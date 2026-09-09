@@ -255,6 +255,10 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
         minimum_inputs=0,
         maximum_inputs=0,
         parameters=(
+            _function_parameter(
+                "base_offset", GeometryParameterKind.NUMBER, unit=_METER,
+                required=False,
+            ),
             _function_parameter("cap_ends", GeometryParameterKind.BOOLEAN),
             _function_parameter(
                 "closed_profile",

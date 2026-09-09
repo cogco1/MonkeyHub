@@ -174,6 +174,20 @@ def _wall_row(element_id: str, axis_from: str, axis_to: str, opening_id: str = "
 
 
 class SemanticWallContractTests(unittest.TestCase):
+    def test_an_authored_opening_ending_at_the_wall_end_is_hosted(self) -> None:
+        # the interior finish wall as authored: length 2.8199999999999994 resolved from its axis
+        # points, the window's along 1.4849999999999985 rounded by the producer to 1.485
+        row = ElementRow("finish-wall", "finish", "wall",
+                         {"base": {"level": "level-ground"}, "line": {"from": _on("OZ", 0.0), "to": _on("OZ", 2.8199999999999994)}},
+                         {"thickness": 0.02, "height": 3.0,
+                          "openings": [{"opening_id": "window", "kind": "window", "along": 1.4849999999999985, "width": 2.67, "sill": 0.19, "head": 2.69}]},
+                         BASIS)
+        produced, _ = _produce((row,))
+        void = next(op for op in produced[0].operations if op.op_id == "finish-wall-void-window")
+        self.assertEqual({round(p[2], 9) for p in _op_params(void)["profile"]}, {0.15, 2.82})
+        with self.assertRaisesRegex(ElementProducerError, "lies outside the wall length"):
+            _produce((replace(row, params={**row.params, "openings": [{**row.params["openings"][0], "along": 1.485 + 1e-8}]}),))
+
     def test_a_wall_ends_at_the_referenced_slab_underside(self) -> None:
         original = _wall_row("support-wall", "1", "2")
         row = replace(original, references={**original.references, "base": {"level": "level-ground"},
@@ -516,6 +530,42 @@ class DirectLoftTests(unittest.TestCase):
     lofted open at both end rings rather than closed with an invented
     thickness; the row's word travels to the operation as it was stated.
     """
+
+    def test_section_heights_are_relative_to_the_datum_without_moving_the_profiles(self) -> None:
+        for bottom, top, support in ((0.4, 1.4375, {"rise": 0.4}),
+                                     (-0.2, 0.8, {"engagement_depth": 0.2}),
+                                     (0.0, 1.0, {})):
+            for datum_height in (3.57, 7.2):
+                with self.subTest(bottom=bottom, datum_height=datum_height):
+                    sections = [_ring(1.0, bottom), _ring(0.8, top)]
+                    row = replace(_loft_row(profiles=sections), references={"base": {"level": PN}})
+                    levels = _levels(piano=datum_height)
+                    context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=levels),
+                                                published={}, frame_id="world")
+                    (element,) = produce_rows((row,), context)
+                    params = _op_params(element.operations[0])
+                    self.assertEqual(params["profiles"], [point for section in sections for point in section])
+                    self.assertEqual(row.params["profiles"], sections)
+                    self.assertEqual(element.relations[0].parameters, support)
+                    operations = tuple(replace(op, semantic_binding_ids=("building-binding",)) for op in element.operations)
+                    state = _state()
+                    result = compile_geometry_program(
+                        state, _only(_proposal(state, extra_operations=operations), operations, ()),
+                        active_commitment_refs=(COMMITMENT,), interface_datums=levels.datums(),
+                        datum_bindings=element.bindings,
+                    )
+                    self.assertIsNotNone(result.program, result.receipt.issues)
+                    bounds = expected_object_bounds(result.program)["obj-drum"]
+                    self.assertAlmostEqual(bounds["bbox_min"][1], datum_height + bottom)
+                    self.assertAlmostEqual(bounds["bbox_max"][1], datum_height + top)
+                    self.assertEqual([bounds["bbox_min"][axis] for axis in (0, 2)], [-1.0, -1.0])
+                    self.assertEqual([bounds["bbox_max"][axis] for axis in (0, 2)], [1.0, 1.0])
+
+    def test_a_direct_loft_still_refuses_a_second_authored_height_offset(self) -> None:
+        row = replace(_loft_row(profiles=[_ring(1.0, 0.4), _ring(1.0, 1.4)]),
+                      references={"base": {"datum": "level-ground", "offset": 0.4}})
+        with self.assertRaisesRegex(ElementProducerError, "sections carry their own heights"):
+            _produce((row,))
 
     def test_a_loft_row_is_capped_unless_it_says_otherwise(self) -> None:
         (drum,), _ = _produce((_loft_row(),))

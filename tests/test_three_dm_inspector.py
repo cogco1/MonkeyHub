@@ -17,6 +17,7 @@ from archflow.adapters.three_dm_inspector import (
     _rgba,
     _visible_geometry_points,
     inspect_three_dm,
+    inspect_three_dm_contents,
 )
 
 try:
@@ -26,6 +27,37 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 class ThreeDmInspectorTests(unittest.TestCase):
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_container_read_keeps_unmeshed_brep_while_export_inspection_stays_strict(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "imported.3dm"
+            model = rhino3dm.File3dm()
+            model.Settings.ModelUnitSystem = rhino3dm.UnitSystem.Feet
+            attributes = rhino3dm.ObjectAttributes()
+            attributes.Name = "imported-equipment"
+            attributes.SetUserString("source_leaf_uuid", "original-equipment")
+            model.Objects.AddBrep(rhino3dm.Brep.CreateFromBoundingBox(rhino3dm.BoundingBox(0, 0, 0, 1, 1, 2)), attributes)
+            self.assertTrue(model.Write(str(source), 8))
+            data = source.read_bytes()
+            contents = inspect_three_dm_contents(data)
+            self.assertEqual(contents.file_sha256, hashlib.sha256(data).hexdigest())
+            self.assertEqual(contents.object_count, 1)
+            self.assertEqual(contents.units["name"], "Feet")
+            self.assertEqual(contents.object_geometry_sha256[0]["name"], "imported-equipment")
+            self.assertEqual(contents.object_user_strings[0]["attributes"], [{"key": "source_leaf_uuid", "value": "original-equipment"}])
+            self.assertIsNone(contents.aggregate_bbox)
+            self.assertEqual(contents.object_geometry_analysis, ())
+            with self.assertRaises(ThreeDmInspectionError) as raised:
+                inspect_three_dm(source)
+            self.assertIs(raised.exception.code, ThreeDmInspectionErrorCode.VISIBLE_BOUNDS_UNAVAILABLE)
+            self.assertEqual(source.read_bytes(), data)
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_container_read_still_refuses_undecodable_archive(self) -> None:
+        with self.assertRaises(ThreeDmInspectionError) as raised:
+            inspect_three_dm_contents(b"not a 3dm archive")
+        self.assertIs(raised.exception.code, ThreeDmInspectionErrorCode.INVALID_FILE)
+
     def test_missing_file_fails_closed_with_named_error(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             source = Path(temporary_directory) / "missing.3dm"

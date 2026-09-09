@@ -351,10 +351,6 @@ class GeometryCompilationReceipt:
                 "rejected receipt requires issues and no compiled digest"
             )
 
-    @property
-    def receipt_digest(self) -> str:
-        return canonical_digest(self.to_dict())
-
     def to_dict(self) -> dict[str, object]:
         return {
             "schema": self.SCHEMA,

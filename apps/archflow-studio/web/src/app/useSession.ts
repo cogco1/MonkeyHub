@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 
 import { StudioApiError, asStudioApiError, studio } from "../api/client";
 import { connection } from "../api/connection";
-import type { ProjectBindingDto, StateProjectionDto } from "../api/generated";
+import type { ProjectBindingDto, StateProjectionDto, WorkingCopyDto } from "../api/generated";
 import { editingBasePreferences } from "../features/settings/preferences";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
 
@@ -29,6 +29,7 @@ export interface Session {
   readonly projection: StateProjectionDto;
   /** Null keeps the server's default reference policy; a run is an explicit choice. */
   readonly sourceRunId: string | null;
+  readonly workingCopies: readonly WorkingCopyDto[];
 }
 
 interface SessionSnapshot {
@@ -40,16 +41,19 @@ interface SessionSnapshot {
 
 export interface SessionHandle extends SessionSnapshot {
   reload(runId?: string | null): Promise<Session | null>;
+  /** Refresh version choices without re-projecting or selecting an editing base. */
+  refreshWorkingCopies(): Promise<readonly WorkingCopyDto[] | null>;
   /** Re-project when the error says the base moved. Answers whether it did. */
   recoverFromStaleBase(error: StudioApiError): boolean;
 }
 
 /** The hook's async transitions, also usable by isolated tests without a browser. */
-export function createSessionController(serverBaseUrl = connection.baseUrl) {
+export function createSessionController(serverBaseUrl = connection.baseUrl, capabilities: readonly string[] = []) {
   let snapshot: SessionSnapshot = {
     session: idle, changingBase: false, baseError: null, persistenceFailed: false,
   };
   let request = 0;
+  let workingCopiesRead = 0;
   const listeners = new Set<() => void>();
   const publish = (next: SessionSnapshot) => {
     snapshot = next;
@@ -75,6 +79,9 @@ export function createSessionController(serverBaseUrl = connection.baseUrl) {
       const runId = requestedRunId !== undefined ? requestedRunId
         : sameProject && previous.status === "ready" ? previous.value.sourceRunId
           : editingBasePreferences.read(serverBaseUrl, project.projectId);
+      const workingCopies = capabilities.includes("working-copies")
+        ? (await studio.workingCopies()).workingCopies : [];
+      if (currentRequest !== request) return null;
       const projection = await studio.state(runId ?? undefined);
       if (currentRequest !== request) return null;
       if (projection.projectId !== project.projectId ||
@@ -91,7 +98,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl) {
         throw new StudioApiError({ status: 0, code: "EDITING_BASE_UNAVAILABLE", detail:
           `Run ${runId} cannot currently be restored as an editing base. Its verified state must match its receipt and current published base. ` + projection.honesty.join(" ") });
       }
-      const next = { project, projection, sourceRunId: runId };
+      const next = { project, projection, sourceRunId: runId, workingCopies };
       // Reading a model or refreshing a session never records consent. Only the
       // explicit continuation/default action reaches the existing preference writer.
       let persistenceFailed = snapshot.persistenceFailed;
@@ -113,6 +120,30 @@ export function createSessionController(serverBaseUrl = connection.baseUrl) {
     }
   };
 
+  const refreshWorkingCopies = async (): Promise<readonly WorkingCopyDto[] | null> => {
+    if (!capabilities.includes("working-copies") || snapshot.session.status !== "ready" || snapshot.changingBase) return null;
+    const currentRead = ++workingCopiesRead;
+    const currentRequest = request;
+    const projectId = snapshot.session.value.project.projectId;
+    const isCurrent = () => currentRead === workingCopiesRead && currentRequest === request &&
+      snapshot.session.status === "ready" && snapshot.session.value.project.projectId === projectId;
+    try {
+      const { workingCopies } = await studio.workingCopies();
+      if (!isCurrent() || snapshot.session.status !== "ready") return null;
+      if (workingCopies.some((copy) => copy.projectId !== projectId)) {
+        throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
+          "The version list belongs to another project. The current editing base has been kept." });
+      }
+      publish({ ...snapshot, session: ready({ ...snapshot.session.value, workingCopies }) });
+      return workingCopies;
+    } catch (cause) {
+      if (!isCurrent()) return null;
+      // A background list failure leaves the bound projection and existing
+      // choices intact. Its caller may report it without discarding the view.
+      throw asStudioApiError(cause);
+    }
+  };
+
   return {
     getSnapshot: () => snapshot,
     subscribe(listener: () => void) {
@@ -120,7 +151,8 @@ export function createSessionController(serverBaseUrl = connection.baseUrl) {
       return () => { listeners.delete(listener); };
     },
     reload,
-    cancel() { request += 1; },
+    refreshWorkingCopies,
+    cancel() { request += 1; workingCopiesRead += 1; },
   };
 }
 
@@ -134,8 +166,8 @@ export function editingDigestForView(
   return session.value.projection.stateDigest;
 }
 
-export function useSession(notice: (line: string) => void): SessionHandle {
-  const [controller] = useState(() => createSessionController());
+export function useSession(notice: (line: string) => void, capabilities: readonly string[] = []): SessionHandle {
+  const [controller] = useState(() => createSessionController(connection.baseUrl, capabilities));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { reload } = controller;
   const noticeRef = useRef(notice);
@@ -159,6 +191,7 @@ export function useSession(notice: (line: string) => void): SessionHandle {
   return {
     ...snapshot,
     reload,
+    refreshWorkingCopies: controller.refreshWorkingCopies,
     recoverFromStaleBase,
   };
 }

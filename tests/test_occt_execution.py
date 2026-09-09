@@ -35,6 +35,7 @@ from archflow.adapters.cad_execution import (
     OcctExecutionReceipt,
     RhinoCadProgramBinding,
     execute_occt_export,
+    project_occt_lines,
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm
 from archflow.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
@@ -156,6 +157,120 @@ def _compile(record: StateRecord) -> CompiledGeometryProgram:
 
 
 @NEEDS_OCCT
+class OcctDrawingTests(unittest.TestCase):
+    """Project exact geometry cold-read from STEP: real curves, occlusion, identity, depth range."""
+
+    def setUp(self) -> None:
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+        from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.path = Path(temporary.name) / "drawing-source.step"
+        panel = BRepPrimAPI_MakeBox(gp_Pnt(2, 3, 4), 2, 4, 3).Shape()
+        hole = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1, 5, 5.5), gp_Dir(1, 0, 0)), 0.4, 4).Shape()
+        panel = BRepAlgoAPI_Cut(panel, hole).Shape()
+        cover = BRepPrimAPI_MakeBox(gp_Pnt(0.5, 4.5, 5.0), 0.5, 1, 1).Shape()
+        occt_backend.write_step(self.path, (
+            occt_backend.StepObject("panel", panel, "panels"),
+            occt_backend.StepObject("cover", cover, "panels"),
+        ), length_unit="meter")
+        self.entries = occt_backend.read_step(self.path, length_unit="meter")
+        # Looking along +X from x = 0: right is -Y, up is +Z, right x up = -X faces the viewer.
+        self.frame = dict(origin=(0, 3, 4), right=(0, -1, 0), up=(0, 0, 1), linear_deflection=0.0001)
+
+    def assert_circle(self, lines, *, center=(-2, 1.5), radius=0.4, deflection=0.0001):
+        curves = [line for line in lines if len(line.points) > 2]
+        self.assertTrue(curves, "the circular hole must not become four bounding-box edges")
+        for line in curves:
+            for x, y in line.points:
+                self.assertAlmostEqual(math.hypot(x - center[0], y - center[1]), radius, places=7)
+            for a, b in zip(line.points, line.points[1:]):
+                midpoint = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+                deviation = radius - math.hypot(midpoint[0] - center[0], midpoint[1] - center[1])
+                self.assertLessEqual(deviation, deflection * 1.00001)
+
+    def test_projection_retains_hole_curves_and_declared_camera_coordinates(self) -> None:
+        lines = project_occt_lines(self.entries, object_ids=("panel",), **self.frame)
+        self.assertEqual({line.object_id for line in lines}, {"panel"})
+        visible = [line for line in lines if line.kind == "visible"]
+        self.assert_circle(visible)
+        self.assertEqual(min(x for line in visible for x, _ in line.points), -4.0)
+        self.assertEqual(max(y for line in visible for _, y in line.points), 3.0)
+        rotated = project_occt_lines(self.entries, object_ids=("panel",), **{
+            **self.frame, "origin": (0, 2, 3), "right": (0, 0, 1), "up": (0, 1, 0),
+        })
+        self.assert_circle([line for line in rotated if line.kind == "visible"], center=(2.5, 3.0))
+
+    def test_selected_objects_occlude_each_other_and_keep_their_identity(self) -> None:
+        lines = project_occt_lines(self.entries, object_ids=("panel", "cover"), **self.frame)
+        self.assertEqual({line.object_id for line in lines}, {"panel", "cover"})
+        panel = [line for line in lines if line.object_id == "panel"]
+        self.assert_circle([line for line in panel if line.kind == "hidden"])
+        self.assertFalse(any(len(line.points) > 2 for line in panel if line.kind == "visible"))
+        self.assertTrue(any(line.kind == "visible" for line in lines if line.object_id == "cover"))
+        self.assertEqual(lines, project_occt_lines(tuple(reversed(self.entries)),
+                                                  object_ids=("cover", "panel"), **self.frame))
+
+    def test_depth_range_excludes_shapes_beyond_it_and_cuts_crossing_shapes_exactly(self) -> None:
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf
+
+        rotation = gp_Trsf()
+        rotation.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), math.pi / 4)
+        diamond = BRepBuilderAPI_Transform(BRepPrimAPI_MakeBox(gp_Pnt(-1, -1, 0), 2, 2, 2).Shape(), rotation, True).Shape()
+        screen = BRepPrimAPI_MakeBox(gp_Pnt(-3, -3, 0), 6, 1, 3).Shape()
+        entries = (occt_backend.StepEntry("diamond", (), None, diamond), occt_backend.StepEntry("screen", (), None, screen))
+        # From y = -5 looking along +Y: the screen sits at depth 2..3, the diamond's centre at depth 5, its tips at 5 +- sqrt(2).
+        frame = dict(origin=(0, -5, 0), right=(1, 0, 0), up=(0, 0, 1), linear_deflection=0.0001)
+        ids = ("diamond", "screen")
+
+        def widest_visible(lines, name):
+            return max(abs(x) for line in lines if line.object_id == name and line.kind == "visible" for x, _ in line.points)
+
+        full = project_occt_lines(entries, object_ids=ids, **frame)
+        self.assertEqual(full, project_occt_lines(entries, object_ids=ids, depth_range=(0, 10), **frame))
+        self.assertFalse(any(line.object_id == "diamond" and line.kind == "visible" for line in full),
+                         "the screen hides the whole diamond at full depth")
+        behind_screen = project_occt_lines(entries, object_ids=ids, depth_range=(3.5, 10), **frame)
+        self.assertEqual({line.object_id for line in behind_screen}, {"diamond"})
+        self.assertAlmostEqual(widest_visible(behind_screen, "diamond"), math.sqrt(2), places=6)
+        cut = project_occt_lines(entries, object_ids=ids, depth_range=(3.5, 4.5), **frame)
+        self.assertEqual({line.object_id for line in cut}, {"diamond"})
+        self.assertAlmostEqual(widest_visible(cut, "diamond"), math.sqrt(2) - 0.5, places=6)
+        self.assertEqual(project_occt_lines(entries, object_ids=ids, depth_range=(7, 10), **frame), ())
+
+    def test_drawing_coordinates_and_deflection_use_the_step_read_unit(self) -> None:
+        millimeters = occt_backend.read_step(self.path, length_unit="millimeter")
+        frame = dict(origin=(3000, 3000, 4000), right=(0, -1, 0), up=(0, 0, 1), linear_deflection=0.1)
+        lines = project_occt_lines(millimeters, object_ids=("panel",), **frame)
+        self.assert_circle(lines, center=(-2000, 1500), radius=400, deflection=0.1)
+        self.assertEqual(min(x for line in lines for x, _ in line.points), -4000.0)
+
+    def test_unknown_ambiguous_and_empty_selections_and_invalid_frames_are_refused(self) -> None:
+        from OCP.TopoDS import TopoDS_Shape
+
+        panel = next(entry for entry in self.entries if entry.name == "panel")
+        for entries, ids, frame in (
+            (self.entries, (), self.frame),
+            (self.entries, ("missing",), self.frame),
+            (self.entries, ("panel", "panel"), self.frame),
+            ((panel, panel), ("panel",), self.frame),
+            ((replace(panel, shape=TopoDS_Shape()),), ("panel",), self.frame),
+            (self.entries, ("panel",), {**self.frame, "right": (0, -2, 0)}),
+            (self.entries, ("panel",), {**self.frame, "up": (0, -1, 0)}),
+            (self.entries, ("panel",), {**self.frame, "origin": (float("nan"), 0, 0)}),
+            (self.entries, ("panel",), {**self.frame, "linear_deflection": 0}),
+            (self.entries, ("panel",), {**self.frame, "depth_range": (2, 1)}),
+            (self.entries, ("panel",), {**self.frame, "depth_range": (0, float("inf"))}),
+        ):
+            with self.subTest(ids=ids, frame=frame), self.assertRaises(occt_backend.OcctBackendError):
+                project_occt_lines(entries, object_ids=ids, **frame)
+
+
+@NEEDS_OCCT
 class OpenLoftExecutionTests(unittest.TestCase):
     """A loft row with ``cap_ends: false`` is delivered as the lofted surface, open at both rings, with no volume claimed.
 
@@ -233,6 +348,50 @@ class OpenLoftExecutionTests(unittest.TestCase):
                         expected_counts={object_id: 1}, expected_deliveries=receipt.exact_artifact["deliveries"], layer_colors={}, tolerance=0.003,
                     )
                     self.assertEqual(agreed, [])
+
+
+@NEEDS_OCCT
+class NativeLoftHeightExecutionTests(unittest.TestCase):
+    """Native section heights survive datum placement in the exact exported solid."""
+
+    DATUM = 2.25
+
+    def _record(self, profiles):
+        element = {**DRUM_ELEMENT, "fields": {**DRUM_ELEMENT["fields"], "params": {
+            "profiles": profiles, "profile_size": len(profiles[0]), "cap_ends": True,
+        }}}
+        record = _record_with(element)
+        return replace(record, entities=tuple(replace(entity, fields={**entity.fields, "elevation": self.DATUM})
+                                              if entity.entity_id == "level-ground" else entity for entity in record.entities))
+
+    def test_positive_zero_and_negative_section_heights_are_relative_to_the_nonzero_datum(self) -> None:
+        for bottom in (-0.4, 0.0, 0.4):
+            with self.subTest(bottom=bottom), tempfile.TemporaryDirectory() as tmp:
+                workspace = Path(tmp).resolve()
+                program = _compile(self._record([_ring(1.0, bottom), _ring(1.0, bottom + 1.0)]))
+                receipt, _ = _execute(program, _persisted_binding(program, "stage-native-height"), workspace, "native-height@occt")
+                self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+                body = occt_backend.measure_shape(entries["obj-drum-east"].shape)
+                self.assertEqual((body.valid, body.closed, body.solid_count), (True, True, 1))
+                _assert_bbox(self, body, (-1.0, -1.0, self.DATUM + bottom), (1.0, 1.0, self.DATUM + bottom + 1.0), places=6)
+                self.assertTrue(receipt.readback_verified)
+
+    def test_a_vertical_circular_section_keeps_its_authored_center_height(self) -> None:
+        center, radius = 1.35, 0.5
+        profiles = [[[radius * math.cos(2.0 * math.pi * index / 16), center + radius * math.sin(2.0 * math.pi * index / 16), depth]
+                     for index in range(16)] for depth in (-0.1, 0.1)]
+        program = _compile(self._record(profiles))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _persisted_binding(program, "stage-native-circle-height"), workspace, "circle-height@occt")
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            body = occt_backend.measure_shape(entries["obj-drum-east"].shape)
+            self.assertEqual((body.valid, body.closed, body.solid_count), (True, True, 1))
+            _assert_bbox(self, body, (-radius, -0.1, self.DATUM + center - radius), (radius, 0.1, self.DATUM + center + radius), places=6)
+            self.assertAlmostEqual((body.bbox_min[2] + body.bbox_max[2]) / 2.0, self.DATUM + center, places=8)
+            self.assertEqual(occt_backend.classify_program_point(entries["obj-drum-east"].shape, (0.0, self.DATUM + center, 0.0)), "inside")
 
 
 WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,
@@ -1091,6 +1250,117 @@ class JointIntersectionTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- STEP unit statics under interleaving
+
+
+@NEEDS_OCCT
+class FinalSolidPairMeasurementTests(unittest.TestCase):
+    """Measure only requested final objects from real STEP readback, including legitimate joints."""
+
+    def test_cold_read_boxes_distinguish_separation_contact_and_positive_common_volume(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+
+        program = _program_of(*(_box(name, [x, 0.0, 0.0], [1.0, 1.0, 1.0]) for name, x in (
+            ("body", 0.0), ("separated", 2.0), ("touching", 1.0), ("penetrating", 0.75),
+        )))
+        pairs = tuple(("body-object", f"{name}-object") for name in ("separated", "touching", "penetrating"))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "pairs@occt", preview=False)
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = occt_backend.read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
+            measured = measure_occt_solid_pairs(entries, object_pairs=pairs, length_unit="meter")
+        self.assertEqual(set(measured), set(pairs))
+        for pair, status, distance, volume in zip(pairs, ("separated", "contact", "penetrating"), (1.0, 0.0, 0.0), (0.0, 0.0, 0.25)):
+            with self.subTest(pair=pair):
+                self.assertEqual(measured[pair]["status"], status, measured[pair])
+                self.assertAlmostEqual(measured[pair]["distance_m"], distance, places=8)
+                self.assertAlmostEqual(measured[pair]["common_volume_m3"], volume, places=8)
+
+    def test_millimeter_step_reports_distance_in_meters_and_volume_in_cubic_meters(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.gp import gp_Pnt
+
+        objects = tuple(occt_backend.StepObject(name, BRepPrimAPI_MakeBox(gp_Pnt(x, 0.0, 0.0), 1000.0, 1000.0, 1000.0).Shape(), "test")
+                        for name, x in (("body", 0.0), ("separated", 2000.0), ("penetrating", 750.0)))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "millimeter-pairs.step"
+            occt_backend.write_step(path, objects, length_unit="millimeter")
+            entries = occt_backend.read_step(path, length_unit="millimeter")
+            measured = measure_occt_solid_pairs(entries, object_pairs=(("body", "separated"), ("body", "penetrating")), length_unit="millimeter")
+        self.assertEqual(measured[("body", "separated")]["status"], "separated")
+        self.assertAlmostEqual(measured[("body", "separated")]["distance_m"], 1.0, places=8)
+        self.assertEqual(measured[("body", "penetrating")]["status"], "penetrating")
+        self.assertAlmostEqual(measured[("body", "penetrating")]["common_volume_m3"], 0.25, places=8)
+
+    def test_a_window_ring_and_pane_can_touch_inside_overlapping_bounds_without_checking_consumed_bars(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+
+        program = _compile(_window_record())
+        frame_op = next(op for op in program.proposal.operations if op.op_id == "frame-wall-south-window-south")
+        pair = (FRAME_ID, PANE_ID)
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _persisted_binding(program, "stage-solid-pair-window"), workspace, "window-pair@occt", preview=False)
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            frame, pane = (occt_backend.measure_shape(entries[name].shape) for name in pair)
+            for axis in range(3):
+                self.assertGreater(min(frame.bbox_max[axis], pane.bbox_max[axis]) - max(frame.bbox_min[axis], pane.bbox_min[axis]), 0.0)
+            self.assertTrue(set(frame_op.input_object_ids).isdisjoint(entries))
+            measured = measure_occt_solid_pairs(tuple(entries.values()), object_pairs=(pair,), length_unit="meter")
+            self.assertEqual(set(measured), {pair})
+            self.assertEqual(measured[pair]["status"], "contact", measured[pair])
+            self.assertAlmostEqual(measured[pair]["distance_m"], 0.0, places=8)
+            self.assertAlmostEqual(measured[pair]["common_volume_m3"], 0.0, places=8)
+            consumed_pair = (frame_op.input_object_ids[0], FRAME_ID)
+            requested = measure_occt_solid_pairs(tuple(entries.values()), object_pairs=(pair, consumed_pair), length_unit="meter")
+            self.assertEqual(set(requested), {pair, consumed_pair})
+            self.assertEqual(requested[pair]["status"], "contact")
+            self.assertEqual(requested[consumed_pair]["status"], "unchecked")
+            self.assertIsNone(requested[consumed_pair]["distance_m"])
+            self.assertIsNone(requested[consumed_pair]["common_volume_m3"])
+            self.assertIn(consumed_pair[0], requested[consumed_pair]["detail"])
+
+    def test_missing_duplicate_or_null_final_objects_stay_unchecked(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+        from OCP.TopoDS import TopoDS_Shape
+
+        program = _program_of(_box("body", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), _box("other", [2.0, 0.0, 0.0], [1.0, 1.0, 1.0]))
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "unchecked-pairs@occt", preview=False)
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+            body, other = entries["body-object"], entries["other-object"]
+            pair = (body.name, other.name)
+            for case, selected_entries in (
+                ("missing", (body,)), ("duplicate", (body, other, other)),
+                ("null", (body, replace(other, shape=TopoDS_Shape()))),
+            ):
+                with self.subTest(case=case):
+                    measured = measure_occt_solid_pairs(selected_entries, object_pairs=(pair,), length_unit="meter")
+                    self.assertEqual(set(measured), {pair})
+                    self.assertEqual(measured[pair]["status"], "unchecked", measured[pair])
+                    self.assertIsNone(measured[pair]["distance_m"])
+                    self.assertIsNone(measured[pair]["common_volume_m3"])
+                    self.assertTrue(measured[pair]["detail"])
+
+    def test_a_cold_read_open_surface_is_not_certified_as_nonpenetrating(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs
+
+        program = _program_of(_box("body", [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]), _loft("surface", cap_ends=False))
+        pair = ("body-object", "surface-object")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            receipt, _ = _execute(program, _synthetic_binding(program), workspace, "surface-pair@occt", preview=False)
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            entries = occt_backend.read_step(workspace / receipt.exact_artifact["relative_path"], length_unit="meter")
+            measured = measure_occt_solid_pairs(entries, object_pairs=(pair,), length_unit="meter")
+        self.assertEqual(measured[pair]["status"], "unchecked", measured[pair])
+        self.assertIsNone(measured[pair]["distance_m"])
+        self.assertIsNone(measured[pair]["common_volume_m3"])
+        self.assertIn("surface-object", measured[pair]["detail"])
 
 
 METER_BOX = (2.0, 4.0, 3.0)      # CAD-frame extents of the metre body: the fixture program's (2, 3, 4) as (x, z, y)

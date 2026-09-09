@@ -10,9 +10,9 @@ something the record answered.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..application.clarification import (
     AuthoredControlDraft,
@@ -20,9 +20,12 @@ from ..application.clarification import (
     PendingIntent,
     ScopeOption,
 )
-from ..application.gestures import Gesture, GestureHit
+from ..application.gestures import (
+    DocumentAnnotationPage, DocumentAnnotationRef, DocumentGesture, Gesture, GestureHit,
+)
 from ..application.intent_agent import Compilation
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
+from .artifacts import ModelSourceDto, model_source_dto
 
 Vector3 = tuple[float, float, float]
 
@@ -54,7 +57,7 @@ class CameraDto(BaseModel):
 
 
 class GestureDto(BaseModel):
-    """One stroke on the model: circle / arrow / keep / remove.
+    """One non-destructive annotation on the model.
 
     ``screen`` is the stroke in canvas pixels, ``camera`` the view it was
     drawn in, ``hits`` the objects under its samples. For an arrow the world
@@ -64,7 +67,7 @@ class GestureDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    kind: Literal["circle", "arrow", "keep", "remove"]
+    kind: Literal["circle", "arrow", "keep", "remove", "freehand", "line", "ruler", "arc"]
     screen: list[tuple[float, float]] = Field(min_length=1)
     camera: CameraDto
     hits: list[GestureHitDto] = Field(default_factory=list)
@@ -72,6 +75,10 @@ class GestureDto(BaseModel):
     world_end: Vector3 | None = Field(alias="worldEnd", default=None)
     world_direction: Vector3 | None = Field(alias="worldDirection", default=None)
     length_model_units: float | None = Field(alias="lengthModelUnits", default=None)
+    label: str | None = Field(default=None, max_length=120)
+    color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    line_width: int | None = Field(alias="lineWidth", default=None, ge=1, le=8)
+    screen_size: tuple[int, int] | None = Field(alias="screenSize", default=None)
 
 
 def gesture_from(dto: GestureDto) -> Gesture:
@@ -87,6 +94,165 @@ def gesture_from(dto: GestureDto) -> Gesture:
         ),
         world_direction=dto.world_direction,
         length_model_units=dto.length_model_units,
+        label=dto.label,
+        screen=tuple(dto.screen),
+        color=dto.color,
+        line_width=dto.line_width,
+        camera=dto.camera.model_dump(),
+        screen_size=dto.screen_size,
+    )
+
+
+class ModelGestureDto(GestureDto):
+    """The existing 3D gesture, with a stable id for erasing and restoring saved ink."""
+
+    id: str = Field(min_length=1, max_length=128)
+
+
+class ModelAnnotationsRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    model_source: ModelSourceDto = Field(alias="modelSource")
+    base_revision_sha256: str | None = Field(alias="baseRevisionSha256", pattern=STATE_DIGEST_PATTERN)
+    annotations: list[ModelGestureDto] = Field(max_length=2000)
+    comment: str = Field(default="", max_length=8000)
+
+
+class ModelAnnotationsDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    model_source: ModelSourceDto = Field(alias="modelSource")
+    revision_sha256: str | None = Field(alias="revisionSha256")
+    annotations: list[ModelGestureDto]
+    comment: str
+
+
+def model_annotations_dto(snapshot) -> ModelAnnotationsDto:
+    return ModelAnnotationsDto(project_id=snapshot.project_id, model_source=model_source_dto(snapshot.model_source),
+                               revision_sha256=snapshot.revision_sha256,
+                               annotations=[ModelGestureDto(**row) for row in snapshot.annotations], comment=snapshot.comment)
+
+
+PageCoordinate = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
+
+
+class DocumentGestureDto(BaseModel):
+    """Page-local ink; this DTO cannot carry model hits, world coordinates or a camera."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    id: str = Field(min_length=1, max_length=128)
+    kind: Literal["circle", "arrow", "keep", "remove", "freehand", "line", "ruler", "arc", "text"]
+    points: list[tuple[PageCoordinate, PageCoordinate]] = Field(
+        min_length=1, max_length=20000,
+        description="Coordinates in [0,1], origin at the visible page's top left, x right/y down. PDF uses CropBox after rotation; images use EXIF orientation. Zoom and DPI do not change them. Text has exactly one point anchoring the text block's top-left corner.",
+    )
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    line_width: float = Field(
+        alias="lineWidth", gt=0, le=1, allow_inf_nan=False,
+        description="Stroke width as a fraction of the visible page's shorter side. Render at lineWidth * min(displayedPageWidth, displayedPageHeight) CSS px, independently of zoom and DPI. Text does not render this width; its independent fontSize sets the font.",
+    )
+    label: str | None = Field(
+        default=None, max_length=2000,
+        description="For text, the non-empty plain-text content, with explicit newlines preserved (at most 2000 characters). Other tools keep their optional label limit of 120 characters.",
+    )
+    font_size: float | None = Field(
+        alias="fontSize", default=None, gt=0, le=1, allow_inf_nan=False,
+        exclude_if=lambda value: value is None,
+        description="Required only for text: font size as a fraction of the visible page's shorter side. Render at fontSize * min(displayedPageWidth, displayedPageHeight) CSS px with 1.25em line height. Absent on existing strokes; never derived from lineWidth.",
+    )
+
+    @model_validator(mode="after")
+    def valid_document_gesture(self) -> DocumentGestureDto:
+        document_gesture_from(self)
+        return self
+
+
+class DocumentAnnotationRefDto(BaseModel):
+    """One exact saved page revision to accompany a written design request."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
+    page_index: int = Field(alias="pageIndex", ge=0)
+    revision_sha256: str = Field(alias="revisionSha256", pattern=STATE_DIGEST_PATTERN)
+
+
+class DocumentAnnotationsRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
+    page_index: int = Field(alias="pageIndex", ge=0)
+    base_revision_sha256: str | None = Field(
+        alias="baseRevisionSha256", pattern=STATE_DIGEST_PATTERN,
+        description="The last revision read for this file/page; null only for an unsaved page. A stale revision is refused with 409.",
+    )
+    annotations: list[DocumentGestureDto] = Field(max_length=2000, description="Complete remaining ink on this page. Erasing a stroke removes its id from this list; prior saved revisions remain readable.")
+    comment: str = Field(default="", max_length=8000)
+
+
+class DocumentAnnotationsDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    run_id: str = Field(alias="runId")
+    asset_sha256: str = Field(alias="assetSha256")
+    page_index: int = Field(alias="pageIndex")
+    revision_sha256: str | None = Field(alias="revisionSha256")
+    annotations: list[DocumentGestureDto]
+    comment: str
+
+
+class DocumentVisualInputDto(BaseModel):
+    """Transient visible-page PNGs, rendered by the client from a registered source."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    role: Literal["edit", "reference"]
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
+    page_index: int = Field(alias="pageIndex", ge=0)
+    revision_sha256: str | None = Field(alias="revisionSha256", default=None, pattern=STATE_DIGEST_PATTERN)
+    page_png_base64: str = Field(alias="pagePngBase64", max_length=5592408,
+        description="Pure base64 PNG, at most 4 MiB decoded and 2048 px on its longer side; same visible-page aspect ratio as the registered PDF/image.")
+    annotated_png_base64: str | None = Field(alias="annotatedPngBase64", default=None, max_length=5592408,
+        description="Same-size page with the exact saved revision's complete ink; required when that selected revision has annotations, otherwise null.")
+    reference_note: str | None = Field(alias="referenceNote", default=None, max_length=2000)
+
+
+class DocumentCommentDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    comment_ref: str = Field(alias="commentRef", description="Retained P036 record URI, for citation; never a server filesystem path.")
+    project_id: str = Field(alias="projectId")
+    source_run_id: str | None = Field(alias="sourceRunId")
+    state_digest: str = Field(alias="stateDigest")
+    utterance: str
+    document_annotations: list[DocumentAnnotationRefDto] = Field(alias="documentAnnotations")
+    submitted_at: str = Field(alias="submittedAt")
+
+
+class DocumentCommentsDto(BaseModel):
+    comments: list[DocumentCommentDto]
+
+
+def document_gesture_from(dto: DocumentGestureDto) -> DocumentGesture:
+    return DocumentGesture(dto.id, dto.kind, tuple(dto.points), dto.color, dto.line_width, dto.label, dto.font_size)
+
+
+def document_annotation_ref_from(dto: DocumentAnnotationRefDto) -> DocumentAnnotationRef:
+    return DocumentAnnotationRef(dto.run_id, dto.asset_sha256, dto.page_index, dto.revision_sha256)
+
+
+def document_annotations_dto(page: DocumentAnnotationPage) -> DocumentAnnotationsDto:
+    return DocumentAnnotationsDto(
+        project_id=page.project_id, run_id=page.run_id, asset_sha256=page.asset_sha256,
+        page_index=page.page_index, revision_sha256=page.revision_sha256,
+        annotations=[DocumentGestureDto(**annotation.to_dict()) for annotation in page.annotations],
+        comment=page.comment,
     )
 
 
@@ -94,6 +260,7 @@ class IntentRequestDto(BaseModel):
     """One request in the architect's words, against the current selection."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
 
     state_digest: str = Field(
         alias="stateDigest",
@@ -138,6 +305,14 @@ class IntentRequestDto(BaseModel):
         description="what the architect drew on the model with the words: "
         "circles, arrows, keep and remove marks, with the objects under them; "
         "the server resolves them and reads them beside the sentence",
+    )
+    document_annotations: list[DocumentAnnotationRefDto] = Field(
+        alias="documentAnnotations", default_factory=list, max_length=100,
+        description="Exact saved document page revisions submitted with the words. The server verifies and retains their source context without inferring a model hit or camera.",
+    )
+    document_visuals: list[DocumentVisualInputDto] = Field(
+        alias="documentVisuals", default_factory=list, max_length=4,
+        description="One edit page matching the sole documentAnnotations reference, plus at most three explicitly selected reference pages. At most 16 MiB total decoded PNGs. Reference pages never change the editing base or import old comments. Omit on clarification to reuse the exact submitted images.",
     )
     camera: CameraDto | None = Field(
         default=None,
@@ -388,6 +563,7 @@ class IntentDto(BaseModel):
     agent: AgentReadingDto
     proposal: ProposalDto
     timings: IntentTimingsDto
+    document_comment_ref: str | None = Field(alias="documentCommentRef", default=None)
     gestures: list[str] = Field(
         default_factory=list,
         description="the server's own reading of each gesture, in the record's "

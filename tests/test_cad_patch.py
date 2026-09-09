@@ -1,14 +1,15 @@
 """P103: incremental Rhino patch — selection, subset translation, patch plan."""
 from __future__ import annotations
 
+import base64
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from archflow.adapters.cad_execution import CadExecutionError, RhinoPatchBase, prepare_rhino_three_dm_export
+from archflow.adapters.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
 from archflow.adapters.cad_patch import CadPatchError, select_patch_operations
-from archflow.adapters.cad_program import translate_to_rhino_python
+from archflow.adapters.cad_program import _physical_ids, translate_to_rhino_python
 from archflow.capabilities.element_producers import ProductionContext, produce_rows
 from archflow.capabilities.reference_resolver import ReferenceContext
 from archflow.compilers.geometry import compile_geometry_program
@@ -144,6 +145,242 @@ class PatchSelectionTests(unittest.TestCase):
             self.assertEqual(len(restamp.patch["kept_object_ids"]), 14)
             self.assertNotIn("_register('obj-", restamp.script_path.read_text(encoding="utf-8"))
             self.assertEqual(plan.patch["mode"], "patch")
+
+
+class ComposedThreeDmPatchTests(unittest.TestCase):
+    """Continue a native change without flattening or rebuilding imported assets."""
+
+    @classmethod
+    def setUpClass(cls):
+        import rhino3dm
+
+        cls.rhino = rhino3dm
+        cls.prior = _compile(_rows())
+        cls.changed = _compile(_capital_rows(half_extent=0.6))
+
+    def mesh(self, size=1.0):
+        mesh = self.rhino.Mesh()
+        for x, y, z in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
+                        (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)):
+            mesh.Vertices.Add(x * size, y * size, z * size)
+        for face in ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4),
+                     (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)):
+            mesh.Faces.AddFace(*face)
+        mesh.Normals.ComputeNormals()
+        return mesh
+
+    def native_model(self, program, *, replacement=False, feet=False):
+        r = self.rhino
+        model = r.File3dm()
+        model.Settings.ModelUnitSystem = r.UnitSystem.Feet if feet else r.UnitSystem.Meters
+        model.Settings.ModelAbsoluteTolerance = 0.004
+        layer = r.Layer()
+        layer.Name = "native"
+        model.Layers.Add(layer)
+        material = r.Material()
+        material.Name = "new finish" if replacement else "original finish"
+        material.DiffuseColor = (30, 180, 70, 255) if replacement else (180, 40, 30, 255)
+        material_index = model.Materials.Add(material)
+        group = r.Group()
+        group.Name = "new native" if replacement else "original native"
+        model.Groups.Add(group)
+        layer_index = 0
+        if replacement:
+            child = r.Layer()
+            child.Name = "replacement"
+            child.ParentLayerId = model.Layers.FindIndex(0).Id
+            child.RenderMaterialIndex = material_index
+            layer_index = model.Layers.Add(child)
+        for name in _physical_ids(program.proposal):
+            attributes = r.ObjectAttributes()
+            attributes.Name = name
+            attributes.LayerIndex = layer_index
+            attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromObject
+            attributes.MaterialIndex = material_index
+            attributes.AddToGroup(0)
+            attributes.SetUserString("archflow:object_ref", f"cad-object:{name}")
+            model.Objects.AddMesh(self.mesh(2.0 if replacement else 1.0), attributes)
+        return model
+
+    def add_imported_equipment(self, model):
+        r = self.rhino
+        layer = r.Layer()
+        layer.Name = "imported equipment"
+        layer.Color = (40, 70, 180, 255)
+        layer_index = model.Layers.Add(layer)
+        material = r.Material()
+        material.Name = "imported enamel"
+        material_index = model.Materials.Add(material)
+        group = r.Group()
+        group.Name = "imported group"
+        model.Groups.Add(group)
+        attributes = r.ObjectAttributes()
+        attributes.Name = "equipment-body"
+        attributes.LayerIndex = layer_index
+        attributes.MaterialIndex = material_index
+        attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromObject
+        attributes.AddToGroup(1)
+        attributes.SetUserString("source_leaf_uuid", "same-leaf-in-brep-and-display")
+        attributes.Visible = False
+        brep = r.Sphere(r.Point3d(0, 0, 0), 1.0).ToBrep()
+        display_attributes = r.ObjectAttributes()
+        display_attributes.Name = "equipment-body-display"
+        display_attributes.LayerIndex = layer_index
+        display_attributes.SetUserString("source_leaf_uuid", "same-leaf-in-brep-and-display")
+        definition_index = model.InstanceDefinitions.Add(
+            "equipment", "fixture", "", "", r.Point3d(0, 0, 0),
+            (brep, self.mesh()), (attributes, display_attributes),
+        )
+        definition = model.InstanceDefinitions.FindIndex(definition_index)
+        for x in (10.0, 20.0):
+            instance_attributes = r.ObjectAttributes()
+            instance_attributes.Name = f"equipment-instance-{x}"
+            instance_attributes.LayerIndex = layer_index
+            instance = r.InstanceReference(definition.Id, r.Transform.Translation(x, 3, 4))
+            model.Objects.AddInstanceObject(instance, instance_attributes)
+        attributes.Name = "invalid-imported-brep"
+        model.Objects.AddBrep(r.Brep(), attributes)
+        model.Strings["project-note"] = "keep source document"
+
+    @staticmethod
+    def encoded(model):
+        return base64.b64decode(model.Encode())
+
+    def patch(self, base, donor, *, program=None):
+        return patch_composed_three_dm(
+            self.encoded(base), prior_program=self.prior,
+            program=program or self.changed, replacement_3dm=self.encoded(donor),
+        )
+
+    def test_native_change_preserves_full_document_and_scales_only_replacements(self):
+        r = self.rhino
+        base = self.native_model(self.prior, feet=True)
+        donor = self.native_model(self.changed, replacement=True)
+        self.add_imported_equipment(base)
+        before = r.File3dm.FromByteArray(self.encoded(base))
+        selected = select_patch_operations(self.changed, self.prior)
+        survivors = {o.Attributes.Id: o for o in before.Objects
+                     if o.Attributes.Name not in selected.delete_object_names}
+        after = r.File3dm.FromByteArray(self.patch(base, donor))
+        actual = {o.Attributes.Id: o for o in after.Objects}
+        for object_id, original in survivors.items():
+            self.assertEqual(actual[object_id].Geometry.Encode(), original.Geometry.Encode())
+            self.assertEqual(actual[object_id].Attributes.Encode(), original.Attributes.Encode())
+        self.assertEqual(after.Settings.ModelUnitSystem, r.UnitSystem.Feet)
+        self.assertEqual(after.Settings.ModelAbsoluteTolerance, before.Settings.ModelAbsoluteTolerance)
+        self.assertEqual(after.Strings["project-note"], "keep source document")
+        self.assertEqual([d.Encode() for d in after.InstanceDefinitions], [d.Encode() for d in before.InstanceDefinitions])
+        self.assertEqual([layer.Encode() for layer in after.Layers][:len(before.Layers)], [layer.Encode() for layer in before.Layers])
+        self.assertEqual([m.Encode() for m in after.Materials][:len(before.Materials)], [m.Encode() for m in before.Materials])
+        self.assertFalse(next(o.Geometry.IsValid for o in after.Objects if o.Attributes.Name == "invalid-imported-brep"))
+        replacements = [o for o in after.Objects if o.Attributes.Name in selected.delete_object_names]
+        self.assertEqual(len(replacements), 6)
+        for item in replacements:
+            self.assertAlmostEqual(item.Geometry.GetBoundingBox().Max.X, 2.0 / 0.3048, places=5)
+            self.assertEqual(after.Layers.FindIndex(item.Attributes.LayerIndex).FullPath, "native::replacement")
+            self.assertEqual(after.Materials.FindIndex(item.Attributes.MaterialIndex).Name, "new finish")
+            self.assertEqual([after.Groups.FindIndex(i).Name for i in item.Attributes.GetGroupList2()], ["new native"])
+
+    def test_retired_and_added_native_objects_preserve_imported_assets(self):
+        short = _compile(_rows()[:3])
+        base = self.native_model(self.prior)
+        self.add_imported_equipment(base)
+        trimmed = self.rhino.File3dm.FromByteArray(self.patch(base, self.native_model(short), program=short))
+        self.assertNotIn("obj-pediment-west", {o.Attributes.Name for o in trimmed.Objects})
+        self.assertEqual(len(trimmed.Objects), len(base.Objects) - 1)
+        restored = self.rhino.File3dm.FromByteArray(patch_composed_three_dm(
+            self.encoded(trimmed), prior_program=short, program=self.prior,
+            replacement_3dm=self.encoded(self.native_model(self.prior)),
+        ))
+        self.assertEqual({o.Attributes.Name for o in restored.Objects}, {o.Attributes.Name for o in base.Objects})
+        self.assertEqual(len(restored.InstanceDefinitions), 1)
+
+    def test_unchanged_program_returns_original_bytes(self):
+        base = self.native_model(self.prior, feet=True)
+        self.add_imported_equipment(base)
+        data = self.encoded(base)
+        self.assertEqual(patch_composed_three_dm(
+            data, prior_program=self.prior, program=self.prior,
+            replacement_3dm=self.encoded(self.native_model(self.prior)),
+        ), data)
+
+    def test_missing_native_geometry_or_wrong_donor_unit_is_refused(self):
+        base = self.native_model(self.prior)
+        donor = self.native_model(self.changed)
+        donor.Objects.Delete(next(o.Attributes.Id for o in donor.Objects if o.Attributes.Name == "obj-capitals-west-0"))
+        with self.assertRaisesRegex(CadPatchError, "replacement is missing"):
+            self.patch(base, donor)
+        donor = self.native_model(self.changed, feet=True)
+        with self.assertRaisesRegex(CadPatchError, "program's length unit"):
+            self.patch(base, donor)
+        base.Objects.Delete(next(o.Attributes.Id for o in base.Objects if o.Attributes.Name == "obj-columns-west-0"))
+        with self.assertRaisesRegex(CadPatchError, "base is missing"):
+            self.patch(base, self.native_model(self.changed))
+
+    def test_custom_replacement_linetype_is_refused_without_touching_base(self):
+        base = self.native_model(self.prior, feet=True)
+        self.add_imported_equipment(base)
+        original = self.encoded(base)
+        donor = self.native_model(self.changed)
+        donor.Linetypes.Add(self.rhino.Linetype.Dots)
+        for item in donor.Objects:
+            item.Attributes.LinetypeIndex = 0
+        with self.assertRaisesRegex(CadPatchError, "custom replacement linetypes"):
+            patch_composed_three_dm(
+                original, prior_program=self.prior, program=self.changed,
+                replacement_3dm=self.encoded(donor),
+            )
+        reopened = self.rhino.File3dm.FromByteArray(original)
+        self.assertEqual(len(reopened.Objects), len(base.Objects))
+        self.assertEqual(len(reopened.InstanceDefinitions), 1)
+        self.assertEqual(reopened.Settings.ModelUnitSystem, self.rhino.UnitSystem.Feet)
+
+    def test_external_object_sharing_a_native_name_is_refused_and_retained(self):
+        base = self.native_model(self.prior)
+        name = "obj-capitals-west-0"
+        attributes = self.rhino.ObjectAttributes()
+        attributes.Name = name
+        attributes.SetUserString("source_leaf_uuid", "external-equipment")
+        external_id = base.Objects.AddMesh(self.mesh(10.0), attributes)
+        original = self.encoded(base)
+        with self.assertRaisesRegex(CadPatchError, f"ambiguous native object {name}"):
+            patch_composed_three_dm(
+                original, prior_program=self.prior, program=self.changed,
+                replacement_3dm=self.encoded(self.native_model(self.changed)),
+            )
+        reopened = self.rhino.File3dm.FromByteArray(original)
+        self.assertEqual(len(reopened.Objects), 15)
+        external = next(o for o in reopened.Objects if o.Attributes.Id == external_id)
+        self.assertEqual(external.Attributes.GetUserString("source_leaf_uuid"), "external-equipment")
+        self.assertEqual(external.Geometry.GetBoundingBox().Max.X, 10.0)
+
+    def test_native_identity_must_be_unique_and_match_its_exported_reference(self):
+        name = "obj-capitals-west-0"
+        for target in ("base", "donor"):
+            for fault in ("duplicate", "missing_ref", "wrong_ref"):
+                with self.subTest(target=target, fault=fault):
+                    base = self.native_model(self.prior)
+                    donor = self.native_model(self.changed)
+                    model = base if target == "base" else donor
+                    item = next(o for o in model.Objects if o.Attributes.Name == name)
+                    if fault == "duplicate":
+                        attributes = self.rhino.ObjectAttributes()
+                        attributes.Name = name
+                        attributes.SetUserString("archflow:object_ref", f"cad-object:{name}")
+                        model.Objects.AddMesh(self.mesh(), attributes)
+                        error = f"ambiguous native object {name}"
+                    else:
+                        item.Attributes.SetUserString("archflow:object_ref", "" if fault == "missing_ref" else "cad-object:another-object")
+                        error = f"missing or mismatched object_ref: {name}"
+                    original = self.encoded(base)
+                    before_ids = {o.Attributes.Id for o in base.Objects}
+                    with self.assertRaisesRegex(CadPatchError, error):
+                        patch_composed_three_dm(
+                            original, prior_program=self.prior, program=self.changed,
+                            replacement_3dm=self.encoded(donor),
+                        )
+                    reopened = self.rhino.File3dm.FromByteArray(original)
+                    self.assertEqual({o.Attributes.Id for o in reopened.Objects}, before_ids)
 
 
 if __name__ == "__main__":

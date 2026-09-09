@@ -1,35 +1,37 @@
-## 卡号
+## 工作归属
 
-P___ — <一句话说这张卡这次推进了什么>
+P___ 或 P000-governance — <本次解决的问题和修改后的行为>
 
-<!-- 把这个 P### 写进每个提交的 subject;subject 没写才会去 body 里找,而 body 里提到的
-     别的卡号会被当成这次提交的归属。archcheck --changed 靠它认写入范围。
-     治理类改动(没有卡)写 P000-governance,并说明为什么不需要卡。 -->
+<!-- 复用现有 live 工作卡；没有合适归属时才新建。每个提交 subject 写所属 P###，
+     未写时 checker 才读取正文。检查采用提交当时的 scope，不追溯规则引入前的历史。
+     P000-governance 仅适用于 checker 已列定的规则维护路径和 README.md，不是通用越界许可。
+     工作卡和模块 canonical 标签都不代表项目 HEAD 或软件版本已经发布。 -->
 
 ## 写入范围
 
-- [ ] 改动只落在这张卡的 `write_scope` 里,加上共享账本(`tests/`、`docs/mapping/`、`governance/work_registry.json`、`governance/module_registry.json`)。
-- [ ] 没有动别人卡的路径;需要动就先改卡、或者拆一张新卡。
+- [ ] 改动落在本次工作卡的 `write_scope` 与 policy 的 `shared_write_scope`，或 `P000-governance` 的有限范围内。
+- [ ] 已交接重叠路径，staged diff 只包含本次修改，保留其他 WIP。
+- [ ] 若软件归口、公开契约或列出的测试改变，已同步现有 module registry；内部修复不要求改表。
 
 改到的路径:
 
 ```
-<git diff --name-only main...HEAD 的结果,或手写清单>
+<git diff --name-only <PR-base>...HEAD 的结果，或明确路径清单>
 ```
 
 ## 验证
 
-勾选实际跑过的;没跑的写"未跑"和原因,别默认勾。
+按本次影响选择检查，只勾实际完成项；未跑或不适用的写明原因。纯文档检查链接、命令和 scoped diff，不要求跑业务套件。
 
-- [ ] `py -3.12 tools/archcheck.py` — 架构防火墙
-- [ ] `py -3.12 tools/archcheck.py --changed main` — 写入范围
-- [ ] `py -3.12 -m pytest tests -q` — 脊柱套件(___ passed)
-- [ ] `PYTHONPATH=<repo> py -3.12 -m pytest apps/archflow-studio/api/tests -q` — Studio API(___ passed)
-- [ ] `npm run api:check` / `npm run typecheck` / `npm run build`(在 `apps/archflow-studio/web`)
-- [ ] 手动核验:<在真实项目上看到的行为,或写"无">
+- [ ] 受影响行为测试：<命令与结果>
+- [ ] `python tools/archcheck.py` — 当前文件树的静态边界
+- [ ] `python tools/archcheck.py --changed <PR-base>` — 已提交源码范围
+- [ ] API／DTO 改动：<相关路由检查与 `api:check` 结果>
+- [ ] Web 改动：<交互检查、typecheck／build 结果>
+- [ ] 文档或手动核验：<实际检查内容与结果>
 
 ## 请 reviewer 重点看
 
 - <哪个文件 / 哪个判断最值得质疑>
-- <有没有引入新的 owner、新的记录种类、新的写入点、新的协议字段>
-- <哪些是这次故意没做的(留给哪张卡)>
+- <独立功能如何调用现有接口；确实变化的软件契约、写入或校核边界>
+- <仍影响使用的限制，以及需要继续的具体任务>

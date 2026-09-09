@@ -922,113 +922,6 @@ export type CoverageDto = {
 };
 
 /**
- * DeclareControlRequestDto
- *
- * The draft the architect confirms, against the state it was drafted for.
- */
-export type DeclareControlRequestDto = {
-    /**
-     * Statedigest
-     */
-    stateDigest: string;
-    /**
-     * Utterance
-     *
-     * the request that ended in MISSING_EDITABLE_CONTROL
-     */
-    utterance: string;
-    draft: AuthoredControlDraftDto;
-    /**
-     * Projectid
-     */
-    projectId?: string | null;
-};
-
-/**
- * DeclaredControlDto
- */
-export type DeclaredControlDto = {
-    /**
-     * Controlid
-     */
-    controlId: string;
-    /**
-     * Status
-     *
-     * proposed: held in this process, written nowhere
-     */
-    status: string;
-    /**
-     * Statedigest
-     */
-    stateDigest: string;
-    /**
-     * Componentid
-     */
-    componentId: string;
-    /**
-     * Requestedproperty
-     */
-    requestedProperty: string | null;
-    /**
-     * Utterance
-     */
-    utterance: string;
-    /**
-     * Suggestedelementid
-     */
-    suggestedElementId: string;
-    /**
-     * Producer
-     */
-    producer: string | null;
-    /**
-     * Binding
-     */
-    binding: string | null;
-    /**
-     * Unit
-     */
-    unit: string | null;
-    /**
-     * Provenance
-     */
-    provenance: Array<string>;
-    /**
-     * Confidence
-     */
-    confidence: string;
-    /**
-     * Dependencyrequirements
-     */
-    dependencyRequirements: Array<string>;
-    /**
-     * Suggestedaction
-     */
-    suggestedAction: string;
-    /**
-     * Catalogstatus
-     */
-    catalogStatus: string | null;
-    /**
-     * Objectnames
-     */
-    objectNames: Array<string>;
-    /**
-     * Createdat
-     */
-    createdAt: string;
-    /**
-     * Honesty
-     */
-    honesty: Array<string>;
-    /**
-     * Persistence
-     */
-    persistence: string;
-};
-
-/**
  * DependencyEdgeDto
  *
  * One kernel dependency edge, with the refs still prefixed.
@@ -1050,6 +943,289 @@ export type DependencyEdgeDto = {
      * Effect
      */
     effect: string;
+};
+
+/**
+ * DocumentAnnotationRefDto
+ *
+ * One exact saved page revision to accompany a written design request.
+ */
+export type DocumentAnnotationRefDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+};
+
+/**
+ * DocumentAnnotationsDto
+ */
+export type DocumentAnnotationsDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Annotations
+     */
+    annotations: Array<DocumentGestureDto>;
+    /**
+     * Comment
+     */
+    comment: string;
+};
+
+/**
+ * DocumentAnnotationsRequestDto
+ */
+export type DocumentAnnotationsRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Baserevisionsha256
+     *
+     * The last revision read for this file/page; null only for an unsaved page. A stale revision is refused with 409.
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Annotations
+     *
+     * Complete remaining ink on this page. Erasing a stroke removes its id from this list; prior saved revisions remain readable.
+     */
+    annotations: Array<DocumentGestureDto>;
+    /**
+     * Comment
+     */
+    comment?: string;
+};
+
+/**
+ * DocumentCommentDto
+ */
+export type DocumentCommentDto = {
+    /**
+     * Commentref
+     *
+     * Retained P036 record URI, for citation; never a server filesystem path.
+     */
+    commentRef: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId: string | null;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Utterance
+     */
+    utterance: string;
+    /**
+     * Documentannotations
+     */
+    documentAnnotations: Array<DocumentAnnotationRefDto>;
+    /**
+     * Submittedat
+     */
+    submittedAt: string;
+};
+
+/**
+ * DocumentCommentsDto
+ */
+export type DocumentCommentsDto = {
+    /**
+     * Comments
+     */
+    comments: Array<DocumentCommentDto>;
+};
+
+/**
+ * DocumentGestureDto
+ *
+ * Page-local ink; this DTO cannot carry model hits, world coordinates or a camera.
+ */
+export type DocumentGestureDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Kind
+     */
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
+    /**
+     * Points
+     *
+     * Coordinates in [0,1], origin at the visible page's top left, x right/y down. PDF uses CropBox after rotation; images use EXIF orientation. Zoom and DPI do not change them. Text has exactly one point anchoring the text block's top-left corner.
+     */
+    points: Array<[
+        number,
+        number
+    ]>;
+    /**
+     * Color
+     */
+    color: string;
+    /**
+     * Linewidth
+     *
+     * Stroke width as a fraction of the visible page's shorter side. Render at lineWidth * min(displayedPageWidth, displayedPageHeight) CSS px, independently of zoom and DPI. Text does not render this width; its independent fontSize sets the font.
+     */
+    lineWidth: number;
+    /**
+     * Label
+     *
+     * For text, the non-empty plain-text content, with explicit newlines preserved (at most 2000 characters). Other tools keep their optional label limit of 120 characters.
+     */
+    label?: string | null;
+    /**
+     * Fontsize
+     *
+     * Required only for text: font size as a fraction of the visible page's shorter side. Render at fontSize * min(displayedPageWidth, displayedPageHeight) CSS px with 1.25em line height. Absent on existing strokes; never derived from lineWidth.
+     */
+    fontSize?: number | null;
+};
+
+/**
+ * DocumentModelSourceRequestDto
+ */
+export type DocumentModelSourceRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     *
+     * The document's storage run; not its model source.
+     */
+    runId: string;
+    /**
+     * Explicitly declared correspondence, not a claim inferred from image pixels.
+     */
+    modelSource: ModelSourceDto;
+};
+
+/**
+ * DocumentPageDto
+ */
+export type DocumentPageDto = {
+    /**
+     * Pageindex
+     *
+     * Zero-based page index; images have page 0 only.
+     */
+    pageIndex: number;
+    /**
+     * Width
+     *
+     * Visible width after PDF CropBox/rotation in points, or EXIF-oriented image pixels.
+     */
+    width: number;
+    /**
+     * Height
+     *
+     * Visible height after PDF CropBox/rotation in points, or EXIF-oriented image pixels.
+     */
+    height: number;
+    /**
+     * Rotation
+     *
+     * PDF page rotation applied to these dimensions; 0 for oriented images.
+     */
+    rotation: number;
+};
+
+/**
+ * DocumentVisualInputDto
+ *
+ * Transient visible-page PNGs, rendered by the client from a registered source.
+ */
+export type DocumentVisualInputDto = {
+    /**
+     * Role
+     */
+    role: 'edit' | 'reference';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
+    /**
+     * Pagepngbase64
+     *
+     * Pure base64 PNG, at most 4 MiB decoded and 2048 px on its longer side; same visible-page aspect ratio as the registered PDF/image.
+     */
+    pagePngBase64: string;
+    /**
+     * Annotatedpngbase64
+     *
+     * Same-size page with the exact saved revision's complete ink; required when that selected revision has annotations, otherwise null.
+     */
+    annotatedPngBase64?: string | null;
+    /**
+     * Referencenote
+     */
+    referenceNote?: string | null;
 };
 
 /**
@@ -1473,7 +1649,7 @@ export type FrameLevelDto = {
 /**
  * GestureDto
  *
- * One stroke on the model: circle / arrow / keep / remove.
+ * One non-destructive annotation on the model.
  *
  * ``screen`` is the stroke in canvas pixels, ``camera`` the view it was
  * drawn in, ``hits`` the objects under its samples. For an arrow the world
@@ -1484,7 +1660,7 @@ export type GestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc';
     /**
      * Screen
      */
@@ -1525,6 +1701,25 @@ export type GestureDto = {
      * Lengthmodelunits
      */
     lengthModelUnits?: number | null;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Color
+     */
+    color?: string | null;
+    /**
+     * Linewidth
+     */
+    lineWidth?: number | null;
+    /**
+     * Screensize
+     */
+    screenSize?: [
+        number,
+        number
+    ] | null;
 };
 
 /**
@@ -1670,6 +1865,10 @@ export type IntentDto = {
     proposal: ProposalDto;
     timings: IntentTimingsDto;
     /**
+     * Documentcommentref
+     */
+    documentCommentRef?: string | null;
+    /**
      * Gestures
      *
      * the server's own reading of each gesture, in the record's names, as it was put on the sheet; empty when nothing was drawn
@@ -1687,6 +1886,7 @@ export type IntentDto = {
  * One request in the architect's words, against the current selection.
  */
 export type IntentRequestDto = {
+    modelSource?: ModelSourceDto | null;
     /**
      * Statedigest
      *
@@ -1729,6 +1929,18 @@ export type IntentRequestDto = {
      * what the architect drew on the model with the words: circles, arrows, keep and remove marks, with the objects under them; the server resolves them and reads them beside the sentence
      */
     gestures?: Array<GestureDto>;
+    /**
+     * Documentannotations
+     *
+     * Exact saved document page revisions submitted with the words. The server verifies and retains their source context without inferring a model hit or camera.
+     */
+    documentAnnotations?: Array<DocumentAnnotationRefDto>;
+    /**
+     * Documentvisuals
+     *
+     * One edit page matching the sole documentAnnotations reference, plus at most three explicitly selected reference pages. At most 16 MiB total decoded PNGs. Reference pages never change the editing base or import old comments. Omit on clarification to reuse the exact submitted images.
+     */
+    documentVisuals?: Array<DocumentVisualInputDto>;
     /**
      * where the viewer stands: reads 'left' and 'right' against the project's compass (PROJECT.md)
      */
@@ -1912,9 +2124,14 @@ export type MassingMetricsDto = {
  */
 export type MassingOptionDto = {
     /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
      * Optionid
      */
     optionId: string;
+    modelSource?: ModelSourceDto | null;
     /**
      * Runid
      *
@@ -1977,6 +2194,12 @@ export type MassingOptionDto = {
  */
 export type MassingOptionRequestDto = {
     /**
+     * Sourcerunid
+     *
+     * the selected retained run; omitted uses the project's default source
+     */
+    sourceRunId?: string | null;
+    /**
      * Statedigest
      *
      * the stateDigest GET /api/state answered; an option made against another state is refused
@@ -1986,6 +2209,7 @@ export type MassingOptionRequestDto = {
      * Transform
      */
     transform: 'add_floor' | 'remove_floor' | 'shift_volume' | 'scale_volume' | 'split_volume' | 'pack';
+    modelSource?: ModelSourceDto | null;
     /**
      * Label
      */
@@ -2048,6 +2272,171 @@ export type MassingOptionRequestDto = {
 };
 
 /**
+ * ModelAnnotationsDto
+ */
+export type ModelAnnotationsDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    modelSource: ModelSourceDto;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+    /**
+     * Annotations
+     */
+    annotations: Array<ModelGestureDto>;
+    /**
+     * Comment
+     */
+    comment: string;
+};
+
+/**
+ * ModelAnnotationsRequestDto
+ */
+export type ModelAnnotationsRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    modelSource: ModelSourceDto;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Annotations
+     */
+    annotations: Array<ModelGestureDto>;
+    /**
+     * Comment
+     */
+    comment?: string;
+};
+
+/**
+ * ModelAssetRequestDto
+ */
+export type ModelAssetRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Contentbase64
+     */
+    contentBase64: string;
+};
+
+/**
+ * ModelGestureDto
+ *
+ * The existing 3D gesture, with a stable id for erasing and restoring saved ink.
+ */
+export type ModelGestureDto = {
+    /**
+     * Kind
+     */
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc';
+    /**
+     * Screen
+     */
+    screen: Array<[
+        number,
+        number
+    ]>;
+    camera: CameraDto;
+    /**
+     * Hits
+     */
+    hits?: Array<GestureHitDto>;
+    /**
+     * Worldstart
+     */
+    worldStart?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Worldend
+     */
+    worldEnd?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Worlddirection
+     */
+    worldDirection?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Lengthmodelunits
+     */
+    lengthModelUnits?: number | null;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Color
+     */
+    color?: string | null;
+    /**
+     * Linewidth
+     */
+    lineWidth?: number | null;
+    /**
+     * Screensize
+     */
+    screenSize?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Id
+     */
+    id: string;
+};
+
+/**
+ * ModelSourceDto
+ */
+export type ModelSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
  * ModifiedToDto
  *
  * What the architect said instead, when the decision was ``modified``.
@@ -2101,6 +2490,10 @@ export type ObjectBindingDto = {
  * The wire form of ``GET /api/options``: the baseline and every option.
  */
 export type OptionsDto = {
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
     /**
      * Statedigest
      */
@@ -2372,9 +2765,16 @@ export type ProgramAdjacencyDto = {
  */
 export type ProgramApplyRequestDto = {
     /**
+     * Sourcerunid
+     *
+     * the selected retained run; omitted uses the project's default source
+     */
+    sourceRunId?: string | null;
+    /**
      * Statedigest
      */
     stateDigest: string;
+    modelSource?: ModelSourceDto | null;
     sheet: ProgramSheetDto;
     /**
      * Saveinput
@@ -2443,6 +2843,10 @@ export type ProgramDepartmentDto = {
  * The wire form of ``GET /api/program``.
  */
 export type ProgramDto = {
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
     /**
      * Source
      *
@@ -2597,6 +3001,7 @@ export type ProjectArtifactDto = {
      * Runid
      */
     runId: string;
+    modelSource?: ModelSourceDto | null;
     /**
      * Stageid
      */
@@ -2804,18 +3209,20 @@ export type ProposalChangeDto = {
  *
  * ``POST /api/proposals/{id}/decision``: what was decided, and why.
  *
- * ``accepted`` is deliberately not a decision this route takes. A proposal is
- * accepted by being run — ``POST /api/proposals/{id}/candidate`` — and an
- * acceptance that left no run would be a judgement about a building nobody
- * built.
+ * Running a candidate is not accepting it. ``accepted`` is the architect's
+ * explicit choice of one candidate this process ran from the proposal and
+ * finished: ``candidateId`` names that run, and the acceptance is retained
+ * into it. An acceptance that named no run would be a judgement about a
+ * building nobody built, so the id is required and never defaulted to the
+ * latest run.
  */
 export type ProposalDecisionRequestDto = {
     /**
      * Decision
      *
-     * rejected closes the option; modified closes it and re-proposes modifiedTo in its place
+     * accepted chooses the finished candidate named by candidateId and closes the other options still open against the same base; rejected closes the option; modified closes it and re-proposes modifiedTo in its place
      */
-    decision: 'rejected' | 'modified';
+    decision: 'accepted' | 'rejected' | 'modified';
     /**
      * Reason
      *
@@ -2826,6 +3233,12 @@ export type ProposalDecisionRequestDto = {
      * required when decision is modified, refused otherwise
      */
     modifiedTo?: ModifiedToDto | null;
+    /**
+     * Candidateid
+     *
+     * required when decision is accepted, refused otherwise: a candidate this process ran from this proposal, and which succeeded; the acceptance is written into that run
+     */
+    candidateId?: string | null;
 };
 
 /**
@@ -2834,6 +3247,7 @@ export type ProposalDecisionRequestDto = {
  * The wire form of ``POST /api/proposals`` and ``GET /api/proposals/{id}``.
  */
 export type ProposalDto = {
+    modelSource?: ModelSourceDto | null;
     /**
      * Proposalid
      */
@@ -3198,6 +3612,98 @@ export type ServerIdentityDto = {
 };
 
 /**
+ * SourceDocumentDto
+ *
+ * An imported reference document, separate from certified model artifacts.
+ */
+export type SourceDocumentDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Mimetype
+     */
+    mimeType: 'application/pdf' | 'image/png' | 'image/jpeg';
+    /**
+     * Sizebytes
+     */
+    sizeBytes: number;
+    /**
+     * Pagecount
+     */
+    pageCount: number;
+    /**
+     * Pages
+     */
+    pages: Array<DocumentPageDto>;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Modelsourcebindingref
+     */
+    modelSourceBindingRef?: string | null;
+};
+
+/**
+ * SourceDocumentListDto
+ */
+export type SourceDocumentListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Documents
+     */
+    documents: Array<SourceDocumentDto>;
+};
+
+/**
+ * SourceDocumentRequestDto
+ */
+export type SourceDocumentRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Mimetype
+     */
+    mimeType: 'application/pdf' | 'image/png' | 'image/jpeg';
+    /**
+     * Contentbase64
+     *
+     * Original file bytes; maximum decoded size 32 MiB. No server path is accepted.
+     */
+    contentBase64: string;
+    modelSource?: ModelSourceDto | null;
+};
+
+/**
  * StateProjectionDto
  *
  * The wire form of ``GET /api/state``.
@@ -3295,7 +3801,7 @@ export type StudioEventDto = {
     /**
      * Type
      *
-     * candidate.queued | candidate.running | candidate.succeeded | candidate.failed | validation.computed
+     * candidate.queued | candidate.running | candidate.succeeded | candidate.failed | validation.computed | model_asset.registered | working_copy.option_added
      */
     type: string;
     /**
@@ -3394,6 +3900,38 @@ export type UnknownCoverageDto = {
      * Componentids
      */
     componentIds: Array<string>;
+};
+
+/**
+ * UserSettingsDto
+ *
+ * PUT replaces the saved preferences; omitted or null fields use defaults.
+ */
+export type UserSettingsDto = {
+    /**
+     * Language
+     */
+    language?: 'en' | 'zh-CN' | null;
+    /**
+     * Theme
+     */
+    theme?: 'dark' | 'light' | 'system' | null;
+    /**
+     * Fontscale
+     */
+    fontScale?: 0.9 | 1 | 1.1 | null;
+    /**
+     * Intentprovider
+     */
+    intentProvider?: 'deterministic' | 'codex' | 'anthropic' | null;
+    /**
+     * Intentmodel
+     */
+    intentModel?: string | null;
+    /**
+     * Intenttimeouts
+     */
+    intentTimeoutS?: number | null;
 };
 
 /**
@@ -3652,6 +4190,137 @@ export type VolumesDto = {
     honesty: Array<string>;
 };
 
+/**
+ * WorkingCopyCreateRequestDto
+ */
+export type WorkingCopyCreateRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Groupid
+     */
+    groupId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Stageid
+     */
+    stageId: string;
+    /**
+     * The explicitly chosen comparison base; does not rewrite retained kernel lineage.
+     */
+    commonBase: ModelSourceDto;
+    /**
+     * Scope
+     */
+    scope: Array<string>;
+    /**
+     * Options
+     */
+    options: Array<WorkingCopyOptionDto>;
+};
+
+/**
+ * WorkingCopyDto
+ */
+export type WorkingCopyDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Groupid
+     */
+    groupId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Stageid
+     */
+    stageId: string;
+    commonBase: ModelSourceDto;
+    /**
+     * Scope
+     */
+    scope: Array<string>;
+    /**
+     * Options
+     */
+    options: Array<WorkingCopyOptionDto>;
+    /**
+     * Selectedoptionid
+     */
+    selectedOptionId: string | null;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+};
+
+/**
+ * WorkingCopyListDto
+ */
+export type WorkingCopyListDto = {
+    /**
+     * Workingcopies
+     */
+    workingCopies: Array<WorkingCopyDto>;
+};
+
+/**
+ * WorkingCopyOptionDto
+ */
+export type WorkingCopyOptionDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    modelSource: ModelSourceDto;
+};
+
+/**
+ * WorkingCopyOptionRequestDto
+ */
+export type WorkingCopyOptionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string;
+    option: WorkingCopyOptionDto;
+};
+
+/**
+ * WorkingCopySelectionRequestDto
+ */
+export type WorkingCopySelectionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string;
+    /**
+     * Optionid
+     */
+    optionId: string;
+};
+
 export type ReadHealthApiHealthGetData = {
     body?: never;
     path?: never;
@@ -3683,6 +4352,47 @@ export type ReadProtocolApiProtocolGetResponses = {
 };
 
 export type ReadProtocolApiProtocolGetResponse = ReadProtocolApiProtocolGetResponses[keyof ReadProtocolApiProtocolGetResponses];
+
+export type GetUserSettingsApiSettingsUserGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/user';
+};
+
+export type GetUserSettingsApiSettingsUserGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserSettingsDto;
+};
+
+export type GetUserSettingsApiSettingsUserGetResponse = GetUserSettingsApiSettingsUserGetResponses[keyof GetUserSettingsApiSettingsUserGetResponses];
+
+export type PutUserSettingsApiSettingsUserPutData = {
+    body: UserSettingsDto;
+    path?: never;
+    query?: never;
+    url: '/api/settings/user';
+};
+
+export type PutUserSettingsApiSettingsUserPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutUserSettingsApiSettingsUserPutError = PutUserSettingsApiSettingsUserPutErrors[keyof PutUserSettingsApiSettingsUserPutErrors];
+
+export type PutUserSettingsApiSettingsUserPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: UserSettingsDto;
+};
+
+export type PutUserSettingsApiSettingsUserPutResponse = PutUserSettingsApiSettingsUserPutResponses[keyof PutUserSettingsApiSettingsUserPutResponses];
 
 export type ReadProjectsApiProjectsGetData = {
     body?: never;
@@ -3866,9 +4576,23 @@ export type ReadClosureApiStateClosurePostResponse = ReadClosureApiStateClosureP
 export type ReadSheetApiProgramGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Run
+         */
+        run?: string | null;
+    };
     url: '/api/program';
 };
+
+export type ReadSheetApiProgramGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSheetApiProgramGetError = ReadSheetApiProgramGetErrors[keyof ReadSheetApiProgramGetErrors];
 
 export type ReadSheetApiProgramGetResponses = {
     /**
@@ -3919,6 +4643,149 @@ export type ReadSemanticsApiSemanticsGetResponses = {
 };
 
 export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetResponses[keyof ReadSemanticsApiSemanticsGetResponses];
+
+export type CreateModelAssetApiModelAssetsPostData = {
+    body: ModelAssetRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/model-assets';
+};
+
+export type CreateModelAssetApiModelAssetsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateModelAssetApiModelAssetsPostError = CreateModelAssetApiModelAssetsPostErrors[keyof CreateModelAssetApiModelAssetsPostErrors];
+
+export type CreateModelAssetApiModelAssetsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProjectArtifactDto;
+};
+
+export type CreateModelAssetApiModelAssetsPostResponse = CreateModelAssetApiModelAssetsPostResponses[keyof CreateModelAssetApiModelAssetsPostResponses];
+
+export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostData = {
+    body: DocumentModelSourceRequestDto;
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/documents/{asset_sha256}/model-source';
+};
+
+export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostError = AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors[keyof AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors];
+
+export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceDocumentDto;
+};
+
+export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponse = AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses[keyof AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses];
+
+export type ReadDocumentsApiDocumentsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+    };
+    url: '/api/documents';
+};
+
+export type ReadDocumentsApiDocumentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDocumentsApiDocumentsGetError = ReadDocumentsApiDocumentsGetErrors[keyof ReadDocumentsApiDocumentsGetErrors];
+
+export type ReadDocumentsApiDocumentsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SourceDocumentListDto;
+};
+
+export type ReadDocumentsApiDocumentsGetResponse = ReadDocumentsApiDocumentsGetResponses[keyof ReadDocumentsApiDocumentsGetResponses];
+
+export type CreateDocumentApiDocumentsPostData = {
+    body: SourceDocumentRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/documents';
+};
+
+export type CreateDocumentApiDocumentsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDocumentApiDocumentsPostError = CreateDocumentApiDocumentsPostErrors[keyof CreateDocumentApiDocumentsPostErrors];
+
+export type CreateDocumentApiDocumentsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateDocumentApiDocumentsPostResponse = CreateDocumentApiDocumentsPostResponses[keyof CreateDocumentApiDocumentsPostResponses];
+
+export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetData = {
+    body?: never;
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+    };
+    url: '/api/documents/{asset_sha256}/bytes';
+};
+
+export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetError = ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors[keyof ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors];
+
+export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type ReadArtifactsApiArtifactsGetData = {
     body?: never;
@@ -4099,6 +4966,170 @@ export type DecideProposalApiProposalsProposalIdDecisionPostResponses = {
 
 export type DecideProposalApiProposalsProposalIdDecisionPostResponse = DecideProposalApiProposalsProposalIdDecisionPostResponses[keyof DecideProposalApiProposalsProposalIdDecisionPostResponses];
 
+export type ReadSavedModelAnnotationsApiModelAnnotationsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Revisionsha256
+         */
+        revisionSha256?: string | null;
+    };
+    url: '/api/model-annotations';
+};
+
+export type ReadSavedModelAnnotationsApiModelAnnotationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSavedModelAnnotationsApiModelAnnotationsGetError = ReadSavedModelAnnotationsApiModelAnnotationsGetErrors[keyof ReadSavedModelAnnotationsApiModelAnnotationsGetErrors];
+
+export type ReadSavedModelAnnotationsApiModelAnnotationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelAnnotationsDto;
+};
+
+export type ReadSavedModelAnnotationsApiModelAnnotationsGetResponse = ReadSavedModelAnnotationsApiModelAnnotationsGetResponses[keyof ReadSavedModelAnnotationsApiModelAnnotationsGetResponses];
+
+export type WriteSavedModelAnnotationsApiModelAnnotationsPutData = {
+    body: ModelAnnotationsRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/model-annotations';
+};
+
+export type WriteSavedModelAnnotationsApiModelAnnotationsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WriteSavedModelAnnotationsApiModelAnnotationsPutError = WriteSavedModelAnnotationsApiModelAnnotationsPutErrors[keyof WriteSavedModelAnnotationsApiModelAnnotationsPutErrors];
+
+export type WriteSavedModelAnnotationsApiModelAnnotationsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelAnnotationsDto;
+};
+
+export type WriteSavedModelAnnotationsApiModelAnnotationsPutResponse = WriteSavedModelAnnotationsApiModelAnnotationsPutResponses[keyof WriteSavedModelAnnotationsApiModelAnnotationsPutResponses];
+
+export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Pageindex
+         */
+        pageIndex: number;
+        /**
+         * Revisionsha256
+         */
+        revisionSha256?: string | null;
+    };
+    url: '/api/document-annotations';
+};
+
+export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetError = ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors[keyof ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors];
+
+export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DocumentAnnotationsDto;
+};
+
+export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponse = ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses[keyof ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses];
+
+export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutData = {
+    body: DocumentAnnotationsRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/document-annotations';
+};
+
+export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutError = WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors[keyof WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors];
+
+export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: DocumentAnnotationsDto;
+};
+
+export type WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponse = WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses[keyof WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses];
+
+export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+    };
+    url: '/api/document-comments';
+};
+
+export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetError = ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors[keyof ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors];
+
+export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DocumentCommentsDto;
+};
+
+export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponse = ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses[keyof ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses];
+
 export type CompileIntentApiIntentsPostData = {
     body: IntentRequestDto;
     path?: never;
@@ -4124,67 +5155,26 @@ export type CompileIntentApiIntentsPostResponses = {
 
 export type CompileIntentApiIntentsPostResponse = CompileIntentApiIntentsPostResponses[keyof CompileIntentApiIntentsPostResponses];
 
-export type DeclareApiControlsPostData = {
-    body: DeclareControlRequestDto;
-    path?: never;
-    query?: never;
-    url: '/api/controls';
-};
-
-export type DeclareApiControlsPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type DeclareApiControlsPostError = DeclareApiControlsPostErrors[keyof DeclareApiControlsPostErrors];
-
-export type DeclareApiControlsPostResponses = {
-    /**
-     * Successful Response
-     */
-    201: DeclaredControlDto;
-};
-
-export type DeclareApiControlsPostResponse = DeclareApiControlsPostResponses[keyof DeclareApiControlsPostResponses];
-
-export type ReadControlApiControlsControlIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Control Id
-         */
-        control_id: string;
-    };
-    query?: never;
-    url: '/api/controls/{control_id}';
-};
-
-export type ReadControlApiControlsControlIdGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ReadControlApiControlsControlIdGetError = ReadControlApiControlsControlIdGetErrors[keyof ReadControlApiControlsControlIdGetErrors];
-
-export type ReadControlApiControlsControlIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: DeclaredControlDto;
-};
-
-export type ReadControlApiControlsControlIdGetResponse = ReadControlApiControlsControlIdGetResponses[keyof ReadControlApiControlsControlIdGetResponses];
-
 export type ReadOptionsApiOptionsGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Run
+         */
+        run?: string | null;
+    };
     url: '/api/options';
 };
+
+export type ReadOptionsApiOptionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadOptionsApiOptionsGetError = ReadOptionsApiOptionsGetErrors[keyof ReadOptionsApiOptionsGetErrors];
 
 export type ReadOptionsApiOptionsGetResponses = {
     /**
@@ -4376,6 +5366,142 @@ export type CompareCandidateApiCandidatesCandidateIdCompareGetResponses = {
 };
 
 export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = CompareCandidateApiCandidatesCandidateIdCompareGetResponses[keyof CompareCandidateApiCandidatesCandidateIdCompareGetResponses];
+
+export type ReadWorkingCopiesApiWorkingCopiesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/working-copies';
+};
+
+export type ReadWorkingCopiesApiWorkingCopiesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingCopyListDto;
+};
+
+export type ReadWorkingCopiesApiWorkingCopiesGetResponse = ReadWorkingCopiesApiWorkingCopiesGetResponses[keyof ReadWorkingCopiesApiWorkingCopiesGetResponses];
+
+export type CreateWorkingCopyGroupApiWorkingCopiesPostData = {
+    body: WorkingCopyCreateRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/working-copies';
+};
+
+export type CreateWorkingCopyGroupApiWorkingCopiesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateWorkingCopyGroupApiWorkingCopiesPostError = CreateWorkingCopyGroupApiWorkingCopiesPostErrors[keyof CreateWorkingCopyGroupApiWorkingCopiesPostErrors];
+
+export type CreateWorkingCopyGroupApiWorkingCopiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: WorkingCopyDto;
+};
+
+export type CreateWorkingCopyGroupApiWorkingCopiesPostResponse = CreateWorkingCopyGroupApiWorkingCopiesPostResponses[keyof CreateWorkingCopyGroupApiWorkingCopiesPostResponses];
+
+export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Group Id
+         */
+        group_id: string;
+    };
+    query?: {
+        /**
+         * Revisionsha256
+         */
+        revisionSha256?: string | null;
+    };
+    url: '/api/working-copies/{group_id}';
+};
+
+export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetError = ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors[keyof ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors];
+
+export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingCopyDto;
+};
+
+export type ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponse = ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses[keyof ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses];
+
+export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutData = {
+    body: WorkingCopySelectionRequestDto;
+    path: {
+        /**
+         * Group Id
+         */
+        group_id: string;
+    };
+    query?: never;
+    url: '/api/working-copies/{group_id}/selection';
+};
+
+export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutError = ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors[keyof ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors];
+
+export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingCopyDto;
+};
+
+export type ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponse = ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses[keyof ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses];
+
+export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostData = {
+    body: WorkingCopyOptionRequestDto;
+    path: {
+        /**
+         * Group Id
+         */
+        group_id: string;
+    };
+    query?: never;
+    url: '/api/working-copies/{group_id}/options';
+};
+
+export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostError = AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors[keyof AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors];
+
+export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingCopyDto;
+};
+
+export type AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponse = AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses[keyof AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses];
 
 export type ListEpisodesApiEpisodesGetData = {
     body?: never;

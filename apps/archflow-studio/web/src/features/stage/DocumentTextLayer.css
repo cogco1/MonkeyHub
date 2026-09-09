@@ -1,0 +1,69 @@
+.document-text-layer { position: absolute; inset: 0; }
+.document-text-display { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.document-text-mark {
+  position: absolute;
+  width: max-content;
+  min-width: 1px;
+  min-height: 1.25em;
+  white-space: pre;
+  line-height: 1.25;
+  font-family: system-ui, sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: normal;
+  user-select: none;
+  cursor: move;
+  outline: none;
+}
+.document-text-mark[data-selected="true"] { outline: 1px dashed var(--accent, #2f80ed); outline-offset: 3px; }
+.document-text-mark[data-text-draft="true"] { opacity: 0.8; cursor: text; }
+.document-text-mark:focus-visible { outline: 2px solid var(--accent, #2f80ed); outline-offset: 3px; }
+.document-text-editor, .document-text-controls {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--line, #c6cbd2);
+  border-radius: 6px;
+  background: var(--panel, #fff);
+  color: var(--ink, #242b33);
+  box-shadow: 0 4px 18px #0003;
+  pointer-events: auto;
+  font: 13px/1.4 system-ui, sans-serif;
+}
+.document-text-editor { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.document-text-editor textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  height: 126px;
+  padding: 5px;
+  resize: none;
+  overflow: auto;
+  border: 1px solid var(--line, #c6cbd2);
+  border-radius: 3px;
+  outline-color: var(--accent, #2f80ed);
+  background: var(--panel, #fff);
+  font-family: system-ui, sans-serif;
+  line-height: 1.25;
+  letter-spacing: normal;
+  white-space: pre;
+  user-select: text;
+}
+.document-text-editor__actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-shrink: 0; }
+.document-text-editor__actions > span { margin-right: auto; font-size: 11px; color: var(--muted, #647080); }
+.document-text-editor button, .document-text-controls button {
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line, #c6cbd2);
+  border-radius: 4px;
+  background: var(--panel-2, #f4f6f8);
+  color: var(--ink, #242b33);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.document-text-editor button:focus-visible, .document-text-controls button:focus-visible { outline: 2px solid var(--accent, #2f80ed); outline-offset: 1px; }
+.document-text-editor__actions button:last-child { background: var(--accent, #2f80ed); border-color: transparent; color: var(--accent-ink, #fff); }
+.document-text-controls { display: flex; gap: 6px; justify-content: space-between; }

@@ -17,6 +17,8 @@ export interface UserPreferences {
   readonly theme: ThemePreference;
   readonly fontScale: FontScale;
   readonly eventStreamVisible: boolean;
+  /** Shows technical records without changing the design workflow. */
+  readonly developerMode: boolean;
 }
 
 export interface UserPreferencesContextValue extends UserPreferences {
@@ -24,6 +26,7 @@ export interface UserPreferencesContextValue extends UserPreferences {
   setTheme(theme: ThemePreference): void;
   setFontScale(fontScale: FontScale): void;
   setEventStreamVisible(visible: boolean): void;
+  setDeveloperMode(enabled: boolean): void;
   updatePreferences(patch: Partial<UserPreferences>): void;
 }
 
@@ -78,6 +81,7 @@ function readStoredPreferences(requireReadable = false): StoredPreferences | nul
       theme: stored.theme,
       fontScale: stored.fontScale,
       eventStreamVisible: stored.eventStreamVisible,
+      developerMode: stored.developerMode === true,
       editingBases: stored.editingBases,
     };
   } catch {
@@ -118,6 +122,7 @@ function initialPreferences(): UserPreferences {
     theme: stored?.theme ?? "system",
     fontScale: stored?.fontScale ?? 1,
     eventStreamVisible: stored?.eventStreamVisible ?? true,
+    developerMode: stored?.developerMode ?? false,
   };
 }
 
@@ -200,6 +205,10 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
     setPreferences((current) => ({ ...current, eventStreamVisible }));
   }, []);
 
+  const setDeveloperMode = useCallback((developerMode: boolean) => {
+    setPreferences((current) => ({ ...current, developerMode }));
+  }, []);
+
   const updatePreferences = useCallback((patch: Partial<UserPreferences>) => {
     setPreferences((current) => ({ ...current, ...patch }));
   }, []);
@@ -211,6 +220,7 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
       setTheme,
       setFontScale,
       setEventStreamVisible,
+      setDeveloperMode,
       updatePreferences,
     }),
     [
@@ -219,6 +229,7 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
       setTheme,
       setFontScale,
       setEventStreamVisible,
+      setDeveloperMode,
       updatePreferences,
     ],
   );

@@ -2,7 +2,7 @@
 
 The first half measures what the producers actually built. The second half is
 the vocabulary: ``state_record.CHECK_KINDS`` says what a relation may declare,
-``CHECKERS`` says what the spine measures, and the two are the same three ids -
+``CHECKERS`` says what the spine measures, and the two name the same ids -
 so a record can no longer declare a check that reports ``unchecked`` forever.
 Those cases are hand-built bounds against a hand-built record, so a failure
 names the measurement and not a run.
@@ -303,7 +303,7 @@ def _report(relation: Relation, bounds, objects_by_element):
 class VocabularyTests(unittest.TestCase):
     def test_the_checker_table_is_the_accepted_vocabulary(self) -> None:
         self.assertEqual(set(CHECKERS), set(CHECK_KINDS))
-        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "support_contact"])
+        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "solid_nonpenetration", "support_contact"])
         for kind, meaning in CHECK_KINDS.items():
             self.assertTrue(meaning.strip(), f"{kind} has no stated meaning")
 
@@ -389,6 +389,73 @@ class ApertureExistsTests(unittest.TestCase):
         check = _report(self.RELATION, bounds, {"window-south": ["obj-window"]}).checks[0]
         self.assertEqual(check.status, "unchecked")
         self.assertIn("wall-south", check.detail)
+
+
+class SolidNonpenetrationTests(unittest.TestCase):
+    OBJECTS = {"wall-south": ["final-wall"], "window-south": ["final-frame"]}
+
+    def _relation(self, pairs=None):
+        return Relation("frame-clear-of-wall", "clearance", "wall-south", "window-south",
+                        validator=ValidatorBinding("solid_nonpenetration", tolerance=0),
+                        parameters={"object_pairs": pairs or [["final-frame", "final-wall"]]})
+
+    def test_boxes_never_stand_in_for_final_solid_measurements(self):
+        report = _report(self._relation(), {"final-frame": WALL, "final-wall": WALL},
+                         {"wall-south": ["final-wall"], "window-south": ["final-frame"]})
+        self.assertTrue(report.held)
+        self.assertFalse(report.fully_checked)
+        self.assertEqual(report.checks[0].status, "unchecked")
+        self.assertIn("final-frame", report.checks[0].detail)
+
+    def test_the_solid_result_retains_contact_separation_and_positive_volume(self):
+        relation = self._relation()
+        for classification, distance, volume, status in (("separated", 0.01, 0.0, "held"),
+                                                         ("contact", 0.0, 0.0, "held"),
+                                                         ("penetrating", 0.0, 1e-12, "violated")):
+            with self.subTest(classification=classification):
+                report = check_relations(_hand_built(relation), bounds={}, objects_by_element=self.OBJECTS,
+                                         solid_measurements={("final-frame", "final-wall"): {
+                                             "status": classification, "distance_m": distance, "common_volume_m3": volume}})
+                check = report.checks[0]
+                self.assertEqual(check.status, status)
+                self.assertEqual(check.measured["common_volume_m3_max"], volume)
+                self.assertEqual(check.measured["distance_m_min"], distance)
+                self.assertIn(classification, check.detail)
+                self.assertTrue(report.fully_checked)
+
+    def test_a_known_violation_does_not_hide_an_unmeasured_pair(self):
+        relation = self._relation([["final-frame", "final-wall"], ["consumed-jamb", "final-wall"]])
+        report = check_relations(_hand_built(relation), bounds={}, objects_by_element=self.OBJECTS, solid_measurements={
+            ("final-frame", "final-wall"): {"status": "penetrating", "distance_m": 0.0, "common_volume_m3": 0.2},
+            ("consumed-jamb", "final-wall"): {"status": "unchecked", "detail": "not a final delivered object"}})
+        self.assertFalse(report.held)
+        self.assertFalse(report.fully_checked)
+        self.assertEqual(report.checks[0].measured["unchecked_pair_count"], 1)
+        self.assertIn("consumed-jamb", report.checks[0].detail)
+        self.assertFalse(report.to_dict()["fully_checked"])
+
+    def test_a_real_separated_pair_cannot_check_different_declared_entities(self):
+        relation = self._relation()
+        values = {("final-frame", "final-wall"): {"status": "separated", "distance_m": 1.0, "common_volume_m3": 0.0}}
+        for objects in ({}, {"wall-south": ["final-wall"], "window-south": ["another-frame"], "stair-run": ["final-frame"]}):
+            with self.subTest(objects=objects):
+                report = check_relations(_hand_built(relation), bounds={}, objects_by_element=objects, solid_measurements=values)
+                self.assertEqual(report.checks[0].status, "unchecked")
+                self.assertFalse(report.fully_checked)
+                self.assertEqual(report.checks[0].measured["checked_pair_count"], 0)
+                self.assertIn("window-south", report.checks[0].detail)
+
+    def test_same_host_requires_both_final_objects_to_belong_to_that_host(self):
+        relation = Relation("same-host-joint", "clearance", "wall-south", "wall-south",
+                            validator=ValidatorBinding("solid_nonpenetration"),
+                            parameters={"object_pairs": [["left-jamb", "head"]]})
+        values = {("left-jamb", "head"): {"status": "contact", "distance_m": 0.0, "common_volume_m3": 0.0}}
+        for objects, expected in (({"wall-south": ["left-jamb", "head"]}, "held"),
+                                  ({"wall-south": ["left-jamb"], "window-south": ["head"]}, "unchecked")):
+            with self.subTest(objects=objects):
+                report = check_relations(_hand_built(relation), bounds={}, objects_by_element=objects, solid_measurements=values)
+                self.assertEqual(report.checks[0].status, expected)
+                self.assertEqual(report.fully_checked, expected == "held")
 
 
 class ReportTests(unittest.TestCase):

@@ -51,7 +51,10 @@
         "the execution receipt and its status",
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
         "native preview material assignment and readback for existing FRAME and GLAZING assembly roles, including actual glass transparency",
-        "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations"
+        "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations",
+        "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
+        "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
+        "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -89,7 +92,13 @@
         "execute_occt_export",
         "OcctCadExportIdentity",
         "OcctExecutionReceipt",
-        "CadCapabilityError"
+        "measure_occt_solid_pairs",
+        "CadCapabilityError",
+        "project_occt_lines",
+        "OcctDrawingPolyline",
+        "StepEntry",
+        "read_step",
+        "patch_composed_three_dm"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -111,7 +120,10 @@
         "archflow/runtime/project_runner.py",
         "tests/test_cad_execution.py",
         "tests/test_cad_patch.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "archflow/runtime/drawing_elevation.py",
+        "tests/test_drawing_elevation.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py"
       ],
       "invariants": [
         "a successful process exit is never sufficient - the saved file is read back independently and must match the denominator",
@@ -122,7 +134,8 @@
         "OCCT execution never starts Rhino and never silently falls back; unsupported operations are named before file writes",
         "STEP carries exact B-rep geometry; mesh .3dm is explicitly a tessellated preview, with the same program/object semantics and one x-y-up-z-plan to Z-up coordinate conversion",
         "OCCT saved geometry is re-read with a fresh STEP reader and checked for named shapes, semantic layers and predicted bounds; solids retain closure and count checks, explicitly uncapped lofts retain open boundaries and report no volume; this is not a separate geometry instrument or a structural bearing proof",
-        "revolve realizes the existing axis and end-radius contract as an exact OCCT cylinder or conical frustum; its datum placement and radius rule are shared with the existing translator and bounds predictor"
+        "revolve realizes the existing axis and end-radius contract as an exact OCCT cylinder or conical frustum; its datum placement and radius rule are shared with the existing translator and bounds predictor",
+        "projection is a plain value: every selected object takes part in the one visibility solve (an object outside the near/far slab is excluded, one crossing it is cut there), each polyline names its object and its kind, output is sorted and deterministic, and nothing is written"
       ],
       "status": "canonical",
       "tests": [
@@ -258,6 +271,61 @@
       "notes": "The single CAD translation on the spine; P107's in-process OCCT executor would be a second executor of this program, not a second translation."
     },
     {
+      "module_id": "adapters.drawing_svg",
+      "owner_path": "archflow/adapters/drawing_svg.py",
+      "purpose": "Serialise orthographic drawing polylines as one deterministic SVG that names each polyline's source object, and render a PNG from those SVG bytes.",
+      "owns": [
+        "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
+        "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
+        "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)"
+      ],
+      "does_not_own": [
+        "projecting geometry - adapters.cad_execution (project_occt_lines)",
+        "choosing the view, verifying the source or writing anything - runtime.drawing_elevation through project.repository",
+        "PDF/DXF sheets, line-weight standards, annotations, title blocks: not implemented"
+      ],
+      "inputs": [
+        "OcctDrawingPolyline tuple",
+        "crop window, unit, scale, hidden-line switch, title",
+        "SVG bytes"
+      ],
+      "outputs": [
+        "OcctDrawingPolyline tuple (cropped)",
+        "SVG bytes",
+        "PNG bytes",
+        "object id tuple"
+      ],
+      "public_api": [
+        "crop_polylines",
+        "drawing_svg",
+        "render_svg_png",
+        "svg_objects",
+        "DrawingSvgError",
+        "SVG_MEDIA_TYPE",
+        "PNG_MEDIA_TYPE"
+      ],
+      "depends_on": [
+        "archflow.adapters.occt_backend"
+      ],
+      "used_by": [
+        "archflow/runtime/drawing_elevation.py",
+        "tests/test_drawing_svg.py",
+        "tests/test_drawing_elevation.py"
+      ],
+      "invariants": [
+        "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
+        "the PNG is rendered only from what the SVG holds; an SVG element the renderer does not draw is an error, never skipped",
+        "hidden lines are omitted entirely unless asked for; every polyline written names its source object id",
+        "no project, run or filesystem path is known here"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_drawing_svg.py",
+        "tests/test_drawing_elevation.py"
+      ],
+      "notes": "CREATE 2026-09-07 (A0 of docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md): no owner serialised drawings; the PDF/DXF paper canvas in a teammate's worktree is a different output and stays out. Pillow renders the PNG (already installed with the Studio); no browser, image model or re-projection."
+    },
+    {
       "module_id": "adapters.three_dm_inspector",
       "owner_path": "archflow/adapters/three_dm_inspector.py",
       "purpose": "Read one .3dm file headlessly and return a deterministic, JSON-compatible summary of what is actually saved in it.",
@@ -268,7 +336,8 @@
         "world bounds: aggregate, per named object, and the visible-bounds witnesses that back each leaf bound",
         "native material and render-material tables and each object's material binding",
         "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling)",
-        "the typed, fail-closed inspection error codes"
+        "the typed, fail-closed inspection error codes",
+        "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit"
       ],
       "does_not_own": [
         "producing the file - adapters.cad_execution",
@@ -288,7 +357,8 @@
         "ThreeDmInspectionError",
         "ThreeDmInspectionErrorCode",
         "REQUIRED_INSPECTION_KEYS",
-        "SUPPORTED_INSPECTION_SCHEMAS"
+        "SUPPORTED_INSPECTION_SCHEMAS",
+        "inspect_three_dm_contents"
       ],
       "depends_on": [
         "contracts.canonical"
@@ -306,7 +376,8 @@
         "bounds come from saved visible geometry, never from Brep control points",
         "an object geometry digest hashes encoded geometry only - object attributes cannot change it",
         "object user strings are read back verbatim whatever their key, so a new archflow:* string the export starts writing needs no change here",
-        "an unreadable or unsupported file fails with a named error code, not a partial summary"
+        "an unreadable or unsupported file fails with a named error code, not a partial summary",
+        "inspect_three_dm keeps strict geometry and visible-bounds checks; inspect_three_dm_contents preserves imported invalid geometry as data and never substitutes a geometric-validation result"
       ],
       "status": "canonical",
       "tests": [
@@ -652,7 +723,8 @@
         "the proposal is bound to one exact design-state digest and predecessor program digest",
         "a round is capped by policy; exhausting the cap deposits a deferral or escalation record, not a result",
         "every round is retained before the next one is authored",
-        "the function contract checks parameters by kind and statements by shape; an operation that declares nothing decodes and re-encodes to the same bytes it always did"
+        "the function contract checks parameters by kind and statements by shape; an operation that declares nothing decodes and re-encodes to the same bytes it always did",
+        "datum-seated lofts accept an optional base_offset in metres, matching the existing extrusion and revolve seat-height contract"
       ],
       "status": "canonical",
       "tests": [
@@ -820,6 +892,7 @@
         "the element-standing-on-a-level orientation of the same check",
         "the clearance measurement: the largest per-axis separation between two elements' realized extents against the declared interval_m",
         "the aperture measurement: the opening has finite geometry and lies inside its host in plan and vertically within tolerance",
+        "solid_nonpenetration: only explicit final object pairs belonging to the declared endpoints' produced objects (either order, both owned by the host for same-host checks); positive common solid volume violates, contact/separation hold, missing/wrong ownership or unavailable measurements are unchecked; bounding boxes never stand in for solid measurements",
         "reporting a relation with no validator, or one whose elements have no realized geometry, as `unchecked` rather than as passing",
         "the report's three-state counts, held / fully_checked flags and its digest"
       ],
@@ -835,7 +908,8 @@
         "StateRecord",
         "per-object bounds mapping",
         "objects_by_element mapping",
-        "datum_values mapping"
+        "datum_values mapping",
+        "optional final solid-pair measurements from the CAD adapter, in metres and cubic metres"
       ],
       "outputs": [
         "RelationCheck",
@@ -848,6 +922,7 @@
         "check_support_contact",
         "check_clearance_interval",
         "check_aperture_exists",
+        "check_solid_nonpenetration",
         "RelationCheckReport",
         "RelationCheck",
         "RelationCheckError"
@@ -1710,7 +1785,8 @@
         "the three computed kinds as patterns and their formatters (geometry_proposal_round, geometry_proposal_completion, stage_geometry_program)",
         "membership: is_registered and require_registered, exact or by pattern",
         "the six kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts",
-        "deliberation-episode (DeliberationEpisode@1): written by the studio into the candidate run at accept / reject / modify"
+        "deliberation-episode (DeliberationEpisode@1): written by the studio into the candidate run at accept / reject / modify",
+        "the StudioModelAsset@1, StudioDocumentModelSource@1, StudioModelAnnotations@1 and StudioWorkingCopy@1 run-record kinds"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -1749,7 +1825,10 @@
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "tools/freeze_project_stage_workflow.py",
         "tools/verify_state_record.py",
-        "tests/test_record_kinds.py"
+        "tests/test_record_kinds.py",
+        "archflow/runtime/drawing_elevation.py",
+        "tests/test_drawing_elevation.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py"
       ],
       "invariants": [
         "a kind is matched exactly, or by its declared pattern; never as a prefix",
@@ -1910,7 +1989,8 @@
         "tools/run_project.py",
         "tools/verify_state_record.py",
         "tools/freeze_project_stage_workflow.py",
-        "tools/issue_project.py"
+        "tools/issue_project.py",
+        "archflow/runtime/drawing_elevation.py"
       ],
       "invariants": [
         "an existing content path is never overwritten; new content is installed or the write fails",
@@ -2119,7 +2199,7 @@
         "one seat failing to get an accepted proposal ends the round loop rather than continuing",
         "a closure is written for every completed run; an exit binding only for a SATISFIED closure",
         "the closure states one finding per problem: a required checker kind with no check, each relation bound to a required checker that is violated or unchecked, and a seat that did not finish; an unbound relation remains unchecked without an inferred relation-kind-to-checker mapping",
-        "relation measurements use compiled-predicted bounds and say so; a SATISFIED stage covers its explicit required checker ids and is not proof that every architectural relation was measured",
+        "extent relations use compiled-predicted bounds and say so; solid_nonpenetration waits until final exports, verifies their retained receipts/STEP hashes and names, and reports true OCCT solid measurements or unchecked once in the existing seat-relation-check records; a SATISFIED stage covers its explicit required checker ids and is not proof that every architectural relation was measured",
         "the developed projection receives the actual envelope phase; the existing guard still rejects a different state or phase"
       ],
       "status": "canonical",
@@ -2128,6 +2208,75 @@
         "tests/test_state_record.py"
       ],
       "notes": "archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
+    },
+    {
+      "module_id": "runtime.drawing_elevation",
+      "owner_path": "archflow/runtime/drawing_elevation.py",
+      "purpose": "Freeze one model-axis orthographic elevation of a retained exact STEP: verify the source through its receipt, project every object, write SVG, PNG and one receipt into a drawing run on the source base, and read them back.",
+      "owns": [
+        "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
+        "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
+        "the in-memory projection value (project_model_axis_elevation): polylines, SVG and PNG, minting nothing",
+        "the drawing run: created with base = source run base, or reused only when it already carries that base",
+        "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
+        "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified"
+      ],
+      "does_not_own": [
+        "the hidden-line solve - adapters.cad_execution",
+        "SVG serialisation and PNG rendering - adapters.drawing_svg",
+        "writing files - project.repository (put_workspace_file, put_json); this module never writes a path itself",
+        "plans, sections, axonometrics, sheets, annotations, freshness/update, Studio routes or jobs: not implemented"
+      ],
+      "inputs": [
+        "FilesystemProjectRepository",
+        "ElevationSource",
+        "ElevationView",
+        "drawing run id",
+        "ProjectRecordRef"
+      ],
+      "outputs": [
+        "ElevationProjection",
+        "ElevationDrawing",
+        "DrawingProjectionReceipt@1 dict",
+        "ProjectRecordRef tuple"
+      ],
+      "public_api": [
+        "ElevationSource",
+        "ElevationView",
+        "ElevationProjection",
+        "ElevationDrawing",
+        "DrawingElevationError",
+        "project_model_axis_elevation",
+        "freeze_model_axis_elevation",
+        "read_model_axis_elevation",
+        "list_model_axis_elevations",
+        "DRAWING_PROJECTION_RECEIPT_SCHEMA",
+        "ELEVATION_KIND",
+        "DOCUMENTATION_WORKSPACE"
+      ],
+      "depends_on": [
+        "adapters.cad_execution",
+        "adapters.drawing_svg",
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository"
+      ],
+      "used_by": [
+        "tests/test_drawing_elevation.py"
+      ],
+      "invariants": [
+        "nothing is written before the source verified, the frame checked and the projection and both renderings succeeded",
+        "the drawing run's base is the source run's base, never the current HEAD; a run with another base is refused",
+        "HEAD is read before and after and must be the same; the SVG, PNG and receipt are read back through the repository before the result is reported",
+        "the same source and view give the same SVG/PNG bytes and the same receipt; a repeat lands on the same paths",
+        "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_drawing_elevation.py"
+      ],
+      "notes": "CREATE 2026-09-07: the plan's first real consumer at the application boundary. runtime.project_runner is the seat/stage loop and does not derive drawings; adapters have no repository authority. First frozen drawing: villa-rotonda-reconstruction run drawing-a0-20260907-villa-b-minus-y from source run studio-cand-20260906-010451-dca4de25-4e9d (external workspace, noncanonical)."
     },
     {
       "module_id": "semantics.conditions",
@@ -2875,7 +3024,7 @@
         "the record's dependency edges and the downstream closure over them (dependency_edges, closure)",
         "binding an authored portable record to one run and canonical base (bound_to, run_ref)",
         "the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding)",
-        "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes",
+        "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
         "the component tree, published levels and published grids read out of the record (design_components_of, project_levels_of, project_grids_of)",
         "the schematic pack and the bootstrap from a record to the developed-design projection (SchematicPack, schematic_proposal, bootstrap_developed_state, developed_design_view)",
         "refusing unregistered semantics on Component@1 and dangling relationship_refs on Connection@1",
@@ -3169,32 +3318,42 @@
     {
       "module_id": "studio.artifacts",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-      "purpose": "List and serve the exported models a run's receipts certify, and save non-canonical Studio viewport captures into the explicitly named existing run's workspace.",
+      "purpose": "List and serve receipt-certified model exports, retain viewport captures, and import and serve PDF/image source documents separately from exports in an explicitly named existing run.",
       "owns": [
         "reading retained seat-rhino-execution and seat-occt-execution receipts into ArtifactRecord rows across a project's runs; exact STEP and mesh .3dm preview carry their format and representation and share their producing receipt",
         "locating the certified file in the run's workspaces by name and re-verifying its sha256 as it is read",
         "the named unavailability reasons (no digest, file missing, file unreadable, digest mismatch) and which runs a not-found did not search",
         "the content-disposition save-as name in both RFC 6266 forms",
         "the per-path sha256 cache keyed by path, size and mtime",
-        "verifying and decoding a viewport PNG before retaining its original bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name"
+        "verifying and decoding a viewport PNG before retaining its original bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name",
+        "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
+        "retaining an explicitly supplied composed 3dm in P036 objects and a registration in its exact retained run state; listing composed alongside native exports with registered status and no native readback claim",
+        "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
         "inspecting the .3dm - adapters.three_dm_inspector",
         "deciding an export succeeded - the retained receipt says so",
         "turning a viewport capture into a receipt-certified ArtifactRecord or changing canonical HEAD",
-        "the project binding and its record refs - studio.binding"
+        "the project binding and its record refs - studio.binding",
+        "document ink and submitted page comments - studio.intent"
       ],
       "inputs": [
         "ProjectBinding",
         "sha256 hex",
-        "run id and base64 PNG bytes"
+        "run id and base64 PNG bytes",
+        "named run, source file name, MIME type and base64 original bytes",
+        "optional StudioEventSink for successful API registration or option additions"
       ],
       "outputs": [
         "ArtifactListing",
         "ArtifactRecord",
         "raw .3dm bytes",
-        "ViewportCapture"
+        "ViewportCapture",
+        "SourceDocument",
+        "DocumentPage",
+        "original PDF/PNG/JPEG bytes",
+        "model_asset.registered event identifying the newly registered run when an event sink is supplied"
       ],
       "public_api": [
         "GET /api/artifacts",
@@ -3205,7 +3364,21 @@
         "save_viewport_capture",
         "ArtifactRecord",
         "ArtifactListing",
-        "ViewportCapture"
+        "ViewportCapture",
+        "POST /api/documents",
+        "GET /api/documents",
+        "GET /api/documents/{asset_sha256}/bytes",
+        "save_document",
+        "list_documents",
+        "document_bytes",
+        "SourceDocument",
+        "DocumentPage",
+        "ModelSource",
+        "register_model_asset",
+        "require_model_source",
+        "bind_document_model_source",
+        "POST /api/model-assets",
+        "POST /api/documents/{asset_sha256}/model-source"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -3213,25 +3386,36 @@
         "project.ports",
         "project.record_kinds",
         "project.refs",
-        "project.repository"
+        "project.repository",
+        "adapters.three_dm_inspector",
+        "studio.binding",
+        "studio.shell"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
         "apps/archflow-studio/api/tests/test_artifacts.py",
-        "apps/archflow-studio/api/tests/test_captures.py"
+        "apps/archflow-studio/api/tests/test_captures.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
+        "apps/archflow-studio/api/tests/test_documents.py"
       ],
       "invariants": [
-        "a file on disk is not an artifact - only a retained receipt makes it one",
         "a viewport capture is a non-canonical workspace file bound to the existing run named by the request; invalid or incomplete PNG data is refused before persistence; saving it does not mint a receipt or change HEAD",
         "bytes are served only when the file's own hash still matches the receipt's digest",
-        "an unavailable artifact is refused in the receipt's own terms, naming the reason and the runs not searched"
+        "an unavailable artifact is refused in the receipt's own terms, naming the reason and the runs not searched",
+        "source documents are original references in the project object store, registered in a named run and never listed as certified model exports; no HTTP request may select a server filesystem path",
+        "page coordinates refer to the visible PDF CropBox after rotation, or the EXIF-oriented image; identical names do not identify identical file content",
+        "model bytes require a retained export receipt or explicit composed-model registration; registration declares correspondence to an exact run state and does not establish that pixels or all imported geometry were generated from that state",
+        "an unknown document may receive one explicit model association; a known association cannot be overwritten and old submitted comments keep the exact association they originally used",
+        "only a completed new model registration emits model_asset.registered; exact-source retries, including concurrent requests in one process, and failed registration emit no new-model event"
       ],
       "status": "canonical",
       "tests": [
         "apps/archflow-studio/api/tests/test_artifacts.py",
         "apps/archflow-studio/api/tests/test_cad_export.py",
-        "apps/archflow-studio/api/tests/test_captures.py"
+        "apps/archflow-studio/api/tests/test_captures.py",
+        "apps/archflow-studio/api/tests/test_documents.py",
+        "apps/archflow-studio/api/tests/test_working_copies.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -3386,7 +3570,10 @@
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
         "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy",
-        "executing a semantic component proposal through the same run_operator path as scalar and massing proposals"
+        "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
+        "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
+        "rechecking a proposal model source and its exact pinned document association before candidate execution",
+        "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through studio.artifacts"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -3402,7 +3589,8 @@
         "Proposal",
         "ProjectBinding",
         "StudioSettings",
-        "run id"
+        "run id",
+        "optional exact ModelSource on run_operator and execute_option_candidate; the existing harness retains its composed-model registration reference in workflow basis_refs"
       ],
       "outputs": [
         "runner receipt mapping",
@@ -3449,7 +3637,10 @@
         "state.developed_design",
         "state.operational_state",
         "state.record",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "studio.artifacts",
+        "studio.intent",
+        "adapters.cad_execution"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
@@ -3466,7 +3657,10 @@
         "run_project calls asyncio.run, so a candidate runs on a worker thread and never on the event loop",
         "two candidates whose closures intersect do not run together, and only one Rhino export runs at a time",
         "relation totals stay three counts plus two flags; they are never collapsed into a single verdict",
-        "everything reported about a finished candidate is read back off retained records, not remembered from the run"
+        "everything reported about a finished candidate is read back off retained records, not remembered from the run",
+        "a composed candidate retains its exact input model registration in the existing harness workflow basis before execution; a cold read requires an available composed model in that candidate run and never treats native-only results after a failed composition as a completed candidate",
+        "ordinary intents, Program application and selected massing options use the same run_operator source validation and composed-model production; omitted model sources preserve the existing native path",
+        "the existing event stream also carries model_asset.registered and working_copy.option_added with runId; clients reread retained lists, and events never substitute for project records"
       ],
       "status": "canonical",
       "tests": [
@@ -3476,7 +3670,9 @@
         "apps/archflow-studio/api/tests/test_events.py",
         "apps/archflow-studio/api/tests/test_sse.py",
         "apps/archflow-studio/api/tests/test_timings.py",
-        "apps/archflow-studio/api/tests/test_options.py"
+        "apps/archflow-studio/api/tests/test_options.py",
+        "apps/archflow-studio/api/tests/test_document_annotations.py",
+        "apps/archflow-studio/api/tests/test_working_copies.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -3494,27 +3690,32 @@
     {
       "module_id": "studio.intent",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
-      "purpose": "Turn an architect's sentence, click and strokes into one grammatical, record-checked proposal - and nothing else reaches the record.",
+      "purpose": "Turn an architect's sentence, click and strokes into a record-checked scalar or component proposal; distinguish design questions, unsupported tools and agent failures.",
       "owns": [
         "the intent grammar: four exact utterance forms (set, set to, increase by %, decrease by %) plus one optional keep clause",
         "the IntentProvider seam that resolves an utterance to one numeric target in the record and builds its DecisionOperator",
-        "the agent seam that compiles free text into that grammar (deterministic, codex subprocess, Anthropic Messages) and the record sheet an agent may see",
+        "the agent seam that compiles free text into a scalar sentence or typed component edit (deterministic, codex subprocess, Anthropic Messages), or returns a design question or unsupported capability; the record sheet an agent may see",
         "the receipt of a Studio model call: the request it was bound to, the provider's version and fingerprint, and how the call ended",
         "resolving a picked object to a component and element from its archflow:* user strings, and saying when it is unbound, unknown or stale",
-        "reading circle / arrow / keep / remove gestures into facts the record can vouch for",
+        "reading circle / arrow / keep / remove and freehand / line / ruler / arc annotations into facts the record can vouch for, retaining their screen control points, colour, line width, manual ruler label and recorded view as annotation context without granting geometry or execution authority",
         "the target resolver: which component and element a request is about, from the projection's component tree, an explicit pick and what the architect has rejected - never from the nearest similar string",
         "the action resolver: change_existing_value / declare_missing_control / clarify / unsupported, and the AuthoredControlDraft the second of those returns",
         "the four closed outcomes of one intent (COMPILED, NEEDS_CLARIFICATION, MISSING_EDITABLE_CONTROL, UNSUPPORTED) and their reason codes",
         "the PendingIntent value and the in-process store that holds it, keyed by continuationToken and bound to one stateDigest",
         "the Proposal value, its closure, optional sourceRunId inherited from the intent or proposal request, and the in-process store that holds it; modifications preserve the same source run",
         "the camera + compass level of the target resolver (a viewer word read into a side), PROJECT.md aliases as outright names, the catalog as the one directory of editable elements and of what the model shows without a row (MODEL_VISIBLE_CATALOG_MISSING on the authored-control draft)",
-        "declared controls: a confirmed authored-control draft kept in process against its state (POST /api/controls), never a row of the record",
         "the DeliberationEpisode value: one judgement of the studio - the intent, the options on the table, the decision on each with its reason, and the run it produced",
         "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)",
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
         "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
         "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; a proposal carries a concise change summary and explicit kept conditions",
-        "showing the Agent project types, source readings, parameter bindings and named relationships as context; no geometry program or deferred replay payload is accepted as semantic authoring"
+        "showing the Agent project types, source readings, parameter bindings and named relationships as context; no geometry program or deferred replay payload is accepted as semantic authoring",
+        "retaining complete 2D page stroke and plain-text revisions and page comments through P036 against exact source-file content, named run and page; reading exact submitted revisions into source context beside existing 3D gesture facts",
+        "retaining submitted document words and their exact annotation references before intent resolution, and carrying that retained context with scalar or semantic proposals and modifications",
+        "refusing unknown or mismatched document model sources before a model call; retaining resolved sourceRunId and the exact document association in comments and proposals, including clarification continuations",
+        "saving existing 3D Gesture payloads with stable ids in exact-model-source annotation revisions and reopening them through P036",
+        "retaining local work-item options, common comparison base, explicit scope and selected option in the common-base run; checking scope and unchanged composed contents without issuing or superseding other work items",
+        "preparing transient client-rendered document page and saved-ink PNGs for the existing Codex and Anthropic compilers; distinguishing one exact edit page from explicitly selected reference pages and retaining their metadata in the existing document comment"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3530,7 +3731,10 @@
         "PickRequest",
         "Gesture strokes",
         "StateProjection",
-        "StudioSettings"
+        "StudioSettings",
+        "page-normalized DocumentGesture values, including text content, anchor and independent font size, and exact saved DocumentAnnotationRef values",
+        "optional StudioEventSink for successful API registration or option additions",
+        "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes"
       ],
       "outputs": [
         "ParsedIntent",
@@ -3539,7 +3743,10 @@
         "PickResolution",
         "GestureReading",
         "Proposal",
-        "DecisionOperator"
+        "DecisionOperator",
+        "DocumentAnnotationPage",
+        "retained document comment reference",
+        "working_copy.option_added event identifying the added option source run when an event sink is supplied"
       ],
       "public_api": [
         "POST /api/intents",
@@ -3576,12 +3783,7 @@
         "closure_of",
         "ProposalStore",
         "element_of_object",
-        "POST /api/controls",
-        "GET /api/controls/{control_id}",
         "compass_side",
-        "declare_control",
-        "DeclaredControl",
-        "DeclaredControlStore",
         "POST /api/proposals/{proposal_id}/decision",
         "GET /api/episodes",
         "GET /api/episodes/{episode_id}",
@@ -3589,7 +3791,38 @@
         "EpisodeStore",
         "ScopeOption",
         "scope_of",
-        "scope_in"
+        "scope_in",
+        "GET /api/document-annotations",
+        "PUT /api/document-annotations",
+        "GET /api/document-comments",
+        "read_document_annotations",
+        "save_document_annotations",
+        "retain_document_comment",
+        "list_document_comments",
+        "DocumentGesture",
+        "DocumentAnnotationRef",
+        "DocumentAnnotationPage",
+        "GET /api/model-annotations",
+        "PUT /api/model-annotations",
+        "ModelAnnotationSnapshot",
+        "read_model_annotations",
+        "save_model_annotations",
+        "require_document_model_sources",
+        "require_document_comment_source",
+        "WorkingCopy",
+        "WorkingCopyOption",
+        "list_working_copies",
+        "read_working_copy",
+        "create_working_copy",
+        "select_working_copy_option",
+        "add_working_copy_option",
+        "GET /api/working-copies",
+        "GET /api/working-copies/{group_id}",
+        "POST /api/working-copies",
+        "PUT /api/working-copies/{group_id}/selection",
+        "POST /api/working-copies/{group_id}/options",
+        "DocumentVisual",
+        "prepare_document_visuals"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3604,7 +3837,10 @@
         "project.refs",
         "capabilities.element_producers",
         "relations.contracts",
-        "semantics.registry"
+        "semantics.registry",
+        "studio.artifacts",
+        "adapters.three_dm_inspector",
+        "studio.shell"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3619,7 +3855,7 @@
       ],
       "invariants": [
         "an utterance is parsed, never interpreted; scalar edits use the four forms; component edits use the typed Entity, Parameter and Relation payload",
-        "an agent's answer must itself parse as the grammar - a compiler that claims success ungrammatically is a failure",
+        "a compiled scalar answer parses as the grammar and a component edit satisfies the existing typed contract; invalid agent scalar output is INTENT_AGENT_FAILED rather than a request for the architect to repair fields or grammar",
         "a clarification chain advances or terminates: a round that leaves the target, the missing slots and the candidates where they were is answered UNSUPPORTED, never asked again",
         "a pending intent is bound to a stateDigest; one opened against a state the project has left is void and answers STALE_CLARIFICATION",
         "one intent ends in exactly one of four outcomes, and only COMPILED is a proposal",
@@ -3635,7 +3871,18 @@
         "a scalar proposal moves one scalar; a semantic component proposal enumerates its entity, parameter and relationship changes through the same candidate chain",
         "a derived capability is shown with its source and never compiled; the agent is not asked about one",
         "an add/remove component request cannot be replaced with an unrelated numeric-field question; protected height or width statements are not change targets",
-        "semantic proposals carry real edits and before/after summaries, never synthetic numeric old/new values"
+        "semantic proposals carry real edits and before/after summaries, never synthetic numeric old/new values",
+        "candidate generation does not accept or reject proposals; explicit acceptance uses the existing decision route with a successful candidateId belonging to that proposal, retains an episode and never issues the project",
+        "2D ink has no camera, model hit, world direction or implied model target/keep clause; legacy 3D Gesture fields and existing Reading entities retain their meaning",
+        "page revisions bind project, run, source SHA-256 and zero-based page index; stale saves are refused, and erased ink remains readable in its explicit older revision",
+        "2D points use the visible page with a top-left origin and x-right/y-down coordinates in [0,1]; lineWidth is a fraction of its shorter side, unaffected by zoom or DPI; page text has one top-left anchor, multiline label content and its own short-side-normalized fontSize, while legacy strokes omit that field and retain their serialized identity",
+        "submitted document words and exact page references survive restart in the named run even when the intent needs clarification; saving documents or ink never moves HEAD",
+        "viewing a work item is read-only; explicit selection changes only that item, leaves canonical HEAD and authored inputs unchanged, and is distinct from project issue or proposal endorsement",
+        "saved choices and model annotations form run-scoped immutable revision chains; stale saves and competing/incomplete chains are refused; process-local locks do not claim cross-process atomic CAS",
+        "a source association added later cannot retroactively authorize an older document comment or proposal",
+        "only a successfully retained option addition emits working_copy.option_added; stale, duplicate and failed writes emit no addition event",
+        "document intents require one edit visual matching the sole saved page reference; selected reference pages do not change the edit base or import historical comments; each PNG is at most 4 MiB and 2048 pixels on its longer side with registered visible-page aspect ratio, with at most 16 MiB total; validation does not prove client pixels were rendered from the source",
+        "clarification continuations reuse the original transient document image bytes and references; explicit context changes are refused; complete ink travels as an overlay with concise annotation summaries, never a full point array in the model prompt; deduplicated images and their purpose mapping bind the existing model invocation identity"
       ],
       "status": "canonical",
       "tests": [
@@ -3648,7 +3895,10 @@
         "apps/archflow-studio/api/tests/test_proposals.py",
         "apps/archflow-studio/api/tests/test_clarification_catalog.py",
         "apps/archflow-studio/api/tests/test_episodes.py",
-        "apps/archflow-studio/api/tests/test_clarification_scope.py"
+        "apps/archflow-studio/api/tests/test_clarification_scope.py",
+        "apps/archflow-studio/api/tests/test_document_annotations.py",
+        "apps/archflow-studio/api/tests/test_working_copies.py",
+        "apps/archflow-studio/api/tests/test_document_visual_providers.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -3664,9 +3914,6 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/pick.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/controls.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/controls.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/controls.py",
         "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py"
       ]
@@ -3684,7 +3931,8 @@
         "the one error body {code, detail} plus question and acceptedForms, and - for a refusal belonging to a clarification chain - outcome, pendingIntent and authoredControlDraft, and the handlers that force every failure including a bug into it",
         "the reserved application Protocols (IntentProvider, RetrievalProvider, PreviewBackend, ViewerAssetProvider, HumanReviewPort, StudioEventSink)",
         "every wire DTO and its camelCase aliases, and the router mounting order",
-        "GET /api/health and GET /api/protocol"
+        "GET /api/health and GET /api/protocol",
+        "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement; launcher reads saved intent defaults for the next launch"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -3737,7 +3985,12 @@
         "StudioEventSink",
         "StudioHealth",
         "ServerIdentityDto",
-        "server_identity_dto"
+        "server_identity_dto",
+        "UserSettingsDto",
+        "read_user_settings",
+        "save_user_settings",
+        "GET /api/settings/user",
+        "PUT /api/settings/user"
       ],
       "depends_on": [],
       "used_by": [
@@ -3755,7 +4008,8 @@
         "every failure answers in the same body shape, and an unexpected error says nothing about itself",
         "a refusal that ends a clarification carries a null continuationToken, so a client can tell 'answer this' from 'this is what the system lacks' without reading the sentence",
         "ports.py holds Protocols only: there are deliberately no implementations here",
-        "projectBound in health is whether the binding opens, not a claim about what it contains"
+        "projectBound in health is whether the binding opens, not a claim about what it contains",
+        "remote servers do not advertise user-settings and answer authenticated settings routes with 404; saving preferences never changes the running compiler or project, and null clears a saved override"
       ],
       "status": "canonical",
       "tests": [
@@ -3777,7 +4031,9 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/errors.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/health.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/protocol.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/protocol.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/settings.py"
       ]
     },
     {
@@ -3940,7 +4196,8 @@
         "loading and validating ArchFlowArchitecturePolicy@1",
         "the checked-file set for the configured roots and the single AST index per file",
         "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables, registry owner/test/public-symbol truth and duplicate owned function bodies",
-        "the Finding shape and the JSON/text report and exit code"
+        "the Finding shape and the JSON/text report and exit code",
+        "checking overlapping live work scopes and checking each changed commit against its historical policy and card scope; explicit P000-governance permits only defined governance paths and README.md maintenance"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
@@ -3950,7 +4207,9 @@
       ],
       "inputs": [
         "repository root",
-        "governance/architecture_policy.json"
+        "governance/architecture_policy.json",
+        "governance/work_registry.json",
+        "optional Git base revision and committed policy/registry history"
       ],
       "outputs": [
         "Finding tuple",
@@ -3963,19 +4222,25 @@
         "validate_policy",
         "PolicyFinding",
         "ArchitecturePolicyError",
-        "main"
+        "main",
+        "check_scopes",
+        "check_changed_scopes"
       ],
       "depends_on": [],
       "used_by": [],
       "invariants": [
         "no archflow import: the checker parses source and never executes it",
         "a policy that cannot be interpreted deterministically fails ArchitecturePolicyError rather than passing vacuously",
-        "the file set is stable and de-duplicated, so findings are reproducible"
+        "the file set is stable and de-duplicated, so findings are reproducible",
+        "write-scope rules do not apply retroactively before their introduction; later missing or invalid policy cannot disable the check",
+        "a changed commit uses its own active or ready card declaration; only the commit closing that card may use its first parent's active scope, whether the row is removed or retained as nonlive; later scope edits do not change earlier results",
+        "P000-governance does not authorize business source, arbitrary scripts or all Markdown files"
       ],
       "status": "canonical",
-      "tests": [],
-      "notes": "No test on main (only stale bytecode in tests/__pycache__ and copies in .claude worktrees); the CANONICAL_SPINE 4 registry rules land here.",
-      "untested_reason": "governance CLI; the gate itself runs on every commit and fails loudly"
+      "tests": [
+        "tests/test_archcheck_scopes.py"
+      ],
+      "notes": "Architecture checks parse source without importing application code; scope behavior is verified with disposable Git repositories."
     },
     {
       "module_id": "tools.devctl",
@@ -4441,7 +4706,8 @@
       "tests": [
         "tests/test_element_reindex.py"
       ],
-      "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol."
+      "reason": "The studio's catalog (studio.binding) reads elements the record declares; a scripted project has none. Re-indexing is the one generic way to give such a project its tree: derived from the model the spine already inspected, checked by the producers the spine already runs. It extends the spine's Element@1 vocabulary; it adds no parallel geometry protocol.",
+      "status": "canonical"
     },
     {
       "module_id": "tools.reindex_project",
@@ -4475,7 +4741,8 @@
       "tests": [
         "tests/test_element_reindex.py"
       ],
-      "reason": "The tool is the only writer of the re-index records; it writes them as run records of a new run and touches nothing the project already holds."
+      "reason": "The tool is the only writer of the re-index records; it writes them as run records of a new run and touches nothing the project already holds.",
+      "status": "canonical"
     },
     {
       "module_id": "state.massing_metrics",
@@ -4549,7 +4816,8 @@
         "the in-process option table and its ids and run ids (OptionStore, MassingOption, OptionsTable, RUN_PREFIX, PERSISTENCE)",
         "retaining one option as selected-spatial-option in its own option-NNN run",
         "the record's volumes as the panel reads them (RecordMassing, RecordVolume, record_massing, baseline_pack)",
-        "POST /api/options, GET /api/options, POST /api/options/{option_id}/select, GET /api/state/volumes"
+        "POST /api/options, GET /api/options, POST /api/options/{option_id}/select, GET /api/state/volumes",
+        "carrying optional exact modelSource from POST /api/options, including pack requests, on its existing in-memory MassingOption and wire response; selection rechecks and passes that original source to the common candidate worker"
       ],
       "does_not_own": [
         "measuring a massing (state.massing_metrics)",
@@ -4584,13 +4852,16 @@
         "project.ports",
         "project.record_kinds",
         "studio.candidate",
-        "studio.binding"
+        "studio.binding",
+        "studio.artifacts"
       ],
       "invariants": [
         "never writes the authored record and never touches canonical",
         "an option is measured on the successor record selecting it would run, not on an approximation, and retains the exact StateRecord.digest it was measured from",
+        "an explicit sourceRunId is retained on the option and used for both selection preflight and candidate execution; omission keeps the default source rule",
         "a massing the kernel would refuse is refused at make time, with the request that made it",
-        "the metrics are this process's memory; only the pack is retained"
+        "the metrics are this process's memory; only the pack is retained",
+        "viewing another asset never changes an option source; same-run assets remain distinct by the complete ModelSource, and neither creation nor selection substitutes another asset for an explicit source"
       ],
       "status": "provisional",
       "files": [
@@ -4676,11 +4947,12 @@
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/program.py",
       "purpose": "Serve the program sheet both ways: which sheet a reader gets, and how one becomes a candidate run without touching the authored record.",
       "owns": [
-        "choosing between the architect's input sheet and the record's derivation, and saying which, and whether the input sheet's state digest still matches",
+        "choosing between the architect's input sheet and the record's derivation, and saying which, and whether the input sheet's state digest still matches; an explicit source run reads its retained derivation and remains the apply worker's source",
         "the pre-flight design view of the successor, so a sheet the kernel will not view is a refusal now rather than a failed job later",
         "the local-mode-only rule for writing the authored sheet (WIP_WRITE_REMOTE)",
         "the sheet's queue closure and its candidate run id",
-        "GET /api/program, POST /api/program, GET /api/semantics"
+        "GET /api/program, POST /api/program, GET /api/semantics",
+        "accepting optional exact modelSource on POST /api/program, checking it before queuing, and passing it unchanged to the common candidate worker while preserving the separate sheet content and run-state digest checks"
       ],
       "does_not_own": [
         "deriving or applying a sheet (state.program_sheet)",
@@ -4706,7 +4978,8 @@
         "semantics.conditions",
         "studio.binding",
         "studio.candidate",
-        "state.record"
+        "state.record",
+        "studio.artifacts"
       ],
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/program.py",

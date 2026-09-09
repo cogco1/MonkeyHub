@@ -35,23 +35,33 @@ from __future__ import annotations
 
 import base64
 import binascii
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 from io import BytesIO
+import math
 import os
 from pathlib import Path
 import re
+import threading
 from typing import Any, Mapping, NamedTuple
 
-from PIL import Image
+from PIL import Image, ImageOps
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
-from archflow.project.record_kinds import SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION
+from archflow.project.record_kinds import (
+    SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
+    STUDIO_DOCUMENT_MODEL_SOURCE,
+)
+from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, ThreeDmInspectionError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef
 from archflow.project.repository import ProjectRepositoryError
 
+from ..ports import StudioEventSink
 from ..transport.errors import StudioError, error_sentence
 from .binding import ProjectBinding, record_kind
+from .projection import StateProjection, project_state, require_actionable
 
 # A file digest, as it travels in a path parameter. Lowercase because that is
 # what the kernel writes; anything else names no artifact here.
@@ -95,6 +105,22 @@ class _Resolution(NamedTuple):
 
 
 @dataclass(frozen=True, slots=True)
+class ModelSource:
+    """The exact retained state and the complete model bytes being viewed."""
+
+    run_id: str
+    state_digest: str
+    asset_sha256: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"runId": self.run_id, "stateDigest": self.state_digest, "assetSha256": self.asset_sha256}
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> ModelSource:
+        return cls(value["runId"], value["stateDigest"], value["assetSha256"])
+
+
+@dataclass(frozen=True, slots=True)
 class ArtifactRecord:
     """One receipt, and what became of the file it certified."""
 
@@ -133,6 +159,7 @@ class ArtifactRecord:
     # ``exact`` or ``preview``: what the receipt claims the geometry is. A
     # preview is a mesh for looking at; the exact file is the delivery.
     representation: str
+    model_source: ModelSource | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +183,202 @@ class ViewportCapture:
     sha256: str
     media_type: str
     size_bytes: int
+
+
+MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
+DOCUMENT_MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg")
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentPage:
+    """Visible page size after crop/rotation; PDF points or oriented image pixels."""
+
+    page_index: int
+    width: float
+    height: float
+    rotation: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDocument:
+    """An imported reference, never an exported model or design state."""
+
+    project_id: str
+    run_id: str
+    asset_sha256: str
+    file_name: str
+    mime_type: str
+    size_bytes: int
+    pages: tuple[DocumentPage, ...]
+    model_source: ModelSource | None = None
+    model_source_binding_ref: str | None = None
+
+
+def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
+    try:
+        if mime_type == "application/pdf":
+            if not data.startswith(b"%PDF-") or b"%%EOF" not in data[-1024:]:
+                raise ValueError("incomplete PDF")
+            reader = PdfReader(BytesIO(data))
+            if reader.is_encrypted:
+                raise StudioError(422, "DOCUMENT_ENCRYPTED", "Open an unencrypted PDF copy to annotate it.")
+            if not 1 <= len(reader.pages) <= 1000:
+                raise ValueError("PDF must contain between 1 and 1000 pages")
+            pages = []
+            for index, page in enumerate(reader.pages):
+                crop, media = page.cropbox, page.mediabox
+                left, bottom = max(crop.left, media.left), max(crop.bottom, media.bottom)
+                right, top = min(crop.right, media.right), min(crop.top, media.top)
+                unit = float(page.user_unit)
+                width, height = float(right - left) * unit, float(top - bottom) * unit
+                rotation = page.rotation % 360
+                if rotation not in (0, 90, 180, 270) or not all(
+                    math.isfinite(value) and value > 0 for value in (unit, width, height)
+                ):
+                    raise ValueError("invalid PDF page dimensions or rotation")
+                if rotation in (90, 270):
+                    width, height = height, width
+                page.get_contents()
+                pages.append(DocumentPage(index, width, height, rotation))
+            return tuple(pages)
+        image_format = {"image/png": "PNG", "image/jpeg": "JPEG"}[mime_type]
+        if image_format == "PNG" and not data.endswith(PNG_END):
+            raise ValueError("incomplete PNG")
+        with Image.open(BytesIO(data), formats=[image_format]) as picture:
+            picture.verify()
+        with Image.open(BytesIO(data), formats=[image_format]) as picture:
+            picture.load()
+            oriented = ImageOps.exif_transpose(picture)
+            return (DocumentPage(0, *oriented.size),)
+    except (PdfReadError, OSError, SyntaxError, ValueError, TypeError, KeyError, Image.DecompressionBombError) as exc:
+        raise StudioError(422, "DOCUMENT_INVALID", "The source is not a complete, readable PDF, PNG or JPEG.") from exc
+
+
+def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument, ...]:
+    """Only registered source files in this run, separately from model exports."""
+
+    documents: dict[str, SourceDocument] = {}
+    for ref in binding.record_refs(run_id):
+        if record_kind(ref) != STUDIO_SOURCE_DOCUMENT:
+            continue
+        payload = binding.repository.load_json(ref)
+        if payload.get("schema") != "StudioSourceDocument@1" or (
+            payload.get("project_id"), payload.get("run_id")
+        ) != (binding.project_id, run_id):
+            raise StudioError(409, "DOCUMENT_INVALID", "The retained source document has a different project or run binding.")
+        document = SourceDocument(
+            project_id=payload["project_id"], run_id=payload["run_id"],
+            asset_sha256=payload["asset_sha256"], file_name=payload["file_name"],
+            mime_type=payload["mime_type"], size_bytes=payload["size_bytes"],
+            pages=tuple(DocumentPage(**page) for page in payload["pages"]),
+            model_source=ModelSource.from_dict(payload["modelSource"]) if payload.get("modelSource") else None,
+            model_source_binding_ref=ref.uri if payload.get("modelSource") else None,
+        )
+        documents.setdefault(document.asset_sha256, document)
+    for ref in binding.record_refs(run_id):
+        if record_kind(ref) != STUDIO_DOCUMENT_MODEL_SOURCE:
+            continue
+        payload = binding.repository.load_json(ref)
+        if payload.get("schema") != "StudioDocumentModelSource@1" or (payload.get("projectId"), payload.get("runId")) != (binding.project_id, run_id):
+            raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "The saved model association belongs to another document run.")
+        document = documents.get(payload["assetSha256"])
+        source = ModelSource.from_dict(payload["modelSource"])
+        if document is None or (document.model_source is not None and document.model_source != source):
+            raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
+        documents[document.asset_sha256] = replace(document, model_source=source, model_source_binding_ref=ref.uri)
+    return tuple(sorted(documents.values(), key=lambda doc: (doc.file_name, doc.asset_sha256)))
+
+
+def document_bytes(
+    binding: ProjectBinding, run_id: str, asset_sha256: str,
+) -> tuple[SourceDocument, bytes]:
+    """Serve the registered original only; the caller cannot supply a disk path."""
+
+    if not SHA256_HEX.fullmatch(asset_sha256):
+        raise StudioError(422, "DOCUMENT_INVALID", "A source document is addressed by its SHA-256.")
+    document = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256), None)
+    if document is None:
+        raise StudioError(404, "DOCUMENT_NOT_FOUND", f"Run {run_id} has no source document {asset_sha256}.")
+    try:
+        path = binding.repository.layout.resolve_relative(f"objects/sha256/{asset_sha256[:2]}/{asset_sha256}")
+        data = path.read_bytes()
+    except (OSError, ValueError) as exc:
+        raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The registered source document cannot be read.") from exc
+    if hashlib.sha256(data).hexdigest() != asset_sha256:
+        raise StudioError(409, "DOCUMENT_DIGEST_MISMATCH", "The source file no longer matches the version this document names.")
+    return document, data
+
+
+def save_document(
+    binding: ProjectBinding, run_id: str, file_name: str, mime_type: str, content_base64: str,
+    model_source: ModelSource | None = None,
+) -> SourceDocument:
+    """Retain original bytes via the object port and register them in the named run."""
+
+    run = binding.load_run(run_id)
+    if model_source is not None:
+        require_model_source(binding, model_source)
+    if not file_name.strip() or len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
+        raise StudioError(422, "DOCUMENT_INVALID", "Provide a file name, not a server path.")
+    if mime_type not in DOCUMENT_MEDIA_TYPES:
+        raise StudioError(422, "DOCUMENT_INVALID", "Only PDF, PNG and JPEG source documents are supported.")
+    if len(content_base64) > 4 * ((MAX_DOCUMENT_BYTES + 2) // 3):
+        raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
+    try:
+        data = base64.b64decode(content_base64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise StudioError(422, "DOCUMENT_INVALID", "The source document is not valid base64 data.") from exc
+    if len(data) > MAX_DOCUMENT_BYTES:
+        raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
+    pages = _document_pages(data, mime_type)
+    digest = hashlib.sha256(data).hexdigest()
+    existing = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == digest), None)
+    if existing is not None:
+        if existing.model_source != model_source:
+            raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
+        document_bytes(binding, run_id, digest)
+        return existing
+    document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages, model_source)
+    try:
+        binding.repository.ingest(
+            run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+            artifact_id=f"source-document-{digest}", media_type=mime_type, source=BytesIO(data),
+        )
+        binding.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=STUDIO_SOURCE_DOCUMENT,
+            payload={"schema": "StudioSourceDocument@1", **{
+                key: value for key, value in asdict(document).items() if key not in ("model_source", "model_source_binding_ref")
+            }, **({"modelSource": model_source.to_dict()} if model_source else {})},
+        )
+    except (ProjectRepositoryError, OSError) as exc:
+        raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
+    return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == digest)
+
+
+_document_source_lock = threading.RLock()
+
+
+def bind_document_model_source(
+    binding: ProjectBinding, run_id: str, asset_sha256: str, source: ModelSource,
+) -> SourceDocument:
+    """Record the user's declared association without rewriting old pages or comments."""
+
+    require_model_source(binding, source)
+    with _document_source_lock:
+        document, _ = document_bytes(binding, run_id, asset_sha256)
+        if document.model_source is not None:
+            if document.model_source != source:
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document already names a model source; it cannot be rebound.")
+            return document
+        run = binding.load_run(run_id)
+        binding.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=STUDIO_DOCUMENT_MODEL_SOURCE,
+            payload={"schema": "StudioDocumentModelSource@1", "projectId": binding.project_id,
+                     "runId": run_id, "assetSha256": asset_sha256, "modelSource": source.to_dict()},
+        )
+        return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256)
 
 
 def save_viewport_capture(
@@ -239,6 +462,7 @@ def list_artifacts(binding: ProjectBinding) -> ArtifactListing:
     for run_id in binding.run_ids():
         try:
             refs = _receipt_refs(binding, run_id)
+            records.extend(_registered_model_assets(binding, run_id))
         except (StudioError, ProjectRepositoryError, ValueError, OSError):
             skipped.append(run_id)
             continue
@@ -265,6 +489,114 @@ def list_artifacts(binding: ProjectBinding) -> ArtifactListing:
         artifacts=tuple(records),
         skipped_runs=tuple(skipped),
     )
+
+
+def require_model_source(
+    binding: ProjectBinding, source: ModelSource, projection: StateProjection | None = None,
+) -> ArtifactRecord:
+    """Resolve both identities; a matching state alone cannot identify model bytes."""
+
+    actual = projection or project_state(binding, source.run_id)
+    require_actionable(actual)
+    if not actual.reference_state_exact or (actual.run.run_id, actual.state_digest) != (source.run_id, source.state_digest):
+        raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The model source does not match the exact retained editing state.")
+    record = next((row for row in list_artifacts(binding).artifacts if (
+        row.run_id, row.design_state_digest, row.sha256, row.format
+    ) == (source.run_id, source.state_digest, source.asset_sha256, FORMAT_3DM)), None)
+    if record is None:
+        raise StudioError(409, "MODEL_SOURCE_UNREGISTERED", "This model has no retained artifact binding to the requested run state.")
+    if not record.available:
+        raise _unavailable(binding, record)
+    return record
+
+
+_model_asset_lock = threading.RLock()
+
+
+def register_model_asset(
+    binding: ProjectBinding, run_id: str, state_digest: str, file_name: str, content_base64: str,
+    *, event_sink: StudioEventSink | None = None,
+) -> ArtifactRecord:
+    """Retain an explicitly supplied composed model; never claim a native export."""
+
+    projection = project_state(binding, run_id)
+    require_actionable(projection)
+    if not projection.reference_state_exact or projection.state_digest != state_digest:
+        raise StudioError(409, "MODEL_SOURCE_MISMATCH", "Register the model against its exact retained run state.")
+    if not file_name.lower().endswith(".3dm") or len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
+        raise StudioError(422, "MODEL_ASSET_INVALID", "Provide a 3dm file name, not a server path.")
+    if len(content_base64) > 4 * ((128 * 1024 * 1024 + 2) // 3):
+        raise StudioError(413, "MODEL_ASSET_TOO_LARGE", "A model asset may contain at most 128 MiB.")
+    try:
+        data = base64.b64decode(content_base64, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise StudioError(422, "MODEL_ASSET_INVALID", "The model bytes are not valid base64.") from exc
+    if not data.startswith(b"3D Geometry File Format"):
+        raise StudioError(422, "MODEL_ASSET_INVALID", "The file is not a 3dm model.")
+    digest = hashlib.sha256(data).hexdigest()
+    source = ModelSource(run_id, state_digest, digest)
+    with _model_asset_lock:
+        existing = next((row for row in _registered_model_assets(binding, run_id) if row.model_source == source), None)
+        if existing is not None:
+            require_model_source(binding, source, projection)
+            return existing
+        try:
+            inspected = inspect_three_dm_contents(data)
+        except ThreeDmInspectionError as exc:
+            raise StudioError(422, "MODEL_ASSET_INVALID", "The supplied 3dm cannot be read as a complete model.") from exc
+        unit = {"Feet": "foot", "Inches": "inch", "Meters": "meter", "Millimeters": "millimeter"}.get(inspected.units["name"])
+        if unit is None:
+            raise StudioError(422, "MODEL_ASSET_INVALID", "The model must declare supported length units.")
+        artifact = binding.repository.ingest(
+            run=projection.run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+            artifact_id=f"composed-model-{digest}", media_type="model/vnd.rhino", source=BytesIO(data),
+        )
+        binding.repository.put_json(
+            run=projection.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=STUDIO_MODEL_ASSET,
+            payload={
+                "schema": "StudioModelAsset@1", "projectId": binding.project_id,
+                "modelSource": source.to_dict(), "stateRecordRef": projection.record_source,
+                "artifact": asdict(artifact), "fileName": file_name, "sizeBytes": len(data),
+                "objectCount": inspected.object_count, "lengthUnit": unit,
+            },
+        )
+        registered = require_model_source(binding, source, projection)
+        if event_sink is not None:
+            event_sink.publish(event={"type": "model_asset.registered", "run_id": run_id})
+        return registered
+
+
+def _registered_model_assets(binding: ProjectBinding, run_id: str) -> tuple[ArtifactRecord, ...]:
+    records = []
+    for ref in binding.record_refs(run_id):
+        if record_kind(ref) != STUDIO_MODEL_ASSET:
+            continue
+        payload = binding.repository.load_json(ref)
+        source = ModelSource.from_dict(payload["modelSource"])
+        if payload.get("schema") != "StudioModelAsset@1" or payload.get("projectId") != binding.project_id or source.run_id != run_id:
+            raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The retained model asset has a different project or run binding.")
+        path = binding.repository.layout.resolve_relative(payload["artifact"]["relative_path"])
+        reason = FILE_MISSING
+        try:
+            if path.is_file():
+                reason = None if _file_sha256(binding, path) == source.asset_sha256 else DIGEST_MISMATCH
+        except OSError:
+            reason = FILE_UNREADABLE
+        run = binding.load_run(run_id)
+        records.append(ArtifactRecord(
+            artifact_id=source.asset_sha256, run_id=run_id, stage_id=None,
+            file_name=payload["fileName"], relative_path=payload["artifact"]["relative_path"],
+            path=path if reason is None else None, sha256=source.asset_sha256,
+            size_bytes=payload["sizeBytes"], object_count=payload["objectCount"],
+            status="registered", readback_verified=None, available=reason is None,
+            unavailable_reason=reason, unavailable_error=None,
+            base_version=run.base.version, base_state_sha256=run.base.state_sha256,
+            branch_id=None, branch_epoch=None, program_ref=None, program_digest=None,
+            design_state_digest=source.state_digest, length_unit=payload["lengthUnit"], up_axis="Z-up",
+            receipt_ref=ref.uri, format=FORMAT_3DM, representation="composed", model_source=source,
+        ))
+    return tuple(records)
 
 
 def artifact_bytes(

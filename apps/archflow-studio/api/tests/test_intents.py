@@ -11,11 +11,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import math
 import shutil
 import tempfile
+import time
 import unittest
 
 from fastapi.testclient import TestClient
+
+from archflow.adapters import occt_backend
 
 from archflow_studio_api.application.intent_agent import (
     CODEX,
@@ -36,10 +40,13 @@ from archflow_studio_api.transport.errors import StudioError
 from .support import (
     PROJECT_ID,
     REFERENCE_RUN_ID,
+    RUNNER_RECORD_PATH,
+    RUNNER_SEATS_PATH,
     make_project,
     runner_state_digest,
     write_codex_shim,
 )
+from .test_candidate import _load_kind
 
 
 def semantic_wall_edit() -> dict:
@@ -79,6 +86,28 @@ def semantic_wall_edit() -> dict:
         "protected": ["entity:level-ground", "entity:portico-base"],
         "kept": ["The existing base geometry and ground level remain unchanged."],
     }
+
+
+def clearance_chain_edit() -> dict:
+    """The wall edit with one more authored input the passage width follows.
+
+    ``maintenance_clearance`` is a fixture parameter and nothing more: its
+    number and the ``+ 0.4`` are test inputs chosen so the arch stays inside
+    the fixture wall, not a clearance rule. What the fixture exercises is the
+    chain: a declared parameter, a width derived from it by expression, a
+    head derived from the width by the semicircular relationship the wall
+    edit already states, and an opening that reads both through @bindings.
+    """
+
+    edit = semantic_wall_edit()
+    thickness, _, head = edit["parameters"]
+    edit["parameters"] = [
+        thickness,
+        {"key": "maintenance_clearance", "value": 1.6, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
+        {"key": "passage_width", "value": 2, "unit": "m", "expr": "maintenance_clearance + 0.4", "inputs": ["maintenance_clearance"], "source_ref": "studio:intent"},
+        head,
+    ]
+    return edit
 
 
 def scripted(**fields: object):
@@ -200,14 +229,14 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(payload["proposal"]["target"]["elementId"], "portico-cornice")
         self.assertEqual(payload["proposal"]["change"]["old"], 0.3)
 
-    def test_an_agent_naming_an_element_the_record_lacks_is_the_grammars_question(self) -> None:
+    def test_an_agent_naming_an_element_the_record_lacks_is_a_technical_failure(self) -> None:
         self.app.state.intent_compiler = scripted(
             utterance="set height to 0.5", component_id="portico", element_id="portico-attic"
         )
         status, payload = self.ask("raise the attic")
-        self.assertEqual(status, 422, payload)
-        self.assertEqual(payload["code"], "BLOCKED_NEEDS_HUMAN")
-        self.assertIn("portico-attic", payload["question"])
+        self.assertEqual(status, 502, payload)
+        self.assertEqual(payload["code"], AGENT_FAILED)
+        self.assertNotIn("question", payload)
 
     def test_the_agents_question_is_asked_as_the_agents(self) -> None:
         self.app.state.intent_compiler = scripted(
@@ -223,14 +252,16 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertIn("the request names the portico", payload["detail"])
         self.assertNotIn("acceptedForms", payload)
 
-    def test_an_agent_that_claims_to_compile_but_does_not_gets_the_forms(self) -> None:
+    def test_an_agent_that_claims_to_compile_but_does_not_is_a_technical_failure(self) -> None:
         self.app.state.intent_compiler = scripted(
             utterance="lift it a bit", component_id="portico", element_id="portico-base"
         )
         status, payload = self.ask("lift it")
-        self.assertEqual(status, 422, payload)
+        self.assertEqual(status, 502, payload)
+        self.assertEqual(payload["code"], AGENT_FAILED)
         self.assertIn("is not in the grammar", payload["detail"])
-        self.assertEqual(len(payload["acceptedForms"]), 4)
+        self.assertNotIn("question", payload)
+        self.assertNotIn("acceptedForms", payload)
 
     def test_an_agent_that_fails_is_a_502_with_its_own_sentence(self) -> None:
         self.app.state.intent_compiler = Failing()
@@ -238,6 +269,36 @@ class ScriptedAgentTests(IntentTestCase):
         self.assertEqual(status, 502, payload)
         self.assertEqual(payload["code"], AGENT_FAILED)
         self.assertIn("no auth", payload["detail"])
+
+    def test_an_agent_can_terminally_name_a_missing_tool_capability(self) -> None:
+        self.app.state.intent_compiler = scripted(
+            status="unsupported",
+            why="This compiler cannot create a passage component.",
+        )
+        status, payload = self.ask("make a passage beneath the landing")
+        self.assertEqual(status, 422, payload)
+        self.assertEqual(payload["code"], "UNSUPPORTED_REQUEST")
+        self.assertEqual(
+            payload["detail"], "This compiler cannot create a passage component."
+        )
+        self.assertIsNone(payload["pendingIntent"]["continuationToken"])
+        self.assertNotIn("question", payload)
+
+    def test_unsupported_scalar_reply_preserves_current_action_kind(self) -> None:
+        self.app.state.intent_compiler = scripted(
+            status="unsupported",
+            why="This compiler cannot make that scalar change.",
+        )
+        status, payload = self.ask(
+            "make the portico base taller", elementId="portico-base"
+        )
+        self.assertEqual(status, 422, payload)
+        self.assertEqual(payload["code"], "UNSUPPORTED_REQUEST")
+        self.assertEqual(
+            payload["pendingIntent"]["actionKind"], "clarify"
+        )
+        self.assertIsNone(payload["pendingIntent"]["continuationToken"])
+        self.assertNotIn("question", payload)
 
     def test_a_sentence_already_in_the_grammar_never_reaches_the_agent(self) -> None:
         compiler = scripted(utterance="set height to 9", element_id="portico-cornice")
@@ -443,6 +504,297 @@ class SemanticIntentTests(IntentTestCase):
         self.assertNotIn("profile", next(row for row in sheet["elements"] if row["elementId"] == "portico-base")["params"])
 
 
+JOB_DEADLINE_S = 120.0
+
+# The wall fixture's own numbers, named once: the arch springs at 1.5 m along a
+# 3 m wall at along 2, and the solver overshoots every cut by its 5 cm margin.
+SPRING = 1.5
+WALL_HEIGHT = 3.0
+ARCH_ALONG = 2.0
+CUT_MARGIN = 0.05
+
+
+def _finished(client: TestClient, job_id: str) -> dict:
+    deadline = time.monotonic() + JOB_DEADLINE_S
+    while time.monotonic() < deadline:
+        payload = client.get(f"/api/jobs/{job_id}").json()
+        if payload["status"] in ("succeeded", "failed"):
+            return payload
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} never finished")
+
+
+def _program_ops(repository, run_id: str) -> dict[str, dict]:
+    """The operations of the seat program the runner retained, by op id."""
+
+    program = _load_kind(repository, run_id, "seat-geometry-program")
+    return {op["op_id"]: op for op in program["proposal"]["operations"]}
+
+
+def _op_value(op: dict, name: str):
+    return next(json.loads(p["value_json"]) for p in op["parameters"] if p["name"] == name)
+
+
+def _arch_measures(ops: dict[str, dict]) -> tuple[float, float, tuple[float, float]]:
+    """What the retained arch tool says: its radius, the box above the springing, and the jamb range along the wall."""
+
+    cylinder = ops["passage-wall-void-passage-arch-cylinder"]
+    self_check = (_op_value(cylinder, "start_radius"), _op_value(cylinder, "end_radius"))
+    assert self_check[0] == self_check[1], self_check
+    upper = _op_value(ops["passage-wall-void-passage-arch-upper"], "vector")[1]
+    legs = [point[2] for point in _op_value(ops["passage-wall-void-passage-arch-legs"], "profile")]
+    return self_check[0], upper, (min(legs), max(legs))
+
+
+class SemanticCandidateChainTests(IntentTestCase):
+    """A parameter the architect adds, driving a real opening through two runner candidates.
+
+    Everything after the scripted agent is real: the typed operator, the
+    kernel's derivation, ``run_project`` producing the wall and its arch, the
+    records the run retained, and a second process reading them back. The
+    numbers asserted are the ones the runner wrote into the retained program
+    and record, never the ones the request carried.
+    """
+
+    def compile(self, app, client: TestClient, edit: dict, *, source_run_id: str, state_digest: str, element_id: str, utterance: str) -> tuple[int, dict]:
+        app.state.intent_compiler = scripted(semantic_edit=edit, component_id="portico")
+        response = client.post("/api/intents", json={
+            "stateDigest": state_digest, "sourceRunId": source_run_id,
+            "targetComponentId": "portico", "elementId": element_id, "utterance": utterance,
+        })
+        return response.status_code, response.json()
+
+    def run_candidate(self, client: TestClient, proposal_id: str) -> tuple[str, dict]:
+        accepted = client.post(f"/api/proposals/{proposal_id}/candidate")
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+        return accepted.json()["candidateId"], _finished(client, accepted.json()["jobId"])
+
+    def candidate_a(self, app, client: TestClient) -> tuple[str, dict]:
+        """Candidate A: the chain authored against the reference run; its id and its retained state."""
+
+        status, body = self.compile(
+            app, client, clearance_chain_edit(), source_run_id=REFERENCE_RUN_ID,
+            state_digest=self.state_digest, element_id="portico-base",
+            utterance="Add a supporting wall with an arched passage that follows the maintenance clearance.",
+        )
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["proposal"]["status"], "proposed")
+        self.assertEqual(body["proposal"]["protected"], ["entity:level-ground", "entity:portico-base"])
+        self.assertEqual(body["proposal"]["change"]["kept"], ["The existing base geometry and ground level remain unchanged."])
+        self.assertIn("parameter:maintenance_clearance", body["proposal"]["impact"]["direct"])
+        run_id, job = self.run_candidate(client,body["proposal"]["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        state = client.get("/api/state", params={"run": run_id})
+        self.assertEqual(state.status_code, 200, state.text)
+        return run_id, state.json()
+
+    def candidate_b(self, app, client: TestClient, source_run_id: str, source_state: dict) -> tuple[str, dict]:
+        """Candidate B: only the clearance moves, from A's exact retained state."""
+
+        edit = semantic_wall_edit()
+        edit.update(
+            summary="Widen the passage by moving the maintenance clearance it follows.",
+            entities=[], parameters=[{"key": "maintenance_clearance", "value": 1.2, "unit": "m"}],
+            protected=["entity:portico-base"], kept=["The base stays as it is."],
+        )
+        status, body = self.compile(
+            app, client, edit, source_run_id=source_run_id, state_digest=source_state["stateDigest"],
+            element_id="passage-wall", utterance="Change the maintenance clearance so the passage follows it.",
+        )
+        self.assertEqual(status, 201, body)
+        proposal = body["proposal"]
+        self.assertEqual(proposal["sourceRunId"], source_run_id)
+        self.assertEqual(proposal["baseStateDigest"], source_state["stateDigest"])
+        # The kernel already re-evaluated the chain at proposal time: three
+        # parameters move, and the bound wall is what the change propagates to.
+        self.assertEqual(
+            {(row["action"], row["entityId"]) for row in proposal["change"]["changes"]},
+            {("update", "parameter:maintenance_clearance"), ("update", "parameter:passage_width"), ("update", "parameter:passage_head")},
+        )
+        self.assertEqual(proposal["impact"]["propagated"], ["entity:passage-wall"])
+        self.assertEqual(proposal["impact"]["conflicts"], [])
+        run_id, job = self.run_candidate(client,proposal["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        return run_id, body
+
+    def test_a_new_parameter_drives_the_opening_through_two_candidates_and_a_restart(self) -> None:
+        before_head = self.repository.read_head()
+        authored = {
+            path: self.repository.layout.resolve_relative(path).read_bytes()
+            for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)
+        }
+        run_a, state_a = self.candidate_a(self.app, self.client)
+
+        # A's retained record: the declarations stand, the values are the kernel's, the bindings are not inlined.
+        record_a = _load_kind(self.repository, run_a, "state-record")
+        parameters = {p["key"]: p for p in record_a["parameters"]}
+        self.assertEqual((parameters["maintenance_clearance"]["value"], parameters["maintenance_clearance"]["expr"]), (1.6, None))
+        self.assertEqual((parameters["passage_width"]["value"], parameters["passage_width"]["expr"]), (2, "maintenance_clearance + 0.4"))
+        self.assertEqual((parameters["passage_head"]["value"], parameters["passage_head"]["expr"]), (2.5, "1.5 + passage_width / 2"))
+        self.assertEqual(parameters["plinth"]["lock_authority"], "client")
+        wall = next(e for e in record_a["entities"] if e["entity_id"] == "passage-wall")["fields"]["params"]
+        self.assertEqual((wall["openings"][0]["width"], wall["openings"][0]["head"], wall["thickness"]), ("@passage_width", "@passage_head", "@passage_thickness"))
+        by_key = {p["key"]: p for p in state_a["parameters"]}
+        self.assertEqual((by_key["passage_width"]["value"], by_key["passage_width"]["expr"]), (2.0, "maintenance_clearance + 0.4"))
+
+        # A's retained program: the runner produced the arch from the evaluated chain.
+        ops_a = _program_ops(self.repository, run_a)
+        radius, upper, jambs = _arch_measures(ops_a)
+        self.assertAlmostEqual(radius, 2.0 / 2)
+        self.assertAlmostEqual(upper, 2.5 + CUT_MARGIN - SPRING)
+        self.assertEqual(jambs, (ARCH_ALONG - 1.0, ARCH_ALONG + 1.0))
+        self.assertEqual(_op_value(ops_a["passage-wall"], "vector"), [0.0, WALL_HEIGHT, 0.0])
+        self.assertEqual(max(p[0] for p in _op_value(ops_a["passage-wall"], "profile")), 0.3)   # thickness, through @passage_thickness
+        self.assertEqual(_op_value(ops_a["portico-base"], "vector"), [0.0, 0.6, 0.0])
+        self.assertEqual(_op_value(ops_a["portico-cornice"], "base_level"), 0.6)
+        candidate_a = self.client.get(f"/api/candidates/{run_a}").json()
+        self.assertEqual((candidate_a["relationChecks"]["held"], candidate_a["relationChecks"]["violated"]), (2, 0))
+        self.assertTrue(candidate_a["relationChecks"]["fullyChecked"])
+
+        run_b, _ = self.candidate_b(self.app, self.client, run_a, state_a)
+
+        # B's record: the one input moved, the declared chain was re-evaluated, the declarations themselves did not.
+        record_b = _load_kind(self.repository, run_b, "state-record")
+        values_b = {p["key"]: (p["value"], p["expr"]) for p in record_b["parameters"]}
+        self.assertEqual(values_b["maintenance_clearance"], (1.2, None))
+        self.assertEqual(values_b["passage_width"], (1.6, "maintenance_clearance + 0.4"))
+        self.assertEqual(values_b["passage_head"], (2.3, "1.5 + passage_width / 2"))
+        self.assertEqual(values_b["plinth"], (0.6, None))
+        self.assertEqual(values_b["bay"], (2.4, "2 * module"))
+        # B's program: the arch tool follows; every other operation is exactly A's.
+        ops_b = _program_ops(self.repository, run_b)
+        radius, upper, jambs = _arch_measures(ops_b)
+        self.assertAlmostEqual(radius, 1.6 / 2)
+        self.assertAlmostEqual(upper, 2.3 + CUT_MARGIN - SPRING)
+        self.assertEqual(jambs, (ARCH_ALONG - 0.8, ARCH_ALONG + 0.8))
+        moved = {"passage-wall-void-passage-arch-cylinder", "passage-wall-void-passage-arch-upper", "passage-wall-void-passage-arch-legs"}
+        self.assertEqual(set(ops_a), set(ops_b))
+        self.assertEqual({op_id for op_id in ops_a if ops_a[op_id] != ops_b[op_id]}, moved)
+        self.assertEqual(ops_b["passage-wall"], ops_a["passage-wall"])
+        self.assertEqual(ops_b["portico-base"], ops_a["portico-base"])
+        self.assertEqual(ops_b["portico-cornice"], ops_a["portico-cornice"])
+        candidate_b = self.client.get(f"/api/candidates/{run_b}").json()
+        self.assertEqual((candidate_b["relationChecks"]["held"], candidate_b["relationChecks"]["violated"]), (2, 0))
+        self.assertIn("entity:passage-wall", candidate_b["honesty"][0])
+
+        # A is still A, the project moved nothing, and both stay candidates.
+        self.assertEqual(_load_kind(self.repository, run_a, "state-record"), record_a)
+        self.assertEqual(self.repository.read_head(), before_head)
+        for path, content in authored.items():
+            self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), content)
+        self.assertEqual(self.client.get("/api/state").json()["referenceRun"]["runId"], REFERENCE_RUN_ID)
+
+        # A new process holds no proposal or job and reads both candidates off their retained records.
+        restarted = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)))
+        self.addCleanup(restarted.close)
+        for run_id, width, head in ((run_a, 2.0, 2.5), (run_b, 1.6, 2.3)):
+            with self.subTest(run=run_id):
+                reopened = restarted.get(f"/api/candidates/{run_id}")
+                self.assertEqual(reopened.status_code, 200, reopened.text)
+                self.assertEqual((reopened.json()["status"], reopened.json()["jobId"], reopened.json()["proposalId"]), ("succeeded", None, None))
+                state = restarted.get("/api/state", params={"run": run_id}).json()
+                self.assertEqual(state["referenceRun"]["runId"], run_id)
+                self.assertTrue(state["matchesReferenceReceipt"])
+                reread = {p["key"]: p for p in state["parameters"]}
+                self.assertEqual((reread["passage_width"]["value"], reread["passage_head"]["value"]), (width, head))
+                self.assertEqual(reread["passage_width"]["expr"], "maintenance_clearance + 0.4")
+                self.assertEqual(reread["plinth"]["lockAuthority"], "client")
+                wall_row = next(e for e in state["elements"] if e["elementId"] == "passage-wall")
+                self.assertEqual(wall_row["numericFields"], {"height": 3, "thickness": 0.3})
+        self.assertEqual(restarted.get("/api/state").json()["referenceRun"]["runId"], REFERENCE_RUN_ID)
+
+    def test_the_chain_is_refused_where_it_must_be_before_any_candidate_runs(self) -> None:
+        run_a, state_a = self.candidate_a(self.app, self.client)
+        source = dict(source_run_id=run_a, state_digest=state_a["stateDigest"], element_id="passage-wall", utterance="Change the maintenance clearance.")
+
+        def clearance_edit(**changes: object) -> dict:
+            edit = semantic_wall_edit()
+            edit.update(summary="Move the clearance.", entities=[], parameters=[{"key": "maintenance_clearance", "value": 1.0, "unit": "m"}], protected=[], kept=[])
+            edit.update(changes)
+            return edit
+
+        unsafe = "__import__(" + "'os').system('x')"
+        for label, edit, fragment in (
+            ("an expression outside the closed grammar", clearance_edit(parameters=[{"key": "passage_width", "value": 2, "unit": "m", "expr": unsafe, "inputs": []}]), "unexpected character"),
+            ("a function the evaluator does not have", clearance_edit(parameters=[{"key": "passage_width", "value": 2, "unit": "m", "expr": "pow(maintenance_clearance, 2)", "inputs": []}]), "unknown function 'pow'"),
+            ("a cycle through the chain", clearance_edit(parameters=[{"key": "maintenance_clearance", "value": 1, "unit": "m", "expr": "passage_head - 1", "inputs": []}]), "cycle among parameters"),
+            ("a locked parameter", clearance_edit(parameters=[{"key": "plinth", "value": 0.7, "unit": "m"}]), "reaches locked parameters: parameter:plinth (client)"),
+        ):
+            with self.subTest(refused=label):
+                status, body = self.compile(self.app, self.client, edit, **source)
+                self.assertEqual(status, 422, body)
+                self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+                self.assertIn(fragment, body["detail"])
+
+        # A protection the chain reaches is kept for review, and never run.
+        status, body = self.compile(self.app, self.client, clearance_edit(protected=["parameter:passage_head"]), **source)
+        self.assertEqual(status, 201, body)
+        self.assertEqual(body["proposal"]["status"], "conflict")
+        self.assertEqual(body["proposal"]["impact"]["conflicts"], ["parameter:passage_head"])
+        refused = self.client.post(f"/api/proposals/{body['proposal']['proposalId']}/candidate")
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "PROPOSAL_NOT_RUNNABLE")
+
+        # A's exact base: the reference run's digest is not A's, and the agent is never asked.
+        compiler = scripted(semantic_edit=clearance_edit(), component_id="portico")
+        self.app.state.intent_compiler = compiler
+        stale = self.client.post("/api/intents", json={"stateDigest": self.state_digest, "sourceRunId": run_a, "targetComponentId": "portico", "elementId": "passage-wall", "utterance": "Change the maintenance clearance."})
+        self.assertEqual(stale.status_code, 409, stale.text)
+        self.assertEqual(stale.json()["code"], "STALE_BASE")
+        self.assertEqual(compiler.calls, [])
+
+        # The scalar grammar names the new source instead of writing over what follows it.
+        derived = self.client.post("/api/proposals", json={"stateDigest": state_a["stateDigest"], "sourceRunId": run_a, "targetComponentId": "portico", "utterance": "set passage_width to 1.5 m"})
+        self.assertEqual(derived.status_code, 422, derived.text)
+        self.assertEqual(derived.json()["code"], "BLOCKED_NEEDS_HUMAN")
+        self.assertIn("set maintenance_clearance (= 1.6 m) instead", derived.json()["question"])
+        bound = self.client.post("/api/proposals", json={"stateDigest": state_a["stateDigest"], "sourceRunId": run_a, "targetComponentId": "portico", "elementId": "passage-wall", "utterance": "set thickness to 0.5"})
+        self.assertEqual(bound.status_code, 422, bound.text)
+        self.assertIn("bound to parameter passage_thickness", bound.json()["question"])
+
+        # Nothing above left a run behind.
+        self.assertEqual(sorted(p.name for p in self.repository.layout.runs.iterdir()), sorted([REFERENCE_RUN_ID, run_a]))
+
+    @unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+    def test_the_exported_solids_follow_the_chain(self) -> None:
+        """The same two candidates with the process's default export: the STEP aperture is the opening the chain says."""
+
+        app = create_app(StudioSettings(project_dir=self.root / PROJECT_ID))
+        self.assertTrue(app.state.settings.exports)
+        client = TestClient(app)
+        self.addCleanup(client.close)
+        run_a, state_a = self.candidate_a(app, client)
+        run_b, _ = self.candidate_b(app, client, run_a, state_a)
+
+        def solids(run_id: str) -> dict[str, occt_backend.ShapeMeasure]:
+            candidate = client.get(f"/api/candidates/{run_id}").json()
+            exact = next(row for row in candidate["artifacts"] if row["representation"] == "exact")
+            self.assertEqual((exact["format"], exact["status"], exact["readbackVerified"]), ("step", "succeeded", True))
+            fetched = client.get(f"/api/artifacts/{exact['sha256']}/bytes")
+            self.assertEqual(fetched.status_code, 200, fetched.text)
+            path = self.root / f"{run_id}.step"
+            path.write_bytes(fetched.content)
+            return {entry.name: occt_backend.measure_shape(entry.shape) for entry in occt_backend.read_step(path, length_unit="meter")}
+
+        measured = {run_a: solids(run_a), run_b: solids(run_b)}
+        for run_id, width, head in ((run_a, 2.0, 2.5), (run_b, 1.6, 2.3)):
+            with self.subTest(run=run_id):
+                shapes = measured[run_id]
+                self.assertEqual(set(shapes), {"obj-passage-wall-cut", "obj-passage-wall-aperture-passage-arch", "obj-portico-base", "obj-portico-cornice"})
+                aperture = shapes["obj-passage-wall-aperture-passage-arch"]
+                self.assertTrue(aperture.valid and aperture.closed and aperture.solid_count == 1)
+                # CAD frame is (thickness x, along y, up z): the jambs, the crown and the volume of a semicircular arch of that width.
+                self.assertAlmostEqual(aperture.bbox_max[1] - aperture.bbox_min[1], width, places=6)
+                self.assertAlmostEqual(aperture.bbox_min[1], ARCH_ALONG - width / 2, places=6)
+                self.assertAlmostEqual(aperture.bbox_max[2], head, places=6)
+                self.assertAlmostEqual(aperture.volume, 0.3 * (width * SPRING + math.pi * (width / 2) ** 2 / 2), places=6)
+                cut = shapes["obj-passage-wall-cut"]
+                self.assertAlmostEqual(cut.volume, 4.0 * 0.3 * WALL_HEIGHT - aperture.volume, places=6)
+        for name in ("obj-portico-base", "obj-portico-cornice"):
+            self.assertEqual(measured[run_a][name], measured[run_b][name])
+        self.assertAlmostEqual(measured[run_a]["obj-portico-base"].volume, 4.0 * 2.0 * 0.6, places=6)
+
+
 class AnswerParsingTests(unittest.TestCase):
     def test_a_fenced_json_answer_is_read(self) -> None:
         raw = '```json\n{"status":"compiled","targetComponentId":"portico","elementId":"portico-base","utterance":"set height to 0.8","why":"","question":null}\n```'
@@ -479,6 +831,19 @@ class AnswerParsingTests(unittest.TestCase):
                 '{"status":"compiled","targetComponentId":null,"elementId":null,"utterance":null,"why":"","question":null}',
                 provider=CODEX, model=None, latency_ms=1, prompt_sha="00" * 32,
             )
+
+    def test_unsupported_answer_is_read_without_a_question(self) -> None:
+        compilation = _parse_answer(
+            '{"status":"unsupported","why":"This tool cannot model that component."}',
+            provider=CODEX,
+            model=None,
+            latency_ms=1,
+            prompt_sha="00" * 32,
+        )
+        self.assertEqual(compilation.status, "unsupported")
+        self.assertEqual(compilation.why, "This tool cannot model that component.")
+        self.assertIsNone(compilation.utterance)
+        self.assertIsNone(compilation.question)
 
     def test_the_deterministic_compiler_passes_the_sentence_through(self) -> None:
         compilation = DeterministicCompiler().compile(

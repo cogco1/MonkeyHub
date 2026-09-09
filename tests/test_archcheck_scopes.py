@@ -11,6 +11,7 @@ temporary directory; nothing here reads or writes this repository.
 """
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.archcheck import check_changed_scopes, check_scopes
+from tools.archcheck import ArchitecturePolicyError, check_changed_scopes, check_scopes
 
 
 SHARED = (
@@ -29,6 +30,8 @@ SHARED = (
     "tests/",
 )
 POLICY = {"shared_write_scope": list(SHARED)}
+POLICY_PATH = "governance/architecture_policy.json"
+REGISTRY_PATH = "governance/work_registry.json"
 
 
 def _registry(*items: dict[str, object]) -> dict[str, object]:
@@ -118,8 +121,14 @@ class ChangedScopeTests(unittest.TestCase):
         root.mkdir()
         cls.root = root
         _git(root, "init", "-q")
+        cls.registry = _registry(
+            _card("P301", "active", "archflow/state/", "tests/"),
+            _card("P302", "ready", "docs/mapping/"),
+        )
         _write(root, "README.md", "base\n")
-        _git(root, "add", "README.md")
+        _write(root, POLICY_PATH, json.dumps(POLICY))
+        _write(root, REGISTRY_PATH, json.dumps(cls.registry))
+        _git(root, "add", "README.md", POLICY_PATH, REGISTRY_PATH)
         _git(root, "commit", "-q", "-m", "base")
         cls.base = _git(root, "rev-parse", "HEAD").strip()
 
@@ -149,19 +158,12 @@ class ChangedScopeTests(unittest.TestCase):
             "P301 the ledger owner\n\nUnblocks P302 and supersedes P303.",
         )
 
-        cls.registry = _registry(
-            _card("P301", "active", "archflow/state/", "tests/"),
-            _card("P302", "ready", "docs/mapping/"),
-        )
-
     @classmethod
     def tearDownClass(cls) -> None:
         cls._temporary.cleanup()
 
     def _findings(self) -> tuple[object, ...]:
-        return tuple(
-            check_changed_scopes(self.root, POLICY, self.registry, self.base)
-        )
+        return tuple(check_changed_scopes(self.root, self.base))
 
     def test_a_commit_inside_its_cards_scope_passes(self) -> None:
         self.assertNotIn(
@@ -176,7 +178,7 @@ class ChangedScopeTests(unittest.TestCase):
             if finding.code == "SCOPE_VIOLATION"
         ]
         self.assertEqual(
-            ["apps/archflow-studio/api/app.py"],
+            ["apps/archflow-studio/api/app.py", "tools/oneoff.py"],
             [finding.path for finding in violations],
         )
         self.assertIn("P301", violations[0].message)
@@ -187,18 +189,14 @@ class ChangedScopeTests(unittest.TestCase):
             [finding.path for finding in self._findings()],
         )
 
-    def test_an_id_no_live_card_carries_falls_back_to_the_governance_paths(
-        self,
-    ) -> None:
-        undeclared = [
+    def test_explicit_governance_cannot_write_an_unowned_tool(self) -> None:
+        findings = [
             finding
             for finding in self._findings()
-            if finding.code == "SCOPE_UNDECLARED"
+            if finding.path == "tools/oneoff.py"
         ]
-        self.assertEqual(
-            ["tools/oneoff.py"], [finding.path for finding in undeclared]
-        )
-        self.assertIn("P000", undeclared[0].message)
+        self.assertEqual(["SCOPE_VIOLATION"], [finding.code for finding in findings])
+        self.assertIn("P000-governance", findings[0].message)
 
     def test_the_subject_decides_when_the_body_names_other_cards(self) -> None:
         """A body says what a change unblocks; that is not its own card."""
@@ -213,17 +211,213 @@ class ChangedScopeTests(unittest.TestCase):
         root.mkdir()
         _git(root, "init", "-q")
         _write(root, "tools/gone.py", "VALUE = 1\n")
-        _git(root, "add", "tools/gone.py")
+        _write(root, POLICY_PATH, json.dumps(POLICY))
+        _write(root, REGISTRY_PATH, json.dumps(self.registry))
+        _git(root, "add", "tools/gone.py", POLICY_PATH, REGISTRY_PATH)
         _git(root, "commit", "-q", "-m", "base")
         base = _git(root, "rev-parse", "HEAD").strip()
         _git(root, "rm", "-q", "tools/gone.py")
         _git(root, "commit", "-q", "-m", "P301 remove the tool")
-        findings = tuple(
-            check_changed_scopes(root, POLICY, self.registry, base)
-        )
+        findings = tuple(check_changed_scopes(root, base))
         self.assertEqual(
             [("tools/gone.py", "SCOPE_VIOLATION")],
             [(finding.path, finding.code) for finding in findings],
+        )
+
+
+class HistoricalScopeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name) / "repo"
+        self.root.mkdir()
+        _git(self.root, "init", "-q")
+        self.base = self.commit(
+            "base",
+            {
+                "README.md": "base\n",
+                POLICY_PATH: POLICY,
+                REGISTRY_PATH: _registry(_card("P301", "active", "archflow/state/")),
+            },
+        )
+
+    def commit(self, message: str, files: dict[str, object]) -> str:
+        for relative, value in files.items():
+            if value is None:
+                (self.root / relative).unlink()
+            else:
+                _write(
+                    self.root, relative,
+                    value if isinstance(value, str) else json.dumps(value),
+                )
+        _git(self.root, "add", "--", *files)
+        _git(self.root, "commit", "-q", "-m", message)
+        return _git(self.root, "rev-parse", "HEAD").strip()
+
+    def findings(self) -> tuple[object, ...]:
+        return tuple(check_changed_scopes(self.root, self.base))
+
+    def test_governance_may_maintain_only_its_named_files_and_readmes(self) -> None:
+        self.commit(
+            "P000-governance: maintain repository guidance",
+            {
+                "README.md": "updated\n",
+                "archflow/project/README.md": "project package\n",
+                "tools/archcheck.py": "# checker\n",
+                POLICY_PATH: {**POLICY, "notes": "scope guidance"},
+                ".github/workflows/verify.yml": "# CI\n",
+                ".github/pull_request_template.md": "PR guidance\n",
+                "CONTRIBUTING.md": "contributor guidance\n",
+                "AGENTS.md": "agent guidance\n",
+                "docs/SYSTEM_MAP.md": "system map\n",
+            },
+        )
+        self.assertEqual((), self.findings())
+        forbidden = {
+            "archflow/project/NOTES.md": "other document\n",
+            "archflow/project/README.md.py": "VALUE = 1\n",
+            "archflow/state/value.py": "VALUE = 1\n",
+            "skills/example/SKILL.md": "skill behavior\n",
+            "tools/oneoff.py": "VALUE = 1\n",
+        }
+        self.commit("P000-governance: unrelated changes", forbidden)
+        self.assertEqual(
+            [(path, "SCOPE_VIOLATION") for path in sorted(forbidden)],
+            [(item.path, item.code) for item in self.findings()],
+        )
+
+    def test_unknown_card_and_uncarded_commits_do_not_gain_governance_scope(self) -> None:
+        self.commit(
+            "P999: no registered owner",
+            {"archflow/state/value.py": "VALUE = 1\n", "README.md": "unknown card\n"},
+        )
+        self.commit("Uncarded documentation", {"archflow/project/README.md": "package\n"})
+        self.assertEqual(
+            {"README.md", "archflow/state/value.py", "archflow/project/README.md"},
+            {item.path for item in self.findings()},
+        )
+        self.assertTrue(all(item.code == "SCOPE_UNDECLARED" for item in self.findings()))
+
+    def test_a_hyphenated_card_subject_keeps_its_registered_scope(self) -> None:
+        self.commit("P301-owner: valid change", {"archflow/state/value.py": "VALUE = 1\n"})
+        self.assertEqual((), self.findings())
+
+    def test_a_partial_governance_marker_does_not_gain_readme_scope(self) -> None:
+        self.commit("P000-governance-extra: not the marker", {"README.md": "updated\n"})
+        self.commit("P3010: invalid four-digit card", {"archflow/state/value.py": "VALUE = 1\n"})
+        self.assertEqual(
+            [("README.md", "SCOPE_UNDECLARED"), ("archflow/state/value.py", "SCOPE_UNDECLARED")],
+            [(item.path, item.code) for item in self.findings()],
+        )
+
+    def test_a_closing_commit_keeps_its_scope_but_the_next_commit_does_not(self) -> None:
+        self.commit("P301: delivered change", {"archflow/state/value.py": "VALUE = 1\n"})
+        self.commit(
+            "P301: finish the card",
+            {REGISTRY_PATH: _registry(), "archflow/state/value.py": "VALUE = 2\n"},
+        )
+        self.assertEqual((), self.findings())
+        self.commit("P301: work after retirement", {"archflow/state/late.py": "VALUE = 3\n"})
+        self.assertEqual(
+            [("archflow/state/late.py", "SCOPE_UNDECLARED")],
+            [(item.path, item.code) for item in self.findings()],
+        )
+
+    def test_later_card_scope_changes_do_not_reclassify_earlier_commits(self) -> None:
+        earlier = self.commit("P301: original scope", {"archflow/state/value.py": "VALUE = 1\n"})
+        self.commit(
+            "P301: narrow future work",
+            {REGISTRY_PATH: _registry(_card("P301", "active", "archflow/state/other.py"))},
+        )
+        later = self.commit("P301: outside new scope", {"archflow/state/value.py": "VALUE = 2\n"})
+        findings = self.findings()
+        self.assertEqual(["SCOPE_VIOLATION"], [item.code for item in findings])
+        self.assertIn(later[:8], findings[0].message)
+        self.assertNotIn(earlier[:8], findings[0].message)
+
+    def test_a_retained_nonlive_row_grants_scope_only_to_its_closing_commit(self) -> None:
+        self.commit(
+            "P301: complete the card",
+            {
+                REGISTRY_PATH: _registry(_card("P301", "done", "archflow/state/")),
+                "archflow/state/value.py": "VALUE = 1\n",
+            },
+        )
+        self.assertEqual((), self.findings())
+        self.commit("P301: work after completion", {"archflow/state/late.py": "VALUE = 2\n"})
+        self.assertEqual(
+            [("archflow/state/late.py", "SCOPE_UNDECLARED")],
+            [(item.path, item.code) for item in self.findings()],
+        )
+
+    def test_later_shared_scope_does_not_erase_an_earlier_violation(self) -> None:
+        earlier = self.commit("P301: outside scope", {"apps/other.py": "VALUE = 1\n"})
+        self.commit(
+            "P000-governance: change shared scope",
+            {POLICY_PATH: {"shared_write_scope": [*SHARED, "apps/"]}},
+        )
+        self.commit("P301: now shared", {"apps/other.py": "VALUE = 2\n"})
+        findings = self.findings()
+        self.assertEqual(["SCOPE_VIOLATION"], [item.code for item in findings])
+        self.assertIn(earlier[:8], findings[0].message)
+
+    def test_policy_field_removal_is_an_error(self) -> None:
+        self.commit("P000-governance: remove field", {POLICY_PATH: {}})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "missing shared_write_scope"):
+            self.findings()
+
+    def test_policy_file_removal_is_an_error(self) -> None:
+        self.commit("P000-governance: remove policy", {POLICY_PATH: None})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "missing policy"):
+            self.findings()
+
+    def test_a_missing_selected_policy_cannot_disable_the_check(self) -> None:
+        self.commit("Uncarded source", {"apps/other.py": "VALUE = 1\n"})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "missing policy"):
+            tuple(check_changed_scopes(self.root, self.base, "missing-policy.json"))
+
+    def test_malformed_policy_is_an_error(self) -> None:
+        self.commit("P000-governance: corrupt policy", {POLICY_PATH: "{"})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "invalid governance/architecture_policy.json"):
+            self.findings()
+
+    def test_invalid_scope_field_is_an_error(self) -> None:
+        self.commit("P000-governance: corrupt scope", {POLICY_PATH: {"shared_write_scope": "apps/"}})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "shared_write_scope must be a string list"):
+            self.findings()
+
+    def test_a_base_after_policy_removal_cannot_restart_the_rule(self) -> None:
+        self.base = self.commit("P000-governance: remove field", {POLICY_PATH: {}})
+        self.commit("Uncarded source", {"apps/other.py": "VALUE = 1\n"})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "missing shared_write_scope"):
+            self.findings()
+
+    def test_missing_registry_is_an_error_even_for_governance(self) -> None:
+        self.commit("P000-governance: remove registry", {REGISTRY_PATH: None})
+        with self.assertRaisesRegex(ArchitecturePolicyError, "invalid work registry"):
+            self.findings()
+
+
+    def test_the_rule_does_not_reach_its_predecessors_or_bootstrap(self) -> None:
+        self.root = Path(self.temporary.name) / "before_rule"
+        self.root.mkdir()
+        _git(self.root, "init", "-q")
+        self.base = self.commit(
+            "Before the scope rule",
+            {POLICY_PATH: {}, REGISTRY_PATH: _registry(_card("P301", "active", "archflow/state/"))},
+        )
+
+        self.commit("Old uncarded change", {"apps/old.py": "VALUE = 1\n"})
+        self.commit(
+            "Introduce scope checks",
+            {POLICY_PATH: POLICY, "tools/checker_bootstrap.py": "# bootstrap\n"},
+        )
+        self.commit("P301: first scoped change", {"archflow/state/value.py": "VALUE = 1\n"})
+        self.assertEqual((), self.findings())
+        self.commit("P301: new violation", {"apps/new.py": "VALUE = 2\n"})
+        self.assertEqual(
+            [("apps/new.py", "SCOPE_VIOLATION")],
+            [(item.path, item.code) for item in self.findings()],
         )
 
 

@@ -429,7 +429,7 @@ try {
 
 New-Splash | Out-Null
 
-# --- runtime.json is the only input, and it is validated before anything is started
+# --- runtime.json selects the project and is validated before anything is started
 Set-SplashStep 1 'validating runtime.json'
 if (-not (Test-Path -LiteralPath $RuntimeConfig -PathType Leaf)) { throw "runtime.json is required: $RuntimeConfig" }
 $runtime = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding utf8 | ConvertFrom-Json
@@ -519,6 +519,32 @@ if ([string]$runtime.intent_provider) { $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = [
 if ([string]$runtime.intent_model) { $env:ARCHFLOW_STUDIO_INTENT_MODEL = [string]$runtime.intent_model }
 if ([string]$runtime.intent_timeout_s) { $env:ARCHFLOW_STUDIO_INTENT_TIMEOUT_S = [string]$runtime.intent_timeout_s }
 if ([string]$runtime.codex) { $env:ARCHFLOW_STUDIO_CODEX = [string]$runtime.codex }
+# A deliberate local save overrides only the three existing intent defaults. Removing
+# a saved field restores the runtime/environment choice assembled above. The file cannot
+# select a project, executable, CAD backend or credential, and remote mode never reads it.
+if ((-not ([string]$env:ARCHFLOW_STUDIO_MODE).Trim() -or $env:ARCHFLOW_STUDIO_MODE.Trim() -eq 'local') -and $env:APPDATA) {
+    try {
+        $userSettingsFile = Join-Path $env:APPDATA 'MonkeyArch\settings.json'
+        if (Test-Path -LiteralPath $userSettingsFile -PathType Leaf) {
+            $userSettingsJson = Get-Content -LiteralPath $userSettingsFile -Raw -Encoding utf8
+            if (-not $userSettingsJson.TrimStart().StartsWith('{')) { throw 'user settings must be an object' }
+            $savedUserSettings = $userSettingsJson | ConvertFrom-Json
+            $unknownSettings = @($savedUserSettings.PSObject.Properties.Name | Where-Object { $_ -cnotin @('language', 'theme', 'fontScale', 'intentProvider', 'intentModel', 'intentTimeoutS') })
+            if ($unknownSettings.Count) { throw 'unsupported user setting' }
+            if ($null -ne $savedUserSettings.language -and ($savedUserSettings.language -isnot [string] -or $savedUserSettings.language -cnotin @('en', 'zh-CN'))) { throw 'invalid language' }
+            if ($null -ne $savedUserSettings.theme -and ($savedUserSettings.theme -isnot [string] -or $savedUserSettings.theme -cnotin @('dark', 'light', 'system'))) { throw 'invalid theme' }
+            if ($null -ne $savedUserSettings.fontScale -and ($savedUserSettings.fontScale.GetType() -notin @([int], [long], [double], [decimal]) -or $savedUserSettings.fontScale -notin @(0.9, 1, 1.1))) { throw 'invalid fontScale' }
+            if ($null -ne $savedUserSettings.intentProvider -and ($savedUserSettings.intentProvider -isnot [string] -or $savedUserSettings.intentProvider -cnotin @('deterministic', 'codex', 'anthropic'))) { throw 'invalid intentProvider' }
+            if ($null -ne $savedUserSettings.intentModel -and ($savedUserSettings.intentModel -isnot [string] -or -not $savedUserSettings.intentModel.Trim() -or $savedUserSettings.intentModel -match '[\x00-\x1f\x7f]')) { throw 'invalid intentModel' }
+            if ($null -ne $savedUserSettings.intentTimeoutS -and ($savedUserSettings.intentTimeoutS.GetType() -notin @([int], [long], [double], [decimal]) -or $savedUserSettings.intentTimeoutS -le 0 -or [double]::IsNaN($savedUserSettings.intentTimeoutS) -or [double]::IsInfinity($savedUserSettings.intentTimeoutS))) { throw 'invalid intentTimeoutS' }
+            if ($null -ne $savedUserSettings.intentProvider) { $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = $savedUserSettings.intentProvider }
+            if ($null -ne $savedUserSettings.intentModel) { $env:ARCHFLOW_STUDIO_INTENT_MODEL = $savedUserSettings.intentModel.Trim() }
+            if ($null -ne $savedUserSettings.intentTimeoutS) { $env:ARCHFLOW_STUDIO_INTENT_TIMEOUT_S = ([double]$savedUserSettings.intentTimeoutS).ToString([Globalization.CultureInfo]::InvariantCulture) }
+        }
+    } catch {
+        Write-Warning 'Saved user settings could not be read; continuing with runtime and environment defaults.'
+    }
+}
 # Redirected python output is block-buffered; an unbuffered child is the difference between a
 # log that says why it died and an empty file.
 $env:PYTHONUNBUFFERED = '1'

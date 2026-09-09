@@ -71,6 +71,10 @@ RUNNER_RUN_FAILURE = "runner-run-failure"
 RUNNER_RUN_RECEIPT = "runner-run-receipt"
 STAGE_GEOMETRY_PROGRAM = "<identifier>-geometry-program"
 
+# ---- the drawing consumer's kind (archflow/runtime/drawing_elevation.py)
+
+DRAWING_PROJECTION_RECEIPT = "drawing-projection-receipt"
+
 # ---- the geometry proposal producer's kinds (archflow/capabilities)
 
 GEOMETRY_PROPOSAL_ROUND = "geometry-proposal-round-NN"
@@ -94,6 +98,13 @@ STUDIO_CANDIDATE_WORKFLOW = "studio-candidate-workflow"
 STUDIO_CANDIDATE_ENVELOPE = "studio-candidate-envelope"
 INTENT_COMPILATION = "intent-compilation"
 DELIBERATION_EPISODE = "deliberation-episode"
+STUDIO_SOURCE_DOCUMENT = "studio-source-document"
+STUDIO_DOCUMENT_ANNOTATIONS = "studio-document-annotations"
+STUDIO_DOCUMENT_COMMENT = "studio-document-comment"
+STUDIO_MODEL_ASSET = "studio-model-asset"
+STUDIO_DOCUMENT_MODEL_SOURCE = "studio-document-model-source"
+STUDIO_WORKING_COPY = "studio-working-copy"
+STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
 
 # ---- read by the spine, written by nobody on it
 
@@ -121,6 +132,48 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 
 _TABLE: tuple[RecordKind, ...] = (
+    RecordKind(
+        STUDIO_WORKING_COPY,
+        "StudioWorkingCopy@1",
+        _RUN_RECORD,
+        "one local work item's explicit model options and selected option, retained in its common-base run",
+    ),
+    RecordKind(
+        STUDIO_MODEL_ANNOTATIONS,
+        "StudioModelAnnotations@1",
+        _RUN_RECORD,
+        "one exact model source's saved 3D annotations and previous revision",
+    ),
+    RecordKind(
+        STUDIO_DOCUMENT_MODEL_SOURCE,
+        "StudioDocumentModelSource@1",
+        _RUN_RECORD,
+        "an explicit one-time model association for an existing unbound source document",
+    ),
+    RecordKind(
+        STUDIO_MODEL_ASSET,
+        "StudioModelAsset@1",
+        _RUN_RECORD,
+        "an existing composed model retained with its explicit exact run state binding",
+    ),
+    RecordKind(
+        STUDIO_SOURCE_DOCUMENT,
+        "StudioSourceDocument@1",
+        _RUN_RECORD,
+        "an imported PDF or image, bound to its original bytes in the project object store",
+    ),
+    RecordKind(
+        STUDIO_DOCUMENT_ANNOTATIONS,
+        "StudioDocumentAnnotations@1",
+        _RUN_RECORD,
+        "one saved page annotation revision, bound to an exact source document and its previous revision",
+    ),
+    RecordKind(
+        STUDIO_DOCUMENT_COMMENT,
+        "StudioDocumentComment@1",
+        _RUN_RECORD,
+        "the architect's submitted words and exact saved document annotation references",
+    ),
     RecordKind(
         STATE_RECORD,
         "StateRecord@1",
@@ -225,6 +278,15 @@ _TABLE: tuple[RecordKind, ...] = (
         _RUN_BRANCH,
         "the program an export is bound to, on the branch, named by its stage",
         kind_pattern=r"[A-Za-z0-9][A-Za-z0-9._-]*-geometry-program",
+    ),
+    RecordKind(
+        DRAWING_PROJECTION_RECEIPT,
+        "DrawingProjectionReceipt@1",
+        _RUN_RECORD,
+        "one orthographic drawing derived from a retained exact STEP: the "
+        "source run/base/STEP/CAD receipt/object ids and frame it was "
+        "projected from, and the SVG and PNG it wrote into the drawing run's "
+        "documentation workspace",
     ),
     RecordKind(
         GEOMETRY_PROPOSAL_ROUND,

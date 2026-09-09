@@ -18,11 +18,13 @@ is compared byte for byte in every test that runs anything.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from pathlib import Path
 import shutil
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -49,6 +51,7 @@ from .support import (
     runner_state_digest,
     write_runner_record,
 )
+from .test_working_copies import register_model
 
 JOB_DEADLINE = 120.0
 TERMINAL = ("succeeded", "failed")
@@ -632,6 +635,177 @@ class RemoteModeTests(ProgramTestCase):
         job = answer["detail"].split("job ")[1].split(".")[0]
         self.assertTrue(candidate.startswith("studio-cand-"))
         self.finished(job)
+
+
+class SelectedProgramTests(ProgramTestCase):
+    """Continue an explicit retained run, without rebinding authored WIP."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(
+            cad_export="off", project_dir=self.repository.layout.root,
+            reference_run=REFERENCE_RUN_ID,
+        )))
+        self.addCleanup(self.client.close)
+        self.source_run_id = "selected-program-source"
+        payload = deepcopy(self.payload)
+        for entity in payload["entities"]:
+            if entity["entity_id"] == "zone-hall":
+                entity["fields"]["program_node_refs"] = ["program:selected/meeting"]
+            elif entity["entity_id"] == "portico-base":
+                entity["fields"]["params"]["height"] = 1.2
+        source = self.repository.create_run(self.source_run_id)
+        retain_runner_receipt(
+            self.repository, source, record_payload=payload,
+            design_state_digest=runner_state_digest(self.repository, self.source_run_id, payload),
+        )
+        self.source_state = self.get(f"/api/state?run={self.source_run_id}")
+
+    def source_sheet(self) -> dict:
+        from archflow.state.program_sheet import sheet_from_record
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.projection import project_state
+        from archflow_studio_api.transport.program import sheet_dto
+
+        projection = project_state(bound_project(self.client.app.state), self.source_run_id)
+        return sheet_dto(sheet_from_record(projection.record)).model_dump(by_alias=True)
+
+    def register_source_model(self, fixture: str = "a") -> dict:
+        data = (Path(__file__).parent / f"fixtures/model-source-{fixture}.3dm").read_bytes()
+        return register_model(
+            self.client, self.source_run_id, self.source_state["stateDigest"], data,
+        )["modelSource"]
+
+    def test_selected_apply_passes_the_exact_asset_to_the_worker(self) -> None:
+        source = self.register_source_model("a")
+        other = self.register_source_model("b")
+        self.assertNotEqual(source["assetSha256"], other["assetSha256"])
+        self.assertEqual(
+            self.client.get(f"/api/artifacts/{other['assetSha256']}/bytes").status_code, 200,
+        )
+
+        with patch("archflow_studio_api.routes.program.run_operator", return_value={}) as worker:
+            response = self.client.post("/api/program", json={
+                "sourceRunId": self.source_run_id,
+                "stateDigest": self.source_state["stateDigest"],
+                "sheet": self.source_sheet(),
+                "modelSource": source,
+            })
+            self.assertEqual(response.status_code, 202, response.text)
+            job = self.finished(response.json()["jobId"])
+            self.assertEqual(job["status"], "succeeded", job)
+
+        worker.assert_called_once()
+        self.assertEqual(worker.call_args.kwargs["source_run_id"], self.source_run_id)
+        self.assertEqual(worker.call_args.kwargs["model_source"].to_dict(), source)
+
+    def test_invalid_model_source_is_refused_before_a_program_run(self) -> None:
+        source = self.register_source_model()
+        request = {
+            "sourceRunId": self.source_run_id,
+            "stateDigest": self.source_state["stateDigest"],
+            "sheet": self.source_sheet(),
+            "modelSource": source,
+        }
+        runs_before = sorted(path.name for path in self.repository.layout.runs.iterdir())
+        for change, code in (
+            ({"modelSource": {**source, "runId": REFERENCE_RUN_ID}}, "MODEL_SOURCE_MISMATCH"),
+            ({"modelSource": {**source, "stateDigest": self.state_digest}}, "MODEL_SOURCE_MISMATCH"),
+            ({"modelSource": {**source, "assetSha256": "0" * 64}}, "MODEL_SOURCE_UNREGISTERED"),
+            ({"stateDigest": self.state_digest}, "STALE_BASE"),
+            ({"sourceRunId": REFERENCE_RUN_ID, "stateDigest": self.state_digest,
+              "sheet": self.get("/api/program")["sheet"]}, "MODEL_SOURCE_MISMATCH"),
+        ):
+            with self.subTest(change=change), patch(
+                "archflow_studio_api.routes.program.run_operator", return_value={},
+            ) as worker:
+                response = self.client.post("/api/program", json={**request, **change})
+                self.assertEqual(response.status_code, 409, response.text)
+                self.assertEqual(response.json()["code"], code)
+                worker.assert_not_called()
+                self.assertEqual(
+                    sorted(path.name for path in self.repository.layout.runs.iterdir()), runs_before,
+                )
+
+    def test_selected_read_derives_its_record_instead_of_the_authored_sheet(self) -> None:
+        from archflow_studio_api.transport.program import ProgramSheetDto, sheet_payload
+
+        sheet = self.source_sheet()
+        sheet["departments"][0]["name"] = "Unapplied authored brief"
+        path = self.repository.layout.resolve_relative(PROGRAM_SHEET_PATH)
+        path.write_text(json.dumps(sheet_payload(ProgramSheetDto.model_validate(sheet))), encoding="utf-8")
+        before = path.read_bytes()
+
+        answer = self.get(f"/api/program?run={self.source_run_id}")
+
+        self.assertEqual(answer["source"], "derived")
+        self.assertEqual(answer["sourceRunId"], self.source_run_id)
+        self.assertEqual(answer["stateDigest"], self.source_state["stateDigest"])
+        self.assertEqual(answer["sheet"], self.source_sheet())
+        self.assertEqual(path.read_bytes(), before)
+        default = self.get("/api/program")
+        self.assertIsNone(default["sourceRunId"])
+        self.assertEqual(default["stateDigest"], self.state_digest)
+        self.assertEqual(default["sheet"]["departments"][0]["departmentId"], "public")
+
+    def test_selected_apply_keeps_the_sources_existing_changes(self) -> None:
+        sheet = self.source_sheet()
+        addition = sheet_adding("store", zone="zone-hall")
+        sheet["departments"].extend(addition["departments"])
+        sheet["adjacencies"] = addition["adjacencies"]
+        before_head = self.repository.read_head()
+        response = self.client.post("/api/program", json={
+            "sourceRunId": self.source_run_id,
+            "stateDigest": self.source_state["stateDigest"],
+            "sheet": sheet,
+            "modelSource": None,
+        })
+        self.assertEqual(response.status_code, 202, response.text)
+        accepted = response.json()
+        job = self.finished(accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        continued = self.get(f"/api/state?run={accepted['candidateId']}")
+        self.assertNotEqual(continued["recordDigest"], self.source_state["recordDigest"])
+        retained = [
+            self.repository.load_json(ref)
+            for ref in self.repository.list_json(
+                run=self.repository.load_run(accepted["candidateId"]),
+                destination=run_records(accepted["candidateId"]),
+            )
+            if ref.relative_path.split("/")[-1].startswith(f"{STATE_RECORD}-")
+        ]
+        entities = {item["entity_id"]: item for item in retained[0]["entities"]}
+        self.assertEqual(entities["portico-base"]["fields"]["params"]["height"], 1.2)
+        self.assertEqual(entities["zone-hall"]["fields"]["program_node_refs"], ["program:selected/meeting"])
+        self.assertEqual(entities["store"]["schema"], "Space@1")
+        self.assertEqual(self.repository.read_head(), before_head)
+        self.assertEqual(self.get("/api/program")["stateDigest"], self.state_digest)
+        self.assertEqual(self.get(f"/api/program?run={self.source_run_id}")["sheet"], self.source_sheet())
+
+    def test_invalid_source_or_digest_is_refused_without_falling_back(self) -> None:
+        missing = self.client.get("/api/program", params={"run": "missing-source"})
+        self.assertEqual(missing.status_code, 404, missing.text)
+        self.assertEqual(missing.json()["code"], "RUN_NOT_FOUND")
+        for change, status, code in (
+            ({"sourceRunId": "missing-source"}, 404, "RUN_NOT_FOUND"),
+            ({"stateDigest": self.state_digest}, 409, "STALE_BASE"),
+        ):
+            with self.subTest(code=code):
+                response = self.client.post("/api/program", json={
+                    "sourceRunId": self.source_run_id,
+                    "stateDigest": self.source_state["stateDigest"],
+                    "sheet": self.source_sheet(),
+                    **change,
+                })
+                self.assertEqual(response.status_code, status, response.text)
+                self.assertEqual(response.json()["code"], code)
+
+    def test_an_inexact_selected_run_does_not_return_authored_wip(self) -> None:
+        self.repository.create_run("incomplete-program-source")
+        response = self.client.get("/api/program", params={"run": "incomplete-program-source"})
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "REFERENCE_STATE_NOT_EXACT")
 
 
 if __name__ == "__main__":  # pragma: no cover

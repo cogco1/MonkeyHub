@@ -13,8 +13,9 @@ dependencies = []
 cad-inspection = ["rhino3dm==8.32.1"]
 # P107 in-process OCCT executor (adapters.cad_execution.execute_occt_export):
 # one verified binding, cp312 win_amd64 wheel checked 2026-09-05.  It also
-# writes the mesh .3dm preview through rhino3dm.
-cad-occt = ["cadquery-ocp==7.9.3.1.1", "rhino3dm==8.32.1"]
+# writes the mesh .3dm preview through rhino3dm.  Pillow rasterises the
+# drawing SVG preview to PNG (adapters.drawing_svg.render_svg_png).
+cad-occt = ["cadquery-ocp==7.9.3.1.1", "rhino3dm==8.32.1", "Pillow>=12.3,<13"]
 
 [tool.setuptools.packages.find]
 include = ["archflow*"]

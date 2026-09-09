@@ -1216,6 +1216,55 @@ class OcctExportTests(unittest.TestCase):
         (plinth,) = structure["readback"].values()
         self.assertAlmostEqual(plinth["volume"], 12.0 * 1.0 * 0.5, places=6)
 
+    def test_native_loft_height_fix_rebuilds_an_old_program_cache_then_reuses_the_correct_export(self) -> None:
+        from unittest.mock import patch
+        from archflow.capabilities import element_producers
+
+        loft = _prism_row()
+        profiles = [[[x, height, z] for x, z in ((0.0, -1.5), (1.0, -1.5), (1.0, -0.5), (0.0, -0.5))] for height in (0.4, 1.4)]
+        loft = replace(loft, fields={**loft.fields, "producer": "loft", "params": {"profiles": profiles, "profile_size": 4}})
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(loft,)))
+        native_producer = element_producers.PRODUCERS["loft"]
+
+        def prior_producer_without_section_height(row, context):
+            produced = native_producer(row, context)
+            # The prior native producer passed raw section Y values but neither a seat offset nor its rise relation.
+            return replace(produced, operations=tuple(replace(op, parameters=tuple(param for param in op.parameters if param.name != "base_offset"))
+                                                       for op in produced.operations),
+                           relations=tuple(replace(relation, parameters={}) for relation in produced.relations))
+
+        with patch.dict(element_producers.PRODUCERS, {"loft": prior_producer_without_section_height}):
+            before = project.run_once()
+        old_seat = next(seat for seat in before["seat_results"] if seat["seat_id"] == "seat-structure")
+        old_path = Path(old_seat["cad"]["model"])
+        old_sha = _sha256_of(old_path)
+        old_body = _occt_backend.measure_shape(next(entry.shape for entry in _occt_backend.read_step(old_path, length_unit="meter") if entry.name == "obj-columns-plinth"))
+        self.assertAlmostEqual(old_body.bbox_min[2], 3.5, places=6)
+        self.assertEqual(before["closure_status"], "SATISFIED")
+
+        corrected = project.run_once()
+        self.assertTrue(corrected["seat_execution_complete"], corrected["seat_results"])
+        new_seat = next(seat for seat in corrected["seat_results"] if seat["seat_id"] == "seat-structure")
+        self.assertEqual(before["state_record_digest"], corrected["state_record_digest"])
+        self.assertEqual(before["design_state_digest"], corrected["design_state_digest"])
+        self.assertNotEqual(old_seat["program_digest"], new_seat["program_digest"])
+        self.assertNotEqual(old_seat["cad"]["execution_ref"], new_seat["cad"]["execution_ref"])
+        self.assertEqual(new_seat["cad"]["path"], "occt")
+        new_body = _occt_backend.measure_shape(next(entry.shape for entry in _occt_backend.read_step(Path(new_seat["cad"]["model"]), length_unit="meter") if entry.name == "obj-columns-plinth"))
+        self.assertEqual((new_body.valid, new_body.closed, new_body.solid_count), (True, True, 1))
+        self.assertAlmostEqual(new_body.bbox_min[2], 3.9, places=6)
+        self.assertAlmostEqual(new_body.bbox_max[2], 4.9, places=6)
+        self.assertEqual(corrected["closure_status"], "SATISFIED")
+        self.assertEqual(_relation_checks(project.repository, corrected)["columns-plinth-stands-on"]["status"], "held")
+        self.assertEqual(_sha256_of(old_path), old_sha)
+
+        again = project.run_once()
+        reused_seat = next(seat for seat in again["seat_results"] if seat["seat_id"] == "seat-structure")
+        self.assertEqual(reused_seat["cad"]["path"], "reused")
+        self.assertEqual(reused_seat["cad"]["execution_ref"], new_seat["cad"]["execution_ref"])
+        self.assertEqual(again["closure_status"], "SATISFIED")
+        self.assertEqual(len(project.files("seat-structure")), 4)
+
     def test_the_same_program_in_the_same_run_reuses_the_verified_files_and_nothing_else(self) -> None:
         project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
         first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
@@ -1394,6 +1443,252 @@ class OcctExportTests(unittest.TestCase):
         self.assertEqual(receipt["closure_status"], "OPEN")
         self.assertEqual(len(project.records("seat-occt-execution")), 1)
         self.assertEqual(project.records("seat-rhino-execution"), [])
+
+
+@NEEDS_OCCT
+class FinalSolidPairRunnerTests(unittest.TestCase):
+    """An explicit cross-seat final-solid relation is measured after export and reaches stage closure."""
+
+    RELATION_ID = "plinths-do-not-penetrate"
+    PAIR = ("obj-columns-plinth", "obj-envelope-plinth")
+
+    def setUp(self) -> None:
+        for patcher in _no_rhino():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _pair_record(self, offset_x: float = 12.0, *, pair=None) -> StateRecord:
+        structure = _prism_row()
+        envelope = _prism_row("exterior-walls", "envelope-plinth")
+        envelope = replace(envelope, fields={**envelope.fields, "params": {
+            **envelope.fields["params"], "profile": [[x + offset_x, z] for x, z in envelope.fields["params"]["profile"]],
+        }})
+        return _record(elements=(), extra_entities=(structure, envelope), relations=(
+            Relation(self.RELATION_ID, "clearance", structure.entity_id, envelope.entity_id,
+                     validator=ValidatorBinding("solid_nonpenetration", tolerance=0.0), parameters={"object_pairs": [list(pair or self.PAIR)]}),
+            Relation("legacy-plinth-gap", "clearance", structure.entity_id, envelope.entity_id,
+                     validator=ValidatorBinding("clearance_interval", interval_m=(0.0, 2.0))),
+        ))
+
+    def _run_required(self, project, *, options=None):
+        options = project.options if options is None else options
+        guard = _stage_guard(project.repository, project.run, project.record, options, required_checks=("solid_nonpenetration",))
+        return run_project(project.repository, run=project.run, stage_guard=guard, record=project.record,
+                           seats=_seats(DesignPhase.DESIGN_DEVELOPMENT), options=options)
+
+    def _solid_report(self, project, receipt):
+        summary = receipt["relation_checks"]
+        self.assertEqual(summary["basis"], "compiled-predicted-bounds")
+        self.assertEqual(summary["solid_check_basis"], "occt-step-solid-pairs")
+        report_ref = _ref(summary["solid_check_ref"])
+        self.assertEqual(report_ref.record_kind, "seat-relation-check")
+        report = project.repository.load_json(report_ref)
+        self.assertEqual((report["scope"], report["basis"]), ("stage-solid-pairs", "occt-step-solid-pairs"))
+        self.assertEqual([check["relation_id"] for check in report["checks"]], [self.RELATION_ID])
+        # The earlier bbox reports must not consume this relation or leave a second unchecked copy for closure.
+        earlier = _relation_checks(project.repository, receipt)
+        self.assertNotIn(self.RELATION_ID, earlier)
+        self.assertEqual(earlier["legacy-plinth-gap"]["status"], "held")
+        closure = project.repository.load_json(_ref(receipt["closure_ref"]))
+        self.assertIn(report_ref.sha256, closure["check_receipt_digests"])
+        return report, report["checks"][0], closure
+
+    def test_cross_seat_final_solids_distinguish_separation_contact_and_penetration_in_the_retained_report(self) -> None:
+        for offset, classification, volume, expected_status in (
+            (13.0, "separated", 0.0, "held"), (12.0, "contact", 0.0, "held"), (11.75, "penetrating", 0.125, "violated"),
+        ):
+            with self.subTest(classification=classification):
+                project = _ExportProject(self, self._pair_record(offset))
+                receipt = self._run_required(project)
+                report, check, closure = self._solid_report(project, receipt)
+                self.assertTrue(receipt["seat_execution_complete"], receipt["seat_results"])
+                self.assertEqual(check["status"], expected_status, check)
+                self.assertEqual(check["measured"][f"{classification}_pair_count"], 1)
+                self.assertAlmostEqual(check["measured"]["common_volume_m3_max"], volume, places=8)
+                self.assertAlmostEqual(check["measured"]["distance_m_min"], 1.0 if classification == "separated" else 0.0, places=8)
+                self.assertTrue(report["fully_checked"])
+                self.assertEqual(set(report["execution_refs"]), {seat["cad"]["execution_ref"] for seat in receipt["seat_results"]})
+                self.assertEqual(receipt["closure_status"], "OPEN" if expected_status == "violated" else "SATISFIED")
+                self.assertEqual(receipt["exit_binding_ref"] is None, expected_status == "violated")
+                self.assertEqual(closure["findings"], ([{"code": "check_failed", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}]
+                                                       if expected_status == "violated" else []))
+
+    def test_without_export_or_with_a_missing_final_object_the_required_relation_stays_unchecked(self) -> None:
+        for case in ("no-export", "missing-object"):
+            with self.subTest(case=case):
+                pair = (self.PAIR[0], "obj-not-delivered") if case == "missing-object" else self.PAIR
+                project = _ExportProject(self, self._pair_record(pair=pair))
+                options = replace(project.options, export=False) if case == "no-export" else project.options
+                receipt = self._run_required(project, options=options)
+                report, check, closure = self._solid_report(project, receipt)
+                self.assertEqual(check["status"], "unchecked", check)
+                self.assertFalse(report["fully_checked"])
+                self.assertEqual(check["measured"]["unchecked_pair_count"], 1)
+                self.assertEqual(receipt["closure_status"], "OPEN")
+                self.assertIsNone(receipt["exit_binding_ref"])
+                self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
+                if case == "no-export":
+                    self.assertEqual(report["execution_refs"], [])
+                    self.assertEqual(project.files("seat-structure") + project.files("seat-envelope"), [])
+                else:
+                    self.assertIn("obj-not-delivered", check["detail"])
+
+    def test_a_failed_seat_export_does_not_turn_its_predicted_bounds_into_a_solid_check(self) -> None:
+        from unittest.mock import patch
+        from archflow.adapters import cad_execution
+
+        real = cad_execution.execute_occt_export
+
+        def refuse_structure(program, *, binding, **kwargs):
+            if binding.stage_id.endswith("seat-structure"):
+                raise cad_execution.CadCapabilityError("the test structure export is unavailable", op_id="columns-plinth", kind="extrude")
+            return real(program, binding=binding, **kwargs)
+
+        project = _ExportProject(self, self._pair_record())
+        with patch.object(cad_execution, "execute_occt_export", side_effect=refuse_structure):
+            receipt = self._run_required(project)
+        report, check, closure = self._solid_report(project, receipt)
+        self.assertEqual(check["status"], "unchecked", check)
+        self.assertFalse(report["fully_checked"])
+        seats = {seat["seat_id"]: seat for seat in receipt["seat_results"]}
+        self.assertEqual(seats["seat-structure"]["status"], "export_failed")
+        self.assertEqual(seats["seat-envelope"]["cad"]["status"], "succeeded")
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        self.assertIn({"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}, closure["findings"])
+
+    def test_cached_exports_are_cold_read_again_and_the_solid_result_is_retained_once(self) -> None:
+        from unittest.mock import patch
+        from archflow.adapters import cad_execution
+
+        project = _ExportProject(self, self._pair_record())
+        first = self._run_required(project)
+        first_report, _, _ = self._solid_report(project, first)
+        with patch.object(cad_execution, "read_step", wraps=cad_execution.read_step) as cold_read:
+            second = self._run_required(project)
+        report, check, _ = self._solid_report(project, second)
+        first_cad = {seat["seat_id"]: seat["cad"] for seat in first["seat_results"]}
+        for seat in second["seat_results"]:
+            self.assertEqual(seat["cad"]["path"], "reused")
+            self.assertEqual(seat["cad"]["execution_ref"], first_cad[seat["seat_id"]]["execution_ref"])
+            self.assertEqual(len(project.files(seat["seat_id"])), 2)
+        self.assertEqual(cold_read.call_count, 2)
+        self.assertEqual({Path(call.args[0]) for call in cold_read.call_args_list}, {Path(cad["model"]) for cad in first_cad.values()})
+        self.assertEqual(report["checks"], first_report["checks"])
+        self.assertEqual(check["status"], "held")
+        self.assertEqual(second["closure_status"], "SATISFIED")
+        self.assertEqual(len(project.records("seat-occt-execution")), 2)
+
+    def test_cold_read_failure_or_step_changed_after_export_leaves_the_current_required_check_unchecked(self) -> None:
+        from unittest.mock import patch
+        from archflow.adapters import cad_execution
+        from archflow.runtime import project_runner
+
+        for failure in ("cold-read", "changed-bytes"):
+            with self.subTest(failure=failure):
+                project = _ExportProject(self, self._pair_record())
+                self.assertEqual(self._run_required(project)["closure_status"], "SATISFIED")
+                if failure == "cold-read":
+                    with patch.object(cad_execution, "read_step", side_effect=cad_execution.OcctBackendError("test final STEP cold read failed")):
+                        receipt = self._run_required(project)
+                else:
+                    real_export = project_runner._export
+
+                    def change_after_export(*args, **kwargs):
+                        cad = real_export(*args, **kwargs)
+                        if "seat-structure" in Path(cad["model"]).name:
+                            Path(cad["model"]).write_bytes(b"ISO-10303-21; changed after its export was returned")
+                        return cad
+
+                    with patch.object(project_runner, "_export", side_effect=change_after_export):
+                        receipt = self._run_required(project)
+                report, check, closure = self._solid_report(project, receipt)
+                self.assertEqual(check["status"], "unchecked", check)
+                self.assertFalse(report["fully_checked"])
+                self.assertEqual(receipt["closure_status"], "OPEN")
+                self.assertIsNone(receipt["exit_binding_ref"])
+                self.assertTrue(all(seat["cad"]["path"] == "reused" for seat in receipt["seat_results"]))
+                self.assertIn("cold read failed" if failure == "cold-read" else "bytes do not match", check["detail"])
+                self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
+
+    def test_real_separated_objects_cannot_certify_a_relation_to_a_different_entity(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs, read_step
+
+        pair = (self.PAIR[0], "obj-third-plinth")
+        record = self._pair_record(13.0, pair=pair)
+        third = _prism_row("exterior-walls", "third-plinth")
+        third = replace(third, fields={**third.fields, "params": {
+            **third.fields["params"], "profile": [[x + 26.0, z] for x, z in third.fields["params"]["profile"]],
+        }})
+        project = _ExportProject(self, replace(record, entities=record.entities + (third,)))
+        receipt = self._run_required(project)
+        report, check, closure = self._solid_report(project, receipt)
+        entries = [entry for seat in receipt["seat_results"] for entry in read_step(Path(seat["cad"]["model"]), length_unit="meter")]
+        self.assertEqual(measure_occt_solid_pairs(entries, object_pairs=(pair,), length_unit="meter")[pair]["status"], "separated")
+        self.assertEqual(check["status"], "unchecked", check)
+        self.assertIn("does not belong to declared endpoints", check["detail"])
+        self.assertIn("envelope-plinth", check["detail"])
+        self.assertFalse(report["fully_checked"])
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
+
+    def test_a_same_host_relation_cannot_include_another_hosts_final_object(self) -> None:
+        from archflow.adapters.cad_execution import measure_occt_solid_pairs, read_step
+
+        record = self._pair_record(13.0)
+        relations = tuple(replace(relation, object=relation.subject) if relation.relation_id == self.RELATION_ID else relation for relation in record.relations)
+        project = _ExportProject(self, replace(record, relations=relations))
+        receipt = self._run_required(project)
+        report, check, closure = self._solid_report(project, receipt)
+        entries = [entry for seat in receipt["seat_results"] for entry in read_step(Path(seat["cad"]["model"]), length_unit="meter")]
+        self.assertEqual(measure_occt_solid_pairs(entries, object_pairs=(self.PAIR,), length_unit="meter")[self.PAIR]["status"], "separated")
+        self.assertEqual(check["status"], "unchecked", check)
+        self.assertIn("does not belong to declared endpoints", check["detail"])
+        self.assertFalse(report["fully_checked"])
+        self.assertEqual(receipt["closure_status"], "OPEN")
+        self.assertIsNone(receipt["exit_binding_ref"])
+        self.assertEqual(closure["findings"], [{"code": "missing_check", "requirement_id": "solid_nonpenetration", "receipt_id": self.RELATION_ID, "refs": []}])
+
+    def test_two_real_outputs_of_the_same_column_array_can_satisfy_its_same_host_relation(self) -> None:
+        pair = ("obj-columns-front-0", "obj-columns-front-1")
+        envelope = _prism_row("exterior-walls", "envelope-plinth")
+        envelope = replace(envelope, fields={**envelope.fields, "params": {
+            **envelope.fields["params"], "profile": [[x, z - 1.0] for x, z in envelope.fields["params"]["profile"]],
+        }})
+        record = _record(elements=("portico-columns",), extra_entities=(envelope,), relations=(
+            Relation(self.RELATION_ID, "clearance", "columns-front", "columns-front",
+                     validator=ValidatorBinding("solid_nonpenetration", tolerance=0.0), parameters={"object_pairs": [list(pair)]}),
+            Relation("legacy-plinth-gap", "clearance", "columns-front", "envelope-plinth",
+                     validator=ValidatorBinding("clearance_interval", interval_m=(0.0, 2.0))),
+        ))
+        project = _ExportProject(self, record)
+        receipt = self._run_required(project)
+        report, check, closure = self._solid_report(project, receipt)
+        structure = next(seat for seat in receipt["seat_results"] if seat["seat_id"] == "seat-structure")
+        retained = project.repository.load_json(_ref(structure["cad"]["execution_ref"]))
+        self.assertTrue(set(pair).issubset(retained["physical_object_ids"]))
+        self.assertEqual(check["status"], "held", check)
+        self.assertEqual(check["measured"]["separated_pair_count"], 1)
+        self.assertAlmostEqual(check["measured"]["distance_m_min"], 1.7, places=8)
+        self.assertAlmostEqual(check["measured"]["common_volume_m3_max"], 0.0, places=8)
+        self.assertTrue(report["fully_checked"])
+        self.assertEqual(report["execution_refs"], [structure["cad"]["execution_ref"]])
+        self.assertEqual(receipt["closure_status"], "SATISFIED")
+        self.assertIsNotNone(receipt["exit_binding_ref"])
+        self.assertEqual(closure["findings"], [])
+
+    def test_reversing_a_cross_seat_pair_preserves_its_endpoint_binding(self) -> None:
+        project = _ExportProject(self, self._pair_record(13.0, pair=tuple(reversed(self.PAIR))))
+        receipt = self._run_required(project)
+        report, check, closure = self._solid_report(project, receipt)
+        self.assertEqual(check["status"], "held", check)
+        self.assertEqual(check["measured"]["separated_pair_count"], 1)
+        self.assertAlmostEqual(check["measured"]["distance_m_min"], 1.0, places=8)
+        self.assertTrue(report["fully_checked"])
+        self.assertEqual(receipt["closure_status"], "SATISFIED")
+        self.assertIsNotNone(receipt["exit_binding_ref"])
+        self.assertEqual(closure["findings"], [])
 
 
 class CadBackendSelectionTests(unittest.TestCase):

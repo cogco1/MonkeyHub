@@ -32,13 +32,23 @@ import {
 } from "./error";
 import {
   applyProgramApiProgramPost,
+  associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost,
+  chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
   compileIntentApiIntentsPost,
+  createDocumentApiDocumentsPost,
   createProposalApiProposalsPost,
   createViewportCaptureApiCapturesPost,
+  getUserSettingsApiSettingsUserGet,
+  putUserSettingsApiSettingsUserPut,
   readArtifactBytesApiArtifactsSha256BytesGet,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
+  readDocumentBytesApiDocumentsAssetSha256BytesGet,
+  readDocumentPageAnnotationsApiDocumentAnnotationsGet,
+  readDocumentsApiDocumentsGet,
   readJobApiJobsJobIdGet,
+  readSavedModelAnnotationsApiModelAnnotationsGet,
+  readWorkingCopiesApiWorkingCopiesGet,
   readProjectApiProjectGet,
   readProjectsApiProjectsGet,
   readProposalApiProposalsProposalIdGet,
@@ -48,6 +58,7 @@ import {
   readSemanticsApiSemanticsGet,
   readSheetApiProgramGet,
   readStateApiStateGet,
+  readSubmittedDocumentCommentsApiDocumentCommentsGet,
   readVolumesApiStateVolumesGet,
   makeMassingOptionApiOptionsPost,
   selectOptionApiOptionsOptionIdSelectPost,
@@ -55,6 +66,8 @@ import {
   compareCandidateApiCandidatesCandidateIdCompareGet,
   resolveApiPickResolvePost,
   startCandidateApiProposalsProposalIdCandidatePost,
+  writeDocumentPageAnnotationsApiDocumentAnnotationsPut,
+  writeSavedModelAnnotationsApiModelAnnotationsPut,
 } from "./generated";
 import type {
   ArtifactListDto,
@@ -63,12 +76,18 @@ import type {
   ClosureDto,
   ClosureRequestDto,
   CompareDto,
+  DocumentAnnotationsDto,
+  DocumentAnnotationsRequestDto,
+  DocumentCommentsDto,
   FrameDto,
   IntentDto,
   IntentRequestDto,
   JobDto,
   MassingOptionDto,
   MassingOptionRequestDto,
+  ModelAnnotationsDto,
+  ModelAnnotationsRequestDto,
+  ModelSourceDto,
   OptionsDto,
   PickRequestDto,
   PickResolutionDto,
@@ -80,10 +99,17 @@ import type {
   ProposalDto,
   ProposalRequestDto,
   SemanticsDto,
+  SourceDocumentDto,
+  SourceDocumentListDto,
+  SourceDocumentRequestDto,
   StateProjectionDto,
+  UserSettingsDto,
   ValidationDto,
   ViewportCaptureDto,
   VolumesDto,
+  WorkingCopyDto,
+  WorkingCopyListDto,
+  WorkingCopySelectionRequestDto,
 } from "./generated";
 
 // The error type and its codes are defined in `error.ts` so that the
@@ -124,6 +150,37 @@ function base64Of(buffer: ArrayBuffer): string {
 // stronger and is the one it asks: `GET /api/project` and `GET /api/state`
 // either return the binding or fail with a code the top bar renders.
 export const studio = {
+  userSettings(): Promise<UserSettingsDto> {
+    return call("GET /api/settings/user", getUserSettingsApiSettingsUserGet());
+  },
+
+  saveUserSettings(body: UserSettingsDto): Promise<UserSettingsDto> {
+    return call("PUT /api/settings/user", putUserSettingsApiSettingsUserPut({ body }));
+  },
+
+  workingCopies(): Promise<WorkingCopyListDto> {
+    return call("GET /api/working-copies", readWorkingCopiesApiWorkingCopiesGet());
+  },
+
+  selectWorkingCopy(groupId: string, body: WorkingCopySelectionRequestDto): Promise<WorkingCopyDto> {
+    return call(`PUT /api/working-copies/${groupId}/selection`, chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut({
+      path: { group_id: groupId }, body,
+    }));
+  },
+
+  modelAnnotations(modelSource: ModelSourceDto): Promise<ModelAnnotationsDto> {
+    return call("GET /api/model-annotations", readSavedModelAnnotationsApiModelAnnotationsGet({ query: modelSource }));
+  },
+
+  saveModelAnnotations(body: ModelAnnotationsRequestDto): Promise<ModelAnnotationsDto> {
+    return call("PUT /api/model-annotations", writeSavedModelAnnotationsApiModelAnnotationsPut({ body }));
+  },
+
+  bindDocumentModelSource(projectId: string, runId: string, assetSha256: string, modelSource: ModelSourceDto): Promise<SourceDocumentDto> {
+    return call(`POST /api/documents/${assetSha256}/model-source`, associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost({
+      path: { asset_sha256: assetSha256 }, body: { projectId, runId, modelSource },
+    }));
+  },
   project(): Promise<ProjectBindingDto> {
     return call("GET /api/project", readProjectApiProjectGet());
   },
@@ -169,8 +226,11 @@ export const studio = {
   },
 
   /** The baseline and every massing option this server process holds. */
-  options(): Promise<OptionsDto> {
-    return call("GET /api/options", readOptionsApiOptionsGet());
+  options(run?: string | null): Promise<OptionsDto> {
+    return call(
+      "GET /api/options",
+      readOptionsApiOptionsGet(run == null ? {} : { query: { run } }),
+    );
   },
 
   /** One deterministic transform of the record's massing, measured. */
@@ -193,8 +253,11 @@ export const studio = {
    * The project's program sheet: the architect's own where one is authored,
    * else the record's own reading of its zones. `source` says which.
    */
-  program(): Promise<ProgramDto> {
-    return call("GET /api/program", readSheetApiProgramGet());
+  program(run?: string | null): Promise<ProgramDto> {
+    return call(
+      "GET /api/program",
+      readSheetApiProgramGet(run == null ? {} : { query: { run } }),
+    );
   },
 
   /**
@@ -244,6 +307,67 @@ export const studio = {
       }) as Promise<FieldsResult<Blob>>,
     );
     return new File([blob], fileName, { type: "application/octet-stream" });
+  },
+
+  documents(runId: string): Promise<SourceDocumentListDto> {
+    return call("GET /api/documents", readDocumentsApiDocumentsGet({ query: { runId } }));
+  },
+
+  /** Upload the original bytes; the server validates the MIME type and size. */
+  async uploadDocument(projectId: string, runId: string, file: File): Promise<SourceDocumentDto> {
+    const contentBase64 = base64Of(await file.arrayBuffer());
+    return call(
+      "POST /api/documents",
+      createDocumentApiDocumentsPost({
+        body: {
+          projectId,
+          runId,
+          fileName: file.name,
+          mimeType: file.type as SourceDocumentRequestDto["mimeType"],
+          contentBase64,
+        },
+      }),
+    );
+  },
+
+  async documentFile(runId: string, assetSha256: string, fileName: string): Promise<File> {
+    const blob = await call<Blob>(
+      `GET /api/documents/${assetSha256}/bytes`,
+      readDocumentBytesApiDocumentsAssetSha256BytesGet({
+        path: { asset_sha256: assetSha256 },
+        query: { runId },
+        parseAs: "blob",
+      }) as Promise<FieldsResult<Blob>>,
+    );
+    return new File([blob], fileName, { type: blob.type });
+  },
+
+  documentAnnotations(
+    runId: string,
+    assetSha256: string,
+    pageIndex: number,
+    revisionSha256?: string | null,
+  ): Promise<DocumentAnnotationsDto> {
+    return call(
+      "GET /api/document-annotations",
+      readDocumentPageAnnotationsApiDocumentAnnotationsGet({
+        query: { runId, assetSha256, pageIndex, revisionSha256 },
+      }),
+    );
+  },
+
+  saveDocumentAnnotations(body: DocumentAnnotationsRequestDto): Promise<DocumentAnnotationsDto> {
+    return call(
+      "PUT /api/document-annotations",
+      writeDocumentPageAnnotationsApiDocumentAnnotationsPut({ body }),
+    );
+  },
+
+  documentComments(runId: string): Promise<DocumentCommentsDto> {
+    return call(
+      "GET /api/document-comments",
+      readSubmittedDocumentCommentsApiDocumentCommentsGet({ query: { runId } }),
+    );
   },
 
   resolvePick(body: PickRequestDto): Promise<PickResolutionDto> {

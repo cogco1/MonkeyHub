@@ -31,6 +31,7 @@ import { candidateSourceLabel } from "../../artifacts/artifactLabels";
 import { artifactKindKey, isViewable } from "../../artifacts/artifactSelection";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
+import { usePreferences } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
 
 /** How often the job is asked whether it is over. */
@@ -57,6 +58,7 @@ export function CandidateCard({
   labelOf(candidateId: string): string | null;
 }) {
   const t = useT();
+  const { developerMode } = usePreferences();
   const [job, setJob] = useState<Loadable<JobDto>>(idle);
   const [candidate, setCandidate] = useState<Loadable<CandidateDto>>(idle);
   // A clock while the run is in flight: eighty seconds of one word was the
@@ -127,14 +129,14 @@ export function CandidateCard({
               ? job.value.status
               : t("candidate.status.reading")}
           </span>
-          {job.status === "ready" && job.value.wallTimeS !== null && (
+          {developerMode && job.status === "ready" && job.value.wallTimeS !== null && (
             <span className="quiet"> {job.value.wallTimeS.toFixed(1)} s</span>
           )}
-          {inFlight && elapsed !== null && (
+          {developerMode && inFlight && elapsed !== null && (
             <span className="quiet mono"> {elapsed.toFixed(0)} s</span>
           )}
         </p>
-        <p className="quiet mono">{candidateId}</p>
+        {developerMode && <p className="quiet mono">{candidateId}</p>}
       </div>
       {job.status === "ready" && job.value.status === "queued" && job.value.waitingReason && (
         <div className="card__row">
@@ -219,6 +221,7 @@ function CandidateReadout({
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
   const t = useT();
+  const { developerMode } = usePreferences();
   const seats = candidate.seatResults;
   return (
     <>
@@ -230,7 +233,7 @@ function CandidateReadout({
               : "candidate.seats.many",
             { count: seats.length },
           )}
-          {seats.map((seat) => (
+          {developerMode && seats.map((seat) => (
             <span key={seat.seatId}>
               {" · "}
               <span className="mono">{seat.seatId}</span>{" "}
@@ -241,16 +244,16 @@ function CandidateReadout({
             </span>
           ))}
         </p>
-        <p className="quiet">
+        {developerMode && <p className="quiet">
           <BilingualText source={candidate.harness} />
-        </p>
+        </p>}
         {!candidate.seatExecutionComplete && (
           <p className="quiet">{t("candidate.seatExecutionIncomplete")}</p>
         )}
         {/* Where the seconds went, as the receipt times them: the run, then
             each export with the runner's own word for its path. A run that
             exported nothing says so with no export figures at all. */}
-        <p className="quiet mono">
+        {developerMode && <p className="quiet mono">
           {candidate.timings.runS === null
             ? t("candidate.timings.runUnrecorded")
             : (
@@ -284,7 +287,7 @@ function CandidateReadout({
               ))}
             </>
           )}
-        </p>
+        </p>}
       </div>
       <div className="card__row">
         {candidate.artifacts.length === 0 ? (
@@ -314,13 +317,13 @@ function CandidateReadout({
                     : (
                         <>
                           {t("candidate.preview")} {" "}
-                          <span className="mono">{artifact.fileName}</span>
+                          {developerMode && <span className="mono">{artifact.fileName}</span>}
                         </>
                       )}
                 </button>
               ) : null,
             )}
-            {candidate.artifacts.map((artifact) =>
+            {developerMode && candidate.artifacts.map((artifact) =>
               artifact.available && artifact.sha256 ? (
                 <a
                   key={`save-${artifact.artifactId}`}
@@ -347,19 +350,19 @@ function CandidateReadout({
             )}
           </div>
         )}
-        {candidate.skippedRuns.length > 0 && (
+        {developerMode && candidate.skippedRuns.length > 0 && (
           <p className="quiet mono">
             {t("candidate.skippedRuns")}: {" "}
             <span>{candidate.skippedRuns.join(", ")}</span>
           </p>
         )}
       </div>
-      {candidate.honesty.length > 0 && (
+      {developerMode && candidate.honesty.length > 0 && (
         <div className="card__row">
           <Verbatim lines={candidate.honesty} />
         </div>
       )}
-      <div className="card__row actions">
+      {developerMode && <div className="card__row actions">
         <button
           type="button"
           className="btn btn--link"
@@ -367,7 +370,7 @@ function CandidateReadout({
         >
           {t("candidate.receipts")}
         </button>
-      </div>
+      </div>}
     </>
   );
 }

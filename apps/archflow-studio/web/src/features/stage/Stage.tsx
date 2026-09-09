@@ -7,15 +7,17 @@
  * stage decides nothing.
  */
 
-import type { ReactNode, RefObject } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import type { StudioApiError } from "../../api/client";
-import type { GestureDto, ProjectArtifactDto } from "../../api/generated";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
+import { designObjectLabel } from "../../app/format";
 import type { EvidenceTab } from "../../app/evidence";
 import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useT } from "../../i18n/useT";
+import { usePreferences } from "../settings/preferences";
 import type { SceneInspection } from "../../viewer/sceneInspection";
 import type { ModelDisplayMode } from "../../viewer/modelDisplay";
 import {
@@ -24,9 +26,12 @@ import {
   type ViewportPick,
   type ViewportStatus,
 } from "../../viewer/ThreeDmViewport";
-import { Annotate, GESTURE_TOOLS, type GestureTool } from "./Annotate";
+import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "./Annotate";
 import { SourceChip, type ViewState } from "./SourceChip";
 import { VersionsStrip, type VersionGroup } from "./VersionsStrip";
+import { DocumentCanvas } from "./DocumentCanvas";
+import { createDocumentAnnotationsController } from "./useDocumentAnnotations";
+import type { ModelAnnotationsHandle } from "./useModelAnnotations";
 
 export interface PickedFacts {
   readonly componentId: string | null;
@@ -73,6 +78,10 @@ export function Stage({
   view,
   picked,
   versions,
+  hasNewVersions = false,
+  onVersionsOpen,
+  workingCopies,
+  onOpenWorkingOption,
   loadingSha,
   loadedShas,
   evidenceCounts,
@@ -89,6 +98,20 @@ export function Stage({
   gestures,
   onTool,
   onGesture,
+  onUndoGesture,
+  onRedoGesture,
+  canUndoGesture,
+  canRedoGesture,
+  onEraseGestures,
+  modelAnnotations,
+  annotationsReady,
+  documentProjectId,
+  documentModelSources,
+  editingModelSource,
+  viewedModelSource,
+  onContinueModelSource,
+  onDocumentSubmit,
+  documentVisualInputAvailable,
   onInspection,
   onStatus,
   onRequestFile,
@@ -126,6 +149,10 @@ export function Stage({
   view: ViewState | null;
   picked: PickedFacts | null;
   versions: readonly VersionGroup[];
+  hasNewVersions?: boolean;
+  onVersionsOpen?(): void;
+  workingCopies: readonly WorkingCopyDto[];
+  onOpenWorkingOption(option: WorkingCopyOptionDto): void;
   loadingSha: string | null;
   /** The digests on screen: one seat's, or every seat of a run. */
   loadedShas: readonly string[];
@@ -149,6 +176,20 @@ export function Stage({
   gestures: readonly GestureDto[];
   onTool(tool: GestureTool | null): void;
   onGesture(gesture: GestureDto): void;
+  onUndoGesture(): void;
+  onRedoGesture(): void;
+  canUndoGesture: boolean;
+  canRedoGesture: boolean;
+  onEraseGestures(indices: readonly number[]): void;
+  modelAnnotations: ModelAnnotationsHandle | null;
+  annotationsReady: boolean;
+  documentProjectId: string | null;
+  documentModelSources: readonly { label: string; modelSource: ModelSourceDto }[];
+  editingModelSource: ModelSourceDto | null;
+  viewedModelSource: ModelSourceDto | null;
+  onContinueModelSource(source: ModelSourceDto): Promise<void>;
+  onDocumentSubmit(utterance: string, refs: readonly DocumentAnnotationRefDto[], modelSource: ModelSourceDto, visuals: DocumentVisualInputDto[]): Promise<void>;
+  documentVisualInputAvailable: boolean;
   onInspection(inspection: SceneInspection | null): void;
   onStatus(status: ViewportStatus, message: string): void;
   onRequestFile(): void;
@@ -187,6 +228,32 @@ export function Stage({
   onEvidence(tab: EvidenceTab): void;
 }) {
   const t = useT();
+  const { developerMode } = usePreferences();
+  const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
+  const [annotationCancel, setAnnotationCancel] = useState(0);
+  const [documentLink] = useState(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get("view") !== "documents") return null;
+    const page = Number(query.get("documentPage") ?? 0);
+    return { runId: query.get("documentRun"), source: query.get("documentSource"),
+      page: Number.isSafeInteger(page) && page >= 0 ? page : -1 };
+  });
+  const [documentOpen, setDocumentOpen] = useState(documentLink !== null);
+  const [documentMounted, setDocumentMounted] = useState(documentLink !== null);
+  // A document's storage run remains fixed when its associated model becomes
+  // the editing base. Continuing from B must keep the drawing already open.
+  const [openedDocumentRunId, setOpenedDocumentRunId] = useState<string | null>(documentLink?.runId ?? null);
+  const documentRunId = openedDocumentRunId ?? editingBaseRunId;
+  useEffect(() => {
+    if (documentMounted && openedDocumentRunId === null && editingBaseRunId !== null) {
+      setOpenedDocumentRunId(editingBaseRunId);
+    }
+  }, [documentMounted, editingBaseRunId, openedDocumentRunId]);
+  const [documentAnnotationsController] = useState(createDocumentAnnotationsController);
+  const [eraser, setEraser] = useState(false);
+  const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
+  const [viewToolsOpen, setViewToolsOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const activeTool = GESTURE_TOOLS.find((item) => item.kind === tool);
   const captureFeedback =
     captureState === "busy"
@@ -196,8 +263,71 @@ export function Stage({
         : captureState === "error"
           ? t("stage.tools.screenshotFailed")
           : "";
+  const sameSource = editingModelSource !== null && viewedModelSource !== null &&
+    editingModelSource.runId === viewedModelSource.runId &&
+    editingModelSource.stateDigest === viewedModelSource.stateDigest &&
+    editingModelSource.assetSha256 === viewedModelSource.assetSha256;
+  const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? editingBaseRunId;
+  const versionCount = new Set([
+    ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
+      .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
+    ...workingCopies.flatMap((copy) => copy.options.map((option) => `${option.modelSource.runId}:${option.modelSource.assetSha256}`)),
+  ]).size;
+  const loadedOptionLabel = workingCopies.flatMap((copy) => copy.options)
+    .find((option) => option.modelSource.runId === loadedRunId && loadedShas.includes(option.modelSource.assetSha256))?.label;
+  const sessionStatus = <>
+    {editingBaseRunId !== null && (
+      <div className="editing-base" data-source-match={sameSource ? "same" : "different"}>
+        <span role="status" aria-live="polite">
+          {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
+          {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
+        </span>
+        {loadedRunId !== null && !sameSource && (
+          <button
+            type="button"
+            className="btn btn--small"
+            disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
+            title={t("stage.base.continueTitle")}
+            onClick={() => viewedModelSource ? void onContinueModelSource(viewedModelSource) : onContinue(loadedRunId)}
+          >
+            {t("stage.base.continue")}
+          </button>
+        )}
+        {explicitBase && (
+          <button type="button" className="btn btn--small" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"} onClick={onDefaultBase}>
+            {t("stage.base.default")}
+          </button>
+        )}
+        {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
+      </div>
+    )}
+    {modelAnnotations && <div className="stage-source-line__save" data-model-annotations-status={modelAnnotations.error ? "error" :
+      !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
+      {!modelAnnotations.error && <span role="status">{t(!modelAnnotations.ready ? "stage.annotations.loading" :
+        modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
+      {modelAnnotations.error && <>
+        <ErrorPanel error={modelAnnotations.error} what="/api/model-annotations" />
+        <button type="button" className="btn btn--small" onClick={() => void (!modelAnnotations.ready || modelAnnotations.error?.status === 409
+          ? modelAnnotations.reload() : modelAnnotations.save()).catch(() => undefined)}>
+          {t(!modelAnnotations.ready || modelAnnotations.error.status === 409 ? "stage.annotations.reload" : "stage.annotations.retry")}
+        </button>
+      </>}
+    </div>}
+  </>;
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}>
+      <div className="stage-mode-switch" role="group" aria-label={t("document.workspace")}>
+        <button type="button" aria-pressed={!documentOpen} onClick={() => setDocumentOpen(false)}>{t("document.model")}</button>
+        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); setDocumentMounted(true); setDocumentOpen(true); }}>{t("document.workspace")}</button>
+      </div>
+      <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
+        onKeyDown={(event) => {
+          if (!(event.ctrlKey || event.metaKey) || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
+          if (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y") {
+            event.preventDefault(); setAnnotationCancel((value) => value + 1);
+            if (event.shiftKey || event.key.toLowerCase() === "y") onRedoGesture(); else onUndoGesture();
+          }
+        }}>
       {/* A machine with no WebGL context throws while the renderer is built;
           behind its own boundary that costs the canvas and nothing else. */}
       <ErrorBoundary label={t("stage.viewer.label")}>
@@ -212,9 +342,13 @@ export function Stage({
       </ErrorBoundary>
       <Annotate
         viewportRef={viewportRef}
-        tool={tool}
+        tool={annotationsReady ? tool : null}
         gestures={gestures}
         onGesture={onGesture}
+        style={annotationStyle}
+        cancelToken={annotationCancel}
+        eraser={annotationsReady && eraser}
+        onErase={onEraseGestures}
       />
       {/* The shield preserves the stage's loading boundary while the translucent matte
           backing leaves the previous picture legible as context. */}
@@ -222,6 +356,7 @@ export function Stage({
 
       <div className="hud">
         <div className="hud__left">
+          <div className="stage-source-line" data-source-match={sameSource ? "same" : "different"}>
           <SourceChip
             sourceLabel={sourceLabel}
             inspection={inspection}
@@ -229,31 +364,8 @@ export function Stage({
             message={message}
             view={view}
           />
-          {editingBaseRunId !== null && (
-            <div className="editing-base">
-              <span role="status" aria-live="polite">
-                {changingBase ? t("stage.base.loading") : t("stage.base.current")} {" "}
-                <span title={editingBaseRunId}>{editingBaseLabel ?? <code>{editingBaseRunId}</code>}</span>
-              </span>
-              {loadedRunId !== null && loadedRunId !== editingBaseRunId && (
-                <button
-                  type="button"
-                  className="btn btn--small"
-                  disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
-                  title={t("stage.base.continueTitle")}
-                  onClick={() => onContinue(loadedRunId)}
-                >
-                  {t("stage.base.continue")}
-                </button>
-              )}
-              {explicitBase && (
-                <button type="button" className="btn btn--small" disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading"} onClick={onDefaultBase}>
-                  {t("stage.base.default")}
-                </button>
-              )}
-              {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
-            </div>
-          )}
+          {sessionStatus}
+          </div>
           {blend && (
             <div className="blend" aria-label={t("stage.blend.ariaLabel")}>
               <span className="label">{t("stage.blend.before")}</span>
@@ -268,9 +380,10 @@ export function Stage({
                 onChange={(event) => onBlend(Number(event.currentTarget.value))}
               />
               <span className="label">{t("stage.blend.after")}</span>
-              <span className="quiet mono blend__meta">
-                {blend.candidateId} · {t("stage.blend.meshes", { count: blend.meshes })} ·{" "}
-                {t("stage.blend.afterTinted")}
+              <span className={`quiet${developerMode ? " mono blend__meta" : ""}`}>
+                {developerMode
+                  ? <>{blend.candidateId} · {t("stage.blend.meshes", { count: blend.meshes })} · {t("stage.blend.afterTinted")}</>
+                  : t("stage.blend.afterTinted")}
               </span>
               <button type="button" className="btn btn--small" onClick={onEndBlend}>
                 {t("stage.blend.done")}
@@ -280,19 +393,25 @@ export function Stage({
           {picked && (
             <div
               className="picked"
-              title={t("stage.picked.title", {
+              title={developerMode ? t("stage.picked.title", {
                 status: picked.status,
                 sourceState: picked.sourceState,
-              })}
+              }) : undefined}
             >
               <span className="label">{t("stage.picked.label")}</span>
-              <span className="mono">
+              {developerMode && <span className="mono">
                 {picked.elementId ?? picked.componentId ?? t("stage.picked.none")}
-              </span>
-              {picked.status !== "resolved" && (
+              </span>}
+              {!developerMode && <span>
+                {designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}
+              </span>}
+              {!developerMode && picked.status !== "resolved" && (
+                <span className="picked__meta">{t("stage.picked.unresolved")}</span>
+              )}
+              {developerMode && picked.status !== "resolved" && (
                 <span className="picked__meta">{picked.status}</span>
               )}
-              {picked.fields.map(([key, value]) => (
+              {developerMode && picked.fields.map(([key, value]) => (
                 <span key={key} className="mono picked__field">
                   {key} {value}
                 </span>
@@ -306,24 +425,45 @@ export function Stage({
             />
           )}
         </div>
-        <div className="viewtools">
-          {GESTURE_TOOLS.map((item) => (
-            <button
-              key={item.kind}
-              type="button"
-              title={t(item.titleKey)}
-              aria-pressed={tool === item.kind}
-              onClick={() => onTool(tool === item.kind ? null : item.kind)}
-            >
-              {item.glyph} {t(item.labelKey)}
+        <div className="viewtools-wrap">
+          <div className="viewtools">
+            <button type="button" aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
+              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); }}>
+              {t("stage.tools.annotate")}{activeTool && !eraser ? ` · ${t(activeTool.labelKey)}` : ""}
             </button>
-          ))}
-          {tool && activeTool && (
-            <span className="viewtools__hint quiet">
-              {t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}
+            <button type="button" aria-pressed={eraser} disabled={!annotationsReady} title={t("document.tool.eraser")}
+              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser((value) => !value); }}>{t("document.tool.eraser")}</button>
+            <button type="button" disabled={!canUndoGesture} title={t("stage.tools.undo.title")} onClick={onUndoGesture}>{t("stage.tools.undo.label")}</button>
+            <button type="button" disabled={!canRedoGesture} title={t("document.redo")} onClick={onRedoGesture}>{t("document.redo")}</button>
+            {(tool !== null || eraser) && <button type="button" title={t("stage.tools.cancel.title")} onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }}>{t("stage.tools.cancel.label")}</button>}
+            <span className="viewtools__sep" aria-hidden="true" />
+            <button type="button" onClick={() => viewportRef.current?.fitView()}>{t("stage.tools.fit")}</button>
+            <button type="button" onClick={() => viewportRef.current?.frontView()}>{t("stage.tools.front")}</button>
+            <button type="button" aria-expanded={viewToolsOpen} aria-controls="view-tools"
+              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); }}>{t("stage.tools.viewOptions")}</button>
+          </div>
+          {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
+            {GESTURE_TOOLS.map((item) => (
+              <button key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
+                aria-pressed={!eraser && tool === item.kind}
+                onClick={() => { setEraser(false); onTool(!eraser && tool === item.kind ? null : item.kind); }}>
+                {item.glyph} {t(item.labelKey)}
+              </button>
+            ))}
+            <span className="viewtools__sep" aria-hidden="true" />
+            <span className="annotation-style" aria-label={t("stage.tools.colour")}>
+              {["#e5534b", "#2f80ed", "#f2c94c", "#ffffff"].map((color) => (
+                <button key={color} type="button" className="annotation-style__colour" aria-label={color} aria-pressed={annotationStyle.color === color} onClick={() => setAnnotationStyle((current) => ({ ...current, color }))} style={{ "--annotation-colour": color } as CSSProperties} />
+              ))}
             </span>
-          )}
-          <span className="viewtools__sep" aria-hidden="true" />
+            <span className="annotation-style" aria-label={t("stage.tools.lineWidth")}>
+              {([2, 4, 6] as const).map((lineWidth) => (
+                <button key={lineWidth} type="button" className="annotation-style__width" aria-label={`${lineWidth}px`} aria-pressed={annotationStyle.lineWidth === lineWidth} onClick={() => setAnnotationStyle((current) => ({ ...current, lineWidth }))}><span style={{ height: lineWidth }} /></button>
+              ))}
+            </span>
+            {tool && activeTool && <span className="viewtools__hint quiet">{t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}</span>}
+          </div>}
+          {viewToolsOpen && <div id="view-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.viewOptions")}>
           <button
             type="button"
             aria-pressed={displayMode === "model"}
@@ -358,8 +498,8 @@ export function Stage({
           <button
             type="button"
             aria-pressed={programOpen}
-            disabled={explicitBase || changingBase}
-            title={t(explicitBase ? "stage.base.programUnavailable" : "program.openTitle")}
+            disabled={changingBase}
+            title={t("program.openTitle")}
             onClick={onToggleProgram}
           >
             {t("program.open")}
@@ -384,12 +524,6 @@ export function Stage({
               ? t("stage.tools.home")
               : t("stage.tools.reference")}
           </button>
-          <button type="button" onClick={() => viewportRef.current?.fitView()}>
-            {t("stage.tools.fit")}
-          </button>
-          <button type="button" onClick={() => viewportRef.current?.frontView()}>
-            {t("stage.tools.front")}
-          </button>
           <button
             type="button"
             disabled={
@@ -410,35 +544,37 @@ export function Stage({
               ? t("stage.tools.screenshotBusy")
               : t("stage.tools.screenshot")}
           </button>
-          <span
-            className="viewtools__hint quiet mono"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            title={captureFeedback || undefined}
-          >
-            {captureFeedback}
-          </span>
           <button type="button" onClick={() => viewportRef.current?.clear()}>
             {t("stage.tools.clear")}
           </button>
           <button type="button" onClick={onRequestFile}>
             {t("stage.tools.open3dm")}
           </button>
+          </div>}
+          {captureFeedback && <span className="viewtools__feedback" role="status" aria-live="polite" aria-atomic="true">{captureFeedback}</span>}
         </div>
       </div>
 
       <div className="stage__foot">
-        <VersionsStrip
-          groups={versions}
-          loadingSha={loadingSha}
-          loadedShas={loadedShas}
-          loadedRunId={loadedRunId}
-          onOpen={onOpenVersion}
-          onOpenRun={onOpenRun}
-          onCompare={onCompareVersion}
-        />
-        <span className="stage__spacer" />
+        <div className="stage__versions">
+          <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
+            onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); }}>
+            {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
+            {loadedOptionLabel && <span className="stage__versions-current">{loadedOptionLabel}</span>}
+            {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
+          </button>
+          {versionsOpen && <div id="stage-versions-panel" className="stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
+            <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
+              <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
+            </div>
+            <VersionsStrip
+              workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
+              groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
+              onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
+            />
+          </div>}
+        </div>
+        {developerMode && <><span className="stage__spacer" />
         <button
           type="button"
           className="drawer-tab"
@@ -467,13 +603,23 @@ export function Stage({
             {t("evidence.tabs.honesty")} {evidenceCounts.honesty} ·{" "}
             {t("evidence.tabs.events")} {evidenceCounts.events}
           </span>
-        </button>
+        </button></>}
       </div>
 
       {framePanel}
       {optionsPanel}
       {programPanel}
       {drawer}
+      </div>
+      {documentMounted && <div style={{ visibility: documentOpen ? "visible" : "hidden" }} inert={!documentOpen} aria-hidden={!documentOpen}>
+        {documentProjectId && documentRunId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}`}
+          projectId={documentProjectId} runId={documentRunId} controller={documentAnnotationsController}
+          modelSources={documentModelSources} editingModelSource={editingModelSource}
+          onContinueModelSource={onContinueModelSource}
+          initialSourceSha={documentLink?.source ?? null} initialPageIndex={documentLink?.page ?? 0}
+          busy={baseActionBusy || changingBase} onSubmit={onDocumentSubmit} documentVisualInputAvailable={documentVisualInputAvailable} />
+          : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
+      </div>}
     </section>
   );
 }

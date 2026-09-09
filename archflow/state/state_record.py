@@ -72,6 +72,7 @@ CHECK_KINDS: Mapping[str, str] = MappingProxyType({
     "support_contact": "the subject supports the object: contact within tolerance",
     "clearance_interval": "the gap between subject and object lies in interval_m",
     "aperture_exists": "the object opening lies within the subject host's extent and has geometry",
+    "solid_nonpenetration": "explicit final solid pairs have no positive common volume; contact and separation are allowed",
 })
 """The checks the spine can measure: check_kind id -> one line of meaning.
 
@@ -236,6 +237,8 @@ class ValidatorBinding:
         if isinstance(self.tolerance, bool) or not isinstance(self.tolerance, (int, float)) or not math.isfinite(self.tolerance) or self.tolerance < 0.0:
             raise StateRecordError(f"check {self.check_kind}: tolerance must be a non-negative number of metres")
         object.__setattr__(self, "tolerance", float(self.tolerance))
+        if self.check_kind == "solid_nonpenetration" and self.tolerance != 0.0:
+            raise StateRecordError("solid_nonpenetration takes zero tolerance: a length tolerance cannot excuse positive common volume")
 
     def to_dict(self) -> dict[str, object]:
         return {"check_kind": self.check_kind, "tolerance": self.tolerance, "interval_m": list(self.interval_m) if self.interval_m else None}
@@ -275,7 +278,7 @@ class Relation:
             raise StateRecordError(f"relation {self.relation_id}: kind {self.kind!r} is not in the kernel relation vocabulary")
         require_identifier(self.subject, "relation subject")
         require_identifier(self.object, "relation object")
-        if self.subject == self.object:
+        if self.subject == self.object and not (self.validator is not None and self.validator.check_kind == "solid_nonpenetration"):
             raise StateRecordError(f"relation {self.relation_id}: subject and object must differ")
         if self.propagation not in {"unchanged", "revalidate", "invalidate"}:
             raise StateRecordError(f"relation {self.relation_id}: invalid propagation")
@@ -285,6 +288,15 @@ class Relation:
             require_identifier(self.datum_role, "datum_role")
         _refs(self.basis_refs, f"relation {self.relation_id} basis_refs")
         object.__setattr__(self, "parameters", dict(self.parameters))
+        if self.validator is not None and self.validator.check_kind == "solid_nonpenetration":
+            pairs = self.parameters.get("object_pairs")
+            if not isinstance(pairs, (list, tuple)) or not pairs:
+                raise StateRecordError(f"relation {self.relation_id}: solid_nonpenetration requires explicit final object_pairs")
+            for pair in pairs:
+                if not isinstance(pair, (list, tuple)) or len(pair) != 2 or pair[0] == pair[1]:
+                    raise StateRecordError(f"relation {self.relation_id}: each object pair must name two distinct final objects")
+                for object_id in pair:
+                    require_identifier(object_id, "solid_nonpenetration object id")
 
     def to_dict(self) -> dict[str, object]:
         return {"relation_id": self.relation_id, "kind": self.kind, "subject": self.subject, "object": self.object, "datum_role": self.datum_role,
@@ -301,7 +313,7 @@ class Relation:
     def dependency_edge(self) -> DependencyEdge | None:
         """The relation as a kernel dependency edge (subject → object)."""
 
-        if self.propagation == "unchanged":
+        if self.propagation == "unchanged" or self.subject == self.object:
             return None
         effect = DependencyEffect.INVALIDATES if self.propagation == "invalidate" else DependencyEffect.REQUIRES_REVALIDATION
         return DependencyEdge(upstream_ref=f"entity:{self.subject}", downstream_ref=f"entity:{self.object}", relation=self.kind,
@@ -1583,7 +1595,7 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     top = max(elevations[-1], elevations[0] + 1.0)
     design_components = tuple(replace_volume_ids(c, ("block",) if c.parent_component_id is None else ()) for c in design_components_of(record, source_ref=evidence_ref))
     pack = SchematicPack(project_id=record.project_id, option_id=option_id, label=f"{record.project_id} state record {record.digest[:12]}", typology=str(record.entity(components[0].entity_id).fields.get("typology", "declared")),
-                         rationale="view of a StateRecord@1; not a second source of truth", evidence_refs=(evidence_ref,),
+                         rationale="view of a StateRecord@1; not a second source of truth", evidence_refs=evidence,
                          levels=({"level_id": "record", "base_y": int(elevations[0]), "height": max(1, int(top - elevations[0] + 0.999))},),
                          volumes=({"volume_id": "block", "min": [-1, int(elevations[0]), -1], "max": [1, int(top + 0.999), 1], "level_ids": ["record"]},),
                          zones=({"zone_id": "record-zone", "program_node_refs": ["program-node:record"], "level_ids": ["record"], "volume_ids": ["block"]},),

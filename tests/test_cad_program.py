@@ -481,6 +481,77 @@ class ExpectedBoundsTest(unittest.TestCase):
         ):
             expected_object_bounds(build)
 
+    def test_wall_end_door_keeps_bounds_with_a_header_after_rotation(self):
+        # A door reaches the floor and wall end, while the header keeps
+        # all four plan corners. These are the failed project dimensions.
+        operations = (
+            op("wall", "extrusion", ["base-object"],
+               profile=[[1.8288, 0.0, 2.5908], [1.8288, 0.0, 0.1524],
+                        [1.6764, 0.0, 0.1524], [1.6764, 0.0, 2.5908]],
+               vector=[0.0, 2.7432, 0.0], base_level=0.0),
+            op("door", "extrusion", ["cut-object"],
+               profile=[[1.8788, 0.0, 2.0066], [1.8788, 0.0, 0.1524],
+                        [1.6264, 0.0, 0.1524], [1.6264, 0.0, 2.0066]],
+               vector=[0.0, 2.1963, 0.0], base_level=0.0, base_offset=-0.05),
+            op("difference", "boolean_difference", ["result-object"],
+               ["base-object", "cut-object"], base_index=0),
+        )
+        for angle in (0.0, 45.0):
+            with self.subTest(angle=angle):
+                rotate = op("rotate", "radial_array", ["rotated-object"],
+                            ["result-object"], count=1, center=[0.0, 0.0, 0.0],
+                            angle_step_degrees=0.0, start_angle_degrees=angle)
+                result = expected_object_bounds(program(*operations, rotate))
+                # The intact wall has the same rotated bounds as the door cut.
+                intact_rotate = op("rotate", "radial_array", ["rotated-object"],
+                                   ["base-object"], count=1, center=[0.0, 0.0, 0.0],
+                                   angle_step_degrees=0.0, start_angle_degrees=angle)
+                intact = expected_object_bounds(program(operations[0], intact_rotate))
+                self.assertEqual(intact, result)
+        result = expected_object_bounds(program(*operations))["result-object"]
+        self.assertEqual([1.6764, 0.0, 0.1524], result["bbox_min"])
+        self.assertEqual([1.8288, 2.7432, 2.5908], result["bbox_max"])
+
+    def test_difference_rejects_cutters_that_together_remove_a_face(self):
+        base = op("base", "solid", ["base-object"],
+                  origin=[0.0, 0.0, 0.0], size=[10.0, 10.0, 10.0])
+        lower = op("lower", "solid", ["cut-lower"],
+                   origin=[-1.0, -1.0, -1.0], size=[6.0, 7.0, 12.0])
+        upper = op("upper", "solid", ["cut-upper"],
+                   origin=[-1.0, 4.0, -1.0], size=[6.0, 7.0, 12.0])
+        for cutters in ((lower,), (upper,), (lower, upper)):
+            with self.subTest(cutters=[item.op_id for item in cutters]):
+                cut = op("difference", "boolean_difference", ["result-object"],
+                         ["base-object", *(item.output_object_ids[0] for item in cutters)],
+                         base_index=0)
+                build = program(base, *cutters, cut)
+                if len(cutters) == 1:
+                    result = expected_object_bounds(build)["result-object"]
+                    self.assertEqual([0.0, 0.0, 0.0], result["bbox_min"])
+                    self.assertEqual([10.0, 10.0, 10.0], result["bbox_max"])
+                else:
+                    with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum"):
+                        expected_object_bounds(build)
+
+    def test_difference_rejects_whole_face_and_plan_corner_removal(self):
+        # A full-height corner notch retains today's six extrema but loses
+        # a plan corner needed to predict a later rotation about vertical.
+        for size in ([6.0, 12.0, 12.0], [6.0, 12.0, 6.0]):
+            with self.subTest(size=size):
+                build = program(
+                    op("base", "solid", ["base-object"],
+                       origin=[0.0, 0.0, 0.0], size=[10.0, 10.0, 10.0]),
+                    op("cut", "solid", ["cut-object"],
+                       origin=[-1.0, -1.0, -1.0], size=size),
+                    op("difference", "boolean_difference", ["result-object"],
+                       ["base-object", "cut-object"], base_index=0),
+                    op("rotate", "radial_array", ["rotated-object"], ["result-object"],
+                       count=1, center=[0.0, 0.0, 0.0], angle_step_degrees=0.0,
+                       start_angle_degrees=45.0),
+                )
+                with self.assertRaisesRegex(CadTranslationError, "can alter a base extremum"):
+                    expected_object_bounds(build)
+
     def test_bounds_cover_exactly_the_physical_set(self):
         build = program(
             op(

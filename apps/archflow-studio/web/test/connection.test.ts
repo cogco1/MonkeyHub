@@ -4,6 +4,8 @@ import test, { type TestContext } from "node:test";
 
 import { createServer } from "vite";
 
+import type { WorkingCopyDto } from "../src/api/generated/index.ts";
+
 test("candidate requests carry their explicit source without changing default requests", async (t) => {
   const vite = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)),
@@ -26,23 +28,33 @@ test("candidate requests carry their explicit source without changing default re
     return Response.json({});
   });
   const source = { stateDigest: "a".repeat(64), sourceRunId: "candidate-a" };
+  const modelSource = { runId: source.sourceRunId, stateDigest: source.stateDigest, assetSha256: "c".repeat(64) };
   await studio.state(source.sourceRunId);
   await studio.frame(source.sourceRunId);
   await studio.volumes(source.sourceRunId);
+  await studio.options(source.sourceRunId);
+  await studio.program(source.sourceRunId);
+  await studio.makeOption({ ...source, modelSource, transform: "add_floor" });
+  await studio.applyProgram({ ...source, modelSource, sheet: {} as never });
   await studio.resolvePick({ ...source, userStrings: {} });
   await studio.closure({ ...source, changedRefs: ["entity:column"] });
   await studio.compileIntent({ ...source, utterance: "set height to 3" });
   await studio.createProposal({ ...source, targetComponentId: "portico", utterance: "set height to 3" });
-  assert.deepEqual(requests.slice(0, 3).map((r) => r.path), [
+  assert.deepEqual(requests.slice(0, 5).map((r) => r.path), [
     "/api/state?run=candidate-a",
     "/api/state/frame?run=candidate-a",
     "/api/state/volumes?run=candidate-a",
+    "/api/options?run=candidate-a",
+    "/api/program?run=candidate-a",
   ]);
-  for (const request of requests.slice(3)) {
+  for (const request of requests.slice(5)) {
     assert.deepEqual(
       { stateDigest: (request.body as typeof source).stateDigest, sourceRunId: (request.body as typeof source).sourceRunId },
       source,
     );
+  }
+  for (const request of requests.slice(5, 7)) {
+    assert.deepEqual((request.body as { modelSource: unknown }).modelSource, modelSource);
   }
 
   // Returning to the default is per request, not a hidden global SDK pointer.
@@ -50,11 +62,18 @@ test("candidate requests carry their explicit source without changing default re
   await studio.state();
   await studio.frame();
   await studio.volumes();
+  await studio.options();
+  await studio.program();
+  await studio.makeOption({ stateDigest: "b".repeat(64), transform: "add_floor" });
+  await studio.applyProgram({ stateDigest: "b".repeat(64), sheet: {} as never });
   await studio.compileIntent({ stateDigest: "b".repeat(64), utterance: "set height to 4" });
-  assert.deepEqual(requests.slice(0, 3).map((r) => r.path), [
-    "/api/state", "/api/state/frame", "/api/state/volumes",
+  assert.deepEqual(requests.slice(0, 5).map((r) => r.path), [
+    "/api/state", "/api/state/frame", "/api/state/volumes", "/api/options", "/api/program",
   ]);
-  assert.equal(Object.hasOwn(requests[3].body as object, "sourceRunId"), false);
+  for (const request of requests.slice(5)) {
+    assert.equal(Object.hasOwn(request.body as object, "sourceRunId"), false);
+    assert.equal(Object.hasOwn(request.body as object, "modelSource"), false);
+  }
 });
 
 async function editingSessionHarness(t: TestContext) {
@@ -67,9 +86,21 @@ async function editingSessionHarness(t: TestContext) {
   const oldPreferences = { version: 1, language: "zh-CN", theme: "light", fontScale: 1.1, eventStreamVisible: false };
   const storage = new Map([[key, JSON.stringify(oldPreferences)]]);
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const workingCopy: WorkingCopyDto = {
+    projectId: "project-a", groupId: "massing-options", label: "Massing options", stageId: "massing",
+    commonBase: { runId: "default-a", stateDigest: "b".repeat(64), assetSha256: "1".repeat(64) },
+    scope: ["entity:building"],
+    options: [
+      { id: "option-a", label: "A", modelSource: { runId: "chosen-a", stateDigest: "a".repeat(64), assetSha256: "2".repeat(64) } },
+      { id: "option-b", label: "B", modelSource: { runId: "candidate-b", stateDigest: "b".repeat(64), assetSha256: "3".repeat(64) } },
+    ],
+    selectedOptionId: "option-b", revisionSha256: "4".repeat(64),
+  };
   const control = {
     projectId: "project-a", defaultRun: "default-a", storageBlocked: false, storageReadBlocked: false,
     stateReply: null as null | ((run: string) => Response | Promise<Response>),
+    workingCopies: [workingCopy],
+    workingCopiesReply: null as null | (() => Response | Promise<Response>),
   };
   Object.defineProperty(globalThis, "window", { configurable: true, value: {
     location: { href: "http://studio.test/", search: "" },
@@ -106,12 +137,169 @@ async function editingSessionHarness(t: TestContext) {
     requests.push(`${request.method} ${url.pathname}${url.search}`);
     assert.equal(request.method, "GET", "restoring a choice must not submit design work");
     if (url.pathname === "/api/project") return Response.json({ projectId: control.projectId, published });
+    if (url.pathname === "/api/working-copies") {
+      return control.workingCopiesReply ? control.workingCopiesReply() : Response.json({ workingCopies: control.workingCopies });
+    }
     assert.equal(url.pathname, "/api/state");
     const run = url.searchParams.get("run") ?? control.defaultRun;
     return control.stateReply ? control.stateReply(run) : Response.json(projection(run));
   });
   return { ...sessionModule, studio, editingBasePreferences, requests, control, projection, storage, key, oldPreferences };
 }
+
+test("working-copy capability permits a cold list read without selecting its option as the editing base", async (t) => {
+  const h = await editingSessionHarness(t);
+  const legacy = h.createSessionController("", ["events"]);
+  await legacy.reload();
+  assert.deepEqual(h.requests, ["GET /api/project", "GET /api/state"]);
+  assert.deepEqual(legacy.getSnapshot().session.value.workingCopies, []);
+
+  h.requests.length = 0;
+  const controller = h.createSessionController("", ["working-copies"]);
+  await controller.reload();
+  assert.deepEqual(h.requests, ["GET /api/project", "GET /api/working-copies", "GET /api/state"]);
+  assert.deepEqual(controller.getSnapshot().session.value.workingCopies, h.control.workingCopies);
+  assert.equal(controller.getSnapshot().session.value.sourceRunId, null);
+  assert.equal(controller.getSnapshot().session.value.projection.referenceRun.runId, "default-a");
+  assert.deepEqual(JSON.parse(h.storage.get(h.key)!), h.oldPreferences);
+});
+
+test("fresh working-copy selections restore on reload and reopen while an explicit candidate remains the editing base", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["working-copies"]);
+  await controller.reload("chosen-a");
+  assert.equal(controller.getSnapshot().session.value.workingCopies[0].selectedOptionId, "option-b");
+  const savedChoice = h.storage.get(h.key);
+
+  const group = h.control.workingCopies[0];
+  h.control.workingCopies = [{
+    ...group, selectedOptionId: "option-c", revisionSha256: "5".repeat(64),
+    options: [...group.options, {
+      id: "option-c", label: "C",
+      modelSource: { runId: "candidate-c", stateDigest: "c".repeat(64), assetSha256: "6".repeat(64) },
+    }],
+  }];
+  for (const session of [controller, h.createSessionController("", ["working-copies"])]) {
+    h.requests.length = 0;
+    await session.reload();
+    assert.deepEqual(h.requests, ["GET /api/project", "GET /api/working-copies", "GET /api/state?run=chosen-a"]);
+    assert.deepEqual(session.getSnapshot().session.value.workingCopies, h.control.workingCopies);
+    assert.equal(session.getSnapshot().session.value.sourceRunId, "chosen-a");
+    assert.equal(session.getSnapshot().session.value.projection.referenceRun.runId, "chosen-a");
+    assert.equal(h.storage.get(h.key), savedChoice, "reading a server selection must not rewrite the explicit base");
+  }
+});
+
+test("background version refresh changes only the list and never reloads or selects the editing base", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["working-copies"]);
+  await controller.reload("chosen-a");
+  const before = controller.getSnapshot();
+  const preference = h.storage.get(h.key);
+  h.control.workingCopies = [{ ...h.control.workingCopies[0], label: "New version available", revisionSha256: "5".repeat(64) }];
+  const transitions: { status: string; changingBase: boolean }[] = [];
+  const unsubscribe = controller.subscribe(() => {
+    const snapshot = controller.getSnapshot();
+    transitions.push({ status: snapshot.session.status, changingBase: snapshot.changingBase });
+  });
+  h.requests.length = 0;
+  assert.deepEqual(await controller.refreshWorkingCopies(), h.control.workingCopies);
+  unsubscribe();
+  const after = controller.getSnapshot();
+  assert.deepEqual(h.requests, ["GET /api/working-copies"]);
+  assert.deepEqual(transitions, [{ status: "ready", changingBase: false }]);
+  assert.equal(after.session.value.project, before.session.value.project);
+  assert.equal(after.session.value.projection, before.session.value.projection);
+  assert.equal(after.session.value.sourceRunId, "chosen-a");
+  assert.equal(after.baseError, before.baseError);
+  assert.equal(after.persistenceFailed, before.persistenceFailed);
+  assert.equal(h.storage.get(h.key), preference);
+  const legacy = h.createSessionController();
+  await legacy.reload();
+  h.requests.length = 0;
+  assert.equal(await legacy.refreshWorkingCopies(), null);
+  assert.deepEqual(h.requests, []);
+});
+
+test("a failed or foreign background version list preserves the ready session and saved choice", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["working-copies"]);
+  await controller.reload("chosen-a");
+  const before = controller.getSnapshot();
+  const preference = h.storage.get(h.key);
+  h.control.workingCopiesReply = () => new Response("Storage unavailable", { status: 503 });
+  await assert.rejects(controller.refreshWorkingCopies(), { status: 503 });
+  assert.equal(controller.getSnapshot(), before);
+  h.control.workingCopiesReply = () => Response.json({ workingCopies: [{ ...h.control.workingCopies[0], projectId: "another-project" }] });
+  await assert.rejects(controller.refreshWorkingCopies(), { code: "EDITING_PROJECT_CHANGED" });
+  assert.equal(controller.getSnapshot(), before);
+  assert.equal(h.storage.get(h.key), preference);
+});
+
+test("late background lists cannot replace a newer list, an explicit continuation, or a cancelled session", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["working-copies"]);
+  await controller.reload("chosen-a");
+  const original = structuredClone(h.control.workingCopies);
+  const hold = () => {
+    let release!: (response: Response) => void;
+    let start!: () => void;
+    const response = new Promise<Response>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { start = resolve; });
+    h.control.workingCopiesReply = () => { start(); return response; };
+    return { release, started };
+  };
+  const first = hold();
+  const lateList = controller.refreshWorkingCopies();
+  await first.started;
+  h.control.workingCopiesReply = null;
+  h.control.workingCopies = [{ ...original[0], label: "Latest list" }];
+  await controller.refreshWorkingCopies();
+  first.release(Response.json({ workingCopies: original }));
+  assert.equal(await lateList, null);
+  assert.equal(controller.getSnapshot().session.value.workingCopies[0].label, "Latest list");
+
+  const second = hold();
+  const previousBase = controller.refreshWorkingCopies();
+  await second.started;
+  h.control.workingCopiesReply = null;
+  await controller.reload("candidate-b");
+  const continued = controller.getSnapshot();
+  second.release(Response.json({ workingCopies: original }));
+  assert.equal(await previousBase, null);
+  assert.equal(controller.getSnapshot(), continued);
+  assert.equal(continued.session.value.sourceRunId, "candidate-b");
+
+  const third = hold();
+  const cancelled = controller.refreshWorkingCopies();
+  await third.started;
+  controller.cancel();
+  third.release(new Response("Late failure", { status: 503 }));
+  assert.equal(await cancelled, null);
+  assert.equal(controller.getSnapshot(), continued);
+});
+
+test("a failed working-copy list read remains visible and retry preserves the saved explicit base", async (t) => {
+  const h = await editingSessionHarness(t);
+  await h.createSessionController().reload("chosen-a");
+  h.control.workingCopiesReply = () => new Response("Working-copy storage unavailable", { status: 503 });
+  h.requests.length = 0;
+  const controller = h.createSessionController("", ["working-copies"]);
+  assert.equal(await controller.reload(), null);
+  assert.equal(controller.getSnapshot().session.status, "failed");
+  assert.equal(controller.getSnapshot().baseError.status, 503);
+  assert.match(controller.getSnapshot().baseError.detail, /working-copies.*503/);
+  assert.deepEqual(h.requests, ["GET /api/project", "GET /api/working-copies"]);
+  assert.equal(h.editingBasePreferences.read("", "project-a"), "chosen-a");
+
+  h.control.workingCopiesReply = null;
+  h.requests.length = 0;
+  await controller.reload();
+  assert.equal(controller.getSnapshot().baseError, null);
+  assert.equal(controller.getSnapshot().session.value.sourceRunId, "chosen-a");
+  assert.deepEqual(controller.getSnapshot().session.value.workingCopies, h.control.workingCopies);
+  assert.deepEqual(h.requests, ["GET /api/project", "GET /api/working-copies", "GET /api/state?run=chosen-a"]);
+});
 
 test("explicit continuation survives reopening, while browsing never records a choice", async (t) => {
   const h = await editingSessionHarness(t);

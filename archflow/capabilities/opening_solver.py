@@ -318,9 +318,10 @@ def solve_door(void: HostedVoid, door: DoorType, *, binding_id: str, interface_r
     a0, a1, sill, head = void.along0, void.along1, void.sill, void.head
     f0, f1 = -door.frame_projection, -door.frame_projection + door.frame_depth
     oid = _scoped(void)
+    # The full-width head caps the jambs; separately delivered members only touch.
     frame = (
-        _box(void, f"door-frame-{oid}-left", binding_id, a0, a0 + fw, f0, f1, sill, head - sill),
-        _box(void, f"door-frame-{oid}-right", binding_id, a1 - fw, a1, f0, f1, sill, head - sill),
+        _box(void, f"door-frame-{oid}-left", binding_id, a0, a0 + fw, f0, f1, sill, head - fw - sill),
+        _box(void, f"door-frame-{oid}-right", binding_id, a1 - fw, a1, f0, f1, sill, head - fw - sill),
         _box(void, f"door-frame-{oid}-top", binding_id, a0, a1, f0, f1, head - fw, fw),
     )
     l0, l1 = door.leaf_offset, door.leaf_offset + door.leaf_thickness

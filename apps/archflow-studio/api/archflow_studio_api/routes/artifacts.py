@@ -4,25 +4,89 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import Response
 from starlette.requests import Request
 
 from ..application.artifacts import (
     artifact_bytes,
+    bind_document_model_source,
+    document_bytes,
     list_artifacts,
+    list_documents,
+    save_document,
+    register_model_asset,
     save_viewport_capture,
 )
 from ..application.binding import bound_project
 from ..transport.artifacts import (
     ArtifactListDto,
+    ModelAssetRequestDto,
+    DocumentModelSourceRequestDto,
+    ProjectArtifactDto,
+    SourceDocumentDto,
+    SourceDocumentListDto,
+    SourceDocumentRequestDto,
     ViewportCaptureDto,
     ViewportCaptureRequestDto,
     capture_dto,
+    artifact_dto,
+    model_source_from,
+    document_dto,
     to_dto,
 )
+from ..transport.errors import StudioError
 
 router = APIRouter(tags=["artifacts"])
+
+
+@router.post("/model-assets", response_model=ProjectArtifactDto, response_model_by_alias=True, status_code=201)
+def create_model_asset(request: Request, payload: ModelAssetRequestDto) -> ProjectArtifactDto:
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The model asset names another project.")
+    return artifact_dto(register_model_asset(binding, payload.run_id, payload.state_digest, payload.file_name,
+                                           payload.content_base64, event_sink=request.app.state.events))
+
+
+@router.post("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)
+def associate_document_model_source(request: Request, asset_sha256: str, payload: DocumentModelSourceRequestDto) -> SourceDocumentDto:
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
+    return document_dto(bind_document_model_source(binding, payload.run_id, asset_sha256, model_source_from(payload.model_source)))
+
+
+@router.post("/documents", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
+def create_document(request: Request, payload: SourceDocumentRequestDto) -> SourceDocumentDto:
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
+    return document_dto(save_document(binding, payload.run_id, payload.file_name, payload.mime_type, payload.content_base64,
+                                     model_source_from(payload.model_source) if payload.model_source else None))
+
+
+@router.get("/documents", response_model=SourceDocumentListDto, response_model_by_alias=True)
+def read_documents(request: Request, run_id: str = Query(alias="runId", min_length=1)) -> SourceDocumentListDto:
+    binding = bound_project(request.app.state)
+    return SourceDocumentListDto(
+        project_id=binding.project_id, run_id=run_id,
+        documents=[document_dto(document) for document in list_documents(binding, run_id)],
+    )
+
+
+@router.get("/documents/{asset_sha256}/bytes", response_class=Response)
+def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query(alias="runId", min_length=1)) -> Response:
+    document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256)
+    return Response(
+        content=data, media_type=document.mime_type,
+        headers={
+            "ETag": f'"{document.asset_sha256}"',
+            "Content-Disposition": _content_disposition(document.file_name, asset_sha256).replace("attachment;", "inline;", 1),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get(

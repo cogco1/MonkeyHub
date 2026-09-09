@@ -28,7 +28,7 @@ from Rhino.
 
 from __future__ import annotations
 
-from .settings import StudioSettings
+from .settings import LOCAL_MODE, StudioSettings
 
 PROTOCOL_MAJOR = 2
 PROTOCOL_MINOR = 0
@@ -45,14 +45,19 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "candidates",
     "captures",
     "compare",
+    "document-model-source",
+    "document-visual-input",
     "events",
     "gestures",
     "intents",
+    "model-annotations",
+    "model-asset-registration",
     "pick",
     "program",
     "projection",
     "proposals",
     "validation",
+    "working-copies",
 )
 
 # The two features that depend on this process's configuration rather than on
@@ -77,4 +82,6 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
         capabilities.append(CAD_EXPORT_CAPABILITY)
     if settings.rhino_lane:
         capabilities.append(RHINO_EXPORT_CAPABILITY)
+    if settings.mode == LOCAL_MODE:
+        capabilities.append("user-settings")
     return tuple(sorted(capabilities))

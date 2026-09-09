@@ -6,6 +6,7 @@
 
 import type { SceneInspection } from "../../viewer/sceneInspection";
 import { useT } from "../../i18n/useT";
+import { usePreferences } from "../settings/preferences";
 import {
   LOCAL_SOURCE_LABEL,
   type ViewportStatus,
@@ -44,6 +45,7 @@ export function SourceChip({
   view: ViewState | null;
 }) {
   const t = useT();
+  const { developerMode } = usePreferences();
   const { tag, rest } = tagOf(sourceLabel);
   const displayedTag =
     tag === "NO MODEL"
@@ -77,7 +79,9 @@ export function SourceChip({
         </>
       );
     }
-    return <span lang="en" translate="no">{view.detail}</span>;
+    return developerMode
+      ? <span lang="en" translate="no">{view.detail}</span>
+      : t("stage.view.needsAttention");
   })();
   return (
     <div className="source" data-tag={tag} data-state={view?.state ?? "none"}>
@@ -88,10 +92,10 @@ export function SourceChip({
         </span>
       )}
       <span className="source__tag">{displayedTag}</span>
-      {displayedRest && <span className="mono">{displayedRest}</span>}
-      {inspection && (
+      {inspection && <span className="source__name" title={inspection.fileName}>{inspection.fileName}</span>}
+      {developerMode && displayedRest && <span className="mono">{displayedRest}</span>}
+      {developerMode && inspection && (
         <span className="mono source__facts">
-          {inspection.fileName} ·{" "}
           {t("stage.source.meshes", {
             count: inspection.meshCount.toLocaleString(),
           })}{" "}

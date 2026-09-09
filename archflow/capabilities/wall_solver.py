@@ -435,7 +435,11 @@ def solve_wall(
         raise WallSolverError("opening ids must be unique")
     for opening in openings:
         for a0, a1 in opening.instances():
-            if a0 < 0.0 or a1 > wall.length:
+            # The ends are judged at the precision the operations are emitted at
+            # (every _points/_number rounds to 9 decimals): an opening whose edge
+            # is the wall end differs from the resolved length only by float
+            # roundoff, while a real overrun of 10 nm or more is still refused.
+            if round(a0, 9) < 0.0 or round(a1, 9) > round(wall.length, 9):
                 raise WallSolverError(f"opening {opening.opening_id} lies outside the wall length")
         if opening.head > wall.height:
             raise WallSolverError(f"opening {opening.opening_id} head is above the wall top")

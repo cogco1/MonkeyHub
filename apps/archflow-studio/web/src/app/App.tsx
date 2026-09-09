@@ -34,9 +34,13 @@ import type { ServerIdentity } from "../api/connection";
 import type {
   ArtifactListDto,
   CatalogDto,
+  DocumentAnnotationRefDto,
+  DocumentVisualInputDto,
   CandidateDto,
   CompareDto,
-  GestureDto,
+  ModelGestureDto,
+  ModelSourceDto,
+  WorkingCopyOptionDto,
   MassingOptionRequestDto,
   OptionsDto,
   PendingIntentDto,
@@ -51,6 +55,7 @@ import type {
   VolumesDto,
 } from "../api/generated";
 import type { GestureTool } from "../features/stage/Annotate";
+import { createModelAnnotationsController, useModelAnnotations } from "../features/stage/useModelAnnotations";
 import {
   canonicalRunSourceLabel,
   canonicalSourceLabel,
@@ -63,9 +68,11 @@ import { Conversation } from "../features/conversation/Conversation";
 import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
+import { useStudioEvents } from "../features/events/EventStream";
 import { OptionsPanel } from "../features/options/OptionsPanel";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
+import { usePreferences } from "../features/settings/preferences";
 import { FrameEditor } from "../features/stage/FrameEditor";
 import {
   ProgramPanel,
@@ -105,6 +112,11 @@ import { useTranscript, type SystemTextPart } from "./transcript";
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
+
+function sameModelSource(left: ModelSourceDto | null | undefined, right: ModelSourceDto | null | undefined): boolean {
+  return left?.runId === right?.runId && left?.stateDigest === right?.stateDigest &&
+    left?.assetSha256 === right?.assetSha256;
+}
 
 function systemText(parts: readonly SystemTextPart[]): {
   readonly text: string;
@@ -186,6 +198,7 @@ interface HomeArtifacts extends HomeModel {
 
 export default function App({ server }: { server: ServerIdentity }) {
   const t = useT();
+  const { developerMode } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -194,8 +207,9 @@ export default function App({ server }: { server: ServerIdentity }) {
     },
     [append],
   );
-  const { session, changingBase, baseError, persistenceFailed, reload, recoverFromStaleBase } = useSession(pushNotice);
+  const { session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
+  const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [picked, setPicked] = useState<PickedFacts | null>(null);
@@ -203,12 +217,16 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [draft, setDraft] = useState("");
   // The one clarification this tab is in the middle of, as the server described
   // it. A ref rather than state because it is not drawn: the cards show what
-  // the server said, and this holds only the token the next request carries
-  // back. There is deliberately no second copy of the conversation here — the
+  // the server said, and this holds the token and its document source guard.
+  // There is deliberately no second copy of the conversation here — the
   // transcript is history, and the pending intent is the server's.
-  const pendingIntentRef = useRef<PendingIntentDto | null>(null);
+  const pendingIntentRef = useRef<(PendingIntentDto & {
+    documentContext?: { projectId: string; modelSource: ModelSourceDto };
+  }) | null>(null);
 
   const [artifacts, setArtifacts] = useState<Loadable<ArtifactListDto>>(idle);
+  const artifactsReadRef = useRef(0);
+  const artifactProjectRef = useRef<string | null>(null);
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
     null,
   );
@@ -230,10 +248,13 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [loadedArtifacts, setLoadedArtifacts] = useState<
     readonly ProjectArtifactDto[]
   >([]);
+  const loadedArtifactsRef = useRef(loadedArtifacts);
+  loadedArtifactsRef.current = loadedArtifacts;
   // The artifacts whose bytes were handed to the viewer and which the viewer
   // has not yet accepted. Committed only when the viewer reports the label,
   // because a refused file leaves the previous model on screen.
   const pendingArtifacts = useRef<readonly ProjectArtifactDto[]>([]);
+  const modelLoadRequest = useRef(0);
   // The first seat on screen answers for the picture wherever one row is
   // wanted: the run it belongs to, the receipt a pick is resolved against,
   // the seat a cross-fade is loaded beside.
@@ -254,6 +275,7 @@ export default function App({ server }: { server: ServerIdentity }) {
 
   const [proposalBusy, setProposalBusy] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
+  const [selectingWorkingCopy, setSelectingWorkingCopy] = useState(false);
   // The proposal drawn as a ghost over the loaded model, if any. The viewer
   // drops the drawing itself whenever a model loads or is cleared; this is the
   // shell's record of which proposal the drawing was of.
@@ -264,7 +286,6 @@ export default function App({ server }: { server: ServerIdentity }) {
   // Select + draw + say: the armed tool and the marks made on this picture,
   // sent with the next sentence and cleared when a proposal answers it.
   const [tool, setTool] = useState<GestureTool | null>(null);
-  const [gestures, setGestures] = useState<readonly GestureDto[]>([]);
   // A cross-fade in the viewer: the loaded export as 'before', a candidate's
   // export of the same seat as 'after', and where the slider stands.
   const [blendState, setBlendState] = useState<{
@@ -298,6 +319,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   // record the tab has left is a number about a different building.
   const [optionsTable, setOptionsTable] = useState<Loadable<OptionsDto>>(idle);
   const [volumes, setVolumes] = useState<Loadable<VolumesDto>>(idle);
+  const optionsReadRef = useRef(0);
   const optionsOpen = displayMode === "massing";
   const [optionsBusy, setOptionsBusy] = useState(false);
   // The program sheet: what the server answered, and the copy this tab is
@@ -308,6 +330,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [programOpen, setProgramOpen] = useState(false);
   const [sheet, setSheet] = useState<ProgramSheetDto | null>(null);
   const [applyingProgram, setApplyingProgram] = useState(false);
+  const programReadRef = useRef(0);
   // The record's semantic vocabulary, read once: it is the framework's, not
   // this project's, so it does not change when the record does.
   const [semantics, setSemantics] = useState<Loadable<SemanticsDto>>(idle);
@@ -315,26 +338,112 @@ export default function App({ server }: { server: ServerIdentity }) {
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidencePinned, setEvidencePinned] = useState(readPinned);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
-  const [eventCount, setEventCount] = useState(0);
+  const [hasNewVersions, setHasNewVersions] = useState(false);
+  const knownVersionSources = useRef<{ projectId: string; keys: Set<string> } | null>(null);
+  const [versionRefreshRequest, setVersionRefreshRequest] = useState(0);
+  const versionRefreshHandled = useRef(0);
+  const eventLines = useStudioEvents(server.capabilities.includes("events"), (event) => {
+    if (event.type === "model_asset.registered" || event.type === "working_copy.option_added" ||
+        event.type === "candidate.succeeded") setVersionRefreshRequest((current) => current + 1);
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [conversationOpen, setConversationOpen] = useState(true);
+  const [conversationOpen, setConversationOpen] = useState(false);
+
+  useEffect(() => {
+    if (conversationOpen) document.querySelector<HTMLInputElement>("#conversation-panel .composer__box input")?.focus();
+  }, [conversationOpen]);
 
   const projection: StateProjectionDto | null =
     session.status === "ready" ? session.value.projection : null;
   const project = session.status === "ready" ? session.value.project : null;
+  artifactProjectRef.current = project?.projectId ?? null;
   // A new editing base starts a new exchange, without discarding the draft or history.
   useEffect(() => {
     pickRequestRef.current += 1;
     pendingIntentRef.current = null;
     setSelection(null);
     setPicked(null);
-    setGestures([]);
     setTool(null);
     setGhostProposalId(null);
     viewportRef.current?.ghost(null);
     refinePending.current.clear();
-  }, [projection?.stateDigest]);
+  }, [project?.projectId, projection?.stateDigest]);
   const [viewerCatalog, setViewerCatalog] = useState<CatalogDto | null>(null);
+  const modelSources = useMemo(() => {
+    const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
+      label: `${copy.label} · ${option.label}`, modelSource: option.modelSource,
+    })));
+    if (artifacts.status === "ready") {
+      const rows = viewableArtifacts(artifacts.value.artifacts);
+      for (const artifact of rows) {
+        if (artifact.representation !== "composed" && rows.some((row) => row.runId === artifact.runId && row.representation === "composed")) continue;
+        if (!artifact.modelSource || options.some((row) => row.modelSource.runId === artifact.runId &&
+          row.modelSource.assetSha256 === artifact.sha256)) continue;
+        options.push({ label: artifact.fileName, modelSource: artifact.modelSource });
+      }
+    }
+    return options;
+  }, [workingCopies, artifacts]);
+  useEffect(() => {
+    if (!project || artifacts.status !== "ready" || artifacts.value.projectId !== project.projectId) return;
+    const keys = modelSources.map(({ modelSource }) => JSON.stringify([
+      modelSource.runId, modelSource.stateDigest, modelSource.assetSha256,
+    ]));
+    const previous = knownVersionSources.current;
+    if (previous?.projectId !== project.projectId) {
+      knownVersionSources.current = { projectId: project.projectId, keys: new Set(keys) };
+      setHasNewVersions(false);
+      return;
+    }
+    if (keys.some((key) => !previous.keys.has(key))) setHasNewVersions(true);
+    for (const key of keys) previous.keys.add(key);
+  }, [artifacts, modelSources, project]);
+  const documentEditingRef = useRef<{ projectId: string | null; modelSource: ModelSourceDto | null }>({
+    projectId: null, modelSource: null,
+  });
+  const loadedModelSource = useMemo<ModelSourceDto | null>(() => {
+    if (loadedArtifacts.length !== 1 || !loadedArtifact?.sha256) return null;
+    return loadedArtifact.modelSource ?? modelSources.find((row) => row.modelSource.runId === loadedArtifact.runId &&
+      row.modelSource.assetSha256 === loadedArtifact.sha256)?.modelSource ?? null;
+  }, [loadedArtifact, loadedArtifacts.length, modelSources]);
+  const editingSources = modelSources.filter((row) =>
+    row.modelSource.runId === projection?.referenceRun.runId && row.modelSource.stateDigest === projection.stateDigest &&
+    artifacts.status === "ready" && viewableArtifacts(artifacts.value.artifacts).some((artifact) =>
+      artifact.runId === row.modelSource.runId && artifact.sha256 === row.modelSource.assetSha256 &&
+      (artifact.representation === "composed" || !artifacts.value.artifacts.some((item) =>
+        item.runId === artifact.runId && item.representation === "composed"))),
+  );
+  const sourceAvailableForEditing = (source: ModelSourceDto | null) => source !== null &&
+    source.runId === projection?.referenceRun.runId && source.stateDigest === projection.stateDigest &&
+    artifacts.status === "ready" && viewableArtifacts(artifacts.value.artifacts).some((artifact) =>
+      artifact.runId === source.runId && artifact.sha256 === source.assetSha256);
+  // Viewing another file is independent of the complete source chosen for editing.
+  const selectedEditingSource = workingCopies.flatMap((copy) => copy.options.filter((option) => option.id === copy.selectedOptionId))
+    .find((option) => sourceAvailableForEditing(option.modelSource))?.modelSource ?? null;
+  const retainedEditingSource = documentEditingRef.current.projectId === project?.projectId && sourceAvailableForEditing(documentEditingRef.current.modelSource)
+    ? documentEditingRef.current.modelSource : selectedEditingSource ?? (sourceAvailableForEditing(loadedModelSource) ? loadedModelSource : null);
+  const editingModelSource = retainedEditingSource ?? (
+    new Set(editingSources.map((row) => row.modelSource.assetSha256)).size === 1
+      ? editingSources[0].modelSource : null
+  );
+  const editingModelSourceReady = artifacts.status === "ready" && (editingModelSource !== null ||
+    !modelSources.some((row) => row.modelSource.runId === projection?.referenceRun.runId));
+  documentEditingRef.current = { projectId: project?.projectId ?? null, modelSource: editingModelSource };
+  const pendingDocument = pendingIntentRef.current;
+  const documentContinuation = pendingDocument?.continuationToken && pendingDocument.documentContext?.projectId === project?.projectId &&
+    sameModelSource(pendingDocument.documentContext?.modelSource, editingModelSource) && pendingDocument.stateDigest === editingModelSource?.stateDigest
+    ? pendingDocument : null;
+  const currentViewSourceRef = useRef(loadedModelSource);
+  currentViewSourceRef.current = loadedModelSource;
+  const [modelAnnotationsController] = useState(createModelAnnotationsController);
+  const persistentAnnotations = server.capabilities.includes("model-annotations") && loadedModelSource !== null;
+  const modelAnnotations = useModelAnnotations({
+    projectId: project?.projectId ?? "", modelSource: persistentAnnotations ? loadedModelSource : null,
+  }, modelAnnotationsController);
+  const gestures = modelAnnotations.annotations;
+  const editGestures = (change: (current: readonly ModelGestureDto[]) => readonly ModelGestureDto[]) => {
+    modelAnnotations.changeAnnotations(change(gestures));
+  };
   const semanticCatalog = useMemo(() => {
     const runId = loadedArtifact?.runId;
     if (runId === undefined) return null;
@@ -353,7 +462,9 @@ export default function App({ server }: { server: ServerIdentity }) {
     void studio
       .state(runId)
       .then((answer) => {
-        if (current) setViewerCatalog(answer.catalog?.inspectionRun === runId ? answer.catalog : null);
+        if (current) {
+          setViewerCatalog(answer.catalog?.inspectionRun === runId ? answer.catalog : null);
+        }
       })
       .catch(() => {
         if (current) setViewerCatalog(null);
@@ -470,18 +581,36 @@ export default function App({ server }: { server: ServerIdentity }) {
     });
   }, [append, project, projection]);
 
-  const loadArtifacts = useCallback(async () => {
-    setArtifacts(loading);
+  const loadArtifacts = useCallback(async (background = false) => {
+    const request = ++artifactsReadRef.current;
+    const projectId = artifactProjectRef.current;
+    const isCurrent = () => request === artifactsReadRef.current && projectId === artifactProjectRef.current;
+    if (!background) setArtifacts(loading);
     try {
-      setArtifacts(ready(await studio.artifacts()));
+      const answer = await studio.artifacts();
+      if (!isCurrent()) return;
+      if (answer.projectId !== projectId) throw new Error("The model list belongs to another project.");
+      setArtifacts(ready(answer));
     } catch (cause) {
-      setArtifacts(failed(asStudioApiError(cause)));
+      if (isCurrent() && !background) setArtifacts(failed(asStudioApiError(cause)));
     }
   }, []);
+
+  useEffect(() => () => { artifactsReadRef.current += 1; }, []);
 
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
   }, [session.status, project?.projectId, loadArtifacts]);
+
+  useEffect(() => {
+    // Events can arrive during startup or an explicit base switch. Keep the
+    // request pending until both lists describe a ready session.
+    if (session.status !== "ready" || changingBase || artifacts.status !== "ready" ||
+        artifacts.value.projectId !== project?.projectId || versionRefreshHandled.current === versionRefreshRequest) return;
+    versionRefreshHandled.current = versionRefreshRequest;
+    void loadArtifacts(true);
+    void refreshWorkingCopies().catch(() => { /* The existing choices remain usable. */ });
+  }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies]);
 
   // Read while the panel is open, and read again when the record underneath it
   // changes: a frame from a record the tab has left is a picture of a building
@@ -500,37 +629,60 @@ export default function App({ server }: { server: ServerIdentity }) {
   useEffect(() => {
     if (!optionsOpen || projection === null) return;
     let current = true;
+    const source = sourceRunId;
+    const expectedStateDigest = projection.stateDigest;
+    optionsReadRef.current += 1;
     setOptionsTable(loading);
     setVolumes(loading);
-    void studio.options().then(
-      (answer) => { if (current) setOptionsTable(ready(answer)); },
+    void studio.options(source).then(
+      (answer) => {
+        if (!current) return;
+        if (
+          (answer.sourceRunId ?? null) !== source ||
+          answer.stateDigest !== expectedStateDigest
+        ) {
+          setOptionsTable(failed(asStudioApiError(new Error(
+            "The options no longer match the editing source. Read them again before making a massing change.",
+          ))));
+          return;
+        }
+        setOptionsTable(ready(answer));
+      },
       (cause) => { if (current) setOptionsTable(failed(asStudioApiError(cause))); },
     );
-    void studio.volumes(sourceRunId ?? undefined).then(
+    void studio.volumes(source ?? undefined).then(
       (answer) => { if (current) setVolumes(ready(answer)); },
       (cause) => { if (current) setVolumes(failed(asStudioApiError(cause))); },
     );
     return () => { current = false; };
-  }, [optionsOpen, projection?.recordDigest, sourceRunId]);
+  }, [optionsOpen, projection?.stateDigest, sourceRunId]);
 
   const loadProgram = useCallback(async () => {
+    const read = ++programReadRef.current;
+    const source = sourceRunId;
+    const expectedStateDigest = projection?.stateDigest ?? null;
     setProgram(loading);
+    setSheet(null);
     try {
-      const answer = await studio.program();
+      const answer = await studio.program(source);
+      if (read !== programReadRef.current) return;
+      if ((answer.sourceRunId ?? null) !== source || answer.stateDigest !== expectedStateDigest) {
+        throw new Error("The program sheet no longer matches the editing source. Read it again before applying changes.");
+      }
       setProgram(ready(answer));
       // The edited copy is replaced by what the server just said. Anything
       // typed and not applied is lost, and that is the honest outcome: the
       // sheet on screen has to be one the server would accept back.
       setSheet(answer.sheet);
     } catch (cause) {
-      setProgram(failed(asStudioApiError(cause)));
+      if (read === programReadRef.current) setProgram(failed(asStudioApiError(cause)));
     }
-  }, []);
+  }, [projection?.stateDigest, sourceRunId]);
 
   useEffect(() => {
     if (!programOpen || projection === null) return;
     void loadProgram();
-  }, [programOpen, projection?.recordDigest, loadProgram]);
+  }, [programOpen, projection?.recordDigest, sourceRunId, loadProgram]);
 
   useEffect(() => {
     if (!programOpen || semantics.status !== "idle") return;
@@ -554,13 +706,30 @@ export default function App({ server }: { server: ServerIdentity }) {
    */
   const applyProgram = useCallback(
     async (current: ProgramSheetDto, saveInput: boolean) => {
-      if (stateDigest === null || sourceRunId !== null) return;
+      if (
+        stateDigest === null ||
+        !editingModelSourceReady ||
+        program.status !== "ready" ||
+        (program.value.sourceRunId ?? null) !== sourceRunId ||
+        program.value.stateDigest !== stateDigest ||
+        current.stateDigest !== program.value.sheet.stateDigest ||
+        current.recordDigest !== program.value.sheet.recordDigest ||
+        current.recordDigest !== projection?.recordDigest
+      ) return;
+      const read = programReadRef.current;
+      const requestedLoad = modelLoadRequest.current;
+      const sourceIsCurrent = () => read === programReadRef.current && requestedLoad === modelLoadRequest.current &&
+        documentEditingRef.current.projectId === project?.projectId &&
+        sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
+        sameModelSource(currentViewSourceRef.current, loadedModelSource);
       setApplyingProgram(true);
       try {
         const answer = await studio.applyProgram({
           stateDigest,
           sheet: current,
           saveInput,
+          ...(sourceRunId === null ? {} : { sourceRunId }),
+          ...(editingModelSource === null ? {} : { modelSource: editingModelSource }),
         });
         append({
           kind: "system",
@@ -580,16 +749,21 @@ export default function App({ server }: { server: ServerIdentity }) {
         }
       } catch (cause) {
         const error = asStudioApiError(cause);
-        recoverFromStaleBase(error);
+        if (sourceIsCurrent()) recoverFromStaleBase(error);
         append({ kind: "refusal", error, what: "POST /api/program" });
       } finally {
         setApplyingProgram(false);
       }
     },
-    [append, recoverFromStaleBase, sourceRunId, stateDigest],
+    [append, editingModelSource, editingModelSourceReady, loadedModelSource, program, project?.projectId,
+      projection?.recordDigest, recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
   const openLocalFile = useCallback((file: File) => {
+    modelLoadRequest.current += 1;
+    pendingArtifacts.current = [];
+    setArtifactLoadingSha(null);
+    manualLoadRef.current = true;
     void viewportRef.current?.openFile(file);
   }, []);
 
@@ -599,7 +773,8 @@ export default function App({ server }: { server: ServerIdentity }) {
    * same route — same digest-addressed bytes, same viewer, different label.
    */
   const loadArtifactIntoViewer = useCallback(
-    async (artifact: ProjectArtifactDto, label: string) => {
+    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false) => {
+      const request = ++modelLoadRequest.current;
       setArtifactError(null);
       if (!artifact.sha256) {
         setArtifactError(
@@ -632,13 +807,20 @@ export default function App({ server }: { server: ServerIdentity }) {
           artifact.sha256,
           artifact.fileName,
         );
+        if (request !== modelLoadRequest.current) return;
         pendingArtifacts.current = [artifact];
-        await viewportRef.current?.openFile(file, label);
+        const previous = loadedArtifactsRef.current;
+        await viewportRef.current?.openFile(file, label, {
+          preserveCamera: preserveCamera && previous.length > 0 && artifact.lengthUnit !== null &&
+            previous.every((row) => row.lengthUnit === artifact.lengthUnit),
+        });
       } catch (cause) {
-        setArtifactError(asStudioApiError(cause));
+        if (request === modelLoadRequest.current) setArtifactError(asStudioApiError(cause));
       } finally {
-        pendingArtifacts.current = [];
-        setArtifactLoadingSha(null);
+        if (request === modelLoadRequest.current) {
+          pendingArtifacts.current = [];
+          setArtifactLoadingSha(null);
+        }
       }
     },
     [],
@@ -651,15 +833,18 @@ export default function App({ server }: { server: ServerIdentity }) {
    * because there is no one file on screen to address.
    */
   const loadRunIntoViewer = useCallback(
-    async (rows: readonly ProjectArtifactDto[], label: string) => {
+    async (rows: readonly ProjectArtifactDto[], label: string, preserveCamera = false) => {
       setArtifactError(null);
       // The previews: one per seat, never the exact STEP beside them.
-      const servable = viewableArtifacts(rows);
+      const previews = viewableArtifacts(rows);
+      const complete = previews.find((row) => row.representation === "composed" && row.modelSource != null);
+      const servable = complete ? [complete] : previews;
       if (servable.length === 0) return;
       if (servable.length === 1) {
-        await loadArtifactIntoViewer(servable[0], label);
+        await loadArtifactIntoViewer(servable[0], label, preserveCamera);
         return;
       }
+      const request = ++modelLoadRequest.current;
       setArtifactLoadingSha(servable[0].sha256);
       try {
         // Every seat, or none: a picture missing a seat that nobody was told
@@ -667,13 +852,16 @@ export default function App({ server }: { server: ServerIdentity }) {
         const files = await Promise.all(
           servable.map((row) => studio.artifactFile(row.sha256, row.fileName)),
         );
+        if (request !== modelLoadRequest.current) return;
         pendingArtifacts.current = servable;
-        await viewportRef.current?.openFiles(files, label);
+        await viewportRef.current?.openFiles(files, label, { preserveCamera });
       } catch (cause) {
-        setArtifactError(asStudioApiError(cause));
+        if (request === modelLoadRequest.current) setArtifactError(asStudioApiError(cause));
       } finally {
-        pendingArtifacts.current = [];
-        setArtifactLoadingSha(null);
+        if (request === modelLoadRequest.current) {
+          pendingArtifacts.current = [];
+          setArtifactLoadingSha(null);
+        }
       }
     },
     [loadArtifactIntoViewer],
@@ -699,12 +887,29 @@ export default function App({ server }: { server: ServerIdentity }) {
   /** Every export of the reference run the viewer can show, as listed. */
   const referenceExports = useMemo<readonly ProjectArtifactDto[]>(() => {
     if (artifacts.status !== "ready" || projection === null || artifacts.value.projectId !== projection.projectId) return [];
+    const complete = editingModelSource ?? artifacts.value.artifacts.find((row) => row.runId === projection.referenceRun.runId && row.representation === "composed" &&
+      row.modelSource?.stateDigest === projection.stateDigest)?.modelSource;
+    if (complete) return viewableArtifacts(artifacts.value.artifacts.filter((row) =>
+      row.runId === complete.runId && row.sha256 === complete.assetSha256,
+    ));
     return viewableArtifacts(
       artifacts.value.artifacts.filter(
         (row) => row.runId === projection.referenceRun.runId,
       ),
     );
-  }, [artifacts, projection]);
+  }, [artifacts, projection, editingModelSource]);
+
+  const openWorkingOption = useCallback((option: WorkingCopyOptionDto) => {
+    if (artifacts.status !== "ready") return;
+    const artifact = artifacts.value.artifacts.find((row) => row.runId === option.modelSource.runId &&
+      row.sha256 === option.modelSource.assetSha256 && row.available && isViewable(row));
+    if (!artifact) {
+      setArtifactError(asStudioApiError(new Error("The selected model's exact file is unavailable.")));
+      return;
+    }
+    manualLoadRef.current = true;
+    void loadArtifactIntoViewer(artifact, option.label, true);
+  }, [artifacts, loadArtifactIntoViewer]);
 
   const missingChosenModel = sourceRunId !== null &&
     (artifacts.status === "failed" || (artifacts.status === "ready" &&
@@ -828,6 +1033,8 @@ export default function App({ server }: { server: ServerIdentity }) {
 
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
+    pickRequestRef.current += 1;
+    if (!pendingIntentRef.current?.documentContext) pendingIntentRef.current = null;
     setSourceLabel(label);
     setDisplayMode("model");
     setLoadedArtifacts(
@@ -842,7 +1049,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     // A new picture, or none: whatever ghost was drawn belonged to the old one,
     // and so did the marks and the cross-fade.
     setGhostProposalId(null);
-    setGestures([]);
+    modelAnnotationsController.resetUnbound(documentEditingRef.current.projectId ?? "");
     setTool(null);
     setBlendState(null);
   }, []);
@@ -981,32 +1188,59 @@ export default function App({ server }: { server: ServerIdentity }) {
     [append, selectSemanticTarget, selection],
   );
   const propose = useCallback(
-    async (utterance: string, override?: Selection | null) => {
-      if (stateDigest === null || project === null) return;
+    async (utterance: string, override?: Selection | null, documentAnnotations: readonly DocumentAnnotationRefDto[] = [], documentModelSource?: ModelSourceDto, documentVisuals: DocumentVisualInputDto[] = []) => {
+      const withDocuments = documentAnnotations.length > 0;
+      if (withDocuments) {
+        if (!server.capabilities.includes("document-visual-input")) throw asStudioApiError(new Error(t("document.visualUnavailable")));
+        const current = documentEditingRef.current;
+        if (!documentModelSource || current.projectId !== project?.projectId ||
+            current.modelSource?.runId !== documentModelSource.runId ||
+            current.modelSource.stateDigest !== documentModelSource.stateDigest ||
+            current.modelSource.assetSha256 !== documentModelSource.assetSha256) {
+          throw asStudioApiError(new Error("The drawing's linked model no longer matches the editing base. Continue from its model before submitting."));
+        }
+      }
+      const requestModelSource = withDocuments ? documentModelSource! : editingModelSource;
+      const documentContext = withDocuments && project ? { projectId: project.projectId, modelSource: documentModelSource! }
+        : documentContinuation?.documentContext;
+      const requestStateDigest = withDocuments ? documentModelSource!.stateDigest : documentContinuation?.stateDigest ?? stateDigest;
+      if (requestStateDigest === null || project === null) return;
+      const requestedView = loadedModelSource;
+      const requestedLoad = modelLoadRequest.current;
+      const canContinueIntent = () => {
+        const current = currentViewSourceRef.current;
+        return documentEditingRef.current.projectId === project.projectId &&
+          sameModelSource(documentEditingRef.current.modelSource, requestModelSource) &&
+          (documentContext !== undefined || (requestedLoad === modelLoadRequest.current && current?.runId === requestedView?.runId && current?.stateDigest === requestedView?.stateDigest &&
+          current?.assetSha256 === requestedView?.assetSha256));
+      };
+      const canUpdateView = () => canContinueIntent() && requestedLoad === modelLoadRequest.current &&
+        sameModelSource(currentViewSourceRef.current, requestedView) && sameModelSource(currentViewSourceRef.current, requestModelSource);
       if (proposingRef.current) return;
       proposingRef.current = true;
       // What this request is asked against, and which exchange it belongs to.
       // The token is the whole of the continuity: no transcript is sent, and
       // the pending intent it names carries the original sentence, the target
       // resolved so far and everything already ruled out.
-      const asked = override === undefined ? selection : override;
-      const continuationToken =
-        pendingIntentRef.current?.continuationToken ?? null;
+      const viewMatchesRequest = sameModelSource(loadedModelSource, requestModelSource);
+      const asked = withDocuments ? null : override === undefined ? (viewMatchesRequest ? selection : null) : override;
+      const sentGestures = withDocuments || !viewMatchesRequest ? [] : gestures.map(({ id: _id, ...gesture }) => gesture);
+      const continuationToken = withDocuments ? null : pendingIntentRef.current?.continuationToken ?? null;
       // The architect's sentence, exactly as said; the marks on their own line.
       append({ kind: "you", text: utterance });
-      if (gestures.length > 0) {
+      if (sentGestures.length > 0) {
         append({
           kind: "system",
           ...systemText([
             { kind: "prose", text: "with " },
-            { kind: "technical", text: String(gestures.length) },
+            { kind: "technical", text: String(sentGestures.length) },
             {
               kind: "prose",
-              text: gestures.length === 1 ? " mark on the model: " : " marks on the model: ",
+              text: sentGestures.length === 1 ? " mark on the model: " : " marks on the model: ",
             },
             {
               kind: "technical",
-              text: gestures.map((gesture) => gesture.kind).join(", "),
+              text: sentGestures.map((gesture) => gesture.kind).join(", "),
             },
           ]),
         });
@@ -1016,7 +1250,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       // The answer - card, question or refusal - replaces this line.
       const readingId = append({
         kind: "reading",
-        subject:
+        subject: withDocuments ? t("document.reading") :
           selection?.elementId ??
           selection?.componentId ??
           (gestures.some((gesture) => gesture.kind === "circle")
@@ -1036,18 +1270,20 @@ export default function App({ server }: { server: ServerIdentity }) {
         // already typed. Either way the proposal that comes back is the
         // record's, and the agent's reading travels beside it, kept apart.
         const answer = await studio.compileIntent({
-          stateDigest,
-          sourceRunId,
+          stateDigest: requestStateDigest,
+          sourceRunId: requestModelSource?.runId ?? sourceRunId,
+          ...(requestModelSource ? { modelSource: requestModelSource } : {}),
           targetComponentId: asked?.componentId ?? null,
           elementId: asked?.elementId ?? null,
           utterance,
           projectId: project.projectId,
-          gestures: [...gestures],
+          gestures: [...sentGestures],
+          ...(withDocuments ? { documentAnnotations: [...documentAnnotations], documentVisuals } : {}),
           continuationToken,
         });
         // COMPILED, the one outcome that is a proposal: the exchange is over
         // and the token that got here is spent.
-        pendingIntentRef.current = null;
+        if (canContinueIntent()) pendingIntentRef.current = null;
         // The marks were included in the request and its retained compilation.
         // The proposal expresses their effect; don't repeat every hit id in chat.
         append({
@@ -1056,6 +1292,9 @@ export default function App({ server }: { server: ServerIdentity }) {
           agent: answer.agent,
           refinements: 0,
         });
+        // The reply remains part of its original exchange. Viewing another
+        // model while it was computed must not paint that reply onto the new one.
+        if (!canUpdateView()) return;
         // The fast stage's picture: a ghost of this proposal over the loaded
         // model, drawn the moment the typed change exists. With no model on
         // screen there is nothing to draw over, and nothing is claimed.
@@ -1088,33 +1327,39 @@ export default function App({ server }: { server: ServerIdentity }) {
         }
         const { target } = answer.proposal;
         selectSemanticTarget(target.componentId, target.elementId);
-        setDraft("");
+        if (!withDocuments) setDraft("");
         // The marks were said; a new sentence starts clean. A question keeps
         // them, so the reply is made with the same marks.
-        setGestures([]);
-        setTool(null);
+        if (!withDocuments) {
+          if (!persistentAnnotations) modelAnnotations.changeAnnotations([]);
+          setTool(null);
+        }
       } catch (cause) {
         const error = asStudioApiError(cause);
+        const updateView = canUpdateView();
         // No proposal came back, so no card claims the ghost that may still
         // stand from the last one: the picture goes back to the loaded model.
-        viewportRef.current?.ghost(null);
-        setGhostProposalId(null);
+        if (updateView) {
+          viewportRef.current?.ghost(null);
+          setGhostProposalId(null);
+        }
         const pending = error.pendingIntent;
         if (error.code === STALE_CLARIFICATION) {
           // The pending intent was opened against a state the project has
           // left. It is void — an answer given about the old record is not
           // applied to the new one — so this tab drops it rather than
           // continuing an exchange nobody checked.
-          pendingIntentRef.current = null;
+          if (canContinueIntent()) pendingIntentRef.current = null;
           append({ kind: "refusal", error, what: "POST /api/intents" });
         } else if (pending !== null) {
           // A refusal that belongs to a clarification moves this tab with it:
           // the target the server resolved is the target the next sentence is
           // about, and the two are never allowed to disagree. A terminal
           // outcome leaves no token, so the card that shows it asks nothing.
-          adoptTarget(pending);
-          pendingIntentRef.current =
-            pending.continuationToken === null ? null : pending;
+          if (canContinueIntent()) {
+            if (updateView) adoptTarget(pending);
+            pendingIntentRef.current = pending.continuationToken === null ? null : { ...pending, ...(documentContext ? { documentContext } : {}) };
+          }
           append({
             kind: TERMINAL_OUTCOMES.includes(error.code) ? "terminal" : "question",
             error,
@@ -1123,7 +1368,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         } else if (error.code === BLOCKED_NEEDS_HUMAN) {
           append({ kind: "question", error, utterance });
         } else {
-          recoverFromStaleBase(error);
+          if (updateView) recoverFromStaleBase(error);
           append({ kind: "refusal", error, what: "POST /api/intents" });
         }
       } finally {
@@ -1136,6 +1381,11 @@ export default function App({ server }: { server: ServerIdentity }) {
       adoptTarget,
       append,
       gestures,
+      modelAnnotations,
+      persistentAnnotations,
+      loadedModelSource,
+      editingModelSource,
+      documentContinuation,
       project,
       projection,
       recoverFromStaleBase,
@@ -1146,6 +1396,7 @@ export default function App({ server }: { server: ServerIdentity }) {
       sourceLabel,
       sourceRunId,
       stateDigest,
+      server.capabilities,
       t,
     ],
   );
@@ -1160,13 +1411,14 @@ export default function App({ server }: { server: ServerIdentity }) {
    */
   const chooseCandidate = useCallback(
     (choice: Choice) => {
+      if (stateDigest === null && documentContinuation === null) return;
       const pending = pendingIntentRef.current;
       if (pending === null) return;
       const next: Selection = {
         componentId: choice.componentId,
         elementId: choice.elementId,
       };
-      selectSemanticTarget(next.componentId, next.elementId);
+      if (sameModelSource(loadedModelSource, editingModelSource)) selectSemanticTarget(next.componentId, next.elementId);
       append({
         kind: "system",
         ...systemText([
@@ -1180,34 +1432,70 @@ export default function App({ server }: { server: ServerIdentity }) {
       });
       void propose(pending.originalUtterance, next);
     },
-    [append, propose, selectSemanticTarget],
+    [append, documentContinuation, editingModelSource, loadedModelSource, propose, selectSemanticTarget, stateDigest],
   );
 
-  const changeEditingBase = useCallback(async (runId: string | null) => {
-    if (changingBase || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy) return;
+  const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto) => {
+    if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy) return null;
     pickRequestRef.current += 1;
-    const next = await reload(runId);
+    const selectedSource = modelSource ?? (loadedModelSource?.runId === runId ? loadedModelSource : null);
+    const group = selectedSource ? workingCopies.find((copy) => copy.options.some((option) =>
+      option.modelSource.runId === selectedSource.runId && option.modelSource.stateDigest === selectedSource.stateDigest &&
+      option.modelSource.assetSha256 === selectedSource.assetSha256,
+    )) : undefined;
+    let next;
+    setSelectingWorkingCopy(true);
+    try {
+      if (group && selectedSource) {
+        const option = group.options.find((row) => sameModelSource(row.modelSource, selectedSource))!;
+        await studio.selectWorkingCopy(group.groupId, {
+          projectId: group.projectId, baseRevisionSha256: group.revisionSha256, optionId: option.id,
+        });
+      }
+      next = await reload(runId);
+    } catch (cause) {
+      setArtifactError(asStudioApiError(cause));
+      return null;
+    } finally {
+      setSelectingWorkingCopy(false);
+    }
     if (next !== null) {
+      pendingIntentRef.current = null;
+      if (selectedSource && selectedSource.runId === next.projection.referenceRun.runId && selectedSource.stateDigest === next.projection.stateDigest) {
+        documentEditingRef.current = { projectId: next.project.projectId, modelSource: selectedSource };
+      }
+      manualLoadRef.current = true;
       setProgramOpen(false);
       setDisplayMode("model");
       viewportRef.current?.showOriginal();
       viewportRef.current?.clearSecondary();
       setBlendState(null);
+      if (selectedSource && artifacts.status === "ready" &&
+          (loadedArtifact?.runId !== selectedSource.runId || loadedArtifact.sha256 !== selectedSource.assetSha256)) {
+        const artifact = artifacts.value.artifacts.find((row) => row.runId === selectedSource.runId && row.sha256 === selectedSource.assetSha256);
+        if (artifact) await loadArtifactIntoViewer(artifact, modelSources.find((row) => row.modelSource.assetSha256 === selectedSource.assetSha256)?.label ?? artifact.fileName, true);
+      }
       if (runId === null) {
-        manualLoadRef.current = true;
+        const complete = next.workingCopies.flatMap((copy) => copy.options.filter((option) => option.id === copy.selectedOptionId)).find((option) =>
+          option.modelSource.runId === next.projection.referenceRun.runId && option.modelSource.stateDigest === next.projection.stateDigest,
+        )?.modelSource ?? (artifacts.status === "ready" ? artifacts.value.artifacts.find((row) =>
+          row.runId === next.projection.referenceRun.runId && row.representation === "composed" && row.modelSource?.stateDigest === next.projection.stateDigest,
+        )?.modelSource : null);
+        documentEditingRef.current = { projectId: next.project.projectId, modelSource: complete ?? null };
         const rows = artifacts.status === "ready" ? viewableArtifacts(
           artifacts.value.artifacts.filter(
-            (row) => row.runId === next.projection.referenceRun.runId,
+            (row) => row.runId === next.projection.referenceRun.runId && (!complete || row.sha256 === complete.assetSha256),
           ),
         ) : [];
         if (rows.length > 0) {
-          void loadRunIntoViewer(rows, runSourceLabel(next.projection.referenceRun.runId, rows));
+          void loadRunIntoViewer(rows, runSourceLabel(next.projection.referenceRun.runId, rows), true);
         } else {
           viewportRef.current?.clear();
         }
       }
     }
-  }, [applyingProgram, artifacts, candidateBusy, changingBase, loadRunIntoViewer, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel]);
+    return next;
+  }, [applyingProgram, artifacts, candidateBusy, changingBase, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
 
   /**
    * The hand moves a proposal's number. The sentence is the grammar's own —
@@ -1415,19 +1703,45 @@ export default function App({ server }: { server: ServerIdentity }) {
    */
   const makeOption = useCallback(
     async (body: MassingOptionRequestDto) => {
+      if (
+        stateDigest === null ||
+        !editingModelSourceReady ||
+        body.stateDigest !== stateDigest ||
+        optionsTable.status !== "ready" ||
+        (optionsTable.value.sourceRunId ?? null) !== sourceRunId ||
+        optionsTable.value.stateDigest !== stateDigest
+      ) return;
+      const read = optionsReadRef.current;
+      const source = sourceRunId;
+      const requestedLoad = modelLoadRequest.current;
+      const sourceIsCurrent = () => read === optionsReadRef.current && requestedLoad === modelLoadRequest.current &&
+        documentEditingRef.current.projectId === project?.projectId &&
+        sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
+        sameModelSource(currentViewSourceRef.current, loadedModelSource);
       setOptionsBusy(true);
       try {
-        await studio.makeOption(body);
-        setOptionsTable(ready(await studio.options()));
+        await studio.makeOption({
+          ...body,
+          sourceRunId: source ?? undefined,
+          modelSource: editingModelSource,
+        });
+        if (!sourceIsCurrent()) return;
+        const answer = await studio.options(source);
+        if (
+          sourceIsCurrent() &&
+          (answer.sourceRunId ?? null) === source &&
+          answer.stateDigest === body.stateDigest
+        ) setOptionsTable(ready(answer));
       } catch (cause) {
         const error = asStudioApiError(cause);
-        recoverFromStaleBase(error);
+        if (sourceIsCurrent()) recoverFromStaleBase(error);
         append({ kind: "refusal", error, what: "POST /api/options" });
       } finally {
         setOptionsBusy(false);
       }
     },
-    [append, recoverFromStaleBase],
+    [append, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
+      recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
   /**
@@ -1438,6 +1752,25 @@ export default function App({ server }: { server: ServerIdentity }) {
    */
   const selectOption = useCallback(
     async (optionId: string) => {
+      const option = optionsTable.status === "ready"
+        ? optionsTable.value.options.find((row) => row.optionId === optionId)
+        : undefined;
+      if (
+        stateDigest === null ||
+        !editingModelSourceReady ||
+        option === undefined ||
+        !sameModelSource(option.modelSource, editingModelSource) ||
+        (optionsTable.status === "ready" &&
+          ((optionsTable.value.sourceRunId ?? null) !== sourceRunId ||
+            optionsTable.value.stateDigest !== stateDigest ||
+            option.stateDigest !== stateDigest))
+      ) return;
+      const read = optionsReadRef.current;
+      const requestedLoad = modelLoadRequest.current;
+      const sourceIsCurrent = () => read === optionsReadRef.current && requestedLoad === modelLoadRequest.current &&
+        documentEditingRef.current.projectId === project?.projectId &&
+        sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
+        sameModelSource(currentViewSourceRef.current, loadedModelSource);
       setOptionsBusy(true);
       manualLoadRef.current = false;
       try {
@@ -1451,7 +1784,7 @@ export default function App({ server }: { server: ServerIdentity }) {
         });
       } catch (cause) {
         const error = asStudioApiError(cause);
-        recoverFromStaleBase(error);
+        if (sourceIsCurrent()) recoverFromStaleBase(error);
         append({
           kind: "refusal",
           error,
@@ -1461,7 +1794,8 @@ export default function App({ server }: { server: ServerIdentity }) {
         setOptionsBusy(false);
       }
     },
-    [append, recoverFromStaleBase],
+    [append, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
+      recoverFromStaleBase, sourceRunId, stateDigest],
   );
 
   // The transcript as of the last render, for callbacks that must stay
@@ -1497,7 +1831,7 @@ export default function App({ server }: { server: ServerIdentity }) {
               ? proposalEntry.proposal.protected
               : [],
         });
-        void loadArtifacts();
+        void loadArtifacts(true);
       }
     },
     [append, loadArtifacts, noteTranscriptStatus],
@@ -1535,17 +1869,18 @@ export default function App({ server }: { server: ServerIdentity }) {
     );
     if (rows.length === 0) return;
     const twin =
+      rows.find((row) => row.representation === "composed" && row.modelSource != null) ??
       rows.find((row) => loadedArtifact !== null && row.stageId === loadedArtifact.stageId) ??
       rows[0];
     autoShowRef.current = null;
-    if (manualLoadRef.current && loadedArtifact !== null && loadedArtifact.runId !== candidateId) {
+    if (manualLoadRef.current && loadedArtifact?.runId !== candidateId) {
       append({
         kind: "system",
         ...systemText([
           { kind: "prose", text: "the candidate's model is ready · " },
           { kind: "technical", text: twin.fileName },
           { kind: "prose", text: " · not shown: you chose " },
-          { kind: "technical", text: loadedArtifact.fileName },
+          { kind: "technical", text: loadedArtifact?.fileName ?? sourceLabel ?? "another view" },
           {
             kind: "prose",
             text: " to look at; its card can show it",
@@ -1573,8 +1908,8 @@ export default function App({ server }: { server: ServerIdentity }) {
             ] satisfies SystemTextPart[])),
       ]),
     });
-    void loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId));
-  }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, validations]);
+    void loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null);
+  }, [append, artifacts, loadArtifactIntoViewer, loadedArtifact, sourceLabel, validations]);
 
   // Which candidate the drawer shows: the one whose card was clicked, else
   // the latest this tab launched. A card's "receipts" opens its own run.
@@ -1692,12 +2027,12 @@ export default function App({ server }: { server: ServerIdentity }) {
   // An agent can resolve the subject from the architect's words and the record.
   // A pick or circle supplies context, but is not a prerequisite for speaking.
   const hasSubject =
-    selection !== null || gestures.some((gesture) => gesture.kind === "circle") ||
+    documentContinuation !== null || selection !== null || gestures.some((gesture) => gesture.kind === "circle") ||
     project?.intentProvider === "codex" || project?.intentProvider === "anthropic";
   const disabledReason =
     changingBase
       ? t("stage.base.loading")
-      : viewingAnotherBase
+      : viewingAnotherBase && documentContinuation === null
         ? t("stage.base.viewOnly")
       : modelLoading
         ? t("stage.base.loading")
@@ -1710,6 +2045,22 @@ export default function App({ server }: { server: ServerIdentity }) {
           : !hasSubject
             ? t("shell.pickFirst")
             : null;
+  const optionsCanAct =
+    stateDigest !== null &&
+    editingModelSourceReady &&
+    optionsTable.status === "ready" &&
+    (optionsTable.value.sourceRunId ?? null) === sourceRunId &&
+    optionsTable.value.stateDigest === stateDigest;
+  const programCanApply =
+    stateDigest !== null &&
+    editingModelSourceReady &&
+    program.status === "ready" &&
+    sheet !== null &&
+    (program.value.sourceRunId ?? null) === sourceRunId &&
+    program.value.stateDigest === stateDigest &&
+    sheet.stateDigest === program.value.sheet.stateDigest &&
+    sheet.recordDigest === program.value.sheet.recordDigest &&
+    sheet.recordDigest === projection?.recordDigest;
 
   // CURRENT / GHOST PREVIEW / VALIDATED — what the picture is, with the
   // server's word as its detail. A candidate's export is VALIDATED only once
@@ -1760,7 +2111,7 @@ export default function App({ server }: { server: ServerIdentity }) {
   const evidenceCounts = {
     honesty: honestyCount(projection, selectedCandidate, selectedValidation),
     receipts: candidateEntries.length,
-    events: eventCount,
+    events: eventLines.length,
   };
   // The review summary on the evidence tab, in the reviewer's words: every
   // candidate this tab launched is a change; a change is checked once its
@@ -1784,7 +2135,7 @@ export default function App({ server }: { server: ServerIdentity }) {
     { changes: candidateEntries.length, checked: 0, needsReview: 0 },
   );
 
-  const drawer = (
+  const drawer = developerMode ? (
     <EvidenceDrawer
       open={evidenceOpen}
       pinned={evidencePinned}
@@ -1796,12 +2147,12 @@ export default function App({ server }: { server: ServerIdentity }) {
       validation={selectedValidation}
       sentence={selectedSentence}
       notices={[]}
+      eventLines={eventLines}
       onTab={setEvidenceTab}
       onClose={() => setEvidenceOpen(false)}
       onPin={pinEvidence}
-      onEventCount={setEventCount}
     />
-  );
+  ) : null;
 
   // The tab is still starting up until the API has answered for the binding. This carries
   // the launcher's exact-status convention into the browser and ends when the shell has a
@@ -1819,7 +2170,7 @@ export default function App({ server }: { server: ServerIdentity }) {
           <p className="refusal__lead">
             {missingChosenModel ? t("stage.base.modelUnavailable") : t("stage.base.restoreHelp")}
           </p>
-          {sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
+          {developerMode && sourceRunId !== null && <p className="mono">{sourceRunId}</p>}
           {error && <ErrorPanel error={error} />}
           <button type="button" className="btn" disabled={changingBase}
             onClick={() => { if (missingChosenModel) void loadArtifacts(); else void reload(); }}>
@@ -1875,9 +2226,11 @@ export default function App({ server }: { server: ServerIdentity }) {
             {persistenceFailed && <span className="toolbar__item" role="status">{t("stage.base.notSaved")}</span>}
             {project ? (
               <>
-                <span className="mono toolbar__item" title={project.projectDir}>
-                  {project.projectId}
-                </span>
+                {developerMode && (
+                  <span className="mono toolbar__item" title={project.projectDir}>
+                    {project.projectId}
+                  </span>
+                )}
                 <span className="mono toolbar__item">
                   {t("shell.publishedIssue", { version: project.published.version })}
                 </span>
@@ -1902,20 +2255,22 @@ export default function App({ server }: { server: ServerIdentity }) {
               aria-expanded={conversationOpen}
               onClick={() => setConversationOpen((open) => !open)}
             >
-              {t("conversation.title")}
+              {t(conversationOpen ? "conversation.title" : "conversation.openComposer")}
             </button>
-            <button
-              type="button"
-              className="toolbar__btn"
-              aria-pressed={evidenceOpen || evidencePinned}
-              onClick={() =>
-                evidenceOpen && !evidencePinned
-                  ? setEvidenceOpen(false)
-                  : openEvidence(evidenceTab)
-              }
-            >
-              {t("nav.evidence")}
-            </button>
+            {developerMode && (
+              <button
+                type="button"
+                className="toolbar__btn"
+                aria-pressed={evidenceOpen || evidencePinned}
+                onClick={() =>
+                  evidenceOpen && !evidencePinned
+                    ? setEvidenceOpen(false)
+                    : openEvidence(evidenceTab)
+                }
+              >
+                {t("nav.evidence")}
+              </button>
+            )}
             <button
               type="button"
               className="toolbar__btn"
@@ -1932,8 +2287,6 @@ export default function App({ server }: { server: ServerIdentity }) {
             entries={transcript.entries}
             sessionError={null}
             projection={projection}
-            editingBaseRunId={projection?.referenceRun.runId ?? null}
-            editingBaseLabel={sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
             currentStateDigest={stateDigest}
             selection={selection}
             disabledReason={disabledReason}
@@ -1944,7 +2297,7 @@ export default function App({ server }: { server: ServerIdentity }) {
             refiningEntryId={refiningEntryId}
             gestures={gestures}
             onRemoveGesture={(index) =>
-              setGestures((current) => current.filter((_, i) => i !== index))
+              editGestures((current) => current.filter((_, i) => i !== index))
             }
             intentProvider={project?.intentProvider ?? null}
             draft={draft}
@@ -2018,22 +2371,51 @@ export default function App({ server }: { server: ServerIdentity }) {
             tool={tool}
             gestures={gestures}
             onTool={setTool}
-            onGesture={(gesture) => setGestures((current) => [...current, gesture])}
+            onGesture={(gesture) => editGestures((current) => [...current, { ...gesture, id: crypto.randomUUID() }])}
+            onUndoGesture={modelAnnotations.undo}
+            onRedoGesture={modelAnnotations.redo}
+            canUndoGesture={modelAnnotations.canUndo}
+            canRedoGesture={modelAnnotations.canRedo}
+            modelAnnotations={persistentAnnotations ? modelAnnotations : null}
+            annotationsReady={modelAnnotations.ready && !modelLoading &&
+              (loadedArtifacts.length > 0 || sourceLabel === LOCAL_SOURCE_LABEL)}
+            onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
+            documentProjectId={project?.projectId ?? null}
+            documentModelSources={modelSources}
+            viewedModelSource={loadedModelSource}
+            editingModelSource={editingModelSource}
+            onContinueModelSource={async (source) => {
+              const next = await changeEditingBase(source.runId, source);
+              if (next === null) throw asStudioApiError(new Error("The editing base could not be changed. Retry after resolving the reported error."));
+            }}
+            documentVisualInputAvailable={server.capabilities.includes("document-visual-input")}
+            onDocumentSubmit={(utterance, refs, source, visuals) => {
+              setConversationOpen(true);
+              return propose(utterance, undefined, refs, source, visuals);
+            }}
             picked={picked}
             versions={versions}
+            hasNewVersions={hasNewVersions}
+            onVersionsOpen={() => {
+              setHasNewVersions(false);
+              setVersionRefreshRequest((current) => current + 1);
+            }}
+            workingCopies={workingCopies}
+            onOpenWorkingOption={openWorkingOption}
             loadingSha={artifactLoadingSha}
             loadedShas={loadedShas}
             editingBaseRunId={projection?.referenceRun.runId ?? null}
-            editingBaseLabel={sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
+            editingBaseLabel={modelSources.find((row) => sameModelSource(row.modelSource, editingModelSource))?.label ??
+              sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
             explicitBase={sourceRunId !== null}
-            changingBase={changingBase}
+            changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}
-            baseActionBusy={proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy}
+            baseActionBusy={proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy || selectingWorkingCopy}
             onContinue={(runId) => void changeEditingBase(runId)}
             onDefaultBase={() => void changeEditingBase(null)}
             evidenceCounts={evidenceCounts}
             review={review}
-            drawer={evidencePinned ? null : drawer}
+            drawer={developerMode && evidencePinned ? null : drawer}
             displayMode={displayMode}
             onDisplayMode={chooseDisplayMode}
             framePanel={
@@ -2062,11 +2444,11 @@ export default function App({ server }: { server: ServerIdentity }) {
             optionsPanel={
               optionsOpen ? (
                 <OptionsPanel
-                  readOnlyReason={sourceRunId !== null ? t("stage.base.optionsReadOnly") : undefined}
                   table={optionsTable}
                   volumes={volumes}
-                  stateDigest={sourceRunId === null ? stateDigest : null}
+                  stateDigest={optionsCanAct ? stateDigest : null}
                   busy={optionsBusy}
+                  canSelect={(option) => sameModelSource(option.modelSource, editingModelSource)}
                   onMake={(body) => void makeOption(body)}
                   onSelect={(optionId) => void selectOption(optionId)}
                   onClose={() => chooseDisplayMode("model")}
@@ -2082,6 +2464,7 @@ export default function App({ server }: { server: ServerIdentity }) {
                   semantics={semantics}
                   sheet={sheet}
                   applying={applyingProgram}
+                  canApply={programCanApply}
                   // Only a local studio writes the architect's own file; a
                   // remote server refuses, so the box is not offered there.
                   canSave={server.mode === "local"}
@@ -2169,7 +2552,7 @@ export default function App({ server }: { server: ServerIdentity }) {
             onEvidence={openEvidence}
           />
         }
-        pinnedDrawer={evidencePinned ? drawer : null}
+        pinnedDrawer={developerMode && evidencePinned ? drawer : null}
       />
       <SettingsPanel
         open={settingsOpen}

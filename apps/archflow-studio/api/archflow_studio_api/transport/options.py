@@ -24,6 +24,7 @@ from ..application.options import (
     OptionsTable,
     RecordMassing,
 )
+from .artifacts import ModelSourceDto, model_source_dto
 
 TransformName = Literal[
     "add_floor", "remove_floor", "shift_volume", "scale_volume", "split_volume", "pack"
@@ -67,6 +68,10 @@ class MassingOptionRequestDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
+    source_run_id: str | None = Field(
+        default=None, alias="sourceRunId", min_length=1,
+        description="the selected retained run; omitted uses the project's default source",
+    )
     state_digest: str = Field(
         alias="stateDigest",
         min_length=1,
@@ -74,6 +79,7 @@ class MassingOptionRequestDto(BaseModel):
         "against another state is refused",
     )
     transform: TransformName
+    model_source: ModelSourceDto | None = Field(default=None, alias="modelSource")
     label: str | None = Field(default=None, min_length=1)
     volume_id: str | None = Field(default=None, alias="volumeId")
     dx: int | None = Field(default=None, description="whole plan cells on x")
@@ -167,7 +173,9 @@ class MassingOptionDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
+    source_run_id: str | None = Field(default=None, alias="sourceRunId")
     option_id: str = Field(alias="optionId")
+    model_source: ModelSourceDto | None = Field(default=None, alias="modelSource")
     run_id: str = Field(
         alias="runId", description="the run this option's pack is retained in"
     )
@@ -194,6 +202,7 @@ class OptionsDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
+    source_run_id: str | None = Field(default=None, alias="sourceRunId")
     state_digest: str = Field(alias="stateDigest")
     baseline: MassingMetricsDto = Field(
         description="the current record's own massing, measured the same way",
@@ -276,6 +285,8 @@ def option_dto(option: MassingOption) -> MassingOptionDto:
             if value is not None
         },
         state_digest=option.base_state_digest,
+        source_run_id=option.source_run_id,
+        model_source=model_source_dto(option.model_source),
         metrics=metrics_dto(option.metrics),
         envelope_findings=[finding_dto(f) for f in option.envelope_findings],
         record_ref=option.record_ref,
@@ -287,6 +298,7 @@ def option_dto(option: MassingOption) -> MassingOptionDto:
 def options_dto(table: OptionsTable) -> OptionsDto:
     return OptionsDto(
         state_digest=table.state_digest,
+        source_run_id=table.source_run_id,
         baseline=metrics_dto(table.baseline),
         options=[option_dto(option) for option in table.options],
         transforms=list(TRANSFORMS),

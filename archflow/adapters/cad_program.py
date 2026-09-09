@@ -841,34 +841,52 @@ def expected_object_bounds(program) -> dict[str, dict]:
         elif kind == "boolean_difference":
             base = sorted(ins)[int(params.get("base_index", 0))]
             base_min, base_max = _point_bounds(points[base])
-            for cutter in (object_id for object_id in ins if object_id != base):
-                cutter_min, cutter_max = _point_bounds(points[cutter])
-                disjoint = any(
-                    cutter_max[axis] < base_min[axis]
-                    or cutter_min[axis] > base_max[axis]
-                    for axis in range(3)
-                )
-                internal = [
-                    base_min[axis] < cutter_min[axis]
-                    and cutter_max[axis] < base_max[axis]
-                    for axis in range(3)
+            cutters = {
+                cutter: _point_bounds(points[cutter])
+                for cutter in ins if cutter != base
+            }
+            if base in boxes:
+                # A surviving corner must be strictly outside every cutter's
+                # closed bounds. Check cutters together: separate cuts may
+                # jointly remove a face that either cut alone would preserve.
+                retained = [
+                    point for point in points[base]
+                    if all(any(point[axis] < lo[axis] or point[axis] > hi[axis]
+                               for axis in range(3))
+                           for lo, hi in cutters.values())
                 ]
-                # Any base keeps its extrema under a cutter strictly inside
-                # it on every axis. A box base also keeps them under a
-                # cutter strictly inside on at least one axis: no face of
-                # a box can be removed whole by such a cutter, so a
-                # through-cut opening (P092) leaves the wall's bounds.
-                # Other shapes may hold an extremum at a single point the
-                # cutter reaches, so they fail closed.
-                strictly_internal = all(internal) or (
-                    base in boxes and any(internal)
-                )
-                if not disjoint and not strictly_internal:
+                # Keep all plan corners as well as the six current extrema:
+                # radial_array later rotates this projection about vertical.
+                # A wall-end door with a header satisfies both conditions.
+                plan_corners = {(point[0], point[2]) for point in retained}
+                if (not retained
+                        or _point_bounds(retained) != (base_min, base_max)
+                        or any((point[0], point[2]) not in plan_corners
+                               for point in points[base])):
                     raise CadTranslationError(
                         "boolean difference bounds are not analytically "
-                        f"determined for {op_id}: cutter {cutter} can alter "
-                        "a base extremum"
+                        f"determined for {op_id}: cutters can alter a base extremum "
+                        "or its vertical-axis rotation"
                     )
+            else:
+                # Other shapes can hold an extremum at a single point.
+                for cutter, (cutter_min, cutter_max) in cutters.items():
+                    disjoint = any(
+                        cutter_max[axis] < base_min[axis]
+                        or cutter_min[axis] > base_max[axis]
+                        for axis in range(3)
+                    )
+                    strictly_internal = all(
+                        base_min[axis] < cutter_min[axis]
+                        and cutter_max[axis] < base_max[axis]
+                        for axis in range(3)
+                    )
+                    if not disjoint and not strictly_internal:
+                        raise CadTranslationError(
+                            "boolean difference bounds are not analytically "
+                            f"determined for {op_id}: cutter {cutter} can alter "
+                            "a base extremum"
+                        )
             points[out] = list(points[base])
             counts[out] = 1
         elif kind == "boolean_intersection":

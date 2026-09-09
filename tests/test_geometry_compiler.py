@@ -285,10 +285,6 @@ class GeometryCompilerTests(unittest.TestCase):
             result.program.program_digest,
         )
         self.assertEqual(
-            "854e5225c219ac1cce02422aad8463af5ebce080eb54ccf1d0a43c8879f161fe",
-            result.receipt.receipt_digest,
-        )
-        self.assertEqual(
             {
                 "schema": "GeometryCompilationReceipt@1",
                 "proposal_digest": (

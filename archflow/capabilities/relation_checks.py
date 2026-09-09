@@ -70,7 +70,7 @@ class RelationCheckReport:
 
     @property
     def fully_checked(self) -> bool:
-        return all(c.status != "unchecked" for c in self.checks)
+        return all(c.status != "unchecked" and not c.measured.get("unchecked_pair_count", 0) for c in self.checks)
 
     def to_dict(self) -> dict[str, Any]:
         counts = {status: sum(1 for c in self.checks if c.status == status) for status in ("held", "violated", "unchecked")}
@@ -286,6 +286,63 @@ def check_aperture_exists(relation: Relation, *, record: StateRecord, bounds: Ma
                          "; ".join(problems) or f"opening {relation.object} lies within host {relation.subject}")
 
 
+def check_solid_nonpenetration(
+    relation: Relation, *, record: StateRecord, bounds: Mapping[str, Bounds],
+    objects_by_element: Mapping[str, Sequence[str]], datum_values: Mapping[str, float],
+    solid_measurements: Mapping[tuple[str, str], Mapping[str, object]] | None = None,
+) -> RelationCheck:
+    """No positive common volume in explicitly requested final solid pairs.
+
+    These measurements must come from the CAD adapter's final STEP
+    readback. Bounds, including overlapping bounds, are never a substitute.
+    A pair may be separated or in contact; neither is penetration. A
+    missing/consumed object or an unavailable solid measurement is unchecked.
+    Each pair must also belong to the declared endpoints' produced objects,
+    in either order; for a same-host relation both objects belong to that host.
+    """
+
+    pairs = tuple(tuple(pair) for pair in relation.parameters["object_pairs"])
+    measured: dict[str, float] = {"pair_count": float(len(pairs)), "checked_pair_count": 0.0,
+                                  "separated_pair_count": 0.0, "contact_pair_count": 0.0,
+                                  "penetrating_pair_count": 0.0, "unchecked_pair_count": 0.0}
+    details = []
+    distances, volumes = [], []
+    subject_objects = set(objects_by_element.get(relation.subject, ()))
+    object_objects = set(objects_by_element.get(relation.object, ()))
+    for first, second in pairs:
+        if not ((first in subject_objects and second in object_objects)
+                or (second in subject_objects and first in object_objects)):
+            measured["unchecked_pair_count"] += 1.0
+            missing = [entity for entity, objects in ((relation.subject, subject_objects), (relation.object, object_objects)) if not objects]
+            reason = (f"no produced-object mapping for {', '.join(dict.fromkeys(missing))}" if missing else
+                      f"pair does not belong to declared endpoints {relation.subject} / {relation.object}")
+            details.append(f"{first} / {second}: unchecked: {reason}")
+            continue
+        values = (solid_measurements or {}).get((first, second))
+        if values is None:
+            values = (solid_measurements or {}).get((second, first))
+        distance = values.get("distance_m") if values else None
+        volume = values.get("common_volume_m3") if values else None
+        if (not values or values.get("status") not in {"separated", "contact", "penetrating"}
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0
+                       for v in (distance, volume))):
+            measured["unchecked_pair_count"] += 1.0
+            reason = str(values.get("detail")) if values and values.get("detail") else "no final OCCT solid readback measurement"
+            details.append(f"{first} / {second}: unchecked: {reason}")
+            continue
+        measured["checked_pair_count"] += 1.0
+        distances.append(float(distance))
+        volumes.append(float(volume))
+        classification = "penetrating" if volume > 0.0 else "contact" if distance == 0.0 else "separated"
+        measured[f"{classification}_pair_count"] += 1.0
+        details.append(f"{first} / {second}: {classification}, common volume {volume:.12g} m3, distance {distance:.12g} m")
+    if distances:
+        measured["distance_m_min"] = min(distances)
+        measured["common_volume_m3_max"] = max(volumes)
+    status = "violated" if measured["penetrating_pair_count"] else "unchecked" if measured["unchecked_pair_count"] else "held"
+    return RelationCheck(relation.relation_id, relation.kind, "solid_nonpenetration", status, 0.0, measured, "; ".join(details))
+
+
 class Checker(Protocol):
     """One measurement of one declared check kind against realized bounds."""
 
@@ -298,6 +355,7 @@ CHECKERS: Mapping[str, Checker] = MappingProxyType({
     "support_contact": check_support_contact,
     "clearance_interval": check_clearance_interval,
     "aperture_exists": check_aperture_exists,
+    "solid_nonpenetration": check_solid_nonpenetration,
 })
 
 if set(CHECKERS) != set(CHECK_KINDS):                                   # the accepted vocabulary IS the checker table
@@ -305,7 +363,8 @@ if set(CHECKERS) != set(CHECK_KINDS):                                   # the ac
 
 
 def check_relations(record: StateRecord, *, bounds: Mapping[str, Bounds], objects_by_element: Mapping[str, Sequence[str]],
-                    datum_values: Mapping[str, float] | None = None, relations: Sequence[Relation] | None = None) -> RelationCheckReport:
+                    datum_values: Mapping[str, float] | None = None, relations: Sequence[Relation] | None = None,
+                    solid_measurements: Mapping[tuple[str, str], Mapping[str, object]] | None = None) -> RelationCheckReport:
     """Measure every relation that binds a validator; a relation without one is reported as unchecked.
 
     ``relations`` defaults to the record's own; a caller that materialised more (the runner's
@@ -328,5 +387,6 @@ def check_relations(record: StateRecord, *, bounds: Mapping[str, Bounds], object
             checks.append(RelationCheck(relation.relation_id, relation.kind, "none", "unchecked", 0.0, {}, "no validator bound"))
             continue
         checker = CHECKERS[relation.validator.check_kind]
-        checks.append(checker(relation, record=record, bounds=bounds, objects_by_element=objects_by_element, datum_values=datum_values or {}))
+        extra = {"solid_measurements": solid_measurements} if relation.validator.check_kind == "solid_nonpenetration" else {}
+        checks.append(checker(relation, record=record, bounds=bounds, objects_by_element=objects_by_element, datum_values=datum_values or {}, **extra))
     return RelationCheckReport(record.digest, tuple(checks))

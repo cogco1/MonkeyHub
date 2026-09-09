@@ -27,7 +27,8 @@ bounds (each relation measured once, in the seat where the last input its
 declared checker reads appears - endpoint extent, or the named datum a
 ``support_contact`` check compares against - on compiler-predicted boxes,
 never on a saved CAD box; what no seat can measure is retained as
-unchecked), handovers to consuming
+unchecked), final solid-pair checks on verified OCCT STEP readback after
+all seats export, handovers to consuming
 seats (published datums and realized bounds as exclusions), optional CAD
 export - in process through OCCT by default (exact STEP plus a mesh ``.3dm``
 preview, retained as ``seat-occt-execution``), or through Rhino when the
@@ -168,6 +169,7 @@ CAD_BACKENDS = (CAD_BACKEND_OCCT, CAD_BACKEND_RHINO)
 # the declared condition, not that a produced solid does. The label travels on every retained
 # ``seat-relation-check`` record and on the run receipt so a reader never has to infer it.
 RELATION_CHECK_BASIS = "compiled-predicted-bounds"
+SOLID_RELATION_CHECK_BASIS = "occt-step-solid-pairs"
 # The checkers that read a relation's ``datum_role`` out of ``datum_values`` (``relation_checks``):
 # ``check_support_contact`` compares the measured face with the named datum, the other two never
 # look at it. A relation bound to one of these is not ready to measure until that datum has been
@@ -854,6 +856,19 @@ def run_project(
                                    "error": type(exc).__name__, "detail": str(exc)[:2000],
                                    "seat_results": [_seat_dict(r) for r in results], "wall_time_s": round(time.perf_counter() - started, 3)})
         raise
+    # Solid relations wait until all seats have exported. A compiler box is
+    # never an early substitute, and each relation is retained exactly once.
+    solid_relations = tuple(r for r in ledger.pending.values() if r.validator and r.validator.check_kind == "solid_nonpenetration")
+    solid_check_ref = None
+    if solid_relations:
+        solid_report, execution_refs = _check_final_solid_relations(repository, run, record, solid_relations, results, ledger.objects)
+        solid_record = put(SEAT_RELATION_CHECK, {**solid_report.to_dict(), "seat_id": None, "scope": "stage-solid-pairs",
+                                               "basis": SOLID_RELATION_CHECK_BASIS, "execution_refs": list(execution_refs), **no_authority(_AUTH)})
+        solid_check_ref = solid_record.uri
+        relation_reports.append(solid_report)
+        check_receipt_digests.append(solid_record.sha256)
+        for relation in solid_relations:
+            del ledger.pending[relation.relation_id]
     # What no seat could measure: a relation whose endpoint never acquired extent in this run
     # (an element nobody produced, a declined component, an entity with no geometry). It is
     # retained as its own unchecked report so the closure reads it, instead of being dropped.
@@ -909,9 +924,10 @@ def run_project(
         "provider": provider_block,
         "rounds": [list(r) for r in rounds], "seat_results": [_seat_dict(s) for s in results],
         "seat_execution_complete": seat_execution_complete,
-        # Every relation check this run made was measured on compiler-predicted bounds; the
-        # relations no seat could measure are named, so an OPEN closure can be read back to them.
+        # Each report states its measurement basis. The original extent
+        # checkers remain analytic; explicit solid pairs use final CAD readback.
         "relation_checks": {"basis": RELATION_CHECK_BASIS, "unmeasured_check_ref": unmeasured_ref,
+                            **({"solid_check_ref": solid_check_ref, "solid_check_basis": SOLID_RELATION_CHECK_BASIS} if solid_check_ref else {}),
                             "unmeasured_relation_ids": [] if unmeasured is None else [c.relation_id for c in unmeasured.checks]},
         "wall_time_s": round(time.perf_counter() - started, 3), **no_authority(_AUTH),
     }
@@ -998,6 +1014,59 @@ def _stage_closure(stage_guard: StageExecutionGuard, *, branch: BranchRef, resul
     )
 
 
+def _check_final_solid_relations(repository, run, record, relations, results, objects_by_element):
+    """Cold-read this run's verified final OCCT exports, then measure requested pairs.
+
+    Pairs may span seats. Consumed operands and synthetic bounds never
+    enter the geometry set; an absent/failed/non-OCCT export leaves its
+    requested objects unchecked. The retained execution refs bind the
+    measurement to the exact STEP bytes read here.
+    """
+
+    from archflow.adapters.cad_execution import OcctBackendError, measure_occt_solid_pairs, read_step
+
+    pairs = tuple(sorted({tuple(pair) for relation in relations for pair in relation.parameters["object_pairs"]}))
+    wanted = {name for pair in pairs for name in pair}
+    entries, execution_refs, problems = [], [], []
+    for seat in results:
+        cad = seat.cad
+        if not cad or cad.get("backend") != CAD_BACKEND_OCCT or cad.get("status") != "succeeded" or cad.get("readback_verified") is not True:
+            continue
+        try:
+            ref = record_ref_from_uri(cad["execution_ref"], run.project_id)
+            payload = repository.load_json(ref)
+            binding = payload["identity"]["binding"]
+            exact = payload["exact_artifact"]
+            physical = payload["physical_object_ids"]
+            if not wanted.intersection(physical):
+                continue
+            if (ref.record_kind != SEAT_OCCT_EXECUTION or payload.get("schema") != "OcctExecutionReceipt@1"
+                    or payload.get("status") != "succeeded" or payload.get("readback_verified") is not True
+                    or payload.get("failures") or binding.get("project_id") != run.project_id
+                    or binding.get("run_id") != run.run_id or binding.get("base") != run.base.to_dict()
+                    or binding.get("program_digest") != seat.program_digest or exact.get("exact_brep") is not True):
+                raise ValueError("final STEP receipt does not certify this seat's current run/program")
+            path = Path(cad["model"])
+            if path.name != exact["relative_path"] or _sha256_file(path) != exact["sha256"]:
+                raise ValueError("final STEP bytes do not match the retained CAD receipt")
+            cold = read_step(path, length_unit="meter")
+            names = [entry.name for entry in cold]
+            if len(names) != len(set(names)) or set(names) != set(physical):
+                raise ValueError("final STEP names do not match the retained physical objects")
+            entries.extend(entry for entry in cold if entry.name in wanted)
+            execution_refs.append(ref.uri)
+        except (ValueError, TypeError, KeyError, OSError, ProjectIntegrityError, OcctBackendError) as exc:
+            problems.append(f"{seat.seat_id}: {exc}")
+    measurements = measure_occt_solid_pairs(entries, object_pairs=pairs, length_unit="meter") if entries else {}
+    for pair in pairs:
+        if pair not in measurements or measurements[pair]["status"] == "unchecked":
+            row = measurements.setdefault(pair, {"status": "unchecked", "distance_m": None, "common_volume_m3": None})
+            reason = row.get("detail") or "no verified final OCCT solid export in this run"
+            row["detail"] = f"{reason}{'; ' + '; '.join(problems) if problems else ''}"
+    return check_relations(record, bounds={}, objects_by_element=objects_by_element, relations=relations,
+                           solid_measurements=measurements), tuple(sorted(set(execution_refs)))
+
+
 @dataclass(frozen=True, slots=True)
 class Produced:
     """What one seat's rows produced, in deterministic order."""
@@ -1050,6 +1119,8 @@ class _RelationLedger:
     of that box is ``volume_boxes_of``). Realized geometry always wins over a
     synthetic bound with the same id. All bounds are compiler-predicted
     (``RELATION_CHECK_BASIS``); nothing here reads a saved CAD box.
+    Explicit solid_nonpenetration relations remain pending for the final
+    STEP measurement after every seat has had its export opportunity.
     """
 
     record: StateRecord
@@ -1121,7 +1192,8 @@ class _RelationLedger:
     def check(self, elements=()) -> RelationCheckReport:
         """Measure every pending relation whose checker inputs are all present now; the rest keep waiting."""
 
-        ready = tuple(r for r in self.pending.values() if not self._missing_inputs(r))
+        ready = tuple(r for r in self.pending.values()
+                      if not (r.validator and r.validator.check_kind == "solid_nonpenetration") and not self._missing_inputs(r))
         for relation in ready:
             del self.pending[relation.relation_id]
         return check_relations(self.record, bounds=self.bounds, objects_by_element=self.objects, datum_values=self.datum_values, relations=ready)

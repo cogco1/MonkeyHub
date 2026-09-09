@@ -1,20 +1,25 @@
-# 怎么在这个仓库里干活 — 十条
+# 协作流程
 
-1. **一人一卡一分支。** 动手前先在 `governance/work_registry.json` 认领一张卡(没有就先写一张 `docs/mapping/planning/P###-*.md`),从 `main` 开 `p1xx-<slug>` 分支,只走 PR 合入,CI 全绿加一个人 review 才合;每天 `git rebase main` 一次,别让分支飘走。
-2. **卡上的 `write_scope` 是硬边界。** 你的提交只能改这张卡列出的路径,加上共享账本(`tests/`、`docs/mapping/`、两张 registry);越界 CI 直接红(`archcheck --changed` 报 `SCOPE_VIOLATION`)。卡号 `P###` 写在每个提交的 subject 里(subject 没写才去 body 里找),`archcheck` 靠它认这次提交归谁。
-3. **兴趣探索进 `labs/`。** `labs/<名字>/` 随便写、可以 `import archflow.*`;但 `archflow/`、`tools/`、`apps/`、`tests/` 谁都不许 `import labs`,越界 `archcheck` 报 `LAYER_AUTHORITY_VIOLATION`。毕业规则见 [`labs/README.md`](labs/README.md)。
-4. **新模块先进注册表,一个能力一个 owner。** 在 `governance/module_registry.json` 写 `owns` / `public_api` / `tests` 再写代码;同一个能力出现第二个实现,`archcheck` 会报 `REGISTRY_DUPLICATE_OWNER` 或 `DUPLICATE_OWNED_FUNCTION`。默认扩展已有 owner,新建要写清为什么没有 owner 合适。
-5. **新记录种类先登记 `record_kinds.py`。** `archflow/project/record_kinds.py` 是 kind 表的唯一入口,没登记的 kind 项目仓库拒收;记录里的语义字段只认 `archflow/semantics/` 里的 `role.*` / `condition.*`。
-6. **新写入点先登记 policy。** 磁盘写入必须走 `archflow.project` 的端口;确实要新开一个写入点,先在 `governance/architecture_policy.json` 的 `allowed_write_sites` 写下 path / function / operations / kind / owner / reason,否则 `archcheck` 报 `UNOWNED_FILESYSTEM_WRITE`。
-7. **改了 DTO 就重生成客户端。** 在 `apps/archflow-studio/web` 跑 `npm run api:generate`,再用 `npm run api:check` 确认没漂移;协议上真的加/改了资源或字段,同一个 PR 更新 [`docs/PROTOCOL.md`](docs/PROTOCOL.md)。
-8. **前端字符串两张同键表。** 客户端自己的文案写进 `src/i18n/messages.en.ts` 和 `messages.zh-CN.ts`,两张表键必须一一对应,少一个键 typecheck 就红;代码、路径、哈希、协议串不翻译。
-9. **设计项目数据不进仓库。** 每个人用自己的 WIP 项目根(外部 `workspace/projects/<project_id>/`),记录、run、导出、截图都留在那里;仓库里只放会被 import、被测试跑、被 CI 检查或被注册表引用的东西。
-10. **提交守规矩。** 只 `git add` 明确的文件路径,不用 `git add -A` / `git add .`;不改已推送的历史(不 `--amend`、不 `push --force`),不直接 push `main`。
+[`AGENTS.md`](AGENTS.md) 保留长期规则；本文说明一次任务如何交接和集成。
+`module_registry` 记录软件归口与公开契约，`work_registry` 记录未完成任务及源码范围，
+`architecture_policy` 配置静态检查。模块 owner 是软件职责，可以包含多个实现文件，不是个人姓名；工作卡不是发布证明。
+
+1. **使用独立检出和短分支。** 成员各用自己的 clone 或 worktree，从约定基线建立 `codex/<简短名称>` 分支。保留维护者主检出的 WIP 和已有明确约定；需要同步时再按实际情况合并或 rebase，不做每日强制操作。
+2. **复用现有工作卡。** 先找本次任务所属的 live 卡，约定结果、验收和 `write_scope`。只有没有合适归属时才新建卡；完成后从 live 清单移除，成果以提交、PR 和实际交付状态说明。
+3. **按明确源码范围修改。** 卡片范围加上 policy 的 `shared_write_scope` 是提交边界，不是运行权限。共享范围现为 `docs/mapping/`、两张 registry、`tests/`、API tests 和 `docs/PROTOCOL.md`。涉及他人负责的路径，先交接本次修改范围。提交 subject 写所属 `P###`，未写时 checker 才读取正文。
+4. **给独立功能合适的位置。** 先查现有公开函数和调用方；新的分析或出图算法可以有独立目录或外部包，通过函数、CLI、API 或 adapter 接入。不要强迫每个功能改 core 或塞进已有大文件；不要复制已有状态、持久化或发布权威。实验与接入方式见 [`labs/README.md`](labs/README.md) 和指南第 7 节。
+5. **按数据用途保存。** 活跃项目使用显式外部项目根，持久数据经 `archflow.project` 的现有接口保存；只有明确晋升的输入和证据进入 `probes/`。用户设置、临时文件和 adapter workspace 沿各自已有边界。确实新增持久记录或受检查的写入点时，更新现有 kind 表或 policy，不为普通内部函数新增登记。
+6. **接口变化才同步契约。** 软件归口、公开契约或列出的测试改变时，同步 module registry；内部修复不用改表。DTO 改动后运行 `api:generate` 和 `api:check`，实际对外协议变化同步 [`PROTOCOL.md`](docs/PROTOCOL.md)。前端文案沿用中英文同键表。
+7. **按影响验证。** 选择受影响的行为测试、类型检查或构建；纯文档检查命令、链接、生成地图和 scoped diff。`archcheck` 检查当前静态边界，`--changed` 检查已提交范围；重复能力检查只覆盖相同声明和部分代码复制，行为正确性与语义重复仍需测试和 review。
+8. **明确暂存，再发 PR。** 只 `git add -- <明确文件>`，核对 staged diff，不收录他人 WIP。通过相关 CI 并由另一人 review 后集成；不直接 push `main`，不重写已推送历史。PR 写清问题、修改后行为、实际检查和仍影响使用的限制。
+
+`archcheck --changed <base>` 按每次提交当时的 policy 和工作卡检查；规则引入前不追溯，关闭卡片的那次提交可沿用父提交的有效范围。此后删除或损坏配置会报错。
+仅规则与说明维护可明确写 `P000-governance`：允许已列定的 checker、policy、CI、PR 模板、规则文档与 `README.md`，不允许业务源码、任意脚本或所有 Markdown。准确路径由 [`tools/archcheck.py`](tools/archcheck.py) 定义。
 
 ## 接着读什么
 
 - [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md) — 什么放哪、什么不进仓库。
-- [`AGENTS.md`](AGENTS.md) — 架构纪律:值与回执、持久化权威、动手前的五步。
+- [`AGENTS.md`](AGENTS.md) — 少量长期规则与项目边界。
 - [`docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — 环境搭建与首次跑通(队友从第 8 节开始)。
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — 对外协议,客户端能依赖什么。
 - [`apps/archflow-studio/README.md`](apps/archflow-studio/README.md) — Studio 的 api / web 与 `api:check`、`typecheck`、`build`。

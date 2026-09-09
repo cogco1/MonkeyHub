@@ -1,138 +1,113 @@
-# P108 — Vibe modeling client/server frontend (Studio lane)
+# P108 — Studio 候选操作与真实使用闭环
 
-**Status:** ready — the implementation has landed in parts; the round-one acceptance below must be completed before this card closes. Current development order is in [ARCHITECTURE.md](../../ARCHITECTURE.md); P111 records the delivered continuation and remaining user trial. This is not a request to rebuild Studio again.
-**Evidence check (2026-09-05):** verifiable in the repository — the six ports in `api/archflow_studio_api/ports.py`, the tag `studio-preview-slice-01` at 1ef336f, the contract / API / stale-base / cross-project / UI-state tests, archcheck. Not verifiable — no configured external project (the villa, any other workspace project, or the `studio-smoke` copies) retains a `studio-cand-*` run with its validation receipt; the round-one chain is attested only by live smokes on temporary copies. The card stays open for that one retained run and does not authorize developing a new design project to close it.
-**Lane:** productization and componentization
-**Depends on:** P102 (StateRecord is the source of truth), P103 (diff data), and — for the sub-second preview —
-P107; until P107 lands the frontend tolerates the 37-second Rhino path or works over existing candidates.
-**Write scope:** `apps/archflow-studio/` only. Codex is active in `archflow/runtime/`, `archflow/state/` and
-`governance/`; the frontend session does not touch those. Kernel gaps are carded, never fixed in passing.
-**Retires:** Preview Slice 01 — the stdlib `ThreadingHTTPServer` gateway, the presence-probe `kernel.py`, the
-monolithic `App.tsx`, `StageRail`/`CapabilityPanel`, the old launcher, the POST-501 tests and the current page
-layout. Retained at tag `studio-preview-slice-01`, whose annotation describes it; there is no archive card (finished
-work is Git history).
+**状态：active（2026-09-08）。** 现有 FastAPI／React 工作台已实现，本轮补齐完整模型与图纸批注的连续使用。
+本轮总分类及逐项进度见 [P115](P115-capability-consolidation.md)；本卡拥有 Studio 实现，
+P115 只索引和回填，不重复占有相同代码路径。
 
-## Direction (third and final ruling, 2026-09-03; codex review verified by 新建会话, adopted by Kaiwen)
+## 1. 已有能力，直接复用
 
-The product is rebuilt **inside the `apps/archflow-studio` namespace**, not in a top-level tree:
+- 已有项目绑定、精确 StateRecord 来源、对象选择、语义目录、圈选／手势、意图和提案。
+- scalar 与 typed component edit 共用现有 candidate → runner → CAD 导出和读回链。
+- 已有候选继续修改、返回默认来源及保留草稿。Program／options API 与客户端已贯通显式来源；旧来源响应不能用于新来源操作。
+- 已有 OCCT 导出与明确选择的 Rhino 兼容路径，不为普通操作启动 Rhino。
+- 已有 API／Web／OpenAPI 生成客户端、启动器、协议握手及相关测试。
+- 当前真实项目已有候选模型；此前“无 retained studio-cand run”的文字是旧快照，不能继续当作现状或重做模型的理由。
+  真实通道位置与整体建筑效果尚未验收，生成实体和关系检查数字不证明建筑正确。
 
-- `web/` — Vite + React, `src/{app,features,viewer,api/generated}`.
-- `api/` — `archflow_studio_api/{main.py,routes,application,adapters,transport}` + `tests/`, on
-  **FastAPI + Pydantic + uvicorn** (fastapi 0.141.1 with native `fastapi.sse.EventSourceResponse`).
-- Pydantic describes **transport DTOs only**. TypeScript types and the client are **generated from OpenAPI**
-  (`@hey-api/openapi-ts`); no second hand-written TS contract set.
-- FastAPI does BFF work only: request validation, SSE, task lifecycle. Design state, dependencies, validation,
-  geometry and commit are all calls into archflow.
+旧 stdlib 网关迁移、tag、框架选型与旧验收过程保留在本卡的 Git 历史，不再列为待实现。
+未使用的预留 port 不自动成为新增基础设施的需求；真正使用的接口契约仍见
+[SYSTEM_MAP](../../SYSTEM_MAP.md) 和 [PROTOCOL](../../PROTOCOL.md)。
 
-**Migrated by moving, never by copying:** `ThreeDmViewport.tsx`, `sceneInspection.ts`, the rhino3dm wasm
-sync/build path, the elevation / Z-up / fit-camera logic, and the boundary rules (local-unbound mode, no canonical
-write, the browser never imports the kernel). **The six reserved Protocols in `backend/ports.py`** — including
-`IntentProvider` ("Translate a user utterance into a proposal candidate, never a commit") — are the seams every
-ruling has named: the file retires, the protocols migrate verbatim into `api/archflow_studio_api/ports.py`.
+## 2. 已收尾的共享基础设施
 
-## The four fences (Kaiwen, 2026-09-02), re-pointed to the new namespace
+| 子项 | 完成条件 | 进度 |
+| --- | --- | --- |
+| 选定来源贯通 | 任务书／体量读取、生成与 worker 使用相同来源；默认来源行为不变，旧响应不能覆盖新来源 | [P115 C02](P115-capability-consolidation.md) |
+| 删除空转 controls | 删除无设计消费者的 provisional 登记 API、store 和专属冻结测试；缺控诊断保留 | [P115 C04](P115-capability-consolidation.md) |
+| 候选与人的决定分开 | 运行只生成候选，不自动 accepted 或 rejected；真正的接受通过既有 decision 入口，绑定明确成功候选 | [P115 C05](P115-capability-consolidation.md) |
+| 技术错误不让人补字段 | Agent 机械输出错误归系统失败；工具不支持就终止说明；真正设计问题才澄清 | [P115 C07](P115-capability-consolidation.md) |
 
-1. **Machine-enforced firewall.** `governance/architecture_policy.json` checks `apps/archflow-studio/api` (and
-   still `apps/archflow-studio/backend` until it is gone): importing rhino3dm, numpy, networkx, OCP, build123d,
-   shapely, trimesh, scipy, tests, tools or probes there is a `LAYER_AUTHORITY_VIOLATION`. Verified to fire with a
-   probe file. The browser bundle never imports archflow. `server/` and `shared/` stay checked as tripwires for the
-   rejected top-level layout.
-2. **DO-NOT-REBUILD inventory** in the brief, precise to module paths, each marked "import, never reimplement".
-3. **Named seams only:** `api/archflow_studio_api/ports.py` (the migrated protocols) and the OpenAPI-generated
-   client. Declare a port first, implement by delegation to archflow.
-4. **The AGENTS.md rule binds this lane:** extend the existing owner and remove a superseded
-   production path when replacing it; a genuinely new behavior needs no invented retirement.
+最高基准是队友能找到入口、独立跑通一个修改、少冲突地交回。复用现有 owner 和类型；
+不新增预览系统、任务总线、审批层、状态数据库或验收报告框架。
 
-One fence the machine cannot hold: **the client never computes geometry** — preview meshes are tessellated by the
-backend and pushed. No client-side CSG.
+## 3. 后续真实建筑使用
 
-## Strict reuse (verified symbol by symbol)
+基础收尾不等于建筑任务完成。按 [ARCHITECTURE](../../ARCHITECTURE.md) 的真实改稿顺序，
+先校准并修复侧通道，再完成视觉候选和后续修改。方法 skill、Agent 工具循环、路由进一步合并和自动预览
+分别跟踪于 P115 C06／C08；普通预览不等待 [P110](P110-canonical-state-projection.md) 全部完成或正式发布。
 
-Current spine mapping (rechecked 2026-09-04; replaces the pre-consolidation symbol list): project identity via
-`ProjectVersionRef` / `RunRef` / `BranchRef` / `open_located_project()` / `FilesystemProjectRepository`; binding
-via `StateRecord.bound_to(run)`; the component tree via `design_components_of`; parameters and dependencies via
-`StateRecord.dependency_edges()` and `StateRecord.closure`; edits via `StateRecordOperator` and
-`apply_state_record_operator`; stages via `ProjectStageWorkflow`, `StageRunEnvelope`, `StageExecutionGuard` and
-`StageExitBinding`; validation via `validate_submission()` / `ValidationReceipt`; candidates via
-`studio.candidate.run_operator` and the existing `run_project` compiler/export chain. Formal issue belongs to
-`project.issue` over P036 (not opened in round one). Viewing reuses `ThreeDmViewport` and `ViewerAssetProvider`.
-Do not restore `DesignStateTree`, `compile_nested_decision` or the archived committer as Studio dependencies.
+- 意图、提案、worker 和画面使用同一个明确来源；旧来源／跨项目／保护条件仍有效。
+- 先呈现可逆模型，避免让建筑师批准内部参数；技术详情按需查看。
+- held／violated／unchecked 分清。没有测量到的要求不冒充已通过。
+- 继续候选、认可设计与正式 issue 分开；只有现有 `project.issue` 能移动已发布设计位置。
 
-**A data pitfall the benchmark exposed:** run `workflow-001` holds two records whose names begin with
-`project-stage-workflow-` — the workflow and its freeze receipt. Resolve the workflow by the exact shape
-`project-stage-workflow-<64 hex>.json`, never by prefix alone.
+## 4. 协作与验收
 
-**Display rule with kernel backing:** `RelationCheckReport.held` means none violated and does not subsume
-unchecked; the kernel also exposes `fully_checked`. Show held / violated / unchecked as three states; the server
-reports candidate review readiness. Only `project.issue` can issue a run or advance a stage.
+精确 write_scope 以 [work registry](../../../governance/work_registry.json) 的 P108 为准。
+后端负责人统一 API、模块 registry 和生成客户端；前端负责人在隔离副本接线并验证；
+CAD 适配器负责人只扩展已有对象增量合成，项目模型与图纸继续由原设计任务维护。
+主代理统一检查和现有入口的激活，不让并发实现各自重启用户页面。
 
-**Kernel gap carded from the calibration (2026-09-03, raised by 新建会话, verified by the main session):**
-P110 — `canonical_state_from_dict` rejects a State-Record project's HEAD
-(`CanonicalProjectState@1`, ref-based), so the validation receipt runs on
-`CanonicalState(ref=head)` with empty facts and must say so. Round one does not depend on it.
+本轮已接通并在原单页验收：
 
-**Reference-run rule (defect found in the plan's Task 2):** "the newest run whose receipt is complete" picks
-`array-patch-001` on the real villa today (harness and patch experiments also retain complete receipts), and
-after the first candidate it would pick `studio-cand-*`. The reference run is either configured explicitly or
-selected by a criterion that excludes harness, equivalence, patch and Studio candidate runs; the projection's
-digest reproduces the reference receipt (`344b2206…` for `runner-002`) only under the reference run's own id.
-*Resolved in the plan (2026-09-03, verified on the villa by both sessions):* `?run=` → `ARCHFLOW_STUDIO_REFERENCE_RUN`
-→ newest complete receipt whose workflow is not a harness (`workflow_id` in {equivalence-harness,
-studio-candidate-harness}; a `RunnerRunReceipt@1` without `workflow_ref` counts). On the villa that leaves
-`runner-002` alone; a Studio candidate never becomes the default reference by recency. P111's explicit
-"continue this candidate" selection is a separate editing choice over an exact retained StateRecord; it must
-not weaken this default-selection rule or move canonical HEAD.
+- 完整 3DM 通过既有 P036 artifact 入口保留，与精确 run／StateRecord 关联并进入当前视口；登记不冒充原生 CAD 导出证明。
+- 图纸存储来源与模型来源分别保留；旧图纸可明确关联一次，已有图纸内容、批注和历史修订不改写。来源未知或与修改起点不符时，在模型调用前拒绝修改。
+- 同一工作事项下查看 A／B、明确继续其中一个并在重启后恢复；比较共同起点不冒充 canonical base，继续也不替代认可或 issue。
+- 3D 批注按精确模型来源保存和重开；A／B 的笔迹和撤销各自独立，保存确认兼容服务端补全的可选字段。
 
-**Exact reference-record rule:** an existing reference run is projected only from the
-content-addressed `state_record_ref` in its runner receipt, after checking the record's project, run,
-branch/base and both record/state digests. Mutable authored WIP is used only when no eligible run exists.
-A legacy, damaged or historical reference can still be opened for inspection, but cannot create an intent,
-proposal, option, program or candidate until an exact current reference is selected.
+首个用户可见完成点是既有单页实际显示已选完整模型，并从该模型继续修改。
+先用复制项目完成载入、来源与保存回读检查，再保留当前未保存内容后统一更新原入口；
+模型文件落盘、资产登记或 loader 单测不单独算视口完成。
 
-**Digest scope:** the run id enters both `state_digest` and the program digest (`_StateIdentity`). "Did this edit
-change anything" is answered by comparing two records bound to the same run, or the authored content before
-binding — never a candidate's digest against the projection's, which differ even for an identical record.
-*Resolved in the plan:* projection and candidate DTOs carry `authoredRecordDigest` (the digest before binding;
-`c5c7843d…` on the villa) and content change is judged on that alone; the bound digests stay, labelled.
+2026-09-08 已在原入口实际显示 B 的完整模型并明确从 B 继续，用户确认看到了更新。
+九个设备实例及其 77 个显示网格已核对，原三份图纸的批注修订与意见保持不变。
+前端完整改动已同步到主检出，现用页面由独立静态构建服务；后续源码修改不会触发该页面刷新。
+API 全套 597 项通过、2 项跳过，核心 665 项通过；前端来源／保存／重开回归、构建与生成客户端一致性检查通过。
 
-**Candidate execution mode (calibrated):** the villa retains no stage-run envelopes, so candidates run through the
-harness pattern of `tools/verify_state_record.py` (a one-stage workflow and envelope retained in the candidate
-run); a candidate run without Rhino export takes about 0.2 s and a bad value fails visibly as `ProjectRunnerError`.
+**连续候选已接入共同调用：** 自然语言、Program 与 options 的原生导出都通过同一 `run_operator`
+保留明确模型来源，并按实际原生对象差异合成完整 3DM。外部设备、原对象及英尺／米换算已验证；
+原生对象身份必须唯一且标签匹配，同名外部对象不能被连带删除。完整 3DM 不冒充包含外部设备的 exact STEP。
+Program 分别核对外层投影摘要、任务书自身摘要和内容摘要，不再因两种正常绑定摘要不同而禁用应用。
 
-## Round-one stopping line
+Program／options 65 项检查、6 项实际 OCCT 合成调用检查、15 项 CAD patch 检查通过；
+真实 App 的 4 项来源切换检查及 16 项客户端检查通过。共同 API 与前端最终包已随下面的界面整理接入原入口。
 
-exact HEAD ↔ exact StateRecord ref/base ↔ component and dependency projection ↔ intent on a selected component
-↔ typed proposal / `BLOCKED_NEEDS_HUMAN` ↔ impact closure ↔ detached candidate artifact + SHA ↔ validation receipt.
-**No canonical commit.** The read side (bind / projection / tree / selection) exists as the front of that chain,
-not as a separate browser stage. Live model providers and login identity stay disabled. Missing information stops
-visibly with a concrete question; nothing invented.
+**界面与新版本提示已实现并接入：** 按用户对界面拥挤的反馈，合并重复状态、收纳批注工具并让版本可辨认。
+登记成功后通过现有事件更新版本列表，提醒有新模型可查看，保持当前画面、修改起点和批注；
+磁盘文件完成仍需明确登记，不建立目录监听或另一份项目状态。
+前端已按 UI 分层方案完成显示调整、常驻事件与最终构建；7 项真实 App 浏览器场景通过，
+覆盖新来源提示、列表刷新及当前模型、修改起点、批注和草稿的保留。1121×874 与 1440×900 两种尺寸已验看，
+视角变化后的批注提示位于版本入口上方，不再被模型状态栏遮挡。
+原页面负责人已在恢复的唯一页面检查完整模型、版本菜单及最新关联图纸，保存的批注和意见读回一致。
+后台与静态入口恢复不会重放先前的意图或执行待处理修改。
 
-## Working method (Kaiwen, 2026-09-03)
+**批注页面与明确参照已在本地接通并通过隔离验收。** 提交本页意见时，浏览器读取精确的已保存批注版本，
+将原页和完整批注叠图送入既有意图调用；最多另选三页参照，并填写参照用途。
+参照默认只附原页，明确勾选后才附已保存批注；旧评论、保留或删除标记不会变成本轮修改指令。
+参照不改变修改起点。页面、修改起点或项目在图像准备期间切换时，旧提交取消；同一澄清续答沿用首轮图像与引用。
 
-Planning, review and judging go to a Fable-class session; implementation of a *pinned* plan (routes, fields,
-error codes, files, tests all fixed) goes to Opus workers in isolated worktrees, dispatched through the Agent
-tool's `model` parameter. Before dispatch the planner dry-runs the plan against real project data; acceptance is
-an independent judge script checked against kernel-computed truth, never the worker's own report. The benchmark
-that established this: both models scored 29/29 on the same pinned slice; the only defect found was in the plan.
+图像复用 PDF.js 和既有笔迹路径，覆盖可见 CropBox、旋转、完整曲线和文字。
+同一 run／state 下的不同完整模型按完整 ModelSource 区分，查看 A 不会覆盖已选的修改起点 B；
+跨 run 查看另一模型时，图纸澄清仍可在原修改起点上继续，改变修改起点则清除旧续答。
+图纸提交不再夹带隐藏的 3D 选择，迟到回复不会在另一模型上显示预览或高亮。
+Codex 使用本次调用临时目录中的 PNG，Anthropic 使用实际图片消息；
+图像摘要及用途进入既有模型请求，图片字节不增加项目持久化路径。
 
-## Acceptance
+后端文档／工作副本 27 项、意图相关 113 项、实际 CLI／SDK 请求 5 项及 OpenAPI 16 文件一致性检查通过；
+前端页面／来源 10 项、完整 App 7 项及 typecheck／build 通过，archcheck 223 项通过。
+实际请求中的原页和参照页与合成源像素一致，批注超出预期范围的像素为零；澄清续答不重读或重绘页面。
+该链路尚未接入现用页面或用于真实项目模型调用。
+明确参照只提供所选图页，不自动定位另一个房间的模型对象；模型读图与实际改稿效果仍须由真实任务验证。
 
-- [ ] The chain above runs end to end on one configured external project and stops at the validation receipt.
-- [ ] Every exported object carries the existing `archflow:*` user-string identity; no second key set.
-- [ ] The six protocols exist verbatim in `api/archflow_studio_api/ports.py`; viewer assets are moved, not copied.
-- [ ] `python tools/archcheck.py` stays green throughout; no Pydantic model mirrors an archflow schema.
-- [ ] Tests: contract, API, stale-base, cross-project rejection, UI state.
-- [x] Tag `studio-preview-slice-01` exists at the last commit where the demo is intact (1ef336f).
+**后续接入已获批准，三项局部修复已完成。** 未绑定文件换源会建立新的临时批注历史，
+撤销不再带回上一文件的笔迹、视角或命中；已绑定来源的在途保存和其他项目草稿保留。
+NURBS fallback 在采样前排除隐藏对象、嵌套实例及父图层分支，保留可见对象的变换、边线和平面填充。
+完整模型和单位检查已移到对象写入前，失败不会新增对象、记录或事件。
+前端 31 项聚焦检查、后端工作副本 10 项、独立代码审阅及最终构建／archcheck 均通过。
+现有前端入口的恢复在新授权后仍被宿主启动审批拒绝，页面接入尚未完成；
+最近的设计修改已经完成，真实改稿试用还需新的具体修改意见，不重放已完成指令。
 
-## Revision history
-
-- 2026-09-04: updated the strict-reuse list to the current single spine; clarified that P111 owns explicit
-  candidate continuation while this card retains its original round-one stopping line.
-- 2026-09-02: opened for `apps/archflow-studio` (brief + four fences).
-- 2026-09-03 (first): Kaiwen's four decisions — top-level `/client /server /shared`, FastAPI, `SYMMETRIC_WITH`,
-  numbered layers. The kernel items (`SYMMETRIC_WITH`, `layer_by_component`) landed and stand.
-- 2026-09-03 (second): an independent review reversed the layout and the FastAPI migration; build in place on
-  the stdlib seams. A benchmark of that plan was run by Fable 5.1 and Opus 5 in isolated worktrees (both 29/29
-  on the independent judge; measurement only, not merged).
-- 2026-09-03 (third, final): codex review adopted — rebuild inside the studio namespace as `web/` + `api/` on
-  FastAPI, retire Preview Slice 01 behind a tag, migrate viewer assets and the six protocols by moving.
+使用现有相关 API／Web 行为测试、OpenAPI 一致性、typecheck／build 和 archcheck。
+本轮依照用户对既有单页持续更新的授权接入，不新增演示窗口；旧提案不重放，未决定的建筑修改仍交设计任务确认。
+真实项目只由已分配负责人经现有项目端口保存，源码检查不操作用户的 Rhino。
+独立成员试用与真实建筑效果验收仍要分别完成，不由本机自动测试代签。

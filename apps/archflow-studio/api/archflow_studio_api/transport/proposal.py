@@ -18,14 +18,75 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..application.episodes import DeliberationEpisode, EpisodeProposal
+from ..application.episodes import DeliberationEpisode, EpisodeProposal, WorkingCopy, WorkingCopyOption
 from ..application.proposals import PERSISTENCE, Proposal
 from .impact import ImpactDto
 from .impact import to_dto as impact_dto
+from .artifacts import ModelSourceDto, model_source_dto, model_source_from
 
 # 64 lowercase hex, the form the kernel writes. A wrongly shaped digest is a
 # malformed request, not a stale base, and the two must not arrive alike.
 STATE_DIGEST_PATTERN = r"^[0-9a-f]{64}$"
+
+
+class WorkingCopyOptionDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    id: str = Field(min_length=1, max_length=128)
+    label: str = Field(min_length=1, max_length=240)
+    model_source: ModelSourceDto = Field(alias="modelSource")
+
+
+class WorkingCopyCreateRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    group_id: str = Field(alias="groupId", min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+    label: str = Field(min_length=1, max_length=240)
+    stage_id: str = Field(alias="stageId", min_length=1, max_length=128)
+    common_base: ModelSourceDto = Field(alias="commonBase", description="The explicitly chosen comparison base; does not rewrite retained kernel lineage.")
+    scope: list[str] = Field(min_length=1, max_length=2000)
+    options: list[WorkingCopyOptionDto] = Field(min_length=2, max_length=32)
+
+
+class WorkingCopySelectionRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    base_revision_sha256: str = Field(alias="baseRevisionSha256", pattern=STATE_DIGEST_PATTERN)
+    option_id: str = Field(alias="optionId", min_length=1)
+
+
+class WorkingCopyOptionRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    base_revision_sha256: str = Field(alias="baseRevisionSha256", pattern=STATE_DIGEST_PATTERN)
+    option: WorkingCopyOptionDto
+
+
+class WorkingCopyDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    group_id: str = Field(alias="groupId")
+    label: str
+    stage_id: str = Field(alias="stageId")
+    common_base: ModelSourceDto = Field(alias="commonBase")
+    scope: list[str]
+    options: list[WorkingCopyOptionDto]
+    selected_option_id: str | None = Field(alias="selectedOptionId")
+    revision_sha256: str = Field(alias="revisionSha256")
+
+
+class WorkingCopyListDto(BaseModel):
+    working_copies: list[WorkingCopyDto] = Field(alias="workingCopies")
+
+
+def working_option_from(dto: WorkingCopyOptionDto) -> WorkingCopyOption:
+    return WorkingCopyOption(dto.id, dto.label, model_source_from(dto.model_source))
+
+
+def working_copy_dto(item: WorkingCopy) -> WorkingCopyDto:
+    return WorkingCopyDto(project_id=item.project_id, group_id=item.group_id, label=item.label, stage_id=item.stage_id,
+                          common_base=model_source_dto(item.common_base), scope=list(item.scope),
+                          options=[WorkingCopyOptionDto(**option.to_dict()) for option in item.options],
+                          selected_option_id=item.selected_option_id, revision_sha256=item.revision_sha256)
 
 
 class ProposalRequestDto(BaseModel):
@@ -168,6 +229,7 @@ class ProposalDto(BaseModel):
     """The wire form of ``POST /api/proposals`` and ``GET /api/proposals/{id}``."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
 
     proposal_id: str = Field(alias="proposalId")
     status: Literal["proposed", "conflict"] = Field(
@@ -223,6 +285,7 @@ def to_dto(proposal: Proposal, *, scope: ProposalScopeDto | None = None) -> Prop
         base_state_digest=proposal.base_state_digest,
         record_digest=proposal.record_digest,
         source_run_id=proposal.source_run_id,
+        model_source=model_source_dto(proposal.model_source),
         target=ProposalTargetDto(
             component_id=proposal.component_id,
             element_id=proposal.element_id,
@@ -265,16 +328,20 @@ class ModifiedToDto(BaseModel):
 class ProposalDecisionRequestDto(BaseModel):
     """``POST /api/proposals/{id}/decision``: what was decided, and why.
 
-    ``accepted`` is deliberately not a decision this route takes. A proposal is
-    accepted by being run — ``POST /api/proposals/{id}/candidate`` — and an
-    acceptance that left no run would be a judgement about a building nobody
-    built.
+    Running a candidate is not accepting it. ``accepted`` is the architect's
+    explicit choice of one candidate this process ran from the proposal and
+    finished: ``candidateId`` names that run, and the acceptance is retained
+    into it. An acceptance that named no run would be a judgement about a
+    building nobody built, so the id is required and never defaulted to the
+    latest run.
     """
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
-    decision: Literal["rejected", "modified"] = Field(
-        description="rejected closes the option; modified closes it and "
+    decision: Literal["accepted", "rejected", "modified"] = Field(
+        description="accepted chooses the finished candidate named by "
+        "candidateId and closes the other options still open against the "
+        "same base; rejected closes the option; modified closes it and "
         "re-proposes modifiedTo in its place",
     )
     reason: str | None = Field(
@@ -287,6 +354,14 @@ class ProposalDecisionRequestDto(BaseModel):
         alias="modifiedTo",
         default=None,
         description="required when decision is modified, refused otherwise",
+    )
+    candidate_id: str | None = Field(
+        alias="candidateId",
+        default=None,
+        min_length=1,
+        description="required when decision is accepted, refused otherwise: "
+        "a candidate this process ran from this proposal, and which "
+        "succeeded; the acceptance is written into that run",
     )
 
 

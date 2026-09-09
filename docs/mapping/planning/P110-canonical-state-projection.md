@@ -1,6 +1,6 @@
 # P110 — CanonicalState projection for State-Record projects (kernel)
 
-**Status:** ready (not started)
+**Status:** blocked (awaiting a selected actual requirement and its authorized source/candidate pair; not started)
 **Lane:** productization and componentization
 **Depends on:** P102
 **Write scope:** the existing runtime/state/validation projection owner and its tests, plus
@@ -51,3 +51,43 @@ still explicit; this is not permission to issue an unchecked project version.
       `AuthorizedCommitmentClaimsValidator` on real content; a test shows at least one finding is reachable.
 - [ ] The Studio drops the "unavailable" label and the empty-facts construction in the same change.
 - [ ] Tests beside the reducer and validation engine; `python tools/archcheck.py` green.
+
+## CAADRIA-linked execution scope — 2026-09-08
+
+This card is **blocked, not started**, pending the concrete inputs described below. The paper review assigns this gap 22% of
+its relative remediation priority; the weight is neither effort nor acceptance
+probability and does not reorder unrelated product work. This update authorizes
+planning only, not implementation or a new experiment.
+
+- **Owners:** `state.record` owns the design content and consumer views;
+  `state.model` owns the receiving canonical validation value;
+  `state.commitments` / `state.operational_state` own commitment authority and
+  obligation status. `studio.binding` and the project repository resolve the exact
+  retained inputs. `studio.validation` assembles the submission and calls
+  `validation.engine`; the actual architectural check remains with its existing
+  relation/CAD measurement owner. Coordinate the Studio caller with P108.
+- **Verified break:** `validate_candidate` still passes `CanonicalState(ref=head)`.
+  Source coverage does not populate its obligations or commitments. In addition,
+  `ObligationDischargeValidator` only rejects discharge of unknown ids, while
+  `AuthorizedCommitmentClaimsValidator` checks that an authorized criterion has a
+  claim and evidence references. Neither proves the architectural criterion true.
+  Populating these fields alone therefore cannot close this card.
+- **First slice:** after the author selects one actual task requirement, follow its
+  source and authorization through the retained record, the candidate's exact base,
+  the executing state/handover view and the measured result. Extend only the
+  existing consumer view and validator/caller needed to carry that requirement and
+  consume its actual check. Replace the empty input on that same Studio path;
+  retain checks and readers that already work. Missing source or measurement stays
+  explicit rather than being turned into a fabricated HARD commitment or a pass.
+- **Task acceptance:** for that same requirement and binding, a measured violation
+  must produce the corresponding finding; a satisfied result must name the actual
+  supporting measurement; absent evidence or an unperformed check must remain
+  unchecked and must not discharge the requirement. Include a positive case, a
+  violated case, a missing-measurement case and an exact-base mismatch. A supplied
+  evidence-reference string alone is not the satisfaction test.
+- **Dependencies:** P094's author first fixes the task, exact source/candidate pair,
+  allowed changes, preserved conditions and intended claim. The 10% independent
+  geometry review can supply the same requirement's measurement through existing
+  owners. Interface inspection and protocol preparation can proceed in parallel;
+  implementation is selected only after this scope is concrete. P108/P111 candidate
+  use and the accepted 3DM display repair do not wait for this card.

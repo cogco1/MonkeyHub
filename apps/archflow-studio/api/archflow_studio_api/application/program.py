@@ -78,6 +78,7 @@ class ProgramView:
     # The digest of the record the sheet is being shown beside — always the
     # state that answers now, whatever the sheet itself claims.
     state_digest: str | None
+    source_run_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,7 +94,8 @@ class ProgramCandidate:
 
 
 def read_program(
-    binding: ProjectBinding, projection: StateProjection
+    binding: ProjectBinding, projection: StateProjection, *,
+    source_run_id: str | None = None,
 ) -> ProgramView:
     """The architect's sheet where one exists, else the record's own.
 
@@ -102,9 +104,14 @@ def read_program(
     another exact record remains on disk, but this read returns the current
     record's derived sheet so reading again produces something that can be
     applied without silently rebinding the architect's old rows.
+
+    An explicit source run reads only that retained record's derivation; an
+    authored brief is WIP, not a change already present in the selected run.
     """
 
     derived = sheet_from_record(projection.record)
+    if source_run_id is not None:
+        return ProgramView(derived, DERIVED, projection.state_digest, source_run_id)
     try:
         authored = load_program_sheet_file(binding.repository)
     except ProgramSheetMissing:

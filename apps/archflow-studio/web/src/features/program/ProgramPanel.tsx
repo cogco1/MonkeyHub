@@ -265,6 +265,7 @@ export function ProgramPanel({
   semantics,
   sheet,
   applying,
+  canApply,
   canSave,
   onEdit,
   onApply,
@@ -277,6 +278,8 @@ export function ProgramPanel({
   /** The sheet as edited in this tab; null before the first read lands. */
   sheet: ProgramSheetDto | null;
   applying: boolean;
+  /** The sheet and visible editing base still answer the same retained state. */
+  canApply: boolean;
   /** Whether this server writes the architect's own file at all. */
   canSave: boolean;
   onEdit(edit: SpaceEdit): void;
@@ -413,7 +416,7 @@ export function ProgramPanel({
             <button
               type="button"
               className="btn"
-              disabled={applying}
+              disabled={applying || !canApply}
               title={t("program.applyTitle")}
               onClick={() => onApply(sheet, save && canSave)}
             >

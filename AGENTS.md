@@ -25,6 +25,16 @@ the vision and `docs/RESEARCH_POSITIONING.md` do not themselves authorize new me
 Deliver one usable change, then use its results to choose the next. Do not make a
 local repair wait for a full research comparison, another building or formal issue.
 
+For ordinary design revisions, give a reversible visual candidate before asking the
+architect to approve implementation parameters. The agent owns interpreting the request,
+consulting relevant sources when needed, choosing a modeling method, inspecting the
+result and correcting technical mistakes. Existing adapters own mechanical field mapping,
+units and reference normalization; ask people about genuine design choices, not internal
+ids or schemas. An unsupported tool operation is a system limitation, not missing user
+information. Keep precise values and diagnostics available on demand. Preserve exact-base
+binding, stated keep conditions, recovery and independent formal issue. The target loop and
+its currently implemented limits are described in `docs/ARCHITECTURE.md`.
+
 ## Framework versus project data
 
 - `archflow/` contains reusable mechanisms only.
@@ -83,6 +93,26 @@ local repair wait for a full research comparison, another building or formal iss
 If a new artifact, state, trace, cache, screenshot, export or recovery record
 does not have one unambiguous destination in the project layout, stop before
 writing it and ask Kevin to decide its ownership.
+
+## Rule sources and independent modules
+
+- `AGENTS.md` states durable working rules. `governance/module_registry.json` names
+  each capability's owning module and public contract; an owner is not a person or a
+  single-file limit. Module `canonical` denotes established ownership, not a released
+  application or issued project. `governance/work_registry.json` holds current work and source-edit
+  scopes. `governance/architecture_policy.json` holds the checks enforced by archcheck.
+  Generated maps are views of these sources, not separate rules or runtime switches.
+- Work is `active` while progressing, `ready` when its prerequisites are met, and
+  `blocked` while awaiting a concrete input or decision, including an explicit pause.
+  Record the reason in the existing card. Reuse that card for related fixes; remove
+  the card and registry entry only when its remaining acceptance is complete.
+- A new domain capability may live in its own module and reach Studio through an
+  existing application API or adapter. Extend the owning module's contract when needed;
+  do not move independent implementation into core merely to make it callable. Change
+  state, compilation or project persistence only when the behavior needs that contract.
+  Registered ownership and reserved protocols do not implement automatic plugin loading
+  or grant execution or project-write authority. The concrete integration path is in
+  `docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`.
 
 ## Before implementing anything
 

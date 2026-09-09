@@ -499,7 +499,7 @@ class StateRecordTests(unittest.TestCase):
             StateRecord("demo", "run-1", record.entities, relations=(Relation("r", "support", "columns-west", "nowhere"),))
 
     def test_a_validator_names_a_check_the_spine_can_measure(self) -> None:
-        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "support_contact"])
+        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "solid_nonpenetration", "support_contact"])
         for kind in ("alignment", "meets", "engagement_interval", "separation_interval", "magic"):
             with self.assertRaises(StateRecordError) as raised:                       # a kind nothing measures is refused here, not reported unchecked forever
                 ValidatorBinding(kind)
@@ -517,6 +517,23 @@ class StateRecordTests(unittest.TestCase):
             with self.assertRaises(StateRecordError):
                 wrong()
 
+    def test_solid_pair_relations_require_final_pairs_and_can_check_one_hosts_distinct_outputs(self) -> None:
+        validator = ValidatorBinding("solid_nonpenetration", tolerance=0)
+        relation = Relation("jamb-head", "clearance", "columns-west", "columns-west", validator=validator,
+                            parameters={"object_pairs": [["final-jamb", "final-head"]]})
+        self.assertEqual(Relation.from_dict(relation.to_dict()), relation)
+        record = replace(_record(), relations=(relation,))
+        self.assertEqual(StateRecord.from_dict(record.to_dict()).digest, record.digest)
+        self.assertIsNone(relation.dependency_edge())
+        with self.assertRaises(StateRecordError):
+            ValidatorBinding("solid_nonpenetration", tolerance=0.001)
+        with self.assertRaises(StateRecordError):
+            Relation("self-support", "support", "columns-west", "columns-west")
+        for pairs in (None, [], [["final-jamb"]], [["final-jamb", "final-jamb"]]):
+            with self.subTest(pairs=pairs), self.assertRaises(StateRecordError):
+                Relation("bad-solid-pair", "clearance", "columns-west", "columns-west", validator=validator,
+                         parameters={"object_pairs": pairs})
+
     def test_production_entry_accepts_the_record(self) -> None:
         from archflow.capabilities.geometry_proposal import GeometryProposalProductionError, _as_developed_state
         with tempfile.TemporaryDirectory() as tmp:
@@ -528,6 +545,21 @@ class StateRecordTests(unittest.TestCase):
             bare = StateRecord("demo", "run-1", _record().entities, decision_ref="decision:declared")
             with self.assertRaises(GeometryProposalProductionError):
                 _as_developed_state(bare, run=run)                                          # no evidence: typed refusal
+
+    def test_view_without_massing_keeps_every_evidence_source(self) -> None:
+        # A record with several evidence refs and no massing entities: every component carries all of them
+        # (design_components_of), so the block-view proposal must declare the same set, not just the first.
+        base = _record()
+        record = replace(base, evidence_refs=("reading:manufacturer-board", "reading:plan", "reading:section"))
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            state = developed_design_view(record, run=run, evidence_ref="reading:detail-review")
+        proposal = state.selected_schematic.option.proposal
+        self.assertEqual(proposal.evidence_refs, ("reading:detail-review", "reading:manufacturer-board", "reading:plan", "reading:section"))
+        self.assertTrue(proposal.components)
+        for component in proposal.components:
+            self.assertEqual(set(component.source_refs), set(proposal.evidence_refs))    # nothing dropped, nothing invented
 
     def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
         from archflow.runtime.project_runner import SchematicPack, bootstrap_developed_state

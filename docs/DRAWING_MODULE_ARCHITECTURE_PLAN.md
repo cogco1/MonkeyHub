@@ -1,6 +1,6 @@
-# ArchFlow 通用出图模块架构方案
+# MonkeyDiagram 图纸与图解工作流方案
 
-**状态：** 研究与实施建议，不是当前已交付能力。  
+**状态：** 2026-09-08 已明确与 MonkeyArch 平行的工作流边界；下文通用出图链仍为研究与实施建议，不表示全部能力已交付。
 **审计基线：** 2026-09-04，`D:\ARCHFLOW_V4` `main`（`1e4d9cae`）及当时未提交的 Studio 工作树。  
 **目标：** 从同一份语义模型稳定派生平面、立面、剖面、正交轴测和施工图纸；自动处理可追溯的
 线宽、可见性、标注与更新，同时不复制模型、不把截图冒充图纸、不绕过 P036。
@@ -8,6 +8,28 @@
 本文只规划一条新能力链。现有所有权仍以
 [`governance/module_registry.json`](../governance/module_registry.json) 为准；进入实现前才为这条能力
 登记唯一 owner，不能先并排建立多个 renderer 或 sheet system。
+
+## 工作流边界：MonkeyArch 与 MonkeyDiagram
+
+**MonkeyArch 负责 3D 建模和空间修改；MonkeyDiagram 负责整条图纸与图解工作流。**
+MonkeyDiagram 包括这几天推进的平面、正投影立面、家具基座与节点表达，以及 PDF／图片批注、
+文字和尺寸、图解、图纸排版、视图更新和导出。它可以从独立二维资料开始，也可以引用指定模型；
+轴测图、透视图或模型截图进入图纸表达后，同样属于这条工作流。
+
+归属按正在编辑的对象判断：修改模型的空间与构件属于 MonkeyArch；修改图纸内容与表达属于
+MonkeyDiagram。二维图纸可承载新的设计想法，但将其落实到三维模型是明确的跨工作流动作。
+当前 DocumentCanvas 的提交按钮发起模型修改，后续不能仅改名为 MonkeyDiagram 的出图操作。
+
+界面方向为两个同级入口，MonkeyDiagram 拥有自己的图纸列表、当前图纸、绘图与表达操作；
+先复用现有应用壳、文档画布和 API。两条工作流共享 ArchFlow 的项目、来源与 P036 保存机制，
+不因名称独立而新建数据库、项目仓库或几何引擎。已有软件 owner 保持不变。
+
+**已存在：** 文档显示与批注保存、完整模型来源绑定；模型轴立面的 SVG／PNG 生成与冷读；
+项目私有消费者已生成并登记的 SML 图纸。**仍需接入：** 两个同级工作区，以及“打开旧图 →
+选择新的完整模型来源 → 保留视图与表达 → 生成新图纸版本”的实际入口。通用平剖面、尺寸系统、
+任意图解生成和整套图纸排版仍按各自实际实现判断，不随命名一并标记完成。
+
+以下模型派生出图链是 MonkeyDiagram 的一部分，不能成为使用独立二维资料的前置条件。
 
 ## 1. 核心判断
 
@@ -446,3 +468,54 @@ Studio 只负责选择 source/view/style、显示 dirty/impact、请求后台任
 spec，生成一张可追溯 SVG、PNG 预览及一个 ProjectionReceipt；同一输入重跑内容身份相同，项目
 `HEAD` 不变。首轮不含自然语言、Studio、job、annotation、sheet 或 update。随后再按平面 → 剖面 →
 正交轴测的顺序扩展；四类 View 均闭环后才进入自动线宽阶段。
+
+### 2026-09-07：首张立面的实际输入与接口缺口
+
+已选定既有 Villa Rotonda 候选 `studio-cand-20260906-010451-dca4de25-4e9d`，首张视图从模型
+−Y 侧朝 +Y 看，画面水平 +X、竖直 +Z；保留完整楼梯和平台，不把模型轴向称为地理南北。
+该候选的 `.preview.3dm` 实为 443 个 Mesh、0 个 Brep。精确来源是同一 CAD 执行回执指定的
+`workspaces/cad-studio-candidate-seat-villa-demo/studio-candidate-seat-villa-demo@8cabf88d59b2.step`，
+SHA-256 为 `c0c05d49feeb1c6699f3841a5de4997e45ce83a26516fef79931137c09b9b5c3`。
+
+已用现有 `occt_backend.read_step(..., length_unit="meter")` 和 `measure_shape()` 冷读该 STEP：
+443 个唯一具名 shape 均有层、均通过形体有效性检查；其中 441 个实体，鼓座和浅穹顶为 2 个开放
+曲面。对该 STEP 的 443 名称与该源回执的 443 个 physical object id 逐项只读比对，缺失 0、额外 0、
+重复 0，`match=true`。CAD Z-up 包围范围约为 `(-22.506522, -22.506522, 0)` 至
+`(22.506522, 22.506522, 17.680000)` 米。源 run 的 base 仍为 version 0，候选保持 OPEN/HOLD；
+本轮没有生成图纸或改变项目 HEAD。
+
+当前可复用的是 STEP 冷读及其对象名、层和 shape；仓库尚无“已保存 shape＋正交 frame →
+可见／遮挡曲线及来源身份 → 确定性 SVG”的实现。现有 OCP 7.9.3.1 可导入 HLR 类，但仅有底层
+依赖不代表已有出图路径。复跑源检查及单视图输入脚本放在已授权外部演示工作区的
+`drawing-a0-20260907/prepare_elevation_input.py`，不写项目、不生成回执，也不是第二套投影器。
+在脚本目录执行 `py -3.12 -B prepare_elevation_input.py` 可复跑；实际已执行通过。它向 stdout
+输出冻结源身份、名称比对、CAD 实测范围和单视图 frame/crop/near/far，不产生 SVG/PNG。
+
+主线已确认本次 A0 的第一源采用该冻结 B 的 exact STEP，收窄的是本次输入格式，不把全部出图
+路线改成 STEP-only。源身份使用“STEP name＝既有回执 physical object id”，不造 3DM GUID。
+
+### 2026-09-07：A0 一张模型轴立面已闭环（实际入口与边界）
+
+已实现的入口，三层各一个 owner（见 `docs/SYSTEM_MAP.md`）：
+
+- `adapters.cad_execution.project_occt_lines(entries, *, object_ids, origin, right, up, linear_deflection,
+  depth_range=None)`：`read_step` 冷读的具名 shape → `OcctDrawingPolyline(object_id, kind, points)` 元组。
+  所有选中对象进入同一次 `HLRBRep_Algo` 精确遮挡求解，再按对象名取 visible／hidden 边；`right × up`
+  指向观察者；`depth_range=(near, far)` 沿观察方向精确裁剪（整体在外的对象不参与，跨面的对象用
+  Boolean common 切到该面）。这是普通值，不写文件、不造回执。
+- `adapters.drawing_svg.drawing_svg(...)` / `render_svg_png(svg)`：crop 在遮挡求解之后对结果裁剪；SVG
+  以 frame 单位为 viewBox、按比例给出 mm 纸面尺寸，每条 `<polyline>` 带 `data-object`；隐藏线仅在
+  要求时以虚线组写出。PNG 只由这份 SVG 的 polyline 光栅化（Pillow），不截图、不重投影。同输入同字节。
+- `runtime.drawing_elevation.freeze_model_axis_elevation(repository, *, source, view, drawing_run_id)`：
+  通过 `ElevationSource`（源 run、STEP 相对路径与 SHA、CAD 回执相对路径与 SHA）核对回执绑定的
+  run／base／单位／Z-up 与 STEP 名称＝physical object id，`ElevationView` 给出模型轴 frame、crop、
+  near/far 与隐藏线开关；投影与两种渲染都成功后，才以 `base = source_run.base` 创建（或复用同 base 的）
+  drawing run，经 `put_workspace_file` 写 `workspaces/documentation/<view>.svg|.png`，经 `put_json` 写
+  `drawing-projection-receipt`（`DrawingProjectionReceipt@1`），随后从仓库读回核 SHA，并要求 `HEAD` 前后一致。
+  `read_model_axis_elevation` / `list_model_axis_elevations` 负责冷读。
+
+首张实际产物：项目 `villa-rotonda-reconstruction` 的非正式 drawing run
+`drawing-a0-20260907-villa-b-minus-y`（base = 源 run 的 version 0），视图 `model-minus-y-elevation`：
+443 个对象全部参与求解，911 条可见、8352 条隐藏折线，129 个对象在图中留下可见线；同源同 frame 的
+两个独立进程得到相同 SVG 字节。未实现：平面、剖面、轴测、线宽标准、注释、Sheet／PDF、过期检测、
+Studio 接入；`view.hidden_lines=True` 只是第二张视图，不是更新机制。

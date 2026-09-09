@@ -740,6 +740,10 @@ def _stated_bool(row: ElementRow, key: str, default: bool) -> bool:
 def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement:
     """A loft through declared section profiles (each point relative to the base datum).
 
+    The CAD operation seats its lowest point at ``base_level + base_offset``.
+    Derive that offset from the sections so their authored heights survive
+    placement on the datum; the row does not state a second height offset.
+
     The row's ``cap_ends`` (default true) passes to the operation as stated:
     ``false`` delivers the lofted surface open at both end sections - a drum
     or a dome that the source gives as a surface with no thickness - rather
@@ -763,7 +767,9 @@ def produce_loft(row: ElementRow, context: ProductionContext) -> ProducedElement
     if closed_profile is False:
         raise ElementProducerError(f"{row.element_id}: an open section profile is not produced; every loft section is a closed polygon")
     profiles = [[_finite(c, f"{row.element_id} profile coordinate") for c in pt] for section in p["profiles"] for pt in section]
-    return _loft(row, context, profiles, int(p["profile_size"]), base_datum, cap_ends=cap_ends, profile_basis=profile_basis, closed_profile=closed_profile)
+    section_base = min((pt[1] for pt in profiles), default=0.0)
+    return _loft(row, context, profiles, int(p["profile_size"]), base_datum, section_base,
+                 cap_ends=cap_ends, profile_basis=profile_basis, closed_profile=closed_profile)
 
 
 def produce_dome_cap(row: ElementRow, context: ProductionContext) -> ProducedElement:

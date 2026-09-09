@@ -15,6 +15,7 @@ calls the Rhino export entry points or starts a process, and the explicit
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 from pathlib import Path
@@ -357,6 +358,269 @@ class DefaultCandidateExportTests(OcctCandidateTestCase):
         validation = self.client.get(f"/api/candidates/{accepted['candidateId']}/validation").json()
         self.assertFalse(validation["reviewReady"])
         self.assertIn("runner.exports_available", validation["blockedBy"])
+
+
+@NEEDS_OCCT
+class ComposedCandidateExportTests(OcctCandidateTestCase):
+    """A model-backed edit retains its imported objects through real OCCT runs."""
+
+    def inspect_model(self, data: bytes):
+        path = self.root / f"composed-readback-{hashlib.sha256(data).hexdigest()[:12]}.3dm"
+        path.write_bytes(data)
+        return inspect_three_dm(path)
+
+    def composed_source(self) -> tuple[dict, object]:
+        with no_process():
+            accepted, job = self.run_candidate(self.client, "set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        run_id = accepted["candidateId"]
+        _, preview = self.split(self.candidate(self.client, run_id)["artifacts"])
+        native = self.inspect_model(self.bytes_of(self.client, preview))
+        # This fixed synthetic model adds a line and a block to the same OCCT
+        # fixture. Its native geometry must match this run before registration;
+        # independent exports may assign different object UUIDs.
+        data = (Path(__file__).parent / "fixtures/model-source-composed.3dm").read_bytes()
+        composed = self.inspect_model(data)
+        expected = {row["name"]: row["geometry_sha256"] for row in native.object_geometry_sha256}
+        actual = {row["name"]: row["geometry_sha256"] for row in composed.object_geometry_sha256
+                  if row["name"] in expected}
+        self.assertTrue(expected)
+        self.assertEqual(actual, expected)
+        self.assertEqual(composed.units, native.units)
+        state = self.client.get("/api/state", params={"run": run_id}).json()
+        registered = self.client.post("/api/model-assets", json={
+            "projectId": PROJECT_ID, "runId": run_id, "stateDigest": state["stateDigest"],
+            "fileName": "complete-B.3dm", "contentBase64": base64.b64encode(data).decode("ascii"),
+        })
+        self.assertEqual(registered.status_code, 201, registered.text)
+        return registered.json(), composed
+
+    def edit_model(self, client: TestClient, source: dict, utterance: str, *, element_id: str = "portico-base") -> tuple[dict, dict]:
+        intent = client.post("/api/intents", json={
+            "projectId": PROJECT_ID, "stateDigest": source["stateDigest"],
+            "sourceRunId": source["runId"], "modelSource": source,
+            "targetComponentId": "portico", "elementId": element_id, "utterance": utterance,
+        })
+        self.assertEqual(intent.status_code, 201, intent.text)
+        proposal = intent.json()["proposal"]
+        self.assertEqual(proposal["modelSource"], source)
+        self.assertEqual(proposal["sourceRunId"], source["runId"])
+        response = client.post(f"/api/proposals/{proposal['proposalId']}/candidate")
+        self.assertEqual(response.status_code, 202, response.text)
+        accepted = response.json()
+        return accepted, self.finished(client, accepted["jobId"])
+
+    def composed_result(self, client: TestClient, run_id: str) -> tuple[dict, object]:
+        candidate = self.candidate(client, run_id)
+        composed = [row for row in candidate["artifacts"] if row["representation"] == "composed"]
+        self.assertEqual(len(composed), 1, candidate["artifacts"])
+        artifact = composed[0]
+        self.assertEqual(artifact["status"], "registered")
+        self.assertIsNone(artifact["readbackVerified"])
+        self.assertEqual(artifact["modelSource"]["runId"], run_id)
+        source = client.get("/api/state", params={"run": run_id}).json()
+        self.assertEqual(artifact["modelSource"]["stateDigest"], source["stateDigest"])
+        self.assertEqual(artifact["modelSource"]["assetSha256"], artifact["sha256"])
+        # A program-only change can retain identical complete model bytes in
+        # two runs. The digest-addressed download may serve either file name.
+        response = client.get(f"/api/artifacts/{artifact['sha256']}/bytes")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(hashlib.sha256(response.content).hexdigest(), artifact["sha256"])
+        return artifact, self.inspect_model(response.content)
+
+    def assert_imported_unchanged(self, before, after) -> None:
+        def imported(rows):
+            return tuple(row for row in rows if row["name"].startswith("imported-"))
+
+        self.assertTrue(imported(before.object_geometry_sha256))
+        self.assertEqual(imported(before.object_geometry_sha256), imported(after.object_geometry_sha256))
+        self.assertEqual(imported(before.object_user_strings), imported(after.object_user_strings))
+        self.assertTrue(before.instance_definitions)
+        self.assertTrue(before.instance_references)
+        self.assertEqual(before.instance_definitions, after.instance_definitions)
+        self.assertEqual(before.instance_references, after.instance_references)
+        self.assertEqual(before.units, after.units)
+
+    def assert_model_height(self, inspection, element_id: str, height: float) -> None:
+        matching = [row for row in inspection.named_object_bboxes if element_id in row["name"]]
+        self.assertEqual(len(matching), 1, inspection.named_object_bboxes)
+        box = matching[0]["bbox"]
+        self.assertAlmostEqual(box["max"][2] - box["min"][2], height, places=5)
+
+    def assert_failed_without_composed(self, accepted: dict, job: dict) -> None:
+        self.assertEqual(job["status"], "failed", job)
+        run_id = accepted["candidateId"]
+        self.assertNotIn("studio-model-asset", self.records_of(run_id))
+        listed = self.client.get("/api/artifacts").json()["artifacts"]
+        self.assertFalse(any(row["runId"] == run_id and row["representation"] == "composed" for row in listed))
+        self.assertEqual(self.client.get(f"/api/candidates/{run_id}").status_code, 404)
+        restarted = self.open_client(self.settings)
+        with no_cad_at_all(), no_process():
+            cold = restarted.get(f"/api/candidates/{run_id}")
+        self.assertFalse(
+            cold.status_code == 200 and cold.json().get("status") == "succeeded",
+            f"restart advertised a failed composed candidate as succeeded: {cold.text}",
+        )
+
+    def test_composed_edit_survives_restart_and_continues_with_external_objects(self) -> None:
+        before_head = self.repository.read_head()
+        authored = {path: self.repository.layout.resolve_relative(path).read_bytes()
+                    for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)}
+        original, before = self.composed_source()
+        self.assert_model_height(before, "portico-base", 2.2)
+        with no_process():
+            accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 2.6")
+        self.assertEqual(job["status"], "succeeded", job)
+        composed_c, after_c = self.composed_result(self.client, accepted["candidateId"])
+        self.assert_imported_unchanged(before, after_c)
+        self.assert_model_height(after_c, "portico-base", 2.6)
+        self.assertNotEqual(original["sha256"], composed_c["sha256"])
+
+        restarted = self.open_client(self.settings)
+        with no_cad_at_all(), no_process():
+            cold_c, _ = self.composed_result(restarted, accepted["candidateId"])
+            self.assertEqual(cold_c["modelSource"], composed_c["modelSource"])
+            self.bytes_of(restarted, original)
+        with no_process():
+            accepted_d, job_d = self.edit_model(
+                restarted, cold_c["modelSource"], "set height to 0.6", element_id="portico-cornice",
+            )
+        self.assertEqual(job_d["status"], "succeeded", job_d)
+        _, after_d = self.composed_result(restarted, accepted_d["candidateId"])
+        self.assert_imported_unchanged(before, after_d)
+        self.assert_model_height(after_d, "portico-base", 2.6)
+        self.assert_model_height(after_d, "portico-cornice", 0.6)
+        self.assertEqual(self.repository.read_head(), before_head)
+        for path, content in authored.items():
+            self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), content)
+
+    def test_a_core_patch_failure_never_becomes_a_complete_candidate(self) -> None:
+        original, _ = self.composed_source()
+        with no_process(), mock.patch.object(
+            candidate_module, "patch_composed_three_dm", side_effect=RuntimeError("injected composed patch failure"),
+        ) as patch:
+            accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 2.6")
+        patch.assert_called_once()
+        self.assertIn("injected composed patch failure", job["error"])
+        self.assert_failed_without_composed(accepted, job)
+
+    def test_a_missing_native_donor_never_becomes_a_complete_candidate(self) -> None:
+        original, _ = self.composed_source()
+        run_successor = candidate_module._run_successor
+
+        def lose_preview(binding, settings, seat_pack, successor, run_id, **kwargs):
+            receipt = run_successor(binding, settings, seat_pack, successor, run_id, **kwargs)
+            preview = next(row for row in candidate_module.list_artifacts(binding).artifacts
+                           if row.run_id == run_id and row.representation == "preview")
+            self.assertTrue(preview.path.resolve().is_relative_to(self.root.resolve()))
+            preview.path.unlink()
+            return receipt
+
+        with no_process(), mock.patch.object(candidate_module, "_run_successor", side_effect=lose_preview):
+            accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 2.6")
+        self.assert_failed_without_composed(accepted, job)
+
+    def test_a_missing_prior_program_never_becomes_a_complete_candidate(self) -> None:
+        original, _ = self.composed_source()
+        receipt = self.load_kind(original["runId"], "runner-run-receipt")
+        prior = record_ref_from_uri(receipt["seat_results"][0]["program_ref"], PROJECT_ID)
+        path = self.repository.layout.resolve_relative(prior.relative_path)
+        self.assertTrue(path.resolve().is_relative_to(self.root.resolve()))
+        path.unlink()
+        with no_process():
+            accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 2.6")
+        self.assert_failed_without_composed(accepted, job)
+
+    def test_program_sheet_preserves_the_selected_complete_model_after_restart(self) -> None:
+        original, before = self.composed_source()
+        source = original["modelSource"]
+        before_head = self.repository.read_head()
+        authored = {path: self.repository.layout.resolve_relative(path).read_bytes()
+                    for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)}
+        response = self.client.get("/api/program", params={"run": source["runId"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        sheet = response.json()["sheet"]
+        sheet_identity = (sheet["recordDigest"], sheet["stateDigest"])
+        sheet["departments"].append({
+            "departmentId": "service", "name": "Service", "spaces": [{
+                "spaceId": "store", "name": "Store", "function": "storage",
+                "targetAreaM2": 18.0, "count": 1, "clearHeightM": 2.4,
+                "levelIds": ["level-ground"], "zoneId": None, "mappedAreaM2": None,
+            }],
+        })
+        self.assertEqual((sheet["recordDigest"], sheet["stateDigest"]), sheet_identity)
+        with no_process():
+            applied = self.client.post("/api/program", json={
+                "stateDigest": source["stateDigest"], "sourceRunId": source["runId"],
+                "modelSource": source, "sheet": sheet, "saveInput": False,
+            })
+            self.assertEqual(applied.status_code, 202, applied.text)
+            accepted = applied.json()
+            job = self.finished(self.client, accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertFalse(accepted["savedInput"])
+        candidate_id = accepted["candidateId"]
+        record = self.load_kind(candidate_id, "state-record")
+        self.assertTrue(any("program:service/store" in row["fields"].get("program_node_refs", [])
+                            for row in record["entities"] if row["schema"] == "Space@1"))
+        complete, after = self.composed_result(self.client, candidate_id)
+        self.assert_imported_unchanged(before, after)
+        self.assert_model_height(after, "portico-base", 2.2)
+        restarted = self.open_client(self.settings)
+        with no_cad_at_all(), no_process():
+            cold, cold_model = self.composed_result(restarted, candidate_id)
+        self.assertEqual(cold["modelSource"], complete["modelSource"])
+        self.assert_imported_unchanged(before, cold_model)
+        self.assertEqual(self.repository.read_head(), before_head)
+        for path, content in authored.items():
+            self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), content)
+
+    def test_option_selection_uses_its_created_model_source_after_restart(self) -> None:
+        from .support import retain_runner_receipt
+        from .test_options import _massing_payload
+
+        # The existing massing fixture leaves the two native prisms unchanged,
+        # so the same composed model can accompany an actual add-floor option.
+        payload = _massing_payload()
+        write_runner_record(self.repository, payload)
+        self.state_digest = runner_state_digest(self.repository, REFERENCE_RUN_ID, payload)
+        retain_runner_receipt(self.repository, self.repository.load_run(REFERENCE_RUN_ID),
+                              design_state_digest=self.state_digest)
+        original, before = self.composed_source()
+        source = original["modelSource"]
+        before_head = self.repository.read_head()
+        authored = {path: self.repository.layout.resolve_relative(path).read_bytes()
+                    for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)}
+        response = self.client.post("/api/options", json={
+            "stateDigest": source["stateDigest"], "sourceRunId": source["runId"],
+            "modelSource": source, "transform": "add_floor", "label": "Third floor",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        option = response.json()
+        self.assertEqual(option["sourceRunId"], source["runId"])
+        self.assertEqual(option["modelSource"], source)
+        self.assertEqual(option["metrics"]["floorCount"], 3)
+        with no_process():
+            selected = self.client.post(f"/api/options/{option['optionId']}/select")
+            self.assertEqual(selected.status_code, 202, selected.text)
+            accepted = selected.json()
+            job = self.finished(self.client, accepted["jobId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        candidate_id = accepted["candidateId"]
+        complete, after = self.composed_result(self.client, candidate_id)
+        self.assert_imported_unchanged(before, after)
+        self.assert_model_height(after, "portico-base", 2.2)
+        restarted = self.open_client(self.settings)
+        with no_cad_at_all(), no_process():
+            cold, cold_model = self.composed_result(restarted, candidate_id)
+            volumes = restarted.get("/api/state/volumes", params={"run": candidate_id})
+        self.assertEqual(cold["modelSource"], complete["modelSource"])
+        self.assert_imported_unchanged(before, cold_model)
+        self.assertEqual(volumes.status_code, 200, volumes.text)
+        self.assertEqual(volumes.json()["metrics"]["floorCount"], 3)
+        self.assertEqual(self.repository.read_head(), before_head)
+        for path, content in authored.items():
+            self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), content)
 
 
 class UnsupportedOperationTests(OcctCandidateTestCase):

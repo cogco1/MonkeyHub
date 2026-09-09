@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from archflow.state.program_sheet import PROGRAM_SHEET_SCHEMA, REQUIREMENTS
 
 from ..application.program import ProgramCandidate, ProgramView
+from .artifacts import ModelSourceDto
 
 
 class ProgramSpaceDto(BaseModel):
@@ -134,6 +135,7 @@ class ProgramDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
+    source_run_id: str | None = Field(default=None, alias="sourceRunId")
     source: str = Field(
         description="input — the architect's own input/runner/program-sheet.json; "
         "derived — what the record's own zones say",
@@ -150,7 +152,12 @@ class ProgramApplyRequestDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
+    source_run_id: str | None = Field(
+        default=None, alias="sourceRunId", min_length=1,
+        description="the selected retained run; omitted uses the project's default source",
+    )
     state_digest: str = Field(alias="stateDigest", min_length=1)
+    model_source: ModelSourceDto | None = Field(default=None, alias="modelSource")
     sheet: ProgramSheetDto
     save_input: bool = Field(
         alias="saveInput",
@@ -280,6 +287,7 @@ def program_dto(view: ProgramView) -> ProgramDto:
         source=view.source,
         sheet=sheet_dto(view.sheet),
         state_digest=view.state_digest,
+        source_run_id=view.source_run_id,
     )
 
 

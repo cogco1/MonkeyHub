@@ -2,6 +2,7 @@ fastapi>=0.141,<1
 uvicorn>=0.52
 pydantic>=2.13
 Pillow>=12.3,<13
+pypdf>=6.14,<7
 
 # Optional: ARCHFLOW_STUDIO_INTENT_PROVIDER=anthropic (the key is the SDK's to
 # read from ANTHROPIC_API_KEY; the API never holds it). Imported only when chosen.

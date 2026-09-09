@@ -8,6 +8,7 @@ OCCT execution tests (``tests/test_occt_execution.py``) realize as solids.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import unittest
 from dataclasses import replace
@@ -134,6 +135,97 @@ class ContractTests(unittest.TestCase):
             solution.assembly.objects_for(AssemblyRole.FRAME),
             ("obj-door-frame-wall-south-window-left", "obj-door-frame-wall-south-window-right", "obj-door-frame-wall-south-window-top"),
         )
+
+    def test_door_jambs_stop_under_the_head_without_changing_the_leaf_opening(self) -> None:
+        void = _void(OpeningKind.DOOR)
+        for leaf_count in (1, 2):
+            door = replace(DOOR, frame_width=0.0381, frame_depth=0.1524,
+                           leaf_count=leaf_count, leaf_gap=0.003)
+            with self.subTest(leaf_count=leaf_count):
+                solution = solve_door(void, door, binding_id="binding-opening")
+                by_id = {op.output_object_ids[0]: _params(op) for op in solution.operations}
+                left, right, top = (by_id[oid] for oid in solution.assembly.objects_for(AssemblyRole.FRAME))
+                for jamb in (left, right):
+                    self.assertAlmostEqual(jamb["base_offset"], void.sill)
+                    self.assertAlmostEqual(jamb["base_offset"] + jamb["vector"][1], top["base_offset"])
+                self.assertEqual(sorted({p[0] for p in top["profile"]}), [void.along0, void.along1])
+                self.assertAlmostEqual(top["base_offset"] + top["vector"][1], void.head)
+                leaves = [by_id[oid] for oid in solution.assembly.objects_for(AssemblyRole.LEAF)]
+                self.assertEqual(len(leaves), leaf_count)
+                for leaf in leaves:
+                    self.assertAlmostEqual(leaf["base_offset"], void.sill + door.clearance_bottom)
+                    self.assertAlmostEqual(leaf["base_offset"] + leaf["vector"][1],
+                                           void.head - door.frame_width - door.clearance_top)
+                spans = [sorted({p[0] for p in leaf["profile"]}) for leaf in leaves]
+                self.assertAlmostEqual(spans[0][0], void.along0 + door.frame_width)
+                self.assertAlmostEqual(spans[-1][-1], void.along1 - door.frame_width)
+                if leaf_count == 2:
+                    self.assertAlmostEqual(spans[1][0] - spans[0][-1], 2 * door.leaf_gap)
+
+    @unittest.skipUnless(importlib.util.find_spec("OCP"), "cadquery-ocp is not installed")
+    def test_real_door_frame_solids_touch_without_overlap_in_single_and_arrayed_openings(self) -> None:
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+        from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+        from OCP.TopAbs import TopAbs_SOLID
+        from OCP.TopExp import TopExp_Explorer
+
+        from archflow.adapters.occt_backend import build_program_shapes, measure_shape
+        from archflow.compilers.geometry import compile_geometry_program
+        from archflow.state.geometry_program import InterfaceDatum, InterfaceDatumKind, LengthUnit
+        from tests.test_geometry_compiler import COMMITMENT, _only, _proposal, _state
+
+        for leaf_count in (1, 2):
+            for count in (1, 3):
+                with self.subTest(leaf_count=leaf_count, count=count):
+                    void = _void(OpeningKind.DOOR, count=count, step=1.8, along=1.2)
+                    if count > 1:
+                        void = replace(void, wall=replace(void.wall, origin=(2.0, -3.0), direction=(0.6, 0.8)))
+                    door = replace(DOOR, frame_width=0.0381, frame_depth=0.1524,
+                                   leaf_count=leaf_count, leaf_gap=0.003)
+                    solution = solve_door(void, door, binding_id="building-binding")
+                    state = _state()
+                    datum = InterfaceDatum.create(datum_id="level-ground", kind=InterfaceDatumKind.LEVEL,
+                                                  published_by="building", value=0.6, unit=LengthUnit.METER)
+                    result = compile_geometry_program(
+                        state, _only(_proposal(state), solution.operations, ()),
+                        active_commitment_refs=(COMMITMENT,), interface_datums=(datum,),
+                        datum_bindings=solution.datum_bindings,
+                    )
+                    self.assertIsNotNone(result.program, result.receipt.issues)
+                    built = build_program_shapes(result.program)
+                    frame_ids = solution.assembly.objects_for(AssemblyRole.FRAME)
+                    self.assertEqual(set(built.physical_object_ids),
+                                     set(frame_ids + solution.assembly.objects_for(AssemblyRole.LEAF)))
+                    shapes = [built.objects[oid].shape for oid in frame_ids]
+                    instances = []
+                    for shape in shapes:
+                        measured = measure_shape(shape)
+                        self.assertTrue(measured.valid)
+                        self.assertEqual(measured.solid_count, count)
+                        explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+                        solids = []
+                        while explorer.More():
+                            solids.append(explorer.Current())
+                            explorer.Next()
+                        instances.append(sorted(solids, key=lambda solid: measure_shape(solid).bbox_min))
+                    for jambs in instances[:2]:
+                        for jamb, head in zip(jambs, instances[2], strict=True):
+                            common = BRepAlgoAPI_Common(jamb, head)
+                            common.Build()
+                            self.assertTrue(common.IsDone())
+                            volume = GProp_GProps()
+                            BRepGProp.VolumeProperties_s(common.Shape(), volume)
+                            self.assertAlmostEqual(volume.Mass(), 0.0, delta=1e-12)
+                            contact = BRepExtrema_DistShapeShape(jamb, head)
+                            contact.Perform()
+                            self.assertTrue(contact.IsDone())
+                            self.assertAlmostEqual(contact.Value(), 0.0, delta=1e-8)
+                    expected = count * door.frame_depth * door.frame_width * (
+                        2 * (void.height - door.frame_width) + void.width
+                    )
+                    self.assertAlmostEqual(sum(measure_shape(shape).volume for shape in shapes), expected, places=9)
 
     def test_a_frame_that_does_not_fit_the_void_is_refused(self) -> None:
         wide = WindowType("window-wide", frame_width=0.7, frame_depth=0.18, frame_projection=0.0,

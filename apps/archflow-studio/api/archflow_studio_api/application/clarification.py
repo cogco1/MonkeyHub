@@ -57,9 +57,12 @@ import re
 from typing import Mapping, Sequence
 from uuid import uuid4
 
+from archflow.project.refs import ProjectRecordRef
+from .artifacts import ModelSource
+
 from ..transport.errors import StudioError
 from .intent import ACCEPTED_FORMS, parse_utterance
-from .intent_agent import Compilation, Selection
+from .intent_agent import DETERMINISTIC, Compilation, DocumentVisual, Selection
 from .projection import ProjectedElement, StateProjection
 
 # ---- the closed set of answers ---------------------------------------------
@@ -552,6 +555,10 @@ class PendingIntent:
     # leaf that carries nothing and shares its datum with nobody — where there
     # is one reading there is no question.
     scope_options: tuple[ScopeOption, ...] = ()
+    # The submitted source/page context follows the same clarification token.
+    document_comment_ref: ProjectRecordRef | None = None
+    model_source: ModelSource | None = None
+    document_visuals: tuple[DocumentVisual, ...] = ()
 
     @property
     def advance_key(self) -> tuple[object, ...]:
@@ -2241,6 +2248,32 @@ def read_compilation(
     round that changed nothing terminates instead of asking again.
     """
 
+    if compilation.status == "unsupported":
+        return _advance_or(
+            pending,
+            Resolution(
+                outcome=UNSUPPORTED,
+                pending=_pending(
+                    state_digest=resolution.pending.state_digest,
+                    original_utterance=resolution.pending.original_utterance,
+                    action_kind=resolution.pending.action_kind,
+                    target_component_id=resolution.pending.target_component_id,
+                    element_id=resolution.pending.element_id,
+                    semantic_property=resolution.pending.requested_semantic_property,
+                    known=resolution.pending.known_slots,
+                    missing=resolution.pending.missing_slots,
+                    candidates=resolution.pending.candidates,
+                    rejected=resolution.pending.rejected_candidates,
+                    reason_code=REQUEST_NOT_EXPRESSIBLE,
+                    terminal=True,
+                    previous=pending,
+                    scope_options=resolution.pending.scope_options,
+                ),
+                selection=None,
+                question=None,
+                detail=compilation.why,
+            ),
+        )
     component_id = compilation.component_id or resolution.pending.target_component_id
     element_id = (
         compilation.element_id
@@ -2288,23 +2321,30 @@ def read_compilation(
         )
     assert compilation.utterance is not None
     if parse_utterance(compilation.utterance) is None:
-        return clarify(
-            resolution,
-            pending=pending,
-            reason_code=VALUE_UNRESOLVED,
-            question=(
-                "The agent's sentence could not be typed. Say the change in one "
-                "of the four forms, or rephrase the request."
-            ),
-            detail=(
-                f"the {compilation.provider} agent compiled "
-                f"{compilation.utterance!r}, which is not in the grammar"
-                + (f"; it said: {compilation.why}" if compilation.why else "")
-            ),
-            accepted_forms=ACCEPTED_FORMS,
-            missing=(SLOT_VALUE,),
-            target_component_id=component_id,
-            element_id=element_id,
+        detail = (
+            f"the {compilation.provider} agent compiled "
+            f"{compilation.utterance!r}, which is not in the grammar"
+            + (f"; it said: {compilation.why}" if compilation.why else "")
+        )
+        if compilation.provider == DETERMINISTIC:
+            return clarify(
+                resolution,
+                pending=pending,
+                reason_code=VALUE_UNRESOLVED,
+                question=(
+                    "The agent's sentence could not be typed. Say the change in one "
+                    "of the four forms, or rephrase the request."
+                ),
+                detail=detail,
+                accepted_forms=ACCEPTED_FORMS,
+                missing=(SLOT_VALUE,),
+                target_component_id=component_id,
+                element_id=element_id,
+            )
+        raise StudioError(
+            502,
+            "INTENT_AGENT_FAILED",
+            detail,
         )
     return Resolution(
         outcome=COMPILED,

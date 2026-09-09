@@ -9,10 +9,12 @@ tessellated for a viewer-readable mesh ``.3dm`` from the same model.
 
 What this module owns is the kernel-facing mechanics only: loading the
 binding, the one-time coordinate mapping, building shapes, measuring them,
-writing and cold-reading STEP, tessellating, and writing the mesh preview.
-The export identity, the readback verification against the analytic
-predictor and the receipt live in ``adapters.cad_execution``; nothing here
-knows a project, a run or a workspace rule.
+writing and cold-reading STEP, tessellating, writing the mesh preview, and
+extracting named orthographic visible/hidden polylines from the same B-reps
+(``project_occt_lines``).  The export identity, the readback verification
+against the analytic predictor and the receipt live in
+``adapters.cad_execution``; nothing here knows a project, a run or a
+workspace rule.
 
 Coordinate frame.  Program geometry is ``(x, y-up, z-plan)``.  The Rhino
 translation writes every point as ``(x, z, y)`` so the saved document is
@@ -165,17 +167,22 @@ def _occt() -> SimpleNamespace:
             for name in (
                 "gp",
                 "BRep",
+                "BRepAdaptor",
                 "BRepAlgoAPI",
                 "BRepBndLib",
                 "BRepBuilderAPI",
                 "BRepCheck",
+                "BRepExtrema",
                 "BRepClass3d",
                 "BRepGProp",
                 "BRepMesh",
                 "BRepOffsetAPI",
                 "BRepPrimAPI",
                 "Bnd",
+                "GCPnts",
                 "GProp",
+                "HLRAlgo",
+                "HLRBRep",
                 "IFSelect",
                 "Interface",
                 "Message",
@@ -837,6 +844,302 @@ def _label_name(occ: SimpleNamespace, label) -> str | None:
     return str(attribute.Get().ToExtString())
 
 
+def measure_occt_solid_pairs(
+    entries: Sequence[StepEntry], *, object_pairs: Sequence[tuple[str, str]], length_unit: str,
+) -> dict[tuple[str, str], dict[str, object]]:
+    """Measure only requested pairs of final named solids, normally cold-read from STEP.
+
+    Distance and common solid volume come from OCCT, in metres and cubic
+    metres. A face/edge contact has zero common volume; a positive common
+    volume is penetration. Missing, ambiguous or non-solid deliveries stay
+    unchecked. In particular, a boolean's consumed operands are not
+    reconstructed or compared with its final result.
+    """
+
+    to_m = {"meter": 1.0, "millimeter": 0.001, "inch": 0.0254, "foot": 0.3048}.get(length_unit)
+    if to_m is None:
+        raise OcctBackendError(f"unsupported solid measurement length unit {length_unit!r}")
+    occ = _occt()
+    by_name: dict[str, list[StepEntry]] = {}
+    for entry in entries:
+        by_name.setdefault(entry.name, []).append(entry)
+    results: dict[tuple[str, str], dict[str, object]] = {}
+    for pair in object_pairs:
+        if (not isinstance(pair, (tuple, list)) or len(pair) != 2
+                or any(not isinstance(name, str) or not name for name in pair)):
+            raise OcctBackendError("solid object pairs must each name two final objects")
+        key = tuple(pair)
+        row: dict[str, object] = {"status": "unchecked", "distance_m": None, "common_volume_m3": None, "detail": ""}
+        results[key] = row
+        if pair[0] == pair[1]:
+            row["detail"] = f"{pair[0]}: a solid cannot be checked against itself"
+            continue
+        shapes = []
+        try:
+            for name in pair:
+                matches = by_name.get(name, ())
+                if len(matches) != 1:
+                    row["detail"] = f"{name}: {'not a final delivered object' if not matches else 'ambiguous final object name'}"
+                    break
+                shape = matches[0].shape
+                measured = measure_shape(shape)
+                if not measured.valid or not measured.closed or not measured.solid_count:
+                    row["detail"] = f"{name}: not a valid closed solid delivery"
+                    break
+                shapes.append(shape)
+            if len(shapes) != 2:
+                continue
+            distance = occ.BRepExtrema.BRepExtrema_DistShapeShape(*shapes)
+            distance.Perform()
+            if not distance.IsDone():
+                raise OcctBuildError("minimum solid distance failed")
+            common = occ.BRepAlgoAPI.BRepAlgoAPI_Common(*shapes)
+            common.Build()
+            if not common.IsDone():
+                raise OcctBuildError("common solid calculation failed")
+            volume = 0.0
+            for solid in _explore(occ, common.Shape(), occ.TopAbs.TopAbs_SOLID):
+                if not occ.BRepCheck.BRepCheck_Analyzer(solid).IsValid():
+                    raise OcctBuildError("common solid is invalid")
+                properties = occ.GProp.GProp_GProps()
+                occ.BRepGProp.BRepGProp.VolumeProperties_s(solid, properties)
+                volume += abs(float(properties.Mass()))
+            distance_m = float(distance.Value()) * to_m
+            common_volume_m3 = volume * to_m ** 3
+            if not math.isfinite(distance_m) or distance_m < 0 or not math.isfinite(common_volume_m3):
+                raise OcctBuildError("solid measurement was not finite and non-negative")
+            classification = "penetrating" if common_volume_m3 > 0.0 else "contact" if distance_m == 0.0 else "separated"
+            row.update(status=classification, distance_m=distance_m, common_volume_m3=common_volume_m3,
+                       detail=f"{pair[0]} / {pair[1]}: {classification} (OCCT solid distance and common volume)")
+        except Exception as exc:
+            row["detail"] = f"{pair[0]} / {pair[1]}: solid measurement unavailable: {exc}"
+    return results
+
+
+# ---------------------------------------------------------------- orthographic drawing lines
+
+
+@dataclass(frozen=True, slots=True)
+class OcctDrawingPolyline:
+    """One object's visible or hidden edge, discretized, in the caller's drawing frame."""
+
+    object_id: str
+    kind: str
+    points: tuple[tuple[float, float], ...]
+
+
+def _drawing_frame(origin, right, up, linear_deflection):
+    vectors = []
+    for label, value in (("origin", origin), ("right", right), ("up", up)):
+        if (not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 3
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in value)):
+            raise OcctBackendError(f"drawing {label} must be three finite numbers")
+        vectors.append(tuple(float(v) for v in value))
+    origin, right, up = vectors
+    for label, vector in (("right", right), ("up", up)):
+        if not math.isclose(math.hypot(*vector), 1.0, rel_tol=0.0, abs_tol=1e-9):
+            raise OcctBackendError(f"drawing {label} must be a unit direction")
+    if abs(sum(r * u for r, u in zip(right, up))) > 1e-9:
+        raise OcctBackendError("drawing right and up must be perpendicular")
+    if (isinstance(linear_deflection, bool) or not isinstance(linear_deflection, (int, float))
+            or not math.isfinite(linear_deflection) or linear_deflection <= 0.0):
+        raise OcctBackendError("drawing linear_deflection must be finite and positive in the shape's unit")
+    right = tuple(v / math.hypot(*right) for v in right)
+    normal = (right[1] * up[2] - right[2] * up[1],
+              right[2] * up[0] - right[0] * up[2],
+              right[0] * up[1] - right[1] * up[0])
+    # Match gp_Ax2's orthonormal frame exactly, including accepted numeric roundoff.
+    normal = tuple(v / math.hypot(*normal) for v in normal)
+    up = (normal[1] * right[2] - normal[2] * right[1],
+          normal[2] * right[0] - normal[0] * right[2],
+          normal[0] * right[1] - normal[1] * right[0])
+    return origin, right, up, normal
+
+
+def _drawing_depth_range(depth_range):
+    if depth_range is None:
+        return None
+    if (not isinstance(depth_range, Sequence) or isinstance(depth_range, (str, bytes)) or len(depth_range) != 2
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in depth_range)):
+        raise OcctBackendError("drawing depth_range must be two finite depths (near, far)")
+    near, far = (float(v) for v in depth_range)
+    if not near < far:
+        raise OcctBackendError("drawing depth_range must have near < far")
+    return near, far
+
+
+def _drawing_entries(occ, entries: Sequence[StepEntry], object_ids: Sequence[str]) -> tuple[StepEntry, ...]:
+    if (not isinstance(object_ids, Sequence) or isinstance(object_ids, (str, bytes)) or not object_ids
+            or any(not isinstance(name, str) or not name.strip() for name in object_ids)
+            or len(set(object_ids)) != len(object_ids)):
+        raise OcctBackendError("drawing object_ids must name at least one unique, non-empty object")
+    by_name: dict[str, list[StepEntry]] = {}
+    for entry in entries:
+        if not isinstance(entry, StepEntry):
+            raise OcctBackendError("drawing entries must be StepEntry values")
+        if entry.name is not None:
+            by_name.setdefault(entry.name, []).append(entry)
+    selected = []
+    for name in sorted(object_ids):
+        matches = by_name.get(name, [])
+        if len(matches) != 1:
+            raise OcctBackendError(f"drawing object {name!r} is {'unknown' if not matches else 'ambiguous'}")
+        entry = matches[0]
+        shape = entry.shape
+        if (not isinstance(shape, occ.TopoDS.TopoDS_Shape) or shape.IsNull()
+                or _count(occ, shape, occ.TopAbs.TopAbs_EDGE) == 0):
+            raise OcctBackendError(f"drawing object {name!r} has no non-empty shape")
+        if not occ.BRepCheck.BRepCheck_Analyzer(shape).IsValid():
+            raise OcctBackendError(f"drawing object {name!r} has an invalid shape")
+        selected.append(entry)
+    return tuple(selected)
+
+
+def _depth_clipped_shape(occ, entry: StepEntry, frame, depth_range):
+    """The entry's shape restricted to the near/far slab, or None when it lies wholly outside.
+
+    Depth is measured from the drawing origin along the look direction (the
+    opposite of ``right cross up``).  A shape wholly inside the slab is used
+    as it is; one wholly outside takes no part in the visibility solve; one
+    crossing a slab plane is cut exactly (Boolean common with the slab), so
+    its cut boundary appears as a drawn edge and the part beyond the plane
+    neither draws nor hides.
+    """
+
+    origin, right, _, normal = frame
+    near, far = depth_range
+    look = tuple(-v for v in normal)
+    across = (look[1] * right[2] - look[2] * right[1],
+              look[2] * right[0] - look[0] * right[2],
+              look[0] * right[1] - look[1] * right[0])
+    box = occ.Bnd.Bnd_Box()
+    occ.BRepBndLib.BRepBndLib.AddOptimal_s(entry.shape, box, False, False)
+    if box.IsVoid():
+        raise OcctBuildError(f"drawing object {entry.name!r} has no bounds")
+    xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+    corners = [(x, y, z) for x in (xmin, xmax) for y in (ymin, ymax) for z in (zmin, zmax)]
+    def extent(direction):
+        values = [sum((c - o) * d for c, o, d in zip(corner, origin, direction)) for corner in corners]
+        return min(values), max(values)
+    depth_min, depth_max = extent(look)
+    if depth_max < near or depth_min > far:
+        return None
+    if depth_min >= near and depth_max <= far:
+        return entry.shape
+    u_min, u_max = extent(right)
+    w_min, w_max = extent(across)
+    pad = 1.0 + max(u_max - u_min, w_max - w_min)
+    corner = tuple(o + near * l + (u_min - pad) * r + (w_min - pad) * a
+                   for o, l, r, a in zip(origin, look, right, across))
+    axes = occ.gp.gp_Ax2(occ.gp.gp_Pnt(*corner), occ.gp.gp_Dir(*look), occ.gp.gp_Dir(*right))
+    slab = occ.BRepPrimAPI.BRepPrimAPI_MakeBox(axes, (u_max - u_min) + 2 * pad, (w_max - w_min) + 2 * pad,
+                                               far - near).Shape()
+    common = occ.BRepAlgoAPI.BRepAlgoAPI_Common(entry.shape, slab)
+    common.Build()
+    if not common.IsDone():
+        raise OcctBuildError(f"drawing object {entry.name!r}: depth clip failed")
+    clipped = common.Shape()
+    if clipped.IsNull() or _count(occ, clipped, occ.TopAbs.TopAbs_EDGE) == 0:
+        return None
+    return clipped
+
+
+def _drawing_point(point):
+    return (float(point.X()), float(point.Y()))
+
+
+def _drawing_edge_points(occ, edge, object_id: str, *, linear_deflection: float):
+    if occ.BRep.BRep_Tool.Degenerated_s(edge):
+        return ()
+    curve = occ.BRepAdaptor.BRepAdaptor_Curve(edge)
+    sample = occ.GCPnts.GCPnts_UniformDeflection(curve, linear_deflection, True)
+    if not sample.IsDone():
+        raise OcctBuildError(f"drawing object {object_id!r}: edge discretization failed")
+    points = []
+    for index in range(1, sample.NbPoints() + 1):
+        xy = _drawing_point(sample.Value(index))
+        if not points or xy != points[-1]:
+            points.append(xy)
+    return tuple(points)
+
+
+def _drawing_polylines(occ, shape, object_id: str, kind: str, *, linear_deflection: float):
+    """Discretize the HLR result edges, which already lie in drawing XY."""
+
+    if shape.IsNull():
+        return ()
+    lines = []
+    for item in _explore(occ, shape, occ.TopAbs.TopAbs_EDGE):
+        edge = occ.TopoDS.TopoDS.Edge_s(item)
+        points = _drawing_edge_points(occ, edge, object_id, linear_deflection=linear_deflection)
+        if len(points) > 1:
+            lines.append(OcctDrawingPolyline(object_id, kind, min(points, tuple(reversed(points)))))
+    return tuple(lines)
+
+
+def project_occt_lines(
+    entries: Sequence[StepEntry], *, object_ids: Sequence[str],
+    origin: Sequence[float], right: Sequence[float], up: Sequence[float],
+    linear_deflection: float, depth_range: Sequence[float] | None = None,
+) -> tuple[OcctDrawingPolyline, ...]:
+    """Orthographic sharp edges and silhouettes, with visibility among selected objects.
+
+    Inputs are named shapes, normally from ``read_step``. Origin and all output
+    points use that read's CAD Z-up frame and length unit; right/up are unit,
+    perpendicular directions. ``right cross up`` points toward the viewer, so
+    the look direction is its opposite. ``linear_deflection`` is the maximum
+    chord deviation in that same unit (0.0001 for a 0.1 mm drawing from metre
+    shapes). Output ``points`` are ``(dot(p - origin, right), dot(p - origin,
+    up))``. Nothing is written.
+
+    All selected shapes participate in one exact HLR calculation
+    (``HLRBRep_Algo``), then their lines are extracted per object name and
+    tagged ``visible`` or ``hidden``; an object entirely behind others may
+    have no visible line and still hides nothing less. Coincident front/back
+    edges can carry both kinds; draw hidden lines before visible ones.
+    Unselected shapes do not hide.
+
+    ``depth_range`` (near, far), measured from origin along the look
+    direction, restricts the solve to that slab exactly: shapes wholly
+    outside take no part, shapes crossing a plane are cut there (see
+    ``_depth_clipped_shape``). ``None`` uses the full depth.
+    """
+
+    frame = _drawing_frame(origin, right, up, linear_deflection)
+    slab = _drawing_depth_range(depth_range)
+    occ = _occt()
+    selected = _drawing_entries(occ, entries, object_ids)
+    origin, right, _, normal = frame
+    try:
+        participating = []
+        for entry in selected:
+            shape = entry.shape if slab is None else _depth_clipped_shape(occ, entry, frame, slab)
+            if shape is not None:
+                participating.append((entry.name, shape))
+        if not participating:
+            return ()
+        algorithm = occ.HLRBRep.HLRBRep_Algo()
+        for _, shape in participating:
+            algorithm.Add(shape)
+        axis = occ.gp.gp_Ax2(occ.gp.gp_Pnt(*origin), occ.gp.gp_Dir(*normal), occ.gp.gp_Dir(*right))
+        algorithm.Projector(occ.HLRAlgo.HLRAlgo_Projector(axis))
+        algorithm.Update()
+        algorithm.Hide()
+        extraction = occ.HLRBRep.HLRBRep_HLRToShape(algorithm)
+        lines = []
+        for name, shape in participating:
+            for kind, methods in (("visible", ("VCompound", "OutLineVCompound")),
+                                  ("hidden", ("HCompound", "OutLineHCompound"))):
+                for method in methods:
+                    lines.extend(_drawing_polylines(occ, getattr(extraction, method)(shape), name, kind,
+                                                    linear_deflection=linear_deflection))
+    except OcctBackendError:
+        raise
+    except Exception as exc:
+        raise OcctBuildError(f"orthographic projection failed: {exc}") from exc
+    return tuple(sorted(set(lines), key=lambda line: (line.object_id, line.kind, line.points)))
+
+
 # ---------------------------------------------------------------- tessellation and preview
 
 
@@ -1040,6 +1343,7 @@ __all__ = [
     "OcctBackendError",
     "OcctBuildError",
     "OcctCapabilityError",
+    "OcctDrawingPolyline",
     "OcctObjectBuild",
     "OcctProgramBuild",
     "OcctUnavailableError",
@@ -1056,7 +1360,9 @@ __all__ = [
     "classify_program_point",
     "declared_delivery",
     "measure_shape",
+    "measure_occt_solid_pairs",
     "occt_available",
+    "project_occt_lines",
     "read_step",
     "tessellate_shape",
     "write_preview_three_dm",

@@ -12,14 +12,52 @@ mesh as the exact model.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..application.artifacts import (
     ArtifactListing,
     ArtifactRecord,
+    ModelSource,
+    SourceDocument,
     ViewportCapture,
 )
 from .project import ProjectVersionDto
+
+
+class ModelSourceDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    run_id: str = Field(alias="runId", min_length=1)
+    state_digest: str = Field(alias="stateDigest", pattern=r"^[0-9a-f]{64}$")
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+
+
+def model_source_from(dto: ModelSourceDto) -> ModelSource:
+    return ModelSource(dto.run_id, dto.state_digest, dto.asset_sha256)
+
+
+def model_source_dto(source: ModelSource | None) -> ModelSourceDto | None:
+    return None if source is None else ModelSourceDto(**source.to_dict())
+
+
+class ModelAssetRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str = Field(alias="runId", min_length=1)
+    state_digest: str = Field(alias="stateDigest", pattern=r"^[0-9a-f]{64}$")
+    file_name: str = Field(alias="fileName", min_length=1, max_length=240)
+    content_base64: str = Field(alias="contentBase64", min_length=1)
+
+
+class DocumentModelSourceRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str = Field(alias="runId", min_length=1, description="The document's storage run; not its model source.")
+    model_source: ModelSourceDto = Field(alias="modelSource", description="Explicitly declared correspondence, not a claim inferred from image pixels.")
 
 
 class ProjectArtifactDto(BaseModel):
@@ -32,6 +70,7 @@ class ProjectArtifactDto(BaseModel):
         description="the file's sha256, or receipt:<sha> when it claims none",
     )
     run_id: str = Field(alias="runId")
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     stage_id: str | None = Field(alias="stageId")
     file_name: str = Field(alias="fileName")
     relative_path: str | None = Field(
@@ -112,12 +151,73 @@ class ViewportCaptureDto(BaseModel):
     size_bytes: int = Field(alias="sizeBytes")
 
 
+class DocumentPageDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    page_index: int = Field(alias="pageIndex", ge=0, description="Zero-based page index; images have page 0 only.")
+    width: float = Field(gt=0, description="Visible width after PDF CropBox/rotation in points, or EXIF-oriented image pixels.")
+    height: float = Field(gt=0, description="Visible height after PDF CropBox/rotation in points, or EXIF-oriented image pixels.")
+    rotation: int = Field(description="PDF page rotation applied to these dimensions; 0 for oriented images.")
+
+
+class SourceDocumentRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str = Field(alias="runId", min_length=1)
+    file_name: str = Field(alias="fileName", min_length=1, max_length=240)
+    mime_type: Literal["application/pdf", "image/png", "image/jpeg"] = Field(alias="mimeType")
+    content_base64: str = Field(alias="contentBase64", min_length=1, description="Original file bytes; maximum decoded size 32 MiB. No server path is accepted.")
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+
+
+class SourceDocumentDto(BaseModel):
+    """An imported reference document, separate from certified model artifacts."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    run_id: str = Field(alias="runId")
+    asset_sha256: str = Field(alias="assetSha256")
+    file_name: str = Field(alias="fileName")
+    mime_type: Literal["application/pdf", "image/png", "image/jpeg"] = Field(alias="mimeType")
+    size_bytes: int = Field(alias="sizeBytes")
+    page_count: int = Field(alias="pageCount")
+    pages: list[DocumentPageDto]
+    model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    model_source_binding_ref: str | None = Field(alias="modelSourceBindingRef", default=None)
+
+
+class SourceDocumentListDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    run_id: str = Field(alias="runId")
+    documents: list[SourceDocumentDto]
+
+
+def document_dto(document: SourceDocument) -> SourceDocumentDto:
+    return SourceDocumentDto(
+        project_id=document.project_id, run_id=document.run_id,
+        asset_sha256=document.asset_sha256, file_name=document.file_name,
+        mime_type=document.mime_type, size_bytes=document.size_bytes,
+        page_count=len(document.pages),
+        model_source=model_source_dto(document.model_source),
+        model_source_binding_ref=document.model_source_binding_ref,
+        pages=[DocumentPageDto(page_index=page.page_index, width=page.width, height=page.height, rotation=page.rotation) for page in document.pages],
+    )
+
+
 def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
     """Shape one artifact for the wire; every value came off its receipt."""
 
     return ProjectArtifactDto(
         artifact_id=record.artifact_id,
         run_id=record.run_id,
+        model_source=model_source_dto(record.model_source or (
+            ModelSource(record.run_id, record.design_state_digest, record.sha256)
+            if record.design_state_digest and record.sha256 and record.format == "3dm" and record.available else None
+        )),
         stage_id=record.stage_id,
         file_name=record.file_name,
         relative_path=record.relative_path,

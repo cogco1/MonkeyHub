@@ -49,6 +49,8 @@ def harness_guard(
     repository: FilesystemProjectRepository,
     run: RunRef,
     state: DevelopedDesignState,
+    *,
+    model_source_ref: str | None = None,
 ) -> StageExecutionGuard:
     """Retain the harness workflow and envelope, and guard the run with them.
 
@@ -56,6 +58,10 @@ def harness_guard(
     is called, because the guard checks that the payloads it was handed are
     exactly what P036 retained — equivalent-looking objects without their refs
     are intentionally not enough.
+
+    A composed input model is also a basis of this run. Its registration ref
+    lets a cold candidate read distinguish a completed composition from native
+    exports left behind when the later composition failed.
 
     The stage requires no check, and the harness closes nothing. A workflow
     may require only checks the spine can measure (ADR-007 rule 3), and the
@@ -77,7 +83,7 @@ def harness_guard(
                 close_obligation_id=CLOSE_OBLIGATION_ID,
             ),
         ),
-        basis_refs=("decision:studio-candidate-harness",),
+        basis_refs=("decision:studio-candidate-harness",) + ((model_source_ref,) if model_source_ref else ()),
     )
     destination = PersistenceDestination(
         PersistenceArea.RUN_RECORD, run_id=run.run_id

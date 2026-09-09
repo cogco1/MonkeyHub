@@ -15,12 +15,13 @@ the vocabulary would offer the architect choices the record refuses.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from archflow.state.program_sheet import totals_of
 
 from ..application.binding import bound_project
+from ..application.artifacts import require_model_source
 from ..application.candidate import run_operator
 from ..application.jobs import JobRegistry
 from ..application.program import (
@@ -36,6 +37,7 @@ from ..application.program import (
 from ..application.projection import project_state, require_actionable
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
+from ..transport.artifacts import model_source_from
 from ..transport.program import (
     ProgramApplyRequestDto,
     ProgramCandidateDto,
@@ -54,11 +56,17 @@ router = APIRouter(tags=["program"])
     response_model=ProgramDto,
     response_model_by_alias=True,
 )
-def read_sheet(request: Request) -> ProgramDto:
+def read_sheet(
+    request: Request,
+    run: str | None = Query(default=None, min_length=1),
+) -> ProgramDto:
     """The project's program sheet: the authored one, or the derived one."""
 
     binding = bound_project(request.app.state)
-    return program_dto(read_program(binding, project_state(binding)))
+    projection = project_state(binding, run_id=run)
+    if run is not None and not projection.reference_state_exact:
+        require_actionable(projection)
+    return program_dto(read_program(binding, projection, source_run_id=run))
 
 
 @router.post(
@@ -88,7 +96,7 @@ def apply_program(
     state = request.app.state
     settings: StudioSettings = state.settings
     binding = bound_project(state)
-    projection = project_state(binding)
+    projection = project_state(binding, run_id=body.source_run_id)
     require_actionable(projection)
     if (
         body.state_digest != projection.state_digest
@@ -108,12 +116,18 @@ def apply_program(
             "zones it names may have moved.",
         )
     sheet = sheet_payload(body.sheet)
+    model_source = model_source_from(body.model_source) if body.model_source is not None else None
+    if model_source is not None:
+        require_model_source(binding, model_source, projection)
     operator = operator_for(sheet, projection)
     registry: JobRegistry = state.jobs
     run_id = candidate_run_id()
 
     def work() -> object:
-        return run_operator(binding, settings, operator, run_id)
+        return run_operator(
+            binding, settings, operator, run_id, source_run_id=body.source_run_id,
+            model_source=model_source,
+        )
 
     job = registry.submit(
         candidate_id=run_id,

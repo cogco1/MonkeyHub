@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from dataclasses import replace
 
@@ -26,6 +27,44 @@ class OverlapTests(unittest.TestCase):
         b = ((0.5, 0.5, 0.9), (1.5, 1.5, 2.0))
         self.assertTrue(_overlaps(a, b))
         self.assertTrue(_overlaps(a, b, tolerance=0.0))
+
+
+class WallEndOpeningTests(unittest.TestCase):
+    """An opening ending exactly at a wall end is inside it; a real overrun is not."""
+
+    def setUp(self) -> None:
+        # west-dining-wall-finish as element_producers resolves it: from (0.2, 6.86) up the axis
+        # to (0.2, 9.68), so length = 9.68 - 6.86 = 2.8199999999999994; the window's authored
+        # along 1.4849999999999985 arrives rounded to 1.485 and its end lands 8.9e-16 past that.
+        self.wall = WallElement("wall", (0.2, 6.86), (0.0, 1.0), 9.68 - 6.86, 0.02, 3.0,
+                                "level-ground", "world", "binding-wall")
+        self.window = OpeningRequest("window", OpeningKind.WINDOW, round(1.4849999999999985, 9), 2.67,
+                                     0.19, 2.69, "binding-opening")
+
+    def _profile(self, result, op_id: str) -> set[float]:
+        tool = next(op for op in result.operations if op.op_id == op_id)
+        return {p[2] for p in json.loads(next(p.value_json for p in tool.parameters if p.name == "profile"))}
+
+    def test_an_opening_ending_at_the_wall_end_keeps_its_full_width(self) -> None:
+        result = solve_wall(self.wall, (self.window,))
+        self.assertEqual(max(self._profile(result, "wall")), 9.68)
+        self.assertEqual(self._profile(result, "wall-void-window"), {7.01, 9.68})
+        self.assertAlmostEqual(result.voids[0].width, 2.67)
+
+    def test_an_opening_starting_at_the_wall_start_tolerates_subtraction_roundoff(self) -> None:
+        opening = replace(self.window, along=0.15, width=0.30000000000000004)   # along0 = -2.8e-17
+        result = solve_wall(self.wall, (opening,))
+        self.assertEqual(self._profile(result, "wall-void-window"), {6.86, 7.16})
+
+    def test_a_real_overrun_at_either_end_or_by_a_repeat_is_refused(self) -> None:
+        for excess in (1e-8, 0.001):
+            for change in ({"along": self.window.width / 2.0 - excess},
+                           {"along": self.window.along + excess},
+                           {"along": 0.485, "width": 0.67, "count": 2, "step": 2.0 + excess}):
+                with self.subTest(excess=excess, change=change), self.assertRaisesRegex(
+                    WallSolverError, "lies outside the wall length"
+                ):
+                    solve_wall(self.wall, (replace(self.window, **change),))
 
 
 class ArchOpeningTests(unittest.TestCase):
