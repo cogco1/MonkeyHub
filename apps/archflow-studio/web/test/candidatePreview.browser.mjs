@@ -21,6 +21,7 @@ const workingCopies = [];
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
 let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0, nextProgram = null;
 let historyEnabled = false, acceptFailure = false, annotationFailure = false, lastDrawing = null, nextCombined = null;
+let drawingFailure = false, drawingGate = null;
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDWsAAAAASUVORK5CYII=", "base64");
 function historyDto(branchId = "main") {
@@ -119,7 +120,6 @@ const snapshot = () => page.evaluate(() => window.__candidatePreview?.snapshot ?
 async function rendered(id, fileName = `${id}.3dm`) {
   await until(snapshot, (value) => value.loadedRunId === id && value.loadedFileName === fileName && value.status === "ready" && value.loadingSha === null,
     `${id} did not finish parsing and become the displayed model`, 45_000);
-  assert.equal(await page.locator(".source__name").textContent(), fileName);
 }
 async function view(artifact) {
   await page.evaluate((value) => window.__candidatePreview.view(value), artifactDto(artifact));
@@ -276,6 +276,11 @@ try {
       }
       if (method === "POST" && name === "/api/intents") return await json({ code: "UNSUPPORTED_REQUEST", detail: "Fixture records the source context." }, 422);
       if (method === "POST" && name === "/api/drawings/elevations") {
+        if (drawingFailure) {
+          if (drawingGate) await drawingGate.promise;
+          return await json({ code: "DRAWING_COMPLETE_SOURCE_UNAVAILABLE",
+            detail: "This complete model has no matching exact STEP. Its native components cannot stand in for a drawing of the complete building." }, 409);
+        }
         const body = request.postDataJSON(); const source = body.sourceStageRef ? stages.get(body.sourceStageRef).modelSource : body.modelSource;
         lastDrawing = { projectId, runId: source.runId, assetSha256: digest(png), fileName: "front-elevation.png", mimeType: "image/png", sizeBytes: png.length,
           pageCount: 1, pages: [{ pageIndex: 0, width: 200, height: 150, rotation: 0 }], modelSource: source,
@@ -306,6 +311,19 @@ try {
   });
   await page.goto(`${origin}/?lang=en`, { waitUntil: "domcontentloaded" });
   await rendered(home.runId);
+
+  await step("model metadata and publication status are available in Settings without cluttering the model", async () => {
+    assert.equal(await page.locator(".stage .source").count(), 0);
+    assert.equal(await page.getByText("published · issue 0", { exact: true }).count(), 0);
+    assert.equal(await page.getByText("Candidate workspace · published version unchanged", { exact: true }).count(), 0);
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("tab", { name: "Model", exact: true }).click();
+    assert.equal(await page.locator(".settings-model-info .source__name").textContent(), home.fileName);
+    assert.equal(await page.getByText("published · issue 0", { exact: true }).isVisible(), true);
+    assert.equal(await page.getByText("Candidate workspace · published version unchanged", { exact: true }).isVisible(), true);
+    await page.locator(".settings-panel").getByRole("button", { name: "Close", exact: true }).click();
+    await rendered(home.runId);
+  });
 
   await step("a failed background artifact refresh retries without losing the displayed model", async () => {
     const external = makeArtifact("external-result", 4); allArtifacts.push(external);
@@ -518,9 +536,40 @@ try {
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef); assert.equal(branches.size, 2);
   });
 
-  await step("generated elevation opens the returned immutable revision with no chat expansion", async () => {
+  await step("drawing errors stay above the viewport, dismiss, reset on direction changes, and ignore stale replies", async () => {
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("main"); await rendered(historyA.candidateId);
-    await page.getByRole("button", { name: "生成立面", exact: true }).click();
+    drawingFailure = true;
+    const generate = page.getByRole("button", { name: "Generate elevation", exact: true });
+    const error = page.locator(".stage-drawing-error");
+    await generate.click(); await error.waitFor();
+    assert.equal(await error.locator('[role="alert"]').textContent(), "This model is missing its matching exact geometry file, so a complete elevation cannot be generated yet.");
+    assert.equal(await error.locator("details").getAttribute("open"), null);
+    await error.getByText("Technical details", { exact: true }).click();
+    assert.match(await error.locator("details p").textContent(), /DRAWING_COMPLETE_SOURCE_UNAVAILABLE.*matching exact STEP/);
+    const bounds = await error.boundingBox(), viewport = await page.locator(".stage-model .viewport-host").boundingBox();
+    assert.ok(bounds && viewport && bounds.y + bounds.height <= viewport.y + 1, "Drawing error must occupy its own row above the model");
+    await page.getByRole("button", { name: "Dismiss drawing error", exact: true }).click();
+    assert.equal(await error.count(), 0);
+    await generate.click(); await error.waitFor();
+    await page.getByRole("combobox", { name: "Elevation direction", exact: true }).selectOption("back");
+    assert.equal(await error.count(), 0);
+    await generate.click(); await error.waitFor();
+    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
+    await rendered(currentHome.runId); assert.equal(await error.count(), 0);
+    drawingGate = deferred();
+    await generate.click();
+    await page.locator('[data-design-stage="S1"]').getByRole("button", { name: /^S1/ }).click();
+    await rendered(historyA.candidateId);
+    drawingGate.resolve(); drawingGate = null;
+    await until(() => generate.isEnabled(), Boolean, "The old drawing request did not finish");
+    assert.equal(await error.count(), 0);
+    assert.equal((await snapshot()).drawingError, null);
+    drawingFailure = false;
+    await page.getByRole("combobox", { name: "Elevation direction", exact: true }).selectOption("front");
+  });
+
+  await step("generated elevation opens the returned immutable revision with no chat expansion", async () => {
+    await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
     await page.locator('.document-workspace:not([aria-hidden="true"]) .document-viewport[data-ready="true"]').waitFor();
     const value = await snapshot();
     assert.equal(value.documentView.open, true); assert.equal(value.documentView.revisionRef, lastDrawing.revisionRef);
@@ -654,6 +703,7 @@ try {
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);
 } finally {
+  drawingGate?.resolve();
   for (const gate of [...validationGates.values(), ...modelGates.values(), ...stateGates.values()]) gate.resolve();
   await browser?.close();
   if (http.listening) await new Promise((resolve, reject) => http.close((error) => error ? reject(error) : resolve()));

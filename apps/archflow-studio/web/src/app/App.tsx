@@ -84,7 +84,7 @@ import {
   edited,
   type SpaceEdit,
 } from "../workspaces/monkeyarch/ProgramPanel";
-import type { ViewState } from "../features/stage/SourceChip";
+import { SourceChip, type ViewState } from "../features/stage/SourceChip";
 import {
   Stage,
   type CaptureState,
@@ -228,7 +228,7 @@ export default function App({ server, initialDocumentIntent }: {
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [drawingBusy, setDrawingBusy] = useState(false);
-  const [drawingError, setDrawingError] = useState<string | null>(null);
+  const [drawingError, setDrawingError] = useState<StudioApiError | null>(null);
   const [documentController] = useState(createDocumentAnnotationsController);
   const documentSaveRef = useRef<(() => Promise<void>) | null>(null);
   const bindDocumentSave = useCallback((save: (() => Promise<void>) | null) => { documentSaveRef.current = save; }, []);
@@ -466,6 +466,9 @@ export default function App({ server, initialDocumentIntent }: {
     return loadedArtifact.modelSource ?? modelSources.find((row) => row.modelSource.runId === loadedArtifact.runId &&
       row.modelSource.assetSha256 === loadedArtifact.sha256)?.modelSource ?? null;
   }, [loadedArtifact, loadedArtifacts.length, modelSources]);
+  useEffect(() => {
+    setDrawingError(null);
+  }, [contextKey, loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, viewerStatus]);
   const editingSources = modelSources.filter((row) =>
     row.modelSource.runId === projection?.referenceRun.runId && row.modelSource.stateDigest === projection.stateDigest &&
     artifacts.status === "ready" && viewableArtifacts(artifacts.value.artifacts).some((artifact) =>
@@ -1704,7 +1707,11 @@ export default function App({ server, initialDocumentIntent }: {
       if (previewContext.current.revision !== currentContext || modelLoadRequest.current !== currentViewRequest) return;
       setDocumentView({ open: true, mounted: true, runId: result.runId, sourceSha: result.assetSha256,
         revisionRef: result.revisionRef ?? null, pageIndex: 0 });
-    } catch (cause) { setDrawingError(asStudioApiError(cause).detail); }
+    } catch (cause) {
+      if (previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest) {
+        setDrawingError(asStudioApiError(cause));
+      }
+    }
     finally { setDrawingBusy(false); }
   };
   const combineDesignCandidates = async (candidateIds: string[]) => {
@@ -2446,15 +2453,6 @@ export default function App({ server, initialDocumentIntent }: {
                     {project.projectId}
                   </span>
                 )}
-                <span className="mono toolbar__item">
-                  {t("shell.publishedIssue", { version: project.published.version })}
-                </span>
-                <span
-                  className="pill pill--plain"
-                  title={t("shell.proposalOnlyTitle")}
-                >
-                  {t("shell.proposalOnly")}
-                </span>
                 <span className="toolbar__spacer" />
               </>
             ) : (
@@ -2576,12 +2574,9 @@ export default function App({ server, initialDocumentIntent }: {
           <Stage
             key={project?.projectId ?? "unbound"}
             viewportRef={viewportRef}
-            sourceLabel={sourceLabel}
             message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : viewerMessage}
             status={artifactLoadingSha !== null ? "loading" : viewerStatus}
-            inspection={inspection}
             artifactError={artifactError}
-            view={view}
             tool={tool}
             gestures={gestures}
             onTool={setTool}
@@ -2597,7 +2592,7 @@ export default function App({ server, initialDocumentIntent }: {
             documentProjectId={project?.projectId ?? null}
             documentView={documentView}
             drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
-              generate: (view) => { void generateElevation(view); } } : undefined}
+              dismissError: () => setDrawingError(null), generate: (view) => { void generateElevation(view); } } : undefined}
             documentAnnotationsController={documentController}
             onDocumentBeforeLeave={bindDocumentSave}
             onDocumentView={(next) => {
@@ -2802,6 +2797,13 @@ export default function App({ server, initialDocumentIntent }: {
         onClose={() => setSettingsOpen(false)}
         server={server}
         project={project}
+        modelInfo={<>
+          <SourceChip sourceLabel={sourceLabel} inspection={inspection} status={viewerStatus} message={viewerMessage} view={view} />
+          {project && <div className="settings-model-publication">
+            <span>{t("shell.publishedIssue", { version: project.published.version })}</span>
+            <span title={t("shell.proposalOnlyTitle")}>{t("shell.proposalOnly")}</span>
+          </div>}
+        </>}
       />
     </>
   );

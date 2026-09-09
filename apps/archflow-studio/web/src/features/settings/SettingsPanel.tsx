@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
 } from "react";
 
 import type { ServerIdentity } from "../../api/connection";
@@ -40,13 +41,14 @@ const SECTIONS: readonly SettingsSection[] = [
   "server",
   "diagnostics",
 ];
-const DESIGN_SECTIONS: readonly SettingsSection[] = ["appearance"];
+const DESIGN_SECTIONS: readonly SettingsSection[] = ["appearance", "model"];
 
 export interface SettingsPanelProps {
   open: boolean;
   onClose(): void;
   server: ServerIdentity;
   project: ProjectBindingDto | null;
+  modelInfo?: ReactNode;
 }
 
 function SourceBadge({
@@ -98,6 +100,7 @@ export function SettingsPanel({
   onClose,
   server,
   project,
+  modelInfo,
 }: SettingsPanelProps) {
   const t = useT();
   const {
@@ -117,8 +120,7 @@ export function SettingsPanel({
   const [translationPreparation, setTranslationPreparation] =
     useState<TranslationPreparation>("idle");
   const userSettingsAvailable = server.mode === "local" && server.capabilities.includes("user-settings");
-  const sections: readonly SettingsSection[] = developerMode ? SECTIONS
-    : userSettingsAvailable ? ["appearance", "model"] : DESIGN_SECTIONS;
+  const sections: readonly SettingsSection[] = developerMode ? SECTIONS : DESIGN_SECTIONS;
   const [savedDefaults, setSavedDefaults] = useState<UserSettingsDto | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<UserSettingsDto>({});
   const [timeoutDraft, setTimeoutDraft] = useState<string | null>(null);
@@ -155,9 +157,8 @@ export function SettingsPanel({
   }, [readUserDefaults, userSettingsAvailable]);
 
   useEffect(() => {
-    if (!developerMode && activeSection !== "appearance" &&
-        !(userSettingsAvailable && activeSection === "model")) setActiveSection("appearance");
-  }, [activeSection, developerMode, userSettingsAvailable]);
+    if (!developerMode && !DESIGN_SECTIONS.includes(activeSection)) setActiveSection("appearance");
+  }, [activeSection, developerMode]);
 
   const stageUserSetting = <K extends keyof UserSettingsDto>(key: K, value: UserSettingsDto[K]) => {
     if (!userSettingsAvailable) return;
@@ -604,6 +605,10 @@ export function SettingsPanel({
               hidden={activeSection !== "model"}
             >
               <h2>{sectionLabel("model")}</h2>
+              {modelInfo && <>
+                <h3>{t("settings.currentModel")}</h3>
+                <div className="settings-group settings-model-info">{modelInfo}</div>
+              </>}
               <div className="settings-group">
                 <ReadOnlySetting
                   label={t("settings.fields.modelProvider")}

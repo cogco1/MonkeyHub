@@ -110,14 +110,28 @@ async function openConversation() {
   const button = page.locator('button[aria-controls="conversation-panel"]');
   if (await button.getAttribute("aria-expanded") !== "true") await button.click();
 }
+async function withModelDetails(read) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByRole("tab", { name: "Model", exact: true }).click();
+  const source = settings.locator(".source");
+  await source.waitFor({ state: "visible" });
+  try { return await read(source); }
+  finally {
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    await settings.waitFor({ state: "detached" });
+  }
+}
+const editingBase = () => page.locator("#stage-versions-panel .stage__versions-session .editing-base");
+const annotationStatus = () => page.locator("#stage-versions-panel [data-model-annotations-status]");
 async function ready(option) {
   await openVersions();
-  await until(async () => ({ selected: await versionButton(option).getAttribute("aria-pressed"),
-    annotations: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
-    loading: await page.locator(".stage-model .source__status").count(),
-    name: await page.locator(".source__name").textContent(),
+  await withModelDetails((source) => until(async () => ({ selected: await versionButton(option).getAttribute("aria-pressed"),
+    annotations: await annotationStatus().getAttribute("data-model-annotations-status"),
+    loading: await source.locator(".source__status").count(),
+    name: await source.locator(".source__name").textContent(),
   }), (value) => value.selected === "true" && value.annotations === "saved" && value.loading === 0 &&
-    value.name?.includes(`option-${option.id}.3dm`), `${option.id}'s actual model did not finish loading`, 60_000);
+    value.name?.includes(`option-${option.id}.3dm`), `${option.id}'s actual model did not finish loading`, 60_000));
 }
 async function view(option) {
   await openVersions();
@@ -125,10 +139,12 @@ async function view(option) {
   await ready(option);
 }
 async function viewState() {
-  return { source: await page.locator(".stage-model .source").textContent(),
-    state: await page.locator(".stage-model .source").getAttribute("data-state"),
-    editing: await page.locator(".stage-model .editing-base").textContent(),
-    match: await page.locator(".stage-model .editing-base").getAttribute("data-source-match"),
+  await openVersions();
+  const details = await withModelDetails(async (source) => ({ source: await source.textContent(),
+    state: await source.getAttribute("data-state") }));
+  return { ...details,
+    editing: await editingBase().textContent(),
+    match: await editingBase().getAttribute("data-source-match"),
     selected: group.selectedOptionId,
     A: await versionButton(optionA).getAttribute("aria-pressed"), B: await versionButton(optionB).getAttribute("aria-pressed"),
     targets: await page.locator(".composer > .context .pill--accent").allTextContents() };
@@ -320,9 +336,9 @@ try {
   await step("same-run/state View B stays separate until Continue selects exact B", async () => {
     await view(optionB);
     assert.equal(group.selectedOptionId, "A"); assert.deepEqual(selections, []);
-    assert.equal(await page.locator(".editing-base").getAttribute("data-source-match"), "different");
-    await page.locator(".editing-base").getByRole("button", { name: "Continue from this version", exact: true }).click();
-    await until(() => page.locator(".editing-base").getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
+    assert.equal(await editingBase().getAttribute("data-source-match"), "different");
+    await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
+    await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
     await ready(optionB); assert.equal(group.selectedOptionId, "B"); assert.equal(selections.length, 1);
   });
   await step("viewing same-run A preserves editing B and posts B's full identity", async () => {
@@ -342,7 +358,7 @@ try {
     const modelReads = requests.slice(beforeReads).filter((row) => /^\/api\/artifacts\/[^/]+\/bytes$/.test(row.path));
     assert.ok(modelReads.length > 0);
     assert.deepEqual([...new Set(modelReads.map((row) => row.path))], [`/api/artifacts/${sourceB.assetSha256}/bytes`]);
-    assert.equal(await page.locator(".editing-base").getAttribute("data-source-match"), "same");
+    assert.equal(await editingBase().getAttribute("data-source-match"), "same");
     assert.equal(selections.length, 1, "Restoring is a read, not a new selection");
   });
   for (const clarification of [false, true]) await step(`B's delayed ${clarification ? "clarification" : "proposal"} leaves same-run A unchanged`, async () => {
@@ -359,7 +375,7 @@ try {
   });
   await step("View A / Edit B posts exact drawing pixels, then continues without sending the pages again", async () => {
     await view(optionA); await openConversation();
-    assert.equal(await page.locator(".editing-base").getAttribute("data-source-match"), "different");
+    assert.equal(await editingBase().getAttribute("data-source-match"), "different");
     assert.equal(group.selectedOptionId, "B");
     await page.locator(".composer .context").getByRole("button").click();
     assert.equal(await page.locator(".tree__row--element").count(), 0, "The object tree starts with top-level components");
@@ -464,11 +480,11 @@ try {
     await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
     await openVersions();
     await page.locator(".vcard__export").filter({ hasText: "option-C.3dm" }).click();
-    await until(async () => ({ name: await page.locator(".source__name").textContent(),
-      annotations: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
-      loading: await page.locator(".source__status").count() }),
+    await withModelDetails((source) => until(async () => ({ name: await source.locator(".source__name").textContent(),
+      annotations: await annotationStatus().getAttribute("data-model-annotations-status"),
+      loading: await source.locator(".source__status").count() }),
     (value) => value.name === "option-C.3dm" && value.annotations === "saved" && value.loading === 0,
-    "The cross-run C model was not accepted by the actual viewer");
+    "The cross-run C model was not accepted by the actual viewer"));
     assert.equal(group.selectedOptionId, "B");
     assert.equal(selections.length, 1, "Viewing C must not choose a new editing source");
     const beforeQuestion = await viewState();
@@ -505,8 +521,8 @@ try {
     // Keep the document question open, then explicitly change just the asset
     // SHA within the original run/state. The old B token must not migrate to A.
     await view(optionA);
-    await page.locator(".editing-base").getByRole("button", { name: "Continue from this version", exact: true }).click();
-    await until(() => page.locator(".editing-base").getAttribute("data-source-match"), (value) => value === "same", "Continue A did not finish");
+    await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
+    await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue A did not finish");
     await ready(optionA);
     assert.equal(group.selectedOptionId, "A"); assert.equal(selections.length, 2);
     const proposalCount = await page.locator(".card--proposal").count();
@@ -526,10 +542,10 @@ try {
     const currentInk = () => page.evaluate(() => window.__modelInkSnapshot);
     const loadLocal = async (name, buffer) => {
       await localInput.setInputFiles({ name, mimeType: "application/octet-stream", buffer });
-      await until(async () => ({ name: await page.locator(".source__name").textContent(),
-        tag: await page.locator(".stage-model .source").getAttribute("data-tag"),
-        loading: await page.locator(".stage-model .source__status").count() }),
-      (value) => value.name === name && value.tag === "LOCAL" && value.loading === 0, "The local file was not accepted");
+      await withModelDetails((source) => until(async () => ({ name: await source.locator(".source__name").textContent(),
+        tag: await source.getAttribute("data-tag"),
+        loading: await source.locator(".source__status").count() }),
+      (value) => value.name === name && value.tag === "LOCAL" && value.loading === 0, "The local file was not accepted"));
     };
     const drawLine = async () => {
       const toggle = page.locator('button[aria-controls="annotation-tools"]');
