@@ -33,7 +33,12 @@ from fastapi import APIRouter, Header, Query
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from starlette.requests import Request
 
-from ..transport.events import StudioEventDto
+from archflow.project.refs import record_ref_from_uri
+from archflow.project.repository import ProjectRepositoryError
+
+from ..application.binding import bound_project
+from ..transport.errors import StudioError
+from ..transport.events import ModelLoadTimingDto, MonitorWriteDto, StudioEventDto
 from ..transport.events import to_dto as event_dto
 
 router = APIRouter(tags=["events"])
@@ -42,6 +47,37 @@ router = APIRouter(tags=["events"])
 # Short enough that progress feels live, long enough that an idle connection
 # costs almost nothing.
 POLL_SECONDS = 0.05
+
+
+@router.post("/events/model-load", response_model=MonitorWriteDto)
+def record_model_load(request: Request, payload: ModelLoadTimingDto) -> MonitorWriteDto:
+    """Record browser wait separately from service and model-call durations."""
+
+    state = request.app.state
+    if state.settings.monitor_dir is None:
+        return MonitorWriteDto(recorded=False)
+    binding = bound_project(state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(409, "PROJECT_MISMATCH", "This measurement names another project.")
+    binding.load_run(payload.run_id)
+    if payload.source_ref is not None:
+        try:
+            ref = record_ref_from_uri(payload.source_ref, binding.project_id)
+            layout = binding.repository.layout
+            if not layout.resolve_relative(ref.relative_path).is_relative_to(layout.run(payload.run_id).root):
+                raise ValueError("record belongs to another run")
+            binding.repository.load_json(ref)
+        except (ValueError, OSError, ProjectRepositoryError) as exc:
+            raise StudioError(409, "SOURCE_MISMATCH", "The measurement source is not retained by this run.") from exc
+    event_id = state.monitor.record(
+        event_id=f"studio:client:{payload.event_id}",
+        phase="model_load", timing_scope="client_wait", status=payload.status,
+        started_at=payload.started_at.isoformat(), ended_at=payload.ended_at.isoformat(),
+        duration_ms=payload.duration_ms, project_id=binding.project_id, run_id=payload.run_id,
+        source_ref=payload.source_ref,
+        related_event_id=f"studio:candidate:{binding.project_id}:{payload.run_id}",
+    )
+    return MonitorWriteDto(recorded=event_id is not None)
 
 
 @router.get(

@@ -49,6 +49,7 @@ import {
   getUserSettingsApiSettingsUserGet,
   putUserSettingsApiSettingsUserPut,
   readArtifactBytesApiArtifactsSha256BytesGet,
+  recordModelLoadApiEventsModelLoadPost,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
   readDocumentBytesApiDocumentsAssetSha256BytesGet,
@@ -100,6 +101,8 @@ import type {
   ModelAnnotationsDto,
   ModelAnnotationsRequestDto,
   ModelSourceDto,
+  ModelLoadTimingDto,
+  MonitorWriteDto,
   OptionsDto,
   PickRequestDto,
   PickResolutionDto,
@@ -315,6 +318,10 @@ export const studio = {
 
   artifacts(): Promise<ArtifactListDto> {
     return call("GET /api/artifacts", readArtifactsApiArtifactsGet());
+  },
+
+  recordModelLoad(body: ModelLoadTimingDto): Promise<MonitorWriteDto> {
+    return call("POST /api/events/model-load", recordModelLoadApiEventsModelLoadPost({ body }));
   },
 
   /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */

@@ -72,6 +72,51 @@ class UsagePricingTests(unittest.TestCase):
         self.assertEqual(UsageEvent.from_dict(payload), event)
         self.assertNotIn("prompt", payload)
 
+    def test_retained_event_without_timing_fields_remains_readable(self):
+        old_row = {
+            "event_id": "retained-call", "source": "studio", "provider": "test",
+            "model": "model", "phase": "intent", "status": "completed",
+            "started_at": "2026-09-09T12:00:00Z", "tokens": counts(10, 2),
+            "billing_mode": "api_estimate", "duration_ms": 200, "project_id": "project",
+        }
+        old_row["tokens"].pop("total_tokens")
+        event = UsageEvent.from_dict(old_row)
+        self.assertEqual(event.duration_ms, 200)
+        self.assertEqual(event.timing_scope, "unknown")
+        for name in ("ended_at", "model_call", "source_ref", "related_event_id",
+                     "session_id", "parent_session_id", "turn_id"):
+            self.assertIsNone(getattr(event, name))
+        self.assertEqual(UsageEvent.from_dict(event.to_dict()), event)
+
+    def test_non_model_phase_rejects_even_zero_provider_counters(self):
+        base = dict(event_id="service", source="studio", provider="unknown", model="unknown",
+                    phase="preview", status="completed", started_at="2026-09-09T12:00:00Z",
+                    tokens=TokenUsage(None, None, None, None, None, None), billing_mode="unknown",
+                    model_call=False, timing_scope="service")
+        self.assertFalse(UsageEvent(**base).model_call)
+        for name in base["tokens"].to_dict():
+            with self.subTest(counter=name), self.assertRaisesRegex(ValueError, "no provider token"):
+                UsageEvent(**{**base, "tokens": TokenUsage(**{**base["tokens"].to_dict(), name: 0})})
+
+    def test_end_time_must_not_precede_start(self):
+        with self.assertRaisesRegex(ValueError, "precedes"):
+            UsageEvent("call", "studio", "test", "model", "intent", "completed",
+                       "2026-09-09T12:00:00Z", TokenUsage(), "api_estimate",
+                       ended_at="2026-09-09T11:59:59Z")
+
+    def test_service_status_and_unknown_tokens_do_not_change_a_model_quote(self):
+        rate = RateCard("test", "model", input="1", output="2")
+        model_tokens = TokenUsage(10, 2)
+        expected = quote(model_tokens, rate)
+        for status in ("completed", "failed"):
+            service = UsageEvent("service", "studio", "test", "model", "preview", status,
+                                 "2026-09-09T12:00:00Z", TokenUsage(None, None, None, None, None, None),
+                                 "unknown", model_call=False, timing_scope="service")
+            result = quote(service.tokens, rate)
+            self.assertIsNone(result["amount_usd"])
+            self.assertEqual(result["known_subtotal_usd"], "0")
+            self.assertEqual(quote(model_tokens, rate), expected)
+
 
 class AlgorithmTests(unittest.TestCase):
     def test_baseline_uses_priority_order_and_all_budget_dimensions(self):
@@ -131,7 +176,30 @@ def token_row(total=None, last=None, timestamp="2026-09-09T12:00:00Z"):
                 "total_token_usage": total, "last_token_usage": last}}}
 
 
+def session_rows(session_id, *, parent=None, **metadata):
+    return [
+        {"type": "session_meta", "payload": {"id": session_id, "model_provider": "openai",
+         **({"source": {"subagent": {"thread_spawn": {"parent_thread_id": parent}}}} if parent else {}),
+         **metadata}},
+        {"type": "turn_context", "payload": {"model": "exact-model"}},
+    ]
+
+
+def boundary_row(kind, timestamp, turn_id=None, **fields):
+    return {"type": "event_msg", "timestamp": timestamp,
+            "payload": {"type": kind, **({"turn_id": turn_id} if turn_id else {}), **fields}}
+
+
 class CodexTests(unittest.TestCase):
+    def read_selected(self, *sources, warnings=None):
+        with TemporaryDirectory() as directory:
+            paths = []
+            for index, rows in enumerate(sources):
+                path = Path(directory) / f"selected-{index}.jsonl"
+                path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+                paths.append(path)
+            return list(iter_codex_events(paths, warnings=warnings))
+
     def read(self, rows, trailing=""):
         with TemporaryDirectory() as directory:
             path = Path(directory) / "explicit-session.jsonl"
@@ -211,6 +279,158 @@ class CodexTests(unittest.TestCase):
     def test_completed_malformed_record_raises(self):
         with self.assertRaisesRegex(ValueError, "Malformed Codex JSON on line"):
             self.read([], '{"type":\n')
+
+    def test_copies_with_different_line_numbers_merge_before_cumulative_deltas(self):
+        first = token_row(counts(100, 10), counts(100, 10))
+        second = token_row(counts(150, 15), counts(50, 5), "2026-09-09T12:00:01Z")
+        third = token_row(counts(180, 18), counts(30, 3), "2026-09-09T12:00:02Z")
+        earlier = session_rows("same-session") + [first, second]
+        later = session_rows("same-session") + [
+            {"type": "response_item", "payload": {"content": "PRIVATE_RESPONSE"}},
+            {"type": "event_msg", "payload": {"type": "user_message", "message": "PRIVATE_PROMPT"}},
+            second, second, third,
+        ]
+        events = self.read_selected(later, earlier, earlier)
+        self.assertEqual([event.tokens.input_tokens for event in events], [100, 50, 30])
+        self.assertEqual(events, self.read_selected(earlier, later))
+        self.assertEqual(len({event.event_id for event in events}), 3)
+        self.assertEqual({event.source_ref for event in events}, {"codex:same-session"})
+        self.assertNotIn("PRIVATE", json.dumps([event.to_dict() for event in events]))
+
+    def test_sources_without_session_metadata_are_not_guessed_to_be_copies(self):
+        rows = [token_row(counts(100, 10), counts(100, 10))]
+        events = self.read_selected(rows, rows)
+        self.assertEqual(len(events), 2)
+        self.assertEqual({event.source_ref for event in events}, {"codex:file-0", "codex:file-1"})
+        self.assertTrue(all(event.session_id is None for event in events))
+
+    def test_legacy_child_inherited_turn_is_not_counted_twice(self):
+        parent_turn = [
+            boundary_row("task_started", "2026-09-09T12:00:00Z", "parent-turn"),
+            token_row(counts(100, 10), counts(100, 10), "2026-09-09T12:00:01Z"),
+            boundary_row("task_complete", "2026-09-09T12:00:02Z", "parent-turn"),
+        ]
+        child_turn = [
+            boundary_row("task_started", "2026-09-09T12:00:03Z", "child-turn"),
+            token_row(counts(130, 13), counts(30, 3), "2026-09-09T12:00:04Z"),
+            boundary_row("task_complete", "2026-09-09T12:00:05Z", "child-turn"),
+        ]
+        warnings = []
+        events = self.read_selected(
+            session_rows("child", parent="parent") + parent_turn + child_turn,
+            session_rows("parent") + parent_turn, warnings=warnings,
+        )
+        calls = [event for event in events if event.model_call]
+        turns = [event for event in events if event.timing_scope == "agent_turn"]
+        self.assertEqual(sorted(event.tokens.input_tokens for event in calls), [30, 100])
+        self.assertEqual(len(turns), 2)
+        self.assertEqual(warnings, [])
+        child = next(event for event in calls if event.session_id == "child")
+        self.assertEqual(child.parent_session_id, "parent")
+        self.assertEqual(child.turn_id, "child-turn")
+        self.assertEqual(child.related_event_id, "codex:child:turn:child-turn")
+        self.assertEqual(child.tokens.input_tokens, 30)
+
+    def test_paginated_boundary_uses_recorded_ordinal_even_without_parent_source(self):
+        inherited = token_row(counts(100, 10), counts(100, 10))
+        inherited["ordinal"] = 9
+        started = boundary_row("task_started", "2026-09-09T12:00:01Z", "child-turn")
+        started["ordinal"] = 10
+        own = token_row(counts(130, 13), counts(30, 3), "2026-09-09T12:00:02Z")
+        own["ordinal"] = 20
+        ended = boundary_row("task_complete", "2026-09-09T12:00:04Z", "child-turn")
+        ended["ordinal"] = 21
+        warnings = []
+        events = self.read_selected(session_rows("child", parent="parent", history_mode="paginated",
+            subagent_history_start_ordinal=10) + [
+                {"type": "response_item", "ordinal": 8, "payload": {"content": "PRIVATE_HISTORY"}},
+                inherited, started, own, ended,
+            ], warnings=warnings)
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].tokens.input_tokens, 30)
+        self.assertEqual(events[0].session_id, "child")
+        self.assertEqual(events[1].duration_ms, 3000)
+        self.assertEqual(warnings, [])
+
+    def test_missing_paginated_ordinal_stays_visible_with_warning(self):
+        warnings = []
+        events = self.read_selected(session_rows("child", parent="parent", history_mode="paginated",
+            subagent_history_start_ordinal=100) + [
+                token_row(counts(100, 10), counts(30, 3)),
+            ], warnings=warnings)
+        self.assertEqual(events[0].tokens.input_tokens, 30)
+        self.assertEqual(events[0].status, "partial_history")
+        self.assertTrue(any("ordinal" in warning for warning in warnings))
+
+    def test_copy_with_explicit_inherited_ordinal_resolves_an_incomplete_copy(self):
+        metadata = session_rows("child", parent="parent", history_mode="paginated",
+                                subagent_history_start_ordinal=2)
+        started = boundary_row("task_started", "2026-09-09T12:00:00Z", "inherited-turn")
+        without_ordinal = metadata + [started]
+        with_ordinal = metadata + [{**started, "ordinal": 1}]
+        self.assertEqual(self.read_selected(without_ordinal, with_ordinal), [])
+        self.assertEqual(self.read_selected(with_ordinal, without_ordinal), [])
+
+    def test_copy_with_reported_last_usage_resolves_a_partial_first_snapshot(self):
+        metadata = session_rows("same-session")
+        missing_last = metadata + [token_row(counts(1000, 100))]
+        reported_last = metadata + [token_row(counts(1000, 100), counts(50, 5))]
+        events = self.read_selected(missing_last, reported_last)
+        self.assertEqual(events, self.read_selected(reported_last, missing_last))
+        self.assertEqual(events[0].tokens.input_tokens, 50)
+        self.assertEqual(events[0].status, "partial_history")
+
+    def test_task_boundaries_measure_whole_turn_and_leave_call_durations_unknown(self):
+        events = self.read([
+            boundary_row("task_started", "2026-09-09T12:00:00Z", "task-turn"),
+            token_row(counts(10, 1), counts(10, 1), "2026-09-09T12:01:00Z"),
+            token_row(counts(30, 3), counts(20, 2), "2026-09-09T12:04:00Z"),
+            boundary_row("task_complete", "2026-09-09T12:05:00Z", "task-turn"),
+        ])
+        self.assertEqual([event.duration_ms for event in events[:2]], [None, None])
+        self.assertTrue(all(event.timing_scope == "model_call" for event in events[:2]))
+        turn = events[2]
+        self.assertEqual(turn.duration_ms, 300000)
+        self.assertEqual(turn.ended_at, "2026-09-09T12:05:00Z")
+        self.assertEqual(turn.status, "completed")
+        self.assertIsNone(turn.model_call)
+        self.assertTrue(all(value is None for value in turn.tokens.to_dict().values()))
+
+    def test_native_completion_times_and_duration_survive_delayed_log_write(self):
+        events = self.read([
+            boundary_row("task_complete", "2026-09-09T12:05:00Z", "task-turn",
+                         started_at=100, completed_at=104, duration_ms=3500),
+        ])
+        self.assertEqual(events[0].started_at, "1970-01-01T00:01:40Z")
+        self.assertEqual(events[0].ended_at, "1970-01-01T00:01:44Z")
+        self.assertEqual(events[0].duration_ms, 3500)
+
+    def test_missing_boundary_remains_unknown_and_aborted_turn_is_retained(self):
+        events = self.read([
+            token_row(counts(10, 1), counts(10, 1)),
+            boundary_row("task_complete", "2026-09-09T12:00:01Z", "missing-start"),
+            boundary_row("task_started", "2026-09-09T12:00:02Z", "aborted-turn"),
+            boundary_row("turn_aborted", "2026-09-09T12:00:05Z", "aborted-turn"),
+            boundary_row("task_started", "2026-09-09T12:00:06Z", "running-turn"),
+        ])
+        self.assertEqual(len(events), 3)
+        self.assertIsNone(events[0].duration_ms)
+        self.assertEqual(events[1].status, "aborted")
+        self.assertEqual(events[1].duration_ms, 3000)
+        self.assertEqual(events[2].status, "running")
+        self.assertIsNone(events[2].duration_ms)
+        self.assertIsNone(events[2].ended_at)
+
+    def test_consecutive_legacy_boundaries_without_turn_ids_are_separate(self):
+        events = self.read([
+            boundary_row("task_started", "2026-09-09T12:00:00Z"),
+            boundary_row("task_complete", "2026-09-09T12:00:01Z"),
+            boundary_row("task_started", "2026-09-09T12:00:02Z"),
+            boundary_row("task_complete", "2026-09-09T12:00:05Z"),
+        ])
+        self.assertEqual([event.duration_ms for event in events], [1000, 3000])
+        self.assertEqual(len({event.event_id for event in events}), 2)
+        self.assertTrue(all(event.turn_id is None for event in events))
 
 
 if __name__ == "__main__":

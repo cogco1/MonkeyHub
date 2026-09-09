@@ -6,7 +6,7 @@
       "id": "P115",
       "stream": "planning",
       "status": "active",
-      "goal": "Continue the remaining P115 capability consolidation from the completed namespace and Stage/Branch/Candidate baseline. The card retains unfinished method/tool/check work and real project acceptance; delivered preview, history, drawing-source and incremental execution paths are not reopened.",
+      "goal": "Continue the remaining P115 capability consolidation from the completed namespace and Stage/Branch/Candidate baseline. The card retains unfinished method/tool/check work and real project acceptance; delivered preview, history, drawing-source and incremental execution paths are not reopened. The authorized MonkeyMonitor follow-up measures candidate/export/load/Stage-save intervals and explicitly selected Codex task families through existing owners.",
       "depends_on": [],
       "write_scope": [
         "OPEN_MONKEYHUB.cmd",
@@ -296,7 +296,10 @@
         "tests/test_lintel_bearing.py",
         "tests/test_window_relational_update.py",
         "archflow/adapters/cad_patch.py",
-        "tests/test_prism_cutouts.py"
+        "tests/test_prism_cutouts.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/events.py",
+        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "tests/monkeymonitor/test_web_timing.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
