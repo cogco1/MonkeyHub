@@ -3490,6 +3490,7 @@
         "the main MonkeyBoard canvas scene and its immutable revision chain in the P036 studio-board run",
         "optimistic scene replacement against the exact last saved revision; a stale tab cannot overwrite another save",
         "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts",
+        "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
         "mapping one explicitly selected drawing and its board marks to page coordinates, then handing its exact saved annotations and user feedback to the existing Studio intent workflow"
       ],
       "does_not_own": [
@@ -3505,13 +3506,16 @@
       "outputs": [
         "BoardDto",
         "retained single-operator board scene revision",
+        "transient merged or per-page PDF, PNG, JPEG, or ZIP board export bytes",
         "page-normalized annotations and a one-time BoardDesignRequest for the existing Studio conversation"
       ],
       "public_api": [
         "GET /api/board",
         "PUT /api/board",
+        "POST /api/board/export",
         "read_board",
         "save_board",
+        "export_board_pages",
         "web: createBoardFeedback",
         "web: prepareBoardDesignRequest"
       ],

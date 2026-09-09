@@ -46,6 +46,7 @@ import {
   createDocumentApiDocumentsPost,
   createProposalApiProposalsPost,
   createViewportCaptureApiCapturesPost,
+  exportBoardApiBoardExportPost,
   getUserSettingsApiSettingsUserGet,
   putUserSettingsApiSettingsUserPut,
   readArtifactBytesApiArtifactsSha256BytesGet,
@@ -79,7 +80,7 @@ import {
   writeSavedModelAnnotationsApiModelAnnotationsPut,
 } from "./generated";
 import type {
-  BoardDto, BoardRequestDto,
+  BoardDto, BoardExportRequestDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
   ElevationRequestDto, CombineCandidatesRequestDto,
   InitializeDesignStageRequestDto, AcceptDesignCandidateRequestDto, ForkDesignBranchRequestDto,
@@ -170,6 +171,10 @@ export const studio = {
   },
   saveBoard(body: BoardRequestDto): Promise<BoardDto> {
     return call("PUT /api/board", updateBoardApiBoardPut({ body }));
+  },
+
+  exportBoard(body: BoardExportRequestDto): Promise<Blob> {
+    return call("POST /api/board/export", exportBoardApiBoardExportPost({ body, parseAs: "blob" }) as Promise<FieldsResult<Blob>>);
   },
   elevation(body: ElevationRequestDto): Promise<SourceDocumentDto> {
     return call("POST /api/drawings/elevations", createElevationApiDrawingsElevationsPost({ body }));

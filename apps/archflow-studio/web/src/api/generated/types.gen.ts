@@ -205,6 +205,54 @@ export type BoardDto = {
 };
 
 /**
+ * BoardExportPageDto
+ *
+ * One exact registered page, in the order it appears on the board.
+ */
+export type BoardExportPageDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+};
+
+/**
+ * BoardExportRequestDto
+ *
+ * A transient clean-source export; the caller supplies no filesystem path.
+ */
+export type BoardExportRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Pages
+     */
+    pages: Array<BoardExportPageDto>;
+    /**
+     * Format
+     */
+    format: 'merged-pdf' | 'page-pdfs' | 'png' | 'jpeg';
+    /**
+     * Zip
+     */
+    zip?: boolean;
+};
+
+/**
  * BoardRequestDto
  */
 export type BoardRequestDto = {
@@ -5287,6 +5335,29 @@ export type UpdateBoardApiBoardPutResponses = {
 };
 
 export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[keyof UpdateBoardApiBoardPutResponses];
+
+export type ExportBoardApiBoardExportPostData = {
+    body: BoardExportRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/board/export';
+};
+
+export type ExportBoardApiBoardExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportBoardApiBoardExportPostError = ExportBoardApiBoardExportPostErrors[keyof ExportBoardApiBoardExportPostErrors];
+
+export type ExportBoardApiBoardExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type CreateElevationApiDrawingsElevationsPostData = {
     body: ElevationRequestDto;

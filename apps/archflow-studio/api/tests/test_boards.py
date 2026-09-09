@@ -6,11 +6,14 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 import json
+from io import BytesIO
 from pathlib import Path
 import tempfile
 import unittest
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 
 from archflow.adapters import occt_backend
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -117,6 +120,35 @@ class BoardTests(unittest.TestCase):
         payloads = {ref.sha256: self.repository.load_json(ref) for ref in records}
         self.assertEqual(payloads[second["revisionSha256"]]["previousRevisionSha256"], first["revisionSha256"])
         self.assertEqual(len(payloads), 2)
+
+    def test_export_uses_only_caller_ordered_registered_pages_without_writing(self) -> None:
+        document = self.upload(two_page_pdf())
+        pages = [{"runId": document["runId"], "assetSha256": document["assetSha256"],
+                  "revisionRef": document["revisionRef"], "pageIndex": index} for index in (1, 0)]
+        before = self.files()
+        merged = self.client.post("/api/board/export", json={"projectId": PROJECT_ID, "pages": pages,
+                                   "format": "merged-pdf", "zip": False})
+        self.assertEqual(merged.status_code, 200, merged.text)
+        self.assertEqual(merged.headers["content-type"], "application/pdf")
+        self.assertEqual(len(PdfReader(BytesIO(merged.content)).pages), 2)
+        self.assertEqual(self.files(), before)
+        archive = self.client.post("/api/board/export", json={"projectId": PROJECT_ID, "pages": pages,
+                                    "format": "page-pdfs", "zip": True})
+        self.assertEqual(archive.status_code, 200, archive.text)
+        self.assertEqual(archive.headers["content-type"], "application/zip")
+        with ZipFile(BytesIO(archive.content)) as bundle:
+            self.assertEqual(bundle.namelist(), ["001-图纸.pdf", "002-图纸.pdf"])
+            self.assertTrue(all(len(PdfReader(BytesIO(bundle.read(name))).pages) == 1 for name in bundle.namelist()))
+        self.assertEqual(self.files(), before)
+        image = self.upload(image_bytes(), "plan.png", "image/png")
+        after_upload = self.files()
+        raster = self.client.post("/api/board/export", json={"projectId": PROJECT_ID, "pages": [{
+            "runId": image["runId"], "assetSha256": image["assetSha256"], "revisionRef": image["revisionRef"], "pageIndex": 0,
+        }], "format": "jpeg", "zip": False})
+        self.assertEqual(raster.status_code, 200, raster.text)
+        self.assertEqual(raster.headers["content-type"], "image/jpeg")
+        self.assertTrue(raster.content.startswith(b"\xff\xd8"))
+        self.assertEqual(self.files(), after_upload)
 
     def test_stale_and_wrong_project_saves_do_not_write(self) -> None:
         saved = self.save(body([]))
