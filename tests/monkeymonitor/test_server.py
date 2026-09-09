@@ -93,6 +93,59 @@ class MonitorServerTests(unittest.TestCase):
             self.request("/api/events", headers={"Origin":"https://example.invalid"})
         self.assertEqual(error.exception.code, 403)
 
+    def test_shared_assets_serve_exact_bytes_and_mime(self):
+        shared = Path(self.temp.name) / "shared"
+        shared.mkdir()
+        assets = {
+            "appearance.js": ("export const theme = '浅色';\n", "text/javascript"),
+            "i18n.js": ("export const language = '中文';\n", "text/javascript"),
+            "browserTranslator.js": ("export const translate = value => value;\n", "text/javascript"),
+            "base.css": (":root { --font: sans-serif; }\n", "text/css"),
+        }
+        with patch.object(monitor_server, "SHARED_WEB", shared):
+            for filename, (text, mime) in assets.items():
+                body = text.encode("utf-8")
+                (shared / filename).write_bytes(body)
+                with self.subTest(filename=filename):
+                    request = Request(self.url + "/shared/" + filename, headers={"Origin": self.url})
+                    with urlopen(request, timeout=3) as response:
+                        self.assertEqual(response.read(), body)
+                        self.assertEqual(response.headers["Content-Type"], mime + "; charset=utf-8")
+
+    def test_shared_assets_reject_unlisted_paths_and_traversal(self):
+        shared = Path(self.temp.name) / "shared"
+        shared.mkdir()
+        (shared / "private.js").write_text("not public", encoding="utf-8")
+        (shared.parent / "secret.js").write_text("outside shared", encoding="utf-8")
+        with patch.object(monitor_server, "SHARED_WEB", shared):
+            for path in (
+                "/shared/", "/shared/private.js", "/shared/../secret.js",
+                "/shared/%2e%2e/secret.js", "/shared/%2e%2e%2fsecret.js",
+            ):
+                with self.subTest(path=path):
+                    with self.assertRaises(HTTPError) as error:
+                        self.request(path)
+                    self.assertEqual(error.exception.code, 404)
+
+    def test_missing_shared_assets_are_404(self):
+        with patch.object(monitor_server, "SHARED_WEB", Path(self.temp.name) / "not-present"):
+            for filename in ("appearance.js", "i18n.js", "browserTranslator.js", "base.css"):
+                with self.subTest(filename=filename):
+                    with self.assertRaises(HTTPError) as error:
+                        self.request("/shared/" + filename)
+                    self.assertEqual(error.exception.code, 404)
+
+    def test_shared_assets_retain_host_and_origin_checks(self):
+        shared = Path(self.temp.name) / "shared"
+        shared.mkdir()
+        (shared / "appearance.js").write_text("export const theme = 'light';", encoding="utf-8")
+        with patch.object(monitor_server, "SHARED_WEB", shared):
+            for headers in ({"Host": "example.invalid"}, {"Origin": "https://example.invalid"}):
+                with self.subTest(headers=headers):
+                    with self.assertRaises(HTTPError) as error:
+                        self.request("/shared/appearance.js", headers=headers)
+                    self.assertEqual(error.exception.code, 403)
+
 
 class MonitorLifecycleTests(unittest.TestCase):
     def start_monitor(self, *, port=0, instance_id=None):
