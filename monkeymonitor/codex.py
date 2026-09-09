@@ -335,7 +335,12 @@ def iter_codex_events(paths: Iterable[str | Path], *, warnings: list[str] | None
             by_session.setdefault(row.session_key, []).append(row)
         for key, chain in by_session.items():
             groups.setdefault(key, []).append(chain)
-    merged = {key: _merge_rows(chains) for key, chains in groups.items()}
+    merged = {}
+    for key, chains in groups.items():
+        try:
+            merged[key] = _merge_rows(chains)
+        except ValueError:
+            notices.append("同一 Codex 会话的副本存在顺序冲突；已跳过该会话，其他明确来源仍正常读取。")
     for key, rows in merged.items():
         parent = next((row.parent_session_id for row in rows if row.parent_session_id), None)
         if parent is not None and any(row.ordinal is None and row.kind == "token_count" for row in rows):
