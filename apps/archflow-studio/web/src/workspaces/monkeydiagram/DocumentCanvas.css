@@ -1,10 +1,12 @@
 .stage-model { position: absolute; inset: 0; }
 .stage-model--hidden { visibility: hidden; pointer-events: none; }
-.stage-mode-switch { position: relative; flex-shrink: 0; align-self: flex-start; max-width: calc(100% - 24px); margin: 8px 12px 0; display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.stage-mode-switch { position: relative; flex-shrink: 0; align-self: flex-end; width: min(760px, calc(100% - 28px)); max-width: calc(100% - 28px); margin: 8px 14px 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .stage-mode-switch button { min-height: 32px; padding: 4px 14px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; }
 .stage-mode-switch button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); }
-.stage-mode-switch select { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; }
 .stage-mode-switch button:disabled { opacity: .45; cursor: default; }
+.stage-mode-switch .picked { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; flex: 1 1 220px; min-height: 32px; padding: 4px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; font-size: calc(12px * var(--font-scale, 1)); text-align: right; }
+.stage-mode-switch .picked__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-mode-switch .picked__meta { flex: none; }
 .stage-drawing-error { display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; gap: 16px; max-height: 35%; overflow: auto; margin: 8px 12px 0; padding: 10px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); font-size: 13px; }
 .stage-drawing-error > div { min-width: 0; }
 .stage-drawing-error p { margin: 0; overflow-wrap: anywhere; }
