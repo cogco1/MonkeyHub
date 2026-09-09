@@ -36,7 +36,7 @@ from monkeyarch.capabilities.reference_resolver import (
     resolve_plan,
 )
 from monkeyarch.capabilities.opening_solver import DoorType, WindowType, solve_openings
-from monkeyarch.capabilities.wall_solver import OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall
+from monkeyarch.capabilities.wall_solver import OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall, subtract_rectangular_cutouts
 from archflow.project.refs import require_identifier
 from archflow.state.geometry_program import (
     DatumBinding,
@@ -670,12 +670,34 @@ def _plan_point(row: ElementRow, context: ProductionContext, key: str = "at") ->
 
 
 def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElement:
-    """A straight extrusion of a declared profile, standing on a datum (an offset only as the base reference says)."""
+    """Extrude a profile; optional rectangular panel cuts span world X and its Z thickness."""
 
     p = row.params
     base_datum, base_offset = _base(row, context)
     profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in p["profile"]]
     height = _height(row, context, base_datum)
+    if "rectangular_cutouts" in p:
+        # Restrict this first consumer to an actual axis-aligned rectangle;
+        # its bounds alone cannot prove an arbitrary profile is rectangular.
+        corners = [(round(x, 9), round(z, 9)) for x, _, z in profile]
+        xs, zs = {x for x, _ in corners}, {z for _, z in corners}
+        if (len(corners) != 4 or len(xs) != 2 or len(zs) != 2
+                or set(corners) != {(x, z) for x in xs for z in zs}
+                or any((a[0] == b[0]) == (a[1] == b[1]) for a, b in zip(corners, corners[1:] + corners[:1]))):
+            raise ElementProducerError(f"{row.element_id}: rectangular_cutouts require four ordered axis-aligned profile corners")
+        pieces = subtract_rectangular_cutouts((min(xs), max(xs), 0.0, height), p["rectangular_cutouts"])
+        if pieces != (("", (min(xs), max(xs), 0.0, round(height, 9))),):
+            operations, bindings = [], []
+            for suffix, (left, right, bottom, top) in pieces:
+                op_id = row.element_id + suffix
+                piece_profile = [(left, 0.0, min(zs)), (right, 0.0, min(zs)),
+                                 (right, 0.0, max(zs)), (left, 0.0, max(zs))]
+                operations.append(_extrusion(op_id, piece_profile, top - bottom, row.binding_id,
+                                             context.frame_id, base_offset + bottom))
+                bindings.append(_bind(op_id, base_datum))
+            # A partition or empty panel supplies no whole-prism top datum or
+            # whole-prism support claim. A downstream top reference is refused.
+            return ProducedElement(tuple(operations), tuple(bindings))
     op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset)
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top  # a prism is what other elements sit on: it publishes its top like a beam does
