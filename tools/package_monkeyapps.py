@@ -167,6 +167,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     temporary = build / "tmp"
     temporary.mkdir()
     environment = dict(os.environ, TEMP=str(temporary), TMP=str(temporary),
+                       PATH=str(node.resolve().parent) + os.pathsep + os.environ.get("PATH", ""),
                        PIP_CACHE_DIR=str(cache / "pip-cache"), npm_config_cache=str(cache / "npm-cache"))
     print(f"Source: {commit}\nBuild directory: {build}", flush=True)
     snapshot = build / "source.zip"
