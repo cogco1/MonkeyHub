@@ -72,7 +72,7 @@ async def stream_events(
             sent += 1
             if sent == limit:
                 return
-        while not await request.is_disconnected():
+        while request.app.state.jobs.accepting and not await request.is_disconnected():
             try:
                 event = inbox.get_nowait()
             except Empty:

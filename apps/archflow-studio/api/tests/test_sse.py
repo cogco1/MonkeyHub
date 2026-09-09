@@ -16,16 +16,20 @@ bounded read is trying to avoid.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 import shutil
 import tempfile
 from typing import Any, Iterator
+from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
 from archflow_studio_api.main import create_app
+from archflow_studio_api.routes.events import stream_events
 from archflow_studio_api.settings import StudioSettings
 
 from .support import PROJECT_ID, make_project
@@ -122,6 +126,22 @@ class SseTestCase(unittest.TestCase):
 
     def test_a_bounded_read_of_an_empty_buffer_ends_immediately(self) -> None:
         self.assertEqual(self.read(limit=10), [])
+
+    def test_an_open_live_stream_ends_when_the_server_stops_accepting_jobs(self) -> None:
+        async def check():
+            request = SimpleNamespace(
+                app=self.app, is_disconnected=AsyncMock(return_value=False),
+            )
+            stream = stream_events(request, last_event_id=None, limit=None)
+            waiting = asyncio.create_task(anext(stream))
+            await asyncio.sleep(0)
+            self.assertFalse(waiting.done())
+            self.app.state.jobs.stop_accepting()
+            with self.assertRaises(StopAsyncIteration):
+                await asyncio.wait_for(waiting, timeout=2)
+            await stream.aclose()
+
+        asyncio.run(check())
 
     def test_last_event_id_resumes_after_the_sequence_it_names(self) -> None:
         self.publish("candidate.queued", job_id="job-a")

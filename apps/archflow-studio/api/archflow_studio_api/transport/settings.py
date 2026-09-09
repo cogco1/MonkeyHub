@@ -33,3 +33,24 @@ class UserSettingsDto(BaseModel):
         if isinstance(value, bool):
             raise ValueError("fontScale must be 0.9, 1 or 1.1")
         return value
+
+
+class ApplicationSettingsDto(BaseModel):
+    """Local app launch choices, separate from appearance and project records."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", strict=True)
+
+    project_dir: str | None = Field(default=None, alias="projectDir", min_length=1)
+    reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
+    cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
+    studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
+    monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
+
+    @field_validator("project_dir")
+    @classmethod
+    def absolute_project(cls, value: str | None) -> str | None:
+        if value is not None:
+            from pathlib import Path
+            if not Path(value).is_absolute():
+                raise ValueError("projectDir must be an absolute path")
+        return value
