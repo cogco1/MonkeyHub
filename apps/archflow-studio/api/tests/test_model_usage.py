@@ -1,6 +1,7 @@
 """Reported provider usage survives success, clarification and failed calls."""
 
 import json
+import asyncio
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -101,12 +102,13 @@ class ProviderUsageTests(unittest.TestCase):
         sheet.start()
         self.addCleanup(sheet.stop)
 
-    def invoke(self, compiler):
+    def invoke(self, compiler, operation_observer=None):
         return compiler.compile(
             message="set height to 0.8", selection=self.selection, projection=self.projection,
+            operation_observer=operation_observer,
         )
 
-    def codex(self, answer=ANSWER, *, events=None, returncode=0, stderr="", timeout=False):
+    def codex(self, answer=ANSWER, *, events=None, returncode=0, stderr="", timeout=False, operation_observer=None):
         with patch.object(intent_agent, "_codex_version", return_value="test-codex-1"):
             compiler = CodexCompiler(model="configured-alias")
         if events is None:
@@ -122,9 +124,9 @@ class ProviderUsageTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, returncode, stdout, stderr)
 
         with patch.object(intent_agent, "_run_bounded", side_effect=run):
-            return self.invoke(compiler)
+            return self.invoke(compiler, operation_observer)
 
-    def anthropic(self, answer=ANSWER, *, usage=ANTHROPIC_USAGE, error=None):
+    def anthropic(self, answer=ANSWER, *, usage=ANTHROPIC_USAGE, error=None, operation_observer=None):
         response = SimpleNamespace(
             content=[SimpleNamespace(type="text", text=json.dumps(answer) if isinstance(answer, dict) else answer)],
             model="reported-exact-model", usage=usage,
@@ -133,7 +135,7 @@ class ProviderUsageTests(unittest.TestCase):
         sdk = SimpleNamespace(Anthropic=Mock(return_value=SimpleNamespace(messages=SimpleNamespace(create=create))))
         with patch.object(intent_agent, "_anthropic_sdk", return_value=(sdk, "test-sdk-1")):
             compiler = AnthropicCompiler(model="configured-alias")
-        return self.invoke(compiler)
+        return self.invoke(compiler, operation_observer)
 
     def assert_codex_usage(self, receipt):
         for name, count in CODEX_USAGE.items():
@@ -257,6 +259,85 @@ class ProviderUsageTests(unittest.TestCase):
         receipt = self.anthropic(usage={key: value for key, value in ANTHROPIC_USAGE.items() if key != "cache_creation"}).receipt
         self.assertEqual(receipt.input_tokens, 180)
         self.assertIsNone(receipt.cache_write_1h_input_tokens)
+
+    def test_model_span_measures_request_and_retains_only_existing_input_identities(self):
+        for provider in (self.codex, self.anthropic):
+            with self.subTest(provider=provider.__name__):
+                spans = []
+                compilation = provider(operation_observer=spans.append)
+                self.assertEqual(len(spans), 1)
+                span = spans[0]
+                self.assertEqual(span["phase"], "model_request")
+                self.assertEqual(span["status"], "succeeded")
+                self.assertEqual(span["duration_ms"], compilation.receipt.duration_ms)
+                self.assertLessEqual(span["started_at"], span["ended_at"])
+                self.assertIsNone(span["details"]["model_inference_ms"])
+                self.assertEqual(span["details"]["request_kind"], provider.__name__ + ("_cli" if provider == self.codex else "_api"))
+                self.assertEqual(span["details"]["input_identity"], {
+                    "context_digest": compilation.receipt.request.context_digest,
+                    "prompt_sha256": compilation.prompt_sha256,
+                    "provider_fingerprint": compilation.receipt.provider_fingerprint,
+                })
+                self.assertEqual(span["details"]["comparison_refs"], [compilation.receipt.request.request_id])
+                serialized = json.dumps(span)
+                self.assertNotIn("set height", serialized)
+                self.assertNotIn("Requested height", serialized)
+                self.assertNotIn("output_json", serialized)
+
+    def test_anthropic_request_duration_excludes_sdk_client_construction(self):
+        spans = []
+        with patch.object(intent_agent.time, "perf_counter", side_effect=[10.0, 12.0, 12.75]):
+            compilation = self.anthropic(operation_observer=spans.append)
+        self.assertEqual(compilation.receipt.duration_ms, 750)
+        self.assertEqual(spans[0]["duration_ms"], 750)
+
+    def test_model_span_reports_failed_request_and_survives_malformed_answer(self):
+        spans = []
+        with self.assertRaises(IntentAgentFailed):
+            self.codex(timeout=True, operation_observer=spans.append)
+        self.assertEqual(spans[0]["status"], "failed")
+        spans.clear()
+        with self.assertRaises(IntentAgentFailed):
+            self.anthropic("not-json", operation_observer=spans.append)
+        self.assertEqual(spans[0]["status"], "succeeded")
+
+    def test_repeated_model_input_has_the_same_identity_but_distinct_request_refs(self):
+        spans = []
+        self.codex(operation_observer=spans.append)
+        self.codex(operation_observer=spans.append)
+        self.assertEqual(spans[0]["details"]["input_identity"], spans[1]["details"]["input_identity"])
+        self.assertNotEqual(spans[0]["details"]["comparison_refs"], spans[1]["details"]["comparison_refs"])
+
+    def test_failed_observer_cannot_change_or_repeat_a_model_request(self):
+        for error in (RuntimeError("diagnostics unavailable"), asyncio.CancelledError()):
+            def corrupt_then_fail(span):
+                span["duration_ms"] = "invalid"
+                span["details"]["input_identity"].clear()
+                raise error
+
+            with self.subTest(error=type(error).__name__):
+                observer = Mock(side_effect=corrupt_then_fail)
+                self.assertEqual(self.codex(operation_observer=observer).status, "compiled")
+                observer.assert_called_once()
+                observer.reset_mock()
+                self.assertEqual(self.anthropic(operation_observer=observer).status, "compiled")
+                observer.assert_called_once()
+
+    def test_sdk_initialization_failure_does_not_invent_a_request_span(self):
+        sdk = SimpleNamespace(Anthropic=Mock(side_effect=RuntimeError("client initialization failed")))
+        with patch.object(intent_agent, "_anthropic_sdk", return_value=(sdk, "test-sdk-1")):
+            compiler = AnthropicCompiler(model="configured-alias")
+        spans = []
+        with self.assertRaises(IntentAgentFailed) as caught:
+            self.invoke(compiler, spans.append)
+        self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.EXIT_ERROR)
+        self.assertEqual(spans, [])
+
+    def test_deterministic_compilation_has_no_model_request_span(self):
+        spans = []
+        compilation = self.invoke(intent_agent.DeterministicCompiler(), spans.append)
+        self.assertIsNone(compilation.receipt)
+        self.assertEqual(spans, [])
 
 
 if __name__ == "__main__":

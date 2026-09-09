@@ -50,6 +50,7 @@ import {
   putUserSettingsApiSettingsUserPut,
   readArtifactBytesApiArtifactsSha256BytesGet,
   recordModelLoadApiEventsModelLoadPost,
+  recordClientTimingApiEventsTimingPost,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
   readDocumentBytesApiDocumentsAssetSha256BytesGet,
@@ -102,6 +103,7 @@ import type {
   ModelAnnotationsRequestDto,
   ModelSourceDto,
   ModelLoadTimingDto,
+  ClientTimingDto,
   MonitorWriteDto,
   OptionsDto,
   PickRequestDto,
@@ -126,6 +128,16 @@ import type {
   WorkingCopyListDto,
   WorkingCopySelectionRequestDto,
 } from "./generated";
+
+/** A trace belongs to this call, never to shared SDK configuration. */
+export interface OperationTrace {
+  readonly operationId: string;
+  readonly parentEventId?: string;
+}
+function traceHeaders(trace?: OperationTrace) {
+  return trace ? { "X-Monkey-Operation": trace.operationId,
+    ...(trace.parentEventId ? { "X-Monkey-Parent": trace.parentEventId } : {}) } : undefined;
+}
 
 // The error type and its codes are defined in `error.ts` so that the
 // connection can refuse a server in the same shape a call refuses an answer.
@@ -171,8 +183,8 @@ export const studio = {
   saveBoard(body: BoardRequestDto): Promise<BoardDto> {
     return call("PUT /api/board", updateBoardApiBoardPut({ body }));
   },
-  elevation(body: ElevationRequestDto): Promise<SourceDocumentDto> {
-    return call("POST /api/drawings/elevations", createElevationApiDrawingsElevationsPost({ body }));
+  elevation(body: ElevationRequestDto, trace?: OperationTrace): Promise<SourceDocumentDto> {
+    return call("POST /api/drawings/elevations", createElevationApiDrawingsElevationsPost({ body, headers: traceHeaders(trace) }));
   },
   combineCandidates(body: CombineCandidatesRequestDto): Promise<CandidateAcceptedDto> {
     return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ body }));
@@ -183,8 +195,8 @@ export const studio = {
   initializeStage(body: InitializeDesignStageRequestDto): Promise<DesignStageDto> {
     return call("POST /api/design-stages/initialize", initializeCommittedDesignApiDesignStagesInitializePost({ body }));
   },
-  acceptCandidate(candidateId: string, body: AcceptDesignCandidateRequestDto): Promise<DesignStageDto> {
-    return call("POST /api/candidates/accept", acceptCommittedDesignApiCandidatesCandidateIdAcceptPost({ path: { candidate_id: candidateId }, body }));
+  acceptCandidate(candidateId: string, body: AcceptDesignCandidateRequestDto, trace?: OperationTrace): Promise<DesignStageDto> {
+    return call("POST /api/candidates/accept", acceptCommittedDesignApiCandidatesCandidateIdAcceptPost({ path: { candidate_id: candidateId }, body, headers: traceHeaders(trace) }));
   },
   forkBranch(body: ForkDesignBranchRequestDto): Promise<DesignBranchDto> {
     return call("POST /api/design-branches", forkCommittedDesignApiDesignBranchesPost({ body }));
@@ -324,6 +336,10 @@ export const studio = {
     return call("POST /api/events/model-load", recordModelLoadApiEventsModelLoadPost({ body }));
   },
 
+  recordClientTiming(body: ClientTimingDto): Promise<MonitorWriteDto> {
+    return call("POST /api/events/timing", recordClientTimingApiEventsTimingPost({ body, keepalive: true }));
+  },
+
   /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */
   async capture(runId: string, png: Blob): Promise<ViewportCaptureDto> {
     const pngBase64 = base64Of(await png.arrayBuffer());
@@ -341,11 +357,12 @@ export const studio = {
    * The name is the receipt's; the digest in the path is what the server
    * verifies the bytes against before it sends them.
    */
-  async artifactFile(sha256: string, fileName: string): Promise<File> {
+  async artifactFile(sha256: string, fileName: string, trace?: OperationTrace): Promise<File> {
     const blob = await call<Blob>(
       `GET /api/artifacts/${sha256}/bytes`,
       readArtifactBytesApiArtifactsSha256BytesGet({
         path: { sha256 },
+        headers: traceHeaders(trace),
         parseAs: "blob",
       }) as Promise<FieldsResult<Blob>>,
     );
@@ -373,11 +390,12 @@ export const studio = {
     );
   },
 
-  async documentFile(runId: string, assetSha256: string, fileName: string, revisionRef?: string | null): Promise<File> {
+  async documentFile(runId: string, assetSha256: string, fileName: string, revisionRef?: string | null, trace?: OperationTrace): Promise<File> {
     const blob = await call<Blob>(
       `GET /api/documents/${assetSha256}/bytes`,
       readDocumentBytesApiDocumentsAssetSha256BytesGet({
         path: { asset_sha256: assetSha256 },
+        headers: traceHeaders(trace),
         query: { runId, revisionRef },
         parseAs: "blob",
       }) as Promise<FieldsResult<Blob>>,
@@ -428,8 +446,8 @@ export const studio = {
    * proposal, and a question comes back as the same BLOCKED_NEEDS_HUMAN a typed
    * sentence would get.
    */
-  compileIntent(body: IntentRequestDto): Promise<IntentDto> {
-    return call("POST /api/intents", compileIntentApiIntentsPost({ body }));
+  compileIntent(body: IntentRequestDto, trace?: OperationTrace): Promise<IntentDto> {
+    return call("POST /api/intents", compileIntentApiIntentsPost({ body, headers: traceHeaders(trace) }));
   },
 
   proposal(proposalId: string): Promise<ProposalDto> {
@@ -439,27 +457,29 @@ export const studio = {
     );
   },
 
-  startCandidate(proposalId: string): Promise<CandidateAcceptedDto> {
+  startCandidate(proposalId: string, trace?: OperationTrace): Promise<CandidateAcceptedDto> {
     return call(
       `POST /api/proposals/${proposalId}/candidate`,
       startCandidateApiProposalsProposalIdCandidatePost({
         path: { proposal_id: proposalId },
+        headers: traceHeaders(trace),
       }),
     );
   },
 
-  job(jobId: string): Promise<JobDto> {
+  job(jobId: string, trace?: OperationTrace): Promise<JobDto> {
     return call(
       `GET /api/jobs/${jobId}`,
-      readJobApiJobsJobIdGet({ path: { job_id: jobId } }),
+      readJobApiJobsJobIdGet({ path: { job_id: jobId }, headers: traceHeaders(trace) }),
     );
   },
 
-  candidate(candidateId: string): Promise<CandidateDto> {
+  candidate(candidateId: string, trace?: OperationTrace): Promise<CandidateDto> {
     return call(
       `GET /api/candidates/${candidateId}`,
       readCandidateApiCandidatesCandidateIdGet({
         path: { candidate_id: candidateId },
+        headers: traceHeaders(trace),
       }),
     );
   },

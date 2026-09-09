@@ -18,10 +18,13 @@ const published = { version: 0, stateSha256: "1".repeat(64) };
 const relations = { held: 0, violated: 0, unchecked: 0, heldFlag: true, fullyChecked: true };
 const allArtifacts = [], models = new Map(), jobs = new Map(), candidates = new Map();
 const workingCopies = [];
+const candidateStartQueues = new Map();
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
 let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0, nextProgram = null;
 let historyEnabled = false, acceptFailure = false, annotationFailure = false, lastDrawing = null, nextCombined = null;
 let drawingFailure = false, drawingGate = null, monitorFailure = false;
+let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
+let projectionOnly = false;
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aDWsAAAAASUVORK5CYII=", "base64");
 function historyDto(branchId = "main") {
@@ -65,7 +68,7 @@ const binding = () => ({ projectId, projectDir: "in-memory fixture", published,
 function projection(runId = currentHome.runId, stageRef = null) {
   const element = { componentId: "fixture-room", elementId: "fixture-floor", producer: "floor", numericFields: { height: 0.2 } };
   return { projectId, published, sourceStageRef: stageRef ?? candidateBases.get(runId) ?? [...stages.values()].find((stage) => stage.modelSource.runId === runId)?.stageRef ?? null,
-    referenceRun: { ...binding().referenceRun, runId }, referenceRunSource: "fixture",
+    referenceRun: { ...binding().referenceRun, runId }, referenceRunSource: projectionOnly ? "none" : "fixture",
     referenceReceipt: null, matchesReferenceReceipt: true, recordSource: "fixture", recordDigest: digest(`record:${runId}`), stateDigest: stateDigest(runId),
     activePhase: "stage-2", counts: { entities: 1, components: 1, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
     componentTree: [{ componentId: element.componentId, parentComponentId: null, semanticKind: "room", intent: "fixture", maturity: "candidate", revision: 1 }],
@@ -85,6 +88,7 @@ function program(runId) {
       departments: [], adjacencies: [], totals, honesty: [] } };
 }
 function prepare(id) {
+  if (diagnosticsEnabled && historyEnabled) candidateBases.set(id, historyDto().stages[0].stageRef);
   const artifact = makeArtifact(id, candidates.size + 3);
   const job = { jobId: `job-${id}`, candidateId: id, proposalId: `proposal-${id}`, status: "running", createdAt: new Date().toISOString(),
     startedAt: new Date().toISOString(), finishedAt: null, error: null, wallTimeS: null, lane: "parallel", waitingFor: null, waitingReason: null, persistence: "fixture" };
@@ -118,6 +122,17 @@ async function until(read, accepts, message, timeout = 20_000) {
 }
 const snapshot = () => page.evaluate(() => window.__candidatePreview?.snapshot ?? {});
 const loadTimings = (runId) => requests.filter((row) => row.name === "/api/events/model-load" && row.body.runId === runId);
+const diagnosticEvents = (phase) => requests.filter((row) => row.name === "/api/events/timing" && (!phase || row.body.phase === phase)).map((row) => row.body);
+const latestDiagnostic = (phase) => diagnosticEvents(phase).at(-1);
+async function finishedDiagnostic(phase, operationId, status = "succeeded") {
+  return until(() => diagnosticEvents(phase).findLast((row) => row.operationId === operationId && row.status !== "running"),
+    (row) => row?.status === status, `${phase} did not finish ${status} in ${operationId}`);
+}
+async function rootForCandidate(candidate) {
+  const request = requests.findLast((row) => row.name === `/api/proposals/${candidate.proposalId}/candidate`);
+  assert.ok(request?.headers["x-monkey-operation"]);
+  return until(() => diagnosticEvents("design_edit").find((row) => row.operationId === request.headers["x-monkey-operation"]), Boolean, "Missing candidate operation root");
+}
 async function reportedLoad(artifact, status) {
   await until(() => loadTimings(artifact.runId), (rows) => rows.length === 1, `${artifact.runId} did not report exactly one finished model load`);
   const { body } = loadTimings(artifact.runId)[0];
@@ -131,6 +146,11 @@ async function reportedLoad(artifact, status) {
 async function rendered(id, fileName = `${id}.3dm`) {
   await until(snapshot, (value) => value.loadedRunId === id && value.loadedFileName === fileName && value.status === "ready" && value.loadingSha === null,
     `${id} did not finish parsing and become the displayed model`, 45_000);
+}
+async function diagnosticRendered(candidate) {
+  await rendered(candidate.candidateId);
+  if (historyEnabled) await until(snapshot, (value) => value.editingRunId === candidate.candidateId && !value.changingBase,
+    "The displayed candidate did not finish binding its editing source");
 }
 async function view(artifact) {
   await page.evaluate((value) => window.__candidatePreview.view(value), artifactDto(artifact));
@@ -153,6 +173,15 @@ try {
       name: "observe-actual-candidate-shell", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
+        if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/DocumentCanvas.tsx`) {
+          const marker = "      const canvas = canvasRef.current;";
+          assert.equal(source.split(marker).length, 2);
+          return { code: source.replace(marker, `
+            const gate = (window as unknown as { __documentRenderGate?: { waiting: boolean; promise: Promise<void> } }).__documentRenderGate;
+            if (gate) { gate.waiting = true; await gate.promise; }
+            if (stopped) return;
+` + marker), map: null };
+        }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx`) {
           const marker = "      let models = parsed";
           assert.equal(source.split(marker).length, 2);
@@ -208,18 +237,20 @@ try {
   page.on("console", (message) => { if (message.type() === "error" && message.text().includes("Encountered two children with the same key")) errors.push(message.text()); });
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request(), url = new URL(request.url()), method = request.method(), name = url.pathname;
-    requests.push({ method, name, query: Object.fromEntries(url.searchParams), body: method === "POST" || method === "PUT" ? request.postDataJSON() : null });
+    requests.push({ method, name, headers: request.headers(), query: Object.fromEntries(url.searchParams), body: method === "POST" || method === "PUT" ? request.postDataJSON() : null });
     try {
       assert.equal(url.origin, origin);
       const json = (body, status = 200) => route.fulfill({ status, json: body });
       if (method === "GET") {
         if (name === "/api/protocol") return await json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
-          capabilities: ["working-copies", "model-annotations", "events", "program", "operation-timing", ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
+          capabilities: ["working-copies", "model-annotations", "events", "program", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
         if (name === "/api/project") return await json(binding());
         if (name === "/api/state") {
-          const runId = url.searchParams.get("run") ?? currentHome.runId;
+          const runId = projectionOnly ? "studio-projection" : url.searchParams.get("run") ?? currentHome.runId;
           const gate = stateGates.get(runId); if (gate) { gate.requested = true; await gate.promise; }
-          return await json(projection(runId, url.searchParams.get("sourceStageRef")));
+          const value = projection(runId, url.searchParams.get("sourceStageRef"));
+          if (projectionOnly) value.sourceStageRef = null;
+          return await json(value);
         }
         if (name === "/api/design-history") return await json(historyDto(url.searchParams.get("branchId") ?? "main"));
         if (name === "/api/documents") return await json({ projectId, runId: url.searchParams.get("runId"), documents: documents.filter((doc) => doc.runId === url.searchParams.get("runId")) });
@@ -230,7 +261,10 @@ try {
           return await json(annotations.get(`${runId}:${assetSha256}:${pageIndex}:${drawingRevisionRef ?? ""}`) ?? {
             projectId, runId, assetSha256, pageIndex, drawingRevisionRef, revisionSha256: null, annotations: [], comment: "" });
         }
-        if (/^\/api\/documents\/[^/]+\/bytes$/.test(name)) return await route.fulfill({ status: 200, body: png, contentType: "image/png" });
+        if (/^\/api\/documents\/[^/]+\/bytes$/.test(name)) {
+          if (documentGate) { documentGate.requested = true; await documentGate.promise; }
+          return await route.fulfill({ status: 200, body: png, contentType: "image/png" });
+        }
         if (name === "/api/working-copies") return await json({ workingCopies });
         if (name === "/api/artifacts") {
           if (artifactFailures > 0) { artifactFailures--; return await json({ code: "TEMPORARY_LIST_FAILURE", detail: "Retry this model list." }, 503); }
@@ -275,7 +309,8 @@ try {
       if (method === "POST" && name === "/api/design-stages/initialize") {
         const body = request.postDataJSON(); return await json(commitStage(body.modelSource, body.branchId, body.label), 201);
       }
-      if (method === "POST" && name === "/api/events/model-load") {
+      if (method === "POST" && (name === "/api/events/model-load" || name === "/api/events/timing")) {
+        if (name === "/api/events/timing" && request.postDataJSON().status === "running" && timingGate) await timingGate.promise;
         return await json(monitorFailure ? { code: "MONITOR_UNAVAILABLE", detail: "Diagnostic write unavailable." } : { recorded: true }, monitorFailure ? 503 : 200);
       }
       if (method === "POST" && /^\/api\/candidates\/[^/]+\/accept$/.test(name)) {
@@ -288,7 +323,20 @@ try {
         const body = request.postDataJSON(); const branch = { branchId: body.branchId, parentBranch: body.parentBranch, forkStageRef: body.stageRef, headStageRef: body.stageRef };
         branches.set(body.branchId, branch); return await json(branch, 201);
       }
-      if (method === "POST" && name === "/api/intents") return await json({ code: "UNSUPPORTED_REQUEST", detail: "Fixture records the source context." }, 422);
+      if (method === "POST" && name === "/api/intents") {
+        if (intentGate) await intentGate.promise;
+        if (!nextIntent) return await json({ code: "UNSUPPORTED_REQUEST", detail: "Fixture records the source context." }, 422);
+        const candidate = nextIntent; nextIntent = null; const body = request.postDataJSON();
+        return await json({ outcome: "COMPILED", agent: { provider: "codex", model: "fixture", compiledUtterance: body.utterance,
+          why: "", latencyMs: 1, promptSha256: null }, gestures: [], proposal: {
+          proposalId: candidate.proposalId, status: "proposed", modelSource: body.modelSource, sourceRunId: body.sourceRunId, sourceStageRef: body.sourceStageRef,
+          baseStateDigest: body.stateDigest, recordDigest: digest("fixture-record"),
+          target: { componentId: "fixture-room", elementId: "fixture-floor", ref: "entity:fixture-room", key: "height" },
+          change: { kind: "set_scalar", old: 0.2, new: 0.3, unit: null }, protected: [], decisionOperator: null,
+          impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
+          utterance: body.utterance, persistence: "fixture", createdAt: new Date().toISOString(),
+        }, pendingIntent: null, timings: { totalMs: 1, agentMs: 1, proposalMs: 0 } }, 201);
+      }
       if (method === "POST" && name === "/api/drawings/elevations") {
         if (drawingFailure) {
           if (drawingGate) await drawingGate.promise;
@@ -308,7 +356,7 @@ try {
       }
       if (method === "POST" && /^\/api\/proposals\/.+\/candidate$/.test(name)) {
         const id = name.split("/")[3];
-        const candidate = [...candidates.values()].find((row) => row.proposalId === id);
+        const candidate = candidateStartQueues.get(id)?.shift() ?? [...candidates.values()].find((row) => row.proposalId === id);
         assert.ok(candidate);
         return await json({ candidateId: candidate.candidateId, jobId: candidate.jobId, status: "running" }, 202);
       }
@@ -739,10 +787,177 @@ try {
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, older.revisionRef);
   });
 
+  diagnosticsEnabled = true;
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await until(snapshot, (value) => value.status === "ready" && !value.changingBase, "Diagnostics fixture did not reload");
+  await page.evaluate((run) => window.__candidatePreview.changeBase(run), currentHome.runId);
+  await view(currentHome);
+
+  await step("one design operation separates manual dwell and waits through download and actual parse", async () => {
+    const candidate = prepare("diagnostic-edit"); nextIntent = candidate; intentGate = deferred();
+    const bytes = deferred(); modelGates.set(candidate.artifacts[0].sha256, bytes);
+    await page.evaluate((name) => { let resolve; const promise = new Promise((done) => { resolve = done; });
+      window.__previewParseGates[name] = { waiting: false, promise, resolve }; }, candidate.artifacts[0].fileName);
+    await page.evaluate(() => { void window.__candidatePreview.propose("Raise the selected floor"); });
+    const root = await until(() => latestDiagnostic("design_edit"), Boolean, "Missing design root");
+    assert.equal(root.status, "running");
+    const intentRequest = requests.findLast((row) => row.name === "/api/intents");
+    assert.equal(intentRequest.headers["x-monkey-operation"], root.operationId);
+    intentGate.resolve(); intentGate = null;
+    const intent = await finishedDiagnostic("intent_wait", root.operationId);
+    assert.equal(requests.filter((row) => row.name === `/api/proposals/${candidate.proposalId}/candidate`).length, 0);
+    await delay(120);
+    await launch(candidate); await complete(candidate);
+    await until(() => diagnosticEvents("model_download").find((row) => row.runId === candidate.candidateId), Boolean, "Missing model download");
+    assert.equal(diagnosticEvents("design_edit").filter((row) => row.operationId === root.operationId).at(-1).status, "running");
+    bytes.resolve();
+    await until(() => page.evaluate((name) => window.__previewParseGates[name].waiting, candidate.artifacts[0].fileName), Boolean, "Parser did not reach real gate");
+    assert.equal(diagnosticEvents("design_edit").filter((row) => row.operationId === root.operationId).at(-1).status, "running");
+    await page.evaluate((name) => window.__previewParseGates[name].resolve(), candidate.artifacts[0].fileName);
+    await diagnosticRendered(candidate);
+    const ended = await finishedDiagnostic("design_edit", root.operationId);
+    const wait = await finishedDiagnostic("candidate_wait", root.operationId);
+    const load = await finishedDiagnostic("model_load", root.operationId);
+    const download = await finishedDiagnostic("model_download", root.operationId);
+    const parse = await finishedDiagnostic("model_parse", root.operationId);
+    assert.equal(ended.eventId, root.eventId);
+    assert.equal(ended.details.active_wait_ms, intent.durationMs + wait.durationMs);
+    assert.ok(ended.details.between_actions_ms >= 100);
+    assert.ok(Math.abs(ended.durationMs - ended.details.active_wait_ms - ended.details.between_actions_ms) < 50);
+    assert.equal(wait.parentEventId, root.eventId); assert.equal(load.parentEventId, wait.eventId);
+    assert.equal(download.parentEventId, load.eventId); assert.equal(parse.parentEventId, load.eventId);
+    assert.equal(download.details.input_bytes, models.get(candidate.artifacts[0].sha256).length);
+    const fetch = requests.findLast((row) => row.name === `/api/artifacts/${candidate.artifacts[0].sha256}/bytes`);
+    assert.equal(fetch.headers["x-monkey-operation"], root.operationId);
+    assert.equal(fetch.headers["x-monkey-parent"], download.eventId);
+    const polls = diagnosticEvents("api_wait").filter((row) => row.operationId === root.operationId && row.status === "succeeded");
+    assert.ok(polls.some((row) => row.details.request_kind === "candidate_poll"));
+    assert.ok(polls.some((row) => row.details.request_kind === "candidate_read"));
+    assert.equal(loadTimings(candidate.candidateId).length, 0, "New diagnostics must not duplicate the legacy load event");
+  });
+
+  await step("superseded candidate roots end cancelled and the replacement owns its own trace", async () => {
+    const old = prepare("diagnostic-old"), current = prepare("diagnostic-new");
+    await launch(old); const oldRoot = await rootForCandidate(old);
+    await launch(current); const newRoot = await rootForCandidate(current);
+    assert.notEqual(oldRoot.operationId, newRoot.operationId);
+    await finishedDiagnostic("design_edit", oldRoot.operationId, "cancelled");
+    await complete(old); await complete(current); await diagnosticRendered(current);
+    await finishedDiagnostic("design_edit", newRoot.operationId);
+    for (const candidate of [old, current]) {
+      const request = requests.findLast((row) => row.name === `/api/proposals/${candidate.proposalId}/candidate`);
+      assert.equal(request.headers["x-monkey-operation"], candidate === old ? oldRoot.operationId : newRoot.operationId);
+    }
+  });
+
+  await step("job failure ends the root and reporting failure never repeats user work", async () => {
+    const broken = prepare("diagnostic-job-failed"); await launch(broken); const failedRoot = await rootForCandidate(broken);
+    jobs.get(broken.jobId).status = "failed"; await emit("candidate.failed", broken.candidateId);
+    await finishedDiagnostic("design_edit", failedRoot.operationId, "failed");
+    monitorFailure = true;
+    const candidate = prepare("diagnostic-monitor-failed"); await launch(candidate); const root = await rootForCandidate(candidate);
+    await complete(candidate); await diagnosticRendered(candidate); await finishedDiagnostic("design_edit", root.operationId);
+    assert.equal(requests.filter((row) => row.name === `/api/proposals/${candidate.proposalId}/candidate`).length, 1);
+    assert.equal(requests.filter((row) => row.name === `/api/artifacts/${candidate.artifacts[0].sha256}/bytes`).length, 1);
+    monitorFailure = false;
+  });
+
+  await step("delayed initial telemetry cannot overwrite a finished event or hold the viewer", async () => {
+    timingGate = deferred(); const candidate = prepare("diagnostic-report-order");
+    await launch(candidate); const root = await rootForCandidate(candidate);
+    await complete(candidate); await diagnosticRendered(candidate);
+    assert.equal(diagnosticEvents("design_edit").filter((row) => row.operationId === root.operationId).length, 1);
+    timingGate.resolve(); timingGate = null;
+    await finishedDiagnostic("design_edit", root.operationId);
+    assert.deepEqual(diagnosticEvents("design_edit").filter((row) => row.operationId === root.operationId).map((row) => row.status), ["running", "succeeded"]);
+  });
+
+  await step("applying the same proposal twice gives the second candidate an independent action", async () => {
+    const first = prepare("diagnostic-apply-first"), second = prepare("diagnostic-apply-second");
+    second.proposalId = first.proposalId; jobs.get(second.jobId).proposalId = first.proposalId;
+    candidateStartQueues.set(first.proposalId, [first, second]); nextIntent = first;
+    await page.evaluate(() => window.__candidatePreview.propose("Adjust the floor again"));
+    await launch(first); const firstRoot = await rootForCandidate(first);
+    await launch(second); const secondRoot = await rootForCandidate(second);
+    assert.notEqual(firstRoot.operationId, secondRoot.operationId);
+    await finishedDiagnostic("design_edit", firstRoot.operationId, "cancelled");
+    await finishedDiagnostic("candidate_wait", firstRoot.operationId, "cancelled");
+    await complete(first); await complete(second); await diagnosticRendered(second);
+    await finishedDiagnostic("design_edit", secondRoot.operationId);
+    const waits = diagnosticEvents("candidate_wait").filter((row) => row.status === "running" && [firstRoot.operationId, secondRoot.operationId].includes(row.operationId));
+    assert.equal(waits.length, 2); assert.notEqual(waits[0].eventId, waits[1].eventId);
+  });
+
+  await step("dropping a local model cancels a candidate still parsing", async () => {
+    const candidate = prepare("diagnostic-local-drop");
+    await page.evaluate((name) => { let resolve; const promise = new Promise((done) => { resolve = done; });
+      window.__previewParseGates[name] = { waiting: false, promise, resolve }; }, candidate.artifacts[0].fileName);
+    await launch(candidate); const root = await rootForCandidate(candidate); await complete(candidate);
+    await until(() => page.evaluate((name) => window.__previewParseGates[name].waiting, candidate.artifacts[0].fileName), Boolean, "Candidate did not pause in the actual parser");
+    await page.evaluate((bytes) => {
+      const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "dropped-local.3dm"));
+      document.querySelector(".viewport-host").dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
+    }, [...models.get(currentHome.sha256)]);
+    await until(snapshot, (value) => value.status === "ready" && value.loadedRunId == null, "Local drop did not become the displayed model");
+    await finishedDiagnostic("design_edit", root.operationId, "cancelled");
+    await page.evaluate((name) => window.__previewParseGates[name].resolve(), candidate.artifacts[0].fileName);
+    await finishedDiagnostic("model_load", root.operationId, "cancelled");
+    assert.equal((await snapshot()).loadedRunId, undefined);
+    assert.equal(diagnosticEvents("design_edit").filter((row) => row.operationId === root.operationId && row.status === "succeeded").length, 0);
+    await view(currentHome);
+  });
+
+  await step("drawing wait ends only after its returned revision is downloaded and painted", async () => {
+    documentGate = deferred();
+    await page.evaluate(() => { let resolve; const promise = new Promise((done) => { resolve = done; });
+      window.__documentRenderGate = { waiting: false, promise, resolve }; });
+    await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
+    await until(() => documentGate.requested, Boolean, "Drawing bytes did not start");
+    const root = latestDiagnostic("drawing_wait"); assert.equal(root.status, "running");
+    documentGate.resolve(); documentGate = null;
+    await until(() => page.evaluate(() => window.__documentRenderGate.waiting), Boolean, "Drawing did not reach actual render gate");
+    assert.equal(diagnosticEvents("drawing_wait").filter((row) => row.operationId === root.operationId).at(-1).status, "running");
+    await page.evaluate(() => { window.__documentRenderGate.resolve(); delete window.__documentRenderGate; });
+    await page.locator('.document-viewport[data-ready="true"]').waitFor();
+    await finishedDiagnostic("drawing_wait", root.operationId);
+    const load = await finishedDiagnostic("document_load", root.operationId);
+    const render = await finishedDiagnostic("document_render", root.operationId);
+    assert.equal(load.parentEventId, root.eventId); assert.equal(render.parentEventId, root.eventId);
+    assert.equal(load.details.input_bytes, png.length);
+    assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
+    const request = requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name));
+    assert.equal(request.headers["x-monkey-operation"], root.operationId);
+    assert.equal(request.headers["x-monkey-parent"], load.eventId);
+  });
+
+  await step("failed drawing requests close their independent action without model tokens", async () => {
+    drawingFailure = true;
+    await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
+    const root = await until(() => latestDiagnostic("drawing_wait"), (row) => row.status === "failed", "Drawing did not report failure");
+    assert.ok(root.durationMs >= 0);
+    assert.ok(!Object.hasOwn(root, "tokens"));
+    drawingFailure = false;
+  });
+
+  await step("an initial project with no retained run reports project-only timing", async () => {
+    projectionOnly = true; historyEnabled = false; projectId = "initial-projection-project";
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await until(snapshot, (value) => value.projectId === projectId && value.editingRunId === "studio-projection" && !value.changingBase,
+      "Initial project projection did not become available");
+    await page.evaluate(() => window.__candidatePreview.propose("Create the first candidate"));
+    const request = requests.findLast((row) => row.name === "/api/intents");
+    const root = await finishedDiagnostic("design_edit", request.headers["x-monkey-operation"], "failed");
+    const intent = await finishedDiagnostic("intent_wait", root.operationId, "failed");
+    assert.equal(root.runId, null); assert.equal(intent.runId, null);
+    assert.equal(root.sourceRef, null);
+    assert.equal(diagnosticEvents().some((row) => row.runId === "studio-projection"), false);
+  });
+
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);
 } finally {
   drawingGate?.resolve();
+  intentGate?.resolve(); documentGate?.resolve(); timingGate?.resolve();
   for (const gate of [...validationGates.values(), ...modelGates.values(), ...stateGates.values()]) gate.resolve();
   await browser?.close();
   if (http.listening) await new Promise((resolve, reject) => http.close((error) => error ? reject(error) : resolve()));

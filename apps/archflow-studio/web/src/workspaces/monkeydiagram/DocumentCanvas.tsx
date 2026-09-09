@@ -5,6 +5,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { asStudioApiError, studio, type StudioApiError } from "../../api/client";
 import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, DocumentPageDto, DocumentVisualInputDto, ModelSourceDto, SourceDocumentDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
+import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
 import { eraseAt, inkPath, toPagePoint, zoomPageAt, type PagePoint, type PageView } from "./documentInk";
 import { useDocumentAnnotations, type createDocumentAnnotationsController } from "./useDocumentAnnotations";
@@ -36,17 +37,25 @@ function Icon({ name }: { name: DocumentTool | "undo" | "redo" | "fit" }) {
 }
 
 /** PDF.js applies the native CropBox and rotation; both canvas and ink use that visible page. */
-function DocumentSurface({ file, page, scale, onReady }: {
+function DocumentSurface({ file, page, scale, onReady, timing }: {
   file: File; page: DocumentPageDto; scale: number; onReady(ready: boolean): void;
+  timing?: ClientTimingSpan;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [source, setSource] = useState<PDFDocumentProxy | HTMLImageElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const activeTiming = useRef(timing);
+  activeTiming.current = timing;
+  const renderTiming = useRef<ClientTimingSpan | null>(null);
   const t = useT();
   useEffect(() => {
     let stopped = false;
     let pdf: ReturnType<typeof import("pdfjs-dist")["getDocument"]> | null = null;
     let imageUrl: string | null = null;
+    const parent = activeTiming.current;
+    renderTiming.current = parent && !parent.closed ? startClientTiming("document_render", parent.binding,
+      parent.trace, { input_bytes: file.size }) : null;
+    const measured = renderTiming.current;
     setSource(null); setError(null); onReady(false);
     void (async () => {
       if (file.type === "application/pdf") {
@@ -64,9 +73,12 @@ function DocumentSurface({ file, page, scale, onReady }: {
         await image.decode();
         if (!stopped) setSource(image);
       }
-    })().catch((cause: unknown) => { if (!stopped) setError(String(cause)); });
+    })().catch((cause: unknown) => { if (!stopped) {
+      measured?.finish("failed"); parent?.finish("failed"); setError(String(cause));
+    } });
     return () => {
       stopped = true;
+      measured?.finish("cancelled");
       if (pdf) void pdf.destroy();
       if (imageUrl) URL.revokeObjectURL(imageUrl);
     };
@@ -99,8 +111,11 @@ function DocumentSurface({ file, page, scale, onReady }: {
       const canvas = canvasRef.current;
       canvas.width = buffer.width; canvas.height = buffer.height;
       canvas.getContext("2d")?.drawImage(buffer, 0, 0);
+      renderTiming.current?.finish("succeeded");
       onReady(true);
-    })().catch((cause: unknown) => { if (!stopped) { setError(String(cause)); onReady(false); } }), 80);
+    })().catch((cause: unknown) => { if (!stopped) {
+      renderTiming.current?.finish("failed"); activeTiming.current?.finish("failed"); setError(String(cause)); onReady(false);
+    } }), 80);
     return () => { stopped = true; window.clearTimeout(timeout); render?.cancel(); };
   }, [source, page, scale, onReady]);
   return <><canvas ref={canvasRef} className="document-page__raster" aria-label={t("document.pageImage", { page: page.pageIndex + 1 })} />
@@ -121,10 +136,11 @@ type Interaction = {
 };
 
 /** Input stays in page coordinates. Only the current path is updated during a stroke. */
-export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo }: {
+export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo, timing }: {
   file: File; page: DocumentPageDto; annotations: readonly DocumentGestureDto[];
   onChange(marks: readonly DocumentGestureDto[]): void; readOnly: boolean;
   canUndo: boolean; canRedo: boolean; onUndo(): void; onRedo(): void;
+  timing?: ClientTimingSpan;
 }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
@@ -146,6 +162,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
   const fallback = useRef<{ move(event: PointerEvent): void; up(event: PointerEvent): void; cancel(): void } | null>(null);
   const updateView = useCallback((next: PageView) => { viewRef.current = next; setView(next); }, []);
   const ready = useCallback((value: boolean) => setRenderReady(value), []);
+  useEffect(() => { if (renderReady) timing?.finish("succeeded"); }, [renderReady, timing]);
   const fit = useCallback(() => {
     const node = host.current;
     if (!node) return;
@@ -321,7 +338,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
         if ((event.ctrlKey || event.metaKey) && !event.altKey && ["z", "y"].includes(event.key.toLowerCase())) cancel();
       }} onKeyUp={(event) => { if (!usesNativeTextEditing(event) && event.code === "Space") { event.preventDefault(); space.current = false; setTemporaryPan(active.current?.mode === "pan"); } }}>
       <div className="document-page" style={{ width: page.width * view.scale, height: page.height * view.scale, transform: `translate(${view.x}px, ${view.y}px)` }}>
-        <DocumentSurface file={file} page={page} scale={view.scale} onReady={ready} />
+        <DocumentSurface file={file} page={page} scale={view.scale} onReady={ready} timing={timing} />
         <svg ref={ink} className="document-page__ink" viewBox={`0 0 ${page.width} ${page.height}`} aria-hidden="true">
           <SavedInk annotations={annotations} width={page.width} height={page.height} />
           <path ref={live} data-live-ink="true" fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -354,7 +371,7 @@ export interface DocumentViewContext {
 
 export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, modelSources, editingModelSource,
   onContinueModelSource, documentVisualInputAvailable, initialSourceSha = null, initialPageIndex = 0, onBeforeLeave,
-  initialRevisionRef = null, sourceStageRef }: {
+  initialRevisionRef = null, sourceStageRef, timing }: {
   projectId: string; runId: string; busy: boolean;
   documentVisualInputAvailable: boolean;
   modelSources: readonly { label: string; modelSource: ModelSourceDto }[];
@@ -363,6 +380,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   initialSourceSha?: string | null; initialPageIndex?: number;
   initialRevisionRef?: string | null;
   sourceStageRef?: string | null;
+  timing?: ClientTimingSpan;
   onBeforeLeave?(save: (() => Promise<void>) | null): void;
   controller: ReturnType<typeof createDocumentAnnotationsController>;
   onSubmit(utterance: string, refs: readonly DocumentAnnotationRefDto[], modelSource: ModelSourceDto, visuals: DocumentVisualInputDto[]): Promise<void>;
@@ -370,6 +388,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const t = useT();
   const input = useRef<HTMLInputElement>(null);
   const listRequest = useRef(0);
+  const activeTiming = useRef(timing);
+  activeTiming.current = timing;
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
   const [selectedSha, setSelectedSha] = useState<string | null>(initialSourceSha);
   const [selectedRevision, setSelectedRevision] = useState<string | null>(initialRevisionRef);
@@ -414,6 +434,10 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const modelLabel = documentModelSource === null ? null
     : modelSources.find((item) => sameModelSource(item.modelSource, documentModelSource))?.label ?? documentModelSource.runId;
   const missingPage = !loading && selectedSha !== null && !page;
+  useEffect(() => {
+    if (selectedSha !== initialSourceSha || selectedRevision !== initialRevisionRef || pageIndex !== initialPageIndex) timing?.finish("cancelled");
+    else if (missingPage) timing?.finish("failed");
+  }, [selectedSha, selectedRevision, pageIndex, initialSourceSha, initialRevisionRef, initialPageIndex, missingPage, timing]);
   const draft = useDocumentAnnotations({ projectId, runId: documentRun, assetSha256: page ? selectedSha : null, pageIndex,
     revisionSha256: review?.ref.revisionSha256 ?? null, drawingRevisionRef: review ? review.ref.drawingRevisionRef ?? null : selectedRevision }, controller);
   useEffect(() => {
@@ -442,7 +466,9 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         setSelectedSha(preferred?.assetSha256 ?? null);
         setSelectedRevision(preferred?.revisionRef ?? null);
       }
-    }).catch((cause: unknown) => { if (!stopped && request === listRequest.current) setError(asStudioApiError(cause)); })
+    }).catch((cause: unknown) => { if (!stopped && request === listRequest.current) {
+      activeTiming.current?.finish("failed"); setError(asStudioApiError(cause));
+    } })
       .finally(() => { if (!stopped && request === listRequest.current) setLoading(false); });
     return () => { stopped = true; };
   }, [documentRun, initialSourceSha, sourceStageRef, editingModelSource]);
@@ -451,9 +477,14 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   useEffect(() => {
     let stopped = false;
     setFile(null);
-    if (fileSha && fileName) void studio.documentFile(documentRun, fileSha, fileName, selectedRevision)
-      .then((value) => { if (!stopped) setFile(value); }).catch((cause: unknown) => { if (!stopped) setError(asStudioApiError(cause)); });
-    return () => { stopped = true; };
+    const parent = activeTiming.current;
+    const measured = parent && !parent.closed && fileSha && fileName ? startClientTiming("document_load",
+      { ...parent.binding, runId: documentRun }, parent.trace,
+      { asset_sha256: fileSha, request_kind: "document_bytes" }) : null;
+    if (fileSha && fileName) void studio.documentFile(documentRun, fileSha, fileName, selectedRevision, measured?.trace)
+      .then((value) => { measured?.finish(stopped ? "cancelled" : "succeeded", { input_bytes: value.size }); if (!stopped) setFile(value); })
+      .catch((cause: unknown) => { measured?.finish(stopped ? "cancelled" : "failed"); if (!stopped) { parent?.finish("failed"); setError(asStudioApiError(cause)); } });
+    return () => { stopped = true; measured?.finish("cancelled"); };
   }, [fileSha, fileName, documentRun, selectedRevision]);
   useEffect(() => { setModelChoice(""); }, [selectedSha, documentRun]);
   const refreshComments = useCallback(async () => {
@@ -625,7 +656,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     {review && <div className="document-review-banner"><span>{t("document.reviewVersion")}</span><button type="button" onClick={() => { setReview(null); setPageIndex(0); }}>{t("document.returnToEdit")}</button></div>}
     <div className="document-body">
       <div className="document-main">
-        {file && page ? <DocumentPageCanvas key={`${documentRun}:${selectedSha}:${pageIndex}`} file={file} page={page}
+        {file && page ? <DocumentPageCanvas key={`${documentRun}:${selectedSha}:${pageIndex}`} file={file} page={page} timing={timing}
           annotations={draft.annotations} onChange={draft.changeAnnotations} readOnly={!draft.ready || draft.readOnly || sending}
           canUndo={draft.canUndo} canRedo={draft.canRedo} onUndo={draft.undo} onRedo={draft.redo} />
           : <div className="document-empty"><p role={missingPage ? "alert" : undefined}>{t(missingPage ? "document.linkUnavailable" : loading || selectedSha ? "document.loadingPage" : "document.empty")}</p><p>{t("document.formats")}</p></div>}

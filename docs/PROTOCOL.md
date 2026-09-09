@@ -521,6 +521,20 @@ A capability name is a feature, not a route: `projection`, `pick`, `gestures`, `
 `proposals`, `candidates`, `captures`, `compare`, `artifacts`, `program`, `validation`, `events`, and
 `cad-export` when geometry export is enabled, `rhino-export` when Rhino is explicitly selected,
 and `user-settings` in local mode only.
+
+An explicitly configured MonkeyMonitor diagnostic directory adds `operation-timing`
+and `operation-diagnostics`. The former retains `POST /api/events/model-load` for
+older clients. The latter adds `POST /api/events/timing` with `ClientTimingDto`:
+client event/operation UUIDs, optional parent UUID, the closed phase/status set,
+project/run/source binding, UTC interval and measured client duration. Optional
+details contain numeric waits/bytes, asset identity and request kind; no prompts,
+responses or provider token counters are accepted from this endpoint.
+`X-Monkey-Operation` and `X-Monkey-Parent` correlate individual requests and their
+candidate workers. They are diagnostic association only and grant no project action.
+The acknowledgement reports whether logging succeeded; diagnostics cannot retry a
+business request. Model-request round trips and nested service intervals are not
+pure inference time, and only an explicit client interaction root supplies total
+elapsed time. See [MonkeyMonitor timing](../monkeymonitor/README.md#时间口径).
 OCCT exports an exact STEP and a mesh 3DM preview from the same program. Clients load only the
 3DM in the viewer and offer the STEP as a download; two files sharing a receipt are one export.
 The list is sorted and reflects the running configuration,

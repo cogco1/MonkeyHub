@@ -17,7 +17,7 @@ import sys
 import threading
 from typing import AsyncIterator, TextIO
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -170,9 +170,41 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.jobs.shutdown()
 
 
+async def _diagnostic_request(request: Request,
+    x_monkey_operation: str | None = Header(default=None),
+    x_monkey_parent: str | None = Header(default=None),
+):
+    """Carry one browser operation through sync route workers without global state."""
+    from uuid import UUID
+
+    monitor = request.app.state.monitor
+    if monitor.store is None or x_monkey_operation is None or request.url.path.startswith("/api/events"):
+        yield
+        return
+    try:
+        operation_id = f"studio:client:{UUID(x_monkey_operation)}"
+        parent_id = f"studio:client:{UUID(x_monkey_parent)}" if x_monkey_parent else operation_id
+    except ValueError:
+        # A malformed optional diagnostic header does not refuse project work.
+        yield
+        return
+    with monitor.scope(operation_id=operation_id, parent_event_id=parent_id):
+        route = request.scope.get("route")
+        with monitor.measure("api_request", details={"request_kind": f"{request.method} {getattr(route, 'path', request.url.path)}"}) as interval:
+            try:
+                yield
+            finally:
+                # The route may bind the project on first use. Observing it must
+                # never open a project just to populate a diagnostic record.
+                binding = getattr(request.app.state, "binding", None)
+                if binding is not None:
+                    interval["project_id"] = binding.project_id
+
+
 def create_app(settings: StudioSettings) -> FastAPI:
     app = FastAPI(
-        title="ArchFlow Studio API", version=SERVER_VERSION, lifespan=_lifespan
+        title="ArchFlow Studio API", version=SERVER_VERSION, lifespan=_lifespan,
+        dependencies=[Depends(_diagnostic_request)],
     )
     app.state.settings = settings
     from monkeymonitor.store import UsageLog
@@ -237,7 +269,7 @@ def create_app(settings: StudioSettings) -> FastAPI:
             allow_origins=list(settings.origins),
             allow_credentials=False,
             allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
+            allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "X-Monkey-Operation", "X-Monkey-Parent"],
             # The two headers the artifact-bytes route answers with that a
             # browser cannot read unless they are named here.
             expose_headers=["ETag", "Content-Disposition"],

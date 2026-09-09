@@ -201,6 +201,7 @@ interface ThreeDmViewportProps {
   onInspection(inspection: SceneInspection | null): void;
   onStatus(status: ViewportStatus, message: string): void;
   onRequestFile(): void;
+  onOpenFile?(file: File): void;
   /** Which file the viewport is showing, in the shell's own words. */
   onSource(sourceLabel: string | null): void;
   onPick(pick: ViewportPick): void;
@@ -657,7 +658,7 @@ export const ThreeDmViewport = forwardRef<
   ViewportController,
   ThreeDmViewportProps
 >(function ThreeDmViewport(
-  { onInspection, onStatus, onRequestFile, onSource, onPick },
+  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick },
   forwardedRef,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -1422,7 +1423,7 @@ export const ThreeDmViewport = forwardRef<
         setDragActive(false);
         const file = event.dataTransfer.files.item(0);
         // Dropped from this machine: bound to nothing, and labelled so.
-        if (file) void openFile(file, LOCAL_SOURCE_LABEL);
+        if (file) { if (onOpenFile) onOpenFile(file); else void openFile(file, LOCAL_SOURCE_LABEL); }
       }}
       onPointerDown={(event) => {
         pointerDownRef.current = { x: event.clientX, y: event.clientY };

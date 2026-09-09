@@ -88,6 +88,8 @@ tbody tr:hover{background:var(--surface-hover)}
 .operations>summary span{font-size:calc(12px * var(--font-scale,1));color:var(--muted);margin-left:6px}
 .operations>.field-help{margin:0 18px 14px}
 .timing-scopes{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;padding:0 18px 16px}
+.timing-summary{border-top:1px solid var(--line)}
+.timing-summary>summary{padding:10px 18px}
 .scope-stat{display:flex;flex-direction:column;gap:4px;padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:calc(12px * var(--font-scale,1))}
 .scope-stat strong{font-weight:500}
 .scope-stat>span{color:var(--muted)}
@@ -97,6 +99,13 @@ tbody tr:hover{background:var(--surface-hover)}
 .operation-group>summary strong{font-weight:500;color:var(--ink)}
 .operation-group>summary .secondary-text{display:inline;margin-left:10px}
 .operation-row{margin:0 18px;padding:13px 0;border-top:1px solid var(--line-2);overflow-wrap:anywhere}
+.action-explanation{margin:0 18px 12px;font-size:calc(13px * var(--font-scale,1));line-height:1.7}
+.action-explanation:empty{display:none}
+.action-waits{font-variant-numeric:tabular-nums}
+.operation-tree>.operation-row{margin-left:calc(18px + var(--timing-depth,0) * 16px)}
+.operation-tree>.operation-row[data-depth]:not([data-depth="0"]){padding-left:10px;border-left:1px solid var(--line)}
+.linked-context{margin:0 18px 12px}
+.linked-context .operation-row{margin:0}
 .operation-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
 .operation-heading strong{font-size:calc(13px * var(--font-scale,1));font-weight:500}
 .operation-heading>span{font-size:calc(12px * var(--font-scale,1))}
@@ -107,6 +116,14 @@ tbody tr:hover{background:var(--surface-hover)}
 .event-diagnostics dl>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;padding:3px 0}
 .event-diagnostics dt{color:var(--muted)}
 .event-diagnostics dd{margin:0;font-family:var(--font-mono);overflow-wrap:anywhere}
+.diagnostic-section{margin:12px 0;padding-top:8px;border-top:1px solid var(--line-2)}
+.diagnostic-section h4{margin:0 0 6px;font-size:calc(12px * var(--font-scale,1));font-weight:500}
+.diagnostic-section dd{font-family:var(--font-ui)}
+.reference-count,.reference-key{color:var(--muted)}
+.reference-list{list-style:none;padding:0;margin:0}
+.reference-list li{margin:3px 0}
+.reference-list .reference-list{padding-left:10px;border-left:1px solid var(--line-2)}
+.more-references>summary{font-size:calc(12px * var(--font-scale,1))}
 #more-operations{margin:8px 18px 12px}
 .source-settings{margin-top:18px}
 .source-settings form{padding:14px 0 0;max-width:780px;font-size:calc(13px * var(--font-scale,1))}
@@ -192,6 +209,8 @@ footer{font-size:calc(11px * var(--font-scale,1))}
 .operations>summary,.operation-group>summary{padding-left:14px;padding-right:14px}
 .operations>.field-help,.operation-group-label{margin-left:14px;margin-right:14px}
 .operation-row{margin:0 14px}
+.operation-tree>.operation-row{margin-left:calc(14px + var(--timing-depth,0) * 10px)}
+.action-explanation,.linked-context{margin-left:14px;margin-right:14px}
 .event-diagnostics dl>div{grid-template-columns:85px minmax(0,1fr);gap:8px}
 dialog{padding:19px;width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}
 .dialog-heading h2{font-size:calc(18px * var(--font-scale,1))}

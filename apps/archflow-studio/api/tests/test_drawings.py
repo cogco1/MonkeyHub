@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import base64
+from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
 import unittest
@@ -52,6 +53,143 @@ class DrawingTests(CandidateTestCase):
             "projectId": PROJECT_ID, "sourceStageRef": (stage or self.stage)["stageRef"],
             "view": "front", "drawingId": "main-elevation", **body,
         })
+
+    def enable_monitor(self):
+        self.client.close()
+        self.settings = replace(self.settings, monitor_dir=self.root / "diagnostics")
+        self.app = create_app(self.settings)
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+
+    def drawing_events(self):
+        events, warnings = self.app.state.monitor.store.read()
+        self.assertFalse(warnings)
+        return [event for event in events if event.phase == "drawing_generate" or event.phase.startswith("drawing.")]
+
+    def test_timing_records_real_projection_then_a_cold_cache_hit_without_regenerating(self) -> None:
+        self.enable_monitor()
+        first = self.generate()
+        self.assertEqual(first.status_code, 201, first.text)
+        events = self.drawing_events()
+        parent = next(event for event in events if event.phase == "drawing_generate")
+        children = [event for event in events if event.parent_event_id == parent.event_id]
+        self.assertEqual([event.phase for event in children],
+                         ["drawing.load", "drawing.hlr", "drawing.svg", "drawing.png", "drawing.persist", "drawing.register"])
+        self.assertEqual(parent.details["executed_stages"], [event.phase for event in children])
+        self.assertEqual(parent.details["cache_status"], "miss")
+        self.assertEqual(parent.details["cache_reason"], "no_registered_drawing")
+        self.assertEqual(parent.details["execution_path"], "full_projection")
+        self.assertEqual(parent.details["input_identity"]["step_sha256"], self.step["sha256"])
+        self.assertIn("backend_version", parent.details["input_identity"])
+        self.assertEqual(parent.details["scope"], "global_visibility")
+        self.assertIn(first.json()["revisionRef"], parent.details["output_refs"])
+        self.assertEqual(parent.source_ref, self.stage["stageRef"])
+        self.assertEqual(parent.run_id, self.model["runId"])
+        for event in (parent, *children):
+            self.assertEqual(event.operation_id, parent.operation_id)
+            self.assertEqual(event.status, "succeeded")
+            self.assertEqual(event.timing_scope, "service")
+            self.assertFalse(event.model_call)
+            self.assertTrue(all(value is None for value in event.tokens.to_dict().values()))
+            self.assertGreaterEqual(event.duration_ms, 0)
+            self.assertGreaterEqual(datetime.fromisoformat(event.started_at), datetime.fromisoformat(parent.started_at))
+            self.assertLessEqual(datetime.fromisoformat(event.ended_at), datetime.fromisoformat(parent.ended_at))
+        hlr = next(event for event in children if event.phase == "drawing.hlr")
+        self.assertEqual(hlr.details["input_object_ids"], parent.details["input_object_ids"])
+        self.assertNotIn("recomputed_object_ids", hlr.details)
+        with TestClient(create_app(self.settings)) as reopened, patch(
+            "archflow_studio_api.application.drawings.freeze_model_axis_elevation",
+            side_effect=AssertionError("a verified cache hit must not project again"),
+        ):
+            second = reopened.post("/api/drawings/elevations", json={
+                "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"],
+                "view": "front", "drawingId": "main-elevation",
+            })
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json(), first.json())
+        events = self.drawing_events()
+        reused = next(event for event in events if event.phase == "drawing_generate" and event.event_id != parent.event_id)
+        self.assertEqual(reused.details["cache_status"], "hit")
+        self.assertEqual(reused.details["cache_reason"], "exact_registered_drawing")
+        self.assertEqual(reused.details["cache_checks"]["bytes"], "same")
+        self.assertEqual(reused.details["comparison_refs"], [first.json()["revisionRef"]])
+        self.assertEqual(reused.details["input_identity"], parent.details["input_identity"])
+        self.assertEqual(reused.details["executed_stages"], [])
+        self.assertFalse(any(event.parent_event_id == reused.event_id for event in events))
+
+    def test_changed_view_records_the_compared_revision_and_actual_cache_difference(self) -> None:
+        self.enable_monitor()
+        first = self.generate()
+        self.assertEqual(first.status_code, 201, first.text)
+        changed = self.generate(view="right")
+        self.assertEqual(changed.status_code, 201, changed.text)
+        parents = [event for event in self.drawing_events() if event.phase == "drawing_generate"]
+        self.assertEqual(len(parents), 2)
+        second = parents[-1]
+        self.assertEqual(second.details["cache_status"], "miss")
+        self.assertEqual(second.details["cache_reason"], "registered_inputs_changed")
+        self.assertEqual(second.details["cache_checks"], {
+            "drawing_id": "same", "source_stage_ref": "same", "model_source": "same", "view_recipe": "changed",
+        })
+        self.assertEqual(second.details["comparison_refs"], [first.json()["revisionRef"]])
+        self.assertNotEqual(second.details["input_identity"], parents[0].details["input_identity"])
+        self.assertIn("drawing.hlr", second.details["executed_stages"])
+
+    def test_binding_only_miss_exposes_equal_inputs_and_two_actual_projection_calls(self) -> None:
+        self.enable_monitor()
+        first = self.generate()
+        self.assertEqual(first.status_code, 201, first.text)
+        second = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "modelSource": self.model, "view": "front", "drawingId": "main-elevation",
+        })
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["assetSha256"], first.json()["assetSha256"])
+        self.assertNotEqual(second.json()["revisionRef"], first.json()["revisionRef"])
+        events = self.drawing_events()
+        parents = [event for event in events if event.phase == "drawing_generate"]
+        self.assertEqual(len(parents), 2)
+        self.assertEqual(parents[1].details["input_identity"], parents[0].details["input_identity"])
+        self.assertEqual(parents[1].details["cache_status"], "miss")
+        self.assertEqual(parents[1].details["cache_checks"], {
+            "drawing_id": "same", "source_stage_ref": "changed", "model_source": "same", "view_recipe": "same",
+        })
+        self.assertEqual(parents[1].details["comparison_refs"], [first.json()["revisionRef"]])
+        self.assertEqual(len([event for event in events if event.phase == "drawing.hlr" and event.status == "succeeded"]), 2)
+        self.assertNotEqual(parents[1].source_ref, parents[0].source_ref)
+
+    def test_logging_failure_cannot_interrupt_real_generation_and_document_registration(self) -> None:
+        self.enable_monitor()
+        with patch.object(self.app.state.monitor.store, "append", side_effect=OSError("diagnostic disk unavailable")), \
+                self.assertLogs("archflow_studio_api.application.monitoring", level="WARNING"):
+            generated = self.generate()
+        self.assertEqual(generated.status_code, 201, generated.text)
+        with TestClient(create_app(self.settings)) as reopened:
+            result = reopened.get("/api/documents", params={"runId": self.model["runId"]})
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertIn(generated.json(), result.json()["documents"])
+            data = reopened.get(f"/api/documents/{generated.json()['assetSha256']}/bytes", params={
+                "runId": self.model["runId"], "revisionRef": generated.json()["revisionRef"],
+            })
+            self.assertEqual(data.status_code, 200, data.text[:200])
+            self.assertTrue(data.content.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_unavailable_cached_drawing_records_a_refusal_without_rebuilding(self) -> None:
+        self.enable_monitor()
+        generated = self.generate()
+        self.assertEqual(generated.status_code, 201, generated.text)
+        drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(generated.json()["revisionRef"], PROJECT_ID))
+        self.repository.layout.resolve_record(drawing.png_ref).write_bytes(drawing.png + b"changed")
+        with patch("archflow_studio_api.application.drawings.freeze_model_axis_elevation",
+                   side_effect=AssertionError("an unavailable cached revision must not be replaced")):
+            refused = self.generate()
+        self.assertEqual(refused.status_code, 409, refused.text)
+        parent = [event for event in self.drawing_events() if event.phase == "drawing_generate"][-1]
+        self.assertEqual(parent.status, "failed")
+        self.assertEqual(parent.details["cache_status"], "refused")
+        self.assertEqual(parent.details["cache_reason"], "cached_document_unavailable")
+        self.assertEqual(parent.details["cache_checks"]["bytes"], "invalid")
+        self.assertEqual(parent.details["executed_stages"], [])
 
     def save_drawing_page(self, drawing: dict, comment: str, *, pinned: bool = True) -> dict:
         response = self.client.put("/api/document-annotations", json={

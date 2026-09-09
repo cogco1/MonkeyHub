@@ -34,13 +34,18 @@ implemented.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import PurePosixPath
-from typing import Any, Mapping, Sequence
+from time import perf_counter
+from typing import Any, Callable, Mapping, Sequence
+from uuid import uuid4
 
 from archflow.adapters.cad_execution import (
     OcctBackendError,
@@ -75,6 +80,36 @@ _TOLERANCE = 1e-9
 
 class DrawingElevationError(ValueError):
     """The source, the frame or the drawing run cannot be used as asked; nothing was written."""
+
+
+@contextmanager
+def _observed_stage(observer, phase: str, *, parent_event_id: str | None = None, details=None):
+    """Report a real call boundary without changing its value or exception."""
+
+    details = {} if details is None else details
+    if observer is None:
+        yield details
+        return
+    started_at, started = datetime.now(timezone.utc).isoformat(), perf_counter()
+    event_id = str(uuid4())
+
+    def report(status, *, ended_at=None, duration_ms=None):
+        try:
+            observer({"event_id": event_id, "parent_event_id": parent_event_id, "phase": phase,
+                      "status": status, "started_at": started_at, "ended_at": ended_at,
+                      "duration_ms": duration_ms, "details": dict(details)})
+        except (Exception, asyncio.CancelledError):
+            pass
+
+    report("running")
+    status = "succeeded"
+    try:
+        yield details
+    except BaseException as exc:
+        status = "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)) else "failed"
+        raise
+    finally:
+        report(status, ended_at=datetime.now(timezone.utc).isoformat(), duration_ms=round((perf_counter() - started) * 1000))
 
 
 def _vector(value, label: str) -> tuple[float, float, float]:
@@ -246,6 +281,8 @@ class ElevationProjection:
 
 def project_model_axis_elevation(
     entries: Sequence[StepEntry], *, object_ids: Sequence[str], view: ElevationView, unit: str,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    parent_event_id: str | None = None,
 ) -> ElevationProjection:
     """Solve, crop and render one elevation of the named shapes; writes nothing.
 
@@ -260,15 +297,22 @@ def project_model_axis_elevation(
     if unit not in _UNITS:
         raise DrawingElevationError(f"unit {unit!r} is not a CAD length unit")
     try:
-        lines = project_occt_lines(
-            entries, object_ids=tuple(object_ids), origin=view.origin, right=view.right, up=view.up,
-            linear_deflection=view.linear_deflection, depth_range=(view.near_depth, view.far_depth),
-        )
-        svg = drawing_svg(
-            lines, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
-            hidden_lines=view.hidden_lines, title=view.name,
-        )
-        png = render_svg_png(svg)
+        with _observed_stage(operation_observer, "drawing.hlr", parent_event_id=parent_event_id,
+                             details={"scope": "global_visibility", "input_object_ids": sorted(object_ids)}) as observation:
+            lines = project_occt_lines(
+                entries, object_ids=tuple(object_ids), origin=view.origin, right=view.right, up=view.up,
+                linear_deflection=view.linear_deflection, depth_range=(view.near_depth, view.far_depth),
+            )
+            observation["emitted_object_ids"] = sorted({line.object_id for line in lines})
+        with _observed_stage(operation_observer, "drawing.svg", parent_event_id=parent_event_id,
+                             details={"input_object_ids": sorted({line.object_id for line in lines})}) as observation:
+            svg = drawing_svg(
+                lines, crop_uv=view.crop_uv, unit=unit, scale_denominator=view.scale_denominator,
+                hidden_lines=view.hidden_lines, title=view.name,
+            )
+            observation["emitted_object_ids"] = list(svg_objects(svg))
+        with _observed_stage(operation_observer, "drawing.png", parent_event_id=parent_event_id):
+            png = render_svg_png(svg)
     except (OcctBackendError, DrawingSvgError) as exc:
         raise DrawingElevationError(f"elevation {view.name}: {exc}") from exc
     return ElevationProjection(lines=lines, svg=svg, png=png)
@@ -400,6 +444,8 @@ def _artifact_ref(project_id: str, value: Mapping[str, Any]) -> ProjectArtifactR
 
 def freeze_model_axis_elevation(
     repository: FilesystemProjectRepository, *, source: ElevationSource, view: ElevationView, drawing_run_id: str,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    parent_event_id: str | None = None,
 ) -> ElevationDrawing:
     """Project one elevation of the source STEP and retain SVG, PNG and receipt in the drawing run.
 
@@ -413,61 +459,77 @@ def freeze_model_axis_elevation(
         raise TypeError("repository must be FilesystemProjectRepository")
     if not isinstance(view, ElevationView):
         raise TypeError("view must be ElevationView")
-    head_before = repository.read_head()
-    verified = _verified_source(repository, source)
+    identity = {"view_recipe": {key: value for key, value in view.to_dict().items()
+                                if key not in {"uv_definition", "depth_definition"}}}
+    if isinstance(source, ElevationSource):
+        identity["step_sha256"] = source.step_sha256
+
+    def observe(event):
+        operation_observer({**event, "details": {"input_identity": dict(identity), **event.get("details", {})}})
+
+    observer = observe if operation_observer is not None else None
+    with _observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
+        head_before = repository.read_head()
+        verified = _verified_source(repository, source)
+        backend = backend_identity()
+        identity.update(backend=backend["binding"], backend_version=backend["binding_version"])
+        observation["input_object_ids"] = list(verified.physical_object_ids)
     projection = project_model_axis_elevation(
         verified.entries, object_ids=verified.physical_object_ids, view=view, unit=verified.length_unit,
+        operation_observer=observer, parent_event_id=parent_event_id,
     )
-    run = _drawing_run(repository, drawing_run_id, verified.run)
-    destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
-    try:
-        svg_ref = repository.put_workspace_file(
-            run=run, destination=destination, artifact_id=f"{view.name}-svg",
-            workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{view.name}.svg",
-            media_type=SVG_MEDIA_TYPE, source=BytesIO(projection.svg),
-        )
-        png_ref = repository.put_workspace_file(
-            run=run, destination=destination, artifact_id=f"{view.name}-png",
-            workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{view.name}.png",
-            media_type=PNG_MEDIA_TYPE, source=BytesIO(projection.png),
-        )
-        payload = {
-            "schema": DRAWING_PROJECTION_RECEIPT_SCHEMA,
-            "project_id": run.project_id,
-            "run_id": run.run_id,
-            "base": run.base.to_dict(),
-            "view": view.to_dict(),
-            "unit": verified.length_unit,
-            "source": {
-                "run_id": verified.run.run_id,
-                "base": verified.run.base.to_dict(),
-                "stage_id": verified.stage_id,
-                "program_digest": verified.program_digest,
-                "step": {"relative_path": source.step_relative_path, "sha256": source.step_sha256,
-                         "media_type": STEP_MEDIA_TYPE},
-                "cad_receipt": {"relative_path": source.cad_receipt_relative_path,
-                                "sha256": source.cad_receipt_sha256},
-                "object_identity": "STEP shape name = CAD receipt physical object id",
-                "physical_object_ids": list(verified.physical_object_ids),
-            },
-            "projection": {
-                "backend": backend_identity(),
-                "algorithm": "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction",
-                "object_count": len(verified.physical_object_ids),
-                **projection.counts(),
-            },
-            "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
-        }
-        receipt_ref = repository.put_json(
-            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
-            record_kind=DRAWING_PROJECTION_RECEIPT, payload=payload,
-        )
-    except ProjectRepositoryError as exc:
-        raise DrawingElevationError(f"the drawing could not be retained in run {run.run_id}: {exc}") from exc
-    drawing = read_model_axis_elevation(repository, receipt_ref)
-    _require(drawing.svg == projection.svg and drawing.png == projection.png,
-             "the retained drawing files read back differently from what was written")
-    _require(repository.read_head() == head_before, "the project's published version changed while drawing")
+    with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
+        run = _drawing_run(repository, drawing_run_id, verified.run)
+        destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
+        try:
+            svg_ref = repository.put_workspace_file(
+                run=run, destination=destination, artifact_id=f"{view.name}-svg",
+                workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{view.name}.svg",
+                media_type=SVG_MEDIA_TYPE, source=BytesIO(projection.svg),
+            )
+            png_ref = repository.put_workspace_file(
+                run=run, destination=destination, artifact_id=f"{view.name}-png",
+                workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{view.name}.png",
+                media_type=PNG_MEDIA_TYPE, source=BytesIO(projection.png),
+            )
+            payload = {
+                "schema": DRAWING_PROJECTION_RECEIPT_SCHEMA,
+                "project_id": run.project_id,
+                "run_id": run.run_id,
+                "base": run.base.to_dict(),
+                "view": view.to_dict(),
+                "unit": verified.length_unit,
+                "source": {
+                    "run_id": verified.run.run_id,
+                    "base": verified.run.base.to_dict(),
+                    "stage_id": verified.stage_id,
+                    "program_digest": verified.program_digest,
+                    "step": {"relative_path": source.step_relative_path, "sha256": source.step_sha256,
+                             "media_type": STEP_MEDIA_TYPE},
+                    "cad_receipt": {"relative_path": source.cad_receipt_relative_path,
+                                    "sha256": source.cad_receipt_sha256},
+                    "object_identity": "STEP shape name = CAD receipt physical object id",
+                    "physical_object_ids": list(verified.physical_object_ids),
+                },
+                "projection": {
+                    "backend": backend,
+                    "algorithm": "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction",
+                    "object_count": len(verified.physical_object_ids),
+                    **projection.counts(),
+                },
+                "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
+            }
+            receipt_ref = repository.put_json(
+                run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                record_kind=DRAWING_PROJECTION_RECEIPT, payload=payload,
+            )
+        except ProjectRepositoryError as exc:
+            raise DrawingElevationError(f"the drawing could not be retained in run {run.run_id}: {exc}") from exc
+        drawing = read_model_axis_elevation(repository, receipt_ref)
+        _require(drawing.svg == projection.svg and drawing.png == projection.png,
+                 "the retained drawing files read back differently from what was written")
+        _require(repository.read_head() == head_before, "the project's published version changed while drawing")
+        observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
 
 

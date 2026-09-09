@@ -62,15 +62,17 @@ execution owner that imports it, never loads OCCT.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import importlib.metadata
 import math
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from archflow.adapters.cad_program import _params, _physical_ids, _revolve_parameters, lift_to_base_level
 from archflow.state.geometry_program import CompiledGeometryProgram
@@ -152,6 +154,34 @@ _OCCT: SimpleNamespace | None = None
 #: (see the module docstring).  A redundant controller ``Init_s`` does not
 #: reset the statics, so ``_occt`` itself needs no share of this lock.
 _STEP_LOCK = threading.Lock()
+
+
+def _observe_operation(
+    observer: Callable[[Mapping[str, Any]], None] | None,
+    *,
+    phase: str,
+    status: str,
+    started_at: datetime,
+    ended_at: datetime,
+    duration_ms: float,
+    parent_event_id: str | None,
+    details: Mapping[str, Any],
+) -> None:
+    if observer is None:
+        return
+    try:
+        observer({
+            "phase": phase,
+            "status": status,
+            "started_at": started_at.isoformat().replace("+00:00", "Z"),
+            "ended_at": ended_at.isoformat().replace("+00:00", "Z"),
+            "duration_ms": round(duration_ms),
+            **({"parent_event_id": parent_event_id} if parent_event_id is not None else {}),
+            "details": dict(details),
+        })
+    except (Exception, asyncio.CancelledError):
+        # Diagnostics cannot change a kernel result or cause a write to repeat.
+        pass
 
 
 def _occt() -> SimpleNamespace:
@@ -270,10 +300,15 @@ class OcctProgramBuild:
     objects: Mapping[str, OcctObjectBuild]
     physical_object_ids: tuple[str, ...]
     elapsed_seconds: float
+    executed_operation_ids: tuple[str, ...] = ()
+    recomputed_object_ids: tuple[str, ...] = ()
+    reused_object_ids: tuple[str, ...] = ()
 
 
 def build_program_shapes(
     program: CompiledGeometryProgram, *, reusable_shapes: Mapping[str, Any] | None = None,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    observation_parent_id: str | None = None,
 ) -> OcctProgramBuild:
     """Interpret the program in operation order against the kernel.
 
@@ -282,69 +317,117 @@ def build_program_shapes(
     valid shape; nothing is written by this function. The caller supplies
     already verified, unchanged source shapes. Their producers and unused
     intermediate operations are not evaluated again.
+
+    The optional observer receives one geometry span with actual consumed,
+    recomputed, reused and emitted object ids. It does not re-evaluate the
+    caller's input-equivalence decision, and observer failures are ignored.
     """
 
     if not isinstance(program, CompiledGeometryProgram):
         raise TypeError("program must be CompiledGeometryProgram")
     occ = _occt()
     started = time.perf_counter()
+    started_at = datetime.now(timezone.utc)
     proposal = program.proposal
     operations = {operation.op_id: operation for operation in proposal.operations}
     shapes: dict[str, Any] = dict(reusable_shapes or {})
     producers = {output: operation.op_id for operation in operations.values() for output in operation.output_object_ids}
-    if set(shapes) - set(producers):
-        raise OcctBackendError("reusable shapes name objects outside the program")
-    needed: set[str] = set()
-    frontier = list(_physical_ids(proposal))
-    while frontier:
-        object_id = frontier.pop()
-        if object_id in shapes:
-            continue
-        op_id = producers.get(object_id)
-        if op_id is None or op_id in needed:
-            continue
-        needed.add(op_id)
-        frontier.extend(operations[op_id].input_object_ids)
-    if not reusable_shapes:
-        needed = set(operations)
     built: dict[str, OcctObjectBuild] = {}
-    for op_id in program.operation_order:
-        operation = operations[op_id]
-        kind = operation.kind.value
-        reused = len(operation.output_object_ids) == 1 and operation.output_object_ids[0] in shapes and op_id not in needed
-        if op_id not in needed and not reused:
-            continue
-        if kind not in SUPPORTED_OPERATION_KINDS:
-            raise OcctCapabilityError(
-                op_id,
-                kind,
-                _UNSUPPORTED_REASONS.get(kind, "operation kind is not realized"),
+    executed: list[str] = []
+    recomputed_ids: list[str] = []
+    reused_ids: list[str] = []
+    input_ids: set[str] = set()
+    physical = tuple(sorted(_physical_ids(proposal)))
+    status = "failed"
+    elapsed = None
+    try:
+        if set(shapes) - set(producers):
+            raise OcctBackendError("reusable shapes name objects outside the program")
+        needed: set[str] = set()
+        frontier = list(physical)
+        while frontier:
+            object_id = frontier.pop()
+            if object_id in shapes:
+                continue
+            op_id = producers.get(object_id)
+            if op_id is None or op_id in needed:
+                continue
+            needed.add(op_id)
+            frontier.extend(operations[op_id].input_object_ids)
+        if not reusable_shapes:
+            needed = set(operations)
+        for op_id in program.operation_order:
+            operation = operations[op_id]
+            kind = operation.kind.value
+            reused = len(operation.output_object_ids) == 1 and operation.output_object_ids[0] in shapes and op_id not in needed
+            if op_id not in needed and not reused:
+                continue
+            if kind not in SUPPORTED_OPERATION_KINDS:
+                raise OcctCapabilityError(
+                    op_id,
+                    kind,
+                    _UNSUPPORTED_REASONS.get(kind, "operation kind is not realized"),
+                )
+            if len(operation.output_object_ids) != 1:
+                raise OcctCapabilityError(
+                    op_id, kind, "exactly one output object per operation is realized"
+                )
+            params = _params(operation)
+            output = operation.output_object_ids[0]
+            try:
+                if reused:
+                    input_ids.add(output)
+                    shape = shapes[output]
+                else:
+                    executed.append(op_id)
+                    input_ids.update(operation.input_object_ids)
+                    shape = _build_operation(occ, kind, operation, params, shapes)
+            except OcctBackendError:
+                raise
+            except Exception as exc:  # OCCT failures surface as Standard_Failure
+                raise OcctBuildError(f"{op_id} ({kind}): {exc}") from exc
+            _require_built_shape(occ, shape, op_id, kind, delivery=declared_delivery(operation))
+            (reused_ids if reused else recomputed_ids).append(output)
+            shapes[output] = shape
+            built[output] = OcctObjectBuild(
+                object_id=output,
+                producer_op=op_id,
+                shape=shape,
+                hidden=bool(params.get("hidden_for_inspection", False)),
             )
-        if len(operation.output_object_ids) != 1:
-            raise OcctCapabilityError(
-                op_id, kind, "exactly one output object per operation is realized"
-            )
-        params = _params(operation)
-        output = operation.output_object_ids[0]
-        try:
-            shape = shapes[output] if reused else _build_operation(occ, kind, operation, params, shapes)
-        except OcctBackendError:
-            raise
-        except Exception as exc:  # OCCT failures surface as Standard_Failure
-            raise OcctBuildError(f"{op_id} ({kind}): {exc}") from exc
-        _require_built_shape(occ, shape, op_id, kind, delivery=declared_delivery(operation))
-        shapes[output] = shape
-        built[output] = OcctObjectBuild(
-            object_id=output,
-            producer_op=op_id,
-            shape=shape,
-            hidden=bool(params.get("hidden_for_inspection", False)),
+        elapsed = time.perf_counter() - started
+        result = OcctProgramBuild(
+            objects=built,
+            physical_object_ids=physical,
+            elapsed_seconds=elapsed,
+            executed_operation_ids=tuple(executed),
+            recomputed_object_ids=tuple(sorted(recomputed_ids)),
+            reused_object_ids=tuple(sorted(reused_ids)),
         )
-    return OcctProgramBuild(
-        objects=built,
-        physical_object_ids=tuple(sorted(_physical_ids(proposal))),
-        elapsed_seconds=time.perf_counter() - started,
-    )
+        status = "succeeded"
+        return result
+    finally:
+        _observe_operation(
+            operation_observer,
+            phase="geometry_build",
+            status=status,
+            started_at=started_at,
+            ended_at=datetime.now(timezone.utc),
+            duration_ms=1000.0 * (elapsed if elapsed is not None else time.perf_counter() - started),
+            parent_event_id=observation_parent_id,
+            details={
+                "input_identity": {"program_digest": program.program_digest},
+                "input_object_ids": sorted(input_ids),
+                "recomputed_object_ids": sorted(recomputed_ids),
+                "reused_object_ids": sorted(reused_ids),
+                "emitted_object_ids": list(physical) if status == "succeeded" else [],
+                "execution_path": "occt",
+                "scope": "program_geometry",
+                "executed_stages": ["build_program_shapes"] if executed else [],
+                "cache_status": "hit" if reused_ids and not executed and status == "succeeded"
+                    else "partial" if reused_ids else "miss" if executed else "unknown",
+            },
+        )
 
 
 def declared_delivery(operation) -> str:
@@ -1259,6 +1342,8 @@ def write_preview_three_dm(
     length_unit: str,
     linear_deflection: float,
     angular_deflection: float = 0.5,
+    operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
+    observation_parent_id: str | None = None,
 ) -> dict[str, dict[str, int]]:
     """Write a mesh-only ``.3dm`` through rhino3dm from the built shapes.
 
@@ -1269,6 +1354,10 @@ def write_preview_three_dm(
     An object with a ``PreviewMaterial`` is bound to a native material of
     the document's table (``MaterialSource`` = from object); equal materials
     share one table entry.  Returns per-object mesh vertex and face counts.
+
+    Observation separates accumulated tessellator-call time from File3dm.Write;
+    mesh construction between calls is outside that accumulated duration.
+    Observer failures never change the output or the original write error.
     """
 
     try:
@@ -1324,39 +1413,105 @@ def write_preview_three_dm(
         if item.material is not None:
             ensure_material(item.material)
     counts: dict[str, dict[str, int]] = {}
-    for item in objects:
-        vertices, triangles = tessellate_shape(
-            item.shape,
-            linear_deflection=linear_deflection,
-            angular_deflection=angular_deflection,
-        )
-        mesh = rhino3dm.Mesh()
-        for x, y, z in vertices:
-            mesh.Vertices.Add(x, y, z)
-        for a, b, c in triangles:
-            mesh.Faces.AddFace(a, b, c)
-        mesh.Normals.ComputeNormals()
-        mesh.Compact()
-        if not mesh.IsValid:
-            raise OcctBuildError(f"{item.object_id}: preview mesh is invalid")
-        attributes = rhino3dm.ObjectAttributes()
-        attributes.Name = item.object_id
-        attributes.LayerIndex = ensure_layer(item.layer)
-        attributes.Visible = bool(item.visible)
-        if item.material is not None:
-            attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
-            attributes.MaterialIndex = ensure_material(item.material)
-        for key in sorted(item.user_text):
-            attributes.SetUserString(key, item.user_text[key])
-        model.Objects.AddMesh(mesh, attributes)
-        counts[item.object_id] = {
-            "mesh_vertex_count": len(vertices),
-            "mesh_face_count": len(triangles),
-        }
+    program_digest = document_user_text.get("archflow:program_digest")
+    input_identity = {"program_digest": program_digest} if program_digest is not None else {}
+    mesh_started_at = mesh_ended_at = None
+    mesh_seconds = 0.0
+    mesh_inputs: list[str] = []
+    mesh_outputs: list[str] = []
+    mesh_status = "succeeded"
+    try:
+        for item in objects:
+            call_started_at = datetime.now(timezone.utc)
+            mesh_started_at = mesh_started_at or call_started_at
+            mesh_inputs.append(item.object_id)
+            call_started = time.perf_counter()
+            try:
+                vertices, triangles = tessellate_shape(
+                    item.shape,
+                    linear_deflection=linear_deflection,
+                    angular_deflection=angular_deflection,
+                )
+            except Exception:
+                mesh_status = "failed"
+                raise
+            finally:
+                mesh_seconds += time.perf_counter() - call_started
+                mesh_ended_at = datetime.now(timezone.utc)
+            mesh_outputs.append(item.object_id)
+            mesh = rhino3dm.Mesh()
+            for x, y, z in vertices:
+                mesh.Vertices.Add(x, y, z)
+            for a, b, c in triangles:
+                mesh.Faces.AddFace(a, b, c)
+            mesh.Normals.ComputeNormals()
+            mesh.Compact()
+            if not mesh.IsValid:
+                raise OcctBuildError(f"{item.object_id}: preview mesh is invalid")
+            attributes = rhino3dm.ObjectAttributes()
+            attributes.Name = item.object_id
+            attributes.LayerIndex = ensure_layer(item.layer)
+            attributes.Visible = bool(item.visible)
+            if item.material is not None:
+                attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+                attributes.MaterialIndex = ensure_material(item.material)
+            for key in sorted(item.user_text):
+                attributes.SetUserString(key, item.user_text[key])
+            model.Objects.AddMesh(mesh, attributes)
+            counts[item.object_id] = {
+                "mesh_vertex_count": len(vertices),
+                "mesh_face_count": len(triangles),
+            }
+    finally:
+        if mesh_started_at is not None:
+            _observe_operation(
+                operation_observer,
+                phase="tessellation",
+                status=mesh_status,
+                started_at=mesh_started_at,
+                ended_at=mesh_ended_at,
+                duration_ms=1000.0 * mesh_seconds,
+                parent_event_id=observation_parent_id,
+                details={
+                    "input_identity": dict(input_identity),
+                    "input_object_ids": list(mesh_inputs),
+                    "emitted_object_ids": list(mesh_outputs),
+                    "execution_path": "occt_tessellation",
+                    "scope": "aggregate_active_time",
+                    "executed_stages": ["tessellate_shape"],
+                    "cache_status": "unknown",
+                    "cache_reason": "kernel_mesh_reuse_unobserved",
+                },
+            )
     for key in sorted(document_user_text):
         model.Strings[key] = document_user_text[key]
-    if not model.Write(str(path), 8):
-        raise OcctBuildError("preview .3dm write failed")
+    write_started_at = datetime.now(timezone.utc)
+    write_started = time.perf_counter()
+    write_status = "failed"
+    try:
+        if not model.Write(str(path), 8):
+            raise OcctBuildError("preview .3dm write failed")
+        write_status = "succeeded"
+    finally:
+        write_seconds = time.perf_counter() - write_started
+        _observe_operation(
+            operation_observer,
+            phase="preview_write",
+            status=write_status,
+            started_at=write_started_at,
+            ended_at=datetime.now(timezone.utc),
+            duration_ms=1000.0 * write_seconds,
+            parent_event_id=observation_parent_id,
+            details={
+                "input_identity": dict(input_identity),
+                "input_object_ids": sorted(counts),
+                "emitted_object_ids": sorted(counts) if write_status == "succeeded" else [],
+                "execution_path": "file3dm_write",
+                "scope": "file_write",
+                "executed_stages": ["write_preview_three_dm"],
+                "cache_status": "not_applicable",
+            },
+        )
     return counts
 
 

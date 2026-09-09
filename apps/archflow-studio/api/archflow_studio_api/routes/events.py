@@ -38,7 +38,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..application.binding import bound_project
 from ..transport.errors import StudioError
-from ..transport.events import ModelLoadTimingDto, MonitorWriteDto, StudioEventDto
+from ..transport.events import ClientTimingDto, ModelLoadTimingDto, MonitorWriteDto, StudioEventDto
 from ..transport.events import to_dto as event_dto
 
 router = APIRouter(tags=["events"])
@@ -76,6 +76,41 @@ def record_model_load(request: Request, payload: ModelLoadTimingDto) -> MonitorW
         duration_ms=payload.duration_ms, project_id=binding.project_id, run_id=payload.run_id,
         source_ref=payload.source_ref,
         related_event_id=f"studio:candidate:{binding.project_id}:{payload.run_id}",
+    )
+    return MonitorWriteDto(recorded=event_id is not None)
+
+
+@router.post("/events/timing", response_model=MonitorWriteDto)
+def record_client_timing(request: Request, payload: ClientTimingDto) -> MonitorWriteDto:
+    state = request.app.state
+    if state.settings.monitor_dir is None:
+        return MonitorWriteDto(recorded=False)
+    binding = bound_project(state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(409, "PROJECT_MISMATCH", "This measurement names another project.")
+    if payload.run_id is not None:
+        try:
+            binding.load_run(payload.run_id)
+        except (StudioError, ValueError, OSError, ProjectRepositoryError):
+            # A failed or queued job may not yet have created its retained run.
+            state.jobs.for_candidate(payload.run_id)
+    if payload.source_ref is not None:
+        try:
+            ref = record_ref_from_uri(payload.source_ref, binding.project_id)
+            binding.repository.load_json(ref)
+        except (ValueError, OSError, ProjectRepositoryError) as exc:
+            raise StudioError(409, "SOURCE_MISMATCH", "The measurement input is not retained by this project.") from exc
+    details = payload.details.model_dump(exclude_none=True)
+    asset_sha = details.pop("asset_sha256", None)
+    if asset_sha is not None:
+        details["input_identity"] = {"asset_sha256": asset_sha}
+    event_id = state.monitor.record(
+        event_id=f"studio:client:{payload.event_id}", operation_id=f"studio:client:{payload.operation_id}",
+        parent_event_id=f"studio:client:{payload.parent_event_id}" if payload.parent_event_id else None,
+        phase=payload.phase, timing_scope="interaction" if payload.phase == "design_edit" else "client_wait",
+        status=payload.status, started_at=payload.started_at.isoformat(),
+        ended_at=payload.ended_at.isoformat() if payload.ended_at else None, duration_ms=payload.duration_ms,
+        project_id=binding.project_id, run_id=payload.run_id, source_ref=payload.source_ref, details=details,
     )
     return MonitorWriteDto(recorded=event_id is not None)
 

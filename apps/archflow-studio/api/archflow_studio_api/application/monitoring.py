@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import logging
+import inspect
 from time import perf_counter
 from uuid import uuid4
 
@@ -35,6 +37,33 @@ class StudioMonitor:
 
     def __init__(self, store: UsageLog | None):
         self.store = store
+        self._context = ContextVar("studio_operation", default={})
+
+    def current(self):
+        return dict(self._context.get())
+
+    @contextmanager
+    def scope(self, *, operation_id: str | None = None, parent_event_id: str | None = None):
+        token = self._context.set({"operation_id": operation_id, "event_id": parent_event_id})
+        try:
+            yield
+        finally:
+            self._context.reset(token)
+
+    def observer(self, *, project_id=None, run_id=None, source_ref=None, parent_event_id=None):
+        """Freeze the host association before crossing a callback or worker boundary."""
+
+        current = self.current()
+        association = dict(project_id=project_id or current.get("project_id"), run_id=run_id or current.get("run_id"),
+                           source_ref=source_ref or current.get("source_ref"),
+                           operation_id=current.get("operation_id"), parent_event_id=parent_event_id or current.get("event_id"))
+
+        def observed(row):
+            try:
+                self.record(**{**association, **dict(row)})
+            except (Exception, asyncio.CancelledError):
+                log.warning("MonkeyMonitor could not read this operation observation; diagnostics are incomplete.")
+        return observed
 
     def record(
         self, *, phase: str, status: str, started_at: str,
@@ -45,25 +74,32 @@ class StudioMonitor:
         run_id: str | None = None, source_ref: str | None = None,
         related_event_id: str | None = None, session_id: str | None = None,
         parent_session_id: str | None = None, turn_id: str | None = None,
+        operation_id: str | None = None, parent_event_id: str | None = None, details=None,
         billing_mode: str = "unknown",
     ) -> str | None:
         if self.store is None:
             return None
         try:
+            current = self.current()
+            if parent_event_id is None:
+                parent_event_id = current.get("parent_event_id") if event_id == current.get("event_id") else current.get("event_id")
             event = UsageEvent(
                 event_id=event_id or str(uuid4()), source="studio",
                 provider=provider, model=model, phase=phase, status=status,
                 started_at=started_at, ended_at=ended_at, duration_ms=duration_ms,
                 timing_scope=timing_scope, model_call=model_call,
                 tokens=tokens if tokens is not None else TokenUsage(),
-                project_id=project_id, run_id=run_id, source_ref=source_ref,
+                project_id=project_id or current.get("project_id"), run_id=run_id or current.get("run_id"),
+                source_ref=source_ref or current.get("source_ref"),
                 related_event_id=related_event_id, session_id=session_id,
                 parent_session_id=parent_session_id, turn_id=turn_id,
                 billing_mode=billing_mode,
+                operation_id=operation_id or current.get("operation_id"), parent_event_id=parent_event_id,
+                details={} if details is None else details,
             )
             self.store.append(event)
             return event.event_id
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             log.warning("MonkeyMonitor could not record this operation; diagnostics are incomplete.")
             return None
 
@@ -72,6 +108,8 @@ class StudioMonitor:
         self, phase: str, *, project_id: str | None = None,
         run_id: str | None = None, source_ref: str | None = None,
         related_event_id: str | None = None, event_id: str | None = None,
+        operation_id: str | None = None, parent_event_id: str | None = None, details=None,
+        timing_scope: str = "service",
     ):
         """Measure only the service call; a nested export is detail of this interval.
 
@@ -79,14 +117,20 @@ class StudioMonitor:
         by the service itself. Both log rows retain the same operation identity.
         """
 
+        current = self.current()
+        event_id = event_id or str(uuid4())
         association = {
-            "event_id": event_id or str(uuid4()), "project_id": project_id,
-            "run_id": run_id, "source_ref": source_ref,
+            "event_id": event_id, "project_id": project_id or current.get("project_id"),
+            "run_id": run_id or current.get("run_id"), "source_ref": source_ref or current.get("source_ref"),
             "related_event_id": related_event_id,
+            "operation_id": operation_id or current.get("operation_id") or event_id,
+            "parent_event_id": parent_event_id or current.get("event_id"),
+            "details": {} if details is None else dict(details), "timing_scope": timing_scope,
         }
         started_at = datetime.now(timezone.utc).isoformat()
         started = perf_counter()
         self.record(phase=phase, status="running", started_at=started_at, **association)
+        token = self._context.set(association)
         status = "succeeded"
         try:
             yield association
@@ -94,6 +138,7 @@ class StudioMonitor:
             status = "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)) else "failed"
             raise
         finally:
+            self._context.reset(token)
             self.record(
                 phase=phase, status=status, started_at=started_at,
                 ended_at=datetime.now(timezone.utc).isoformat(),
@@ -116,23 +161,25 @@ class MonitoredCompiler:
         return getattr(self.compiler, "model", None)
 
     def compile(self, *, message: str, selection: Selection, projection: StateProjection) -> Compilation:
-        started_at = datetime.now(timezone.utc).isoformat()
-        started = perf_counter()
-        result, receipt, status = None, None, "failed"
-        try:
-            result = self.compiler.compile(message=message, selection=selection, projection=projection)
-            receipt = result.receipt
-            status = result.status
-            return result
-        except BaseException as exc:
-            receipt = getattr(exc, "receipt", None)
-            if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
-                status = "cancelled"
-            raise
-        finally:
-            duration_ms = round((perf_counter() - started) * 1000)
-            # A deterministic pass calls no model and cannot acquire billed usage.
-            if receipt is not None or self.provider != "deterministic":
+        spans = []
+        result, receipt = None, None
+        with self.monitor.measure(
+            "intent_compile", project_id=projection.project_id,
+            run_id=getattr(getattr(projection, "run", None), "run_id", None),
+            source_ref=projection_source_ref(projection),
+        ):
+            try:
+                options = dict(message=message, selection=selection, projection=projection)
+                # Older injected compilers may not implement the optional observer.
+                if "operation_observer" in inspect.signature(self.compiler.compile).parameters:
+                    options["operation_observer"] = spans.append
+                result = self.compiler.compile(**options)
+                receipt = result.receipt
+                return result
+            except BaseException as exc:
+                receipt = getattr(exc, "receipt", None)
+                raise
+            finally:
                 try:
                     provider = result.provider if result is not None else self.provider
                     model = getattr(receipt, "model_id", None) or (result.model if result is not None else self.model) or "unknown"
@@ -141,17 +188,25 @@ class MonitoredCompiler:
                         "cache_write_1h_input_tokens", "reasoning_output_tokens",
                     )}
                     receipt_id = getattr(receipt, "receipt_id", None)
-                    self.monitor.record(
-                        event_id=f"studio:model:{receipt_id}" if receipt_id else None, provider=provider,
-                        model=model, phase="intent", status=status, started_at=started_at,
-                        ended_at=datetime.now(timezone.utc).isoformat(),
-                        timing_scope="model_call", model_call=True,
-                        duration_ms=duration_ms, tokens=TokenUsage(**counts),
-                        billing_mode="api_estimate" if provider == "anthropic" else "unknown",
-                        project_id=projection.project_id,
-                        run_id=getattr(getattr(projection, "run", None), "run_id", None),
-                        source_ref=projection_source_ref(projection),
-                    )
+                    for index, span in enumerate(spans):
+                        # Only the observed provider boundary is model-request time.
+                        # Receipt counters belong to the actual call, never its parent.
+                        self.monitor.record(
+                            **span, event_id=f"studio:model:{receipt_id}" if receipt_id and len(spans) == 1 else None,
+                            provider=provider, model=model, timing_scope="model_call", model_call=True,
+                            tokens=TokenUsage(**counts) if index == len(spans) - 1 else TokenUsage(),
+                            billing_mode="api_estimate" if provider == "anthropic" else "unknown",
+                        )
+                    if not spans and receipt is not None and self.provider != "deterministic":
+                        # Compatibility for external compilers with a receipt but no
+                        # observed boundary: preserve usage without inventing duration.
+                        self.monitor.record(
+                            phase="model_usage", status=getattr(receipt, "status", "unknown"),
+                            event_id=f"studio:model:{receipt_id}" if receipt_id else None,
+                            started_at=datetime.now(timezone.utc).isoformat(), timing_scope="unknown", model_call=True,
+                            provider=provider, model=model, tokens=TokenUsage(**counts),
+                            billing_mode="api_estimate" if provider == "anthropic" else "unknown",
+                        )
                 except Exception:
                     # Monitoring is optional; losing diagnostics must never repeat a paid call.
                     log.warning("MonkeyMonitor could not record this invocation; usage is incomplete.")

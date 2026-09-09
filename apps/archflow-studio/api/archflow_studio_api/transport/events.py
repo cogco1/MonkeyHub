@@ -48,6 +48,44 @@ class MonitorWriteDto(BaseModel):
     recorded: bool
 
 
+class ClientTimingDetailsDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    active_wait_ms: int | None = Field(default=None, ge=0)
+    between_actions_ms: int | None = Field(default=None, ge=0)
+    input_bytes: int | None = Field(default=None, ge=0)
+    asset_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    retry_attempt: int | None = Field(default=None, ge=0)
+    request_kind: Literal["candidate_poll", "candidate_read", "artifact_bytes", "document_bytes"] | None = None
+
+
+class ClientTimingDto(BaseModel):
+    """Browser intervals for one visible action; no message or document content."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    event_id: UUID = Field(alias="eventId")
+    operation_id: UUID = Field(alias="operationId")
+    parent_event_id: UUID | None = Field(alias="parentEventId", default=None)
+    phase: Literal["design_edit", "intent_wait", "candidate_wait", "model_load", "model_download", "model_parse", "drawing_wait", "document_load", "document_render", "stage_wait", "api_wait"]
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str | None = Field(alias="runId", default=None, min_length=1)
+    source_ref: str | None = Field(alias="sourceRef", default=None)
+    started_at: AwareDatetime = Field(alias="startedAt")
+    ended_at: AwareDatetime | None = Field(alias="endedAt", default=None)
+    duration_ms: int | None = Field(alias="durationMs", default=None, ge=0)
+    status: Literal["running", "succeeded", "failed", "cancelled"]
+    details: ClientTimingDetailsDto = Field(default_factory=ClientTimingDetailsDto)
+
+    @model_validator(mode="after")
+    def ordered_interval(self) -> ClientTimingDto:
+        if self.ended_at is not None and self.ended_at < self.started_at:
+            raise ValueError("endedAt precedes startedAt")
+        if self.status != "running" and (self.ended_at is None or self.duration_ms is None):
+            raise ValueError("completed timing requires endedAt and durationMs")
+        return self
+
+
 class StudioEventDto(BaseModel):
     """One event on ``GET /api/events``."""
 

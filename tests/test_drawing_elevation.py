@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import tempfile
 import unittest
 from dataclasses import replace
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch
 
 from archflow.adapters import occt_backend
+from monkeydiagram import drawing_elevation
 from monkeydiagram.drawing_svg import svg_objects
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT, SEAT_OCCT_EXECUTION
@@ -159,7 +163,27 @@ class FreezeElevationTests(unittest.TestCase):
         return payload
 
     def test_freezes_svg_png_and_receipt_in_a_drawing_run_on_the_source_base_and_reads_them_back_cold(self) -> None:
-        drawing = freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="drawing-run")
+        observations = []
+        drawing = freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="drawing-run",
+                                             operation_observer=observations.append, parent_event_id="drawing-operation")
+        completed = [event for event in observations if event["status"] == "succeeded"]
+        self.assertEqual([event["phase"] for event in completed],
+                         ["drawing.load", "drawing.hlr", "drawing.svg", "drawing.png", "drawing.persist"])
+        self.assertEqual(len(observations), 2 * len(completed))
+        for event in completed:
+            begun = next(row for row in observations if row["event_id"] == event["event_id"] and row["status"] == "running")
+            self.assertIsNone(begun["duration_ms"])
+            self.assertIsNone(begun["ended_at"])
+            self.assertGreaterEqual(datetime.fromisoformat(event["ended_at"]), datetime.fromisoformat(event["started_at"]))
+            self.assertGreaterEqual(event["duration_ms"], 0)
+            self.assertEqual(event["parent_event_id"], "drawing-operation")
+            self.assertEqual(event["details"]["input_identity"]["step_sha256"], self.step_sha)
+        hlr = next(event for event in completed if event["phase"] == "drawing.hlr")
+        svg = next(event for event in completed if event["phase"] == "drawing.svg")
+        self.assertEqual(hlr["details"]["input_object_ids"], sorted(OBJECTS))
+        self.assertEqual(hlr["details"]["scope"], "global_visibility")
+        self.assertEqual(svg["details"]["emitted_object_ids"], list(svg_objects(drawing.svg)))
+        self.assertNotEqual(hlr["details"]["input_object_ids"], svg["details"]["emitted_object_ids"])
         self.assertEqual(self.repository.read_head(), self.head)
         self.assertEqual(drawing.run.base, self.source_run.base)
         receipt = drawing.receipt
@@ -185,9 +209,49 @@ class FreezeElevationTests(unittest.TestCase):
         self.assertEqual(reopened.load_run("drawing-run").base, self.source_run.base)
         self.assertEqual(reopened.read_head(), self.head)
 
-        again = freeze_model_axis_elevation(reopened, source=self.source, view=_view(), drawing_run_id="drawing-run")
+        with patch.object(drawing_elevation, "project_occt_lines", wraps=drawing_elevation.project_occt_lines) as project:
+            again = freeze_model_axis_elevation(reopened, source=self.source, view=_view(), drawing_run_id="drawing-run",
+                                                operation_observer=observations.append, parent_event_id="repeated-operation")
+        self.assertEqual(project.call_count, 1)
+        self.assertTrue(any(event["phase"] == "drawing.hlr" and event["parent_event_id"] == "repeated-operation"
+                            and event["status"] == "succeeded" for event in observations))
         self.assertEqual((again.receipt_ref, again.svg_ref, again.png_ref), (drawing.receipt_ref, drawing.svg_ref, drawing.png_ref))
         self.assertEqual(len(list_model_axis_elevations(reopened, "drawing-run")), 1)
+
+    def test_observer_failure_cannot_change_drawing_or_hide_a_source_refusal(self) -> None:
+        for error in (OSError("diagnostic unavailable"), asyncio.CancelledError()):
+            with self.subTest(error=type(error).__name__):
+                def unavailable(event):
+                    raise error
+
+                drawing = freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="drawing-run",
+                                                     operation_observer=unavailable)
+                self.assertEqual(svg_objects(drawing.svg), ("far", "skin", "wall"))
+                self.assertEqual(read_model_axis_elevation(self.repository, drawing.receipt_ref), drawing)
+                with self.assertRaisesRegex(DrawingElevationError, "sha256"):
+                    freeze_model_axis_elevation(self.repository, source=replace(self.source, step_sha256="f" * 64),
+                                                view=_view(), drawing_run_id="refused-run", operation_observer=unavailable)
+        observations = []
+        with self.assertRaisesRegex(DrawingElevationError, "sha256"):
+            freeze_model_axis_elevation(self.repository, source=replace(self.source, step_sha256="f" * 64),
+                                        view=_view(), drawing_run_id="refused-run", operation_observer=observations.append)
+        self.assertEqual([(row["phase"], row["status"]) for row in observations],
+                         [("drawing.load", "running"), ("drawing.load", "failed")])
+        self.assertFalse((self.root / "runs" / "refused-run").exists())
+
+    def test_failed_or_cancelled_projection_records_no_render_or_write_that_did_not_run(self) -> None:
+        for error in (occt_backend.OcctBackendError("projection stopped"), asyncio.CancelledError()):
+            with self.subTest(error=type(error).__name__):
+                observations = []
+                with patch.object(drawing_elevation, "project_occt_lines", side_effect=error) as project:
+                    with self.assertRaises(asyncio.CancelledError if isinstance(error, asyncio.CancelledError) else DrawingElevationError):
+                        freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="failed-run",
+                                                    operation_observer=observations.append)
+                self.assertEqual(project.call_count, 1)
+                self.assertEqual(observations[-1]["phase"], "drawing.hlr")
+                self.assertEqual(observations[-1]["status"], "cancelled" if isinstance(error, asyncio.CancelledError) else "failed")
+                self.assertEqual({row["phase"] for row in observations}, {"drawing.load", "drawing.hlr"})
+                self.assertFalse((self.root / "runs" / "failed-run").exists())
 
     def test_a_hidden_line_view_is_a_second_drawing_in_the_same_run(self) -> None:
         first = freeze_model_axis_elevation(self.repository, source=self.source, view=_view(), drawing_run_id="drawing-run")

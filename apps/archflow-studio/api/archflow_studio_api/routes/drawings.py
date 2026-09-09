@@ -22,4 +22,5 @@ def create_elevation(request: Request, payload: ElevationRequestDto) -> SourceDo
         model_source=None if payload.model_source is None else model_source_from(payload.model_source),
         view=payload.view, drawing_id=payload.drawing_id, hidden_lines=payload.hidden_lines,
         scale_denominator=payload.scale_denominator,
+        monitor=request.app.state.monitor,
     ))

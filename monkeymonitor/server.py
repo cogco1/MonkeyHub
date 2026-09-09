@@ -80,7 +80,62 @@ class MonitorData:
         rows = sorted(unique.values(), key=lambda event: event.started_at, reverse=True)
         if any(event.status in {"counter_discontinuity", "partial_history", "counter_reset_unknown", "last_only"} for event in rows):
             warnings.append("Codex 累计计数存在断点，已保留可识别的单次用量；此汇总不是完整账单。")
-        return {"events": [event.to_dict() for event in rows], "warnings": warnings}
+        return {"events": _diagnose_operations([event.to_dict() for event in rows]), "warnings": warnings}
+
+
+def _diagnose_operations(rows: list[dict]) -> list[dict]:
+    """Compare observed inputs in this selection, without another history store.
+
+    Matching metadata establishes repeated inputs, not that a retry or a retained
+    result was safe to omit. Actual execution and reuse paths remain separate.
+    """
+    seen, contexts = {}, {}
+    for row in sorted(rows, key=lambda event: event["started_at"]):
+        if row["source"] != "studio" or row["status"] == "running":
+            continue
+        phase, details = row["phase"], row["details"]
+        if not (phase in {"model_request", "drawing_generate", "drawing.hlr", "geometry_build", "element_production", "model_download", "document_load"}
+                or phase.startswith("geometry_export.")):
+            continue
+        identity = details.get("input_identity")
+        if not identity:
+            details["duplicate_status"] = "insufficient_input_identity"
+            continue
+        category = ".".join(phase.split(".")[:2]) if phase.startswith("geometry_export.") else phase
+        key = (row.get("project_id"), category, row["provider"], row["model"], json.dumps(identity, sort_keys=True, separators=(",", ":")))
+        previous = seen.get(key)
+        cache_hit = details.get("cache_status") == "hit" or details.get("execution_path") in {"reused", "retained_drawing"}
+        if cache_hit:
+            details["duplicate_status"] = "reused_result"
+        elif previous is None:
+            details["duplicate_status"] = "first_observed_input"
+        else:
+            # input_equivalent belongs to the producer's selected-source check;
+            # this comparison may refer to another historical execution.
+            details["comparison_event_id"] = previous["event_id"]
+            if phase == "model_request":
+                details.update(duplicate_status="same_input_request", duplicate_reason="same_observed_model_inputs",
+                               reuse_opportunity="provider_cache_policy_requires_verification")
+            elif phase in {"model_download", "document_load"}:
+                details.update(duplicate_status="same_asset_request", duplicate_reason="same_asset_identity",
+                               reuse_opportunity="browser_cache_transfer_not_observed")
+            else:
+                details.update(duplicate_status="repeated_execution", duplicate_reason="same_observed_execution_inputs",
+                               reuse_opportunity="retained_result_binding_requires_verification")
+            if previous["status"] not in {"succeeded", "completed", "compiled"}:
+                details["reuse_opportunity"] = "previous_attempt_has_no_verified_result"
+        if phase == "model_request" and identity.get("context_digest") and identity.get("provider_fingerprint"):
+            context_key = (row.get("project_id"), row["provider"], row["model"], identity["context_digest"], identity["provider_fingerprint"])
+            context = contexts.get(context_key)
+            if context is not None and previous is None:
+                details.update(stable_input_parts=["context_digest", "provider_fingerprint"],
+                               opportunity_refs=[context["event_id"]],
+                               reuse_opportunity="shared_context_prefix_eligibility_unknown")
+            contexts[context_key] = row
+        # Failed/cancelled attempts still happened. Their inputs can recur even
+        # though they establish no successful result to reuse.
+        seen[key] = row
+    return rows
 
 
 class MonitorHandler(BaseHTTPRequestHandler):
