@@ -2,12 +2,13 @@
 
 先完成一件事：**在自己的电脑、源码目录和运行目录里跑通一个现有任务，让另一人能按同一版本复现。** 不需要先理解整个 ArchFlow，也不用先新增模块。
 
-若从尚未合并的 PR 进入本页，直接把本页链接交给 Agent；此时从 `main` clone 的源码里可能还没有这份清单，不必为了取得文档而更换约定的代码基线。
+ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对应 Actions 结果；已有任务则使用负责人约定的提交。本页随 `main` 更新，可直接把页面链接交给 Agent。
 
 ## 先看这一屏
 
 | 你要做什么 | 从哪里进入 | 第一个结果 |
 | --- | --- | --- |
+| 直接使用 MonkeyHub 整合包 | [Windows 候选包安装说明](../apps/monkeyhub/installer/README.md) | 完整解压后运行 `INSTALL_MONKEYHUB.cmd`，打开 Hub；无需自行安装 Python 或 Node.js |
 | 使用或改进研究工具、Skills、实验记录、图表与报告 | [共享工具箱](https://github.com/cogco1/huaguoshan-digital-infrastructure)，先读其 `AGENTS.md`、`README.md`、`docs/CLI.md` | 在自己的 Runtime 生成一次合成演示，找到报告、图表和来源 run |
 | 使用或改进 MonkeyArch 界面、模型修改与候选执行 | [ArchFlow](https://github.com/cogco1/ARCHFLOW_V4)，先读 [AGENTS.md](../AGENTS.md)，再按本文运行 | API/Web 连通，一次合成候选修改读回为 `2.2` |
 | 修改某个已有能力 | 对应仓库的现有实现；ArchFlow 查 [SYSTEM_MAP.md](SYSTEM_MAP.md) 和 [模块契约](../governance/module_registry.json) | 找到唯一负责模块、真实调用方和相关测试，约定一个小修改 |
@@ -15,16 +16,19 @@
 
 **第一次默认任务：接入复现。** 先跑工具箱；需要参与建模时再跑 ArchFlow。把版本、实际结果和最卡的一步回传到约定的 Issue/PR。没有发现真实问题，就不为了“交第一个 PR”制造代码改动。
 
+整合包按包内 `source-version.txt` 标明的版本运行，更新源码不会自动更新已安装的包。第二台干净 Windows 和第二位使用者的实际验收仍需完成；下面的源码接入回路也不替代真实项目试用。
+
 ## 今天按什么顺序收口
 
-- [ ] **主线负责人：确定可分发代码。** 审查并发布接入需要的源码及文档，给出两个仓库的准确提交和审查人。不要让新成员猜维护者本机的未提交版本。
-- [ ] **主线负责人：恢复 ArchFlow 远端检查。** 先处理下面已经定位的旧 CI 入口，并集成已有首次接入修复；不要安排朋友重复实现本地已有的功能。
-- [ ] **新成员与她的 Agent：独立复现。** 从 GitHub 获取代码，在自己的环境完成下面的最小回路。工具箱这一项可以先做，不必等 ArchFlow 集成结束。
+- [ ] **主线负责人：给出接入版本。** 给出所选仓库的准确提交、任务和审查人。不要让新成员猜维护者本机的未提交版本。
+- [ ] **主线负责人：核对所选版本的检查结果。** ArchFlow 的 [远端工作流](../.github/workflows/verify.yml) 已包含架构检查、核心与 Studio API 测试、Web 检查及 Windows/Linux 首次接入检查；以该提交实际 Actions 结果为准。
+- [ ] **新成员与她的 Agent：独立复现。** 从 GitHub 获取代码，在自己的环境完成所选仓库的最小回路。
 - [ ] **双方：交接一个真实小任务。** 依据复现中实际遇到的问题，约定修改文件、完成动作和审查人，再开短分支。第二人复跑或审查后才算完成交接。
 
 这四项完成后，再决定新的模型功能。第一天不要求跑完整建筑、接入外部模型服务或增加通用框架。
 
-### 发布状态快照：2026-09-06
+<details>
+<summary>2026-09-06 历史快照（不作为当前接入基线）</summary>
 
 | 仓库 | 当日 GitHub `main` | 已核实状态 |
 | --- | --- | --- |
@@ -33,7 +37,9 @@
 
 当日维护者的 ArchFlow 本地提交为 `a587156`，比上述远端多 24 笔提交；另有未提交改动。工具箱本地提交为 `c3b54af`，另有 `hgs` 查询、目录及命名等未提交改动。本清单发布不等于这些代码已发布。
 
-下列首次运行命令已对上述远端源码核对；这不等于已在新成员电脑执行。每次接入重新读取 `main` 和 Actions；有更新时采用负责人指定的已发布版本，不按这个历史快照回退代码。
+</details>
+
+下列 ArchFlow 命令对应当前源码入口；工具箱保留其独立发布边界。每次接入记录所选仓库的实际提交并查看 Actions，不按历史快照回退代码。源码检查通过不等于已在新成员电脑完成接入。
 
 ## 1. 负责人先给什么
 
@@ -117,6 +123,7 @@ $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
 & $ArchPython -m pip install -r apps/archflow-studio/api/requirements.txt httpx2
 & $ArchPython -m pip check
 npm.cmd ci --prefix apps/archflow-studio/web
+npm.cmd ci --prefix apps/archflow-studio/web/tools/openapi-ts
 
 Set-Location "$ArchSource\apps\archflow-studio\api"
 $env:ARCHFLOW_ONBOARDING_PROJECTS = "$ArchRuntime\workspace\projects"
@@ -135,7 +142,7 @@ $env:ARCHFLOW_STUDIO_PROJECT_DIR = "$ArchRuntime\workspace\projects\demo-project
 $env:ARCHFLOW_STUDIO_REFERENCE_RUN = ''
 $env:ARCHFLOW_STUDIO_MODE = 'local'
 $env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
-$env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
+$env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
 & $ArchPython -m archflow_studio_api.main --host 127.0.0.1 --port 18080
 ```
 
@@ -191,14 +198,16 @@ $result = Invoke-RestMethod "$api/state?run=$($accepted.candidateId)"
 $ArchSource = 'D:\code\ARCHFLOW_V4'
 $ArchRuntime = 'D:\runtime\archflow-first-trial'
 $ArchPython = "$ArchRuntime\venv\Scripts\python.exe"
+$env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
 Set-Location "$ArchSource\apps\archflow-studio\api"
 & $ArchPython -m unittest tests.test_health tests.test_protocol tests.test_candidate
 Set-Location "$ArchSource\apps\archflow-studio\web"
 npm.cmd test
+npm.cmd run api:check
 npm.cmd run build
 ```
 
-旧远端 `7b3d09f` 的 `api:dump` 固定调用 `py -3.12`，可能绕过 venv；生成客户端比较还可能受 CRLF/LF 影响。这两项已有本地修复待集成，不要求新成员重新实现。涉及 API/DTO 的开发仍需在负责人指定的新基线上运行 `api:check`，不能跳过真实接口差异。
+`api:check` 使用 PATH 中的 `python` 导出实际 API，再用独立安装的生成器核对客户端；比较已处理 CRLF/LF 差异。涉及 API/DTO 的开发需保持这项检查通过。
 
 </details>
 
@@ -222,7 +231,7 @@ npm.cmd run build
 
 ```text
 请先读取这份 GitHub 接入清单，帮我完成首次接入（代码版本仍按负责人指定）：
-https://github.com/cogco1/ARCHFLOW_V4/blob/ebb7c9b6441132d29c95a3a3ca28f8d54ebedd99/docs/TEAM_ONBOARDING.md
+https://github.com/cogco1/ARCHFLOW_V4/blob/main/docs/TEAM_ONBOARDING.md
 先读两个目标仓库的 AGENTS.md、这份清单和所选仓库 README，报告：
 当前能访问的仓库与提交、我今天先跑哪个入口、成功时应看到什么。
 不要从旧会话或维护者个人路径猜环境，也不要把本地开发功能当作 GitHub 已发布功能。

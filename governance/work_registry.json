@@ -20,6 +20,7 @@
         ".gitignore",
         "AGENTS.md",
         "README.md",
+        "docs/TEAM_ONBOARDING.md",
         "apps/archflow-studio/README.md",
         "apps/archflow-studio/api/archflow_studio_api/adapters/harness.py",
         "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
