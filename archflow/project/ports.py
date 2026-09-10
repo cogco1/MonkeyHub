@@ -96,3 +96,16 @@ class WorkspaceSink(Protocol):
         source: BinaryIO,
     ) -> ProjectArtifactRef: ...
 
+
+class DesignBranchStore(Protocol):
+    """Project-scoped positions in retained design history."""
+
+    def read_design_branches(self) -> dict[str, dict[str, Any]]: ...
+
+    def compare_and_swap_design_branch(
+        self,
+        *,
+        branch_id: str,
+        expected_head: ProjectRecordRef | None,
+        branch: Mapping[str, Any],
+    ) -> dict[str, Any]: ...

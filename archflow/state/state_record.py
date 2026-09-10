@@ -72,6 +72,7 @@ CHECK_KINDS: Mapping[str, str] = MappingProxyType({
     "support_contact": "the subject supports the object: contact within tolerance",
     "clearance_interval": "the gap between subject and object lies in interval_m",
     "aperture_exists": "the object opening lies within the subject host's extent and has geometry",
+    "lintel_minimum_bearing": "the declared axis-aligned lintel bounds meet minimum bearing at both opening span ends, align bottom to opening head and overlap transversely",
     "solid_nonpenetration": "explicit final solid pairs have no positive common volume; contact and separation are allowed",
 })
 """The checks the spine can measure: check_kind id -> one line of meaning.
@@ -288,6 +289,25 @@ class Relation:
             require_identifier(self.datum_role, "datum_role")
         _refs(self.basis_refs, f"relation {self.relation_id} basis_refs")
         object.__setattr__(self, "parameters", dict(self.parameters))
+        if self.validator is not None and self.validator.check_kind == "lintel_minimum_bearing":
+            if self.kind != "dependency":
+                raise StateRecordError(f"relation {self.relation_id}: lintel_minimum_bearing requires kind dependency")
+            required = {"opening_object_id", "lintel_object_id", "span_axis", "minimum_bearing_m"}
+            if set(self.parameters) != required:
+                raise StateRecordError(f"relation {self.relation_id}: lintel_minimum_bearing requires exactly {', '.join(sorted(required))}")
+            for name in ("opening_object_id", "lintel_object_id"):
+                require_identifier(self.parameters[name], f"lintel_minimum_bearing {name}")
+            if self.parameters["opening_object_id"] == self.parameters["lintel_object_id"]:
+                raise StateRecordError(f"relation {self.relation_id}: opening and lintel must name distinct objects")
+            if self.parameters["span_axis"] not in ("x", "z"):
+                raise StateRecordError(f"relation {self.relation_id}: lintel_minimum_bearing span_axis must be x or z")
+            bearing = self.parameters["minimum_bearing_m"]
+            try:
+                finite_bearing = isinstance(bearing, (int, float)) and not isinstance(bearing, bool) and math.isfinite(bearing)
+            except OverflowError:
+                finite_bearing = False
+            if not finite_bearing or bearing < 0:
+                raise StateRecordError(f"relation {self.relation_id}: minimum_bearing_m must be a non-negative finite number of metres")
         if self.validator is not None and self.validator.check_kind == "solid_nonpenetration":
             pairs = self.parameters.get("object_pairs")
             if not isinstance(pairs, (list, tuple)) or not pairs:
@@ -932,6 +952,46 @@ class StateRecordOperator:
     remove_parameter_keys: tuple[str, ...] = ()
     remove_relation_ids: tuple[str, ...] = ()
 
+    def to_dict(self) -> dict[str, object]:
+        """Retain the executable change, including its exact original base."""
+        return {
+            "kind": self.kind.value,
+            "base_record_digest": self.base_record_digest,
+            "base_state_digest": self.base_state_digest,
+            "protected": list(self.protected), "target_ref": self.target_ref,
+            "key": self.key, "value": self.value,
+            "massing_pack": None if self.massing_pack is None else self.massing_pack.to_dict(),
+            "entities": [item.to_dict() for item in self.entities],
+            "relations": [item.to_dict() for item in self.relations],
+            "basis_refs": list(self.basis_refs),
+            "parameters": [item.to_dict() for item in self.parameters],
+            "remove_entity_ids": list(self.remove_entity_ids),
+            "remove_parameter_keys": list(self.remove_parameter_keys),
+            "remove_relation_ids": list(self.remove_relation_ids),
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "StateRecordOperator":
+        if not isinstance(value, Mapping) or set(value) != {
+            "kind", "base_record_digest", "base_state_digest", "protected", "target_ref",
+            "key", "value", "massing_pack", "entities", "relations", "basis_refs", "parameters",
+            "remove_entity_ids", "remove_parameter_keys", "remove_relation_ids",
+        }:
+            raise StateRecordError("state-record operator fields are invalid")
+        return cls(
+            kind=StateRecordEditKind(value["kind"]),
+            base_record_digest=value["base_record_digest"], base_state_digest=value["base_state_digest"],
+            protected=tuple(value["protected"]), target_ref=value["target_ref"], key=value["key"], value=value["value"],
+            massing_pack=None if value["massing_pack"] is None else SchematicPack.from_dict(value["massing_pack"]),
+            entities=tuple(Entity.from_dict(item) for item in value["entities"]),
+            relations=tuple(Relation.from_dict(item) for item in value["relations"]),
+            basis_refs=tuple(value["basis_refs"]),
+            parameters=tuple(Parameter.from_dict(item) for item in value["parameters"]),
+            remove_entity_ids=tuple(value["remove_entity_ids"]),
+            remove_parameter_keys=tuple(value["remove_parameter_keys"]),
+            remove_relation_ids=tuple(value["remove_relation_ids"]),
+        )
+
     def __post_init__(self) -> None:
         if not isinstance(self.kind, StateRecordEditKind):
             raise TypeError("state-record operator kind is invalid")
@@ -1018,6 +1078,63 @@ def compile_component_edit(
         remove_relation_ids=tuple(sorted(remove_relation_ids)),
         protected=tuple(sorted(protected)),
     )
+
+
+def combine_component_changes(
+    record: StateRecord, candidates: tuple[StateRecord, ...], *, protected: tuple[str, ...] = (),
+) -> StateRecordOperator:
+    """Normalize independent component changes into one operator on their common base.
+
+    The supplied candidates have already been replayed by the caller. This
+    comparison uses their materialized content, including declared dependency
+    effects, so neither source operator has its base digest rewritten.
+    """
+    if len(candidates) < 2:
+        raise StateRecordError("combine needs at least two candidate results")
+    changed_sets: list[set[str]] = []
+    closures: list[set[str]] = []
+    write_sets: list[set[str]] = []
+    edges = tuple(edge for state in (record, *candidates) for edge in state.dependency_edges())
+
+    def reached(changed: set[str], effects: tuple[DependencyEffect, ...]) -> set[str]:
+        result = set(changed)
+        while True:
+            expanded = result | {edge.downstream_ref for edge in edges
+                                 if edge.effect in effects and edge.upstream_ref in result}
+            if expanded == result:
+                return result
+            result = expanded
+
+    edits: dict[str, dict[str, Any]] = {"entities": {}, "parameters": {}, "relations": {}}
+    removals: dict[str, set[str]] = {name: set() for name in edits}
+    for candidate in candidates:
+        for field_name in ("project_id", "base", "obligations", "evidence_refs", "basis_refs",
+                           "predecessor_ref", "decision_ref", "invalidated_refs", "option"):
+            if getattr(candidate, field_name) != getattr(record, field_name):
+                raise StateRecordError(f"combine cannot normalize changes to {field_name} as component edits")
+        changed = set(_changed_refs(record, candidate))
+        closure = reached(changed, (DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION))
+        writes = reached(changed, (DependencyEffect.INVALIDATES,))
+        for previous, reached, written in zip(changed_sets, closures, write_sets):
+            conflicts = (changed & reached) | (previous & closure) | (written & writes)
+            if conflicts:
+                raise StateRecordError("candidate changes overlap or depend on each other: " + ", ".join(sorted(conflicts)))
+        changed_sets.append(changed)
+        closures.append(closure)
+        write_sets.append(writes)
+        for name, identity in (("entities", "entity_id"), ("parameters", "key"), ("relations", "relation_id")):
+            before = {getattr(item, identity): item for item in getattr(record, name)}
+            after = {getattr(item, identity): item for item in getattr(candidate, name)}
+            edits[name].update({key: item for key, item in after.items() if before.get(key) != item})
+            removals[name].update(before.keys() - after.keys())
+    operator = compile_component_edit(
+        record, entities=tuple(edits["entities"].values()), parameters=tuple(edits["parameters"].values()),
+        relations=tuple(edits["relations"].values()), remove_entity_ids=tuple(removals["entities"]),
+        remove_parameter_keys=tuple(removals["parameters"]), remove_relation_ids=tuple(removals["relations"]),
+        protected=protected,
+    )
+    apply_state_record_operator(record, operator)
+    return operator
 
 
 _MASSING_SCHEMAS = frozenset(

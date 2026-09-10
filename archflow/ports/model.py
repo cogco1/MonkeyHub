@@ -7,7 +7,7 @@ Protocol boundaries. Concrete command execution remains in adapters.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
@@ -143,8 +143,16 @@ class ModelInvocationReceipt:
     output_tokens: int | None = None
     error_code: str | None = None
     message: str | None = None
+    # Input includes cache reads/writes; output includes reasoning. These
+    # optional subsets describe provider-reported usage, never estimates.
+    cached_input_tokens: int | None = None
+    cache_write_input_tokens: int | None = None
+    cache_write_1h_input_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
+    _schema: str | None = field(default=None, repr=False, compare=False)
 
-    SCHEMA = "ModelInvocationReceipt@2"
+    SCHEMA = "ModelInvocationReceipt@3"
+    PREVIOUS_SCHEMA = "ModelInvocationReceipt@2"
     LEGACY_SCHEMA = "ModelInvocationReceipt@1"
 
     def __post_init__(self) -> None:
@@ -172,11 +180,17 @@ class ModelInvocationReceipt:
         for value, field in (
             (self.input_tokens, "input_tokens"),
             (self.output_tokens, "output_tokens"),
+            (self.cached_input_tokens, "cached_input_tokens"),
+            (self.cache_write_input_tokens, "cache_write_input_tokens"),
+            (self.cache_write_1h_input_tokens, "cache_write_1h_input_tokens"),
+            (self.reasoning_output_tokens, "reasoning_output_tokens"),
         ):
             if value is not None and (
                 type(value) is not int or value < 0
             ):
                 raise ValueError(f"{field} must be non-negative or None")
+        if self._schema not in (None, self.PREVIOUS_SCHEMA, self.SCHEMA):
+            raise ValueError("model receipt schema drifted")
         if self.status is ModelInvocationStatus.SUCCESS:
             if (
                 self.output_json is None
@@ -201,8 +215,17 @@ class ModelInvocationReceipt:
         return _decode_object(self.output_json, "output_json")
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "schema": self.SCHEMA,
+        usage = {
+            "cached_input_tokens": self.cached_input_tokens,
+            "cache_write_input_tokens": self.cache_write_input_tokens,
+            "cache_write_1h_input_tokens": self.cache_write_1h_input_tokens,
+            "reasoning_output_tokens": self.reasoning_output_tokens,
+        }
+        extended = self._schema == self.SCHEMA or any(
+            value is not None for value in usage.values()
+        )
+        result = {
+            "schema": self.SCHEMA if extended else self.PREVIOUS_SCHEMA,
             "receipt_id": self.receipt_id,
             "status": self.status.value,
             "request": self.request.to_dict(),
@@ -220,6 +243,9 @@ class ModelInvocationReceipt:
             "error_code": self.error_code,
             "message": self.message,
         }
+        if extended:
+            result.update(usage)
+        return result
 
     @classmethod
     def from_dict(cls, value: object) -> ModelInvocationReceipt:
@@ -243,7 +269,14 @@ class ModelInvocationReceipt:
             "message",
         }
         schema = payload.get("schema")
+        usage_fields = {
+            "cached_input_tokens", "cache_write_input_tokens",
+            "cache_write_1h_input_tokens", "reasoning_output_tokens",
+        }
         if schema == cls.SCHEMA:
+            expected = base_expected | {"duration_ms"} | usage_fields
+            duration_ms = payload.get("duration_ms")
+        elif schema == cls.PREVIOUS_SCHEMA:
             expected = base_expected | {"duration_ms"}
             duration_ms = payload.get("duration_ms")
         elif schema == cls.LEGACY_SCHEMA:
@@ -275,6 +308,8 @@ class ModelInvocationReceipt:
             output_tokens=payload["output_tokens"],
             error_code=payload["error_code"],
             message=payload["message"],
+            **{name: payload.get(name) for name in usage_fields},
+            _schema=cls.SCHEMA if schema == cls.SCHEMA else cls.PREVIOUS_SCHEMA,
         )
 
 
@@ -331,4 +366,3 @@ __all__ = [
     "ModelInvocationStatus",
     "ModelPhase",
 ]
-

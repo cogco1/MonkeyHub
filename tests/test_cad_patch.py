@@ -2,14 +2,18 @@
 from __future__ import annotations
 
 import base64
+import json
+import sys
 import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from archflow.adapters.cad_execution import CadExecutionError, RhinoPatchBase, patch_composed_three_dm, prepare_rhino_three_dm_export
-from archflow.adapters.cad_patch import CadPatchError, select_patch_operations
-from archflow.adapters.cad_program import _physical_ids, translate_to_rhino_python
+from archflow.adapters.cad_patch import CadPatchError, PatchSelection, build_patch_prelude, select_patch_operations
+from archflow.adapters.cad_program import _physical_ids, expected_object_semantics, translate_to_rhino_python
 from monkeyarch.capabilities.element_producers import ProductionContext, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from monkeyarch.compilers.geometry import compile_geometry_program
@@ -50,6 +54,151 @@ def _capital_rows(**capital_params):
 
 
 class PatchSelectionTests(unittest.TestCase):
+    def test_empty_patches_remap_materials_refresh_declared_colors_and_keep_texture_without_growth(self):
+        try:
+            import rhino3dm as r
+        except ImportError:
+            self.skipTest("rhino3dm is not installed")
+        from tests.test_cad_program import binding, op, program
+
+        names = tuple(f"object-{i:02}" for i in range(25))
+        build = program(*(op(f"solid-{i}", "solid", [name], bindings=(f"binding-{i}",), origin=[0, 0, 0], size=[1, 1, 1]) for i, name in enumerate(names)),
+                        bindings=tuple(binding(f"binding-{i}", f"component-{i}", (name,)) for i, name in enumerate(names)))
+        assignments = {f"component-{i}": f"finish-{i}" for i in range(24)}
+        semantics = expected_object_semantics(build, material_by_component=assignments)["objects"]
+        selection = PatchSelection("1" * 64, "2" * 64, (), (), (), (), (), names, {})
+        source = r.File3dm()
+        source.Materials.Add(r.Material())  # unused table entry: carried indices must be remapped
+        for i, name in enumerate(names):
+            material = r.Material()
+            material.Name, material.DiffuseColor = (f"finish-{i}" if i < 24 else "imported-texture"), (20, 30, 40, 255)
+            if i < 2:
+                material.Name = f"Display finish {i}"
+                material.SetUserString("archflow:material" if i == 0 else "archflow:material_id", f"finish-{i}")
+            if i == 0:
+                material.ToPhysicallyBased()
+                material.PhysicallyBased.BaseColor = (0.1, 0.2, 0.3, 0.8)
+                material.PhysicallyBased.Roughness = 0.37
+                material.PhysicallyBased.Opacity = 0.6
+            if i == 24:
+                material.SetBitmapTexture("retained-grain.png")
+            material_index = source.Materials.Add(material)
+            layer = r.Layer()
+            layer.Name = semantics[name]["layer"]
+            attributes = r.ObjectAttributes()
+            attributes.Name, attributes.LayerIndex = name, source.Layers.Add(layer)
+            attributes.MaterialSource, attributes.MaterialIndex = r.ObjectMaterialSource.MaterialFromObject, material_index
+            attributes.PlotWeight = 0.35
+            attributes.SetUserString("archflow:object_ref", f"cad-object:{name}")
+            source.Objects.AddBrep(r.Brep.CreateFromBoundingBox(r.BoundingBox(r.Point3d(0, 0, 0), r.Point3d(1, 1, 1))), attributes)
+        geometry = {obj.Attributes.Name: obj.Geometry.Encode() for obj in source.Objects}
+
+        def read_source(path):
+            model = r.File3dm.Read(path)
+            layers = [SimpleNamespace(Index=layer.Index, Name=layer.Name, Id=layer.Id, ParentLayerId=layer.ParentLayerId,
+                                      Color=SimpleNamespace(R=layer.Color[0], G=layer.Color[1], B=layer.Color[2]), RenderMaterialIndex=layer.RenderMaterialIndex) for layer in model.Layers]
+            objects = []
+            for obj in model.Objects:
+                attributes = obj.Attributes
+                objects.append(SimpleNamespace(Geometry=obj.Geometry, Attributes=SimpleNamespace(
+                    Name=attributes.Name, ObjectId=attributes.Id, LayerIndex=attributes.LayerIndex, MaterialIndex=attributes.MaterialIndex,
+                    Duplicate=lambda guid=attributes.Id, saved=model: r.File3dm.Decode(saved.Encode()).Objects.FindId(guid).Attributes)))
+            return SimpleNamespace(Layers=layers, Objects=objects, Materials=model.Materials, InstanceDefinitions=())
+
+        with tempfile.TemporaryDirectory() as directory:
+            for revision in range(2):
+                prior = Path(directory) / f"prior-{revision}.3dm"
+                self.assertTrue(source.Write(str(prior), 8))
+                target = r.File3dm()
+                layer_ids = {}
+
+                class NativeMaterial:
+                    def __init__(self, material):
+                        self.material = material
+                    @property
+                    def IsPhysicallyBased(self):
+                        return self.material.PhysicallyBased.Supported
+                    @property
+                    def PhysicallyBased(self):
+                        return self
+                    @property
+                    def BaseColor(self):
+                        return SimpleNamespace(A=self.material.PhysicallyBased.BaseColor[3])
+                    @BaseColor.setter
+                    def BaseColor(self, rgba):
+                        self.material.PhysicallyBased.BaseColor = rgba
+                    def CommitChanges(self):
+                        return True
+
+                class NativeMaterials:
+                    Add = target.Materials.Add
+                    def __getitem__(self, index):
+                        return NativeMaterial(target.Materials[index])
+
+                def add_layer(name, color):
+                    if name not in layer_ids:
+                        layer = r.Layer()
+                        layer.Name, layer.Color = name, (*color, 255)
+                        layer_ids[name] = target.Layers.Add(layer)
+                    return name
+
+                def attributes(guid):
+                    return target.Objects.FindId(guid).Attributes
+
+                def add_material(guid):
+                    index = target.Materials.Add(r.Material())
+                    attributes(guid).MaterialIndex = index
+                    return index
+
+                rs = SimpleNamespace(
+                    AllObjects=lambda: [], AddLayer=add_layer,
+                    AddBox=lambda points: self.fail("an empty geometry patch must not rebuild objects"),
+                    ObjectLayer=lambda guid, layer: setattr(attributes(guid), "LayerIndex", layer_ids[layer]),
+                    GetUserText=lambda guid: [row[0] for row in attributes(guid).GetUserStrings()],
+                    SetUserText=lambda guid, key, value: attributes(guid).SetUserString(key, value or ""),
+                    HideObject=lambda guid: setattr(attributes(guid), "Visible", False),
+                    ShowObject=lambda guid: setattr(attributes(guid), "Visible", True),
+                    ObjectMaterialIndex=lambda guid, index: setattr(attributes(guid), "MaterialIndex", index),
+                    ObjectMaterialSource=lambda guid, source: setattr(attributes(guid), "MaterialSource", r.ObjectMaterialSource(source)),
+                    AddMaterialToObject=add_material,
+                    MaterialName=lambda index, name: setattr(target.Materials[index], "Name", name),
+                    MaterialColor=lambda index, rgb: setattr(target.Materials[index], "DiffuseColor", (*rgb, 255)),
+                    BlockNames=lambda: [],
+                )
+                active = SimpleNamespace(Materials=NativeMaterials(), Layers=SimpleNamespace(FindByFullPath=lambda name, default: layer_ids.get(name, default)),
+                                         Objects=SimpleNamespace(Add=target.Objects.AddBrep))
+                rhino = SimpleNamespace(FileIO=SimpleNamespace(File3dm=SimpleNamespace(Read=read_source)),
+                                        RhinoDoc=SimpleNamespace(ActiveDoc=active), Geometry=SimpleNamespace(InstanceReferenceGeometry=r.InstanceReference),
+                                        Display=SimpleNamespace(Color4f=lambda red, green, blue, alpha: (red, green, blue, alpha)))
+                colors = {name: (90 + revision * 20, 70, 50) for name in assignments.values()}
+                translation = translate_to_rhino_python(build, material_by_component=assignments, material_colors=colors, operation_subset=())
+                scope = {"Path": Path, "json": json, "Rhino": rhino, "rs": rs}
+                with patch.dict(sys.modules, {"System": SimpleNamespace(Guid=SimpleNamespace(Empty=None)), "rhinoscriptsyntax": rs, "Rhino": rhino}), patch("builtins.print"):
+                    exec(build_patch_prelude(selection, prior_model_path=prior, semantics=semantics) + "\n" + translation.script, scope)
+                source = r.File3dm.Decode(target.Encode())
+                self.assertEqual(len(source.Materials), 25)
+                self.assertEqual({obj.Attributes.Name: obj.Geometry.Encode() for obj in source.Objects}, geometry)
+                for obj in source.Objects:
+                    attrs = obj.Attributes
+                    self.assertEqual(attrs.PlotWeight, 0.35)
+                    self.assertEqual(attrs.MaterialSource, r.ObjectMaterialSource.MaterialFromObject)
+                    self.assertEqual(attrs.GetUserString("archflow:object_ref"), f"cad-object:{attrs.Name}")
+                    material = source.Materials[attrs.MaterialIndex]
+                    if attrs.Name != names[-1]:
+                        logical = semantics[attrs.Name]["user_text"]["archflow:material"]
+                        self.assertEqual(material.DiffuseColor, (*colors[logical], 255))
+                        self.assertEqual(attrs.GetUserString("archflow:material"), logical)
+                        if attrs.Name in names[:2]:
+                            self.assertEqual(material.Name, f"Display finish {names.index(attrs.Name)}")
+                        if attrs.Name == names[0]:
+                            for actual, expected in zip(material.PhysicallyBased.BaseColor, (*[value / 255 for value in colors[logical]], 0.8)):
+                                self.assertAlmostEqual(actual, expected, places=6)
+                            self.assertAlmostEqual(material.PhysicallyBased.Roughness, 0.37, places=6)
+                            self.assertAlmostEqual(material.PhysicallyBased.Opacity, 0.6, places=6)
+                    else:
+                        self.assertEqual(material.Name, "imported-texture")
+                        self.assertEqual(material.GetBitmapTexture().FileName, "retained-grain.png")
+
     def test_same_program_selects_nothing(self) -> None:
         a = _compile(_rows())
         selection = select_patch_operations(a, a)
@@ -294,6 +443,63 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
         ))
         self.assertEqual({o.Attributes.Name for o in restored.Objects}, {o.Attributes.Name for o in base.Objects})
         self.assertEqual(len(restored.InstanceDefinitions), 1)
+
+    def test_unassigned_replacements_inherit_exact_source_and_new_component_materials(self):
+        r = self.rhino
+        short = _compile(_rows()[:3])
+        for prior, current in ((self.prior, self.changed), (short, self.prior)):
+            with self.subTest(added=prior is short):
+                base = self.native_model(prior)
+                native = base.Materials[0]
+                native.SetUserString("archflow:material", "source-glass")
+                native.Transparency = 0.65
+                native.ToPhysicallyBased()
+                native.PhysicallyBased.Opacity = 0.35
+                native.PhysicallyBased.Roughness = 0.27
+                native.SetBitmapTexture("source-texture.png")
+                donor = self.native_model(current, replacement=True)
+                for layer in donor.Layers:
+                    layer.RenderMaterialIndex = -1
+                for item in (*base.Objects, *donor.Objects):
+                    item.Attributes.SetUserString("archflow:component", "building")
+                for item in donor.Objects:
+                    item.Attributes.MaterialIndex = -1
+                    item.Attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromLayer
+                before = r.File3dm.FromByteArray(self.encoded(base))
+                output = patch_composed_three_dm(self.encoded(base), prior_program=prior, program=current, replacement_3dm=self.encoded(donor))
+                after = r.File3dm.FromByteArray(output)
+                self.assertEqual(len(after.Materials), len(before.Materials))
+                for saved, original in zip(after.Materials, before.Materials):
+                    self.assertEqual((saved.Id, saved.Name, saved.DiffuseColor, saved.Transparency, saved.GetUserStrings()),
+                                     (original.Id, original.Name, original.DiffuseColor, original.Transparency, original.GetUserStrings()))
+                    self.assertEqual(saved.PhysicallyBased.BaseColor, original.PhysicallyBased.BaseColor)
+                    self.assertEqual(saved.PhysicallyBased.Roughness, original.PhysicallyBased.Roughness)
+                replaced = set(_physical_ids(current.proposal)) - set(select_patch_operations(current, prior).kept_object_ids)
+                for item in after.Objects:
+                    if item.Attributes.Name in replaced:
+                        self.assertEqual(item.Attributes.MaterialSource, r.ObjectMaterialSource.MaterialFromObject)
+                        self.assertEqual(item.Attributes.MaterialIndex, 0)
+                        self.assertEqual(item.Attributes.GetUserString("archflow:material"), "source-glass")
+                self.assertAlmostEqual(after.Materials[0].Transparency, 0.65)
+                self.assertAlmostEqual(after.Materials[0].PhysicallyBased.Opacity, 0.35)
+                self.assertEqual(after.Materials[0].GetBitmapTexture().FileName, "source-texture.png")
+
+    def test_new_object_does_not_guess_between_component_materials(self):
+        r = self.rhino
+        short = _compile(_rows()[:3])
+        base = self.native_model(short)
+        second = base.Materials.Add(r.Material())
+        next(iter(base.Objects)).Attributes.MaterialIndex = second
+        donor = self.native_model(self.prior)
+        for item in (*base.Objects, *donor.Objects):
+            item.Attributes.SetUserString("archflow:component", "building")
+        for item in donor.Objects:
+            item.Attributes.MaterialSource = r.ObjectMaterialSource.MaterialFromLayer
+            item.Attributes.MaterialIndex = -1
+        after = r.File3dm.FromByteArray(patch_composed_three_dm(self.encoded(base), prior_program=short, program=self.prior, replacement_3dm=self.encoded(donor)))
+        added = next(item for item in after.Objects if item.Attributes.Name == "obj-pediment-west")
+        self.assertEqual(added.Attributes.MaterialIndex, -1)
+        self.assertEqual(len(after.Materials), 2)
 
     def test_unchanged_program_returns_original_bytes(self):
         base = self.native_model(self.prior, feet=True)

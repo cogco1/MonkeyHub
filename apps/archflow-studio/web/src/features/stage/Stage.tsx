@@ -1,16 +1,15 @@
 /**
  * The model, and the few facts that sit over it.
  *
- * The viewport is the moved viewer, untouched. Around it: the source chip
- * (which file, whose label), the camera tools, the last resolved pick, the
+ * The viewport is the moved viewer, untouched. Around it: the camera tools, the last resolved pick, the
  * versions strip and the evidence tab. Everything here was handed in; the
  * stage decides nothing.
  */
 
-import { useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import type { StudioApiError } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";
@@ -27,9 +26,8 @@ import {
   type ViewportStatus,
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
-import { SourceChip, type ViewState } from "./SourceChip";
-import { VersionsStrip, type VersionGroup } from "./VersionsStrip";
-import { DocumentCanvas } from "../../workspaces/monkeydiagram/DocumentCanvas";
+import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
+import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 
@@ -70,18 +68,21 @@ export type CaptureState = "idle" | "busy" | "success" | "error";
 
 export function Stage({
   viewportRef,
-  sourceLabel,
   message,
   status,
-  inspection,
   artifactError,
-  view,
   picked,
   versions,
   hasNewVersions = false,
   onVersionsOpen,
   workingCopies,
   onOpenWorkingOption,
+  designHistory,
+  documentView,
+  onDocumentView,
+  documentAnnotationsController,
+  onDocumentBeforeLeave,
+  drawing,
   loadingSha,
   loadedShas,
   evidenceCounts,
@@ -140,19 +141,21 @@ export function Stage({
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
-  sourceLabel: string | null;
   message: string;
   status: ViewportStatus;
-  inspection: SceneInspection | null;
   artifactError: StudioApiError | null;
-  /** CURRENT / GHOST PREVIEW / VALIDATED, with the server's word as detail. */
-  view: ViewState | null;
   picked: PickedFacts | null;
   versions: readonly VersionGroup[];
   hasNewVersions?: boolean;
   onVersionsOpen?(): void;
   workingCopies: readonly WorkingCopyDto[];
   onOpenWorkingOption(option: WorkingCopyOptionDto): void;
+  designHistory?: DesignHistoryControls;
+  documentView: DocumentViewContext;
+  onDocumentView(next: DocumentViewContext): void;
+  documentAnnotationsController: ReturnType<typeof createDocumentAnnotationsController>;
+  onDocumentBeforeLeave(save: (() => Promise<void>) | null): void;
+  drawing?: { busy: boolean; available: boolean; error: StudioApiError | null; dismissError(): void; generate(view: ElevationRequestDto["view"]): void };
   loadingSha: string | null;
   /** The digests on screen: one seat's, or every seat of a run. */
   loadedShas: readonly string[];
@@ -230,26 +233,11 @@ export function Stage({
   const t = useT();
   const { developerMode } = usePreferences();
   const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
+  const [elevationView, setElevationView] = useState<NonNullable<ElevationRequestDto["view"]>>("front");
   const [annotationCancel, setAnnotationCancel] = useState(0);
-  const [documentLink] = useState(() => {
-    const query = new URLSearchParams(window.location.search);
-    if (query.get("view") !== "documents") return null;
-    const page = Number(query.get("documentPage") ?? 0);
-    return { runId: query.get("documentRun"), source: query.get("documentSource"),
-      page: Number.isSafeInteger(page) && page >= 0 ? page : -1 };
-  });
-  const [documentOpen, setDocumentOpen] = useState(documentLink !== null);
-  const [documentMounted, setDocumentMounted] = useState(documentLink !== null);
-  // A document's storage run remains fixed when its associated model becomes
-  // the editing base. Continuing from B must keep the drawing already open.
-  const [openedDocumentRunId, setOpenedDocumentRunId] = useState<string | null>(documentLink?.runId ?? null);
-  const documentRunId = openedDocumentRunId ?? editingBaseRunId;
-  useEffect(() => {
-    if (documentMounted && openedDocumentRunId === null && editingBaseRunId !== null) {
-      setOpenedDocumentRunId(editingBaseRunId);
-    }
-  }, [documentMounted, editingBaseRunId, openedDocumentRunId]);
-  const [documentAnnotationsController] = useState(createDocumentAnnotationsController);
+  const documentOpen = documentView.open;
+  const documentMounted = documentView.mounted;
+  const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
   const [viewToolsOpen, setViewToolsOpen] = useState(false);
@@ -268,13 +256,16 @@ export function Stage({
     editingModelSource.stateDigest === viewedModelSource.stateDigest &&
     editingModelSource.assetSha256 === viewedModelSource.assetSha256;
   const editingLabel = editingBaseLabel ?? versions.find((group) => group.runId === editingBaseRunId)?.exports[0]?.artifact.fileName ?? editingBaseRunId;
-  const versionCount = new Set([
+  const versionCount = designHistory ? designHistory.history?.stages.length ?? 0 : new Set([
     ...versions.flatMap((group) => group.exports.filter(({ artifact }) => artifact.format === "3dm" && artifact.sha256 !== null)
       .map(({ artifact }) => `${group.runId}:${artifact.sha256}`)),
     ...workingCopies.flatMap((copy) => copy.options.map((option) => `${option.modelSource.runId}:${option.modelSource.assetSha256}`)),
   ]).size;
   const loadedOptionLabel = workingCopies.flatMap((copy) => copy.options)
     .find((option) => option.modelSource.runId === loadedRunId && loadedShas.includes(option.modelSource.assetSha256))?.label;
+  const acceptedStage = designHistory?.history?.stages.find((stage) => stage.modelSource.runId === loadedRunId && loadedShas.includes(stage.modelSource.assetSha256));
+  const contextLabel = designHistory ? acceptedStage?.label ?? (designHistory.candidates.some((candidate) => candidate.modelSource.runId === loadedRunId)
+    ? `${designHistory.history?.stages.find((stage) => stage.stageRef === designHistory.currentStageRef)?.label ?? "历史 Stage"} · 候选未提交` : "尚未确认 Stage") : loadedOptionLabel;
   const sessionStatus = <>
     {editingBaseRunId !== null && (
       <div className="editing-base" data-source-match={sameSource ? "same" : "different"}>
@@ -301,7 +292,7 @@ export function Stage({
         {baseError && <ErrorPanel error={baseError} what="GET /api/state" />}
       </div>
     )}
-    {modelAnnotations && <div className="stage-source-line__save" data-model-annotations-status={modelAnnotations.error ? "error" :
+    {modelAnnotations && <div className="stage-annotations-status" data-model-annotations-status={modelAnnotations.error ? "error" :
       !modelAnnotations.ready ? "loading" : modelAnnotations.saving || modelAnnotations.dirty ? "saving" : "saved"}>
       {!modelAnnotations.error && <span role="status">{t(!modelAnnotations.ready ? "stage.annotations.loading" :
         modelAnnotations.saving || modelAnnotations.dirty ? "stage.annotations.saving" : "stage.annotations.saved")}</span>}
@@ -317,9 +308,42 @@ export function Stage({
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}>
       <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
-        <button type="button" aria-pressed={!documentOpen} onClick={() => setDocumentOpen(false)}>{t("workspace.monkeyarch")}</button>
-        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); setDocumentMounted(true); setDocumentOpen(true); }}>{t("workspace.monkeydiagram")}</button>
+        <button type="button" aria-pressed={!documentOpen} onClick={() => onDocumentView({ ...documentView, open: false })}>{t("workspace.monkeyarch")}</button>
+        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); onDocumentView({ ...documentView, mounted: true, open: true }); }}>{t("workspace.monkeydiagram")}</button>
+        <button type="button" onClick={() => {
+          const target = new URL(window.location.href);
+          target.searchParams.set("view", "board");
+          window.open(target.href, "_blank", "noopener");
+        }}>{t("workspace.monkeyboard")}</button>
+        {picked && (
+          <div
+            className="picked"
+            title={developerMode ? t("stage.picked.title", {
+              status: picked.status,
+              sourceState: picked.sourceState,
+            }) : designObjectLabel(picked.elementId ?? picked.componentId) ?? undefined}
+          >
+            <span className="label">{t("stage.picked.label")}</span>
+            <span className="picked__name">
+              {developerMode
+                ? picked.elementId ?? picked.componentId ?? t("stage.picked.none")
+                : designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}
+            </span>
+            {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
+          </div>
+        )}
       </div>
+      {drawing?.error && <div className="stage-drawing-error">
+        <div>
+          <p role="alert">{t(drawing.error.code === "DRAWING_COMPLETE_SOURCE_UNAVAILABLE" ? "stage.drawing.completeSourceUnavailable"
+            : drawing.error.code === "DRAWING_SOURCE_MISMATCH" ? "stage.drawing.sourceMismatch" : "stage.drawing.failed")}</p>
+          <details key={`${drawing.error.code}:${drawing.error.detail}`}><summary>{t("stage.drawing.details")}</summary>
+            <p className="mono" lang="en" translate="no">{drawing.error.code}: {drawing.error.detail}</p>
+          </details>
+        </div>
+        <button type="button" className="btn btn--small" onClick={drawing.dismissError} aria-label={t("stage.drawing.dismiss")}>{t("common.close")}</button>
+      </div>}
+      <div className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         onKeyDown={(event) => {
           if (!(event.ctrlKey || event.metaKey) || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
@@ -356,16 +380,6 @@ export function Stage({
 
       <div className="hud">
         <div className="hud__left">
-          <div className="stage-source-line" data-source-match={sameSource ? "same" : "different"}>
-          <SourceChip
-            sourceLabel={sourceLabel}
-            inspection={inspection}
-            status={status}
-            message={message}
-            view={view}
-          />
-          {sessionStatus}
-          </div>
           {blend && (
             <div className="blend" aria-label={t("stage.blend.ariaLabel")}>
               <span className="label">{t("stage.blend.before")}</span>
@@ -388,34 +402,6 @@ export function Stage({
               <button type="button" className="btn btn--small" onClick={onEndBlend}>
                 {t("stage.blend.done")}
               </button>
-            </div>
-          )}
-          {picked && (
-            <div
-              className="picked"
-              title={developerMode ? t("stage.picked.title", {
-                status: picked.status,
-                sourceState: picked.sourceState,
-              }) : undefined}
-            >
-              <span className="label">{t("stage.picked.label")}</span>
-              {developerMode && <span className="mono">
-                {picked.elementId ?? picked.componentId ?? t("stage.picked.none")}
-              </span>}
-              {!developerMode && <span>
-                {designObjectLabel(picked.elementId ?? picked.componentId) ?? t("stage.picked.unresolved")}
-              </span>}
-              {!developerMode && picked.status !== "resolved" && (
-                <span className="picked__meta">{t("stage.picked.unresolved")}</span>
-              )}
-              {developerMode && picked.status !== "resolved" && (
-                <span className="picked__meta">{picked.status}</span>
-              )}
-              {developerMode && picked.fields.map(([key, value]) => (
-                <span key={key} className="mono picked__field">
-                  {key} {value}
-                </span>
-              ))}
             </div>
           )}
           {artifactError && (
@@ -504,6 +490,14 @@ export function Stage({
           >
             {t("program.open")}
           </button>
+          {drawing && <>
+            <span className="viewtools__sep" aria-hidden="true" />
+            <select aria-label={t("stage.drawing.direction")} value={elevationView} disabled={drawing.busy}
+              onChange={(event) => { setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>); drawing.dismissError(); }}>
+              <option value="front">{t("stage.drawing.front")}</option><option value="back">{t("stage.drawing.back")}</option><option value="left">{t("stage.drawing.left")}</option><option value="right">{t("stage.drawing.right")}</option>
+            </select>
+            <button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{t(drawing.busy ? "stage.drawing.busy" : "stage.drawing.generate")}</button>
+          </>}
           <span className="viewtools__sep" aria-hidden="true" />
           {/* One button, home: the reference run's exports when it left
               any, else the export the stage actually opened on — named for
@@ -555,19 +549,27 @@ export function Stage({
         </div>
       </div>
 
+
+      {framePanel}
+      {optionsPanel}
+      {programPanel}
+      {drawer}
+      </div>
       <div className="stage__foot">
         <div className="stage__versions">
           <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
             onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); }}>
             {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
-            {loadedOptionLabel && <span className="stage__versions-current">{loadedOptionLabel}</span>}
+            {contextLabel && <span className="stage__versions-current">{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
           </button>
           {versionsOpen && <div id="stage-versions-panel" className="stage__versions-panel" role="region" aria-label={t("stage.versions.ariaLabel")}>
             <div className="stage__versions-head"><strong>{t("stage.versions.ariaLabel")}</strong>
               <button type="button" className="btn btn--small" onClick={() => setVersionsOpen(false)}>{t("stage.versions.close")}</button>
             </div>
+            <div className="stage__versions-session">{sessionStatus}</div>
             <VersionsStrip
+              design={designHistory}
               workingCopies={workingCopies} onOpenWorkingOption={onOpenWorkingOption}
               groups={versions} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
               onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
@@ -606,20 +608,19 @@ export function Stage({
         </button></>}
       </div>
 
-      {framePanel}
-      {optionsPanel}
-      {programPanel}
-      {drawer}
-      </div>
       {documentMounted && <div style={{ visibility: documentOpen ? "visible" : "hidden" }} inert={!documentOpen} aria-hidden={!documentOpen}>
-        {documentProjectId && documentRunId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}`}
+        {documentProjectId && documentRunId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}:${documentView.sourceSha}:${documentView.revisionRef}`}
           projectId={documentProjectId} runId={documentRunId} controller={documentAnnotationsController}
           modelSources={documentModelSources} editingModelSource={editingModelSource}
           onContinueModelSource={onContinueModelSource}
-          initialSourceSha={documentLink?.source ?? null} initialPageIndex={documentLink?.page ?? 0}
+          initialSourceSha={documentView.sourceSha} initialPageIndex={documentView.pageIndex}
+          initialRevisionRef={documentView.revisionRef}
+          sourceStageRef={designHistory?.currentStageRef}
+          onBeforeLeave={onDocumentBeforeLeave}
           busy={baseActionBusy || changingBase} onSubmit={onDocumentSubmit} documentVisualInputAvailable={documentVisualInputAvailable} />
           : <div className="document-workspace document-empty">{t("document.noRun")}</div>}
       </div>}
+      </div>
     </section>
   );
 }

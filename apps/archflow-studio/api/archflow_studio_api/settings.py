@@ -8,12 +8,13 @@ write to, a project nobody chose.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_address
 import os
 from pathlib import Path
 import tempfile
 from typing import Mapping
 
-from .transport.settings import UserSettingsDto
+from .transport.settings import ApplicationSettingsDto, UserSettingsDto
 
 PROJECT_DIR_ENV = "ARCHFLOW_STUDIO_PROJECT_DIR"
 CAD_EXPORT_ENV = "ARCHFLOW_STUDIO_CAD_EXPORT"
@@ -33,6 +34,7 @@ MODE_ENV = "ARCHFLOW_STUDIO_MODE"
 BIND_ENV = "ARCHFLOW_STUDIO_BIND"
 TOKEN_ENV = "ARCHFLOW_STUDIO_TOKEN"
 ORIGINS_ENV = "ARCHFLOW_STUDIO_ORIGINS"
+MONITOR_DIR_ENV = "MONKEYMONITOR_DATA_DIR"
 
 # The two modes of the protocol boundary. ``local`` is the pair the launcher
 # starts on this machine: one loopback listener, one user, no token. ``remote``
@@ -111,9 +113,11 @@ class StudioSettings:
     # mode only. Local mode adds no CORS at all: the dev proxy makes the two
     # halves one origin, so there is nothing to allow.
     origins: tuple[str, ...] = ()
+    # Optional engineering telemetry, outside the P036 project document.
+    monitor_dir: Path | None = None
 
     def __post_init__(self) -> None:
-        """A remote process without a token is not a configuration that exists.
+        """Local listeners stay on loopback; remote listeners need credentials.
 
         The rule lives here rather than in ``create_app`` so that no path can
         build one: the environment, ``--project-dir``, and a test constructing
@@ -131,6 +135,15 @@ class StudioSettings:
                 f"{self.mode!r}."
             )
         if self.mode != REMOTE_MODE:
+            try:
+                loopback = ip_address(self.bind_host).is_loopback
+            except ValueError:
+                loopback = self.bind_host.lower() == "localhost"
+            if not loopback:
+                raise SettingsError(
+                    f"{MODE_ENV}={LOCAL_MODE} requires a loopback {BIND_ENV}. "
+                    "Use remote mode with a token and allowed origins for a network listener."
+                )
             return
         if not self.api_token:
             raise SettingsError(
@@ -214,6 +227,7 @@ class StudioSettings:
                 os.environ.get(BIND_ENV, "").strip() or DEFAULT_BIND_HOST
             ),
             api_token=os.environ.get(TOKEN_ENV, "").strip() or None,
+            monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,
             origins=tuple(
                 origin
                 for origin in (
@@ -272,7 +286,30 @@ def read_user_settings() -> UserSettingsDto:
 def save_user_settings(settings: UserSettingsDto) -> UserSettingsDto:
     """Replace one local preferences file atomically; no project state is touched."""
 
-    destination = user_settings_path()
+    _save_local_settings(user_settings_path(), settings)
+    return settings
+
+
+def read_application_settings(runtime_root: Path) -> ApplicationSettingsDto:
+    """Read Hub launch configuration from its explicitly selected nonproject root."""
+
+    try:
+        raw = (runtime_root / "config" / "applications.json").read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return ApplicationSettingsDto()
+    return ApplicationSettingsDto.model_validate_json(raw)
+
+
+def save_application_settings(runtime_root: Path, settings: ApplicationSettingsDto) -> ApplicationSettingsDto:
+    """App configuration has no preference, credential or project-write fields."""
+
+    if not runtime_root.is_absolute():
+        raise SettingsError("The application runtime root must be absolute.")
+    _save_local_settings(runtime_root / "config" / "applications.json", settings)
+    return settings
+
+
+def _save_local_settings(destination: Path, settings: UserSettingsDto | ApplicationSettingsDto) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
@@ -288,4 +325,3 @@ def save_user_settings(settings: UserSettingsDto) -> UserSettingsDto:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-    return settings

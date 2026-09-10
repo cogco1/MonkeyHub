@@ -122,6 +122,10 @@ See the [team setup and review path](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.m
 
 ## Run Studio
 
+For the Windows candidate installation without a system Python or Node.js,
+see the [MonkeyHub installation guide](apps/monkeyhub/installer/README.md).
+The source-development setup below remains available for contributors.
+
 Follow section 8 of the [team setup guide](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md):
 an independent clone, Python 3.12 in an external virtual environment, Node.js 24,
 and the locked web dependencies. Create an external project with the production command:

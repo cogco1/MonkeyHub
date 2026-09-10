@@ -324,8 +324,8 @@ test("a rebuilt controller reads multiline text, its font ratio and anchor witho
   assert.notEqual(reopened, original);
   await reopened.load();
   assert.deepEqual(reads, [
-    [scope.runId, scope.assetSha256, scope.pageIndex, undefined],
-    [scope.runId, scope.assetSha256, scope.pageIndex, undefined],
+    [scope.runId, scope.assetSha256, scope.pageIndex, undefined, undefined],
+    [scope.runId, scope.assetSha256, scope.pageIndex, undefined, undefined],
   ]);
   assert.deepEqual(reopened.getSnapshot().annotations, [legacy, text]);
   assert.equal(Object.hasOwn(reopened.getSnapshot().annotations[0], "fontSize"), false);

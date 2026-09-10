@@ -150,6 +150,8 @@ class ProgramDto(BaseModel):
 class ProgramApplyRequestDto(BaseModel):
     """Apply a sheet to the record as a candidate; optionally keep the sheet."""
 
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     source_run_id: str | None = Field(

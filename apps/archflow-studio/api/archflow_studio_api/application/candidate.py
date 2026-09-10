@@ -39,6 +39,7 @@ from archflow.project.record_kinds import (
     SEAT_RELATION_CHECK,
     STUDIO_DOCUMENT_COMMENT,
     STUDIO_MODEL_ASSET,
+    STUDIO_CANDIDATE_DELTA,
 )
 from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
 from monkeyarch.runtime.project_runner import CAD_BACKEND_OCCT, RunOptions, run_project
@@ -46,8 +47,10 @@ from archflow.state.state_record import (
     SchematicPack,
     StateRecord,
     StateRecordEditKind,
+    StateRecordError,
     StateRecordOperator,
     apply_state_record_operator,
+    combine_component_changes,
     developed_design_view,
 )
 
@@ -59,7 +62,8 @@ from .artifacts import (
     ArtifactRecord, ModelSource, _text, _whole, artifact_bytes, list_artifacts,
     register_model_asset, require_model_source,
 )
-from .binding import ProjectBinding, record_kind
+from .monitoring import StudioMonitor, candidate_event_id
+from .binding import ProjectBinding, ReferenceRun, record_kind
 from .jobs import FAILED, QUEUED, RUNNING
 from .projection import (
     BRANCH_ID,
@@ -88,6 +92,8 @@ def execute_candidate(
     settings: StudioSettings,
     proposal: Proposal,
     run_id: str,
+    *,
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Run the proposal as a candidate and return the runner's own receipt.
 
@@ -106,6 +112,7 @@ def execute_candidate(
         expected_record_digest=proposal.record_digest,
         expected_state_digest=proposal.base_state_digest,
         source_run_id=proposal.source_run_id,
+        source_stage_ref=proposal.source_stage_ref,
     )
     operator = proposal.state_record_operator or StateRecordOperator(
         kind=StateRecordEditKind.SET_SCALAR,
@@ -145,16 +152,18 @@ def execute_candidate(
         binding, settings, operator, run_id,
         source_run_id=proposal.source_run_id, retain=retain,
         model_source=proposal.model_source,
+        source_stage_ref=proposal.source_stage_ref,
+        monitor=monitor,
     )
 
 
 def _retain_composed_candidate(
     binding: ProjectBinding, source: ArtifactRecord, run_id: str, receipt: Mapping[str, Any],
+    *, source_receipt: Mapping[str, Any] | None,
 ) -> None:
     """Compose the runner's native exports into the exact input model and retain it."""
 
-    prior_receipt = binding.reference_run(source.run_id).receipt
-    before = {row["seat_id"]: row for row in _rows((prior_receipt or {}).get("seat_results"))}
+    before = {row["seat_id"]: row for row in _rows((source_receipt or {}).get("seat_results"))}
     after = {row["seat_id"]: row for row in _rows(receipt.get("seat_results"))}
     if not before or before.keys() != after.keys():
         raise ValueError("The composed candidate needs the same retained geometry seats as its source model.")
@@ -188,6 +197,8 @@ def execute_option_candidate(
     base_state_digest: str,
     source_run_id: str | None = None,
     model_source: ModelSource | None = None,
+    source_stage_ref: ProjectRecordRef | None = None,
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Run one selected massing option as a candidate, by the same arrangement.
 
@@ -208,6 +219,7 @@ def execute_option_candidate(
         expected_record_digest=base_record_digest,
         expected_state_digest=base_state_digest,
         source_run_id=source_run_id,
+        source_stage_ref=source_stage_ref,
     )
     operator = StateRecordOperator(
         kind=StateRecordEditKind.REPLACE_MASSING,
@@ -215,7 +227,8 @@ def execute_option_candidate(
         base_state_digest=base_record.state_digest,
         massing_pack=pack,
     )
-    return run_operator(binding, settings, operator, run_id, source_run_id=source_run_id, model_source=model_source)
+    return run_operator(binding, settings, operator, run_id, source_run_id=source_run_id, model_source=model_source,
+                        source_stage_ref=source_stage_ref, monitor=monitor)
 
 
 def _operator_base(
@@ -224,6 +237,7 @@ def _operator_base(
     expected_record_digest: str,
     expected_state_digest: str,
     source_run_id: str | None = None,
+    source_stage_ref: ProjectRecordRef | None = None,
 ) -> StateRecord:
     """Bind a Studio request to the StateRecord exact base on the worker.
 
@@ -232,7 +246,7 @@ def _operator_base(
     are checked rather than replacing either with a fresh value from here.
     """
 
-    projection = project_state(binding, run_id=source_run_id)
+    projection = project_state(binding, run_id=source_run_id, source_stage_ref=source_stage_ref)
     require_actionable(projection)
     if (
         projection.record_digest != expected_record_digest
@@ -257,6 +271,8 @@ def _run_successor(
     *,
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
     model_source_ref: str | None = None,
+    source_run_receipt_ref: ProjectRecordRef | None = None,
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Create the run, retain what belongs to it, and hand the record to the runner.
 
@@ -308,6 +324,7 @@ def _run_successor(
         cad_backend=settings.cad_export if settings.exports else CAD_BACKEND_OCCT,
         workspace_root=repository.layout.run(run_id).root / "workspaces",
         powershell=settings.powershell,
+        source_run_receipt_ref=source_run_receipt_ref,
     )
     if options.export:
         # Either exporter writes into a directory per seat and expects it to
@@ -318,6 +335,16 @@ def _run_successor(
                     options.workspace_root
                     / f"cad-{STAGE_ID}-{seat.seat_id}"
                 ).mkdir(parents=True, exist_ok=True)
+    observations = {}
+    if monitor is not None and monitor.store is not None:
+        def observe_export(timing):
+            monitor.record(
+                phase=f"geometry_export.{timing['backend']}.{timing['path']}",
+                status=timing["status"], started_at=timing["started_at"], ended_at=timing["ended_at"],
+                duration_ms=timing["duration_ms"], project_id=binding.project_id, run_id=run_id,
+                source_ref=timing["source_ref"], related_event_id=candidate_event_id(binding.project_id, run_id),
+            )
+        observations["operation_observer"] = observe_export
     return run_project(
         repository,
         run=run,
@@ -325,6 +352,7 @@ def _run_successor(
         record=bound,
         seats=seats,
         options=options,
+        **observations,
     )
 
 
@@ -337,21 +365,157 @@ def run_operator(
     source_run_id: str | None = None,
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
     model_source: ModelSource | None = None,
+    source_stage_ref: ProjectRecordRef | None = None,
+    combined_candidate_ids: tuple[str, ...] = (),
+    monitor: StudioMonitor | None = None,
 ) -> Mapping[str, Any]:
     """Replay a typed operator against its selected or default exact base and run it."""
 
     seat_pack = load_seat_pack(binding.repository)
-    projection = project_state(binding, run_id=source_run_id)
+    projection = project_state(binding, run_id=source_run_id, source_stage_ref=source_stage_ref)
     require_actionable(projection)
+    if model_source is None and projection.source_stage_ref is not None:
+        stage = binding.design_stage(projection.source_stage_ref)
+        if stage.candidate_id == projection.run.run_id:
+            model_source = ModelSource(stage.candidate_id, projection.state_digest, stage.model_sha256)
+        else:
+            complete = [row.model_source for row in list_artifacts(binding).artifacts
+                        if row.run_id == projection.run.run_id and row.design_state_digest == projection.state_digest
+                        and row.representation == "composed" and row.model_source is not None]
+            if len(complete) == 1:
+                model_source = complete[0]
+            elif len(complete) > 1:
+                raise StudioError(409, "MODEL_SOURCE_REQUIRED", "Select the complete candidate model to continue.")
     source_model = require_model_source(binding, model_source, projection) if model_source is not None else None
     if source_model is not None and source_model.representation != "composed":
         source_model = None
     successor = apply_state_record_operator(projection.record, operator)
-    receipt = _run_successor(binding, settings, seat_pack, successor, run_id, retain=retain,
-                             model_source_ref=source_model.receipt_ref if source_model is not None else None)
-    if source_model is not None:
-        _retain_composed_candidate(binding, source_model, run_id, receipt)
+    source_record_ref = (
+        record_ref_from_uri(projection.record_source, binding.project_id)
+        if projection.reference_state_exact else None
+    )
+    runner_ref = None
+    if projection.reference.receipt is not None:
+        runner_ref = next((ref for ref in binding.record_refs(projection.run.run_id)
+                           if record_kind(ref) == RUNNER_RUN_RECEIPT
+                           and binding.repository.load_json(ref) == projection.reference.receipt), None)
+        if runner_ref is None:
+            raise StudioError(409, "CANDIDATE_SOURCE_INVALID", "The selected source runner receipt could not be retained exactly.")
+    delta = {
+        "schema": "StudioCandidateDelta@1", "project_id": binding.project_id, "run_id": run_id,
+        "source_stage_ref": None if projection.source_stage_ref is None else projection.source_stage_ref.to_dict(),
+        "source_run_ref": projection.run.to_dict(),
+        "source_record_ref": None if source_record_ref is None else source_record_ref.to_dict(),
+        "source_record": projection.record.to_dict() if source_record_ref is None else None,
+        "source_runner_ref": None if runner_ref is None else runner_ref.to_dict(),
+        "source_model": None if model_source is None else model_source.to_dict(),
+        "operator": operator.to_dict(), "result_record_digest": successor.digest,
+        "combined_candidate_ids": list(combined_candidate_ids),
+    }
+    receipt = _run_successor(binding, settings, seat_pack, successor, run_id,
+                             retain=(*retain, (STUDIO_CANDIDATE_DELTA, delta)),
+                             model_source_ref=source_model.receipt_ref if source_model is not None else None,
+                             source_run_receipt_ref=runner_ref, monitor=monitor)
+    if source_model is not None and settings.exports:
+        _retain_composed_candidate(binding, source_model, run_id, receipt, source_receipt=projection.reference.receipt)
     return receipt
+
+
+def read_candidate_delta(binding: ProjectBinding, run_id: str) -> dict[str, Any]:
+    delta = binding.candidate_delta(run_id)
+    if delta is None:
+        raise StudioError(409, "CANDIDATE_DELTA_MISSING", "This retained model has no replayable candidate change; keep it as a legacy reference.")
+    return delta
+
+
+def prepare_combined_candidate(
+    binding: ProjectBinding, candidate_ids: tuple[str, ...],
+) -> tuple[StateProjection, StateRecordOperator]:
+    """Read saved candidates from one Stage and compile their independent net edits."""
+    if len(candidate_ids) < 2 or len(set(candidate_ids)) != len(candidate_ids):
+        raise StudioError(422, "CANDIDATE_COMBINE_INVALID", "Choose at least two distinct candidates.")
+    deltas = [read_candidate_delta(binding, run_id) for run_id in candidate_ids]
+    stage_value = deltas[0].get("source_stage_ref")
+    if stage_value is None or any(delta.get("source_stage_ref") != stage_value for delta in deltas):
+        raise StudioError(409, "CANDIDATE_COMBINE_BASE_MISMATCH", "Combined candidates must share one exact committed Stage.")
+    stage_ref = ProjectRecordRef.from_dict(stage_value)
+    projection = project_state(binding, source_stage_ref=stage_ref)
+    require_actionable(projection)
+    results = tuple(replay_candidate(binding, run_id) for run_id in candidate_ids)
+    protected: set[str] = set()
+    for run_id in candidate_ids:
+        current = run_id
+        while current != projection.run.run_id:
+            delta = read_candidate_delta(binding, current)
+            protected.update(delta["operator"]["protected"])
+            current = delta["source_run_ref"]["run_id"]
+    try:
+        operator = combine_component_changes(projection.record, results, protected=tuple(sorted(protected)))
+    except StateRecordError as exc:
+        raise StudioError(409, "CANDIDATE_COMBINE_CONFLICT", str(exc)) from exc
+    return projection, operator
+
+
+def replay_candidate(binding: ProjectBinding, run_id: str) -> StateRecord:
+    """Verify each exact parent before replaying the candidate's retained operator."""
+    visiting: set[str] = set()
+
+    def replay(current_id: str) -> StateRecord:
+        if current_id in visiting:
+            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The candidate source chain contains a cycle.")
+        visiting.add(current_id)
+        delta = read_candidate_delta(binding, current_id)
+        source_run = RunRef.from_dict(delta["source_run_ref"])
+        if source_run.project_id != binding.project_id:
+            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The candidate source belongs to another project.")
+        source_ref_value = delta["source_record_ref"]
+        source_is_stage = False
+        if source_ref_value is None:
+            if delta.get("source_stage_ref") is not None:
+                raise StudioError(409, "CANDIDATE_DELTA_INVALID", "A Stage-based candidate must retain its exact source record reference.")
+            source = StateRecord.from_dict(delta["source_record"])
+            if source.run_ref != source_run:
+                raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The authored source binding does not match the retained operator.")
+        else:
+            source_receipt = binding.repository.load_json(ProjectRecordRef.from_dict(delta["source_runner_ref"]))
+            source_ref, source = binding.exact_state_record(ReferenceRun(source_run, "query", source_receipt))
+            if source_ref != ProjectRecordRef.from_dict(source_ref_value):
+                raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The candidate source record and runner disagree.")
+            stage_value = delta.get("source_stage_ref")
+            if stage_value is not None:
+                stage = binding.design_stage(ProjectRecordRef.from_dict(stage_value))
+                source_is_stage = stage.record_ref == source_ref and stage.runner_ref == ProjectRecordRef.from_dict(delta["source_runner_ref"])
+                if not source_is_stage:
+                    parent_delta = binding.candidate_delta(source_run.run_id)
+                    if parent_delta is None or parent_delta.get("source_stage_ref") != stage_value:
+                        raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The candidate's parent does not descend from its declared Stage.")
+            if not source_is_stage and binding.candidate_delta(source_run.run_id) is not None:
+                parent_result = replay(source_run.run_id)
+                if parent_result.digest != source.digest:
+                    raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The preceding candidate does not replay to its retained source.")
+        operator = StateRecordOperator.from_dict(delta["operator"])
+        combined = delta.get("combined_candidate_ids", [])
+        if combined:
+            if len(combined) < 2 or len(set(combined)) != len(combined) or not source_is_stage:
+                raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The combined candidate must use one exact Stage base and distinct sources.")
+            results = []
+            for candidate_id in combined:
+                if read_candidate_delta(binding, candidate_id).get("source_stage_ref") != delta.get("source_stage_ref"):
+                    raise StudioError(409, "CANDIDATE_DELTA_INVALID", "Combined candidate sources do not share the retained Stage.")
+                results.append(replay(candidate_id))
+            expected = combine_component_changes(source, tuple(results), protected=operator.protected)
+            if expected != operator:
+                raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The combined operator disagrees with its source candidates.")
+        result = apply_state_record_operator(source, operator)
+        if result.digest != delta["result_record_digest"]:
+            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The retained change does not reproduce the candidate content.")
+        actual = project_state(binding, current_id, source_stage_ref=None if delta.get("source_stage_ref") is None else ProjectRecordRef.from_dict(delta["source_stage_ref"]))
+        if not actual.reference_state_exact or actual.record.digest != result.digest:
+            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The replayed content does not match the actual candidate result.")
+        visiting.remove(current_id)
+        return actual.record
+
+    return replay(run_id)
 
 @dataclass(frozen=True, slots=True)
 class SeatOutcome:

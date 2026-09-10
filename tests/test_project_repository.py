@@ -10,9 +10,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleProjectHead
+from archflow.project.repository import FilesystemProjectRepository, ProjectAlreadyExists, ProjectHeadLocked, ProjectIntegrityError, PromotionAuthorityError, StaleDesignBranch, StaleProjectHead
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import PROMOTION_DECISION, STATE_RECORD
+from archflow.project.record_kinds import DESIGN_STAGE, PROMOTION_DECISION, STATE_RECORD
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.project.digests import project_state_sha256
 
@@ -72,6 +72,106 @@ def _decision(
 
 
 class ProjectRepositoryTests(unittest.TestCase):
+    def stage(self, name: str, parent: ProjectRecordRef | None = None) -> ProjectRecordRef:
+        run = self.repository.create_run(name)
+        return self.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=name),
+            record_kind=DESIGN_STAGE,
+            payload={"schema": "DesignStage@1", "candidate_id": name,
+                     "parent_stage": None if parent is None else parent.to_dict()},
+        )
+
+    def branch(self, branch_id: str, fork: ProjectRecordRef, head: ProjectRecordRef,
+               parent: str | None = None) -> dict:
+        return {"branch_id": branch_id, "parent_branch": parent,
+                "fork_stage": fork.to_dict(), "head_stage": head.to_dict()}
+
+    def test_design_history_survives_restart_without_issuing_or_hidden_runs(self) -> None:
+        issued = self.repository.read_head()
+        self.assertEqual(self.repository.read_design_branches(), {})
+        self.assertFalse(self.repository.layout.design_branches.exists())
+        s0 = self.stage("initial")
+        s1 = self.stage("cabinet-b", s0)
+        unaccepted = self.stage("uncommitted", s0)
+        self.repository.compare_and_swap_design_branch(
+            branch_id="main", expected_head=None, branch=self.branch("main", s0, s0))
+        self.repository.compare_and_swap_design_branch(
+            branch_id="main", expected_head=s0, branch=self.branch("main", s0, s1))
+        self.repository.compare_and_swap_design_branch(
+            branch_id="cabinet-alt-a", expected_head=None,
+            branch=self.branch("cabinet-alt-a", s0, s0, "main"))
+        reopened = FilesystemProjectRepository.open(self.root)
+        self.assertEqual(reopened.read_head(), issued)
+        branches = reopened.read_design_branches()
+        self.assertEqual(branches["main"]["head_stage"], s1.to_dict())
+        self.assertEqual(branches["cabinet-alt-a"]["head_stage"], s0.to_dict())
+        self.assertEqual({p.name for p in reopened.layout.runs.iterdir()},
+                         {"initial", "cabinet-b", "uncommitted"})
+        report = reopened.verify()
+        self.assertIn(s0.relative_path, report.reachable_paths)
+        self.assertIn(s1.relative_path, report.reachable_paths)
+        self.assertIn(unaccepted.relative_path, report.orphan_paths)
+
+    def test_design_head_cas_rejects_competing_accept_and_fork_rewrite(self) -> None:
+        s0 = self.stage("initial")
+        a, b = self.stage("a", s0), self.stage("b", s0)
+        self.repository.compare_and_swap_design_branch(
+            branch_id="main", expected_head=None, branch=self.branch("main", s0, s0))
+        competitor = FilesystemProjectRepository.open(self.root)
+        self.repository.compare_and_swap_design_branch(
+            branch_id="main", expected_head=s0, branch=self.branch("main", s0, a))
+        with self.assertRaises(StaleDesignBranch):
+            competitor.compare_and_swap_design_branch(
+                branch_id="main", expected_head=s0, branch=self.branch("main", s0, b))
+        with self.assertRaises(ProjectIntegrityError):
+            competitor.compare_and_swap_design_branch(
+                branch_id="main", expected_head=a, branch=self.branch("main", b, b))
+        self.assertEqual(competitor.read_design_branches()["main"]["head_stage"], a.to_dict())
+
+    def test_design_ref_failed_write_preserves_position_and_prepared_stage(self) -> None:
+        s0, s1 = self.stage("initial"), self.stage("next")
+        self.repository.compare_and_swap_design_branch(
+            branch_id="main", expected_head=None, branch=self.branch("main", s0, s0))
+        with patch("archflow.project.repository._replace_atomic", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.repository.compare_and_swap_design_branch(
+                    branch_id="main", expected_head=s0, branch=self.branch("main", s0, s1))
+        reopened = FilesystemProjectRepository.open(self.root)
+        self.assertEqual(reopened.read_design_branches()["main"]["head_stage"], s0.to_dict())
+        self.assertIn(s1.relative_path, reopened.verify().orphan_paths)
+
+    def test_design_ref_rejects_non_stage_or_tampered_history(self) -> None:
+        run = self.repository.create_run("plain")
+        record = self.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STATE_RECORD, payload={"value": "not a stage"})
+        with self.assertRaises(ProjectIntegrityError):
+            self.repository.compare_and_swap_design_branch(
+                branch_id="main", expected_head=None, branch=self.branch("main", record, record))
+        s0 = self.stage("initial")
+        self.repository.compare_and_swap_design_branch(
+            branch_id="main", expected_head=None, branch=self.branch("main", s0, s0))
+        self.repository.layout.resolve_record(s0).write_text("{}", encoding="utf-8")
+        with self.assertRaises(ProjectIntegrityError):
+            FilesystemProjectRepository.open(self.root)
+
+    def test_design_ref_respects_cross_process_lock(self) -> None:
+        s0 = self.stage("initial")
+        lock_path = self.repository.layout.design_branches.with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        holder = subprocess.Popen([sys.executable, "-c", _FOREIGN_LOCK_HOLDER, str(lock_path)],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "LOCKED")
+            with patch("archflow.project.repository._HEAD_LOCK_TIMEOUT_SECONDS", 0.05):
+                with self.assertRaises(ProjectHeadLocked):
+                    self.repository.compare_and_swap_design_branch(
+                        branch_id="main", expected_head=None, branch=self.branch("main", s0, s0))
+            self.assertFalse(self.repository.layout.design_branches.exists())
+        finally:
+            holder.communicate("\n", timeout=5)
+
     def test_initial_authored_inputs_refuse_invalid_bytes_and_existing_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "new-project"
@@ -409,6 +509,10 @@ class ProjectRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.repository.read_head(), accepted)
         self.assertEqual(self.repository.load_current_state(), {"selected": "a"})
+        self.assertEqual(self.repository.load_version_state(base), {"phase": "request", "commitments": []})
+        self.assertEqual(self.repository.load_version_state(accepted), {"selected": "a"})
+        with self.assertRaises(ProjectIntegrityError):
+            self.repository.load_version_state(ProjectVersionRef("project-a", base.version, "0" * 64))
 
     def test_concurrent_head_readers_survive_cas_replacement(self) -> None:
         """HEAD reads racing os.replace must not leak PermissionError or

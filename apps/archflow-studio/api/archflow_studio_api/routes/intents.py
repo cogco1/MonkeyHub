@@ -104,9 +104,10 @@ def read_document_page_annotations(
     asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
     page_index: int = Query(alias="pageIndex", ge=0),
     revision_sha256: str | None = Query(alias="revisionSha256", default=None, pattern=r"^[0-9a-f]{64}$"),
+    drawing_revision_ref: str | None = Query(alias="drawingRevisionRef", default=None),
 ) -> DocumentAnnotationsDto:
     return document_annotations_dto(read_document_annotations(
-        bound_project(request.app.state), run_id, asset_sha256, page_index, revision_sha256,
+        bound_project(request.app.state), run_id, asset_sha256, page_index, revision_sha256, drawing_revision_ref,
     ))
 
 
@@ -116,7 +117,7 @@ def write_document_page_annotations(request: Request, payload: DocumentAnnotatio
     _require_bound_project(binding, payload.project_id)
     return document_annotations_dto(save_document_annotations(
         binding, payload.run_id, payload.asset_sha256, payload.page_index,
-        payload.base_revision_sha256, [document_gesture_from(row) for row in payload.annotations], payload.comment,
+        payload.base_revision_sha256, [document_gesture_from(row) for row in payload.annotations], payload.comment, payload.drawing_revision_ref,
     ))
 
 
@@ -133,6 +134,7 @@ def _refused(
     document_comment_ref: ProjectRecordRef | None = None,
     model_source: ModelSource | None = None,
     document_visuals: tuple[DocumentVisual, ...] = (),
+    source_stage_ref: ProjectRecordRef | None = None,
 ) -> StudioError:
     """One of the three refusing outcomes, as the error the route raises.
 
@@ -146,6 +148,7 @@ def _refused(
     resolution = replace(resolution, pending=replace(
         resolution.pending, document_comment_ref=document_comment_ref,
         model_source=model_source, document_visuals=document_visuals,
+        source_stage_ref=source_stage_ref,
     ))
     store.close(token)
     if not resolution.terminal:
@@ -194,6 +197,7 @@ def _semantic_answer(
     )
     proposal = replace(
         proposal, pending=resolution.pending, source_run_id=body.source_run_id,
+        source_stage_ref=projection.source_stage_ref,
         compilation_receipt=None if compilation.receipt is None else compilation.receipt.to_dict(),
         document_comment_ref=document_comment_ref,
         model_source=model_source_from(body.model_source) if body.model_source else None,
@@ -213,14 +217,14 @@ def _semantic_answer(
     response_model=IntentDto,
     response_model_by_alias=True,
     status_code=201,
-    responses={422: {"model": IntentBlockedDto}},
+    responses={422: {"model": IntentBlockedDto, "description": "Unprocessable Entity"}},
 )
 def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     """Compile one request against the resolved target, then propose it."""
 
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
-    projection = project_state(binding, run_id=body.source_run_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
     # Fail before resolution or model invocation: no compiler should explore
     # against a historical run whose exact state cannot base new work.
     require_actionable(projection)
@@ -247,6 +251,8 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         if body.continuation_token is None
         else store.resume(body.continuation_token, projection.state_digest)
     )
+    if pending is not None and pending.source_stage_ref != projection.source_stage_ref:
+        raise StudioError(409, "DESIGN_STAGE_MISMATCH", "Continue this clarification from its original design stage.")
     if pending is not None and pending.model_source is not None:
         if model_source is not None and model_source != pending.model_source:
             raise StudioError(409, "MODEL_SOURCE_MISMATCH", "This clarification belongs to a different model source.")
@@ -264,6 +270,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         require_document_comment_source(binding, previous_comment, projection)
         previous_references = [DocumentAnnotationRef(
             row["runId"], row["assetSha256"], row["pageIndex"], row["revisionSha256"],
+            row.get("drawingRevisionRef"),
         ) for row in previous_comment["documentAnnotations"]]
         if "document_annotations" in body.model_fields_set and document_references != previous_references:
             raise StudioError(409, "DOCUMENT_CONTEXT_MISMATCH", "This clarification belongs to the originally submitted page revisions. Submit a new request to change them.")
@@ -306,7 +313,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
     if edit_request:
         agent_selection = replace(reading.target, gestures=reading.facts, document_visuals=document_visuals) if reading.target else selection
         if isinstance(configured_compiler, DeterministicCompiler):
-            raise _refused(store, token=body.continuation_token, model_source=model_source, document_visuals=document_visuals, document_comment_ref=document_comment_ref, resolution=clarification.semantic_resolution(
+            raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, document_comment_ref=document_comment_ref, resolution=clarification.semantic_resolution(
                 projection, utterance=body.utterance, selection=agent_selection, pending=pending,
                 unsupported=True,
                 detail="Component changes need the configured design agent. This process currently accepts numeric edits only.",
@@ -323,7 +330,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             return _semantic_answer(request, body, projection, reading, pending, compilation, compile_ms, document_comment_ref)
         if edit_request:
             question = compilation.question if compilation.status == "question" else None
-            raise _refused(store, token=body.continuation_token, model_source=model_source, document_visuals=document_visuals, document_comment_ref=document_comment_ref, resolution=clarification.semantic_resolution(
+            raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, document_comment_ref=document_comment_ref, resolution=clarification.semantic_resolution(
                 projection, utterance=body.utterance, selection=agent_selection, pending=pending,
                 question=question, unsupported=question is None,
                 detail=compilation.why or "The request changes building components; the agent did not supply a supported component edit.",
@@ -371,7 +378,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             projection, compilation=compilation, resolution=resolution, pending=pending,
         )
         if checked.outcome != clarification.COMPILED:
-            raise _refused(store, token=body.continuation_token, model_source=model_source, document_visuals=document_visuals, resolution=checked, document_comment_ref=document_comment_ref)
+            raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, resolution=checked, document_comment_ref=document_comment_ref)
         original_utterance = resolution.pending.original_utterance
         resolution = clarification.resolve(
             projection, utterance=compilation.utterance,
@@ -380,7 +387,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         )
         resolution = replace(resolution, pending=replace(resolution.pending, original_utterance=original_utterance))
     if resolution.outcome != clarification.COMPILED:
-        raise _refused(store, token=body.continuation_token, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
+        raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
     assert resolution.selection is not None
     # A sentence already in the grammar is not read by the agent: the grammar
     # is the truth about it, and the architect who typed an exact sentence gets
@@ -424,7 +431,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         projection, compilation=compilation, resolution=resolution, pending=pending
     )
     if resolution.outcome != clarification.COMPILED:
-        raise _refused(store, token=body.continuation_token, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
+        raise _refused(store, token=body.continuation_token, source_stage_ref=projection.source_stage_ref, model_source=model_source, document_visuals=document_visuals, resolution=resolution, document_comment_ref=document_comment_ref)
     assert compilation.utterance is not None
     if reading.keep_refs:
         compilation = replace(
@@ -452,6 +459,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
             store,
             token=body.continuation_token,
             document_comment_ref=document_comment_ref,
+            source_stage_ref=projection.source_stage_ref,
             model_source=model_source,
             document_visuals=document_visuals,
             resolution=clarification.blocked(
@@ -475,6 +483,7 @@ def compile_intent(request: Request, body: IntentRequestDto) -> IntentDto:
         ),
         pending=resolution.pending,
         source_run_id=body.source_run_id,
+        source_stage_ref=projection.source_stage_ref,
         document_comment_ref=document_comment_ref,
         model_source=model_source,
     )

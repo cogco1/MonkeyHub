@@ -4,15 +4,12 @@
 event loop thread at all: it would refuse. This module owns the worker
 threads it runs on instead, and the queue in front of them.
 
-The queue is dependency-aware. Two candidates conflict when their closures
-intersect - the target, the kernel's direct and propagated impact and what
-the sentence protected - and a conflicting candidate waits for the one ahead
-of it, saying which one and why. Candidates whose closures are disjoint run
-side by side: each run writes only its own directory under the repository's
-lock, and a harness run never issues anything. Exports are the exception: a
-Rhino export is one process on this machine, so a candidate that exports
-takes the exclusive lane and waits for any other exporting candidate,
-whatever their closures. The DAG is never drawn; it shows as behaviour.
+Candidates run in separate workspaces against immutable sources. Their read
+and write refs describe the proposed change; even overlapping edits can be
+computed independently. Deciding whether their results can be combined is
+not queue admission. A Rhino export still takes the exclusive lane because
+there is one Rhino process on this machine; other candidates share the worker
+pool without a design-ref lock.
 
 The registry is an in-process dict, like the proposal store and for the same
 reason: it is not history. It remembers what this service did since it started
@@ -37,6 +34,7 @@ from uuid import uuid4
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError
+from .monitoring import StudioMonitor, candidate_event_id
 
 QUEUED = "queued"
 RUNNING = "running"
@@ -69,7 +67,8 @@ class Job:
     # The queue's own facts: which lane the job runs in, and while it is
     # queued, which candidate it is waiting for and why.
     lane: str = PARALLEL
-    closure: frozenset[str] = frozenset()
+    read_refs: frozenset[str] = frozenset()
+    write_refs: frozenset[str] = frozenset()
     waiting_for: str | None = None
     waiting_reason: str | None = None
 
@@ -78,19 +77,21 @@ class JobRegistry:
     """The worker threads candidates run on, the queue in front of them, and
     what became of each job.
 
-    Every state change publishes an event before the lock is released, so the
-    order events are numbered in is the order the jobs actually changed.
+    A queued job is registered with its work and announced before another
+    submitter or a finishing worker can admit it.
     """
 
-    def __init__(self, events: StudioEventSink, *, max_workers: int = 2) -> None:
+    def __init__(self, events: StudioEventSink, *, max_workers: int = 2, monitor: StudioMonitor | None = None) -> None:
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
         self._events = events
+        self._monitor = monitor
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._accepting = True
         self._jobs: dict[str, Job] = {}
         self._by_candidate: dict[str, str] = {}
-        # Admission order: a job waits behind every earlier job it conflicts
-        # with, so two changes to one element run in the order they were asked.
+        # Admission order preserves the exclusive resource lane's order.
         self._pending: list[str] = []
         self._running: list[str] = []
         self._work: dict[str, Callable[[], Any]] = {}
@@ -103,21 +104,35 @@ class JobRegistry:
     def max_workers(self) -> int:
         return self._max_workers
 
+    @property
+    def accepting(self) -> bool:
+        with self._lock:
+            return self._accepting
+
+    def stop_accepting(self) -> None:
+        """Close admission while already accepted work keeps its place."""
+
+        with self._lock:
+            self._accepting = False
+
     def submit(
         self,
         *,
         candidate_id: str,
         proposal_id: str,
         work: Callable[[], Any],
-        closure: Iterable[str] = (),
+        read_refs: Iterable[str] = (),
+        write_refs: Iterable[str] = (),
         exclusive: bool = False,
+        project_id: str | None = None,
+        source_ref: str | None = None,
+        related_event_id: str | None = None,
     ) -> Job:
         """Queue one candidate run and answer with the job that will do it.
 
-        ``closure`` is what the change touches, as the record's refs; two
-        jobs whose closures intersect never run at the same time. An
-        ``exclusive`` job (one that exports) never runs beside another
-        exclusive job.
+        ``read_refs`` and ``write_refs`` describe the design inputs and edits.
+        Separate candidate workspaces may compute overlapping edits. An
+        ``exclusive`` job never runs beside another exclusive job.
 
         A candidate id is claimed here, once. Rebinding one to a second job
         would silently orphan the first: ``GET /api/candidates/{id}`` would
@@ -126,6 +141,19 @@ class JobRegistry:
         The second submission is refused instead, naming both jobs.
         """
 
+        if self._monitor is not None:
+            operation = work
+
+            def measured_work():
+                with self._monitor.measure(
+                    "candidate", project_id=project_id, run_id=candidate_id,
+                    source_ref=source_ref, related_event_id=related_event_id,
+                    event_id=candidate_event_id(project_id, candidate_id) if project_id is not None else None,
+                ):
+                    return operation()
+
+            work = measured_work
+
         job = Job(
             job_id=f"job-{uuid4().hex[:12]}",
             status=QUEUED,
@@ -133,13 +161,25 @@ class JobRegistry:
             proposal_id=proposal_id,
             created_at=_now(),
             lane=EXCLUSIVE if exclusive else PARALLEL,
-            closure=frozenset(closure),
+            read_refs=frozenset(read_refs),
+            write_refs=frozenset(write_refs),
         )
         with self._lock:
+            if not self._accepting:
+                raise StudioError(
+                    503,
+                    "STUDIO_STOPPING",
+                    "Studio is shutting down and no longer accepts candidate jobs.",
+                )
             claimed = self._by_candidate.get(candidate_id)
             if claimed is None:
                 self._jobs[job.job_id] = job
                 self._by_candidate[candidate_id] = job.job_id
+                self._work[job.job_id] = work
+                self._pending.append(job.job_id)
+                # Admission can happen on any submitting or finishing thread.
+                # Publish queued before releasing this complete job to them.
+                self._publish(job, "candidate.queued")
         if claimed is not None:
             raise StudioError(
                 409,
@@ -148,10 +188,7 @@ class JobRegistry:
                 f"{claimed}. One candidate id names one run; it is never "
                 "rebound to a second job.",
             )
-        self._publish(job, "candidate.queued")
-        with self._lock:
-            self._pending.append(job.job_id)
-        self._admit(work_for={job.job_id: work})
+        self._admit()
         return job
 
     def get(self, job_id: str) -> Job:
@@ -200,8 +237,11 @@ class JobRegistry:
             )
 
     def shutdown(self) -> None:
-        """Stop accepting work and let the running candidates finish."""
+        """Finish every accepted job before closing the worker pool."""
 
+        with self._idle:
+            self._accepting = False
+            self._idle.wait_for(lambda: not self._pending and not self._running)
         self._workers.shutdown(wait=True)
 
     # ---- admission
@@ -209,33 +249,26 @@ class JobRegistry:
     def _blocker(self, job: Job, ahead: Iterable[Job]) -> tuple[str, str] | None:
         """The nearest job ahead that this one must wait for, and why.
 
-        Nearest, not first: behind two changes to one element the third
-        waits for the second, which is the one it will actually run after.
+        An exclusive job waits for the nearest earlier exclusive job.
         """
 
         for other in reversed(list(ahead)):
             if job.lane == EXCLUSIVE and other.lane == EXCLUSIVE:
                 return other.candidate_id, EXCLUSIVE_REASON
-            shared = sorted(job.closure & other.closure)
-            if shared:
-                return other.candidate_id, "shares " + ", ".join(shared)
         return None
 
-    def _admit(self, *, work_for: Mapping[str, Callable[[], Any]] | None = None) -> None:
+    def _admit(self) -> None:
         """Start every pending job that nothing ahead of it blocks.
 
         Called on submit and whenever a job finishes. Pending jobs are
         looked at in order; each is blocked by any running job or any
-        *earlier* pending job it conflicts with, so admission never
-        reorders two jobs that touch the same thing. A job that is not
+        *earlier* pending job using the same exclusive resource. A job that is not
         blocked but finds every worker busy waits for a worker, and says so.
         """
 
         started: list[tuple[Job, Callable[[], Any]]] = []
         waiting: list[tuple[Job, str]] = []
         with self._lock:
-            if work_for:
-                self._work.update(work_for)
             running = [self._jobs[job_id] for job_id in self._running]
             earlier: list[Job] = []
             still_pending: list[str] = []
@@ -298,6 +331,9 @@ class JobRegistry:
             )
             self._release(job_id)
             return
+        except BaseException:
+            self._release(job_id)
+            raise
         self._publish(
             self._transition(
                 job_id,
@@ -313,6 +349,7 @@ class JobRegistry:
         with self._lock:
             if job_id in self._running:
                 self._running.remove(job_id)
+            self._idle.notify_all()
         self._admit()
 
     def _transition(self, job_id: str, **changes: Any) -> Job:

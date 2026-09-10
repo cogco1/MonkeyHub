@@ -58,6 +58,7 @@ ANTHROPIC_PROVIDER_ID = "anthropic-messages"
 # one call and are no part of the provider's identity.
 CODEX_FIXED_ARGUMENTS = (
     "exec",
+    "--json",
     "--ephemeral",
     "--skip-git-repo-check",
     "--ignore-user-config",
@@ -321,7 +322,7 @@ class Compilation:
     prompt_sha256: str | None
     raw: str | None
     # The receipt of the model call this answer came out of, on the shared
-    # ``ModelInvocationReceipt@2`` contract. ``None`` when no model was
+    # ``ModelInvocationReceipt`` contract. ``None`` when no model was
     # called, which is the deterministic compiler's whole case.
     receipt: ModelInvocationReceipt | None = None
     semantic_edit: Mapping[str, Any] | None = None
@@ -514,6 +515,8 @@ def _model_receipt(
     error_code: str | None = None,
     message: str | None = None,
     image_bytes: int = 0,
+    usage: Mapping[str, int | None] | None = None,
+    reported_model: str | None = None,
 ) -> ModelInvocationReceipt:
     """One receipt of one call: what was sent, what came back, and how it ended.
 
@@ -543,7 +546,7 @@ def _model_receipt(
         status=status,
         request=request,
         provider_id=binding.provider_id,
-        model_id=binding.model_id,
+        model_id=reported_model or binding.model_id,
         provider_version=binding.version,
         provider_fingerprint=binding.fingerprint,
         input_bytes=len(prompt.encode("utf-8")) + image_bytes,
@@ -555,6 +558,7 @@ def _model_receipt(
         ),
         error_code=error_code,
         message=said,
+        **(usage or {}),
     )
 
 
@@ -569,6 +573,8 @@ def _failed(
     detail: str,
     raw: str | None = None,
     image_bytes: int = 0,
+    usage: Mapping[str, int | None] | None = None,
+    reported_model: str | None = None,
 ) -> IntentAgentFailed:
     """The refusal a caller sees, with the receipt of the call behind it."""
 
@@ -585,6 +591,8 @@ def _failed(
             error_code=error_code,
             message=detail,
             image_bytes=image_bytes,
+            usage=usage,
+            reported_model=reported_model,
         ),
     )
 
@@ -842,6 +850,7 @@ class CodexCompiler:
                     ),
                 ) from exc
             except subprocess.TimeoutExpired as exc:
+                usage, reported_model = _codex_usage(exc.stdout)
                 raise _failed(
                     self.binding,
                     request,
@@ -850,9 +859,12 @@ class CodexCompiler:
                     duration_ms=_elapsed_ms(started),
                     error_code="model.timeout",
                     image_bytes=image_bytes,
+                    usage=usage,
+                    reported_model=reported_model,
                     detail=f"codex did not answer within {self.timeout_s:g} s",
                 ) from exc
             latency_ms = _elapsed_ms(started)
+            usage, reported_model = _codex_usage(completed.stdout)
             if completed.returncode != 0:
                 tail = (completed.stderr or completed.stdout or "").strip()[-600:]
                 raise _failed(
@@ -863,6 +875,8 @@ class CodexCompiler:
                     duration_ms=latency_ms,
                     error_code="model.provider_exit",
                     image_bytes=image_bytes,
+                    usage=usage,
+                    reported_model=reported_model,
                     detail=f"codex exited with {completed.returncode}: {tail}",
                 )
             raw = answer_path.read_text(encoding="utf-8") if answer_path.exists() else completed.stdout
@@ -873,14 +887,91 @@ class CodexCompiler:
             prompt=prompt,
             prompt_sha=prompt_sha,
             provider=CODEX,
-            model=self.model,
+            model=reported_model or self.model,
             duration_ms=latency_ms,
             image_bytes=image_bytes,
+            usage=usage,
+            reported_model=reported_model,
         )
 
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _usage_field(value: object, name: str) -> Any:
+    return value.get(name) if isinstance(value, Mapping) else getattr(value, name, None)
+
+
+def _token_count(value: object) -> int | None:
+    return value if type(value) is int and value >= 0 else None
+
+
+def _reported_model(value: object) -> str | None:
+    model = _usage_field(value, "model") or _usage_field(value, "model_id")
+    return model.strip() if isinstance(model, str) and 0 < len(model.strip()) <= 1_000 else None
+
+
+def _codex_usage(stdout: str | bytes | None) -> tuple[dict[str, int | None], str | None]:
+    """Read CLI metadata only, never usage mentioned in a message or stderr."""
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="replace")
+    usage: dict[str, int | None] = {}
+    model = None
+    for line in (stdout or "").splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = event.get("type")
+        if event_type in ("thread.started", "turn.started", "turn.completed", "turn.failed"):
+            model = _reported_model(event) or model
+        if event_type not in ("turn.completed", "turn.failed"):
+            continue
+        reported = event.get("usage")
+        if not isinstance(reported, Mapping):
+            continue
+        # The terminal event reports the complete turn, not an increment to
+        # earlier progress events; do not add them and double-count the call.
+        usage = {
+            name: _token_count(reported.get(name))
+            for name in ("input_tokens", "output_tokens", "cached_input_tokens", "reasoning_output_tokens",
+                         "cache_write_input_tokens", "cache_write_1h_input_tokens")
+        }
+        if usage["cache_write_input_tokens"] == 0:
+            usage["cache_write_1h_input_tokens"] = 0
+    return usage, model
+
+
+def _anthropic_usage(response: object) -> dict[str, int | None]:
+    reported = _usage_field(response, "usage")
+    if reported is None:
+        return {}
+    uncached = _token_count(_usage_field(reported, "input_tokens"))
+    output = _token_count(_usage_field(reported, "output_tokens"))
+    cached = _token_count(_usage_field(reported, "cache_read_input_tokens"))
+    written = _token_count(_usage_field(reported, "cache_creation_input_tokens"))
+    if uncached is not None:
+        # Older Messages responses omit the optional cache counters when
+        # there was no prompt-cache use. Input itself is never defaulted.
+        cached = 0 if _usage_field(reported, "cache_read_input_tokens") is None else cached
+        written = 0 if _usage_field(reported, "cache_creation_input_tokens") is None else written
+    cache_creation = _usage_field(reported, "cache_creation")
+    written_1h = _token_count(_usage_field(cache_creation, "ephemeral_1h_input_tokens"))
+    if written == 0:
+        written_1h = 0
+    elif cache_creation is not None and _usage_field(cache_creation, "ephemeral_1h_input_tokens") is None:
+        written_1h = 0
+    return {
+        "input_tokens": None if uncached is None or cached is None or written is None else uncached + cached + written,
+        "output_tokens": output,
+        "cached_input_tokens": cached,
+        "cache_write_input_tokens": written,
+        "cache_write_1h_input_tokens": written_1h,
+        "reasoning_output_tokens": _token_count(_usage_field(reported, "reasoning_output_tokens")),
+    }
 
 
 def _answered(
@@ -894,6 +985,8 @@ def _answered(
     model: str | None,
     duration_ms: int,
     image_bytes: int = 0,
+    usage: Mapping[str, int | None] | None = None,
+    reported_model: str | None = None,
 ) -> Compilation:
     """The provider answered: type the answer, then sign what came back.
 
@@ -924,6 +1017,8 @@ def _answered(
                 error_code="model.output_malformed",
                 message=exc.detail,
                 image_bytes=image_bytes,
+                usage=usage,
+                reported_model=reported_model,
             ),
         ) from exc
     return replace(
@@ -937,6 +1032,8 @@ def _answered(
             output=_answer_object(compilation),
             duration_ms=duration_ms,
             image_bytes=image_bytes,
+            usage=usage,
+            reported_model=reported_model,
         ),
     )
 
@@ -1012,7 +1109,11 @@ def _run_bounded(
             process.wait(timeout=5.0)
         except subprocess.TimeoutExpired:
             pass
-        raise subprocess.TimeoutExpired(command, timeout_s)
+        for thread in threads:
+            thread.join(timeout=1.0)
+        raise subprocess.TimeoutExpired(
+            command, timeout_s, output=captured["stdout"], stderr=captured["stderr"]
+        )
     for thread in threads:
         thread.join(timeout=5.0)
     return subprocess.CompletedProcess(command, process.returncode, captured["stdout"], captured["stderr"])
@@ -1135,9 +1236,13 @@ class AnthropicCompiler:
                 duration_ms=_elapsed_ms(started),
                 error_code="model.timeout" if timed_out else "model.provider_error",
                 image_bytes=image_bytes,
+                usage=_anthropic_usage(getattr(exc, "body", None)),
+                reported_model=_reported_model(getattr(exc, "body", None)),
                 detail=f"the Anthropic API did not answer: {type(exc).__name__}: {exc}",
             ) from exc
         latency_ms = _elapsed_ms(started)
+        usage = _anthropic_usage(response)
+        reported_model = _reported_model(response)
         raw = "".join(
             block.text for block in response.content if getattr(block, "type", "") == "text"
         )
@@ -1148,9 +1253,11 @@ class AnthropicCompiler:
             prompt=prompt,
             prompt_sha=prompt_sha,
             provider=ANTHROPIC,
-            model=self.model,
+            model=reported_model or self.model,
             duration_ms=latency_ms,
             image_bytes=image_bytes,
+            usage=usage,
+            reported_model=reported_model,
         )
 
 

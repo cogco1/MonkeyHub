@@ -23,6 +23,7 @@ from ..application.binding import ProjectBinding, bound_project
 from ..application.artifacts import require_model_source
 from ..application.candidate import execute_option_candidate
 from ..application.jobs import JobRegistry
+from ..application.monitoring import projection_source_ref
 from ..application.options import (
     MassingOption,
     OptionStore,
@@ -63,7 +64,7 @@ def make_massing_option(
 
     state = request.app.state
     binding = bound_project(state)
-    projection = project_state(binding, run_id=body.source_run_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
     require_actionable(projection)
     _require_current_base(
         binding,
@@ -88,6 +89,7 @@ def make_massing_option(
             envelope=envelope,
             program_targets=body.program_targets,
             source_run_id=body.source_run_id,
+            source_stage_ref=projection.source_stage_ref,
             model_source=model_source_from(body.model_source) if body.model_source is not None else None,
         )
     )
@@ -143,7 +145,7 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
     state = request.app.state
     option: MassingOption = state.options.get(option_id)
     binding = bound_project(state)
-    projection = project_state(binding, run_id=option.source_run_id)
+    projection = project_state(binding, run_id=option.source_run_id, source_stage_ref=option.source_stage_ref)
     require_actionable(projection)
     _require_current_base(
         binding,
@@ -167,7 +169,9 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
             base_record_digest=option.base_record_digest,
             base_state_digest=option.base_state_digest,
             source_run_id=option.source_run_id,
+            source_stage_ref=option.source_stage_ref,
             model_source=option.model_source,
+            monitor=state.monitor,
         )
 
     return accepted_dto(
@@ -178,9 +182,11 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
             # candidate readout says so instead of inventing an utterance.
             proposal_id=option_id,
             work=work,
+            project_id=binding.project_id,
+            source_ref=projection_source_ref(projection),
             # A massing option reaches every entity of the record's massing,
             # so its closure is the volumes, levels and zones it declares.
-            closure=tuple(
+            write_refs=tuple(
                 f"entity:{item['volume_id']}" for item in pack.volumes
             )
             + tuple(f"entity:{item['level_id']}" for item in pack.levels)

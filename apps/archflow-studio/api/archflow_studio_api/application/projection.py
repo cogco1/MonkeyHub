@@ -23,7 +23,7 @@ from archflow.project.inputs import (
     load_authored_record,
 )
 from archflow.project.layout import AUTHORED_RECORD_PATH
-from archflow.project.refs import ProjectVersionRef, RunRef
+from archflow.project.refs import ProjectRecordRef, ProjectVersionRef, RunRef, record_ref_from_uri
 from archflow.state.developed_design import DevelopedDesignError, DevelopedDesignState
 from archflow.state.operational_state import DependencyEdge
 from archflow.state.spatial import DesignComponent
@@ -99,6 +99,7 @@ class StateProjection:
     parameters: tuple[Parameter, ...]
     edges: tuple[DependencyEdge, ...]
     honesty: tuple[str, ...]
+    source_stage_ref: ProjectRecordRef | None = None
 
     @property
     def record_digest(self) -> str:
@@ -128,6 +129,7 @@ def project_state(
     run_id: str | None = None,
     *,
     require_view: bool = True,
+    source_stage_ref: ProjectRecordRef | str | None = None,
 ) -> StateProjection:
     """Project one run's retained record, or authored WIP when no run exists.
 
@@ -147,7 +149,42 @@ def project_state(
     having to remember it.
     """
 
-    reference = binding.reference_run(run_id)
+    if isinstance(source_stage_ref, str):
+        try:
+            source_stage_ref = record_ref_from_uri(source_stage_ref, binding.project_id)
+        except ValueError as exc:
+            raise StudioError(422, "DESIGN_STAGE_REF_INVALID", error_sentence(exc)) from exc
+    # Existing sourceRunId callers can continue a committed model. An exact
+    # Stage selection takes precedence when a run belongs to multiple lines.
+    if source_stage_ref is None:
+        branches = binding.repository.read_design_branches()
+        main_head = None if "main" not in branches else ProjectRecordRef.from_dict(branches["main"]["head_stage"])
+        if run_id is None and main_head is not None:
+            source_stage_ref = main_head
+        elif run_id is not None and branches:
+            matches: dict[ProjectRecordRef, str] = {}
+            for branch_id in branches:
+                for ref, stage in binding.design_history(branch_id):
+                    if stage.candidate_id == run_id:
+                        matches[ref] = branch_id
+            if main_head in matches:
+                source_stage_ref = main_head
+            elif len(matches) == 1:
+                source_stage_ref = next(iter(matches))
+            elif not matches:
+                delta = binding.candidate_delta(run_id)
+                if delta is not None and delta.get("source_stage_ref") is not None:
+                    source_stage_ref = ProjectRecordRef.from_dict(delta["source_stage_ref"])
+    selected_stage = None if source_stage_ref is None else binding.design_stage(source_stage_ref)
+    if selected_stage is not None and (run_id is None or run_id == selected_stage.candidate_id):
+        reference = ReferenceRun(binding.load_run(selected_stage.candidate_id), "query",
+                                 binding.repository.load_json(selected_stage.runner_ref))
+    else:
+        reference = binding.reference_run(run_id)
+        if selected_stage is not None:
+            delta = binding.candidate_delta(reference.run.run_id)
+            if delta is None or delta.get("source_stage_ref") != source_stage_ref.to_dict():
+                raise StudioError(409, "DESIGN_STAGE_MISMATCH", "The candidate is not derived from the selected stage.")
     head = binding.head()
     record_source = AUTHORED_RECORD_PATH
     reference_state_exact = False
@@ -165,6 +202,8 @@ def project_state(
             run = reference.run
             record_source = retained_ref.uri
             reference_state_exact = True
+            if selected_stage is not None and reference.run.run_id == selected_stage.candidate_id and retained_ref != selected_stage.record_ref:
+                raise StudioError(409, "DESIGN_STAGE_MISMATCH", "The stage's runner and StateRecord references disagree.")
         except StudioError as exc:
             if exc.code != "REFERENCE_STATE_NOT_EXACT":
                 raise
@@ -247,6 +286,7 @@ def project_state(
             phase_error=phase_error,
             binding_error=binding_error,
         ),
+        source_stage_ref=source_stage_ref,
     )
 
 
@@ -304,7 +344,7 @@ def require_actionable(projection: StateProjection) -> None:
             projection.reference_state_error
             or "the reference run has no verified retained State Record",
         )
-    if projection.reference.run.base != projection.head:
+    if projection.reference.run.base != projection.head and projection.source_stage_ref is None:
         raise StudioError(
             409,
             "REFERENCE_BASE_STALE",

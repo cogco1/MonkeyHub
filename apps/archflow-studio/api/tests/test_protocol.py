@@ -72,6 +72,7 @@ class ProtocolRouteTests(unittest.TestCase):
             "candidates",
             "captures",
             "artifacts",
+            "board-scenes",
             "events",
             "validation",
         ):
@@ -264,6 +265,22 @@ class RemoteModeGateTests(unittest.TestCase):
         response = self.local.get("/api/state")
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("access-control-allow-origin", response.headers)
+
+    def test_remote_browser_can_preflight_annotation_and_selection_saves(self) -> None:
+        for path in (
+            "/api/model-annotations",
+            "/api/document-annotations",
+            "/api/working-copies/example/selection",
+        ):
+            with self.subTest(path=path):
+                response = self.remote.options(path, headers={
+                    "Origin": ORIGIN,
+                    "Access-Control-Request-Method": "PUT",
+                    "Access-Control-Request-Headers": "authorization,content-type",
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["access-control-allow-origin"], ORIGIN)
+                self.assertIn("PUT", response.headers["access-control-allow-methods"])
 
 
 if __name__ == "__main__":

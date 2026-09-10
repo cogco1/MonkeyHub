@@ -6,7 +6,9 @@ from fastapi import APIRouter
 
 from . import (
     artifacts,
+    boards,
     candidates,
+    drawings,
     episodes,
     events,
     health,
@@ -32,6 +34,8 @@ router.include_router(project.router)
 router.include_router(state.router)
 router.include_router(program.router)
 router.include_router(artifacts.router)
+router.include_router(boards.router)
+router.include_router(drawings.router)
 router.include_router(pick.router)
 router.include_router(proposals.router)
 router.include_router(intents.router)

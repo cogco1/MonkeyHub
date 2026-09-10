@@ -12,7 +12,7 @@ mesh as the exact model.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -160,15 +160,27 @@ class DocumentPageDto(BaseModel):
     rotation: int = Field(description="PDF page rotation applied to these dimensions; 0 for oriented images.")
 
 
+class DocumentPageReplacementDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+    revision_ref: str | None = Field(alias="revisionRef", default=None, min_length=1)
+    page_index: int = Field(alias="pageIndex", ge=0, strict=True)
+    new_page_index: int = Field(alias="newPageIndex", ge=0, strict=True)
+
+
 class SourceDocumentRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     project_id: str = Field(alias="projectId", min_length=1)
-    run_id: str = Field(alias="runId", min_length=1)
+    run_id: str | None = Field(alias="runId", default=None, min_length=1,
+                              description="Existing storage run, or omit to use the project's source-document run without a model or Stage association.")
     file_name: str = Field(alias="fileName", min_length=1, max_length=240)
     mime_type: Literal["application/pdf", "image/png", "image/jpeg"] = Field(alias="mimeType")
     content_base64: str = Field(alias="contentBase64", min_length=1, description="Original file bytes; maximum decoded size 32 MiB. No server path is accepted.")
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    replaces_pages: list[DocumentPageReplacementDto] = Field(alias="replacesPages", default_factory=list)
 
 
 class SourceDocumentDto(BaseModel):
@@ -186,13 +198,19 @@ class SourceDocumentDto(BaseModel):
     pages: list[DocumentPageDto]
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     model_source_binding_ref: str | None = Field(alias="modelSourceBindingRef", default=None)
+    drawing_id: str | None = Field(alias="drawingId", default=None)
+    revision_ref: str | None = Field(alias="revisionRef", default=None)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    view_recipe: dict[str, Any] | None = Field(alias="viewRecipe", default=None)
+    generated_at: str | None = Field(alias="generatedAt", default=None)
+    replaces_pages: list[DocumentPageReplacementDto] = Field(alias="replacesPages", default_factory=list)
 
 
 class SourceDocumentListDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     project_id: str = Field(alias="projectId")
-    run_id: str = Field(alias="runId")
+    run_id: str | None = Field(alias="runId", description="Requested storage run; null when listing every registered project document.")
     documents: list[SourceDocumentDto]
 
 
@@ -204,6 +222,13 @@ def document_dto(document: SourceDocument) -> SourceDocumentDto:
         page_count=len(document.pages),
         model_source=model_source_dto(document.model_source),
         model_source_binding_ref=document.model_source_binding_ref,
+        drawing_id=document.drawing_id, revision_ref=document.revision_ref,
+        source_stage_ref=document.source_stage_ref, view_recipe=document.view_recipe,
+        generated_at=document.generated_at,
+        replaces_pages=[DocumentPageReplacementDto(
+            run_id=page.run_id, asset_sha256=page.asset_sha256, revision_ref=page.revision_ref,
+            page_index=page.page_index, new_page_index=page.new_page_index,
+        ) for page in document.replaces_pages],
         pages=[DocumentPageDto(page_index=page.page_index, width=page.width, height=page.height, rotation=page.rotation) for page in document.pages],
     )
 

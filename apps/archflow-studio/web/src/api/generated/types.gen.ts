@@ -5,6 +5,28 @@ export type ClientOptions = {
 };
 
 /**
+ * AcceptDesignCandidateRequestDto
+ */
+export type AcceptDesignCandidateRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string;
+    /**
+     * Expectedheadstageref
+     */
+    expectedHeadStageRef: string;
+    /**
+     * Label
+     */
+    label?: string | null;
+};
+
+/**
  * AgentReadingDto
  *
  * What the agent said and how it was obtained — the agent's, not the record's.
@@ -47,7 +69,7 @@ export type AgentReadingDto = {
     /**
      * Receiptid
      *
-     * the ModelInvocationReceipt@2 that signs the call to the model; null for the deterministic provider, which calls none
+     * the ModelInvocationReceipt that signs the call to the model; null for the deterministic provider, which calls none
      */
     receiptId?: string | null;
     /**
@@ -152,6 +174,110 @@ export type AuthoredControlDraftDto = {
      * the model's objects of the component, as the catalog binds them
      */
     objectNames?: Array<string>;
+};
+
+/**
+ * BoardDto
+ */
+export type BoardDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Elements
+     */
+    elements: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Seendocuments
+     */
+    seenDocuments: Array<string>;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string | null;
+};
+
+/**
+ * BoardExportPageDto
+ *
+ * One exact registered page, in the order it appears on the board.
+ */
+export type BoardExportPageDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+};
+
+/**
+ * BoardExportRequestDto
+ *
+ * A transient clean-source export; the caller supplies no filesystem path.
+ */
+export type BoardExportRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Pages
+     */
+    pages: Array<BoardExportPageDto>;
+    /**
+     * Format
+     */
+    format: 'merged-pdf' | 'page-pdfs' | 'png' | 'jpeg';
+    /**
+     * Zip
+     */
+    zip?: boolean;
+};
+
+/**
+ * BoardRequestDto
+ */
+export type BoardRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Title
+     */
+    title?: string;
+    /**
+     * Elements
+     */
+    elements: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Seendocuments
+     */
+    seenDocuments: Array<string>;
 };
 
 /**
@@ -629,6 +755,20 @@ export type ClosureRequestDto = {
 };
 
 /**
+ * CombineCandidatesRequestDto
+ */
+export type CombineCandidatesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Candidateids
+     */
+    candidateIds: Array<string>;
+};
+
+/**
  * CompareComponentDto
  *
  * A component's objects, counted by what happened to them.
@@ -946,6 +1086,81 @@ export type DependencyEdgeDto = {
 };
 
 /**
+ * DesignBranchDto
+ */
+export type DesignBranchDto = {
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Parentbranch
+     */
+    parentBranch: string | null;
+    /**
+     * Forkstageref
+     */
+    forkStageRef: string;
+    /**
+     * Headstageref
+     */
+    headStageRef: string;
+};
+
+/**
+ * DesignHistoryDto
+ */
+export type DesignHistoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branches
+     */
+    branches: Array<DesignBranchDto>;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Stages
+     */
+    stages: Array<DesignStageDto>;
+};
+
+/**
+ * DesignStageDto
+ */
+export type DesignStageDto = {
+    /**
+     * Stageref
+     */
+    stageRef: string;
+    /**
+     * Parentstageref
+     */
+    parentStageRef: string | null;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    modelSource: ModelSourceDto;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+};
+
+/**
  * DocumentAnnotationRefDto
  *
  * One exact saved page revision to accompany a written design request.
@@ -967,6 +1182,12 @@ export type DocumentAnnotationRefDto = {
      * Revisionsha256
      */
     revisionSha256: string;
+    /**
+     * Drawingrevisionref
+     *
+     * The exact generated drawing receipt URI; omitted for legacy source documents.
+     */
+    drawingRevisionRef?: string | null;
 };
 
 /**
@@ -1001,6 +1222,10 @@ export type DocumentAnnotationsDto = {
      * Comment
      */
     comment: string;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
 };
 
 /**
@@ -1023,6 +1248,10 @@ export type DocumentAnnotationsRequestDto = {
      * Pageindex
      */
     pageIndex: number;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
     /**
      * Baserevisionsha256
      *
@@ -1185,6 +1414,32 @@ export type DocumentPageDto = {
 };
 
 /**
+ * DocumentPageReplacementDto
+ */
+export type DocumentPageReplacementDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Newpageindex
+     */
+    newPageIndex: number;
+};
+
+/**
  * DocumentVisualInputDto
  *
  * Transient visible-page PNGs, rendered by the client from a registered source.
@@ -1210,6 +1465,10 @@ export type DocumentVisualInputDto = {
      * Revisionsha256
      */
     revisionSha256?: string | null;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
     /**
      * Pagepngbase64
      *
@@ -1252,6 +1511,37 @@ export type ElementDto = {
     numericFields: {
         [key: string]: number | number;
     };
+};
+
+/**
+ * ElevationRequestDto
+ */
+export type ElevationRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * View
+     */
+    view?: 'front' | 'back' | 'left' | 'right';
+    /**
+     * Drawingid
+     */
+    drawingId?: string | null;
+    /**
+     * Hiddenlines
+     */
+    hiddenLines?: boolean;
+    /**
+     * Scaledenominator
+     */
+    scaleDenominator?: number;
 };
 
 /**
@@ -1539,6 +1829,28 @@ export type ExportTimingDto = {
 };
 
 /**
+ * ForkDesignBranchRequestDto
+ */
+export type ForkDesignBranchRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Parentbranch
+     */
+    parentBranch: string;
+    /**
+     * Stageref
+     */
+    stageRef: string;
+};
+
+/**
  * FrameAxisDto
  *
  * One ``GridAxis@1`` row of the frame, read as a plan line where it is one.
@@ -1816,6 +2128,25 @@ export type ImpactLockDto = {
 };
 
 /**
+ * InitializeDesignStageRequestDto
+ */
+export type InitializeDesignStageRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Branchid
+     */
+    branchId?: string;
+    /**
+     * Label
+     */
+    label?: string;
+    modelSource: ModelSourceDto;
+};
+
+/**
  * IntentBlockedDto
  *
  * The body every refusing outcome of ``POST /api/intents`` answers with.
@@ -1886,6 +2217,10 @@ export type IntentDto = {
  * One request in the architect's words, against the current selection.
  */
 export type IntentRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     modelSource?: ModelSourceDto | null;
     /**
      * Statedigest
@@ -2194,6 +2529,10 @@ export type MassingOptionDto = {
  */
 export type MassingOptionRequestDto = {
     /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
      * Sourcerunid
      *
      * the selected retained run; omitted uses the project's default source
@@ -2419,6 +2758,46 @@ export type ModelGestureDto = {
 };
 
 /**
+ * ModelLoadTimingDto
+ *
+ * Client elapsed time from artifact download to viewport load completion.
+ */
+export type ModelLoadTimingDto = {
+    /**
+     * Eventid
+     */
+    eventId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Sourceref
+     */
+    sourceRef?: string | null;
+    /**
+     * Startedat
+     */
+    startedAt: string;
+    /**
+     * Endedat
+     */
+    endedAt: string;
+    /**
+     * Durationms
+     */
+    durationMs: number;
+    /**
+     * Status
+     */
+    status: 'succeeded' | 'failed' | 'cancelled';
+};
+
+/**
  * ModelSourceDto
  */
 export type ModelSourceDto = {
@@ -2448,6 +2827,18 @@ export type ModifiedToDto = {
      * the sentence the architect replaced the proposal with; it is re-proposed through the same deterministic path
      */
     utterance: string;
+};
+
+/**
+ * MonitorWriteDto
+ *
+ * A diagnostic acknowledgement; it does not change a model or project.
+ */
+export type MonitorWriteDto = {
+    /**
+     * Recorded
+     */
+    recorded: boolean;
 };
 
 /**
@@ -2764,6 +3155,10 @@ export type ProgramAdjacencyDto = {
  * Apply a sheet to the record as a candidate; optionally keep the sheet.
  */
 export type ProgramApplyRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     /**
      * Sourcerunid
      *
@@ -3247,6 +3642,10 @@ export type ProposalDecisionRequestDto = {
  * The wire form of ``POST /api/proposals`` and ``GET /api/proposals/{id}``.
  */
 export type ProposalDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     modelSource?: ModelSourceDto | null;
     /**
      * Proposalid
@@ -3322,6 +3721,10 @@ export type ProposalDto = {
  * One utterance against one selection, at one exact base.
  */
 export type ProposalRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     /**
      * Statedigest
      *
@@ -3654,6 +4057,32 @@ export type SourceDocumentDto = {
      * Modelsourcebindingref
      */
     modelSourceBindingRef?: string | null;
+    /**
+     * Drawingid
+     */
+    drawingId?: string | null;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Viewrecipe
+     */
+    viewRecipe?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Generatedat
+     */
+    generatedAt?: string | null;
+    /**
+     * Replacespages
+     */
+    replacesPages?: Array<DocumentPageReplacementDto>;
 };
 
 /**
@@ -3666,8 +4095,10 @@ export type SourceDocumentListDto = {
     projectId: string;
     /**
      * Runid
+     *
+     * Requested storage run; null when listing every registered project document.
      */
-    runId: string;
+    runId: string | null;
     /**
      * Documents
      */
@@ -3684,8 +4115,10 @@ export type SourceDocumentRequestDto = {
     projectId: string;
     /**
      * Runid
+     *
+     * Existing storage run, or omit to use the project's source-document run without a model or Stage association.
      */
-    runId: string;
+    runId?: string | null;
     /**
      * Filename
      */
@@ -3701,6 +4134,10 @@ export type SourceDocumentRequestDto = {
      */
     contentBase64: string;
     modelSource?: ModelSourceDto | null;
+    /**
+     * Replacespages
+     */
+    replacesPages?: Array<DocumentPageReplacementDto>;
 };
 
 /**
@@ -3709,6 +4146,10 @@ export type SourceDocumentRequestDto = {
  * The wire form of ``GET /api/state``.
  */
 export type StateProjectionDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
     /**
      * Projectid
      */
@@ -3858,6 +4299,26 @@ export type StudioHealth = {
      * Projectbound
      */
     projectBound: boolean;
+    /**
+     * Serverversion
+     */
+    serverVersion?: string | null;
+    /**
+     * Managedinstanceid
+     */
+    managedInstanceId?: string | null;
+    /**
+     * Processid
+     */
+    processId?: number | null;
+    /**
+     * Parentprocessid
+     */
+    parentProcessId?: number | null;
+    /**
+     * Sourcerevision
+     */
+    sourceRevision?: string | null;
 };
 
 /**
@@ -4244,6 +4705,10 @@ export type WorkingCopyDto = {
      * Stageid
      */
     stageId: string;
+    /**
+     * Basestageref
+     */
+    baseStageRef?: string | null;
     commonBase: ModelSourceDto;
     /**
      * Scope
@@ -4460,6 +4925,10 @@ export type ReadStateApiStateGetData = {
     body?: never;
     path?: never;
     query?: {
+        /**
+         * Sourcestageref
+         */
+        sourceStageRef?: string | null;
         /**
          * Run
          *
@@ -4702,11 +5171,11 @@ export type AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostRe
 export type ReadDocumentsApiDocumentsGetData = {
     body?: never;
     path?: never;
-    query: {
+    query?: {
         /**
          * Runid
          */
-        runId: string;
+        runId?: string | null;
     };
     url: '/api/documents';
 };
@@ -4767,6 +5236,10 @@ export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetData = {
          * Runid
          */
         runId: string;
+        /**
+         * Revisionref
+         */
+        revisionRef?: string | null;
     };
     url: '/api/documents/{asset_sha256}/bytes';
 };
@@ -4855,6 +5328,95 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
      */
     200: unknown;
 };
+
+export type ReadBoardApiBoardGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/board';
+};
+
+export type ReadBoardApiBoardGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardDto;
+};
+
+export type ReadBoardApiBoardGetResponse = ReadBoardApiBoardGetResponses[keyof ReadBoardApiBoardGetResponses];
+
+export type UpdateBoardApiBoardPutData = {
+    body: BoardRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/board';
+};
+
+export type UpdateBoardApiBoardPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateBoardApiBoardPutError = UpdateBoardApiBoardPutErrors[keyof UpdateBoardApiBoardPutErrors];
+
+export type UpdateBoardApiBoardPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: BoardDto;
+};
+
+export type UpdateBoardApiBoardPutResponse = UpdateBoardApiBoardPutResponses[keyof UpdateBoardApiBoardPutResponses];
+
+export type ExportBoardApiBoardExportPostData = {
+    body: BoardExportRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/board/export';
+};
+
+export type ExportBoardApiBoardExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportBoardApiBoardExportPostError = ExportBoardApiBoardExportPostErrors[keyof ExportBoardApiBoardExportPostErrors];
+
+export type ExportBoardApiBoardExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CreateElevationApiDrawingsElevationsPostData = {
+    body: ElevationRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/drawings/elevations';
+};
+
+export type CreateElevationApiDrawingsElevationsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateElevationApiDrawingsElevationsPostError = CreateElevationApiDrawingsElevationsPostErrors[keyof CreateElevationApiDrawingsElevationsPostErrors];
+
+export type CreateElevationApiDrawingsElevationsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationApiDrawingsElevationsPostResponses[keyof CreateElevationApiDrawingsElevationsPostResponses];
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;
@@ -5053,6 +5615,10 @@ export type ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData = {
          * Revisionsha256
          */
         revisionSha256?: string | null;
+        /**
+         * Drawingrevisionref
+         */
+        drawingRevisionRef?: string | null;
     };
     url: '/api/document-annotations';
 };
@@ -5270,6 +5836,31 @@ export type StartCandidateApiProposalsProposalIdCandidatePostResponses = {
 
 export type StartCandidateApiProposalsProposalIdCandidatePostResponse = StartCandidateApiProposalsProposalIdCandidatePostResponses[keyof StartCandidateApiProposalsProposalIdCandidatePostResponses];
 
+export type CombineCandidatesApiCandidatesCombinePostData = {
+    body: CombineCandidatesRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/candidates/combine';
+};
+
+export type CombineCandidatesApiCandidatesCombinePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CombineCandidatesApiCandidatesCombinePostError = CombineCandidatesApiCandidatesCombinePostErrors[keyof CombineCandidatesApiCandidatesCombinePostErrors];
+
+export type CombineCandidatesApiCandidatesCombinePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: CandidateAcceptedDto;
+};
+
+export type CombineCandidatesApiCandidatesCombinePostResponse = CombineCandidatesApiCandidatesCombinePostResponses[keyof CombineCandidatesApiCandidatesCombinePostResponses];
+
 export type ReadJobApiJobsJobIdGetData = {
     body?: never;
     path: {
@@ -5366,6 +5957,116 @@ export type CompareCandidateApiCandidatesCandidateIdCompareGetResponses = {
 };
 
 export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = CompareCandidateApiCandidatesCandidateIdCompareGetResponses[keyof CompareCandidateApiCandidatesCandidateIdCompareGetResponses];
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Branchid
+         */
+        branchId?: string;
+    };
+    url: '/api/design-history';
+};
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetError = ReadCommittedDesignHistoryApiDesignHistoryGetErrors[keyof ReadCommittedDesignHistoryApiDesignHistoryGetErrors];
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DesignHistoryDto;
+};
+
+export type ReadCommittedDesignHistoryApiDesignHistoryGetResponse = ReadCommittedDesignHistoryApiDesignHistoryGetResponses[keyof ReadCommittedDesignHistoryApiDesignHistoryGetResponses];
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostData = {
+    body: InitializeDesignStageRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/design-stages/initialize';
+};
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostError = InitializeCommittedDesignApiDesignStagesInitializePostErrors[keyof InitializeCommittedDesignApiDesignStagesInitializePostErrors];
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DesignStageDto;
+};
+
+export type InitializeCommittedDesignApiDesignStagesInitializePostResponse = InitializeCommittedDesignApiDesignStagesInitializePostResponses[keyof InitializeCommittedDesignApiDesignStagesInitializePostResponses];
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostData = {
+    body: AcceptDesignCandidateRequestDto;
+    path: {
+        /**
+         * Candidate Id
+         */
+        candidate_id: string;
+    };
+    query?: never;
+    url: '/api/candidates/{candidate_id}/accept';
+};
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostError = AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors[keyof AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors];
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DesignStageDto;
+};
+
+export type AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponse = AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses[keyof AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses];
+
+export type ForkCommittedDesignApiDesignBranchesPostData = {
+    body: ForkDesignBranchRequestDto;
+    path?: never;
+    query?: never;
+    url: '/api/design-branches';
+};
+
+export type ForkCommittedDesignApiDesignBranchesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ForkCommittedDesignApiDesignBranchesPostError = ForkCommittedDesignApiDesignBranchesPostErrors[keyof ForkCommittedDesignApiDesignBranchesPostErrors];
+
+export type ForkCommittedDesignApiDesignBranchesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DesignBranchDto;
+};
+
+export type ForkCommittedDesignApiDesignBranchesPostResponse = ForkCommittedDesignApiDesignBranchesPostResponses[keyof ForkCommittedDesignApiDesignBranchesPostResponses];
 
 export type ReadWorkingCopiesApiWorkingCopiesGetData = {
     body?: never;
@@ -5596,6 +6297,31 @@ export type ReadValidationApiCandidatesCandidateIdValidationGetResponses = {
 };
 
 export type ReadValidationApiCandidatesCandidateIdValidationGetResponse = ReadValidationApiCandidatesCandidateIdValidationGetResponses[keyof ReadValidationApiCandidatesCandidateIdValidationGetResponses];
+
+export type RecordModelLoadApiEventsModelLoadPostData = {
+    body: ModelLoadTimingDto;
+    path?: never;
+    query?: never;
+    url: '/api/events/model-load';
+};
+
+export type RecordModelLoadApiEventsModelLoadPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecordModelLoadApiEventsModelLoadPostError = RecordModelLoadApiEventsModelLoadPostErrors[keyof RecordModelLoadApiEventsModelLoadPostErrors];
+
+export type RecordModelLoadApiEventsModelLoadPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MonitorWriteDto;
+};
+
+export type RecordModelLoadApiEventsModelLoadPostResponse = RecordModelLoadApiEventsModelLoadPostResponses[keyof RecordModelLoadApiEventsModelLoadPostResponses];
 
 export type StreamEventsApiEventsGetData = {
     body?: never;

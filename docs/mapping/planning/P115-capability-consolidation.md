@@ -10,7 +10,92 @@
 [work registry](../../../governance/work_registry.json) 生成到 [planning INDEX](INDEX.md)。
 本轮完成的子项保留 `[x]` 和结果，不删行；整张卡结束时按仓库规则退出 live registry，记录由 Git 保留。
 
+**2026-09-09 Stage 收敛。** 用户已同意 [Stage / Branch / Candidate 方案](../../STAGE_BRANCH_CANDIDATE_PLAN.md)。本地实现已接常驻候选预览、显式 Stage 接受和历史 fork、确切模型立面、跨 run 局部复用及同 Stage 独立修改合并；相关 API／OCCT、41 个隔离浏览器场景、构建和架构检查已通过。沿现有 owner 实施，保留真实项目的显式初始接受与正式 issue 边界。此项不关闭 C08 的建筑方法闭环或其他未完成任务。
+
 ## 1. 先记住四块
+
+Monkey 家族的用量、计价与预算接口归独立 [MonkeyMonitor](../../../monkeymonitor/README.md)。
+它通过 Studio 的可选元数据适配器联动，采用家族同款界面；具体优化策略和同步调整按该方案中的实际测量结果推进，不混入建筑评价或项目发布。
+
+### MonkeyMonitor：时间与 Token 记录补齐（2026-09-09）
+
+**本地实现与实际浏览器闭环已完成。** 从 `069c6c39` 的独立工作区扩展既有 Monitor 与 Studio owner：
+候选 worker、几何导出、浏览器模型加载和显式 Stage 保存写入同一可选诊断日志，带项目、run 和保留来源。
+候选耗时包含内部导出；浏览器等待、Codex 轮次和模型调用分别呈现。人工查看时间不计入服务耗时，
+没有模型调用的阶段不填 token。受控 OCCT 项目已通过实际 HTTP 和视口加载并点击保存 S1；
+日志故障测试下 S2 仍可保存并冷重开，诊断不会重复业务调用。
+
+Codex 来源可在 Monitor 页面显式填写父任务及已知子代理 JSONL，或逐个使用 `--codex-session`。
+来源只在当前进程选择，不扫描任务历史。已知会话副本与继承轮次去重；缺少父来源／turn_id 的旧日志
+显示归属未核实和原文提示，不猜扣计数，也不从 token 行间距推算模型耗时。
+旧日志保持可读。该实现尚未纳入安装包；不会重启现用服务或回写冻结的发行工作区。
+详细口径与使用方法见 [MonkeyMonitor](../../../monkeymonitor/README.md#时间口径)。
+
+### MonkeyHub：共用设施与桌面入口（2026-09-09）
+
+**请求已授权实施，尚未交付。** 用户要求总结现有基础设施，分给不同会话执行。功能基线是
+`5813fb4`；各实现会话从本次交接提交建立独立工作区，保留 `D:/ARCHFLOW_V4` 的未提交内容。
+第一版闭环：下载固定版本包 → 首次准备 → 打开 Hub → 打开应用 → 正常退出 → 再次打开。
+MonkeyArch、MonkeyDiagram 共用 Studio；MonkeyMonitor 独立启动。Hub 最初交接时 MonkeyBoard
+尚未实现；其后单独授权的白板实施与 Studio 共用入口，见下节。
+
+| 执行会话 | 交付与文件边界 | 完成条件 |
+| --- | --- | --- |
+| 界面交互｜MonkeyArch工作台 | 共用翻译、显示偏好与基础样式，新增 `apps/monkeyhub/web/`；共用前端文件限 `apps/shared-web/`，只迁出真实第二消费者所需部分。可修改 Studio 的 i18n、settings、样式及对应构建/测试和 Monitor 的 Web 消费端。 | 现有 Studio 行为保留；Hub 使用相同的语言、主题、字号和控件。对接真实启动 API 后验证状态与按钮；界面模拟不算集成完成。 |
+| 团队开发｜环境、协作与接入准备 | `apps/monkeyhub/api/`、Hub 根目录运行入口和 README；扩展既有 Studio 启动器及确需调整的 settings/进程退出路径，以及 Monitor 的四个精确共用资源地址与退出路径。先提供最小实际 OpenAPI，再交界面会话生成客户端。此会话独占本轮 module/work registry、architecture policy 及生成地图更新。 | Hub 无项目也能启动；Arch/Diagram 共享一组服务；Monitor 可独立开关并读取共用显示资源；重复点击不重复启动；核对正确服务身份；退出协调运行中任务。 |
+| 仓库维护｜巡检、清理与归档 | `apps/monkeyhub/installer/`、`tools/package_monkeyapps.py`、根目录 `OPEN_MONKEYHUB.cmd` 和首次安装/发行说明；在独立集成工作区接入另外两条线的已检查提交。 | 产出明确源提交对应的 Windows 候选安装包；前端预构建，普通使用者无需运行 npm；验证路径含中文/空格、重开和不覆盖原数据。干净机器/第二位使用者未验证时明确保留该项。 |
+
+**已确认可以复用的实现。** Studio 的 `i18n/browserTranslator.ts`、`useT.ts`、中英词典、
+`features/settings/preferences.tsx`、基础样式、错误显示与 OpenAPI 工具链；现有 Windows 启动器的
+托盘、日志和进程监测；ArchFlow 的项目定位、文件/记录保存、稳定引用、原子写入和重开校验；
+共享模型调用值与 MonkeyMonitor 用量/计价。公共 UI 只提取真实共用部分，不创建全面组件迁移工程。
+
+**接入时必须处理的实际差异。** `useT` 依赖 React，Monitor 当前是普通 JS；不同端口的
+localStorage 不共享。用户默认值已有 `%APPDATA%/MonkeyArch/settings.json`，优先沿原 owner
+补读取/配置，不建立第二份互相争用的设置源。现有 generated client 使用全局单连接，多服务必须
+按真实实例隔离，不能手写一套已有 DTO。Studio 的 `project_dir` 是必填配置；Hub 不能靠虚假项目
+或 `None` 冒充已有无项目模式。启动器现有 `taskkill /T /F` 不等于正常退出，Hub 必须区分自己拥有
+的进程与外部进程，并协调在途任务。用户的当前应用、Rhino、浏览器和 runtime 配置不用于强制重启测试。
+
+**保留领域边界。** 队列仍是进程内候选任务，SSE 只有有限内存回放，不声称持久队列或跨重启续跑；
+现有 Codex/Anthropic 编译器仍绑定建筑意图，不是通用 AI 网关。Stage 仍绑定模型和运行记录，普通
+图版保存不能复用为伪建模 Stage。原图导入可以沿既有接口，但持久保存需要真实 run。
+检索、通用预览等预留 port 不算已接通的插件系统。此轮不增加应用市场、云账号或自动更新服务。
+
+**协作与交接。** 界面抽取与启动服务可并行；服务会话先交实际 API，界面再完成真实接线；安装会话
+先准备构建包装，接收两条已检查提交后完成候选包。各会话只提交自身明确路径，不推送，不覆盖主目录
+或他人 WIP；需要其他会话的文件时先定向交接。每条线返回提交、文件、检查与具体剩余项给本会话，
+同时交安装会话做集成。集成会话在自身工作区处理合并，公共契约冲突由原 owner 修复，不改受保护主线。
+检查采用现有相关行为测试、受影响 Web 类型/构建/OpenAPI 检查和 `tools/archcheck.py`；纯包装验收
+以真实可启动成品为准。最终状态区分本地实现、候选包与第二台机器已验证。
+
+### MonkeyBoard：公司内部单人投屏白板（2026-09-09）
+
+**本地实现与真实浏览器验收已完成。** 首版由一人编辑并在会议中投屏，操作沿用
+Miro 的无限画布习惯，从已发布候选源码 `4d2c7c2` 单独实施。PDF／PNG／JPG 已接上传、
+拖放和粘贴；PDF 可按页加入画布。MonkeyDiagram 的新资料自动追加为独立图框，保留
+已有图纸的位置与讨论；主动移除的图纸不会在下一次自动收取时重新出现。
+图框、文字、箭头和手绘标记可在画布排列，布局经串行保存后可重开恢复。
+每张图均可按原文档的 run、确切 drawing revision 和页码返回 MonkeyDiagram。
+原始文件仍由 `studio.artifacts` 保存在项目原有 P036 对象和记录中。
+
+**实现归属。** EXTEND `studio.artifacts` 的跨 run 文档发现和无模型上传；新增
+`studio.board` 仅承担当前真实消费者需要的持久画布场景，使用 `studio-board` run
+内的 `studio-board-scene` 记录。已有文件 owner 不负责画布排布，页批注 owner 不负责
+多图位置，因此此场景拥有单独 owner；不另建项目存储或 Design Stage。Hub 的 Board
+入口与 Arch／Diagram 共用 Studio 进程。画布采用 MIT 的 Excalidraw 0.18.1，保留本地
+字体与许可，使用现有显示偏好和生成客户端。
+
+**验收状态。** 相关 API 和前端保存／来源身份测试已通过。主代理继续在真实浏览器中
+核对自动收图、上传与 PDF 分页、拖动与标记、撤销、保存重开，以及确切原图页返回。
+多人实时协作不在本次明确使用方式内。
+
+**会议接入。** 官方已提供 Zoom RTMS 和腾讯会议 `meeting.asr-push` 实时转写路径。
+目标是会议原句／发言时间对应当时白板上的图纸与区域，再形成该来源 Stage 的意见。
+当前账户权限、会议接入与真实转写尚未配置；普通白板保存不宣称完成了会议自动传输。
+腾讯会议 OAuth 接入限相应授权创建的会议，Zoom 公司内部与对外分发的审批条件不同。
+[Zoom RTMS](https://developers.zoom.us/docs/rtms/meetings/add-features/) ·
+[腾讯会议转写推送](https://cloud.tencent.com/document/product/1095/107522)。
 
 | 工作领域 | 回答什么问题 | 输入 → 输出 | 不负责 |
 | --- | --- | --- | --- |
@@ -122,7 +207,7 @@
 | episode／任务重启恢复、取消 | P115 F11：已知有限缺口，未作为今晚全部完工条件 | 分清完成结果可回读与进行中任务不可恢复；有实际使用需求时扩展已有 owner，不建聊天数据库 |
 | 算法搜索策略／OCBA／预算分配 | P115 F12：[架构文档](../../ARCHITECTURE.md)明确暂缓，由算法方向后续研究 | 不恢复旧 controller，不当作这轮建模的前置 |
 | 队友独立开发与接入 | P115 F13：已有入口、本机隔离验证及 PR #3 的远端 CI 通过；第二位成员复现待完成 | 选定源码基线 → 独立 clone／短分支 → PR／Actions／review；不在同一个检出里多人切分支，不复制维护者私有项目 |
-| 模型制造准备：3D 打印缩放拆件，后续板材排料与激光／CNC | P115 F14：MonkeyFab 独立工具已本地实现闭合 STL／OBJ 等比缩放、按 X1C／H2D 参数封闭拆件及 STL／装配清单输出；ArchFlow 应用调用尚未接入 | 主归“出”，改变设计的拆件／接头回到“做”，工艺条件归“读”、制造检查归“验”；共享工具箱以 `monkeyfab-print-preparation` 登记为 `reference`，源码留在 MonkeyFab；接入时扩展真实消费 owner 和项目工件入口。板材排料、激光／CNC 仍待实现 |
+| 模型制造准备：3D 打印缩放拆件，后续板材排料与激光／CNC | P115 F14：MonkeyFab 独立工具实现闭合 STL／OBJ 等比缩放、X1C／H2S／H2D 封闭拆件与装配清单，以及已切片文件的 LAN Send；Hub 提供现有 CLI 的操作页面，整合包共用 Python 并绑定两个仓库提交 | 主归“出”，改变设计的拆件／接头回到“做”，工艺条件归“读”、制造检查归“验”；源码留在独立 [MonkeyFab](https://github.com/cogco1/MonkeyFab)，Hub 扩展固定工具入口，几何结果由用户明确指定外部目录。Stage 工件回写、实机发送验收、板材排料、激光／CNC 仍待实现 |
 
 ## 4. Agent、skill 与工具的分工
 
@@ -157,7 +242,7 @@
 - [x] **C02｜完成选定来源前后端贯通。** Program／options GET 接收 `run`，POST 接收 `sourceRunId`；option 选择与 worker 保留创建来源，无效来源不退回 WIP。客户端读写传递选定来源，只允许来源和绑定摘要均匹配的结果生成候选，旧响应不会覆盖新来源。OpenAPI SDK 和协议已同步；program／options 61 测、候选续改 5 测与客户端 13 项接线测试通过。现有项目的建筑效果仍由 P108／P111 试用核实，不重做本项实现。
 - [x] **C03｜已删除无消费者的编译回执自摘要。** 移除 `GeometryCompilationReceipt.receipt_digest` 及其冻结断言；保留 `to_dict()`、编译程序身份、错误、asset substitution 的真实摘要和历史 round 读取。编译器／接口 datum／语义几何 27 测通过，两文件净删 8 行。
 - [x] **C04｜已退役空转的 declared-controls 入口。** 核实无设计 successor／candidate 消费及保留记录格式后，删除 `/api/controls` 的 endpoint、store、DTO 三文件、挂载和两项专属冻结测试，并更新协议、模块索引与生成 SDK。仍供澄清解释用的 AuthoredControlDraft 保留；clarification catalog 7 测与接口生成一致性检查通过。删除源码可从 Git 恢复，无项目数据迁移。
-- [x] **C05｜已解除“运行候选＝替人接受方案”的耦合。** candidate 路径只生成预览并保存既有人工判断，不再自动 accepted／rejected。显式采纳复用现有 decision 入口，必须指定同 proposal 的成功 `candidateId`，证据读取该候选的 retained StateRecord；沿已有语义关闭同起点未决定选项，保留原文理由、旧 episode 格式和读取，不移动 HEAD／issue。episodes／candidate／proposals 95 测通过、1 项真实 Villa 环境测试跳过，包含默认来源变化后的精确采纳回归。自动视觉候选与方法循环仍见 C08。
+- [x] **C05｜已解除“运行候选＝替人接受方案”的耦合。** candidate 路径只生成预览并保存既有人工判断，不再自动 accepted／rejected。显式采纳复用现有 decision 入口，必须指定同 proposal 的成功 `candidateId`，证据读取该候选的 retained StateRecord；2026-09-09 已进一步取消自动作废同起点其他选项，保留原文理由、旧 episode 格式和读取，不移动 HEAD／issue。episodes／candidate／proposals 95 测通过、1 项真实 Villa 环境测试跳过，包含默认来源变化后的精确采纳回归。自动视觉候选与方法循环仍见 C08。
 - [ ] **C06｜合并普通意图的重复分流。** 核对 route regex、target／action／scope resolver 的真实用途，移除让非 scalar 任务提前掉进数值补问的分支。保留明确数值输入、滑杆、选中目标和 keep 条件；不是删除所有 parser。
 - [x] **C07｜已完成技术错误责任边界。** Agent 无效 scalar／字段／单位／element 下沉错误为 `502 INTENT_AGENT_FAILED`，不向人返回语法补问；Agent 可明确返回 `unsupported`，沿既有终止结果解释工具限制。确定性直输和真实设计澄清保留。相关四组 90 测通过，另补 scalar unsupported 分支回归。自动修正属于 C08，本项不冒充自修复已实现。
 - [ ] **C08｜完成一个方法＋工具＋检查的 Agent 闭环。** 先用 F03 通道任务，不建立泛化技能平台；Agent 需要能读相关资料／视图、调用现有工具、查看候选并修正。以真实通行与后续修改验收，不以 JSON 合法或测试数量验收。
@@ -229,7 +314,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 | 资料与任务（3） | `state.program`、`state.program_sheet`、`studio.program` |
 | 方案与建模（10） | `capabilities.element_producers`、`capabilities.geometry_proposal`、`capabilities.opening_solver`、`capabilities.reference_resolver`、`capabilities.wall_solver`、`capabilities.element_reindex`、`state.spatial`、`state.developed_design`、`state.decision_operator`、`studio.options` |
 | 分析与校核（7） | `capabilities.declaration`、`capabilities.relation_checks`、`state.massing_metrics`、`validation.engine`、`validation.model`、`studio.validation`、`adapters.three_dm_inspector` |
-| 表达与出图（3） | `studio.artifacts`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
+| 表达与出图（4） | `studio.artifacts`、`studio.board`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
 | Agent 与工作台（6） | `ports.model`、`capabilities.discipline_seats`、`studio.binding`、`studio.candidate`、`studio.intent`、`studio.shell` |
 | 共享：状态与语义（12） | `state.commitments`、`state.derivation`、`state.design_portfolio`、`state.model`、`state.operational_state`、`state.record`、`state.stage_workflow`、`relations.contracts`、`semantics.conditions`、`semantics.registry`、`semantics.roles`、`submission.model` |
 | 建模编译与共用 CAD 执行（6） | `state.geometry_program`、`compilers.geometry`、`runtime.project_runner`、`adapters.cad_execution`、`adapters.cad_patch`、`adapters.cad_program` |

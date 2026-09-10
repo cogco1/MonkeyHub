@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, ServerSentEventsResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostData, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses, ApplyProgramApiProgramPostData, ApplyProgramApiProgramPostErrors, ApplyProgramApiProgramPostResponses, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostData, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutData, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses, CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateDocumentApiDocumentsPostData, CreateDocumentApiDocumentsPostErrors, CreateDocumentApiDocumentsPostResponses, CreateModelAssetApiModelAssetsPostData, CreateModelAssetApiModelAssetsPostErrors, CreateModelAssetApiModelAssetsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, CreateViewportCaptureApiCapturesPostData, CreateViewportCaptureApiCapturesPostErrors, CreateViewportCaptureApiCapturesPostResponses, CreateWorkingCopyGroupApiWorkingCopiesPostData, CreateWorkingCopyGroupApiWorkingCopiesPostErrors, CreateWorkingCopyGroupApiWorkingCopiesPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadDocumentBytesApiDocumentsAssetSha256BytesGetData, ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors, ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses, ReadDocumentsApiDocumentsGetData, ReadDocumentsApiDocumentsGetErrors, ReadDocumentsApiDocumentsGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetErrors, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetErrors, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadSavedModelAnnotationsApiModelAnnotationsGetData, ReadSavedModelAnnotationsApiModelAnnotationsGetErrors, ReadSavedModelAnnotationsApiModelAnnotationsGetResponses, ReadSemanticsApiSemanticsGetData, ReadSemanticsApiSemanticsGetResponses, ReadSheetApiProgramGetData, ReadSheetApiProgramGetErrors, ReadSheetApiProgramGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadSubmittedDocumentCommentsApiDocumentCommentsGetData, ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors, ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetErrors, ReadVolumesApiStateVolumesGetResponses, ReadWorkingCopiesApiWorkingCopiesGetData, ReadWorkingCopiesApiWorkingCopiesGetResponses, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutData, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses, WriteSavedModelAnnotationsApiModelAnnotationsPutData, WriteSavedModelAnnotationsApiModelAnnotationsPutErrors, WriteSavedModelAnnotationsApiModelAnnotationsPutResponses } from './types.gen';
+import type { AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostData, AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors, AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostData, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostErrors, AppendWorkingCopyOptionApiWorkingCopiesGroupIdOptionsPostResponses, ApplyProgramApiProgramPostData, ApplyProgramApiProgramPostErrors, ApplyProgramApiProgramPostResponses, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostData, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostErrors, AssociateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePostResponses, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutData, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutErrors, ChooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPutResponses, CombineCandidatesApiCandidatesCombinePostData, CombineCandidatesApiCandidatesCombinePostErrors, CombineCandidatesApiCandidatesCombinePostResponses, CompareCandidateApiCandidatesCandidateIdCompareGetData, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompileIntentApiIntentsPostData, CompileIntentApiIntentsPostErrors, CompileIntentApiIntentsPostResponses, CreateDocumentApiDocumentsPostData, CreateDocumentApiDocumentsPostErrors, CreateDocumentApiDocumentsPostResponses, CreateElevationApiDrawingsElevationsPostData, CreateElevationApiDrawingsElevationsPostErrors, CreateElevationApiDrawingsElevationsPostResponses, CreateModelAssetApiModelAssetsPostData, CreateModelAssetApiModelAssetsPostErrors, CreateModelAssetApiModelAssetsPostResponses, CreateProposalApiProposalsPostData, CreateProposalApiProposalsPostErrors, CreateProposalApiProposalsPostResponses, CreateViewportCaptureApiCapturesPostData, CreateViewportCaptureApiCapturesPostErrors, CreateViewportCaptureApiCapturesPostResponses, CreateWorkingCopyGroupApiWorkingCopiesPostData, CreateWorkingCopyGroupApiWorkingCopiesPostErrors, CreateWorkingCopyGroupApiWorkingCopiesPostResponses, DecideProposalApiProposalsProposalIdDecisionPostData, DecideProposalApiProposalsProposalIdDecisionPostErrors, DecideProposalApiProposalsProposalIdDecisionPostResponses, ExportBoardApiBoardExportPostData, ExportBoardApiBoardExportPostErrors, ExportBoardApiBoardExportPostResponses, ForkCommittedDesignApiDesignBranchesPostData, ForkCommittedDesignApiDesignBranchesPostErrors, ForkCommittedDesignApiDesignBranchesPostResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, InitializeCommittedDesignApiDesignStagesInitializePostData, InitializeCommittedDesignApiDesignStagesInitializePostErrors, InitializeCommittedDesignApiDesignStagesInitializePostResponses, ListEpisodesApiEpisodesGetData, ListEpisodesApiEpisodesGetErrors, ListEpisodesApiEpisodesGetResponses, MakeMassingOptionApiOptionsPostData, MakeMassingOptionApiOptionsPostErrors, MakeMassingOptionApiOptionsPostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadArtifactBytesApiArtifactsSha256BytesGetData, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactsApiArtifactsGetData, ReadArtifactsApiArtifactsGetResponses, ReadBoardApiBoardGetData, ReadBoardApiBoardGetResponses, ReadCandidateApiCandidatesCandidateIdGetData, ReadCandidateApiCandidatesCandidateIdGetErrors, ReadCandidateApiCandidatesCandidateIdGetResponses, ReadClosureApiStateClosurePostData, ReadClosureApiStateClosurePostErrors, ReadClosureApiStateClosurePostResponses, ReadCommittedDesignHistoryApiDesignHistoryGetData, ReadCommittedDesignHistoryApiDesignHistoryGetErrors, ReadCommittedDesignHistoryApiDesignHistoryGetResponses, ReadDocumentBytesApiDocumentsAssetSha256BytesGetData, ReadDocumentBytesApiDocumentsAssetSha256BytesGetErrors, ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetData, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetErrors, ReadDocumentPageAnnotationsApiDocumentAnnotationsGetResponses, ReadDocumentsApiDocumentsGetData, ReadDocumentsApiDocumentsGetErrors, ReadDocumentsApiDocumentsGetResponses, ReadEpisodeApiEpisodesEpisodeIdGetData, ReadEpisodeApiEpisodesEpisodeIdGetErrors, ReadEpisodeApiEpisodesEpisodeIdGetResponses, ReadFrameApiStateFrameGetData, ReadFrameApiStateFrameGetErrors, ReadFrameApiStateFrameGetResponses, ReadHealthApiHealthGetData, ReadHealthApiHealthGetResponses, ReadJobApiJobsJobIdGetData, ReadJobApiJobsJobIdGetErrors, ReadJobApiJobsJobIdGetResponses, ReadOptionsApiOptionsGetData, ReadOptionsApiOptionsGetErrors, ReadOptionsApiOptionsGetResponses, ReadProjectApiProjectGetData, ReadProjectApiProjectGetResponses, ReadProjectByIdApiProjectsProjectIdGetData, ReadProjectByIdApiProjectsProjectIdGetErrors, ReadProjectByIdApiProjectsProjectIdGetResponses, ReadProjectsApiProjectsGetData, ReadProjectsApiProjectsGetResponses, ReadProposalApiProposalsProposalIdGetData, ReadProposalApiProposalsProposalIdGetErrors, ReadProposalApiProposalsProposalIdGetResponses, ReadProtocolApiProtocolGetData, ReadProtocolApiProtocolGetResponses, ReadSavedModelAnnotationsApiModelAnnotationsGetData, ReadSavedModelAnnotationsApiModelAnnotationsGetErrors, ReadSavedModelAnnotationsApiModelAnnotationsGetResponses, ReadSemanticsApiSemanticsGetData, ReadSemanticsApiSemanticsGetResponses, ReadSheetApiProgramGetData, ReadSheetApiProgramGetErrors, ReadSheetApiProgramGetResponses, ReadStateApiStateGetData, ReadStateApiStateGetErrors, ReadStateApiStateGetResponses, ReadSubmittedDocumentCommentsApiDocumentCommentsGetData, ReadSubmittedDocumentCommentsApiDocumentCommentsGetErrors, ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetData, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadVolumesApiStateVolumesGetData, ReadVolumesApiStateVolumesGetErrors, ReadVolumesApiStateVolumesGetResponses, ReadWorkingCopiesApiWorkingCopiesGetData, ReadWorkingCopiesApiWorkingCopiesGetResponses, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetData, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetErrors, ReadWorkingCopyGroupApiWorkingCopiesGroupIdGetResponses, RecordModelLoadApiEventsModelLoadPostData, RecordModelLoadApiEventsModelLoadPostErrors, RecordModelLoadApiEventsModelLoadPostResponses, ResolveApiPickResolvePostData, ResolveApiPickResolvePostErrors, ResolveApiPickResolvePostResponses, SelectOptionApiOptionsOptionIdSelectPostData, SelectOptionApiOptionsOptionIdSelectPostErrors, SelectOptionApiOptionsOptionIdSelectPostResponses, StartCandidateApiProposalsProposalIdCandidatePostData, StartCandidateApiProposalsProposalIdCandidatePostErrors, StartCandidateApiProposalsProposalIdCandidatePostResponses, StreamEventsApiEventsGetData, StreamEventsApiEventsGetErrors, StreamEventsApiEventsGetResponses, UpdateBoardApiBoardPutData, UpdateBoardApiBoardPutErrors, UpdateBoardApiBoardPutResponses, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutData, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutErrors, WriteDocumentPageAnnotationsApiDocumentAnnotationsPutResponses, WriteSavedModelAnnotationsApiModelAnnotationsPutData, WriteSavedModelAnnotationsApiModelAnnotationsPutErrors, WriteSavedModelAnnotationsApiModelAnnotationsPutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -204,7 +204,7 @@ export const associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost 
 /**
  * Read Documents
  */
-export const readDocumentsApiDocumentsGet = <ThrowOnError extends boolean = false>(options: Options<ReadDocumentsApiDocumentsGetData, ThrowOnError>): RequestResult<ReadDocumentsApiDocumentsGetResponses, ReadDocumentsApiDocumentsGetErrors, ThrowOnError> => (options.client ?? client).get<ReadDocumentsApiDocumentsGetResponses, ReadDocumentsApiDocumentsGetErrors, ThrowOnError>({ url: '/api/documents', ...options });
+export const readDocumentsApiDocumentsGet = <ThrowOnError extends boolean = false>(options?: Options<ReadDocumentsApiDocumentsGetData, ThrowOnError>): RequestResult<ReadDocumentsApiDocumentsGetResponses, ReadDocumentsApiDocumentsGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadDocumentsApiDocumentsGetResponses, ReadDocumentsApiDocumentsGetErrors, ThrowOnError>({ url: '/api/documents', ...options });
 
 /**
  * Create Document
@@ -250,6 +250,47 @@ export const createViewportCaptureApiCapturesPost = <ThrowOnError extends boolea
  * The certified bytes, under the digest that identifies them.
  */
 export const readArtifactBytesApiArtifactsSha256BytesGet = <ThrowOnError extends boolean = false>(options: Options<ReadArtifactBytesApiArtifactsSha256BytesGetData, ThrowOnError>): RequestResult<ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ThrowOnError> => (options.client ?? client).get<ReadArtifactBytesApiArtifactsSha256BytesGetResponses, ReadArtifactBytesApiArtifactsSha256BytesGetErrors, ThrowOnError>({ url: '/api/artifacts/{sha256}/bytes', ...options });
+
+/**
+ * Read Board
+ */
+export const readBoardApiBoardGet = <ThrowOnError extends boolean = false>(options?: Options<ReadBoardApiBoardGetData, ThrowOnError>): RequestResult<ReadBoardApiBoardGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ReadBoardApiBoardGetResponses, unknown, ThrowOnError>({ url: '/api/board', ...options });
+
+/**
+ * Update Board
+ */
+export const updateBoardApiBoardPut = <ThrowOnError extends boolean = false>(options: Options<UpdateBoardApiBoardPutData, ThrowOnError>): RequestResult<UpdateBoardApiBoardPutResponses, UpdateBoardApiBoardPutErrors, ThrowOnError> => (options.client ?? client).put<UpdateBoardApiBoardPutResponses, UpdateBoardApiBoardPutErrors, ThrowOnError>({
+    url: '/api/board',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Export Board
+ */
+export const exportBoardApiBoardExportPost = <ThrowOnError extends boolean = false>(options: Options<ExportBoardApiBoardExportPostData, ThrowOnError>): RequestResult<ExportBoardApiBoardExportPostResponses, ExportBoardApiBoardExportPostErrors, ThrowOnError> => (options.client ?? client).post<ExportBoardApiBoardExportPostResponses, ExportBoardApiBoardExportPostErrors, ThrowOnError>({
+    url: '/api/board/export',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Create Elevation
+ */
+export const createElevationApiDrawingsElevationsPost = <ThrowOnError extends boolean = false>(options: Options<CreateElevationApiDrawingsElevationsPostData, ThrowOnError>): RequestResult<CreateElevationApiDrawingsElevationsPostResponses, CreateElevationApiDrawingsElevationsPostErrors, ThrowOnError> => (options.client ?? client).post<CreateElevationApiDrawingsElevationsPostResponses, CreateElevationApiDrawingsElevationsPostErrors, ThrowOnError>({
+    url: '/api/drawings/elevations',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Resolve
@@ -402,6 +443,18 @@ export const selectOptionApiOptionsOptionIdSelectPost = <ThrowOnError extends bo
 export const startCandidateApiProposalsProposalIdCandidatePost = <ThrowOnError extends boolean = false>(options: Options<StartCandidateApiProposalsProposalIdCandidatePostData, ThrowOnError>): RequestResult<StartCandidateApiProposalsProposalIdCandidatePostResponses, StartCandidateApiProposalsProposalIdCandidatePostErrors, ThrowOnError> => (options.client ?? client).post<StartCandidateApiProposalsProposalIdCandidatePostResponses, StartCandidateApiProposalsProposalIdCandidatePostErrors, ThrowOnError>({ url: '/api/proposals/{proposal_id}/candidate', ...options });
 
 /**
+ * Combine Candidates
+ */
+export const combineCandidatesApiCandidatesCombinePost = <ThrowOnError extends boolean = false>(options: Options<CombineCandidatesApiCandidatesCombinePostData, ThrowOnError>): RequestResult<CombineCandidatesApiCandidatesCombinePostResponses, CombineCandidatesApiCandidatesCombinePostErrors, ThrowOnError> => (options.client ?? client).post<CombineCandidatesApiCandidatesCombinePostResponses, CombineCandidatesApiCandidatesCombinePostErrors, ThrowOnError>({
+    url: '/api/candidates/combine',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Read Job
  *
  * One candidate job as this process last saw it, failures included.
@@ -427,6 +480,47 @@ export const readCandidateApiCandidatesCandidateIdGet = <ThrowOnError extends bo
  * is unavailable rather than guessing one.
  */
 export const compareCandidateApiCandidatesCandidateIdCompareGet = <ThrowOnError extends boolean = false>(options: Options<CompareCandidateApiCandidatesCandidateIdCompareGetData, ThrowOnError>): RequestResult<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError> => (options.client ?? client).get<CompareCandidateApiCandidatesCandidateIdCompareGetResponses, CompareCandidateApiCandidatesCandidateIdCompareGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}/compare', ...options });
+
+/**
+ * Read Committed Design History
+ */
+export const readCommittedDesignHistoryApiDesignHistoryGet = <ThrowOnError extends boolean = false>(options?: Options<ReadCommittedDesignHistoryApiDesignHistoryGetData, ThrowOnError>): RequestResult<ReadCommittedDesignHistoryApiDesignHistoryGetResponses, ReadCommittedDesignHistoryApiDesignHistoryGetErrors, ThrowOnError> => (options?.client ?? client).get<ReadCommittedDesignHistoryApiDesignHistoryGetResponses, ReadCommittedDesignHistoryApiDesignHistoryGetErrors, ThrowOnError>({ url: '/api/design-history', ...options });
+
+/**
+ * Initialize Committed Design
+ */
+export const initializeCommittedDesignApiDesignStagesInitializePost = <ThrowOnError extends boolean = false>(options: Options<InitializeCommittedDesignApiDesignStagesInitializePostData, ThrowOnError>): RequestResult<InitializeCommittedDesignApiDesignStagesInitializePostResponses, InitializeCommittedDesignApiDesignStagesInitializePostErrors, ThrowOnError> => (options.client ?? client).post<InitializeCommittedDesignApiDesignStagesInitializePostResponses, InitializeCommittedDesignApiDesignStagesInitializePostErrors, ThrowOnError>({
+    url: '/api/design-stages/initialize',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Accept Committed Design
+ */
+export const acceptCommittedDesignApiCandidatesCandidateIdAcceptPost = <ThrowOnError extends boolean = false>(options: Options<AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostData, ThrowOnError>): RequestResult<AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses, AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors, ThrowOnError> => (options.client ?? client).post<AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostResponses, AcceptCommittedDesignApiCandidatesCandidateIdAcceptPostErrors, ThrowOnError>({
+    url: '/api/candidates/{candidate_id}/accept',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Fork Committed Design
+ */
+export const forkCommittedDesignApiDesignBranchesPost = <ThrowOnError extends boolean = false>(options: Options<ForkCommittedDesignApiDesignBranchesPostData, ThrowOnError>): RequestResult<ForkCommittedDesignApiDesignBranchesPostResponses, ForkCommittedDesignApiDesignBranchesPostErrors, ThrowOnError> => (options.client ?? client).post<ForkCommittedDesignApiDesignBranchesPostResponses, ForkCommittedDesignApiDesignBranchesPostErrors, ThrowOnError>({
+    url: '/api/design-branches',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Read Working Copies
@@ -491,9 +585,23 @@ export const readEpisodeApiEpisodesEpisodeIdGet = <ThrowOnError extends boolean 
 /**
  * Read Validation
  *
- * Validate one finished candidate against the project's published design.
+ * Validate a Stage continuation on its source base, or a legacy candidate on HEAD.
  */
 export const readValidationApiCandidatesCandidateIdValidationGet = <ThrowOnError extends boolean = false>(options: Options<ReadValidationApiCandidatesCandidateIdValidationGetData, ThrowOnError>): RequestResult<ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ThrowOnError> => (options.client ?? client).get<ReadValidationApiCandidatesCandidateIdValidationGetResponses, ReadValidationApiCandidatesCandidateIdValidationGetErrors, ThrowOnError>({ url: '/api/candidates/{candidate_id}/validation', ...options });
+
+/**
+ * Record Model Load
+ *
+ * Record browser wait separately from service and model-call durations.
+ */
+export const recordModelLoadApiEventsModelLoadPost = <ThrowOnError extends boolean = false>(options: Options<RecordModelLoadApiEventsModelLoadPostData, ThrowOnError>): RequestResult<RecordModelLoadApiEventsModelLoadPostResponses, RecordModelLoadApiEventsModelLoadPostErrors, ThrowOnError> => (options.client ?? client).post<RecordModelLoadApiEventsModelLoadPostResponses, RecordModelLoadApiEventsModelLoadPostErrors, ThrowOnError>({
+    url: '/api/events/model-load',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Stream Events

@@ -12,20 +12,11 @@
  * The verdict is asked for only when the server says the job `succeeded`.
  */
 
-import { useEffect, useState } from "react";
-
-import { asStudioApiError, studio } from "../../../api/client";
 import type { ValidationDto } from "../../../api/generated";
 import { ErrorPanel } from "../../../app/ErrorPanel";
 import type { EvidenceTab } from "../../../app/evidence";
 import { RelationChips } from "../../../app/RelationChips";
-import {
-  failed,
-  idle,
-  loading,
-  ready,
-  type Loadable,
-} from "../../../app/loadable";
+import type { Loadable } from "../../../app/loadable";
 import { BilingualText } from "../../../i18n/BilingualText";
 import { useT } from "../../../i18n/useT";
 import { usePreferences } from "../../settings/preferences";
@@ -59,37 +50,19 @@ const REVIEW = [
 export function VerdictCard({
   candidateId,
   protectedRefs,
-  onValidation,
+  validation,
+  onRetry,
   onEvidence,
 }: {
   candidateId: string;
   /** What the sentence asked to keep; the proposal's refs, verbatim. */
   protectedRefs: readonly string[];
-  onValidation(validation: ValidationDto): void;
+  validation: Loadable<ValidationDto>;
+  onRetry(): void;
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
 }) {
   const t = useT();
   const { developerMode } = usePreferences();
-  const [validation, setValidation] = useState<Loadable<ValidationDto>>(idle);
-
-  useEffect(() => {
-    let cancelled = false;
-    setValidation(loading);
-    void (async () => {
-      try {
-        const value = await studio.validation(candidateId);
-        if (cancelled) return;
-        setValidation(ready(value));
-        onValidation(value);
-      } catch (cause) {
-        if (!cancelled) setValidation(failed(asStudioApiError(cause)));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [candidateId, onValidation]);
-
   if (validation.status === "loading" || validation.status === "idle") {
     return (
       <article className="card">
@@ -112,6 +85,7 @@ export function VerdictCard({
             error={validation.error}
             what={`GET /api/candidates/${candidateId}/validation`}
           />
+          <button type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button>
         </div>
       </article>
     );

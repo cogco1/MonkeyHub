@@ -63,6 +63,7 @@ The project files have distinct roles:
 | --- | --- |
 | `project.json` | immutable project identity and format version |
 | `HEAD` | version 0's canonical position; unrelated to a Git branch |
+| `design/branches.json` | created by explicit design acceptance or fork; project-wide design branch pointers, independent of canonical `HEAD` |
 | `canonical/`, `events/` | the initial snapshot and initialization event |
 | `input/runner/state-record.json` | caller-authored input, or the CLI's empty record |
 | `input/runner/seats.json` | execution seats, written only when supplied |
@@ -95,9 +96,10 @@ Known ownership:
 | accepted canonical events | `events/` |
 | verified canonical snapshots | `canonical/` |
 | derived/expert/model/tool records | `runs/<run_id>/records/` |
-| alternative design branches | `runs/<run_id>/branches/` |
+| execution branch bindings | `runs/<run_id>/branches/` |
+| persistent design branch fork/head refs | `design/branches.json` |
 | candidate packages and plans | `runs/<run_id>/candidates/` |
-| hard/commitment/aesthetic reviews | `runs/<run_id>/reviews/` |
+| hard/commitment/aesthetic reviews and immutable accepted design Stages | `runs/<run_id>/reviews/` |
 | speculative tool files | `runs/<run_id>/workspaces/` |
 | external-world reconciliation | `runs/<run_id>/recovery/` |
 | non-authoritative share packages | `exports/` |
@@ -108,6 +110,17 @@ project owner to assign it.
 Cache and temp data do not fit this table because they are not project records.
 They live outside the project root and may be deleted or rebuilt without
 changing canonical project state.
+
+Design acceptance stores a `DesignStage@1` in the accepted candidate's reviews,
+pinning its complete model, StateRecord and runner receipt, then compares and
+atomically advances the named design branch. P036 uses the existing process and
+file lock primitives around `design/branches.json`. A failed pointer update leaves
+an unreachable prepared Stage; `verify()` reports it and history does not show it
+as accepted. Forking creates a branch pointer to a reachable historical Stage and
+generates no model. Candidate operators remain under their run's records.
+Neither operation changes canonical `HEAD`; formal issue retains its exact-base
+check. `load_version_state()` reads a specified published ancestor from the
+retained event/snapshot chain for historical design validation.
 
 An architect's original Rhino file may stay in its existing working directory.
 Copies, exports and records that must reopen or travel with an ArchFlow project

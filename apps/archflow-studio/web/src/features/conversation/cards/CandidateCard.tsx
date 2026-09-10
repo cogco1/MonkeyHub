@@ -1,32 +1,17 @@
 /**
- * One candidate run, watched to the end and then read back.
- *
- * The job is polled because the job is what answers "is it over"; the candidate
- * readout is only meaningful once it is. A run the runner refused is a *failed
- * job carrying the runner's own sentence*, not an HTTP error, so that sentence
- * is printed verbatim rather than turned into a status word. `harness` is
- * printed as it came, because it is the line that says what kind of run these
- * numbers are from.
+ * One candidate run, read by the shell even while this card is not mounted.
  */
 
 import { useEffect, useState } from "react";
 
-import { asStudioApiError, studio } from "../../../api/client";
 import type {
   CandidateDto,
-  JobDto,
   ProjectArtifactDto,
 } from "../../../api/generated";
 import { ErrorPanel } from "../../../app/ErrorPanel";
 import type { EvidenceTab } from "../../../app/evidence";
 import { IN_FLIGHT } from "../../../app/jobs";
-import {
-  failed,
-  idle,
-  loading,
-  ready,
-  type Loadable,
-} from "../../../app/loadable";
+import type { CandidateReadback } from "../../../app/useCandidateRuns";
 import { candidateSourceLabel } from "../../artifacts/artifactLabels";
 import { artifactKindKey, isViewable } from "../../artifacts/artifactSelection";
 import { BilingualText } from "../../../i18n/BilingualText";
@@ -34,24 +19,21 @@ import { useT } from "../../../i18n/useT";
 import { usePreferences } from "../../settings/preferences";
 import { Verbatim } from "./Verbatim";
 
-/** How often the job is asked whether it is over. */
-const POLL_MS = 400;
-
 export function CandidateCard({
   candidateId,
   jobId,
+  readback,
   loadingSha,
-  onJobStatus,
-  onCandidate,
+  onRetry,
   onPreview,
   onEvidence,
   labelOf,
 }: {
   candidateId: string;
   jobId: string;
+  readback: CandidateReadback;
   loadingSha: string | null;
-  onJobStatus(candidateId: string, status: string): void;
-  onCandidate(candidate: CandidateDto): void;
+  onRetry(): void;
   onPreview(artifact: ProjectArtifactDto, sourceLabel: string): void;
   onEvidence(tab: EvidenceTab, candidateId?: string): void;
   /** The sentence another candidate of this tab was made from, for naming a blocker. */
@@ -59,8 +41,7 @@ export function CandidateCard({
 }) {
   const t = useT();
   const { developerMode } = usePreferences();
-  const [job, setJob] = useState<Loadable<JobDto>>(idle);
-  const [candidate, setCandidate] = useState<Loadable<CandidateDto>>(idle);
+  const { job, candidate } = readback;
   // A clock while the run is in flight: eighty seconds of one word was the
   // review's complaint. The seconds are this browser's; the receipt's
   // timings replace them when the run is over.
@@ -74,49 +55,6 @@ export function CandidateCard({
   const since =
     job.status === "ready" ? (job.value.startedAt ?? job.value.createdAt) : null;
   const elapsed = since ? Math.max(0, (now - Date.parse(since)) / 1000) : null;
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: number | undefined;
-    setJob(loading);
-    setCandidate(idle);
-
-    const readCandidate = async () => {
-      setCandidate(loading);
-      try {
-        const value = await studio.candidate(candidateId);
-        if (cancelled) return;
-        setCandidate(ready(value));
-        onCandidate(value);
-      } catch (cause) {
-        if (!cancelled) setCandidate(failed(asStudioApiError(cause)));
-      }
-    };
-
-    const tick = async () => {
-      try {
-        const value = await studio.job(jobId);
-        if (cancelled) return;
-        setJob(ready(value));
-        onJobStatus(candidateId, value.status);
-        if (IN_FLIGHT.has(value.status)) {
-          timer = window.setTimeout(() => void tick(), POLL_MS);
-          return;
-        }
-        if (value.status === "succeeded") await readCandidate();
-      } catch (cause) {
-        if (!cancelled) setJob(failed(asStudioApiError(cause)));
-      }
-    };
-
-    void tick();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-    };
-    // The watch is identified by the run it watches; the two reporters are the
-    // shell's stable callbacks.
-  }, [candidateId, jobId, onJobStatus, onCandidate]);
 
   const status = job.status === "ready" ? job.value.status : "reading";
   return (
@@ -168,7 +106,7 @@ export function CandidateCard({
           <p className="quiet">
             {job.value.lane === "exclusive"
               ? t("candidate.running.exportLane")
-              : t("candidate.running.kernelOnly")}
+              : t("candidate.running.generating")}
           </p>
         </div>
       )}
@@ -196,6 +134,9 @@ export function CandidateCard({
             what={`GET /api/candidates/${candidateId}`}
           />
         </div>
+      )}
+      {(job.status === "failed" || candidate.status === "failed") && (
+        <div className="card__row"><button type="button" className="btn btn--small" onClick={onRetry}>{t("stage.base.retry")}</button></div>
       )}
       {candidate.status === "ready" && (
         <CandidateReadout

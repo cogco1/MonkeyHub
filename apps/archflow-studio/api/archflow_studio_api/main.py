@@ -11,7 +11,11 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import secrets
-from typing import AsyncIterator
+import re
+import subprocess
+import sys
+import threading
+from typing import AsyncIterator, TextIO
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -19,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
+from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
@@ -28,14 +33,16 @@ from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
+from .application.monitoring import MonitoredCompiler, StudioMonitor
 from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
-from .settings import PROJECT_DIR_ENV, REMOTE_MODE, StudioSettings
+from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, StudioSettings
 from .transport.errors import StudioError
 
 DEFAULT_PORT = 8000
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 _HTTP_ERROR_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
 
 # The prefix every protocol resource lives under, and the two routes inside it
@@ -168,6 +175,9 @@ def create_app(settings: StudioSettings) -> FastAPI:
         title="ArchFlow Studio API", version=SERVER_VERSION, lifespan=_lifespan
     )
     app.state.settings = settings
+    from monkeymonitor.store import UsageLog
+
+    app.state.monitor = StudioMonitor(UsageLog(settings.monitor_dir) if settings.monitor_dir is not None else None)
     # Proposals live in this process and nowhere else. The store is created
     # here so that fact is visible at the top of the application rather than
     # accumulating quietly at the bottom of a route.
@@ -177,7 +187,7 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # here for the same reason as the store: what this process holds in memory,
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
-    app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers)
+    app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
     # One validation per candidate, remembered so that reading a verdict twice
     # is one verdict and one event rather than two of each. In memory, like
     # everything above it, and lost on restart for the same reason.
@@ -205,6 +215,10 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # code path. A provider that cannot name its own version refuses here,
     # before a request arrives, rather than at the first sentence.
     app.state.intent_compiler = compiler_from_settings(settings)
+    if settings.monitor_dir is not None:
+        app.state.intent_compiler = MonitoredCompiler(
+            app.state.intent_compiler, app.state.monitor
+        )
     app.add_exception_handler(StudioError, _handle_studio_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
@@ -222,13 +236,46 @@ def create_app(settings: StudioSettings) -> FastAPI:
             CORSMiddleware,
             allow_origins=list(settings.origins),
             allow_credentials=False,
-            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_methods=["GET", "POST", "PUT", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
             # The two headers the artifact-bytes route answers with that a
             # browser cannot read unless they are named here.
             expose_headers=["ETag", "Content-Disposition"],
         )
     return app
+
+
+def _source_revision(root: Path = REPOSITORY_ROOT) -> str | None:
+    """Use the packaged source identity, or the checkout that contains this code."""
+
+    packaged = root / "source-version.txt"
+    if packaged.is_file():
+        revision = packaged.read_text(encoding="utf-8").strip()
+        if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision):
+            raise ValueError("source-version.txt must contain one full source commit SHA")
+        return revision
+    if not (root / ".git").exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = result.stdout.strip()
+    return revision if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision) else None
+
+
+def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: TextIO) -> None:
+    """Only the owning parent's pipe requests a managed shutdown."""
+
+    for line in stream:
+        if line.strip() == "stop":
+            break
+    jobs.stop_accepting()
+    server.should_exit = True
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -242,6 +289,9 @@ def main(argv: list[str] | None = None) -> None:
         "the settings decide, and they default to loopback.",
     )
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--managed-stdin", action="store_true", help="Stop gracefully on stdin stop or EOF.")
+    parser.add_argument("--managed-instance-id", default=None, help="The owning Hub's unique launch identifier.")
+    parser.add_argument("--web-dir", type=Path, default=None, help="Serve a prebuilt Studio web directory.")
     parser.add_argument(
         "--project-dir",
         type=Path,
@@ -249,14 +299,35 @@ def main(argv: list[str] | None = None) -> None:
         help=f"Project root to bind; overrides {PROJECT_DIR_ENV}.",
     )
     args = parser.parse_args(argv)
+    if args.managed_stdin != bool(args.managed_instance_id):
+        parser.error("--managed-stdin and --managed-instance-id must be supplied together")
     if args.project_dir is not None:
         os.environ[PROJECT_DIR_ENV] = str(args.project_dir)
+    if args.host is not None:
+        os.environ[BIND_ENV] = args.host
     settings = StudioSettings.from_env()
-    uvicorn.run(
-        create_app(settings),
-        host=args.host if args.host is not None else settings.bind_host,
-        port=args.port,
-    )
+    app = create_app(settings)
+    app.state.server_version = SERVER_VERSION
+    app.state.process_id = os.getpid()
+    app.state.parent_process_id = os.getppid()
+    app.state.source_revision = _source_revision()
+    app.state.managed_instance_id = args.managed_instance_id
+    if args.web_dir is not None:
+        if not (args.web_dir / "index.html").is_file():
+            parser.error("--web-dir must contain the prebuilt Studio index.html")
+        app.mount("/", StaticFiles(directory=args.web_dir, html=True), name="studio-web")
+    if not args.managed_stdin:
+        uvicorn.run(app, host=settings.bind_host, port=args.port)
+        return
+    server = uvicorn.Server(uvicorn.Config(app, host=settings.bind_host, port=args.port))
+    threading.Thread(
+        target=_watch_managed_stdin, args=(server, app.state.jobs, sys.stdin),
+        name="studio-owner-input", daemon=True,
+    ).start()
+    try:
+        server.run()
+    finally:
+        app.state.jobs.shutdown()
 
 
 if __name__ == "__main__":

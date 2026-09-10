@@ -15,9 +15,37 @@ being omitted, so the shape a client parses stays the same.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
+
+class ModelLoadTimingDto(BaseModel):
+    """Client elapsed time from artifact download to viewport load completion."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    event_id: UUID = Field(alias="eventId")
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str = Field(alias="runId", min_length=1)
+    source_ref: str | None = Field(alias="sourceRef", default=None)
+    started_at: AwareDatetime = Field(alias="startedAt")
+    ended_at: AwareDatetime = Field(alias="endedAt")
+    duration_ms: int = Field(alias="durationMs", ge=0)
+    status: Literal["succeeded", "failed", "cancelled"]
+
+    @model_validator(mode="after")
+    def ordered_interval(self) -> ModelLoadTimingDto:
+        if self.ended_at < self.started_at:
+            raise ValueError("endedAt precedes startedAt")
+        return self
+
+
+class MonitorWriteDto(BaseModel):
+    """A diagnostic acknowledgement; it does not change a model or project."""
+
+    recorded: bool
 
 
 class StudioEventDto(BaseModel):

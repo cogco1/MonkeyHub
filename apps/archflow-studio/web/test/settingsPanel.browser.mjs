@@ -300,10 +300,12 @@ test("user settings use the existing panel without changing the running model or
     for (const query of ["&mode=remote", "&old=1"]) {
       const h = await pageWithApi({}, query);
       await h.page.getByRole("dialog").waitFor();
-      assert.deepEqual(await h.page.getByRole("tab").allTextContents(), ["Appearance"]);
+      assert.deepEqual(await h.page.getByRole("tab").allTextContents(), ["Appearance", "Model"]);
       assert.equal(await h.page.getByRole("button", { name: "Save on this machine", exact: true }).count(), 0);
       await h.page.getByLabel("Theme", { exact: true }).selectOption("light");
       assert.equal(await h.page.locator("html").getAttribute("data-theme"), "light");
+      await h.page.getByRole("tab", { name: "Model", exact: true }).click();
+      await until(() => h.page.getByRole("tab", { name: "Model", exact: true }).getAttribute("aria-selected"), "true");
       assert.deepEqual(h.requests, []);
       assert.deepEqual(h.errors, []);
       await h.context.close();

@@ -303,7 +303,7 @@ def _report(relation: Relation, bounds, objects_by_element):
 class VocabularyTests(unittest.TestCase):
     def test_the_checker_table_is_the_accepted_vocabulary(self) -> None:
         self.assertEqual(set(CHECKERS), set(CHECK_KINDS))
-        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "solid_nonpenetration", "support_contact"])
+        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "lintel_minimum_bearing", "solid_nonpenetration", "support_contact"])
         for kind, meaning in CHECK_KINDS.items():
             self.assertTrue(meaning.strip(), f"{kind} has no stated meaning")
 

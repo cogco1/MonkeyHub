@@ -31,6 +31,14 @@ import {
   type FieldsResult,
 } from "./error";
 import {
+  readBoardApiBoardGet,
+  updateBoardApiBoardPut,
+  readCommittedDesignHistoryApiDesignHistoryGet,
+  createElevationApiDrawingsElevationsPost,
+  combineCandidatesApiCandidatesCombinePost,
+  initializeCommittedDesignApiDesignStagesInitializePost,
+  acceptCommittedDesignApiCandidatesCandidateIdAcceptPost,
+  forkCommittedDesignApiDesignBranchesPost,
   applyProgramApiProgramPost,
   associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost,
   chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
@@ -38,9 +46,11 @@ import {
   createDocumentApiDocumentsPost,
   createProposalApiProposalsPost,
   createViewportCaptureApiCapturesPost,
+  exportBoardApiBoardExportPost,
   getUserSettingsApiSettingsUserGet,
   putUserSettingsApiSettingsUserPut,
   readArtifactBytesApiArtifactsSha256BytesGet,
+  recordModelLoadApiEventsModelLoadPost,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
   readDocumentBytesApiDocumentsAssetSha256BytesGet,
@@ -70,6 +80,10 @@ import {
   writeSavedModelAnnotationsApiModelAnnotationsPut,
 } from "./generated";
 import type {
+  BoardDto, BoardExportRequestDto, BoardRequestDto,
+  DesignHistoryDto, DesignStageDto, DesignBranchDto,
+  ElevationRequestDto, CombineCandidatesRequestDto,
+  InitializeDesignStageRequestDto, AcceptDesignCandidateRequestDto, ForkDesignBranchRequestDto,
   ArtifactListDto,
   CandidateAcceptedDto,
   CandidateDto,
@@ -88,6 +102,8 @@ import type {
   ModelAnnotationsDto,
   ModelAnnotationsRequestDto,
   ModelSourceDto,
+  ModelLoadTimingDto,
+  MonitorWriteDto,
   OptionsDto,
   PickRequestDto,
   PickResolutionDto,
@@ -150,6 +166,34 @@ function base64Of(buffer: ArrayBuffer): string {
 // stronger and is the one it asks: `GET /api/project` and `GET /api/state`
 // either return the binding or fail with a code the top bar renders.
 export const studio = {
+  board(): Promise<BoardDto> {
+    return call("GET /api/board", readBoardApiBoardGet());
+  },
+  saveBoard(body: BoardRequestDto): Promise<BoardDto> {
+    return call("PUT /api/board", updateBoardApiBoardPut({ body }));
+  },
+
+  exportBoard(body: BoardExportRequestDto): Promise<Blob> {
+    return call("POST /api/board/export", exportBoardApiBoardExportPost({ body, parseAs: "blob" }) as Promise<FieldsResult<Blob>>);
+  },
+  elevation(body: ElevationRequestDto): Promise<SourceDocumentDto> {
+    return call("POST /api/drawings/elevations", createElevationApiDrawingsElevationsPost({ body }));
+  },
+  combineCandidates(body: CombineCandidatesRequestDto): Promise<CandidateAcceptedDto> {
+    return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ body }));
+  },
+  designHistory(branchId = "main"): Promise<DesignHistoryDto> {
+    return call("GET /api/design-history", readCommittedDesignHistoryApiDesignHistoryGet({ query: { branchId } }));
+  },
+  initializeStage(body: InitializeDesignStageRequestDto): Promise<DesignStageDto> {
+    return call("POST /api/design-stages/initialize", initializeCommittedDesignApiDesignStagesInitializePost({ body }));
+  },
+  acceptCandidate(candidateId: string, body: AcceptDesignCandidateRequestDto): Promise<DesignStageDto> {
+    return call("POST /api/candidates/accept", acceptCommittedDesignApiCandidatesCandidateIdAcceptPost({ path: { candidate_id: candidateId }, body }));
+  },
+  forkBranch(body: ForkDesignBranchRequestDto): Promise<DesignBranchDto> {
+    return call("POST /api/design-branches", forkCommittedDesignApiDesignBranchesPost({ body }));
+  },
   userSettings(): Promise<UserSettingsDto> {
     return call("GET /api/settings/user", getUserSettingsApiSettingsUserGet());
   },
@@ -190,10 +234,10 @@ export const studio = {
     return call("GET /api/projects", readProjectsApiProjectsGet());
   },
 
-  state(run?: string): Promise<StateProjectionDto> {
+  state(run?: string, sourceStageRef?: string | null): Promise<StateProjectionDto> {
     return call(
       "GET /api/state",
-      readStateApiStateGet(run === undefined ? {} : { query: { run } }),
+      readStateApiStateGet({ query: { run, sourceStageRef } }),
     );
   },
 
@@ -281,6 +325,10 @@ export const studio = {
     return call("GET /api/artifacts", readArtifactsApiArtifactsGet());
   },
 
+  recordModelLoad(body: ModelLoadTimingDto): Promise<MonitorWriteDto> {
+    return call("POST /api/events/model-load", recordModelLoadApiEventsModelLoadPost({ body }));
+  },
+
   /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */
   async capture(runId: string, png: Blob): Promise<ViewportCaptureDto> {
     const pngBase64 = base64Of(await png.arrayBuffer());
@@ -309,12 +357,12 @@ export const studio = {
     return new File([blob], fileName, { type: "application/octet-stream" });
   },
 
-  documents(runId: string): Promise<SourceDocumentListDto> {
+  documents(runId?: string | null): Promise<SourceDocumentListDto> {
     return call("GET /api/documents", readDocumentsApiDocumentsGet({ query: { runId } }));
   },
 
   /** Upload the original bytes; the server validates the MIME type and size. */
-  async uploadDocument(projectId: string, runId: string, file: File): Promise<SourceDocumentDto> {
+  async uploadDocument(projectId: string, runId: string | null, file: File, replacesPages?: SourceDocumentRequestDto["replacesPages"]): Promise<SourceDocumentDto> {
     const contentBase64 = base64Of(await file.arrayBuffer());
     return call(
       "POST /api/documents",
@@ -325,17 +373,18 @@ export const studio = {
           fileName: file.name,
           mimeType: file.type as SourceDocumentRequestDto["mimeType"],
           contentBase64,
+          ...(replacesPages ? { replacesPages } : {}),
         },
       }),
     );
   },
 
-  async documentFile(runId: string, assetSha256: string, fileName: string): Promise<File> {
+  async documentFile(runId: string, assetSha256: string, fileName: string, revisionRef?: string | null): Promise<File> {
     const blob = await call<Blob>(
       `GET /api/documents/${assetSha256}/bytes`,
       readDocumentBytesApiDocumentsAssetSha256BytesGet({
         path: { asset_sha256: assetSha256 },
-        query: { runId },
+        query: { runId, revisionRef },
         parseAs: "blob",
       }) as Promise<FieldsResult<Blob>>,
     );
@@ -347,11 +396,12 @@ export const studio = {
     assetSha256: string,
     pageIndex: number,
     revisionSha256?: string | null,
+    drawingRevisionRef?: string | null,
   ): Promise<DocumentAnnotationsDto> {
     return call(
       "GET /api/document-annotations",
       readDocumentPageAnnotationsApiDocumentAnnotationsGet({
-        query: { runId, assetSha256, pageIndex, revisionSha256 },
+        query: { runId, assetSha256, pageIndex, revisionSha256, drawingRevisionRef },
       }),
     );
   },

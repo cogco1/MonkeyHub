@@ -18,10 +18,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 from starlette.requests import Request
 
+from archflow.project.refs import ProjectRecordRef
+
 from ..application.binding import bound_project
 from ..application.candidate import describe
 from ..application.jobs import QUEUED, RUNNING, SUCCEEDED, Job
-from ..application.validation import validate_candidate, validation_key
+from ..application.validation import validate_candidate, validate_design_candidate, validation_key
 from ..transport.errors import StudioError
 from ..transport.validation import ValidationDto
 from ..transport.validation import to_dto as validation_dto
@@ -35,7 +37,7 @@ router = APIRouter(tags=["validation"])
     response_model_by_alias=True,
 )
 def read_validation(request: Request, candidate_id: str) -> ValidationDto:
-    """Validate one finished candidate against the project's published design."""
+    """Validate a Stage continuation on its source base, or a legacy candidate on HEAD."""
 
     state = request.app.state
     binding = bound_project(state)
@@ -73,6 +75,16 @@ def read_validation(request: Request, candidate_id: str) -> ValidationDto:
         status=job.status if job is not None else SUCCEEDED,
         proposal_id=job.proposal_id if job is not None else None,
     )
+    delta = binding.candidate_delta(candidate_id)
+    source_stage = None if delta is None else delta.get("source_stage_ref")
+    if source_stage is not None:
+        stage_ref = ProjectRecordRef.from_dict(source_stage)
+        stage = binding.design_stage(stage_ref)
+        base = binding.load_run(stage.candidate_id).base
+        return validation_dto(state.validations.remembered(
+            validation_key(candidate_id, base),
+            lambda: validate_design_candidate(stage_ref, candidate, binding=binding, events=state.events),
+        ))
     # Read once, then used both to check against and to remember under, so the
     # review-readiness result and its key name the same canonical version.
     head = binding.head()

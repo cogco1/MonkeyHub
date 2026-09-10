@@ -42,11 +42,14 @@ SERVER_VERSION = "0.1.0"
 # reads would look like a server that had changed.
 BASE_CAPABILITIES: tuple[str, ...] = (
     "artifacts",
+    "board-scenes",
     "candidates",
     "captures",
     "compare",
+    "design-history",
     "document-model-source",
     "document-visual-input",
+    "drawing-elevations",
     "events",
     "gestures",
     "intents",
@@ -84,4 +87,6 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
         capabilities.append(RHINO_EXPORT_CAPABILITY)
     if settings.mode == LOCAL_MODE:
         capabilities.append("user-settings")
+    if settings.monitor_dir is not None:
+        capabilities.append("operation-timing")
     return tuple(sorted(capabilities))

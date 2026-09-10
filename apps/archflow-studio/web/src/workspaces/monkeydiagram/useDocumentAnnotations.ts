@@ -9,6 +9,7 @@ export interface DocumentAnnotationsOptions {
   assetSha256: string | null;
   pageIndex: number;
   revisionSha256?: string | null;
+  drawingRevisionRef?: string | null;
 }
 
 interface Draft {
@@ -84,6 +85,7 @@ function createPage(scope: DocumentAnnotationsOptions) {
   const reference = (sha256: string): DocumentAnnotationRefDto => ({
     runId: scope.runId, assetSha256: scope.assetSha256!, pageIndex: scope.pageIndex,
     revisionSha256: sha256,
+    ...(scope.drawingRevisionRef ? { drawingRevisionRef: scope.drawingRevisionRef } : {}),
   });
   const rejectWaiters = (reason: StudioApiError) => {
     for (const job of queue) {
@@ -100,6 +102,7 @@ function createPage(scope: DocumentAnnotationsOptions) {
           const response = await studio.saveDocumentAnnotations({
             projectId: scope.projectId, runId: scope.runId, assetSha256: scope.assetSha256!,
             pageIndex: scope.pageIndex, baseRevisionSha256: revision,
+            ...(scope.drawingRevisionRef ? { drawingRevisionRef: scope.drawingRevisionRef } : {}),
             annotations: copyInk(job.draft.annotations), comment: job.draft.comment,
           });
           if (response.revisionSha256 === null) {
@@ -107,6 +110,7 @@ function createPage(scope: DocumentAnnotationsOptions) {
               status: 200, code: TRANSPORT_ERROR, detail: "The saved page did not return an annotation revision.",
             });
           }
+          if ((response.drawingRevisionRef ?? null) !== (scope.drawingRevisionRef ?? null)) throw unavailable("The saved annotations belong to another drawing revision.");
           revision = response.revisionSha256;
           acknowledged = job.draft;
           queue.shift();
@@ -165,8 +169,9 @@ function createPage(scope: DocumentAnnotationsOptions) {
       await writing;
       try {
         const response = await studio.documentAnnotations(
-          scope.runId, scope.assetSha256!, scope.pageIndex, scope.revisionSha256,
+          scope.runId, scope.assetSha256!, scope.pageIndex, scope.revisionSha256, scope.drawingRevisionRef,
         );
+        if ((response.drawingRevisionRef ?? null) !== (scope.drawingRevisionRef ?? null)) throw unavailable("The annotations belong to another drawing revision.");
         const next = { annotations: copyInk(response.annotations), comment: response.comment };
         finishTyping();
         rejectWaiters(unavailable("Reading the latest page interrupted this save; the local draft remains in Undo."));
@@ -258,7 +263,7 @@ export function createDocumentAnnotationsController() {
   return {
     page(options: DocumentAnnotationsOptions) {
       const key = JSON.stringify([
-        options.projectId, options.runId, options.assetSha256, options.pageIndex, options.revisionSha256 ?? null,
+        options.projectId, options.runId, options.assetSha256, options.pageIndex, options.revisionSha256 ?? null, options.drawingRevisionRef ?? null,
       ]);
       let page = pages.get(key);
       if (!page) { page = createPage({ ...options }); pages.set(key, page); }

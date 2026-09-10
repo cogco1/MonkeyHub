@@ -11,6 +11,7 @@ from starlette.requests import Request
 from ..application.artifacts import (
     artifact_bytes,
     bind_document_model_source,
+    DocumentPageReplacement,
     document_bytes,
     list_artifacts,
     list_documents,
@@ -63,11 +64,12 @@ def create_document(request: Request, payload: SourceDocumentRequestDto) -> Sour
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
     return document_dto(save_document(binding, payload.run_id, payload.file_name, payload.mime_type, payload.content_base64,
-                                     model_source_from(payload.model_source) if payload.model_source else None))
+                                     model_source_from(payload.model_source) if payload.model_source else None,
+                                     tuple(DocumentPageReplacement(**page.model_dump()) for page in payload.replaces_pages)))
 
 
 @router.get("/documents", response_model=SourceDocumentListDto, response_model_by_alias=True)
-def read_documents(request: Request, run_id: str = Query(alias="runId", min_length=1)) -> SourceDocumentListDto:
+def read_documents(request: Request, run_id: str | None = Query(default=None, alias="runId", min_length=1)) -> SourceDocumentListDto:
     binding = bound_project(request.app.state)
     return SourceDocumentListDto(
         project_id=binding.project_id, run_id=run_id,
@@ -76,8 +78,9 @@ def read_documents(request: Request, run_id: str = Query(alias="runId", min_leng
 
 
 @router.get("/documents/{asset_sha256}/bytes", response_class=Response)
-def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query(alias="runId", min_length=1)) -> Response:
-    document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256)
+def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query(alias="runId", min_length=1),
+                        revision_ref: str | None = Query(default=None, alias="revisionRef")) -> Response:
+    document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256, revision_ref)
     return Response(
         content=data, media_type=document.mime_type,
         headers={

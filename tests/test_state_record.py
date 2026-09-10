@@ -28,6 +28,7 @@ from archflow.state.state_record import (
     ValidatorBinding,
     apply_state_record_operator,
     compile_component_edit,
+    combine_component_changes,
     developed_design_view,
     parameter_bindings_of,
     resolve_element_bindings,
@@ -59,6 +60,77 @@ def _record() -> StateRecord:
 
 
 class StateRecordTests(unittest.TestCase):
+    def test_independent_changes_combine_on_original_base_with_protection_checks(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        wall = apply_state_record_operator(record, self._wall_edit(record))
+        scalar = StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest,
+                                     base_state_digest=record.state_digest, target_ref="parameter:column_diameter",
+                                     key="column_diameter", value=0.8)
+        columns = apply_state_record_operator(record, scalar)
+        combined = combine_component_changes(record, (wall, columns))
+        result = apply_state_record_operator(record, combined)
+        self.assertEqual(result.entity("wall-new"), wall.entity("wall-new"))
+        self.assertEqual(result.parameter("column_diameter").value, 0.8)
+        self.assertEqual(result.parameter("column_height").value, 7.2)
+        self.assertEqual(combined.base_record_digest, record.digest)
+        self.assertEqual(scalar.base_state_digest, record.state_digest)
+        with self.assertRaisesRegex(StateRecordError, "protected"):
+            combine_component_changes(record, (wall, columns), protected=("parameter:column_diameter",))
+
+    def test_combination_refuses_shared_objects_and_declared_dependencies(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        source = record.entity("columns-west")
+        dependent = record.entity("entablature-west")
+        left = apply_state_record_operator(record, compile_component_edit(record,
+            entities=(replace(source, fields={**source.fields, "label": "changed"}),)))
+        right = apply_state_record_operator(record, compile_component_edit(record,
+            entities=(replace(dependent, fields={**dependent.fields, "label": "changed"}),)))
+        for pair in ((left, right), (left, left)):
+            with self.assertRaisesRegex(StateRecordError, "overlap or depend"):
+                combine_component_changes(record, pair)
+
+    def test_combination_refuses_two_parameters_rebuilding_the_same_element(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        column = record.entity("columns-west")
+        record = apply_state_record_operator(record, compile_component_edit(record,
+            parameters=(Parameter("width", 1, "m"), Parameter("depth", 1, "m")),
+            entities=(replace(column, fields={**column.fields, "params": {"width": "@width", "depth": "@depth"}}),)))
+        results = tuple(apply_state_record_operator(record, StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest,
+            base_state_digest=record.state_digest, target_ref=f"parameter:{key}", key=key, value=2,
+        )) for key in ("width", "depth"))
+        with self.assertRaisesRegex(StateRecordError, "entity:columns-west"):
+            combine_component_changes(record, results)
+
+    def test_combination_checks_dependencies_introduced_by_the_other_candidate(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        added = apply_state_record_operator(record, compile_component_edit(record, entities=(
+            Entity("cabinet-new", "Element@1", {"component_id": "building", "producer": "prism",
+                    "params": {"height": "@column_diameter"}}, parent_id="building"),)))
+        edited = apply_state_record_operator(record, StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest,
+            base_state_digest=record.state_digest, target_ref="parameter:column_diameter", key="column_diameter", value=0.8,
+        ))
+        for pair in ((added, edited), (edited, added)):
+            with self.assertRaisesRegex(StateRecordError, "entity:cabinet-new"):
+                combine_component_changes(record, pair)
+
+    def test_retained_operator_replays_components_and_scalars_on_exact_parent(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        edits = (
+            self._wall_edit(record),
+            StateRecordOperator(kind=StateRecordEditKind.SET_SCALAR,
+                                base_record_digest=record.digest, base_state_digest=record.state_digest,
+                                target_ref="parameter:column_diameter", key="column_diameter", value=0.8),
+        )
+        for edit in edits:
+            with self.subTest(kind=edit.kind):
+                retained = StateRecordOperator.from_dict(edit.to_dict())
+                expected = apply_state_record_operator(record, edit)
+                self.assertEqual(apply_state_record_operator(record, retained).digest, expected.digest)
+                with self.assertRaises(StateRecordError):
+                    apply_state_record_operator(expected, retained)
+
     def _wall_edit(self, record: StateRecord, **extra) -> StateRecordOperator:
         return compile_component_edit(
             record,
@@ -499,7 +571,7 @@ class StateRecordTests(unittest.TestCase):
             StateRecord("demo", "run-1", record.entities, relations=(Relation("r", "support", "columns-west", "nowhere"),))
 
     def test_a_validator_names_a_check_the_spine_can_measure(self) -> None:
-        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "solid_nonpenetration", "support_contact"])
+        self.assertEqual(sorted(CHECK_KINDS), ["aperture_exists", "clearance_interval", "lintel_minimum_bearing", "solid_nonpenetration", "support_contact"])
         for kind in ("alignment", "meets", "engagement_interval", "separation_interval", "magic"):
             with self.assertRaises(StateRecordError) as raised:                       # a kind nothing measures is refused here, not reported unchecked forever
                 ValidatorBinding(kind)

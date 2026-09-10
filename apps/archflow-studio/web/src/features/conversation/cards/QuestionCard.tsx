@@ -13,6 +13,7 @@
  * templates are available on demand, not presented as work for the architect.
  */
 
+import { useState } from "react";
 import type { PendingIntentDto } from "../../../api/generated";
 import type { StudioApiError } from "../../../api/client";
 import { BilingualText } from "../../../i18n/BilingualText";
@@ -35,8 +36,11 @@ export function QuestionCard({
   onChoose(choice: Choice): void;
 }) {
   const t = useT();
+  const [expanded, setExpanded] = useState(false);
+  const [search, setSearch] = useState("");
   const pending: PendingIntentDto | null = error.pendingIntent;
   const candidates = pending?.candidates ?? [];
+  const shown = expanded ? candidates.filter((candidate) => `${candidate.label} ${candidate.componentId} ${candidate.elementId ?? ""}`.toLowerCase().includes(search.trim().toLowerCase())) : candidates.slice(0, 4);
   return (
     <article className="card card--question" aria-live="polite">
       <div className="card__row">
@@ -47,7 +51,8 @@ export function QuestionCard({
       </div>
       {candidates.length > 0 && (
         <div className="card__row chips">
-          {candidates.map((candidate) => (
+          {expanded && <input aria-label="搜索澄清对象" placeholder="搜索对象" value={search} onChange={(event) => setSearch(event.target.value)} />}
+          {shown.map((candidate) => (
             <button
               key={candidate.ref}
               type="button"
@@ -62,6 +67,8 @@ export function QuestionCard({
               <span className="mono">{candidate.label}</span>
             </button>
           ))}
+          {candidates.length > 4 && <button type="button" className="btn btn--small" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "收起" : `查看全部 ${candidates.length} 项`}</button>}
         </div>
       )}
       {(error.question || error.acceptedForms.length > 0 || pending) && (

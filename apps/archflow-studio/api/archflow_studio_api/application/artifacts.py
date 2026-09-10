@@ -43,7 +43,7 @@ import os
 from pathlib import Path
 import re
 import threading
-from typing import Any, Mapping, NamedTuple
+from typing import Any, Iterable, Mapping, NamedTuple
 
 from PIL import Image, ImageOps
 from pypdf import PdfReader
@@ -55,7 +55,7 @@ from archflow.project.record_kinds import (
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, ThreeDmInspectionError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.refs import ProjectRecordRef
+from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
@@ -77,6 +77,7 @@ FILE_UNREADABLE = "file unreadable"
 DIGEST_MISMATCH = "digest mismatch"
 PNG_MEDIA_TYPE = "image/png"
 PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
+DOCUMENT_UPLOAD_RUN_ID = "studio-documents"
 
 # The receipts that certify an exported file, and the schema that tells the
 # two apart. Both are read; nothing is ever regenerated or run by reading them.
@@ -200,8 +201,19 @@ class DocumentPage:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentPageReplacement:
+    """An exact registered old page and its corresponding uploaded page."""
+
+    run_id: str
+    asset_sha256: str
+    revision_ref: str | None
+    page_index: int
+    new_page_index: int
+
+
+@dataclass(frozen=True, slots=True)
 class SourceDocument:
-    """An imported reference, never an exported model or design state."""
+    """An imported reference or a retained drawing, never a design state."""
 
     project_id: str
     run_id: str
@@ -212,6 +224,12 @@ class SourceDocument:
     pages: tuple[DocumentPage, ...]
     model_source: ModelSource | None = None
     model_source_binding_ref: str | None = None
+    drawing_id: str | None = None
+    revision_ref: str | None = None
+    source_stage_ref: str | None = None
+    view_recipe: dict[str, Any] | None = None
+    generated_at: str | None = None
+    replaces_pages: tuple[DocumentPageReplacement, ...] = ()
 
 
 def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
@@ -254,8 +272,13 @@ def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
         raise StudioError(422, "DOCUMENT_INVALID", "The source is not a complete, readable PDF, PNG or JPEG.") from exc
 
 
-def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument, ...]:
-    """Only registered source files in this run, separately from model exports."""
+def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[SourceDocument, ...]:
+    """Registered documents in one run, or across the bound project."""
+
+    if run_id is None:
+        return _ordered_documents(
+            document for source_run in binding.run_ids() for document in list_documents(binding, source_run)
+        )
 
     documents: dict[str, SourceDocument] = {}
     for ref in binding.record_refs(run_id):
@@ -273,8 +296,21 @@ def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
             pages=tuple(DocumentPage(**page) for page in payload["pages"]),
             model_source=ModelSource.from_dict(payload["modelSource"]) if payload.get("modelSource") else None,
             model_source_binding_ref=ref.uri if payload.get("modelSource") else None,
+            drawing_id=payload.get("drawingId"), revision_ref=payload.get("revisionRef"),
+            source_stage_ref=payload.get("sourceStageRef"), view_recipe=payload.get("viewRecipe"),
+            generated_at=payload.get("generatedAt"),
+            replaces_pages=tuple(DocumentPageReplacement(**page) for page in payload.get("replaces_pages", ())),
         )
-        documents.setdefault(document.asset_sha256, document)
+        key = document.revision_ref or document.asset_sha256
+        previous = documents.get(key)
+        if previous is None:
+            documents[key] = document
+        elif document.model_source is not None:
+            if previous.model_source is not None and previous.model_source != document.model_source:
+                raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
+            if previous.model_source is None:
+                documents[key] = replace(previous, model_source=document.model_source,
+                                                           model_source_binding_ref=document.model_source_binding_ref)
     for ref in binding.record_refs(run_id):
         if record_kind(ref) != STUDIO_DOCUMENT_MODEL_SOURCE:
             continue
@@ -286,19 +322,47 @@ def list_documents(binding: ProjectBinding, run_id: str) -> tuple[SourceDocument
         if document is None or (document.model_source is not None and document.model_source != source):
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "This document has competing model associations; its pages remain retained.")
         documents[document.asset_sha256] = replace(document, model_source=source, model_source_binding_ref=ref.uri)
-    return tuple(sorted(documents.values(), key=lambda doc: (doc.file_name, doc.asset_sha256)))
+    return _ordered_documents(documents.values())
+
+
+def _ordered_documents(documents: Iterable[SourceDocument]) -> tuple[SourceDocument, ...]:
+    documents = tuple(documents)
+    generated = sorted((doc for doc in documents if doc.generated_at is not None),
+                       key=lambda doc: (doc.generated_at, doc.revision_ref or doc.asset_sha256), reverse=True)
+    undated = sorted((doc for doc in documents if doc.generated_at is None),
+                     key=lambda doc: (doc.file_name, doc.run_id, doc.asset_sha256))
+    return tuple(generated + undated)
 
 
 def document_bytes(
     binding: ProjectBinding, run_id: str, asset_sha256: str,
+    revision_ref: str | None = None,
+    *, binding_ref: str | None = None,
 ) -> tuple[SourceDocument, bytes]:
     """Serve the registered original only; the caller cannot supply a disk path."""
 
     if not SHA256_HEX.fullmatch(asset_sha256):
         raise StudioError(422, "DOCUMENT_INVALID", "A source document is addressed by its SHA-256.")
-    document = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256), None)
+    document = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256
+                     and (revision_ref is None or row.revision_ref == revision_ref)
+                     and (binding_ref is None or row.model_source_binding_ref == binding_ref)), None)
     if document is None:
         raise StudioError(404, "DOCUMENT_NOT_FOUND", f"Run {run_id} has no source document {asset_sha256}.")
+    return document, _registered_document_bytes(binding, document)
+
+
+def _registered_document_bytes(binding: ProjectBinding, document: SourceDocument) -> bytes:
+    run_id, asset_sha256 = document.run_id, document.asset_sha256
+    if document.revision_ref is not None:
+        from monkeydiagram.drawing_elevation import DrawingElevationError, read_model_axis_elevation
+
+        try:
+            drawing = read_model_axis_elevation(binding.repository, record_ref_from_uri(document.revision_ref, binding.project_id))
+        except (DrawingElevationError, TypeError, ValueError) as exc:
+            raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The retained drawing revision cannot be read.") from exc
+        if drawing.png_ref.sha256 != asset_sha256 or drawing.receipt["source"]["run_id"] != run_id or drawing.receipt["view"] != document.view_recipe:
+            raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "The drawing revision does not match its registered source and view.")
+        return drawing.png
     try:
         path = binding.repository.layout.resolve_relative(f"objects/sha256/{asset_sha256[:2]}/{asset_sha256}")
         data = path.read_bytes()
@@ -306,16 +370,50 @@ def document_bytes(
         raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The registered source document cannot be read.") from exc
     if hashlib.sha256(data).hexdigest() != asset_sha256:
         raise StudioError(409, "DOCUMENT_DIGEST_MISMATCH", "The source file no longer matches the version this document names.")
-    return document, data
+    return data
+
+
+def _validate_page_replacements(
+    binding: ProjectBinding, run_id: str, digest: str, pages: tuple[DocumentPage, ...],
+    replacements: tuple[DocumentPageReplacement, ...], documents: tuple[SourceDocument, ...],
+) -> None:
+    old_pages: set[tuple[str, str, str | None, int]] = set()
+    for replacement in replacements:
+        identity = (replacement.run_id, replacement.asset_sha256, replacement.revision_ref)
+        old_page = (*identity, replacement.page_index)
+        if old_page in old_pages:
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Each old page may appear only once in a replacement upload.")
+        old_pages.add(old_page)
+        if identity == (run_id, digest, None):
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "A source document cannot replace itself.")
+        previous = next((document for document in documents if (
+            document.run_id, document.asset_sha256, document.revision_ref
+        ) == identity), None)
+        if previous is None:
+            raise StudioError(404, "DOCUMENT_NOT_FOUND", "The page to replace does not name an exact registered source document.")
+        old = next((page for page in previous.pages if page.page_index == replacement.page_index), None)
+        new = next((page for page in pages if page.page_index == replacement.new_page_index), None)
+        if old is None or new is None:
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Both replacement page indices must exist in their documents.")
+        _registered_document_bytes(binding, previous)
+        if not math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001):
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Replacement pages must have the same visible aspect ratio to preserve board marks.")
+    for document in documents:
+        if (document.run_id, document.asset_sha256, document.revision_ref) == (run_id, digest, None):
+            continue
+        if any((page.run_id, page.asset_sha256, page.revision_ref, page.page_index) in old_pages
+               for page in document.replaces_pages):
+            raise StudioError(409, "DOCUMENT_REPLACEMENT_CONFLICT", "An old page already has a registered replacement; replace that newer page instead.")
 
 
 def save_document(
-    binding: ProjectBinding, run_id: str, file_name: str, mime_type: str, content_base64: str,
+    binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
+    replaces_pages: tuple[DocumentPageReplacement, ...] = (),
 ) -> SourceDocument:
-    """Retain original bytes via the object port and register them in the named run."""
+    """Retain original bytes in a named run or the project's source-document run."""
 
-    run = binding.load_run(run_id)
+    run = binding.load_run(run_id) if run_id is not None else None
     if model_source is not None:
         require_model_source(binding, model_source)
     if not file_name.strip() or len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
@@ -332,28 +430,50 @@ def save_document(
         raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
     pages = _document_pages(data, mime_type)
     digest = hashlib.sha256(data).hexdigest()
-    existing = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == digest), None)
-    if existing is not None:
-        if existing.model_source != model_source:
-            raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
-        document_bytes(binding, run_id, digest)
-        return existing
-    document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages, model_source)
-    try:
-        binding.repository.ingest(
-            run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
-            artifact_id=f"source-document-{digest}", media_type=mime_type, source=BytesIO(data),
+    with _document_source_lock:
+        target_run_id = run_id if run_id is not None else DOCUMENT_UPLOAD_RUN_ID
+        documents = list_documents(binding) if replaces_pages else ()
+        _validate_page_replacements(binding, target_run_id, digest, pages, replaces_pages, documents)
+        existing_documents = documents if replaces_pages else (
+            list_documents(binding, target_run_id) if target_run_id in binding.run_ids() else ()
         )
-        binding.repository.put_json(
-            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
-            record_kind=STUDIO_SOURCE_DOCUMENT,
-            payload={"schema": "StudioSourceDocument@1", **{
-                key: value for key, value in asdict(document).items() if key not in ("model_source", "model_source_binding_ref")
-            }, **({"modelSource": model_source.to_dict()} if model_source else {})},
-        )
-    except (ProjectRepositoryError, OSError) as exc:
-        raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
-    return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == digest)
+        existing = next((row for row in existing_documents
+                         if row.run_id == target_run_id and row.asset_sha256 == digest), None)
+        if existing is not None:
+            if existing.model_source != model_source:
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
+            if replaces_pages and set(existing.replaces_pages) != set(replaces_pages):
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's replacement pages are already retained and cannot be rebound.")
+            _registered_document_bytes(binding, existing)
+            return existing
+        if run is None:
+            # A general P036 run stores references without inventing a model
+            # or a design Stage. Invalid uploads never create this envelope.
+            try:
+                run = (binding.load_run(DOCUMENT_UPLOAD_RUN_ID) if DOCUMENT_UPLOAD_RUN_ID in binding.run_ids()
+                       else binding.repository.create_run(DOCUMENT_UPLOAD_RUN_ID))
+            except (ProjectRepositoryError, OSError) as exc:
+                raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document run could not be retained in its project.") from exc
+            run_id = run.run_id
+        document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages,
+                                  model_source, replaces_pages=replaces_pages)
+        try:
+            binding.repository.ingest(
+                run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+                artifact_id=f"source-document-{digest}", media_type=mime_type, source=BytesIO(data),
+            )
+            binding.repository.put_json(
+                run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+                record_kind=STUDIO_SOURCE_DOCUMENT,
+                payload={"schema": "StudioSourceDocument@1", **{
+                    key: value for key, value in asdict(document).items() if key not in (
+                        "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
+                    )
+                }, **({"modelSource": model_source.to_dict()} if model_source else {})},
+            )
+        except (ProjectRepositoryError, OSError) as exc:
+            raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
+        return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == digest)
 
 
 _document_source_lock = threading.RLock()
@@ -508,6 +628,16 @@ def require_model_source(
     if not record.available:
         raise _unavailable(binding, record)
     return record
+
+
+def require_complete_model(record: ArtifactRecord, runner_receipt: Mapping[str, Any]) -> None:
+    """A native seat export can represent the whole run only if it covers every producing seat."""
+
+    if record.representation == "composed":
+        return
+    produced = [row for row in runner_receipt.get("seat_results", ()) if row.get("program_ref")]
+    if not produced or any((row.get("cad") or {}).get("execution_ref") != record.receipt_ref for row in produced):
+        raise StudioError(409, "MODEL_SOURCE_INCOMPLETE", "This native export does not establish coverage of every producing seat. Select a complete composed model or the run's complete native delivery.")
 
 
 _model_asset_lock = threading.RLock()

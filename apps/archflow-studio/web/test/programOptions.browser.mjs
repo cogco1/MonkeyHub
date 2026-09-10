@@ -141,13 +141,47 @@ function versionButton(option) {
   return page.locator(`[data-working-copy=${JSON.stringify(group.groupId)}]`)
     .getByRole("button", { name: new RegExp(`^View ${label}`) });
 }
+async function openVersions() {
+  const button = page.locator(".stage__versions-toggle");
+  if (await button.getAttribute("aria-expanded") !== "true") await button.click();
+}
+async function withModelDetails(read) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+  await settings.getByRole("tab", { name: "Model", exact: true }).click();
+  const source = settings.locator(".source");
+  await source.waitFor({ state: "visible" });
+  try { return await read(source); }
+  finally {
+    await settings.getByRole("button", { name: "Close", exact: true }).click();
+    await settings.waitFor({ state: "detached" });
+  }
+}
+const editingBase = () => page.locator("#stage-versions-panel .stage__versions-session .editing-base");
+const annotationStatus = () => page.locator("#stage-versions-panel [data-model-annotations-status]");
+async function editingRun() {
+  await openVersions();
+  if (await editingBase().getAttribute("data-source-match") === "same") {
+    for (const option of group.options) {
+      if (await versionButton(option).getAttribute("aria-pressed") === "true") return option.modelSource.runId;
+    }
+    assert.fail("A matching editing source must identify the viewed A/B option");
+  }
+  // The compact editing notice names the real option rather than exposing a
+  // run id in its title. Resolve that visible label against this A/B fixture.
+  const label = (await editingBase().locator(".editing-base__name").textContent()).trim();
+  const option = group.options.find((row) => label === `${group.label} · ${row.label}`);
+  assert.ok(option, `The editing notice must name a retained option: ${label}`);
+  return option.modelSource.runId;
+}
 async function ready(option) {
-  await until(async () => ({ selected: await versionButton(option).getAttribute("aria-pressed"),
-    annotations: await page.locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
-    loading: await page.locator(".stage-model .source__status").count(),
-    facts: await page.locator(".stage-model .source__facts").count(),
+  await openVersions();
+  await withModelDetails((source) => until(async () => ({ selected: await versionButton(option).getAttribute("aria-pressed"),
+    annotations: await annotationStatus().getAttribute("data-model-annotations-status"),
+    loading: await source.locator(".source__status").count(),
+    facts: await source.locator(".source__facts").count(),
   }), (value) => value.selected === "true" && value.annotations === "saved" && value.loading === 0 && value.facts === 1,
-  `${option.label}'s real model did not load`, 60_000);
+  `${option.label}'s real model did not load`, 60_000));
 }
 const programPanel = () => page.locator(".program[role=dialog]");
 const optionsPanel = () => page.locator(".options[role=dialog]");
@@ -179,10 +213,14 @@ async function closeOptions() {
   if (await optionsPanel().count()) await optionsPanel().getByRole("button", { name: "Close", exact: true }).click();
 }
 async function viewState() {
+  await openVersions();
+  const details = await withModelDetails(async (source) => ({ source: await source.textContent(),
+    state: await source.getAttribute("data-state") }));
   return {
-    source: await page.locator(".stage-model .source").textContent(),
-    state: await page.locator(".stage-model .source").getAttribute("data-state"),
-    editingRun: await page.locator(".stage-model .hud__left > .editing-base").first().locator("span[title]").getAttribute("title"),
+    ...details,
+    editingRun: await editingRun(),
+    editing: await editingBase().textContent(),
+    sourceMatch: await editingBase().getAttribute("data-source-match"),
     A: await versionButton(optionA).getAttribute("aria-pressed"), B: await versionButton(optionB).getAttribute("aria-pressed"),
     context: await page.locator(".composer > .context").textContent(),
   };
@@ -271,9 +309,11 @@ try {
       } else if (url.pathname === "/api/options") {
         assert.ok(optionsByRun.has(runId), "Options GET must request the explicit editing run");
         await route.fulfill({ json: optionsByRun.get(runId) });
-      } else if (url.pathname === "/api/jobs/fixture-option-job") {
-        await route.fulfill({ json: { jobId: "fixture-option-job", candidateId: "fixture-option-candidate",
-          proposalId: rightAssetOption.optionId, status: "failed", createdAt: "2026-09-08T00:00:00Z",
+      } else if (["/api/jobs/fixture-option-job", "/api/jobs/fixture-program-job"].includes(url.pathname)) {
+        const isProgram = url.pathname.endsWith("fixture-program-job");
+        await route.fulfill({ json: { jobId: isProgram ? "fixture-program-job" : "fixture-option-job",
+          candidateId: isProgram ? "fixture-program-B" : "fixture-option-candidate",
+          proposalId: isProgram ? "fixture-program" : rightAssetOption.optionId, status: "failed", createdAt: "2026-09-08T00:00:00Z",
           startedAt: null, finishedAt: "2026-09-08T00:00:00Z", error: "Execution is intercepted by this browser test.",
           wallTimeS: 0, lane: "parallel", waitingFor: null, waitingReason: null, persistence: "browser fixture only" } });
       } else {
@@ -380,7 +420,8 @@ try {
     await until(() => heldProgram.requested, Boolean, "The old B program GET must be held");
     await openOptions();
     await until(() => heldOptions.requested, Boolean, "The old B options GET must be held");
-    const continueButton = page.locator(".stage-model .hud__left > .editing-base").first()
+    await openVersions();
+    const continueButton = editingBase()
       .getByRole("button", { name: "Continue from this version", exact: true });
     assert.equal(await continueButton.isEnabled(), true, "Panel reads must not block explicit Continue");
     expectedWrite = { method: "PUT", path: `/api/working-copies/${group.groupId}/selection`,

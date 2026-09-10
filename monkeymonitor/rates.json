@@ -1,0 +1,8 @@
+{
+  "rates": [
+    {"label":"GPT-6 Astra · Standard · Short context", "provider":"openai", "model":"gpt-6-astra", "input":"10", "cached_input":"1", "cache_write_input":"12.50", "cache_write_1h_input":null, "output":"50", "source_url":"https://developers.openai.com/api/docs/pricing", "effective_date":"2026-09-09"},
+    {"label":"GPT-6 Astra · Standard · Long context", "provider":"openai", "model":"gpt-6-astra", "input":"20", "cached_input":"2", "cache_write_input":"25", "cache_write_1h_input":null, "output":"75", "source_url":"https://developers.openai.com/api/docs/pricing", "effective_date":"2026-09-09"},
+    {"label":"GPT-5.6 Sol · Standard · Short context", "provider":"openai", "model":"gpt-5.6-sol", "input":"4", "cached_input":"0.40", "cache_write_input":"5", "cache_write_1h_input":null, "output":"20", "source_url":"https://developers.openai.com/api/docs/pricing", "effective_date":"2026-09-09"},
+    {"label":"GPT-5.6 Sol · Standard · Long context", "provider":"openai", "model":"gpt-5.6-sol", "input":"8", "cached_input":"0.80", "cache_write_input":"10", "cache_write_1h_input":null, "output":"30", "source_url":"https://developers.openai.com/api/docs/pricing", "effective_date":"2026-09-09"}
+  ]
+}

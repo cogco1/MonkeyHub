@@ -56,6 +56,13 @@ class StateProjectionTests(unittest.TestCase):
         self.addCleanup(self.client.close)
         self.payload = self.client.get("/api/state").json()
 
+    def test_invalid_stage_reference_is_an_input_error(self) -> None:
+        for source in ("bad-stage-ref", "project://another-project/runs/run/reviews/design-stage-" + "0" * 64 + ".json"):
+            with self.subTest(source=source):
+                response = self.client.get("/api/state", params={"sourceStageRef": source})
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["code"], "DESIGN_STAGE_REF_INVALID")
+
     def test_type_inherited_parameter_bindings_keep_their_source_in_the_projection(self) -> None:
         from archflow_studio_api.application.projection import _elements
 

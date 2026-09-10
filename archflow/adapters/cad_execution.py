@@ -2546,16 +2546,22 @@ def _preview_materials(
     layer_colors: Mapping[str, tuple[int, int, int]],
     material_colors: Mapping[str, tuple[int, int, int]] | None,
 ) -> dict[str, PreviewMaterial]:
-    """The native material each delivered assembly member wears, keyed by object id.
+    """The declared native material each delivered object wears, keyed by object id.
 
-    Roles come from ``program.proposal.assemblies`` alone, never from an
-    object's name.  A FRAME member reuses the ``archflow:material`` its
-    semantics already carry (the declared assignment of its component);
-    a GLAZING member takes the glass fallback.
+    Every declared component material is carried into the preview. Roles
+    come from ``program.proposal.assemblies`` alone, never from an object's
+    name: GLAZING keeps its glass fallback and an undeclared FRAME is shaded.
     """
 
     objects = semantics["objects"]
     materials: dict[str, PreviewMaterial] = {}
+    for object_id in physical:
+        row = objects[object_id]
+        declared = row["user_text"].get("archflow:material")
+        if declared:
+            layer_color = layer_colors.get(row["layer"], (0, 0, 0))
+            color = (material_colors or {}).get(declared, layer_color)
+            materials[object_id] = PreviewMaterial(name=declared, diffuse=tuple(int(c) for c in color))
     for assembly in program.proposal.assemblies:
         for object_id in assembly.objects_for(AssemblyRole.GLAZING):
             if object_id in physical:
@@ -2565,13 +2571,8 @@ def _preview_materials(
                 continue
             row = objects[object_id]
             layer_color = layer_colors.get(row["layer"], (0, 0, 0))
-            declared = row["user_text"].get("archflow:material")
-            if declared:
-                color = (material_colors or {}).get(declared, layer_color)
-                materials[object_id] = PreviewMaterial(name=declared, diffuse=tuple(int(c) for c in color))
-            else:
-                shaded = tuple(int(round(channel * _FRAME_FALLBACK_SHADE)) for channel in layer_color)
-                materials[object_id] = PreviewMaterial(name=AssemblyRole.FRAME.value, diffuse=shaded)
+            shaded = tuple(int(round(channel * _FRAME_FALLBACK_SHADE)) for channel in layer_color)
+            materials[object_id] = PreviewMaterial(name=AssemblyRole.FRAME.value, diffuse=shaded)
     return materials
 
 
@@ -2659,6 +2660,7 @@ class OcctExecutionReceipt:
     readback_tolerance: float
     timings: dict[str, float]
     failures: tuple[dict[str, str], ...]
+    reused_object_ids: tuple[str, ...] = ()
 
     SCHEMA = "OcctExecutionReceipt@1"
 
@@ -2670,6 +2672,8 @@ class OcctExecutionReceipt:
         require_identifier(self.adapter_id, "adapter_id")
         if not isinstance(self.backend, dict):
             raise TypeError("backend must be dict")
+        if not isinstance(self.reused_object_ids, tuple) or set(self.reused_object_ids) - set(self.physical_object_ids):
+            raise CadExecutionError("reused objects must belong to the exported physical denominator")
         if not isinstance(self.evidence_tier, str) or not self.evidence_tier:
             raise CadExecutionError("evidence_tier must be non-empty text")
         for field in ("exact_artifact", "preview_artifact"):
@@ -2745,6 +2749,7 @@ class OcctExecutionReceipt:
                 "timings": self.timings,
                 "failures": list(self.failures),
                 "readback_verified": self.readback_verified,
+                **({"reused_object_ids": list(self.reused_object_ids)} if self.reused_object_ids else {}),
             }
         )
 
@@ -2761,6 +2766,9 @@ def execute_occt_export(
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     layer_by_component: Mapping[str, str] | None = None,
     preview: bool = True,
+    prior_program: CompiledGeometryProgram | None = None,
+    prior_step: Path | None = None,
+    prior_step_sha256: str | None = None,
 ) -> OcctExecutionReceipt:
     """Realize the bound program in process, write STEP and a mesh preview, cold-read the STEP.
 
@@ -2777,6 +2785,10 @@ def execute_occt_export(
     actual open boundary, no volume claimed.  The preview is read back
     through ``inspect_three_dm`` and checked against the same denominator.
     No process is started.
+
+    An explicitly supplied prior program and verified STEP may contribute
+    unchanged shapes. Only changed geometry is built; the complete current
+    model is written and independently read back under the current binding.
 
     Raises ``CadCapabilityError`` (a ``CadExecutionError``) before writing
     when the program uses an operation this executor does not realize, and
@@ -2871,7 +2883,9 @@ def execute_occt_export(
     except OcctUnavailableError as exc:
         raise CadExecutionError(str(exc)) from exc
     try:
-        build = build_program_shapes(program)
+        reused_shapes = _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256)
+        build = (build_program_shapes(program, reusable_shapes=reused_shapes)
+                 if reused_shapes else build_program_shapes(program))
     except OcctCapabilityError as exc:
         raise CadCapabilityError(
             f"OCCT executor cannot realize {exc.op_id} ({exc.kind}): {exc.reason}",
@@ -3004,7 +3018,37 @@ def execute_occt_export(
         readback_tolerance=tolerance,
         timings=timings,
         failures=tuple(failures),
+        reused_object_ids=tuple(sorted(reused_shapes)),
     )
+
+
+def _reusable_occt_shapes(program, prior_program, prior_step, prior_step_sha256) -> dict[str, Any]:
+    """Load unchanged physical inputs from the exact source the caller chose."""
+
+    if prior_program is None and prior_step is None and prior_step_sha256 is None:
+        return {}
+    if prior_program is None or prior_step is None or prior_step_sha256 is None:
+        raise CadExecutionError("OCCT reuse requires the prior program, STEP and certified digest")
+    if program.proposal.length_unit != prior_program.proposal.length_unit:
+        return {}
+    source = Path(prior_step)
+    if source.is_symlink():
+        raise CadExecutionError("OCCT reuse source cannot be a symlink")
+    with source.open("rb") as stream:
+        if hashlib.file_digest(stream, "sha256").hexdigest() != prior_step_sha256:
+            raise CadExecutionError("OCCT reuse source differs from its certified STEP")
+    entries = read_step(source, length_unit=program.proposal.length_unit.value)
+    by_name = {entry.name: entry.shape for entry in entries}
+    if len(by_name) != len(entries) or set(by_name) != set(_physical_ids(prior_program.proposal)):
+        raise CadExecutionError("OCCT reuse source has missing or ambiguous physical objects")
+    from .cad_patch import select_patch_operations
+
+    selection = select_patch_operations(program, prior_program)
+    # The Rhino patch's kept set excludes the entire connected input closure.
+    # OCCT can keep an unchanged final shape even when a changed sibling needs
+    # their missing shared intermediate rebuilt from the program.
+    unchanged = (set(by_name) & set(_physical_ids(program.proposal))) - set(selection.changed_object_ids)
+    return {name: by_name[name] for name in unchanged}
 
 
 def _declared_deliveries(program: CompiledGeometryProgram, physical: tuple[str, ...]) -> dict[str, str]:
@@ -3326,6 +3370,9 @@ def patch_composed_three_dm(
     native block instance is refused, never silently stripped of its definition.
     Preserved block instances in the base need no reconstruction. This is a
     display-model composition, not an exact STEP export of the imported assets.
+    A replacement without a native material keeps the existing object's native
+    material, or a new object's unambiguous component material. Explicit donor
+    materials take precedence; inherited materials retain their PBR and textures.
     New native objects must use built-in linetypes: rhino3dm's custom-linetype
     table wrappers cannot safely be released on the supported Windows runtime.
     """
@@ -3396,6 +3443,42 @@ def patch_composed_three_dm(
     if selection.empty:
         return base_3dm
 
+    def native_material_index(model, attributes):
+        if attributes.MaterialSource == rhino3dm.ObjectMaterialSource.MaterialFromObject:
+            index = attributes.MaterialIndex
+        elif attributes.MaterialSource == rhino3dm.ObjectMaterialSource.MaterialFromLayer:
+            layer = model.Layers.FindIndex(attributes.LayerIndex)
+            index = -1 if layer is None else layer.RenderMaterialIndex
+        else:
+            return None
+        return index if index >= 0 and model.Materials.FindIndex(index) is not None else None
+
+    source_materials = {}
+    component_materials: dict[str, set[int]] = {}
+    for name in prior_names:
+        attributes = base_objects[name][0].Attributes
+        index = native_material_index(base, attributes)
+        if index is None:
+            continue
+        source_materials[name] = index
+        component = attributes.GetUserString("archflow:component")
+        if component:
+            component_materials.setdefault(component, set()).add(index)
+
+    inherited_materials = {}
+    for item in replacements:
+        attributes = item.Attributes
+        if native_material_index(donor, attributes) is not None:
+            continue
+        index = source_materials.get(attributes.Name)
+        if index is None:
+            component = attributes.GetUserString("archflow:component")
+            candidates = component_materials.get(component, set())
+            if len(candidates) == 1:
+                index = next(iter(candidates))
+        if index is not None:
+            inherited_materials[attributes.Name] = index
+
     # Table indices belong to a document. Copy only tables the replacement uses;
     # never change an existing base layer or material while adding native objects.
     materials: dict[int, int] = {}
@@ -3459,8 +3542,21 @@ def patch_composed_three_dm(
     imported = set()
     for item in replacements:
         attributes = item.Attributes
+        donor_material = native_material_index(donor, attributes)
         attributes.LayerIndex = copy_layer(attributes.LayerIndex)
-        attributes.MaterialIndex = copy_material(attributes.MaterialIndex)
+        inherited = inherited_materials.get(attributes.Name)
+        if inherited is not None:
+            attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+            attributes.MaterialIndex = inherited
+            material = base.Materials.FindIndex(inherited)
+            logical = material.GetUserString("archflow:material_id") or material.GetUserString("archflow:material")
+            if logical:
+                attributes.SetUserString("archflow:material", logical)
+        elif donor_material is not None:
+            attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+            attributes.MaterialIndex = copy_material(donor_material)
+        else:
+            attributes.MaterialIndex = copy_material(attributes.MaterialIndex)
         attributes.LinetypeIndex = copy_linetype(attributes.LinetypeIndex)
         old_groups = attributes.GetGroupList2()
         attributes.RemoveFromAllGroups()

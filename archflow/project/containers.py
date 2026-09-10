@@ -214,8 +214,8 @@ def published(repository: FilesystemProjectRepository) -> Container:
     """
 
     layout = repository.layout
-    version = _head_version(repository)
-    for snapshot_version, ref in _snapshots(layout):
+    version, snapshots = _issued_snapshots(repository)
+    for snapshot_version, ref in snapshots:
         if snapshot_version == version:
             return Container(
                 state=ContainerState.PUBLISHED,
@@ -244,7 +244,7 @@ def archived(
     """
 
     layout = repository.layout
-    version = _head_version(repository)
+    version, snapshots = _issued_snapshots(repository)
     return tuple(
         Container(
             state=ContainerState.ARCHIVED,
@@ -256,7 +256,7 @@ def archived(
             branch_id=None,
             note=f"issue {snapshot_version} · superseded",
         )
-        for snapshot_version, ref in _snapshots(layout)
+        for snapshot_version, ref in snapshots
         if snapshot_version < version
     )
 
@@ -411,46 +411,36 @@ def _run_ids(layout: ProjectLayout) -> tuple[str, ...]:
         ) from exc
 
 
-def _snapshots(
-    layout: ProjectLayout,
-) -> tuple[tuple[int, ProjectRecordRef], ...]:
-    """Every canonical snapshot as (version, ref), oldest version first.
-
-    Snapshot files are immutable and content-addressed by name, so the digest
-    in the name is the record's identity; nothing is opened here.
-    """
+def _issued_snapshots(
+    repository: FilesystemProjectRepository,
+) -> tuple[int, tuple[tuple[int, ProjectRecordRef], ...]]:
+    """Use one verified HEAD chain, excluding prepared but unissued snapshots."""
 
     try:
-        names = sorted(item.name for item in layout.canonical.iterdir())
-    except OSError as exc:
+        report = repository.verify()
+    except _UNREADABLE as exc:
         raise ContainerError(
-            f"{layout.project_id}: cannot list canonical snapshots: {exc}"
+            f"{repository.layout.project_id}: cannot read issued snapshots: {exc}"
         ) from exc
     found: list[tuple[int, ProjectRecordRef]] = []
-    for name in names:
-        matched = _SNAPSHOT_NAME.match(name)
+    for relative_path in report.reachable_paths:
+        path = PurePosixPath(relative_path)
+        if path.parent != PurePosixPath("canonical"):
+            continue
+        matched = _SNAPSHOT_NAME.fullmatch(path.name)
         if matched is None:
             continue
         found.append(
             (
                 int(matched.group(1)),
                 ProjectRecordRef(
-                    project_id=layout.project_id,
-                    relative_path=f"canonical/{name}",
+                    project_id=repository.layout.project_id,
+                    relative_path=relative_path,
                     sha256=matched.group(2),
                 ),
             )
         )
-    return tuple(sorted(found, key=lambda item: item[0]))
-
-
-def _head_version(repository: FilesystemProjectRepository) -> int:
-    try:
-        return repository.read_head().version
-    except _UNREADABLE as exc:
-        raise ContainerError(
-            f"{repository.layout.project_id}: cannot read HEAD: {exc}"
-        ) from exc
+    return report.head.version, tuple(sorted(found, key=lambda item: item[0]))
 
 
 def _digest_of(path: Path) -> str:

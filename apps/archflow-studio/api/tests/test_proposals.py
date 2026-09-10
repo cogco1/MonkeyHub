@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.application.proposals import read_refs_of, write_refs_of
 
 from archflow.state.decision_operator import DecisionOperator
 
@@ -91,6 +92,20 @@ class ProposalTestCase(unittest.TestCase):
         self.assertEqual(status, 422, payload)
         self.assertEqual(payload["code"], "BLOCKED_NEEDS_HUMAN")
         return payload
+
+
+class ProposalAccessTests(ProposalTestCase):
+    def test_protected_geometry_is_read_while_declared_parameter_dependents_are_written(self) -> None:
+        payload = self.accepted("set module to 1.5 keep entity:portico-base")
+        proposal = self.client.app.state.proposals.get(payload["proposalId"])
+        self.assertEqual(read_refs_of(proposal), {"entity:portico-base"})
+        self.assertEqual(write_refs_of(proposal), {"parameter:module", "parameter:bay", "parameter:span"})
+
+    def test_an_element_edit_does_not_claim_the_whole_component(self) -> None:
+        payload = self.accepted("set height to 2.2", elementId="portico-cornice")
+        proposal = self.client.app.state.proposals.get(payload["proposalId"])
+        self.assertEqual(read_refs_of(proposal), frozenset())
+        self.assertEqual(write_refs_of(proposal), {"entity:portico-cornice"})
 
 
 class ElementFieldProposalTests(ProposalTestCase):
