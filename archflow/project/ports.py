@@ -109,3 +109,22 @@ class DesignBranchStore(Protocol):
         expected_head: ProjectRecordRef | None,
         branch: Mapping[str, Any],
     ) -> dict[str, Any]: ...
+
+
+class ProjectTransferStore(Protocol):
+    """Explicit project snapshot reads and candidate imports; no issue port."""
+
+    def export_transfer(
+        self, *, run_id: str | None = None,
+        known_files: Mapping[str, str] | None = None,
+        include_contents: bool = True,
+    ) -> dict[str, Any]: ...
+
+    def read_transfer_file(self, path: str, sha256: str) -> bytes: ...
+
+    def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None: ...
+
+    def pull_transfer(
+        self, transfer: Mapping[str, Any], *, expected_head: ProjectVersionRef,
+        expected_branches: Mapping[str, Any],
+    ) -> None: ...

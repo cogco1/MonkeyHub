@@ -651,3 +651,72 @@ smoke against a **temporary copy** of a project with export on: bind → choose 
 preview its export under the `CANDIDATE` chip → read the review-readiness card → send an abstract
 sentence and get a question card → open the evidence drawer; then the light theme and the
 900 px fold.
+
+## Local Runtime and shared project collaboration
+
+One shared service retains the team's design branches. Each architect runs a separate local
+Runtime, with the same P036 project identity under its own project root, and generates
+geometry locally. Uploading a candidate leaves the shared branch unchanged. Explicit
+acceptance uses the existing shared validation and branch CAS; the next pull gives another
+Runtime the accepted Stage and its model bytes for continued editing.
+
+Use the existing packaged Python and API entry point. No Vite server is required. Each
+project directory's final component must equal its `project_id`; separate roots can be
+`workspace/shared/projects/demo-project` and `workspace/alice/projects/demo-project`.
+
+For the shared process, configure:
+
+```powershell
+$env:ARCHFLOW_STUDIO_MODE = 'remote'
+$env:ARCHFLOW_STUDIO_SERVICE_ROLE = 'shared_project'
+$env:ARCHFLOW_STUDIO_ACTORS_FILE = 'E:\YourRuntime\config\actors.json'
+$env:ARCHFLOW_STUDIO_ORIGINS = 'http://127.0.0.1:8891'
+$env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
+python -m archflow_studio_api.main --project-dir E:\YourRuntime\workspace\shared\projects\demo-project --host 127.0.0.1 --port 8890
+```
+
+The external actor file names unique credentials and explicit actions. Replace the example
+token values in your own configuration; keep this file outside project folders and packages.
+
+```json
+{"actors":[
+  {"actor_id":"alice","token":"REPLACE_ALICE_TOKEN","projects":{"demo-project":["read","propose","accept"]}},
+  {"actor_id":"reviewer","token":"REPLACE_REVIEWER_TOKEN","projects":{"demo-project":["read","accept"]}}
+]}
+```
+
+In a separate shell for Alice's local Runtime, configure:
+
+```powershell
+$env:ARCHFLOW_STUDIO_MODE = 'local'
+$env:ARCHFLOW_STUDIO_SERVICE_ROLE = 'runtime'
+$env:ARCHFLOW_STUDIO_SYNC_URL = 'http://127.0.0.1:8890'
+$env:ARCHFLOW_STUDIO_SYNC_PROJECT_ID = 'demo-project'
+$env:ARCHFLOW_STUDIO_SYNC_TOKEN = 'REPLACE_ALICE_TOKEN'
+$env:ARCHFLOW_STUDIO_CAD_EXPORT = 'occt'
+python -m archflow_studio_api.main --project-dir E:\YourRuntime\workspace\alice\projects\demo-project --host 127.0.0.1 --port 8891
+```
+
+Initialize the shared project's first Stage with the existing model-source endpoint. Then
+`POST http://127.0.0.1:8891/api/sync/pull` installs a same-identity local copy, including
+necessary retained artifacts. The usual proposal/candidate endpoints compute locally;
+`POST /api/sync/push?candidateId=...` submits without accepting. The existing accept and
+branch endpoints on this connected Runtime delegate to the shared service and pull the
+result. A reviewer can accept an already uploaded candidate without a propose grant.
+
+An outdated candidate returns a branch conflict and stays available locally. Pull the new
+Stage and rerun the intended revision explicitly. Repeating a completed accept returns the
+same Stage; repeating a pull reuses identical bytes. A changed published HEAD requires a
+separate published-version synchronization path, which this slice explicitly refuses.
+
+Each connected Runtime uses one actor and listens only on loopback; a shared service can
+authenticate multiple actors. The first shared project must already exist. The two-client
+test uses disposable synthetic inputs and actual OCCT models:
+
+```powershell
+python -m pytest apps/archflow-studio/api/tests/test_collaboration_http.py -q
+```
+
+`ARCHFLOW_COLLABORATION_PYTHON` and `ARCHFLOW_COLLABORATION_SOURCE_ROOT` can point that test
+at an unpacked candidate to verify its isolated processes. This same-machine check does
+not replace two-machine network/member testing. Current installed services are unaffected.

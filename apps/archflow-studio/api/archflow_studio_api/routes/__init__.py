@@ -22,6 +22,7 @@ from . import (
     proposals,
     settings,
     state,
+    synchronization,
     validation,
 )
 
@@ -44,5 +45,6 @@ router.include_router(candidates.router)
 router.include_router(episodes.router)
 router.include_router(validation.router)
 router.include_router(events.router)
+router.include_router(synchronization.router)
 
 __all__ = ["router"]

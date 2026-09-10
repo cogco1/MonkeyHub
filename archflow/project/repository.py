@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
 import shutil
 import threading
+import tempfile
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -14,6 +16,7 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO
 from uuid import uuid4
+from urllib.parse import unquote, urlsplit
 
 if os.name == "nt":
     import msvcrt
@@ -33,6 +36,7 @@ from archflow.project.refs import (
     record_file_name,
     require_identifier,
     require_project_relative_path,
+    parse_record_file_name,
 )
 
 
@@ -58,6 +62,25 @@ class StaleDesignBranch(ProjectRepositoryError):
 
 class PromotionAuthorityError(ProjectRepositoryError):
     pass
+
+
+def _transfer_path(value: str) -> str:
+    """Retained native export names may contain @; never accept host paths."""
+    if not isinstance(value, str) or not value or "\\" in value or ":" in value:
+        raise ProjectIntegrityError("TRANSFER_PATH_INVALID: expected a project-relative path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or path.as_posix() != value or any(
+        part in ("", ".", "..") or part.endswith((".", " "))
+        or any(ord(char) < 32 for char in part) for part in path.parts
+    ):
+        raise ProjectIntegrityError("TRANSFER_PATH_INVALID: unsafe project path")
+    allowed = value in ("project.json", "HEAD", "design/branches.json",
+                        "input/runner/state-record.json", "input/runner/seats.json")
+    if not allowed and path.parts[0] not in ("canonical", "events", "objects", "runs"):
+        raise ProjectIntegrityError("TRANSFER_PATH_INVALID: unassigned project area")
+    if any(part.endswith(".lock") for part in path.parts):
+        raise ProjectIntegrityError("TRANSFER_PATH_INVALID: locks are not project content")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -1161,6 +1184,414 @@ class FilesystemProjectRepository:
                 _json_bytes(self._head_payload(next_ref, replacement, event)),
             )
             return next_ref
+
+    def export_transfer(
+        self, *, run_id: str | None = None,
+        known_files: Mapping[str, str] | None = None,
+        include_contents: bool = True,
+    ) -> dict[str, Any]:
+        """Read a retained design snapshot or one candidate and its dependencies.
+
+        This is a transport value, not a new project format. All identities and
+        file bytes are the existing P036 ones. Only receipt-named workspace
+        artifacts travel; speculative scripts, logs and recovery files do not.
+        """
+        with self._lock, self._head_lock, self._design_lock:
+            report = self.verify()
+            branches = self.read_design_branches() if run_id is None else {}
+            files: dict[str, tuple[str, int]] = {}
+            contents: dict[str, str] = {}
+            known = known_files or {}
+            pending: list[tuple[str, str | None]] = []
+            runs: set[str] = set()
+
+            def add(path: str, digest: str | None = None) -> None:
+                pending.append((_transfer_path(path), digest))
+
+            def add_run(value: str) -> None:
+                require_identifier(value, "transfer run_id")
+                if value in runs:
+                    return
+                run = self.load_run(value)
+                self.load_version_state(run.base)
+                runs.add(value)
+                add(f"runs/{value}/run.json")
+                for area in ("records", "reviews", "candidates", "branches"):
+                    directory = self.layout.run(value).root / area
+                    if not directory.exists():
+                        continue
+                    for path in sorted(directory.rglob("*.json")):
+                        try:
+                            _, digest = parse_record_file_name(path.name)
+                        except ValueError:
+                            continue
+                        add(path.relative_to(self.layout.root).as_posix(), digest)
+
+            def artifact(path: str, digest: str, current_run: str | None) -> None:
+                # Native CAD receipts name a workspace-local export. P036
+                # artifact refs instead carry a complete project-relative path.
+                if path.startswith(("runs/", "objects/", "canonical/", "events/")):
+                    add(path, digest)
+                    return
+                if current_run is None:
+                    raise ProjectIntegrityError("TRANSFER_DEPENDENCY_MISSING: artifact has no run")
+                name = PurePosixPath(path.replace("\\", "/")).name
+                matches = [p for p in self.layout.run(current_run).workspaces.rglob(name)
+                           if p.is_file() and _sha256(_read_bytes(p)) == digest]
+                if not matches:
+                    raise ProjectIntegrityError(f"TRANSFER_DEPENDENCY_MISSING: {current_run}/{name}")
+                add(sorted(matches)[0].relative_to(self.layout.root).as_posix(), digest)
+
+            def references(value: Any, current_run: str | None) -> None:
+                if isinstance(value, Mapping):
+                    if "relative_path" in value and "sha256" in value:
+                        if value.get("project_id", self._manifest.project_id) != self._manifest.project_id:
+                            raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign artifact")
+                        artifact(value["relative_path"], value["sha256"], current_run)
+                    if {"run_id", "project_id", "base"}.issubset(value):
+                        if value["project_id"] != self._manifest.project_id:
+                            raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign run")
+                        add_run(value["run_id"])
+                    native = value.get("artifact_relative_path")
+                    inspection = value.get("inspection")
+                    if native and isinstance(inspection, Mapping) and inspection.get("file_sha256"):
+                        artifact(native, inspection["file_sha256"], current_run)
+                    for key, item in value.items():
+                        evidence_list = key == "archflow:evidence" or (
+                            key == "value" and value.get("key") == "archflow:evidence"
+                        )
+                        if evidence_list and isinstance(item, str):
+                            # The CAD metadata contract serializes evidence as
+                            # a comma-separated list in this specific field.
+                            # Every member still takes the strict URI path check.
+                            for source in item.split(","):
+                                references(source, current_run)
+                        else:
+                            references(item, current_run)
+                elif isinstance(value, (list, tuple)):
+                    for item in value:
+                        references(item, current_run)
+                elif isinstance(value, str) and value.startswith("project://"):
+                    uri = urlsplit(value)
+                    if uri.netloc != self._manifest.project_id or uri.query or uri.fragment:
+                        raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign project reference")
+                    path = _transfer_path(unquote(uri.path.lstrip("/")))
+                    parts = PurePosixPath(path).parts
+                    if parts[0] == "runs" and len(parts) >= 2:
+                        add_run(parts[1])
+                        if len(parts) == 2:
+                            return
+                    add(path)
+
+            add("project.json")
+            add("HEAD")
+            for path in report.reachable_paths:
+                if path.startswith(("canonical/", "events/")):
+                    add(path)
+            if run_id is None:
+                if self.layout.design_branches.exists():
+                    add("design/branches.json")
+                references(branches, None)
+                for path in ("input/runner/state-record.json", "input/runner/seats.json"):
+                    if (self.layout.root / path).is_file():
+                        add(path)
+            else:
+                add_run(run_id)
+            while pending:
+                path, expected_digest = pending.pop()
+                if path in files:
+                    if expected_digest is not None and files[path][0] != expected_digest:
+                        raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path}")
+                    continue
+                target = (self.layout.root / path).resolve()
+                if not target.is_relative_to(self.layout.root) or not target.is_file():
+                    raise ProjectIntegrityError(f"TRANSFER_DEPENDENCY_MISSING: {path}")
+                is_json = path.endswith(".json") or path == "HEAD"
+                data = _read_bytes(target) if is_json else None
+                if data is None:
+                    with target.open("rb") as stream:
+                        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                    size = target.stat().st_size
+                else:
+                    digest, size = _sha256(data), len(data)
+                if expected_digest is not None and digest != expected_digest:
+                    raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path}")
+                files[path] = (digest, size)
+                if include_contents and known.get(path) != digest:
+                    if data is None:
+                        data = _read_bytes(target)
+                    if _sha256(data) != digest or len(data) != size:
+                        raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path} changed during export")
+                    contents[path] = base64.b64encode(data).decode("ascii")
+                parts = PurePosixPath(path).parts
+                current_run = parts[1] if parts[0] == "runs" else None
+                if current_run is not None:
+                    add_run(current_run)
+                if is_json:
+                    assert data is not None
+                    references(_parse_json_document(data, path), current_run)
+            return {
+                "project_id": self._manifest.project_id,
+                "format_version": self._manifest.format_version,
+                "mode": "snapshot" if run_id is None else "candidate",
+                "root_run_id": run_id, "head": report.head.to_dict(),
+                "branches": branches, "run_ids": sorted(runs),
+                "files": [{"path": path, "sha256": digest, "size": size}
+                          for path, (digest, size) in sorted(files.items())],
+                "contents": contents,
+            }
+
+    def read_transfer_file(self, path: str, sha256: str) -> bytes:
+        """Read one retained file by identity without rescanning other binaries."""
+        path = _transfer_path(path)
+        target = (self.layout.root / path).resolve()
+        if not target.is_relative_to(self.layout.root):
+            raise ProjectIntegrityError("TRANSFER_PATH_INVALID: target escapes project root")
+        parts = PurePosixPath(path).parts
+        metadata = path in ("project.json", "HEAD", "design/branches.json",
+                            "input/runner/state-record.json", "input/runner/seats.json")
+        run_id = parts[1] if parts[0] == "runs" and len(parts) >= 3 else None
+        run_manifest = run_id is not None and len(parts) == 3 and parts[2] == "run.json"
+        record_area = (parts[0] in ("canonical", "events") and len(parts) == 2) or (
+            run_id is not None and (
+                (len(parts) == 4 and parts[2] in ("records", "reviews", "candidates"))
+                or (len(parts) == 6 and parts[2] == "branches" and parts[4] == "records")
+            )
+        )
+        if run_manifest:
+            self.load_run(run_id)
+        elif record_area:
+            try:
+                _, named_digest = parse_record_file_name(parts[-1])
+            except ValueError as exc:
+                raise ProjectIntegrityError("TRANSFER_FILE_UNAVAILABLE: not a retained record") from exc
+            if named_digest != sha256:
+                raise ProjectIntegrityError("TRANSFER_DIGEST_MISMATCH: record filename")
+        elif not metadata:
+            workspace = run_id is not None and len(parts) >= 4 and parts[2] == "workspaces"
+            object_file = parts == ("objects", "sha256", sha256[:2], sha256)
+            if not (workspace or object_file) or not self._transfer_artifact_referenced(path, sha256, run_id):
+                raise ProjectIntegrityError("TRANSFER_FILE_UNAVAILABLE: no retained artifact reference")
+        data = _read_bytes(target)
+        if _sha256(data) != sha256:
+            raise ProjectIntegrityError("TRANSFER_DIGEST_MISMATCH: shared file changed")
+        return data
+
+    def _transfer_artifact_referenced(self, path: str, digest: str, run_id: str | None) -> bool:
+        """Find an object's ref, or a native artifact's exact run-local receipt."""
+        def matches(value: Any) -> bool:
+            if isinstance(value, Mapping):
+                relative = value.get("relative_path")
+                if value.get("sha256") == digest and isinstance(relative, str):
+                    if relative == path:
+                        return value.get("project_id", self._manifest.project_id) == self._manifest.project_id
+                    if run_id is not None and not relative.startswith(("runs/", "objects/")):
+                        if PurePosixPath(relative.replace("\\", "/")).name == PurePosixPath(path).name:
+                            return True
+                inspection = value.get("inspection")
+                native = value.get("artifact_relative_path")
+                if run_id is not None and isinstance(inspection, Mapping) and isinstance(native, str):
+                    if inspection.get("file_sha256") == digest and PurePosixPath(native.replace("\\", "/")).name == PurePosixPath(path).name:
+                        return True
+                return any(matches(item) for item in value.values())
+            if isinstance(value, (list, tuple)):
+                return any(matches(item) for item in value)
+            return value == f"project://{self._manifest.project_id}/{path}"
+
+        roots = [self.layout.run(run_id).root] if run_id else sorted(self.layout.runs.iterdir())
+        for root in roots:
+            for area in ("records", "reviews", "candidates", "branches"):
+                if not (root / area).is_dir():
+                    continue
+                for record in (root / area).rglob("*.json"):
+                    try:
+                        _, record_digest = parse_record_file_name(record.name)
+                    except ValueError:
+                        continue
+                    data = _read_bytes(record)
+                    if _sha256(data) != record_digest:
+                        raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {record.name}")
+                    if matches(_parse_json_document(data, record.name)):
+                        return True
+        return False
+
+    @classmethod
+    def _validate_transfer(
+        cls, transfer: Mapping[str, Any], *, expected_project_id: str,
+        existing_root: Path | None = None,
+    ) -> dict[str, bytes]:
+        """Verify the complete received closure before any destination write."""
+        keys = {"project_id", "format_version", "mode", "root_run_id", "head",
+                "branches", "run_ids", "files", "contents"}
+        if not isinstance(transfer, Mapping) or set(transfer) != keys:
+            raise ProjectIntegrityError("TRANSFER_INVALID: invalid transport fields")
+        if transfer["project_id"] != expected_project_id:
+            raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: transfer names another project")
+        if transfer["mode"] not in ("snapshot", "candidate") or (
+            (transfer["root_run_id"] is None) != (transfer["mode"] == "snapshot")
+        ):
+            raise ProjectIntegrityError("TRANSFER_INVALID: invalid transfer root")
+        if not isinstance(transfer["contents"], Mapping) or not isinstance(transfer["files"], list):
+            raise ProjectIntegrityError("TRANSFER_INVALID: expected files and contents")
+        files: dict[str, bytes] = {}
+        for row in transfer["files"]:
+            if not isinstance(row, Mapping) or set(row) != {"path", "sha256", "size"}:
+                raise ProjectIntegrityError("TRANSFER_INVALID: invalid file manifest")
+            path = _transfer_path(row["path"])
+            if path in files:
+                raise ProjectIntegrityError("TRANSFER_INVALID: duplicate path")
+            if path in transfer["contents"]:
+                try:
+                    data = base64.b64decode(transfer["contents"][path], validate=True)
+                except (ValueError, TypeError) as exc:
+                    raise ProjectIntegrityError("TRANSFER_INVALID: invalid file bytes") from exc
+            elif existing_root is not None:
+                target = (existing_root / path).resolve()
+                if not target.is_relative_to(existing_root.resolve()) or not target.is_file():
+                    raise ProjectIntegrityError(f"TRANSFER_DEPENDENCY_MISSING: {path}")
+                data = _read_bytes(target)
+            else:
+                raise ProjectIntegrityError(f"TRANSFER_DEPENDENCY_MISSING: {path}")
+            if type(row["size"]) is not int or len(data) != row["size"] or _sha256(data) != row["sha256"]:
+                raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path}")
+            parts = PurePosixPath(path).parts
+            if path.endswith(".json") and path not in (
+                "project.json", "design/branches.json", "input/runner/state-record.json",
+                "input/runner/seats.json",
+            ) and not (parts[0] == "runs" and len(parts) == 3 and parts[2] == "run.json"):
+                try:
+                    _, named_digest = parse_record_file_name(parts[-1])
+                except ValueError as exc:
+                    raise ProjectIntegrityError("TRANSFER_INVALID: non-record JSON") from exc
+                if named_digest != row["sha256"]:
+                    raise ProjectIntegrityError("TRANSFER_DIGEST_MISMATCH: record filename")
+            if parts[0] == "objects" and parts != ("objects", "sha256", row["sha256"][:2], row["sha256"]):
+                raise ProjectIntegrityError("TRANSFER_DIGEST_MISMATCH: object path")
+            files[path] = data
+        if set(transfer["contents"]) - set(files):
+            raise ProjectIntegrityError("TRANSFER_INVALID: unlisted contents")
+        # This disposable repository is owned by P036 too. Reopening it tests
+        # the original format, event chain, Stage ancestry and all references;
+        # no transport parser is allowed to replace those existing readers.
+        with tempfile.TemporaryDirectory(prefix="archflow-transfer-") as temporary:
+            root = Path(temporary)
+            for path, data in files.items():
+                _write_immutable(root / path, data)
+            staged = cls.open(root)
+            if staged.load_manifest().project_id != expected_project_id:
+                raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: manifest")
+            checked = staged.export_transfer(run_id=transfer["root_run_id"], include_contents=False)
+            for key in keys - {"contents", "files"}:
+                if checked[key] != transfer[key]:
+                    raise ProjectIntegrityError(f"TRANSFER_INVALID: {key} differs from retained content")
+            if checked["files"] != sorted(transfer["files"], key=lambda row: row["path"]):
+                raise ProjectIntegrityError("TRANSFER_DEPENDENCY_MISSING: transfer is not the complete retained closure")
+        return files
+
+    @classmethod
+    def bootstrap_transfer(
+        cls, root: Path, transfer: Mapping[str, Any], *, expected_project_id: str,
+    ) -> FilesystemProjectRepository:
+        """Install a trusted snapshot; retry only matching unfinished bytes."""
+        if transfer.get("mode") != "snapshot":
+            raise ProjectIntegrityError("TRANSFER_INVALID: bootstrap requires a snapshot")
+        files = cls._validate_transfer(transfer, expected_project_id=expected_project_id)
+        root = Path(root).resolve()
+        directories = {parent.as_posix() for path in files
+                       for parent in PurePosixPath(path).parents if parent != PurePosixPath(".")}
+        project_directories = {"objects", "objects/sha256", "events", "canonical", "runs", "exports", "input"}
+        directories.update(project_directories)
+
+        def require_resume_target() -> None:
+            if not root.exists():
+                return
+            if not root.is_dir():
+                raise ProjectAlreadyExists("bootstrap destination is not a directory")
+            if (root / "HEAD").exists():
+                raise ProjectAlreadyExists("bootstrap destination already has a published position")
+            for path in root.rglob("*"):
+                relative = path.relative_to(root).as_posix()
+                if relative == "HEAD.lock":
+                    continue
+                if path.is_symlink() or not path.resolve().is_relative_to(root):
+                    raise ProjectAlreadyExists("bootstrap destination contains a redirected path")
+                if path.is_dir() and relative in directories:
+                    continue
+                if not path.is_file() or relative not in files or _read_bytes(path) != files[relative]:
+                    raise ProjectAlreadyExists("bootstrap destination contains unrelated or conflicting content")
+
+        require_resume_target()
+        with _project_lock(root), _HeadFileLock(root / "HEAD.lock"):
+            require_resume_target()
+            for directory in project_directories:
+                (root / directory).mkdir(parents=True, exist_ok=True)
+            for path, data in files.items():
+                if path != "HEAD":
+                    _write_immutable(root / path, data)
+            _write_immutable(root / "HEAD", files["HEAD"])
+        return cls.open(root)
+
+    def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None:
+        """Import immutable candidate evidence; never accept, branch or issue."""
+        if transfer.get("mode") != "candidate":
+            raise ProjectIntegrityError("TRANSFER_INVALID: candidate upload requires a candidate transfer")
+        files = self._validate_transfer(transfer, expected_project_id=self._manifest.project_id,
+                                        existing_root=self.layout.root)
+        with self._lock, self._head_lock, self._design_lock:
+            if self.read_head().to_dict() != transfer["head"]:
+                raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: synchronize the published base before upload")
+            self._install_transfer_files(files)
+
+    def pull_transfer(
+        self, transfer: Mapping[str, Any], *, expected_head: ProjectVersionRef,
+        expected_branches: Mapping[str, Any],
+    ) -> None:
+        """Adopt shared Stage positions, preserving local runs and authored WIP.
+
+        Published HEAD migration is deliberately not this operation. A changed
+        published base requires an explicit later synchronization capability.
+        """
+        if transfer.get("mode") != "snapshot":
+            raise ProjectIntegrityError("TRANSFER_INVALID: pull requires a shared snapshot")
+        files = self._validate_transfer(transfer, expected_project_id=self._manifest.project_id,
+                                        existing_root=self.layout.root)
+        with self._lock, self._head_lock, self._design_lock:
+            if self.read_head() != expected_head or transfer["head"] != expected_head.to_dict():
+                raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: published base synchronization is not supported by Stage pull")
+            if self.read_design_branches() != expected_branches:
+                raise StaleDesignBranch("local design branches changed while the shared snapshot was downloaded")
+            for branch_id, previous in expected_branches.items():
+                replacement = transfer["branches"].get(branch_id)
+                if replacement is None or any(previous[key] != replacement[key] for key in ("fork_stage", "parent_branch")):
+                    raise StaleDesignBranch("shared snapshot cannot remove or refork existing local history")
+                stage = replacement["head_stage"]
+                while stage != previous["head_stage"]:
+                    payload = _parse_json_document(files[stage["relative_path"]], "pulled design Stage")
+                    stage = payload.get("parent_stage")
+                    if stage is None:
+                        raise StaleDesignBranch("shared snapshot does not continue the current local design head")
+            self._install_transfer_files(files)
+            if transfer["branches"]:
+                _replace_atomic(self.layout.design_branches, files["design/branches.json"])
+
+    def _install_transfer_files(self, files: Mapping[str, bytes]) -> None:
+        writes: list[tuple[Path, bytes]] = []
+        for path, data in files.items():
+            if path == "design/branches.json" or path.startswith("input/"):
+                continue
+            target = (self.layout.root / path).resolve()
+            if not target.is_relative_to(self.layout.root):
+                raise ProjectIntegrityError("TRANSFER_PATH_INVALID: destination escapes project root")
+            if target.exists() and _read_bytes(target) != data:
+                raise ProjectIntegrityError(f"TRANSFER_CONTENT_CONFLICT: {path}")
+            if path in ("HEAD", "project.json") or path.startswith(("canonical/", "events/")):
+                if not target.exists():
+                    raise StaleProjectHead("TRANSFER_PUBLISHED_HEAD_CHANGED: retained published history differs")
+                continue
+            if not target.exists():
+                writes.append((target, data))
+        for target, data in writes:
+            _write_immutable(target, data)
 
     def verify(self) -> RecoveryReport:
         self.load_manifest()

@@ -1158,6 +1158,10 @@ export type DesignStageDto = {
      * Recorddigest
      */
     recordDigest: string;
+    /**
+     * Acceptedby
+     */
+    acceptedBy: string;
 };
 
 /**
@@ -3558,6 +3562,54 @@ export type ProjectSummaryDto = {
 };
 
 /**
+ * ProjectTransferDto
+ */
+export type ProjectTransferDto = {
+    /**
+     * Project Id
+     */
+    project_id: string;
+    /**
+     * Format Version
+     */
+    format_version: number;
+    /**
+     * Mode
+     */
+    mode: 'snapshot' | 'candidate';
+    /**
+     * Head
+     */
+    head: {
+        [key: string]: unknown;
+    };
+    /**
+     * Branches
+     */
+    branches: {
+        [key: string]: unknown;
+    };
+    /**
+     * Root Run Id
+     */
+    root_run_id: string | null;
+    /**
+     * Run Ids
+     */
+    run_ids: Array<string>;
+    /**
+     * Files
+     */
+    files: Array<TransferFileDto>;
+    /**
+     * Contents
+     */
+    contents?: {
+        [key: string]: string;
+    };
+};
+
+/**
  * ProjectVersionDto
  *
  * One canonical project version.
@@ -4322,6 +4374,28 @@ export type StudioHealth = {
 };
 
 /**
+ * SynchronizationDto
+ */
+export type SynchronizationDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Candidateid
+     */
+    candidateId?: string | null;
+    /**
+     * Filestransferred
+     */
+    filesTransferred: number;
+    /**
+     * Bytestransferred
+     */
+    bytesTransferred: number;
+};
+
+/**
  * TimingsDto
  *
  * Where the seconds of a candidate went, read off the run receipt.
@@ -4345,6 +4419,24 @@ export type TimingsDto = {
      * Exports
      */
     exports: Array<ExportTimingDto>;
+};
+
+/**
+ * TransferFileDto
+ */
+export type TransferFileDto = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Sha256
+     */
+    sha256: string;
+    /**
+     * Size
+     */
+    size: number;
 };
 
 /**
@@ -6358,3 +6450,124 @@ export type StreamEventsApiEventsGetResponses = {
      */
     200: unknown;
 };
+
+export type SharedManifestApiSyncManifestGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/sync/manifest';
+};
+
+export type SharedManifestApiSyncManifestGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectTransferDto;
+};
+
+export type SharedManifestApiSyncManifestGetResponse = SharedManifestApiSyncManifestGetResponses[keyof SharedManifestApiSyncManifestGetResponses];
+
+export type SharedFileApiSyncFilesGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Path
+         */
+        path: string;
+        /**
+         * Sha256
+         */
+        sha256: string;
+    };
+    url: '/api/sync/files';
+};
+
+export type SharedFileApiSyncFilesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SharedFileApiSyncFilesGetError = SharedFileApiSyncFilesGetErrors[keyof SharedFileApiSyncFilesGetErrors];
+
+export type SharedFileApiSyncFilesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Blob | File;
+};
+
+export type SharedFileApiSyncFilesGetResponse = SharedFileApiSyncFilesGetResponses[keyof SharedFileApiSyncFilesGetResponses];
+
+export type ReceiveCandidateApiSyncCandidatesPostData = {
+    body: ProjectTransferDto;
+    path?: never;
+    query?: never;
+    url: '/api/sync/candidates';
+};
+
+export type ReceiveCandidateApiSyncCandidatesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReceiveCandidateApiSyncCandidatesPostError = ReceiveCandidateApiSyncCandidatesPostErrors[keyof ReceiveCandidateApiSyncCandidatesPostErrors];
+
+export type ReceiveCandidateApiSyncCandidatesPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SynchronizationDto;
+};
+
+export type ReceiveCandidateApiSyncCandidatesPostResponse = ReceiveCandidateApiSyncCandidatesPostResponses[keyof ReceiveCandidateApiSyncCandidatesPostResponses];
+
+export type PullProjectApiSyncPullPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/sync/pull';
+};
+
+export type PullProjectApiSyncPullPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SynchronizationDto;
+};
+
+export type PullProjectApiSyncPullPostResponse = PullProjectApiSyncPullPostResponses[keyof PullProjectApiSyncPullPostResponses];
+
+export type PushCandidateApiSyncPushPostData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Candidateid
+         */
+        candidateId: string;
+    };
+    url: '/api/sync/push';
+};
+
+export type PushCandidateApiSyncPushPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PushCandidateApiSyncPushPostError = PushCandidateApiSyncPushPostErrors[keyof PushCandidateApiSyncPushPostErrors];
+
+export type PushCandidateApiSyncPushPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SynchronizationDto;
+};
+
+export type PushCandidateApiSyncPushPostResponse = PushCandidateApiSyncPushPostResponses[keyof PushCandidateApiSyncPushPostResponses];

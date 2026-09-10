@@ -1738,7 +1738,8 @@
         "a validated project- or run-scoped write destination (PersistenceDestination)",
         "the fail-closed check that a producer was assigned a destination (require_destination, PersistenceDestinationRequired)",
         "the structural protocols a repository satisfies (RecordSink, WorkspaceSink)",
-        "the project-scoped design branch read/CAS port; no writer implementation"
+        "the project-scoped design branch read/CAS port; no writer implementation",
+        "structural project snapshot and candidate transfer port; persistence remains with P036"
       ],
       "does_not_own": [
         "any implementation of these ports (project.repository is the only one)",
@@ -1760,7 +1761,8 @@
         "RecordSink",
         "WorkspaceSink",
         "PersistenceDestinationRequired",
-        "DesignBranchStore"
+        "DesignBranchStore",
+        "ProjectTransferStore"
       ],
       "depends_on": [
         "project.manifest",
@@ -1955,7 +1957,8 @@
         "installing optional caller-authored State Record and seat-pack mappings at the existing input paths during initialize; no run is created and later authored edits remain with their existing owners",
         "project-scoped design branch refs with atomic compare-and-swap under the existing process and file locking primitives; independent of canonical HEAD",
         "exact historical published state read through the retained event chain",
-        "design Stage reachability and unreferenced prepared Stage reporting in verify"
+        "design Stage reachability and unreferenced prepared Stage reporting in verify",
+        "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -1991,7 +1994,12 @@
         "StaleDesignBranch",
         "FilesystemProjectRepository.read_design_branches",
         "FilesystemProjectRepository.compare_and_swap_design_branch",
-        "FilesystemProjectRepository.load_version_state"
+        "FilesystemProjectRepository.load_version_state",
+        "FilesystemProjectRepository.export_transfer",
+        "FilesystemProjectRepository.read_transfer_file",
+        "FilesystemProjectRepository.bootstrap_transfer",
+        "FilesystemProjectRepository.import_candidate_transfer",
+        "FilesystemProjectRepository.pull_transfer"
       ],
       "depends_on": [
         "project.digests",
@@ -2025,7 +2033,8 @@
         "a record lands in the area its PersistenceDestination names; events/ and canonical/ areas are re-checked on swap",
         "put_workspace_file writes an immutable binary only below the assigned run workspace and never changes HEAD",
         "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
-        "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged"
+        "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
+        "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD"
       ],
       "status": "canonical",
       "tests": [
@@ -2033,7 +2042,8 @@
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_repository.py",
         "archive/tests/test_project_runtime.py",
-        "tests/test_record_kinds.py"
+        "tests/test_record_kinds.py",
+        "tests/test_project_transfer.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -3576,7 +3586,8 @@
         "reading PROJECT.md at the project root for names (aliases -> declared components) and the compass; nothing else is read from it",
         "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
         "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created",
-        "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source"
+        "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source",
+        "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes"
       ],
       "does_not_own": [
         "writing, issuing or advancing anything - the binding is read-only; runtime.project_runner is the only writer and project.issue the only issuer",
@@ -3634,7 +3645,17 @@
         "references_of",
         "ProjectBinding.design_history",
         "ProjectBinding.design_stage",
-        "ProjectBinding.candidate_delta"
+        "ProjectBinding.candidate_delta",
+        "SharedProjectClient",
+        "pull_shared_project",
+        "push_shared_candidate",
+        "accept_shared_candidate",
+        "fork_shared_branch",
+        "GET /api/sync/manifest",
+        "GET /api/sync/files",
+        "POST /api/sync/candidates",
+        "POST /api/sync/pull",
+        "POST /api/sync/push"
       ],
       "depends_on": [
         "project.inputs",
@@ -3680,7 +3701,8 @@
         "apps/archflow-studio/api/tests/test_protocol.py",
         "apps/archflow-studio/api/tests/test_catalog.py",
         "apps/archflow-studio/api/tests/test_conventions.py",
-        "apps/archflow-studio/api/tests/test_frame.py"
+        "apps/archflow-studio/api/tests/test_frame.py",
+        "apps/archflow-studio/api/tests/test_collaboration_http.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -3693,7 +3715,9 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/state.py",
         "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
         "apps/archflow-studio/api/archflow_studio_api/application/conventions.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/frame.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/synchronization.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py"
       ]
     },
     {
@@ -3814,7 +3838,8 @@
         "retained candidates descend through exact parent runner/record references from their declared Stage; replays never rewrite an operator base digest",
         "independent same-Stage component changes form a new candidate; overlapping writes or declared dependency effects refuse combination before creating a run",
         "Shutdown closes admission before draining all accepted queued and running jobs, and only then closes the executor",
-        "Candidate service timing begins at worker entry and includes nested geometry export; browser load timing is separately marked client_wait and validates the project, run and optional retained source"
+        "Candidate service timing begins at worker entry and includes nested geometry export; browser load timing is separately marked client_wait and validates the project, run and optional retained source",
+        "configured Runtime acceptance delegates to its shared service and then pulls the retained result; shared acceptance records the authenticated actor in existing accepted_by; older records retain their original attribution"
       ],
       "status": "canonical",
       "tests": [
@@ -4108,7 +4133,8 @@
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call",
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
-        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web"
+        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web",
+        "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4175,7 +4201,11 @@
         "apps/shared-web/src/i18n.js: translateMessage",
         "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
         "apps/shared-web/src/base.css: appearance tokens and base controls",
-        "StudioMonitor"
+        "StudioMonitor",
+        "authenticated_actor",
+        "require_actor",
+        "ProjectTransferDto",
+        "SynchronizationDto"
       ],
       "depends_on": [
         "monkeymonitor"
@@ -4193,10 +4223,10 @@
         "monkeymonitor/web/style.css"
       ],
       "invariants": [
-        "create_app touches no filesystem and binds no project - a wrong project root is discovered by the request that needs it",
+        "create_app binds no project; only explicitly supplied external actor configuration is read at creation",
         "the project root is never defaulted in code",
         "GET /api/protocol opens no project, so a client can tell a foreign server from an unbound one; removing or renaming a stable wire field changes the protocol major, and mismatched clients refuse at handshake",
-        "local-mode StudioSettings accepts only loopback listeners; remote mode requires a token and allowed origins; CLI host overrides pass through the same constructor before serving",
+        "local-mode settings accept only loopback listeners; remote mode requires a legacy token or external actor configuration plus explicit origins; shared_project requires actors",
         "in remote mode every /api route but health and protocol answers 401 UNAUTHENTICATED without a matching bearer token, unknown paths included",
         "every failure answers in the same body shape, and an unexpected error says nothing about itself",
         "a refusal that ends a clarification carries a null continuationToken, so a client can tell 'answer this' from 'this is what the system lacks' without reading the sentence",
@@ -4207,7 +4237,8 @@
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
         "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
         "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts",
-        "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations"
+        "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations",
+        "configured actors never fall back to the legacy token; authorization uses the authenticated actor and actual project binding; shared services reject computation before route execution; accept grants do not imply release"
       ],
       "status": "canonical",
       "tests": [
@@ -4218,7 +4249,8 @@
         "apps/archflow-studio/web/test/connection.test.ts",
         "apps/archflow-studio/web/test/proposalCard.test.ts",
         "apps/archflow-studio/api/tests/test_monitoring.py",
-        "apps/archflow-studio/web/test/settingsPanel.browser.mjs"
+        "apps/archflow-studio/web/test/settingsPanel.browser.mjs",
+        "apps/archflow-studio/api/tests/test_collaboration_auth.py"
       ],
       "notes": "transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/archflow-studio/web/src/api/connection.ts is the client boundary. EXTEND: Studio already owns the user settings boundary and its browser preferences, interpolation, translation and styles. apps/shared-web extracts only these facilities for the real Hub and Monitor consumers, without a second preference writer. Shared JavaScript exports are listed with their source paths; the registry's symbol checker inspects Python only.",
       "files": [
@@ -4246,7 +4278,9 @@
         "apps/shared-web/src/i18n.d.ts",
         "apps/shared-web/src/browserTranslator.js",
         "apps/shared-web/src/browserTranslator.d.ts",
-        "apps/shared-web/src/base.css"
+        "apps/shared-web/src/base.css",
+        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/synchronization.py"
       ]
     },
     {

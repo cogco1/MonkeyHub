@@ -6,7 +6,8 @@ rely on, and what version 2 has reserved but not yet built.
 
 ArchFlow is the methodology and this protocol. **MonkeyArch** is one implementation of it: the
 server `monkeyarch-api` and the client in `apps/archflow-studio/web`; a conforming server need
-be neither. Every field on the wire is `camelCase`, `serverVersion` included.
+be neither. Application DTO fields use `camelCase`, `serverVersion` included.
+The project-transfer envelope retains P036's existing `snake_case` fields and reference values.
 
 ---
 
@@ -552,8 +553,8 @@ answer, and `server` there is the implementation's product name.
 ### 10.5 Not in version 2
 
 Named here so nobody reads their absence as an oversight: issuing (writing the published
-container), the archived container as a resource, stage closure, per-user identity and
-authorisation, project creation, authored-record writing (the work-in-progress container is
+container), the archived container as a resource, stage closure,
+project creation, authored-record writing (the work-in-progress container is
 read-only over the wire), server-side lookup of an artifact by digest across projects, and a
 second author's work-in-progress slot. Each has a place in the layout already; none has a route.
 
@@ -570,3 +571,47 @@ cover rather than the answer being silently narrowed.
 A **client** conforms when it probes `/api/protocol` first, refuses a foreign major, sends back
 the `stateDigest` it was given, renders the server's codes and honesty lines verbatim, and
 computes no review readiness, impact or propagation of its own.
+
+## 12. Shared project and local Runtime (additive version 2.1)
+
+A shared project service advertises `shared-project` and `project-sync`. It authenticates
+operator-configured actors, each with explicit project `read`, `propose`, `accept` and/or
+`release` grants. No grant implies another. It exposes retained reads, candidate transfer,
+initial Stage creation, branch creation and the existing candidate acceptance operation.
+It does not construct an intent compiler or accept local computation jobs. Its OpenAPI
+document lists only the operations this service role exposes.
+
+A connected Runtime remains a single-user loopback process. Its operator configures one
+shared URL, project identity and actor token. It runs the local modeling/agent/drawing
+operations and retains local candidates. Multiple incoming actors cannot share that static
+upstream credential. Authenticated shared acceptance fills the existing Stage `accepted_by`
+field; `DesignStageDto.acceptedBy` exposes it. Earlier records keep their stored attribution.
+
+| Endpoint | Process and action | Result |
+| --- | --- | --- |
+| `GET /api/sync/manifest` | Shared, read | Snapshot dependency closure, file paths, SHA-256 and sizes; no embedded bytes |
+| `GET /api/sync/files?path=...&sha256=...` | Shared, read | One verified project file as binary; unrelated workspace files are refused |
+| `POST /api/sync/candidates` | Shared, propose | Verified immutable candidate dependencies; no acceptance or published HEAD change |
+| `POST /api/sync/pull` | Connected Runtime | Bootstrap an empty same-identity project or pull shared branches while retaining local candidates and inputs |
+| `POST /api/sync/push?candidateId=...` | Connected Runtime | Upload that candidate's missing dependencies to the configured shared service |
+
+Transfers carry `project_id`, `format_version`, `mode` (`snapshot` or `candidate`), `head`,
+`branches`, `root_run_id`, dependency `run_ids`, `files` (`path`, `sha256`, `size`) and
+`contents` (base64 bytes by path). Existing identical bytes may be omitted from `contents`;
+the receiver verifies the complete closure before installation. This is a transfer value,
+not another project file format. P036 remains the only project writer.
+
+The existing `POST /api/candidates/{id}/accept` on a connected Runtime delegates to the
+shared service and then pulls the result. It uploads a candidate first only when the shared
+service does not already hold it. Acceptance still verifies replay, model completeness,
+validation and exact branch base. A stale branch returns `409 DESIGN_BRANCH_STALE` and
+retains the local candidate; acceptance retries return the original Stage. Branch creation
+also delegates; initial Stage creation must occur on the shared project before clients pull.
+
+This slice synchronizes design branches only while published HEAD is identical. A different
+published HEAD or incompatible local branch returns `409 SYNC_BASE_CHANGED`; it is not
+silently overwritten. Lost network access returns `503 SYNC_UNAVAILABLE`; local work stays
+available. Accept, upload and pull never issue a published version. `release` is a distinct
+grant and does not expose a new issue endpoint. Remote hosting, TLS, real member onboarding
+and multi-machine installation remain deployment work. The existing browser SSE bearer
+limitation remains; this HTTP collaboration path does not depend on an SSE connection.

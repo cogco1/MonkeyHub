@@ -110,7 +110,7 @@ def _retain_stage(binding: ProjectBinding, stage: DesignStage) -> ProjectRecordR
 def _stage_from_model(
     binding: ProjectBinding, *, source: ModelSource, artifact: ArtifactRecord,
     runner_ref: ProjectRecordRef, parent: ProjectRecordRef | None,
-    branch_id: str, label: str,
+    branch_id: str, label: str, accepted_by: str,
 ) -> DesignStage:
     record_ref, _, receipt = _exact_runner(binding, source.run_id, runner_ref)
     if receipt.get("design_state_digest") != source.state_digest or (
@@ -123,12 +123,13 @@ def _stage_from_model(
         model_ref=record_ref_from_uri(artifact.receipt_ref, binding.project_id),
         model_sha256=source.asset_sha256, runner_ref=runner_ref,
         candidate_id=source.run_id, branch_id=branch_id, label=label,
-        accepted_by="studio:explicit-user-action",
+        accepted_by=accepted_by,
     )
 
 
 def initialize_design_stage(
     binding: ProjectBinding, *, model_source: ModelSource, branch_id: str = "main", label: str = "S0",
+    accepted_by: str = "studio:explicit-user-action",
 ) -> StageView:
     require_identifier(branch_id, "branch_id")
     branches = binding.repository.read_design_branches()
@@ -145,7 +146,7 @@ def initialize_design_stage(
     if len(refs) != 1:
         raise StudioError(409, "DESIGN_STAGE_SOURCE_MISMATCH", "The initial model does not have one exact retained runner source.")
     stage = _stage_from_model(binding, source=model_source, artifact=artifact, runner_ref=refs[0],
-                              parent=None, branch_id=branch_id, label=label)
+                              parent=None, branch_id=branch_id, label=label, accepted_by=accepted_by)
     ref = _retain_stage(binding, stage)
     branch = initialize_branch(branch_id, ref)
     try:
@@ -172,6 +173,7 @@ def _accepted_retry(
 def accept_design_candidate(
     binding: ProjectBinding, *, candidate_id: str, branch_id: str,
     expected_head: ProjectRecordRef, events: StudioEventSink, label: str | None = None,
+    accepted_by: str = "studio:explicit-user-action",
 ) -> StageView:
     require_identifier(candidate_id, "candidate_id")
     branch = _branch(binding, branch_id)
@@ -206,7 +208,7 @@ def accept_design_candidate(
         raise StudioError(409, "DESIGN_STAGE_SOURCE_MISMATCH", "The candidate model has competing source records.")
     stage = _stage_from_model(binding, source=source, artifact=artifact, runner_ref=runner_ref,
                               parent=expected_head, branch_id=branch_id,
-                              label=label or f"S{len(binding.design_history(branch_id))}")
+                              label=label or f"S{len(binding.design_history(branch_id))}", accepted_by=accepted_by)
     ref = _retain_stage(binding, stage)
     advanced = advance_branch(branch, expected_head=expected_head, candidate_base=expected_head, stage_ref=ref, stage=stage)
     try:

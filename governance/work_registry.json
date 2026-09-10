@@ -299,7 +299,15 @@
         "tests/test_prism_cutouts.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/events.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "tests/monkeymonitor/test_web_timing.py"
+        "tests/monkeymonitor/test_web_timing.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/synchronization.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/synchronization.py",
+        "apps/archflow-studio/api/tests/collaboration_support.py",
+        "apps/archflow-studio/api/tests/test_collaboration_auth.py",
+        "apps/archflow-studio/api/tests/test_collaboration_http.py",
+        "tests/test_project_transfer.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -309,7 +317,8 @@
         "The overnight infrastructure slice removes the unused provisional controls store and API, separates candidate generation from an architect's acceptance decision, and removes technical field failures from the human clarification path without weakening exact-base or kept conditions.",
         "No private project, active application, published design, remote repository or unrelated worktree changes are included.",
         "Existing drawing and modeling caller chains use their new namespaces; shared ArchFlow code imports neither workflow, workflows do not import each other, old production modules are removed, packaging and affected behavioral checks pass.",
-        "Generated candidates appear without opening chat or waiting for validation; explicit acceptance advances one design branch atomically and survives restart without CAD rerun; historical model and drawing sources stay exact, and issue retains its separate canonical-base checks."
+        "Generated candidates appear without opening chat or waiting for validation; explicit acceptance advances one design branch atomically and survives restart without CAD rerun; historical model and drawing sources stay exact, and issue retains its separate canonical-base checks.",
+        "Two Runtime processes pull one shared Stage, generate locally, upload complete retained candidate dependencies, accept through authenticated existing branch CAS, reject stale proposals without losing work, and pull/restart to continue; accept and synchronization never issue published HEAD."
       ],
       "notes": [
         "2026-09-09: MonkeyHub implementation authorized and split across existing UI, team-environment and repository-maintenance conversations. P115 records shared UI reuse, local service lifecycle and Windows candidate packaging scopes; architecture owners remain unchanged until their actual public contracts are extended. Delivery and clean-machine acceptance remain pending.",
@@ -324,7 +333,8 @@
         "2026-09-09: Shared browser appearance, interpolation, translation and base controls extend studio.shell; Monitor serves only the four exact shared JS/CSS URLs. UI owns the shared files and consumer changes; distribution preserves them in the package. Real browser integration and packaged acceptance remain separate from the HTTP route checks.",
         "2026-09-09 MonkeyBoard local implementation: single-operator whiteboard for meeting screen sharing, original PDF/image uploads, automatic receipt of new MonkeyDiagram documents, movable drawing frames and notes, immutable layout saves and reopening, and exact run/revision/page return links. Focused API and frontend save/source tests passed; real-browser acceptance is in progress with the main integration task. No multiplayer is requested; meeting plugins, account access and live transcription are not connected.",
         "2026-09-09: user authorized the bounded window-width relation slice and editable 3dm materials. Extend existing parameter/closure/operator, window producers, relation checks and CAD reuse. Add only the declared lintel envelope bearing check; repair native material export and legacy layer-colour display. The explicitly named external Ightham analytical input consumes these relations through its existing case script and retains candidates through P036; active services and formal issue are separate.",
-        "2026-09-09: user authorized the ordinary UI window continuation and local runtime integration. Extend prism with panel cutouts and preserve exact source materials through composed candidates. The external Ightham input is authored into a normal single-seat runner state; verify 1400 to 1600 mm, save/reopen, then 1500 mm. The existing OCCT composed display changes remain meshes; parameter continuation and native Brep editing are distinct."
+        "2026-09-09: user authorized the ordinary UI window continuation and local runtime integration. Extend prism with panel cutouts and preserve exact source materials through composed candidates. The external Ightham input is authored into a normal single-seat runner state; verify 1400 to 1600 mm, save/reopen, then 1500 mm. The existing OCCT composed display changes remain meshes; parameter continuation and native Brep editing are distinct.",
+        "2026-09-09 authorized overnight local-first slice: EXTEND project.repository/ports for same-format snapshot and candidate transfer, studio.binding for configured HTTP synchronization, studio.shell for authenticated project actions and service roles, and studio.candidate for attributed shared acceptance. Isolated from the delivered 4a887f15 baseline; current installations and other worktrees remain outside this scope. Three independent project roots and HTTP processes with real OCCT outputs are the acceptance target; no remote deployment or formal issue is included."
       ]
     },
     {
