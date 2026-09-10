@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "Isolated install of the hey-api generator. It lives apart from the web app because @hey-api/openapi-ts reads the TypeScript compiler's JS API (ts.SyntaxKind), which the Go-based TypeScript 7 the web builds with does not ship. This directory pins typescript@5 for the generator alone; nothing here is imported by the app.",
+  "overrides": {
+    "@hey-api/json-schema-ref-parser": {
+      "js-yaml": "4.3.2"
+    }
+  },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.99.0",
     "typescript": "^5.9.0"
