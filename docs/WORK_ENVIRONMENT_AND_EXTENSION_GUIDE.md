@@ -301,6 +301,44 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 必要时用下划线，函数用 snake_case，类用 CapWords。显示名修订不迁移旧 ID、API 或引用，
 也不为命名另加注册表字段。
 
+#### 产品名称与版本用语
+
+应用标题、桌面入口和团队文档统一采用下表的英文名称与大小写；中文用途作为说明，
+不替换产品名。上面的“领域｜具体任务或输出”用于能力显示名，不用于给应用另起名称。
+
+| 名称 | 用途与边界 | 当前代码标识或入口 |
+| --- | --- | --- |
+| **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `archflow/` |
+| **MonkeyHub** | 应用启动入口、服务管理与共享设置 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
+| **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
+| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub `appId: monkeydiagram`；Studio `?view=documents` |
+| **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；Studio `?view=board` |
+| **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
+| **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 独立 MonkeyFab CLI；Hub `appId: monkeyfab`、`?view=fab` |
+
+**ArchFlow Studio / Studio** 指 `apps/archflow-studio/` 这个共同宿主；MonkeyArch、
+MonkeyDiagram、MonkeyBoard 是各自面向用户的入口。产品分开命名不要求各自启动一个进程：
+这三个入口当前共用 Studio 服务，MonkeyMonitor 独立运行，MonkeyFab 页面由 Hub 承载。
+名称和应用列表以 [Hub 实现](../apps/monkeyhub/api/monkeyhub_api/applications.py) 及
+[启动说明](../apps/monkeyhub/README.md) 对照；现有目录、`appId`、模块 ID 与 API 不因显示名变化而迁移。
+另行约定的 **MonkeyMinecraft** 用于 Minecraft 建筑模组项目，不列作当前 Hub 已接入的应用。
+
+设计历史统一使用以下用语，详细动作与存储约定见
+[Stage / Branch / Candidate 方案](STAGE_BRANCH_CANDIDATE_PLAN.md)：
+
+| 用语 | 含义 | 显示示例 |
+| --- | --- | --- |
+| **Stage** | 已接受、已提交且不可原地修改的完整设计状态节点 | `S0`、`S1`、`S2`；可附“总体建筑”“柜体调整”等说明 |
+| **Branch** | 一条要持续保留和演化的历史线 | `main`、`cabinet-alt-A` |
+| **Candidate** | 从确切起点生成的尚未接受提交的候选修改 | `Candidate A`、`Candidate B` |
+| **Exploration** | 围绕同一起点的一次比较或决定，组织相关候选 | “柜体布局比较”；复用既有 WorkingCopy |
+
+普通 A/B 备选称为 Candidate；一次柜体修改或多个 Agent 并行生成不自动创建 Branch。
+接受候选后才得到下一 Stage；从历史 Stage 另开一条持续演化路线时才创建 Branch。
+`S0/S1` 是显示编号，不替代唯一
+Stage 引用，也不表示正式 issue；设计 Branch 与 Git 源码分支是不同的历史。
+软件版本、项目 Stage、成果文件修订号分别命名；导出成果继续遵循第 4 节的文件名规则。
+
 ### 第 2 步：找到归口，选择扩展位置
 
 1. 在 `SYSTEM_MAP.md` 和 module registry 找相关 owner，读取它的公开 API、职责边界和真实调用方。

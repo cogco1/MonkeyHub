@@ -46,8 +46,8 @@ from developing an unresolved design.
 
 ## MonkeyArch: a place to test the interaction
 
-**MonkeyArch (ArchFlow Studio)** is the modeling environment used to test these
-methods. People should be able to work directly on a model, inspect what the
+**MonkeyArch**, hosted in ArchFlow Studio, is the modeling environment used to test
+these methods. People should be able to work directly on a model, inspect what the
 machine understood, compare proposed changes, and take over when necessary.
 Continuing a candidate, endorsing a direction and formally issuing a project
 version are distinct actions. **Continue from this version** explicitly makes the
@@ -77,6 +77,12 @@ V4 has three code owners, composed in the same Studio application:
 - **ArchFlow** holds shared project storage, architectural facts and technical contracts.
 - **MonkeyArch** owns 3D modeling, typed design edits, candidate execution and relation checks.
 - **MonkeyDiagram** owns drawing projection and presentation; its Studio workspace also handles document viewing and annotation.
+
+Product names and design-history terms follow the
+[team naming conventions](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语),
+including MonkeyHub, MonkeyBoard, MonkeyMonitor, MonkeyFab and Stage / Branch /
+Candidate. ArchFlow Studio is the shared host for MonkeyArch, MonkeyDiagram and
+MonkeyBoard.
 
 Modeling produces geometry programs and CAD exports, with saved-file readback and
 retained run evidence. OCCT and explicitly selected Rhino execution use the same
