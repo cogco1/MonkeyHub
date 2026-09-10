@@ -1,4 +1,4 @@
-"""Work registry: what is live, what is next, and the two generated ledgers.
+"""Governance lookup: module contracts, live work and generated ledgers.
 
 The registry holds only work that is not finished. Finished work lives in Git
 history; a card that is done is deleted together with its registry entry.
@@ -24,6 +24,95 @@ SYSTEM_MAP = ROOT / "docs" / "SYSTEM_MAP.md"
 SEMANTIC_REGISTRY = ROOT / "docs" / "SEMANTIC_REGISTRY.md"
 SCHEMA = "ArchFlowDevelopmentRegistry@2"
 STATUSES = ("active", "ready", "blocked")
+MODULE_SECTIONS = (
+    "owns", "does_not_own", "public_api", "depends_on", "source_paths", "tests",
+    "inputs", "outputs", "invariants",
+)
+
+
+def _module_lookup(query: str, *, section: str | None, limit: int, offset: int) -> dict:
+    """Read registry metadata only; never import or walk the matching source."""
+
+    data = json.loads(MODULE_REGISTRY.read_text(encoding="utf-8"))
+    if data.get("schema") != "ArchFlowModuleRegistry@1":
+        raise SystemExit(f"unsupported module registry schema: {data.get('schema')!r}")
+    needle = query.strip().casefold()
+    if not needle:
+        raise SystemExit("module query must not be empty")
+    modules = data["modules"]
+    exact = next((m for m in modules if m["module_id"].casefold() == needle), None)
+    terms = needle.split()
+
+    def relevance(entry: dict) -> tuple[int, str]:
+        module_id = entry["module_id"].casefold()
+        path = entry["owner_path"].casefold()
+        rank = 0 if all(t in module_id for t in terms) else 1 if all(t in path for t in terms) else 2
+        return rank, module_id
+
+    matches = [exact] if exact is not None else sorted(
+        (m for m in modules if all(t in " ".join(
+            [m["module_id"], m["owner_path"], m["purpose"],
+             *m.get("owns", []), *m.get("public_api", []), *m.get("files", [])]
+        ).casefold() for t in terms)),
+        key=relevance,
+    )
+    result = {"query": query, "match_count": len(matches), "offset": offset, "limit": limit}
+    if len(matches) != 1:
+        result["candidates"] = [
+            {"module_id": m["module_id"], "owner_path": m["owner_path"],
+             "purpose": m["purpose"][:240] + ("..." if len(m["purpose"]) > 240 else "")}
+            for m in matches[offset:offset + limit]
+        ]
+        result["remaining"] = max(0, len(matches) - offset - limit)
+        return result
+
+    entry = matches[0]
+    detail = {k: entry[k] for k in ("module_id", "owner_path", "purpose", "status") if k in entry}
+    omitted = {}
+    for name in (section,) if section else MODULE_SECTIONS:
+        values = (list(dict.fromkeys([entry["owner_path"], *entry.get("files", [])]))
+                  if name == "source_paths" else entry.get(name, []))
+        detail[name] = values[offset:offset + limit]
+        before = min(offset, len(values))
+        after = max(0, len(values) - offset - limit)
+        if before or after:
+            omitted[name] = {"before": before, "after": after, "total": len(values)}
+    result["module"] = detail
+    result["omitted"] = omitted
+    return result
+
+
+def _print_module_lookup(result: dict) -> None:
+    if "module" not in result:
+        count = result["match_count"]
+        if not count:
+            print(f"No modules match {result['query']!r}.")
+            return
+        print(f"{count} modules match {result['query']!r}; use an exact module id:")
+        for candidate in result["candidates"]:
+            print(f"- {candidate['module_id']} - {candidate['owner_path']}")
+            print(f"  {candidate['purpose']}")
+        if result["remaining"]:
+            print(f"{result['remaining']} more; next page: --offset {result['offset'] + result['limit']}")
+        return
+    module = result["module"]
+    print(f"{module['module_id']} - {module['owner_path']}")
+    print(module["purpose"])
+    if module.get("status"):
+        print(f"status: {module['status']}")
+    for section in MODULE_SECTIONS:
+        if section not in module:
+            continue
+        print(f"\n{section}:")
+        for value in module[section]:
+            print(f"- {value}")
+        if not module[section]:
+            print("- (no entries on this page)" if section in result["omitted"] else "- (none declared)")
+        if section in result["omitted"]:
+            page = result["omitted"][section]
+            print(f"  [{page['total']} total; {page['before']} earlier, {page['after']} later]")
+            if page["after"]:
+                print(f"  Read more: --section {section} --offset {result['offset'] + result['limit']}")
 
 
 def load_registry() -> dict:
@@ -186,7 +275,22 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status")
     sub.add_parser("next")
     sub.add_parser("render-map")
+    module_parser = sub.add_parser("module", help="find one module contract without reading the whole registry")
+    module_parser.add_argument("query", help="exact module id or keywords, e.g. wall")
+    module_parser.add_argument("--json", action="store_true", help="emit structured lookup output")
+    module_parser.add_argument("--section", choices=MODULE_SECTIONS, help="read only one contract section")
+    module_parser.add_argument("--limit", type=int, default=8, help="entries per section or candidate page (1-20; default: 8)")
+    module_parser.add_argument("--offset", type=int, default=0, help="skip this many section entries or candidates")
     args = parser.parse_args(argv)
+    if args.command == "module":
+        if not 1 <= args.limit <= 20 or args.offset < 0:
+            parser.error("module requires --limit between 1 and 20 and --offset >= 0")
+        result = _module_lookup(args.query, section=args.section, limit=args.limit, offset=args.offset)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            _print_module_lookup(result)
+        return 0 if result["match_count"] else 1
     data = load_registry()
     if args.command == "status":
         for item in data["items"]:

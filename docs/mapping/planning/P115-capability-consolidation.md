@@ -14,6 +14,21 @@
 
 ## 1. 先记住四块
 
+### Dependency-aware context compilation（2026-09-10）
+
+**已完成的源码子项，待 PR 集成。** 本轮沿 `tools.devctl`、`studio.intent`、
+`studio.shell` 与 `monkeymonitor` 扩展：用 `devctl module <query>` 按模块读取契约；
+模型调用前选择 scalar/component/design 输出词汇并沿既有 StateRecord 依赖图提取上下文。
+确定范围的单字段或同构件多字段数值修改使用缩小请求；结构、类型、引用和不确定范围
+保留完整设计路径。精确引用最多补充两轮，只增加读取，不增加修改目标或字段。
+每次请求记录分段文本估算、预算提示和独立 provider 用量，保留原有确定性绕过与候选验证。
+
+验收包括作用域、参数绑定和约束保留、输出校验、补充次数与引用有效性、provider seam
+的模拟调用及计量、离线同请求基准；不以字符或参考 tokenizer 数值冒充真实账单，
+不以模拟回答证明模型设计成功率。开发方法、命令和限制见
+[上下文编译说明](../../CONTEXT_COMPILATION.md)。现用安装包与项目数据未改写，
+本子项不关闭 P115 其余建筑与产品验收。
+
 Monkey 家族的用量、计价与预算接口归独立 [MonkeyMonitor](../../../monkeymonitor/README.md)。
 它通过 Studio 的可选元数据适配器联动，采用家族同款界面；具体优化策略和同步调整按该方案中的实际测量结果推进，不混入建筑评价或项目发布。
 

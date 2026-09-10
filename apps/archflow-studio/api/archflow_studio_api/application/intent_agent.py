@@ -22,6 +22,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -43,6 +44,14 @@ from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
 from ..transport.errors import StudioError
 from .intent import ACCEPTED_FORMS, KEEP_SENTENCE
 from .projection import StateProjection
+from .intent_context import compile_context, expand_context, IntentContext
+from .intent_budget import build_context_budget
+from .intent_requests import (
+    EXPANSION_RULES, MAX_OUTPUT_TOKENS, SCALAR_RULES, provider_schema,
+    request_schema, validate_request_answer,
+)
+
+log = logging.getLogger(__name__)
 
 DETERMINISTIC = "deterministic"
 CODEX = "codex"
@@ -330,6 +339,8 @@ class Compilation:
     # called, which is the deterministic compiler's whole case.
     receipt: ModelInvocationReceipt | None = None
     semantic_edit: Mapping[str, Any] | None = None
+    # Internal provider continuation, consumed before the HTTP intent boundary.
+    context_refs: tuple[str, ...] = ()
 
 
 class IntentCompiler(Protocol):
@@ -466,6 +477,7 @@ def _invocation_request(
     selection: Selection,
     projection: StateProjection,
     sheet: Mapping[str, Any],
+    schema: Mapping[str, Any] | None = None,
 ) -> ModelInvocationRequest:
     """The request every Studio model call is bound to, in the shared contract.
 
@@ -485,6 +497,8 @@ def _invocation_request(
         },
         "record_sheet": dict(sheet),
     }
+    if schema is not None:
+        payload["response_schema_sha256"] = canonical_digest(schema, ascii=False)
     return ModelInvocationRequest.create(
         request_id=f"intent-{uuid.uuid4().hex}",
         phase=ModelPhase.INTENT_COMPILATION,
@@ -505,6 +519,7 @@ def _answer_object(compilation: Compilation) -> dict[str, Any]:
         "semanticEdit": None if compilation.semantic_edit is None else dict(compilation.semantic_edit),
         "why": compilation.why,
         "question": compilation.question,
+        **({"contextRefs": list(compilation.context_refs)} if compilation.context_refs else {}),
     }
 
 
@@ -632,7 +647,7 @@ def _parse_answer(
     if not isinstance(payload, dict):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered a JSON {type(payload).__name__}, not an object")
     status = payload.get("status")
-    if status not in ("compiled", "question", "unsupported"):
+    if status not in ("compiled", "question", "unsupported", "needs_context"):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered status {status!r}; only compiled, question or unsupported are answers")
 
     def text_or_none(key: str) -> str | None:
@@ -645,6 +660,11 @@ def _parse_answer(
 
     why = payload.get("why")
     semantic_edit = payload.get("semanticEdit")
+    context_refs = payload.get("contextRefs", ())
+    if not isinstance(context_refs, (list, tuple)) or len(context_refs) > 16 or any(
+        not isinstance(ref, str) or not ref.strip() for ref in context_refs
+    ):
+        raise StudioError(502, AGENT_FAILED, "the agent's contextRefs must name at most sixteen references")
     if semantic_edit is not None and not isinstance(semantic_edit, dict):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent's semanticEdit is not an object")
     if semantic_edit is not None:
@@ -670,6 +690,7 @@ def _parse_answer(
         raw=raw,
         receipt=receipt,
         semantic_edit=semantic_edit,
+        context_refs=tuple(context_refs),
     )
     if compilation.status == "compiled" and (compilation.utterance is None) == (semantic_edit is None):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent must compile exactly one scalar sentence or semantic edit")
@@ -682,10 +703,112 @@ def _parse_answer(
             raise StudioError(502, AGENT_FAILED, f"the {provider} agent said unsupported but also supplied an utterance, edit or question")
         if not compilation.why:
             raise StudioError(502, AGENT_FAILED, f"the {provider} agent said unsupported but did not explain the limitation")
+    if status == "needs_context" and (not context_refs or compilation.utterance or semantic_edit is not None or compilation.question):
+        raise StudioError(502, AGENT_FAILED, "a context supplement must name references and cannot supply an edit")
+    if status != "needs_context" and context_refs:
+        raise StudioError(502, AGENT_FAILED, "only a context supplement may request references")
     return compilation
 
 
 # ---- providers -------------------------------------------------------------
+
+
+def _context_budget(message, context, rules, schema, *, model, budget_tokens, image_count):
+    """Partition the sent text once; contributors diagnose, never add to the total."""
+    sheet = dict(context.sheet)
+    preferences = {key: sheet.pop(key) for key in ("readings", "preferences") if key in sheet}
+    dependencies = {key: sheet.pop(key) for key in (
+        "parameters", "frame", "types", "relationships", "obligations", "contextEntities",
+    ) if key in sheet}
+    encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return build_context_budget(
+        {"intent": message, "system": rules, "schema": encode(schema), "state": encode(sheet),
+         "preferences": encode(preferences) if preferences else "",
+         "dependencies": encode(dependencies) if dependencies else "",
+         "overhead": "RECORD SHEET (JSON):\n\nREQUEST:\n\nAnswer with one JSON object matching the schema."},
+        model=model, task_type=context.tier, budget_tokens=budget_tokens,
+        expected_max_output_tokens=MAX_OUTPUT_TOKENS[context.tier], image_count=image_count,
+        contributors={
+            "all_components": encode(context.sheet.get("elements", [])),
+            "type_registry": encode(context.sheet.get("types", [])),
+            "relations": encode(context.sheet.get("relationships", [])),
+            "parameters": encode(context.sheet.get("parameters", [])),
+            "constraints": encode(context.sheet.get("obligations", [])),
+        },
+    )
+
+
+def _compile_context_request(compiler, *, message, selection, projection, operation_observer):
+    full_sheet = record_sheet(projection, selection)
+    record = getattr(projection, "record", None)
+    context = compile_context(message, full_sheet, record=record)
+    # One initial call and at most two explicit, validated context supplements.
+    # Malformed output, provider failures and diagnostic failures never retry.
+    while True:
+        sheet = dict(context.sheet)
+        sheet.pop("producerSignatures", None)  # The response schema owns this vocabulary.
+        if context.tier == "scalar":
+            sheet.pop("semanticIds", None)
+        sheet["requestContext"] = {
+            "tier": context.tier, "targetIds": list(context.target_ids),
+            "editableFields": list(context.editable_fields),
+            "expansionCount": context.expansion_count,
+        }
+        context = replace(context, sheet=sheet)
+        schema = request_schema(context, response_schema(strict=False))
+        strict_schema = provider_schema(schema, _strict_response_schema)
+        rules = SCALAR_RULES if context.tier == "scalar" else SYSTEM_PROMPT.replace(
+            "Only the producer signatures on the sheet define supported element parameters and references.",
+            "Only the response schema defines supported element parameters and references.",
+        )
+        if context.tier == "component":
+            rules += "\nUpdate only the selected Element instances and their existing bound parameters. Supply one semanticEdit for the requested numeric fields; utterance is null. Preserve complete params/references, parameter bindings, basisRefs and parameter epistemicStatus, units, expressions and sourceRef. Do not create or remove entities or relationships, reparent elements, or edit shared Type definitions."
+        rules += "\n\n" + EXPANSION_RULES
+        budget = _context_budget(message, context, rules, strict_schema,
+                                 model=compiler.binding.model_id,
+                                 budget_tokens=compiler.context_budget_tokens,
+                                 image_count=len(_document_images(selection.document_visuals)[1]))
+        budget.log_preflight(log)
+        spans = []
+        result = receipt = None
+        try:
+            result = compiler._compile_once(
+                message=message, selection=selection, projection=projection,
+                operation_observer=spans.append, context=context, schema=strict_schema,
+                answer_schema=schema, rules=rules, full_sheet=full_sheet,
+            )
+            receipt = result.receipt
+        except BaseException as exc:
+            receipt = getattr(exc, "receipt", None)
+            raise
+        finally:
+            for span in spans:
+                span["usage"] = {key: getattr(receipt, key, None) for key in (
+                    "input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens",
+                    "cache_write_1h_input_tokens", "reasoning_output_tokens",
+                )}
+                span["reported_model"] = getattr(receipt, "model_id", None)
+                span["details"].update(budget.to_details())
+                span["details"].update(
+                    success=result is not None and result.status == "compiled",
+                    validator_scope="request_output",
+                    validator_pass=(receipt.status == ModelInvocationStatus.SUCCESS)
+                    if receipt is not None and receipt.status in (ModelInvocationStatus.SUCCESS, ModelInvocationStatus.MALFORMED) else None,
+                    escalation=bool(context.expansion_count or context.escalation),
+                    retry_reason="expanded_context" if context.expansion_count else (
+                        context.escalation[0] if context.escalation else "initial_request"),
+                    retry_attempt=context.expansion_count,
+                )
+                if operation_observer is not None:
+                    try:
+                        operation_observer(deepcopy(span))
+                    except (Exception, asyncio.CancelledError):
+                        pass
+        if result.status != "needs_context":
+            return result
+        # _answered already validated expansion, including existence, progress
+        # and round limit, before signing a successful receipt for this response.
+        context = expand_context(context, full_sheet, result.context_refs, record=record)
 
 
 @contextmanager
@@ -812,10 +935,12 @@ class CodexCompiler:
         executable: str = "codex",
         model: str | None = None,
         timeout_s: float = 120.0,
+        context_budget_tokens: int = 16000,
     ) -> None:
         self.executable = executable
         self.model = model
         self.timeout_s = timeout_s
+        self.context_budget_tokens = context_budget_tokens
         version = _codex_version(executable)
         model_id = model or CODEX_DEFAULT_MODEL_ID
         self.binding = _ProviderBinding(
@@ -839,8 +964,13 @@ class CodexCompiler:
         self, *, message: str, selection: Selection, projection: StateProjection,
         operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Compilation:
-        sheet = record_sheet(projection, selection)
-        prompt = SYSTEM_PROMPT + "\n\n" + _prompt(message, sheet)
+        return _compile_context_request(self, message=message, selection=selection,
+                                        projection=projection, operation_observer=operation_observer)
+
+    def _compile_once(self, *, message, selection, projection, operation_observer,
+                      context, schema, answer_schema, rules, full_sheet) -> Compilation:
+        sheet = context.sheet
+        prompt = rules + "\n\n" + _prompt(message, sheet)
         prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         images = _document_images(selection.document_visuals)[1]
         image_bytes = sum(map(len, images))
@@ -849,11 +979,12 @@ class CodexCompiler:
             selection=selection,
             projection=projection,
             sheet=sheet,
+            schema=schema,
         )
         with tempfile.TemporaryDirectory(prefix="archflow-intent-") as tmp:
             workdir = Path(tmp)
             schema_path = workdir / "schema.json"
-            schema_path.write_text(json.dumps(response_schema()), encoding="utf-8")
+            schema_path.write_text(json.dumps(schema), encoding="utf-8")
             answer_path = workdir / "answer.json"
             command = [self.executable, *CODEX_FIXED_ARGUMENTS]
             command += [
@@ -934,6 +1065,8 @@ class CodexCompiler:
             image_bytes=image_bytes,
             usage=usage,
             reported_model=reported_model,
+            context=context, answer_schema=answer_schema, full_sheet=full_sheet,
+            record=getattr(projection, "record", None),
         )
 
 
@@ -1029,6 +1162,10 @@ def _answered(
     image_bytes: int = 0,
     usage: Mapping[str, int | None] | None = None,
     reported_model: str | None = None,
+    context: IntentContext | None = None,
+    answer_schema: Mapping[str, Any] | None = None,
+    full_sheet: Mapping[str, Any] | None = None,
+    record=None,
 ) -> Compilation:
     """The provider answered: type the answer, then sign what came back.
 
@@ -1045,9 +1182,15 @@ def _answered(
             latency_ms=duration_ms,
             prompt_sha=prompt_sha,
         )
-    except StudioError as exc:
+        if context is not None and answer_schema is not None:
+            answer = {**_answer_object(compilation), "contextRefs": list(compilation.context_refs)}
+            validate_request_answer(answer, context, answer_schema)
+            if compilation.status == "needs_context":
+                expand_context(context, full_sheet, compilation.context_refs, record=record)
+    except (StudioError, ValueError) as exc:
+        detail = exc.detail if isinstance(exc, StudioError) else str(exc)
         raise IntentAgentFailed(
-            exc.detail,
+            detail,
             _model_receipt(
                 binding,
                 request,
@@ -1057,7 +1200,7 @@ def _answered(
                 output=None,
                 duration_ms=duration_ms,
                 error_code="model.output_malformed",
-                message=exc.detail,
+                message=detail,
                 image_bytes=image_bytes,
                 usage=usage,
                 reported_model=reported_model,
@@ -1209,9 +1352,10 @@ class AnthropicCompiler:
 
     provider = ANTHROPIC
 
-    def __init__(self, *, model: str, timeout_s: float = 120.0) -> None:
+    def __init__(self, *, model: str, timeout_s: float = 120.0, context_budget_tokens: int = 16000) -> None:
         self.model = model
         self.timeout_s = timeout_s
+        self.context_budget_tokens = context_budget_tokens
         self._sdk, version = _anthropic_sdk()
         self.binding = _ProviderBinding(
             provider_id=ANTHROPIC_PROVIDER_ID,
@@ -1232,9 +1376,14 @@ class AnthropicCompiler:
         self, *, message: str, selection: Selection, projection: StateProjection,
         operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> Compilation:
-        sheet = record_sheet(projection, selection)
+        return _compile_context_request(self, message=message, selection=selection,
+                                        projection=projection, operation_observer=operation_observer)
+
+    def _compile_once(self, *, message, selection, projection, operation_observer,
+                      context, schema, answer_schema, rules, full_sheet) -> Compilation:
+        sheet = context.sheet
         user = _prompt(message, sheet)
-        system = SYSTEM_PROMPT + "\n\nJSON schema of the only acceptable answer:\n" + json.dumps(response_schema())
+        system = rules + "\n\nJSON schema of the only acceptable answer:\n" + json.dumps(schema)
         images = _document_images(selection.document_visuals)[1]
         image_bytes = sum(map(len, images))
         content: str | list[dict[str, Any]] = user
@@ -1254,6 +1403,7 @@ class AnthropicCompiler:
             selection=selection,
             projection=projection,
             sheet=sheet,
+            schema=schema,
         )
         started = time.perf_counter()
         request_span = None
@@ -1263,7 +1413,7 @@ class AnthropicCompiler:
                                      prompt_sha=prompt_sha, request_kind="anthropic_api") as request_span:
                 response = client.messages.create(
                     model=self.model,
-                    max_tokens=5000,
+                    max_tokens=MAX_OUTPUT_TOKENS[context.tier],
                     system=system,
                     messages=[{"role": "user", "content": content}],
                 )
@@ -1304,6 +1454,8 @@ class AnthropicCompiler:
             image_bytes=image_bytes,
             usage=usage,
             reported_model=reported_model,
+            context=context, answer_schema=answer_schema, full_sheet=full_sheet,
+            record=getattr(projection, "record", None),
         )
 
 
@@ -1323,11 +1475,13 @@ def compiler_from_settings(settings: StudioSettings) -> IntentCompiler:
             executable=settings.codex_executable,
             model=settings.intent_model,
             timeout_s=settings.intent_timeout_s,
+            context_budget_tokens=settings.intent_context_budget_tokens,
         )
     if provider == ANTHROPIC:
         return AnthropicCompiler(
             model=settings.intent_model or DEFAULT_ANTHROPIC_MODEL,
             timeout_s=settings.intent_timeout_s,
+            context_budget_tokens=settings.intent_context_budget_tokens,
         )
     raise SettingsError(
         f"{INTENT_PROVIDER_ENV}={provider!r} is not one of {', '.join(PROVIDERS)}"

@@ -1,5 +1,8 @@
 # ArchFlow Studio
 
+For scoped model requests, advisory context budgets and the offline size benchmark,
+see [Dependency-aware context compilation](../../docs/CONTEXT_COMPILATION.md).
+
 ## 1. What it is
 
 MonkeyArch is the modeling environment used to test how people and AI can carry

@@ -29,6 +29,7 @@ REFERENCE_RUN_ENV = "ARCHFLOW_STUDIO_REFERENCE_RUN"
 INTENT_PROVIDER_ENV = "ARCHFLOW_STUDIO_INTENT_PROVIDER"
 INTENT_MODEL_ENV = "ARCHFLOW_STUDIO_INTENT_MODEL"
 INTENT_TIMEOUT_ENV = "ARCHFLOW_STUDIO_INTENT_TIMEOUT_S"
+CONTEXT_BUDGET_ENV = "ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS"
 CODEX_ENV = "ARCHFLOW_STUDIO_CODEX"
 MODE_ENV = "ARCHFLOW_STUDIO_MODE"
 BIND_ENV = "ARCHFLOW_STUDIO_BIND"
@@ -115,6 +116,7 @@ class StudioSettings:
     origins: tuple[str, ...] = ()
     # Optional engineering telemetry, outside the P036 project document.
     monitor_dir: Path | None = None
+    intent_context_budget_tokens: int = 16000
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -124,6 +126,8 @@ class StudioSettings:
         settings directly all pass through this one constructor.
         """
 
+        if type(self.intent_context_budget_tokens) is not int or self.intent_context_budget_tokens < 1:
+            raise SettingsError(f"{CONTEXT_BUDGET_ENV} must be a positive whole number.")
         if self.cad_export not in CAD_EXPORTS:
             raise SettingsError(
                 f"{CAD_EXPORT_ENV} must be one of {', '.join(CAD_EXPORTS)}, not "
@@ -207,6 +211,10 @@ class StudioSettings:
             raise SettingsError(
                 f"{INTENT_TIMEOUT_ENV} must be more than 0 s, not {intent_timeout_s:g}."
             )
+        try:
+            context_budget = int(os.environ.get(CONTEXT_BUDGET_ENV, "").strip() or "16000")
+        except ValueError as exc:
+            raise SettingsError(f"{CONTEXT_BUDGET_ENV} must be a positive whole number.") from exc
         return cls(
             project_dir=Path(project_dir),
             cad_export=cad_export_from_env(os.environ),
@@ -219,6 +227,7 @@ class StudioSettings:
             ),
             intent_model=os.environ.get(INTENT_MODEL_ENV, "").strip() or None,
             intent_timeout_s=intent_timeout_s,
+            intent_context_budget_tokens=context_budget,
             codex_executable=(
                 os.environ.get(CODEX_ENV, "").strip() or DEFAULT_CODEX_EXECUTABLE
             ),

@@ -190,11 +190,24 @@ class MonitoredCompiler:
                     receipt_id = getattr(receipt, "receipt_id", None)
                     for index, span in enumerate(spans):
                         # Only the observed provider boundary is model-request time.
-                        # Receipt counters belong to the actual call, never its parent.
+                        # Expanded context can make multiple calls; each span owns
+                        # its own reported usage. Legacy observers may only supply
+                        # the final receipt, which belongs to the final call alone.
+                        span = dict(span)
+                        reported_usage = span.pop("usage", None)
+                        reported_model = span.pop("reported_model", None)
+                        span_tokens = (TokenUsage(**reported_usage) if reported_usage is not None else
+                                       TokenUsage(**counts) if index == len(spans) - 1 else TokenUsage())
+                        details = dict(span.get("details", {}))
+                        details.setdefault("success", result is not None and result.status == "compiled"
+                                           if index == len(spans) - 1 else None)
+                        details.setdefault("validator_pass", None)
+                        details.setdefault("escalation", None)
+                        span["details"] = details
                         self.monitor.record(
                             **span, event_id=f"studio:model:{receipt_id}" if receipt_id and len(spans) == 1 else None,
-                            provider=provider, model=model, timing_scope="model_call", model_call=True,
-                            tokens=TokenUsage(**counts) if index == len(spans) - 1 else TokenUsage(),
+                            provider=provider, model=reported_model or model, timing_scope="model_call", model_call=True,
+                            tokens=span_tokens,
                             billing_mode="api_estimate" if provider == "anthropic" else "unknown",
                         )
                     if not spans and receipt is not None and self.provider != "deterministic":
@@ -205,6 +218,8 @@ class MonitoredCompiler:
                             event_id=f"studio:model:{receipt_id}" if receipt_id else None,
                             started_at=datetime.now(timezone.utc).isoformat(), timing_scope="unknown", model_call=True,
                             provider=provider, model=model, tokens=TokenUsage(**counts),
+                            details={"success": result is not None and result.status == "compiled",
+                                     "validator_pass": None, "escalation": None},
                             billing_mode="api_estimate" if provider == "anthropic" else "unknown",
                         )
                 except Exception:
