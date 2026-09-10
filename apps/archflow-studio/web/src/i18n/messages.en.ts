@@ -32,6 +32,7 @@ export const messagesEn = {
   "document.empty": "Open a drawing and mark what you want to change.",
   "document.formats": "Multi-page PDF, PNG or JPEG · up to 32 MB",
   "document.tools": "Page annotation tools",
+  "document.tool.select": "Edit line",
   "document.tool.freehand": "Pen",
   "document.tool.line": "Line",
   "document.tool.arrow": "Arrow",
