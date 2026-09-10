@@ -11,7 +11,7 @@ import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
-import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { documentKey, documentMime, documentUrl, drawingLineageKey, findSource, imageSource, nextDocumentPosition, pageKey, pageSource, type BoardDraft, type PageSource } from "./boardScene";
 import "./board.css";
 
 const copy = {
@@ -232,6 +232,53 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     capture(elements);
     if (!automatic || elements.length === additions.length) api.scrollToContent(additions, { fitToContent: true, animate: false });
   }, [capture, preview, queue]);
+  /**
+   * A regenerated elevation is a new retained source, but it is not a new
+   * board location. Keep the first existing placement (and every annotation
+   * around it), replace only its image file/source binding, and remove any
+   * older auto-created image copies of that exact logical drawing.
+   */
+  const replaceDeliveredPage = useCallback(async (document: SourceDocumentDto, pageIndex: number): Promise<boolean> => {
+    const lineage = drawingLineageKey(document);
+    if (lineage === null) return false;
+    const api = canvas.current;
+    if (!alive.current || !api || !initialized.current || queue.getState().conflict) return false;
+    const current = api.getSceneElementsIncludingDeleted();
+    const matches = current.filter((element) => {
+      if (element.type !== "image" || element.isDeleted) return false;
+      const source = imageSource(element);
+      const previous = source === null ? undefined : findSource(documentsRef.current, source);
+      return source?.pageIndex === pageIndex && previous !== undefined && drawingLineageKey(previous) === lineage;
+    });
+    if (matches.length === 0) return false;
+    const rendered = await preview(document, pageIndex);
+    if (!alive.current || queue.getState().conflict) return false;
+    const retained = matches[0];
+    const duplicateIds = new Set(matches.slice(1).map((element) => element.id));
+    const fileId = crypto.randomUUID() as FileId;
+    const source = pageSource(document, pageIndex);
+    const elements: ExcalidrawElement[] = current.map((element): ExcalidrawElement => {
+      if (element.id === retained.id) {
+        const customData = typeof element.customData === "object" && element.customData !== null
+          ? element.customData as Record<string, unknown> : {};
+        return { ...element, fileId, status: "saved", customData: { ...customData, sourceDocument: source } } as ExcalidrawElement;
+      }
+      // These are copies the old automatic receiver created. Deliberate marks
+      // are separate board elements and are never removed here.
+      if (duplicateIds.has(element.id)) return { ...element, isDeleted: true } as ExcalidrawElement;
+      const children = element.type === "frame"
+        ? (element as unknown as { children?: readonly string[] }).children : undefined;
+      if (children?.length === 1 && duplicateIds.has(children[0])) {
+        return { ...element, isDeleted: true } as ExcalidrawElement;
+      }
+      return element;
+    });
+    api.addFiles([{ id: fileId, dataURL: rendered.dataURL, mimeType: "image/png", created: Date.now() }]);
+    seen.current.add(documentKey(document));
+    api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    capture(elements);
+    return true;
+  }, [capture, preview, queue]);
   const acceptDocuments = useCallback((next: SourceDocumentDto[]) => {
     documentsRef.current = next;
     setDocuments(next);
@@ -240,10 +287,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     for (const document of next) {
       const key = documentKey(document);
       if (seen.current.has(key) || skipped.current.has(key) || queue.getState().conflict) continue;
-      try { await addPage(document, document.pages[0].pageIndex, true); }
+      try {
+        const page = document.pages[0].pageIndex;
+        if (!await replaceDeliveredPage(document, page)) await addPage(document, page, true);
+      }
       catch (error) { skipped.current.add(key); if (alive.current) setNotice(`${document.fileName}: ${errorText(error)}`); }
     }
-  }, [addPage, queue]);
+  }, [addPage, queue, replaceDeliveredPage]);
   const upload = useCallback((incoming: File[]) => serial(async () => {
     for (const file of incoming) {
       const mime = documentMime(file);
