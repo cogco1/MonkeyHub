@@ -26,6 +26,7 @@ class IntentContext:
     included_refs: tuple[str, ...] = ()
     escalation: tuple[str, ...] = ()
     expansion_count: int = 0
+    supplemental_refs: tuple[str, ...] = ()
 
 
 def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dict[str, Any]:
@@ -294,4 +295,240 @@ def expand_context(context: IntentContext, sheet: Mapping[str, Any], requested_r
     if not added:
         raise ValueError("context expansion made no progress")
     narrowed, refs = _slice(full, set(context.included_refs) | added, record, changed=set())
-    return replace(context, sheet=narrowed, included_refs=refs, expansion_count=context.expansion_count + 1, escalation=(*context.escalation, "expanded_context"))
+    return replace(context, sheet=narrowed, included_refs=refs, expansion_count=context.expansion_count + 1,
+                   supplemental_refs=tuple(sorted(set(context.supplemental_refs) | added)),
+                   escalation=(*context.escalation, "expanded_context"))
+
+
+def control_unit(context: IntentContext, row: Mapping[str, Any], field: str) -> str | None:
+    """Return a declared unit, never infer it from a field's spelling or value."""
+    binding = row.get("parameterBindings", {}).get(field)
+    if isinstance(binding, str):
+        parameter = next((item for item in context.sheet.get("parameters", ()) if item["key"] == binding.removeprefix("@")), None)
+        unit = parameter.get("unit") if parameter is not None else None
+        return unit if isinstance(unit, str) and unit else None
+    # produce_wall declares dimensions in metres and builds its geometry with
+    # _M (monkeyarch.capabilities.element_producers). Other producers/fields
+    # have no unit metadata in the queried signature; do not guess theirs.
+    if row.get("producer") == "wall" and field in {"height", "thickness"}:
+        return "m"
+    return None
+
+
+def _display_name(row: Mapping[str, Any]) -> str:
+    authored = row.get("authoredContext", row.get("fields", {}))
+    for key in ("label", "name"):
+        if isinstance(authored.get(key), str) and authored[key].strip():
+            return authored[key]
+    return str(row.get("elementId", row.get("componentId", row.get("entity_id", row.get("key", "Selected object")))))
+
+
+def _affected_parameters(context: IntentContext, parameter_key: str) -> set[str]:
+    affected = {parameter_key}
+    while True:
+        expanded = affected | {
+            row["key"] for row in context.sheet.get("parameters", ())
+            if affected.intersection(row.get("inputs", ()))
+        }
+        if expanded == affected:
+            break
+        affected = expanded
+    return affected
+
+
+def _shared_consumers(context: IntentContext, parameter_key: str) -> list[Mapping[str, Any]]:
+    affected = _affected_parameters(context, parameter_key)
+    types = {row["entity_id"]: row.get("fields", {}) for row in context.sheet.get("types", ())}
+    consumers = []
+    for row in context.sheet.get("elements", ()):
+        bindings = {value.removeprefix("@") for value in row.get("parameterBindings", {}).values() if isinstance(value, str)}
+        type_ref = row.get("typeRef")
+        defaults = types.get(type_ref.removeprefix("entity:"), {}) if isinstance(type_ref, str) else {}
+        for group in ("params", "references"):
+            effective = {**defaults.get(group, {}), **row.get(group, {})}
+            bindings.update(value[1:] for value in _strings(effective) if value.startswith("@"))
+        if bindings.intersection(affected):
+            consumers.append(row)
+    return consumers
+
+
+_PRIVATE_FACT_KEYS = frozenset({
+    "schema", "entity_id", "relation_id", "obligation_id", "parent_id", "parentId",
+    "component_id", "componentId", "elementId", "producer", "lineage", "provenance",
+    "expr", "inputs", "lockAuthority", "lock_authority", "parameterBindings",
+    "params", "references", "typeRef", "status", "validator", "propagation",
+})
+
+
+def _design_value(value: Any) -> Any:
+    """Keep authored design facts while leaving identifiers and control data private."""
+    if isinstance(value, Mapping):
+        result = {}
+        for key, item in value.items():
+            if key in _PRIVATE_FACT_KEYS or key.lower().endswith(("ref", "refs")):
+                continue
+            cleaned = _design_value(item)
+            if cleaned not in (None, {}, []):
+                result[key] = cleaned
+        return result
+    if isinstance(value, (list, tuple)):
+        return [item for child in value if (item := _design_value(child)) not in (None, {}, [])]
+    return deepcopy(value)
+
+
+def model_context(context: IntentContext) -> dict[str, Any]:
+    """Facts for proposing a numeric action, separate from the validation closure.
+
+    The complete sheet stays private on IntentContext. This projection never
+    grants edits, changes references or evaluates a candidate's constraints.
+    """
+    if context.tier == "design":
+        result = deepcopy(dict(context.sheet))
+        result.pop("producerSignatures", None)  # The response schema supplies authoring vocabulary.
+        return result
+    rows = _rows(context.sheet)
+    elements = {row["elementId"]: row for row in context.sheet.get("elements", ())}
+    parameters = {row["key"]: row for row in context.sheet.get("parameters", ())}
+    targets = []
+    relevant = {"entity:" + identifier for identifier in context.target_ids} | set(context.supplemental_refs)
+    for identifier in context.target_ids:
+        row = elements[identifier]
+        controls = []
+        for field in context.editable_fields:
+            binding = row.get("parameterBindings", {}).get(field)
+            parameter = parameters.get(binding.removeprefix("@"), {}) if isinstance(binding, str) else {}
+            type_ref = row.get("typeRef")
+            type_row = rows.get("entity:" + type_ref.removeprefix("entity:"), (None, {}))[1] if isinstance(type_ref, str) else {}
+            effective_refs = {**type_row.get("fields", {}).get("references", {}), **row.get("references", {})}
+            reason = None
+            if parameter.get("lockAuthority"):
+                reason = "This value is locked by an existing design decision."
+            elif parameter.get("expr"):
+                reason = "This value is derived from other dimensions and cannot be changed directly."
+            elif field == "height" and (effective_refs.get("top") or row.get("top_level")):
+                reason = "This height is determined by its top reference and cannot be changed directly."
+            control = {"field": field, "currentValue": row.get("numericFields", {}).get(field),
+                       "unit": control_unit(context, row, field), "editable": reason is None}
+            if reason:
+                control["reason"] = reason
+            if isinstance(binding, str):
+                relevant.add("parameter:" + binding.removeprefix("@"))
+                consumers = _shared_consumers(context, binding.removeprefix("@"))
+                affected_parameters = _affected_parameters(context, binding.removeprefix("@"))
+                coupled_fields = [key for key, value in row.get("parameterBindings", {}).items()
+                                  if key != field and isinstance(value, str) and value.removeprefix("@") in affected_parameters]
+                if len(consumers) > 1 or coupled_fields:
+                    control["editable"] = False
+                    control.setdefault("reason", "This dimension is shared; decide which objects and dimensions should change before editing it.")
+                    names = sorted(_display_name(item) for item in consumers)
+                    control["sharedImpact"] = {
+                        "affectedCount": len(consumers),
+                        "meaning": "Changing this shared dimension also changes the other named objects.",
+                    }
+                    if len(names) <= 8:
+                        control["sharedImpact"]["affectedObjects"] = names
+                    else:
+                        # Complete impact remains private. A large set is an
+                        # explicit count and examples, not an unbounded id list.
+                        control["sharedImpact"].update(exampleAffectedObjects=names[:4], unnamedCount=len(names) - 4)
+                    if coupled_fields:
+                        control["sharedImpact"]["coupledFieldsOnThisObject"] = sorted(coupled_fields)
+                        control["sharedImpact"]["meaning"] = "Changing this dimension also changes the listed coupled dimensions."
+                    relevant.update("entity:" + item["elementId"] for item in consumers)
+            controls.append(control)
+        targets.append({"name": _display_name(row), "controls": controls})
+    # Follow only the facts the selected objects reference, plus explicitly
+    # requested supplements. An unrelated global lock may occur in the private
+    # validation sheet but cannot seed additional model facts here.
+    while True:
+        before = set(relevant)
+        for ref in tuple(relevant):
+            if ref not in rows:
+                continue
+            group, row = rows[ref]
+            if group == "elements":
+                links = {key: row.get(key) for key in ("references", "typeRef", "host", "base_level", "top_level", "sill_level", "parentId", "componentId")}
+                relevant.update(_named_refs(links, rows))
+            elif group == "components":
+                relevant.update(_named_refs(row.get("parentId"), rows))
+            elif group == "parameters":
+                relevant.update("parameter:" + key for key in row.get("inputs", ()))
+            elif group == "types":
+                relevant.update(_named_refs(row.get("fields", {}).get("references", {}), rows))
+            elif group == "obligations":
+                relevant.update(_named_refs(row, rows))
+        for row in context.sheet.get("obligations", ()):
+            ref = "obligation:" + row["obligation_id"]
+            refs = _named_refs(row, rows) - {ref}
+            if refs.intersection(relevant):
+                relevant.add(ref)
+                relevant.update(refs)
+        if before == relevant:
+            break
+    facts = []
+    for group in ("readings", "obligations", "preferences", "constraints"):
+        for row in context.sheet.get(group, ()):
+            if not isinstance(row, Mapping):
+                if isinstance(row, str):
+                    facts.append({"kind": group, "statement": row})
+                continue
+            own = {prefix + row[key] for prefix, key in (("entity:", "entity_id"), ("obligation:", "obligation_id")) if key in row}
+            refs = _named_refs(row, rows) - own
+            if refs and not refs.intersection(relevant) and not own.intersection(relevant):
+                continue
+            fact = _design_value(row.get("fields", row))
+            if fact:
+                facts.append({"kind": group, "fact": fact})
+    for row in context.sheet.get("relationships", ()):
+        endpoints = {"entity:" + row["subject"], "entity:" + row["object"]}
+        if not endpoints.intersection(relevant):
+            continue
+        fact = {"kind": row["kind"], "between": [
+            _display_name(rows[ref][1]) if ref in rows else ref.removeprefix("entity:")
+            for ref in ("entity:" + row["subject"], "entity:" + row["object"])
+        ]}
+        validator = row.get("validator") or {}
+        if validator.get("check_kind") == "clearance_interval":
+            fact["requiredClearance"] = {"interval": deepcopy(validator.get("interval_m")), "unit": "m"}
+        elif validator.get("check_kind") == "support_contact":
+            fact["requirement"] = "Maintain the declared support contact."
+        elif validator.get("check_kind") == "aperture_exists":
+            fact["requirement"] = "Retain the declared opening."
+        elif validator.get("check_kind") == "solid_nonpenetration":
+            fact["requirement"] = "The named objects must not penetrate each other."
+        elif validator:
+            fact["requirement"] = "An existing geometric constraint must remain satisfied."
+        facts.append(fact)
+    dependencies = []
+    for ref in sorted(relevant):
+        if ref not in rows:
+            continue
+        group, row = rows[ref]
+        if group == "frame":
+            fields = row.get("fields", {})
+            fact = {"name": _display_name(row)}
+            if "elevation" in fields:
+                fact["elevation"] = deepcopy(fields["elevation"])
+                fact["unit"] = fields.get("unit")  # No implicit units on Level@1.
+            if "role" in fields:
+                fact["description"] = fields["role"]
+            dependencies.append(fact)
+        elif ref in context.supplemental_refs and group in {"elements", "parameters", "types"}:
+            fact = {"name": _display_name(row)}
+            if group == "elements":
+                fact["dimensions"] = [{"field": field, "value": value, "unit": control_unit(context, row, field)}
+                                      for field, value in row.get("numericFields", {}).items()]
+            elif group == "parameters":
+                fact.update(value=row.get("value"), unit=row.get("unit"))
+            else:
+                fields = row.get("fields", {})
+                fact["description"] = _design_value(fields)
+                fact["dimensions"] = []
+                for field, value in fields.get("params", {}).items():
+                    parameter = parameters.get(value.removeprefix("@"), {}) if isinstance(value, str) and value.startswith("@") else {}
+                    if type(value) not in (int, float) and not parameter:
+                        continue
+                    fact["dimensions"].append({"field": field, "value": parameter.get("value", value),
+                                               "unit": parameter.get("unit") if parameter else control_unit(context, fields, field)})
+            dependencies.append(fact)
+    return {"targets": targets, "designFacts": facts, "dependencyFacts": dependencies}

@@ -1,8 +1,9 @@
 # Dependency-aware context compilation
 
 Studio prepares the model's read context and output vocabulary for the current
-request. A supported numeric edit to one known element receives the target,
-required dependencies, applicable readings and constraints. Broad or uncertain
+request. A supported numeric edit to one known element receives the requested
+controls and relevant design facts. The complete execution and validation closure
+stays on the server. Broad or uncertain
 requests retain the complete design context. The existing deterministic compiler
 still makes no model call.
 
@@ -17,10 +18,11 @@ These development commands do not affect student API requests.
 ```text
 Request + explicit selection + exact StateRecord
     -> deterministic scope classification
-    -> scalar, component or design answer schema
-    -> target, dependency closure, applicable evidence and constraints
+    -> private target, dependency closure, evidence and constraints
+    -> deterministic control preflight
+    -> model facts + numeric actions, or full design vocabulary
     -> provider call
-    -> request-output validation
+    -> request-output validation and server action adaptation
     -> existing proposal and candidate validation
 ```
 
@@ -32,8 +34,8 @@ There is no model router or second project store.
 
 | Tier | Current trigger and output | Anthropic output limit |
 | --- | --- | ---: |
-| Scalar | One recognized numeric field on one exact selected or named element. Uses the existing scalar grammar and a small answer schema; semantic edits are disabled. | 800 |
-| Component | Several existing numeric fields on one element with an advertised producer signature. Permits that element and its requested existing parameter bindings. | 2,400 |
+| Scalar | One recognized numeric field on one exact selected or named element. The model proposes one numeric action; the server supplies target identity and the existing scalar grammar. | 400 |
+| Component | Several existing numeric fields on one element with an advertised producer signature. The model proposes one action per requested field; the server preserves untouched record data. | 800 |
 | Design | Uncertain scope, unsupported numeric control, multiple targets, creation/removal, references/types, broad architectural work, gestures or document visuals. Keeps the full design context and output vocabulary. | 5,000 |
 
 These limits are enforced through Anthropic's `max_tokens`. Codex CLI output
@@ -45,18 +47,43 @@ implement arbitrary type, reference or relationship edits with reduced context.
 Those requests use the design tier. An ambiguous request such as “change this
 window to 1200” also retains full context because the field is unresolved.
 
-Scope follows the record's declared dependency edges and affected closure.
-Read context also retains parents, types, hosts, levels, grid-role lookups,
+Private scope follows the record's declared dependency edges and affected closure.
+The internal context retains parents, types, hosts, levels, grid-role lookups,
 parameter expression inputs, applicable relations and their validators, explicit
 keep references and obligation blockers. Unscoped readings and obligations, and
 declared parameter locks, remain visible. This does not establish that the
-project's declared architectural dependencies are complete.
+project's declared architectural dependencies are complete. These records are not
+automatically copied into a numeric model request. The model sees requested fields,
+current values, verified units, relevant design requirements and concise shared
+effects. Unrelated locks, raw expressions, source bindings, producer contracts and
+execution bookkeeping remain private. Only explicitly requested supplements expose
+additional dependency dimensions.
 
-Output schemas follow the same scope. They restrict writable targets and fields,
-retain the producer vocabulary needed by component edits, and share repeated
-definitions through JSON Schema references. Producer signatures are removed from
-the state packet once the response schema supplies that vocabulary. Extra read
-context never authorizes changes to another element or shared type.
+Both numeric tiers accept a small action envelope. An action can be:
+
+```json
+{"op":"set_parameter","field":"thickness","value":300,"unit":"mm"}
+```
+
+The target is already bound on the server. The model does not return project or
+element ids, internal grammar, complete Entity/Parameter records, or unchanged
+metadata. The server checks the exact requested field set, converts declared units,
+and adapts actions into the existing proposal inputs. Unchanged params, references,
+types, source evidence and parameter knowledge status survive by construction.
+Missing unit evidence never authorizes a guessed conversion. Percent operations
+are also explicit actions, with arithmetic performed by the server.
+
+Shared or derived controls require a design choice; locked controls are refused.
+Known blockers are handled before inference and create no model receipt or usage.
+The server does not silently change other consumers or detach a binding. Clear,
+single-field absolute wall height/thickness requests with explicit metric units
+also use the existing deterministic grammar path. Extra clauses, uncertain targets,
+unknown units and unsupported controls do not acquire this shortcut.
+
+The design tier retains the complete producer vocabulary, with repeated schemas
+shared through JSON Schema references. Producer signatures are removed from the
+state packet once the response schema supplies that vocabulary. Additional read
+facts never authorize another writable target or shared type.
 
 ## Bounded context supplements
 
@@ -126,32 +153,40 @@ selected wall, dependent parapet, level, grid, type, parameter and two obligatio
 It adds unrelated wall/type pairs. The benchmark executes the production
 preparation loop and substitutes only the provider call with a capture. It compares
 the old full `SYSTEM_PROMPT + response_schema + record_sheet` packaging against
-the actual prepared rules, schema and state, serialized as Anthropic text inputs.
+the actual prepared rules, schema and `model_context` state, serialized as
+Anthropic text inputs. The private validation sheet is not counted as sent text.
 Section counts are independently tokenized diagnostics and may not sum to the
 token count of concatenated request text.
 
-The initial fixture comparison measured the following **characters**, including
+The fixture comparison measured the following **characters**, including
 rules, schema, request text and application wrappers:
 
 | Unrelated wall/type pairs | Scalar: full → compiled | Component: full → compiled | Design: full → compiled |
 | ---: | ---: | ---: | ---: |
-| 0 | 49,492 → 6,364 | 49,510 → 20,382 | 49,546 → 24,883 |
-| 100 | 105,762 → 6,364 | 105,780 → 20,382 | 105,816 → 83,353 |
-| 1,000 | 615,162 → 6,364 | 615,180 → 20,382 | 615,216 → 612,553 |
+| 0 | 49,492 → 2,240 | 49,510 → 2,341 | 49,546 → 24,785 |
+| 100 | 105,762 → 2,240 | 105,780 → 2,341 | 105,816 → 83,255 |
+| 1,000 | 615,162 → 2,240 | 615,180 → 2,341 | 615,216 → 612,455 |
 
 The same prepared text measured with **`tiktoken:o200k_base` reference tokens**:
 
 | Unrelated wall/type pairs | Scalar: full → compiled | Component: full → compiled | Design: full → compiled |
 | ---: | ---: | ---: | ---: |
-| 0 | 13,822 → 1,805 | 13,829 → 5,417 | 13,825 → 6,819 |
-| 100 | 32,723 → 1,805 | 32,730 → 5,417 | 32,726 → 26,520 |
-| 1,000 | 202,823 → 1,805 | 202,830 → 5,417 | 202,826 → 203,820 |
+| 0 | 13,822 → 603 | 13,829 → 639 | 13,825 → 6,791 |
+| 100 | 32,723 → 603 | 32,730 → 639 | 32,726 → 26,492 |
+| 1,000 | 202,823 → 603 | 202,830 → 639 | 202,826 → 203,792 |
 
-The narrow requests retain the same two relevant elements, one type and both
-obligations as unrelated siblings grow. The design request retains all elements
-and types, so its state still grows with the project. The compiled full context
-also preserves authored fields and obligations omitted from the previous sheet.
-At 1,000 siblings that additional context outweighs schema savings by 994 reference
+For narrow requests, the model receives one target and five design facts; it
+receives no full element or type reconstruction rows. The private validation
+context still retains two relevant elements and both obligations as unrelated
+siblings grow. The benchmark reports `sent_target_count` and `sent_design_fact_count`
+separately from `private_element_count` and `private_obligation_count` so these
+are not mistaken for the same packet. Scalar schema/state text measures 275/195
+reference tokens; component schema/state text measures 278/221.
+
+The design request retains all elements and types, so its state still grows with
+the project. The compiled full context also preserves authored fields and
+obligations omitted from the previous sheet.
+At 1,000 siblings that additional context outweighs schema savings by 966 reference
 tokens, despite slightly fewer characters. Broad requests therefore have no
 guaranteed token reduction. Re-run the command when schemas or rules change.
 These synthetic packaging measurements establish neither billed cost savings nor

@@ -3882,7 +3882,7 @@
         "preparing transient client-rendered document page and saved-ink PNGs for the existing Codex and Anthropic compilers; distinguishing one exact edit page from explicitly selected reference pages and retaining their metadata in the existing document comment",
         "explicit initial Stage acceptance, candidate acceptance and historical fork through portfolio rules and P036; WorkingCopy remains Exploration",
         "preserving optional exact baseStageRef on new Explorations while legacy WorkingCopy labels and choices remain readable without inferred acceptance",
-        "Compiling a conservative scalar, component or design request vocabulary and dependency slice from the existing StateRecord graph; at most two exact-reference read supplements preserve writable targets and the original checkpoint",
+        "Compiling scalar/component numeric actions or a complete design request; the StateRecord dependency closure remains private while model-facing facts expose only requested controls and relevant design consequences; at most two exact-reference supplements preserve writable targets and the original checkpoint",
         "Preflight text-section budget estimates and response-schema/request-scope checks before the existing proposal compiler; repeated JSON subschemas are shared without changing their accepted values",
         "Offline context-size benchmark using the same request preparation with an in-memory provider capture, with tokenizer identity or an explicit heuristic and no inference call"
       ],
@@ -4064,7 +4064,7 @@
         "candidate generation and option selection never commit a Stage; explicit acceptance verifies retained replay, model and validation before exact branch-head CAS",
         "ordinary Stage acceptance never issues canonical HEAD; repeat acceptance returns the same committed Stage",
         "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base",
-        "A scoped request never drops its declared dependencies, applicable constraints or locks to meet a budget; ambiguous and structural requests retain full design context",
+        "A scoped request retains the complete validation closure privately; the model proposes numeric actions without copying records, identifiers, bindings or provenance. Server adaptation preserves untouched data, normalizes declared units, and refuses silent shared, derived or locked-control changes; ambiguous and structural requests retain full design context",
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
         "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters"
       ],

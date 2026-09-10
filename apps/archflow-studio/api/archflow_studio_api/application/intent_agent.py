@@ -44,10 +44,10 @@ from ..settings import INTENT_PROVIDER_ENV, SettingsError, StudioSettings
 from ..transport.errors import StudioError
 from .intent import ACCEPTED_FORMS, KEEP_SENTENCE
 from .projection import StateProjection
-from .intent_context import compile_context, expand_context, IntentContext
+from .intent_context import compile_context, expand_context, model_context, IntentContext
 from .intent_budget import build_context_budget
 from .intent_requests import (
-    EXPANSION_RULES, MAX_OUTPUT_TOKENS, SCALAR_RULES, provider_schema,
+    ACTION_RULES, EXPANSION_RULES, MAX_OUTPUT_TOKENS, action_answer, action_preflight, provider_schema,
     request_schema, validate_request_answer,
 )
 
@@ -617,17 +617,8 @@ def _failed(
     )
 
 
-def _parse_answer(
-    raw: str,
-    *,
-    provider: str,
-    model: str | None,
-    latency_ms: int,
-    prompt_sha: str,
-    receipt: ModelInvocationReceipt | None = None,
-) -> Compilation:
-    """The agent's JSON, checked field by field; anything else is a failure."""
-
+def _answer_payload(raw: str, *, provider: str) -> dict[str, Any]:
+    """Read one provider JSON object before interpreting its request contract."""
     text = raw.strip()
     # A model that wraps its answer in a fence is answering the question; the
     # fence is stripped, nothing else is.
@@ -646,6 +637,22 @@ def _parse_answer(
         ) from exc
     if not isinstance(payload, dict):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered a JSON {type(payload).__name__}, not an object")
+    return payload
+
+
+def _parse_answer(
+    raw: str,
+    *,
+    provider: str,
+    model: str | None,
+    latency_ms: int,
+    prompt_sha: str,
+    receipt: ModelInvocationReceipt | None = None,
+    normalize_fields: bool = True,
+) -> Compilation:
+    """The application answer, checked field by field; anything else is a failure."""
+
+    payload = _answer_payload(raw, provider=provider)
     status = payload.get("status")
     if status not in ("compiled", "question", "unsupported", "needs_context"):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent answered status {status!r}; only compiled, question or unsupported are answers")
@@ -667,7 +674,7 @@ def _parse_answer(
         raise StudioError(502, AGENT_FAILED, "the agent's contextRefs must name at most sixteen references")
     if semantic_edit is not None and not isinstance(semantic_edit, dict):
         raise StudioError(502, AGENT_FAILED, f"the {provider} agent's semanticEdit is not an object")
-    if semantic_edit is not None:
+    if semantic_edit is not None and normalize_fields:
         # Strict provider schemas spell absent optional signature keys as
         # null. Their domain spelling is absence, so type defaults still work.
         for entity in semantic_edit.get("entities", ()):
@@ -715,10 +722,11 @@ def _parse_answer(
 
 def _context_budget(message, context, rules, schema, *, model, budget_tokens, image_count):
     """Partition the sent text once; contributors diagnose, never add to the total."""
-    sheet = dict(context.sheet)
-    preferences = {key: sheet.pop(key) for key in ("readings", "preferences") if key in sheet}
+    sent_sheet = model_context(context)
+    sheet = dict(sent_sheet)
+    preferences = {key: sheet.pop(key) for key in ("readings", "preferences", "designFacts") if key in sheet}
     dependencies = {key: sheet.pop(key) for key in (
-        "parameters", "frame", "types", "relationships", "obligations", "contextEntities",
+        "parameters", "frame", "types", "relationships", "obligations", "contextEntities", "dependencyFacts",
     ) if key in sheet}
     encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True)
     return build_context_budget(
@@ -728,13 +736,13 @@ def _context_budget(message, context, rules, schema, *, model, budget_tokens, im
          "overhead": "RECORD SHEET (JSON):\n\nREQUEST:\n\nAnswer with one JSON object matching the schema."},
         model=model, task_type=context.tier, budget_tokens=budget_tokens,
         expected_max_output_tokens=MAX_OUTPUT_TOKENS[context.tier], image_count=image_count,
-        contributors={
-            "all_components": encode(context.sheet.get("elements", [])),
-            "type_registry": encode(context.sheet.get("types", [])),
-            "relations": encode(context.sheet.get("relationships", [])),
-            "parameters": encode(context.sheet.get("parameters", [])),
-            "constraints": encode(context.sheet.get("obligations", [])),
-        },
+        contributors={label: encode(sent_sheet[key]) for key, label in (
+            ("targets", "state"), ("designFacts", "constraints"),
+            ("dependencyFacts", "dependencies"), ("elements", "entities"),
+            ("types", "type_registry"), ("parameters", "parameters"),
+            ("relationships", "relations"), ("obligations", "constraints"),
+            ("readings", "readings"),
+        ) if sent_sheet.get(key)},
     )
 
 
@@ -742,28 +750,27 @@ def _compile_context_request(compiler, *, message, selection, projection, operat
     full_sheet = record_sheet(projection, selection)
     record = getattr(projection, "record", None)
     context = compile_context(message, full_sheet, record=record)
+    blocked = action_preflight(context, record)
+    if blocked is not None:
+        # This is a fact about the current controls, requiring no interpretation
+        # or external call. It therefore creates neither model usage nor receipt.
+        return replace(_parse_answer(
+            json.dumps(blocked, ensure_ascii=False), provider=DETERMINISTIC,
+            model=None, latency_ms=0, prompt_sha="", normalize_fields=False,
+        ), raw=None, prompt_sha256=None)
     # One initial call and at most two explicit, validated context supplements.
     # Malformed output, provider failures and diagnostic failures never retry.
     while True:
-        sheet = dict(context.sheet)
-        sheet.pop("producerSignatures", None)  # The response schema owns this vocabulary.
-        if context.tier == "scalar":
-            sheet.pop("semanticIds", None)
-        sheet["requestContext"] = {
-            "tier": context.tier, "targetIds": list(context.target_ids),
-            "editableFields": list(context.editable_fields),
-            "expansionCount": context.expansion_count,
-        }
-        context = replace(context, sheet=sheet)
-        schema = request_schema(context, response_schema(strict=False))
+        # The complete closure stays private for action adaptation and checks.
+        # Narrow requests never construct the complete design-output vocabulary.
+        schema = request_schema(context, response_schema(strict=False) if context.tier == "design" else {})
         strict_schema = provider_schema(schema, _strict_response_schema)
-        rules = SCALAR_RULES if context.tier == "scalar" else SYSTEM_PROMPT.replace(
+        rules = ACTION_RULES if context.tier != "design" else SYSTEM_PROMPT.replace(
             "Only the producer signatures on the sheet define supported element parameters and references.",
             "Only the response schema defines supported element parameters and references.",
         )
-        if context.tier == "component":
-            rules += "\nUpdate only the selected Element instances and their existing bound parameters. Supply one semanticEdit for the requested numeric fields; utterance is null. Preserve complete params/references, parameter bindings, basisRefs and parameter epistemicStatus, units, expressions and sourceRef. Do not create or remove entities or relationships, reparent elements, or edit shared Type definitions."
-        rules += "\n\n" + EXPANSION_RULES
+        if context.tier == "design":
+            rules += "\n\n" + EXPANSION_RULES
         budget = _context_budget(message, context, rules, strict_schema,
                                  model=compiler.binding.model_id,
                                  budget_tokens=compiler.context_budget_tokens,
@@ -969,7 +976,7 @@ class CodexCompiler:
 
     def _compile_once(self, *, message, selection, projection, operation_observer,
                       context, schema, answer_schema, rules, full_sheet) -> Compilation:
-        sheet = context.sheet
+        sheet = model_context(context)
         prompt = rules + "\n\n" + _prompt(message, sheet)
         prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         images = _document_images(selection.document_visuals)[1]
@@ -1175,16 +1182,27 @@ def _answered(
     """
 
     try:
+        parsed_raw = raw
+        narrow = context is not None and context.tier != "design"
+        if narrow:
+            payload = _answer_payload(raw, provider=provider)
+            validate_request_answer(payload, context, answer_schema)
+            parsed_raw = json.dumps(action_answer(payload, context, record), ensure_ascii=False)
         compilation = _parse_answer(
-            raw,
+            parsed_raw,
             provider=provider,
             model=model,
             latency_ms=duration_ms,
             prompt_sha=prompt_sha,
+            normalize_fields=not narrow,
         )
+        # Receipts retain the provider's actual bytes; the synthesized domain
+        # answer is a deterministic adapter result, not another model response.
+        compilation = replace(compilation, raw=raw)
         if context is not None and answer_schema is not None:
-            answer = {**_answer_object(compilation), "contextRefs": list(compilation.context_refs)}
-            validate_request_answer(answer, context, answer_schema)
+            if not narrow:
+                answer = {**_answer_object(compilation), "contextRefs": list(compilation.context_refs)}
+                validate_request_answer(answer, context, answer_schema)
             if compilation.status == "needs_context":
                 expand_context(context, full_sheet, compilation.context_refs, record=record)
     except (StudioError, ValueError) as exc:
@@ -1214,7 +1232,7 @@ def _answered(
             status=ModelInvocationStatus.SUCCESS,
             prompt=prompt,
             raw=raw,
-            output=_answer_object(compilation),
+            output=payload if narrow else _answer_object(compilation),
             duration_ms=duration_ms,
             image_bytes=image_bytes,
             usage=usage,
@@ -1381,7 +1399,7 @@ class AnthropicCompiler:
 
     def _compile_once(self, *, message, selection, projection, operation_observer,
                       context, schema, answer_schema, rules, full_sheet) -> Compilation:
-        sheet = context.sheet
+        sheet = model_context(context)
         user = _prompt(message, sheet)
         system = rules + "\n\nJSON schema of the only acceptable answer:\n" + json.dumps(schema)
         images = _document_images(selection.document_visuals)[1]

@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import archflow_studio_api  # noqa: F401
 from archflow.ports.model import ModelInvocationStatus
+from archflow.state.state_record import Parameter
 from archflow_studio_api.application import intent_agent
 from archflow_studio_api.application.intent_agent import AnthropicCompiler, CodexCompiler, IntentAgentFailed, Selection
 from archflow_studio_api.application.projection import _elements
@@ -31,15 +32,15 @@ SELECTION = Selection("facade", "wall-07")
 
 def scalar_answer(**changes):
     return {
-        "status": "compiled", "targetComponentId": "facade", "elementId": "wall-07",
-        "utterance": "set height to 3.5", "semanticEdit": None,
+        "status": "compiled",
+        "actions": [{"op": "set_parameter", "field": "height", "value": 3.5, "unit": "m"}],
         "why": "Apply the requested height.", "question": None, "contextRefs": [],
         **changes,
     }
 
 
 def supplement(*refs):
-    return scalar_answer(status="needs_context", utterance=None, contextRefs=list(refs), why="Read the named dependency before compiling.")
+    return scalar_answer(status="needs_context", actions=[], contextRefs=list(refs), why="Read the named dependency before compiling.")
 
 
 class ContextProviderTests(unittest.TestCase):
@@ -107,14 +108,10 @@ class ContextProviderTests(unittest.TestCase):
         return json.loads(call["prompt"].split("RECORD SHEET (JSON):\n", 1)[1].split("\n\nREQUEST:\n", 1)[0])
 
     def component_answer(self):
-        wall = self.record.entity("wall-07").to_dict()
-        wall.pop("lineage")
-        wall["fields"]["params"] = {"height": 3.5, "thickness": 0.3}
-        return scalar_answer(utterance=None, semanticEdit={
-            "summary": "Raise and thicken the selected wall.", "entities": [wall],
-            "parameters": [], "relations": [], "removeEntityIds": [],
-            "removeParameterKeys": [], "removeRelationIds": [], "protected": [], "kept": [],
-        })
+        return scalar_answer(actions=[
+            {"op": "set_parameter", "field": "height", "value": 3.5, "unit": "m"},
+            {"op": "set_parameter", "field": "thickness", "value": 300, "unit": "mm"},
+        ])
 
     def test_scalar_adapters_send_small_schema_and_dependency_slice(self):
         for name in PROVIDERS:
@@ -125,20 +122,23 @@ class ContextProviderTests(unittest.TestCase):
                 self.assertEqual(len(provider.calls), 1)
                 call = provider.calls[0]
                 sheet = self.sheet(call)
-                self.assertEqual(sheet["requestContext"]["tier"], "scalar")
-                self.assertEqual(sheet["requestContext"]["targetIds"], ["wall-07"])
-                self.assertEqual(sheet["requestContext"]["editableFields"], ["height"])
+                self.assertEqual([c["field"] for c in sheet["targets"][0]["controls"]], ["height"])
+                self.assertNotIn("requestContext", sheet)
                 self.assertNotIn("producerSignatures", sheet)
                 self.assertNotIn("semanticIds", sheet)
-                self.assertNotIn("remote-wall", {row["elementId"] for row in sheet["elements"]})
-                self.assertEqual(call["schema"]["properties"]["semanticEdit"], {"type": "null"})
+                self.assertNotIn("elements", sheet)
+                self.assertNotIn("semanticEdit", call["schema"]["properties"])
+                self.assertEqual(result.element_id, "wall-07")
+                self.assertEqual(result.utterance, "set params.height to 3.5")
+                self.assertEqual(json.loads(result.receipt.output_json), scalar_answer())
+                self.assertEqual(json.loads(result.raw), scalar_answer())
                 self.assertLess(len(json.dumps(call["schema"])), len(json.dumps(intent_agent.response_schema())) / 4)
                 self.assertEqual(spans[0]["details"]["task_type"], "scalar")
                 self.assertTrue(spans[0]["details"]["validator_pass"])
                 self.assertEqual(spans[0]["usage"]["cached_input_tokens"], 50)
                 self.assertEqual(spans[0]["reported_model"], "exact-context-model")
                 if name == "anthropic":
-                    self.assertEqual(call["max_tokens"], 800)
+                    self.assertEqual(call["max_tokens"], 400)
 
     def test_component_adapters_accept_selected_wall_multi_field_edit(self):
         for name in PROVIDERS:
@@ -146,19 +146,23 @@ class ContextProviderTests(unittest.TestCase):
                 result = self.invoke(provider, COMPONENT_MESSAGE)
                 self.assertIsNotNone(result.semantic_edit)
                 sheet = self.sheet(provider.calls[0])
-                self.assertEqual(sheet["requestContext"]["tier"], "component")
-                self.assertEqual(sheet["requestContext"]["editableFields"], ["height", "thickness"])
+                self.assertEqual([c["field"] for c in sheet["targets"][0]["controls"]], ["height", "thickness"])
+                self.assertEqual(result.semantic_edit["entities"][0]["fields"]["params"], {"height": 3.5, "thickness": 0.3})
+                self.assertEqual(json.loads(result.receipt.output_json), self.component_answer())
+                self.assertNotIn("semanticEdit", json.loads(result.receipt.output_json))
                 if name == "anthropic":
-                    self.assertEqual(provider.calls[0]["max_tokens"], 2400)
+                    self.assertEqual(provider.calls[0]["max_tokens"], 800)
 
     def test_broad_architectural_request_keeps_design_context(self):
-        answer = scalar_answer(status="unsupported", utterance=None, why="This proposal needs an architectural design step.")
+        answer = {"status": "unsupported", "utterance": None, "semanticEdit": None,
+                  "targetComponentId": "facade", "elementId": "wall-07", "question": None,
+                  "why": "This proposal needs an architectural design step.", "contextRefs": []}
         for name in PROVIDERS:
             with self.subTest(provider=name), self.provider(name, [answer]) as provider:
                 result = self.invoke(provider, "reorganize the entire gallery")
                 self.assertEqual(result.status, "unsupported")
                 sheet = self.sheet(provider.calls[0])
-                self.assertEqual(sheet["requestContext"]["tier"], "design")
+                self.assertNotIn("requestContext", sheet)
                 self.assertIn("remote-wall", {row["elementId"] for row in sheet["elements"]})
                 self.assertIn("semanticIds", sheet)
                 if name == "anthropic":
@@ -172,10 +176,10 @@ class ContextProviderTests(unittest.TestCase):
                 self.assertEqual(result.status, "compiled")
                 self.assertEqual(len(provider.calls), 2)
                 first, second = map(self.sheet, provider.calls)
-                self.assertNotIn("remote-wall", {row["elementId"] for row in first["elements"]})
-                self.assertIn("remote-wall", {row["elementId"] for row in second["elements"]})
-                self.assertEqual(first["requestContext"]["targetIds"], second["requestContext"]["targetIds"])
-                self.assertEqual(second["requestContext"]["expansionCount"], 1)
+                self.assertNotIn("remote-wall", json.dumps(first))
+                self.assertIn("remote-wall", json.dumps(second["dependencyFacts"]))
+                self.assertEqual(first["targets"], second["targets"])
+                self.assertNotIn("requestContext", second)
                 self.assertEqual([request.checkpoint_digest for request in provider.requests], ["a" * 64] * 2)
                 self.assertNotEqual(provider.requests[0].context_digest, provider.requests[1].context_digest)
                 self.assertEqual([request.payload["selection"] for request in provider.requests], [{"component_id": "facade", "element_id": "wall-07", "gestures": []}] * 2)
@@ -217,10 +221,12 @@ class ContextProviderTests(unittest.TestCase):
                 self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.MALFORMED)
                 self.assertEqual(len(provider.calls), 3)
                 self.assertEqual(len(spans), 3)
-                self.assertEqual([self.sheet(call)["requestContext"]["expansionCount"] for call in provider.calls], [0, 1, 2])
+                self.assertEqual([span["details"]["retry_attempt"] for span in spans], [0, 1, 2])
 
     def test_wrong_target_or_scalar_field_fails_without_retry(self):
-        answers = [scalar_answer(elementId="remote-wall"), scalar_answer(utterance="set thickness to 0.3")]
+        answers = [scalar_answer(elementId="remote-wall"), scalar_answer(actions=[
+            {"op": "set_parameter", "field": "thickness", "value": 0.3, "unit": "m"},
+        ])]
         for name in PROVIDERS:
             for answer in answers:
                 with self.subTest(provider=name, answer=answer), self.provider(name, [answer]) as provider:
@@ -251,6 +257,37 @@ class ContextProviderTests(unittest.TestCase):
                 self.assertEqual(result.status, "compiled")
                 self.assertEqual(len(provider.calls), 1)
         self.assertEqual(len(observed), 2)
+
+    def test_known_locked_or_shared_control_stops_before_any_provider_call(self):
+        for name in PROVIDERS:
+            for blocker in ("locked", "shared"):
+                with self.subTest(provider=name, blocker=blocker):
+                    self.setUp()
+                    parameter = Parameter("height-control", 3.0, "m",
+                                          lock_authority="design-decision" if blocker == "locked" else None)
+                    entities = []
+                    for entity in self.record.entities:
+                        if entity.entity_id == "wall-07" or (blocker == "shared" and entity.entity_id == "remote-wall"):
+                            entity = replace(entity, fields={**entity.fields, "params": {
+                                **entity.fields.get("params", {}), "height": "@height-control",
+                            }})
+                        entities.append(entity)
+                    self.record = replace(self.record, entities=tuple(entities),
+                                          parameters=(*self.record.parameters, parameter))
+                    elements, error = _elements(self.record)
+                    self.assertIsNone(error)
+                    self.projection = SimpleNamespace(**{**vars(self.projection), "record": self.record,
+                                                        "elements": elements, "parameters": self.record.parameters})
+                    with self.provider(name, []) as provider:
+                        spans = []
+                        result = self.invoke(provider, observer=spans.append)
+                    self.assertEqual(result.status, "unsupported" if blocker == "locked" else "question")
+                    self.assertEqual(result.provider, "deterministic")
+                    self.assertIsNone(result.receipt)
+                    self.assertIsNone(result.semantic_edit)
+                    self.assertIsNone(result.utterance)
+                    self.assertEqual(provider.calls, [])
+                    self.assertEqual(spans, [])
 
 
 if __name__ == "__main__":

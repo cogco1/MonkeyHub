@@ -10,7 +10,7 @@ import archflow_studio_api  # noqa: F401
 from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
 from archflow_studio_api.application.intent_agent import Selection, record_sheet
-from archflow_studio_api.application.intent_context import compile_context, expand_context
+from archflow_studio_api.application.intent_context import compile_context, expand_context, control_unit, model_context
 from archflow_studio_api.application.projection import _elements
 
 
@@ -164,6 +164,140 @@ class IntentContextTests(unittest.TestCase):
                 expand_context(context, sheet, refs, record=record)
         with self.assertRaisesRegex(ValueError, "limit"):
             expand_context(replace(context, expansion_count=2), sheet, ["entity:remote-wall"], record=record)
+
+
+class ModelContextTests(unittest.TestCase):
+    def context(self, record=None):
+        if record is None:
+            record, _ = fixture()
+        return compile_context("set window-23 width to 1.4", sheet_of(record), record=record)
+
+    def test_model_facts_do_not_mutate_or_disclose_private_validation_closure(self):
+        context = self.context()
+        before = deepcopy(context.sheet)
+        public = model_context(context)
+        self.assertEqual(context.sheet, before)
+        self.assertIn("entity:wall-07", context.included_refs)
+        self.assertIn("parameter:module", context.included_refs)
+        self.assertIn("parameterBindings", context.sheet["elements"][1])
+        text = json.dumps(public)
+        for key in ("producer", "parameterBindings", "sourceRef", "basisRefs", "expr", "inputs", "lockAuthority", "tier", "expansionCount", "projectId", "semanticIds", "requestContext"):
+            self.assertNotIn('"' + key + '"', text)
+        self.assertNotIn("window-width", text)
+        control = public["targets"][0]["controls"][0]
+        self.assertEqual((control["field"], control["currentValue"], control["unit"]), ("width", 1.2, "m"))
+        self.assertFalse(control["editable"])
+        self.assertIn("derived", control["reason"])
+        public["targets"][0]["controls"][0]["currentValue"] = 900
+        self.assertEqual(context.sheet, before)
+
+    def test_shared_impact_retains_direct_and_derived_consumers_without_graph_rows(self):
+        record, _ = fixture(shared=True)
+        remote = record.entity("remote-wall")
+        remote = replace(remote, fields={**remote.fields, "params": {"height": "@dependent-size"}})
+        record = replace(record, parameters=(*record.parameters, Parameter("dependent-size", 2.4, "m", inputs=("window-width",))),
+                         entities=tuple(remote if row.entity_id == remote.entity_id else row for row in record.entities))
+        public = model_context(self.context(record))
+        impact = public["targets"][0]["controls"][0]["sharedImpact"]
+        self.assertEqual(impact["affectedCount"], 3)
+        self.assertEqual(impact["affectedObjects"], ["remote-wall", "window-23", "window-24"])
+        self.assertNotIn("elements", public)
+        self.assertNotIn("dependent-size", json.dumps(public))
+
+    def test_unrelated_locks_and_their_constraints_do_not_grow_model_context(self):
+        record, _ = fixture()
+        initial = model_context(self.context(record))
+        locks = tuple(Parameter(f"private-lock-{index}", 1, "m", lock_authority="review:private") for index in range(40))
+        duties = tuple(DesignObligation(f"private-duty-{index}", "Unrelated locked decision", "studio:intent", subject_refs=(f"parameter:private-lock-{index}",)) for index in range(40))
+        record = replace(record, parameters=(*record.parameters, *locks), obligations=(*record.obligations, *duties))
+        context = self.context(record)
+        self.assertIn("parameter:private-lock-39", context.included_refs)
+        self.assertEqual(model_context(context), initial)
+
+    def test_shared_dimension_used_in_a_reference_still_reports_affected_object(self):
+        record, _ = fixture()
+        remote = record.entity("remote-wall")
+        remote = replace(remote, fields={**remote.fields, "references": {"base": {"offset_from": {"level": "level-02", "offset": "@window-width"}}}})
+        record = replace(record, entities=tuple(remote if row.entity_id == remote.entity_id else row for row in record.entities))
+        context = self.context(record)
+        self.assertIn("entity:remote-wall", context.included_refs)
+        impact = model_context(context)["targets"][0]["controls"][0]["sharedImpact"]
+        self.assertEqual(impact["affectedCount"], 2)
+        self.assertIn("remote-wall", impact["affectedObjects"])
+
+    def test_selected_lock_is_a_design_fact_without_lock_owner_identity(self):
+        record, _ = fixture()
+        record = replace(record, parameters=tuple(replace(row, lock_authority="review:secret-owner") if row.key == "window-width" else row for row in record.parameters))
+        public = model_context(self.context(record))
+        control = public["targets"][0]["controls"][0]
+        self.assertFalse(control["editable"])
+        self.assertIn("locked", control["reason"])
+        self.assertNotIn("secret-owner", json.dumps(public))
+
+    def test_shared_control_on_two_fields_of_one_object_is_not_hidden(self):
+        record, _ = fixture()
+        window = record.entity("window-23")
+        window = replace(window, fields={**window.fields, "params": {"width": "@window-width", "height": "@window-width"}})
+        record = replace(record, entities=tuple(window if row.entity_id == window.entity_id else row for row in record.entities))
+        impact = model_context(self.context(record))["targets"][0]["controls"][0]["sharedImpact"]
+        self.assertEqual(impact["affectedCount"], 1)
+        self.assertEqual(impact["coupledFieldsOnThisObject"], ["height"])
+
+    def test_design_conditions_keep_meaning_without_validator_or_source_payload(self):
+        record, _ = fixture()
+        clearance = Relation("clearance-rule", "dependency", "wall-07", "window-23", validator=ValidatorBinding("clearance_interval", interval_m=(0.1, 0.3)))
+        record = replace(record, relations=(*record.relations, clearance))
+        public = model_context(self.context(record))
+        text = json.dumps(public)
+        self.assertIn("Keep the opening daylight ratio", text)
+        self.assertIn("Preserve agreed project limits", text)
+        self.assertIn("Maintain the declared support contact", text)
+        self.assertNotIn("Unrelated wall finish", text)
+        self.assertNotIn('"validator"', text)
+        self.assertNotIn("source_ref", text)
+        self.assertIn({"interval": [0.1, 0.3], "unit": "m"}, [fact["requiredClearance"] for fact in public["designFacts"] if "requiredClearance" in fact])
+
+    def test_units_come_from_bindings_or_the_declared_wall_contract(self):
+        context = self.context()
+        row = next(item for item in context.sheet["elements"] if item["elementId"] == "window-23")
+        self.assertEqual(control_unit(context, row, "width"), "m")
+        self.assertIsNone(control_unit(context, row, "height"))
+        self.assertEqual(control_unit(context, {"producer": "wall"}, "height"), "m")
+        self.assertIsNone(control_unit(context, {"producer": "wall"}, "count"))
+        other = replace(context, sheet={**context.sheet, "parameters": [{"key": "window-width", "unit": "mm"}]})
+        self.assertEqual(control_unit(other, {**row, "producer": "wall"}, "width"), "mm")
+
+    def test_supplement_is_projected_as_read_facts_without_new_actions(self):
+        record, sheet = fixture()
+        context = self.context(record)
+        initial = model_context(context)
+        expanded = expand_context(context, sheet, ["entity:remote-wall"], record=record)
+        public = model_context(expanded)
+        self.assertEqual(public["targets"], initial["targets"])
+        self.assertIn("remote-wall", [fact["name"] for fact in public["dependencyFacts"]])
+        self.assertIn("Unrelated wall finish", json.dumps(public))
+        self.assertNotIn("producer", json.dumps(public))
+        self.assertEqual(expanded.target_ids, context.target_ids)
+
+    def test_component_exposes_only_requested_numeric_controls(self):
+        record, _ = fixture()
+        wall = record.entity("wall-07")
+        wall = replace(wall, fields={**wall.fields, "producer": "wall", "params": {"height": 3.0, "thickness": 0.2}})
+        record = replace(record, entities=tuple(wall if row.entity_id == wall.entity_id else row for row in record.entities))
+        context = compile_context("set wall-07 height to 3.5 and thickness to 0.3", sheet_of(record, Selection("facade", "wall-07")), record=record)
+        public = model_context(context)
+        self.assertEqual([control["field"] for control in public["targets"][0]["controls"]], ["height", "thickness"])
+        self.assertTrue(all(control["unit"] == "m" for control in public["targets"][0]["controls"]))
+        self.assertNotIn("parameters", public)
+        self.assertNotIn("relationships", public)
+
+    def test_design_path_keeps_full_context_without_repeated_signatures(self):
+        record, sheet = fixture()
+        context = compile_context("reorganize the gallery", sheet, record=record)
+        public = model_context(context)
+        self.assertEqual(public["elements"], context.sheet["elements"])
+        self.assertNotIn("producerSignatures", public)
+        self.assertIn("producerSignatures", context.sheet)
 
 
 if __name__ == "__main__":

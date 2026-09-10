@@ -53,6 +53,7 @@ from __future__ import annotations
 import math
 
 from dataclasses import dataclass
+from decimal import Decimal, localcontext
 import re
 from typing import Mapping, Sequence
 from uuid import uuid4
@@ -1132,40 +1133,127 @@ def _draft(
 
 _INCREASE_WORDS = ("提高", "升高", "加高", "抬高", "增高", "加大", "增加", "raise", "increase", "taller", "higher", "up by", "longer", "wider", "thicker")
 _DECREASE_WORDS = ("降低", "减低", "压低", "缩短", "减小", "减少", "lower", "decrease", "shorter", "reduce", "down by", "thinner", "narrower")
-_DELTA = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*(mm|cm|m|毫米|厘米|米)(?![a-z])", re.I)
 _UNIT_TO_M = {"mm": 0.001, "毫米": 0.001, "cm": 0.01, "厘米": 0.01, "m": 1.0, "米": 1.0}
+_ABSOLUTE_MARKER = re.compile(r"\b(?:set|change|adjust|make)\b|改成|改为|设置为|设为|调整为", re.I)
+
+
+def _metric_delta(utterance: str, element_id: str, key: str) -> float | None:
+    """The complete retained delta forms, without accepting a second clause."""
+
+    spoken = re.sub(re.escape(element_id), "", utterance, flags=re.I)
+    if set(_named(spoken, _PROPERTIES_BY_WORD)) - {key}:
+        return None
+    def alternatives(words):
+        return "(?:" + "|".join(re.escape(word) for word in sorted(set(words), key=len, reverse=True)) + ")"
+    direction = alternatives((*_INCREASE_WORDS, *_DECREASE_WORDS))
+    noun = alternatives(word for _, words in _KIND_WORDS for word in words)
+    position = alternatives(word for _, words in (*_COMPASS_WORDS, *_VIEWER_WORDS) for word in words)
+    chinese_field = next((word for name, words in _PROPERTY_WORDS if name == key
+                          for word in words if not word.isascii() and word not in (*_INCREASE_WORDS, *_DECREASE_WORDS)), None)
+    field = alternatives((key, *((chinese_field,) if chinese_field else ())))
+    target = rf"(?:{re.escape(element_id)}|{noun})"
+    quantity = r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm|m|毫米|厘米|米)\s*[.!。！]?"
+    patterns = (
+        rf"(?:请\s*)?(?:把|将)?\s*(?:(?:这面|这堵|这个|选中的|{position})\s*的?\s*)?(?:{target}\s*的?\s*)?(?:{field}\s*)?(?P<direction>{direction})\s*{quantity}",
+        rf"(?:please\s+)?(?P<direction>raise|increase|lower|decrease|reduce)\s+(?:(?:(?:the|this|selected)\s+)?(?:{position}\s+)?{target}(?:'s)?\s+)?(?:{field}\s+)?(?:by\s+)?{quantity}",
+        rf"(?:(?:(?:the|this|selected)\s+)?(?:{position}\s+)?{target}(?:'s)?\s+)?(?:{field}\s+)?(?P<direction>taller|higher|longer|wider|thicker|shorter|thinner|narrower|up|down)\s+by\s+{quantity}",
+    )
+    match = next((matched for pattern in patterns if (matched := re.fullmatch(pattern, utterance.strip(), re.I))), None)
+    if match is None:
+        return None
+    sign = 1.0 if match["direction"].lower() in (*_INCREASE_WORDS, "up") else -1.0
+    value = float(match["number"]) * _UNIT_TO_M[match["unit"].lower()]
+    return sign * value if math.isfinite(value) else None
+
+
+def _absolute_sentence_for(utterance: str, *, resolution: Resolution, projection: StateProjection) -> str | None:
+    """Read one complete metric wall assignment after exact target resolution."""
+
+    if resolution.outcome != COMPILED or resolution.selection is None:
+        return None
+    pending, selection = resolution.pending, resolution.selection
+    key, element_id = pending.requested_semantic_property, pending.element_id
+    if (element_id is None or key not in {"height", "thickness"}
+            or selection.element_id != element_id or selection.gestures or selection.document_visuals):
+        return None
+    element = next((row for row in projection.elements if row.element_id == element_id), None)
+    if (element is None or element.producer != "wall" or key not in element.numeric_fields
+            or selection.component_id != element.component_id):
+        return None
+    # Full matches deliberately exclude keep clauses, negation, alternatives,
+    # multiple values/targets and additional instructions. A resolved selection
+    # is not permission to discard any of those words.
+    target = re.escape(element_id)
+    number_unit = r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm|m|毫米|厘米|米)"
+    field = "高度" if key == "height" else "厚度"
+    patterns = (
+        rf"(?:please\s+)?(?:set|change|adjust)\s+(?:(?:this|the selected|selected)\s+wall|{target})(?:'s)?\s+{key}\s+(?:to|=)\s*{number_unit}\s*[.!]?",
+        rf"(?:请\s*)?(?:把|将)?\s*(?:这面墙|这堵墙|这个墙|选中的墙|{target})\s*的?\s*{field}\s*(?:改成|改为|设置为|设为|调整为)\s*{number_unit}\s*[。！]?",
+    )
+    match = next((matched for pattern in patterns if (matched := re.fullmatch(pattern, utterance.strip(), re.I))), None)
+    if match is None:
+        return None
+    record = getattr(projection, "record", None)
+    if record is None:
+        return None
+    from .intent_context import IntentContext, control_unit
+    from .intent_requests import action_preflight
+    row = {"elementId": element_id, "componentId": element.component_id, "producer": element.producer,
+           "parameterBindings": element.bindings, "numericFields": element.numeric_fields}
+    context = IntentContext("scalar", {"elements": [row], "parameters": [item.to_dict() for item in record.parameters]},
+                            target_ids=(element_id,), producer_ids=(element.producer,), editable_fields=(key,))
+    # The same record-based preflight governs both model actions and this
+    # shortcut, including derived consumers, type defaults and nested refs.
+    if action_preflight(context, record) is not None:
+        return None
+    if control_unit(context, row, key) != "m":
+        return None
+    binding = element.bindings.get(key)
+    if binding is not None:
+        binding = binding.removeprefix("@")
+        parameter = next((item for item in projection.parameters if item.key == binding), None)
+        if parameter is None or parameter.inputs or parameter.epistemic_status == "derived":
+            return None
+    # Decimal conversion keeps the explicitly written value; no rounding of a
+    # small dimension into zero and no scientific notation outside the grammar.
+    with localcontext() as context:
+        context.prec = max(len(match["number"]), 28) + 8
+        value = Decimal(match["number"]) * Decimal(str(_UNIT_TO_M[match["unit"].lower()]))
+        if not math.isfinite(float(value)) or value <= 0:
+            return None
+        number = format(value, "f")
+    if "." in number:
+        number = number.rstrip("0").rstrip(".")
+    return f"set {'parameter:' + binding if binding is not None else key} to {number}"
 
 
 def grammar_sentence_for(utterance: str, *, resolution: Resolution, projection: StateProjection) -> str | None:
-    """The grammar sentence an absolute delta means, when the request already resolved to one
-    element and one numeric field: "提高 0.1m" on a height of 9.798 is ``set height to 9.898``.
+    """Keep exact grammar, translate closed wall assignments, or read the existing delta forms.
 
-    Only a number with a length unit and a direction word is read; "略微" or a bare "提高" is
-    not a number and stays the value slot the architect fills. Element params are bare numbers
-    in metres (the record's unit), so mm and cm are converted and a bare "m" is taken as is.
+    Absolute assignments require one resolved control with verified metre units.
+    The retained delta path reads "提高 0.1m" on 9.798 as ``set height to 9.898``.
     """
+
+    if parse_utterance(utterance) is not None:
+        return utterance
+    if _ABSOLUTE_MARKER.search(utterance):
+        # A partially understood assignment must not fall through to a delta
+        # word in its second clause and silently lose the rest of the request.
+        return _absolute_sentence_for(utterance, resolution=resolution, projection=projection)
 
     pending = resolution.pending
     element_id = pending.element_id
     key = pending.requested_semantic_property
-    if element_id is None or key is None:
-        return None
-    match = _DELTA.search(utterance)
-    if match is None:
-        return None
-    lowered = utterance.lower()
-    if any(w in lowered for w in _INCREASE_WORDS):
-        sign = 1.0
-    elif any(w in lowered for w in _DECREASE_WORDS):
-        sign = -1.0
-    else:
+    if resolution.outcome != COMPILED or element_id is None or key is None:
         return None
     element = next((e for e in projection.elements if e.element_id == element_id), None)
     if element is None or key not in element.numeric_fields:
         return None
     old = element.numeric_fields[key]
-    delta = float(match.group(1)) * _UNIT_TO_M[match.group(2).lower()]
-    new = round(float(old) + sign * delta, 6)
+    delta = _metric_delta(utterance, element_id, key)
+    if delta is None:
+        return None
+    new = round(float(old) + delta, 6)
     return f"set {key} to {new}"
 
 

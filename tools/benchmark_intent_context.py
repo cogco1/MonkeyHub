@@ -33,6 +33,7 @@ from archflow_studio_api.application.intent_agent import (
     record_sheet, response_schema,
 )
 from archflow_studio_api.application.projection import StateProjection, _elements
+from archflow_studio_api.application.intent_context import model_context
 
 
 def _cached_tokenizer_file(blobpath: str, expected_hash: str | None = None) -> bytes:
@@ -168,13 +169,17 @@ def benchmark(sibling_counts, count):
             if context.tier != expected_tier:
                 raise ValueError(f"benchmark case {expected_tier} unexpectedly compiled as {context.tier}")
             legacy = _measure(message, sheet, legacy_schema, SYSTEM_PROMPT, count)
-            compiled = _measure(message, context.sheet, prepared["schema"], prepared["rules"], count)
+            sent_sheet = model_context(context)
+            compiled = _measure(message, sent_sheet, prepared["schema"], prepared["rules"], count)
             rows.append({
                 "sibling_count": sibling_count, "task_type": context.tier,
                 "project_element_count": len(projection.elements),
-                "sent_element_count": len(context.sheet["elements"]),
-                "sent_type_count": len(context.sheet["types"]),
-                "sent_obligation_count": len(context.sheet.get("obligations", [])),
+                "sent_element_count": len(sent_sheet.get("elements", [])),
+                "sent_type_count": len(sent_sheet.get("types", [])),
+                "sent_target_count": len(sent_sheet.get("targets", [])),
+                "sent_design_fact_count": len(sent_sheet.get("designFacts", [])),
+                "private_element_count": len(context.sheet.get("elements", [])),
+                "private_obligation_count": len(context.sheet.get("obligations", [])),
                 "max_output_tokens": MAX_OUTPUT_TOKENS[context.tier],
                 "legacy": legacy, "compiled": compiled,
                 "input_text_tokens_removed": legacy["input_text_tokens"] - compiled["input_text_tokens"],
