@@ -11,7 +11,7 @@ from archflow.project.refs import ProjectVersionRef
 from archflow.state.state_record import Entity, Lineage, Parameter, StateRecord, apply_state_record_operator
 from archflow_studio_api.application.intent import component_edit_proposal, parse_utterance
 from archflow_studio_api.application.intent_agent import _parse_answer, _strict_response_schema, record_sheet, response_schema, Selection
-from archflow_studio_api.application.intent_context import IntentContext
+from archflow_studio_api.application.intent_context import IntentContext, compile_context, model_context
 from archflow_studio_api.application.intent_requests import action_answer, action_preflight, provider_schema, request_schema, validate_request_answer
 from archflow_studio_api.application.projection import _elements
 
@@ -238,13 +238,23 @@ class IntentRequestSchemaTests(unittest.TestCase):
         wall = record.entity("wall-07")
         wall = replace(wall, fields={**wall.fields, "params": {**wall.fields["params"], "thickness": "@wall_height"}})
         record = replace(record, entities=tuple(wall if item.entity_id == wall.entity_id else item for item in record.entities))
-        self.assertEqual(action_preflight(_context(record), record)["status"], "question")
-        context = _context(record, tier="component", fields=("height", "thickness"))
+        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
+        single = compile_context("set wall-07 height to 4", sheet, record=record)
+        self.assertEqual(single.tier, "scalar")
+        self.assertEqual(action_preflight(single, record)["status"], "question")
+        self.assertFalse(model_context(single)["targets"][0]["controls"][0]["editable"])
+        context = compile_context("set wall-07 height to 4 and thickness to 4", sheet, record=record)
+        self.assertEqual(context.tier, "component")
+        self.assertEqual(context.editable_fields, ("height", "thickness"))
+        self.assertIsNone(action_preflight(context, record))
         with self.assertRaisesRegex(ValueError, "conflicting"):
             action_answer(_answer(_action(value=4), _action("thickness", 5)), context, record)
         result = action_answer(_answer(_action(value=4), _action("thickness", 4)), context, record)
         self.assertEqual(result["semanticEdit"]["parameters"], [{"key": "wall_height", "value": 4}])
         self.assertEqual(result["semanticEdit"]["entities"], [])
+        controls = model_context(context)["targets"][0]["controls"]
+        self.assertEqual({control["field"]: control["editable"] for control in controls},
+                         {"height": True, "thickness": True})
 
     def test_design_contract_and_factored_strict_validation_are_preserved(self):
         record = _record()

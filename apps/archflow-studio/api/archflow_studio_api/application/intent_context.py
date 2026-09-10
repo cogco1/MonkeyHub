@@ -418,8 +418,9 @@ def model_context(context: IntentContext) -> dict[str, Any]:
                 coupled_fields = [key for key, value in row.get("parameterBindings", {}).items()
                                   if key != field and isinstance(value, str) and value.removeprefix("@") in affected_parameters]
                 if len(consumers) > 1 or coupled_fields:
-                    control["editable"] = False
-                    control.setdefault("reason", "This dimension is shared; decide which objects and dimensions should change before editing it.")
+                    if len(consumers) > 1 or any(key not in context.editable_fields for key in coupled_fields):
+                        control["editable"] = False
+                        control.setdefault("reason", "This dimension is shared; decide which objects and dimensions should change before editing it.")
                     names = sorted(_display_name(item) for item in consumers)
                     control["sharedImpact"] = {
                         "affectedCount": len(consumers),
