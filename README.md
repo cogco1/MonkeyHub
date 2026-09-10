@@ -1,5 +1,8 @@
 # ArchFlow V4
 
+New teammate or agent? Start with the [团队与 Agent 接入清单](docs/TEAM_ONBOARDING.md):
+which repository to use, the first runnable task, setup commands, and the current release boundary.
+
 **Less work serving the tools. More room to develop architectural ideas.**
 
 ArchFlow explores infrastructure for people and AI to work on architectural
