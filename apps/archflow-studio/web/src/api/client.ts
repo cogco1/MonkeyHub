@@ -194,8 +194,8 @@ export const studio = {
   combineCandidates(body: CombineCandidatesRequestDto): Promise<CandidateAcceptedDto> {
     return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ body }));
   },
-  designHistory(branchId = "main"): Promise<DesignHistoryDto> {
-    return call("GET /api/design-history", readCommittedDesignHistoryApiDesignHistoryGet({ query: { branchId } }));
+  designHistory(branchId = "main", signal?: AbortSignal): Promise<DesignHistoryDto> {
+    return call("GET /api/design-history", readCommittedDesignHistoryApiDesignHistoryGet({ query: { branchId }, signal }));
   },
   initializeStage(body: InitializeDesignStageRequestDto): Promise<DesignStageDto> {
     return call("POST /api/design-stages/initialize", initializeCommittedDesignApiDesignStagesInitializePost({ body }));
@@ -246,10 +246,10 @@ export const studio = {
     return call("GET /api/projects", readProjectsApiProjectsGet());
   },
 
-  state(run?: string, sourceStageRef?: string | null): Promise<StateProjectionDto> {
+  state(run?: string, sourceStageRef?: string | null, signal?: AbortSignal): Promise<StateProjectionDto> {
     return call(
       "GET /api/state",
-      readStateApiStateGet({ query: { run, sourceStageRef } }),
+      readStateApiStateGet({ query: { run, sourceStageRef }, signal }),
     );
   },
 
@@ -333,8 +333,8 @@ export const studio = {
     return call("GET /api/semantics", readSemanticsApiSemanticsGet());
   },
 
-  artifacts(): Promise<ArtifactListDto> {
-    return call("GET /api/artifacts", readArtifactsApiArtifactsGet());
+  artifacts(signal?: AbortSignal): Promise<ArtifactListDto> {
+    return call("GET /api/artifacts", readArtifactsApiArtifactsGet({ signal }));
   },
 
   recordModelLoad(body: ModelLoadTimingDto): Promise<MonitorWriteDto> {
@@ -362,13 +362,14 @@ export const studio = {
    * The name is the receipt's; the digest in the path is what the server
    * verifies the bytes against before it sends them.
    */
-  async artifactFile(sha256: string, fileName: string, trace?: OperationTrace): Promise<File> {
+  async artifactFile(sha256: string, fileName: string, trace?: OperationTrace, signal?: AbortSignal): Promise<File> {
     const blob = await call<Blob>(
       `GET /api/artifacts/${sha256}/bytes`,
       readArtifactBytesApiArtifactsSha256BytesGet({
         path: { sha256 },
         headers: traceHeaders(trace),
         parseAs: "blob",
+        signal,
       }) as Promise<FieldsResult<Blob>>,
     );
     return new File([blob], fileName, { type: "application/octet-stream" });

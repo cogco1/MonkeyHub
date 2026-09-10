@@ -3481,6 +3481,12 @@ export type ProjectArtifactDto = {
     runId: string;
     modelSource?: ModelSourceDto | null;
     /**
+     * Sourcestageref
+     *
+     * The committed source Stage declared by this run's retained candidate delta, matched to the artifact's run state. Listing metadata; editing and acceptance verify the full state.
+     */
+    sourceStageRef?: string | null;
+    /**
      * Stageid
      */
     stageId: string | null;

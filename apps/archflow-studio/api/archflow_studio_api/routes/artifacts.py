@@ -100,7 +100,7 @@ def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query
 def read_artifacts(request: Request) -> ArtifactListDto:
     """List the exported models, each one still answered for by its receipt."""
 
-    return to_dto(list_artifacts(bound_project(request.app.state)))
+    return to_dto(list_artifacts(bound_project(request.app.state), include_candidate_sources=True))
 
 
 @router.post(

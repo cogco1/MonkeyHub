@@ -60,7 +60,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError, error_sentence
-from .binding import ProjectBinding, record_kind
+from .binding import ProjectBinding, ReferenceRun, record_kind
 from .projection import StateProjection, project_state, require_actionable
 
 # A file digest, as it travels in a path parameter. Lowercase because that is
@@ -161,6 +161,9 @@ class ArtifactRecord:
     # preview is a mesh for looking at; the exact file is the delivery.
     representation: str
     model_source: ModelSource | None = None
+    # The committed source declared by this run's retained candidate delta.
+    # Listing metadata only; continuing or accepting still verifies the state.
+    source_stage_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -574,7 +577,7 @@ def save_viewport_capture(
     )
 
 
-def list_artifacts(binding: ProjectBinding) -> ArtifactListing:
+def list_artifacts(binding: ProjectBinding, *, include_candidate_sources: bool = False) -> ArtifactListing:
     """Every artifact certified by a receipt in this project, run by run."""
 
     records: list[ArtifactRecord] = []
@@ -603,12 +606,48 @@ def list_artifacts(binding: ProjectBinding) -> ArtifactListing:
                     skipped.append(run_id)
                 continue
             records.extend(_artifacts(binding, run_id, ref, payload, index))
+    if include_candidate_sources:
+        sources: dict[str, tuple[str, str] | None] = {}
+        for row_index, record in enumerate(records):
+            if record.design_state_digest is None:
+                continue
+            if record.run_id not in sources:
+                sources[record.run_id] = _candidate_stage_source(binding, record.run_id)
+            source = sources[record.run_id]
+            if source is not None and source[0] == record.design_state_digest:
+                records[row_index] = replace(record, source_stage_ref=source[1])
     records.sort(key=lambda item: (item.run_id, item.stage_id or "", item.file_name))
     return ArtifactListing(
         project_id=binding.project_id,
         artifacts=tuple(records),
         skipped_runs=tuple(skipped),
     )
+
+
+def _candidate_stage_source(binding: ProjectBinding, run_id: str) -> tuple[str, str] | None:
+    """Read a candidate's retained state digest and committed source, without a view."""
+
+    try:
+        delta = binding.candidate_delta(run_id)
+        if delta is None or delta.get("source_stage_ref") is None:
+            return None
+        newest = binding.newest_runner_receipt(run_id)
+        if newest is None:
+            return None
+        # reference_run also surveys every project run for projection warnings.
+        # Use its same receipt chooser here, without that unrelated survey.
+        reference = ReferenceRun(binding.load_run(run_id), "query", newest[1])
+        _, record = binding.exact_state_record(reference)
+        state_digest = newest[1].get("design_state_digest")
+        if (delta.get("result_record_digest") != record.digest or
+                not isinstance(state_digest, str) or not SHA256_HEX.fullmatch(state_digest)):
+            return None
+        stage_ref = ProjectRecordRef.from_dict(delta["source_stage_ref"])
+        binding.design_stage(stage_ref)
+        return state_digest, stage_ref.uri
+    except (StudioError, ProjectRepositoryError, KeyError, TypeError, ValueError, OSError):
+        # A missing or invalid candidate source must not hide certified bytes.
+        return None
 
 
 def require_model_source(

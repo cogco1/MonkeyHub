@@ -71,6 +71,11 @@ class ProjectArtifactDto(BaseModel):
     )
     run_id: str = Field(alias="runId")
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
+    source_stage_ref: str | None = Field(
+        alias="sourceStageRef", default=None,
+        description="The committed source Stage declared by this run's retained candidate delta, "
+        "matched to the artifact's run state. Listing metadata; editing and acceptance verify the full state.",
+    )
     stage_id: str | None = Field(alias="stageId")
     file_name: str = Field(alias="fileName")
     relative_path: str | None = Field(
@@ -243,6 +248,7 @@ def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
             ModelSource(record.run_id, record.design_state_digest, record.sha256)
             if record.design_state_digest and record.sha256 and record.format == "3dm" and record.available else None
         )),
+        source_stage_ref=record.source_stage_ref,
         stage_id=record.stage_id,
         file_name=record.file_name,
         relative_path=record.relative_path,

@@ -11,9 +11,10 @@ from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.adapters import occt_backend
-from archflow.project.record_kinds import DESIGN_STAGE
+from archflow.project.record_kinds import DESIGN_STAGE, STUDIO_CANDIDATE_DELTA
 from archflow.project.refs import record_ref_from_uri
 from archflow.state.state_record import StateRecordEditKind, StateRecordOperator
+from archflow_studio_api.application.artifacts import list_artifacts
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.candidate import replay_candidate, run_operator
 from archflow_studio_api.application.projection import project_state
@@ -100,6 +101,87 @@ class DesignHistoryTests(CandidateTestCase):
         with TestClient(create_app(self.settings)) as restarted:
             self.assertEqual(self.history(client=restarted)["stages"], [initial, stage])
         self.assertEqual(self.repository.read_head(), self.initial_head)
+
+    def test_artifact_candidate_source_survives_cold_read_without_projection(self) -> None:
+        initial = self.initialize()
+        candidate = self.candidate_from(initial)
+        state = self.client.get("/api/state", params={"run": candidate}).json()
+        second_model = register_model(self.client, candidate, state["stateDigest"], self.model_bytes + b"\n")
+        with TestClient(create_app(self.settings)) as restarted:
+            binding = bound_project(restarted.app.state)
+            with (
+                patch("archflow_studio_api.application.artifacts.project_state", side_effect=AssertionError("listing projected a state")),
+                patch("archflow_studio_api.application.projection.project_state", side_effect=AssertionError("listing projected a state")),
+                patch("archflow_studio_api.application.catalog.build_catalog", side_effect=AssertionError("listing built a catalog")),
+                patch("archflow_studio_api.application.design_history.read_stage", side_effect=AssertionError("listing read a full Stage view")),
+                patch.object(binding, "_survey", side_effect=AssertionError("candidate source surveyed every run")),
+                patch.object(binding, "candidate_delta", wraps=binding.candidate_delta) as read_delta,
+            ):
+                response = restarted.get("/api/artifacts")
+            self.assertEqual(response.status_code, 200, response.text)
+            rows = response.json()["artifacts"]
+            candidates = [row for row in rows if row["runId"] == candidate]
+            self.assertEqual(len(candidates), 2)
+            self.assertTrue(all(row["sourceStageRef"] == initial["stageRef"] for row in candidates))
+            self.assertTrue(all(row["modelSource"]["stateDigest"] == state["stateDigest"] for row in candidates))
+            self.assertTrue(all(row["sourceStageRef"] is None for row in rows if row["runId"] == REFERENCE_RUN_ID))
+            self.assertEqual(sum(call.args == (candidate,) for call in read_delta.call_args_list), 1)
+            # Internal artifact reads and downloads keep their original cost.
+            with patch.object(binding, "candidate_delta", side_effect=AssertionError("internal artifact read asked for candidate metadata")):
+                self.assertTrue(all(row.source_stage_ref is None for row in list_artifacts(binding).artifacts))
+                downloaded = restarted.get(f"/api/artifacts/{second_model['modelSource']['assetSha256']}/bytes")
+                self.assertEqual(downloaded.status_code, 200, downloaded.text)
+                self.assertEqual(downloaded.content, self.model_bytes + b"\n")
+        self.assertEqual(self.repository.read_head(), self.initial_head)
+
+    def test_invalid_candidate_source_does_not_hide_artifacts(self) -> None:
+        initial = self.initialize()
+        candidate = self.candidate_from(initial)
+        binding = bound_project(self.app.state)
+        run = binding.load_run(candidate)
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=candidate)
+        delta_ref = next(ref for ref in binding.record_refs(candidate) if ref.record_kind == STUDIO_CANDIDATE_DELTA)
+        delta = self.repository.load_json(delta_ref)
+        runner_ref, runner = binding.newest_runner_receipt(candidate)
+        initial_ref = record_ref_from_uri(initial["stageRef"], PROJECT_ID)
+        initial_stage = binding.design_stage(initial_ref)
+        uncommitted = self.repository.put_json(
+            run=self.repository.load_run(initial_stage.candidate_id),
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=initial_stage.candidate_id),
+            record_kind=DESIGN_STAGE,
+            payload={**self.repository.load_json(initial_ref), "label": "Uncommitted"},
+        )
+        cases = (
+            (delta_ref, delta, "source_stage_ref", uncommitted.to_dict()),
+            (delta_ref, delta, "source_stage_ref", {**initial_ref.to_dict(), "project_id": "another-project"}),
+            (delta_ref, delta, "result_record_digest", "0" * 64),
+            (delta_ref, delta, "run_id", "another-run"),
+            (delta_ref, delta, "project_id", "another-project"),
+            (runner_ref, runner, "state_record_ref", initial_stage.record_ref.uri),
+            (runner_ref, runner, "state_record_digest", "0" * 64),
+            (runner_ref, runner, "design_state_digest", "0" * 64),
+        )
+        for original_ref, original, field, value in cases:
+            with self.subTest(record_kind=original_ref.record_kind, field=field, value=value):
+                changed = self.repository.put_json(
+                    run=run, destination=destination, record_kind=original_ref.record_kind,
+                    payload={**original, field: value},
+                )
+                # Replace one fixture record through P036 so its stored hash is
+                # valid and the cold reader must detect the semantic mismatch.
+                self.repository.layout.resolve_record(original_ref).unlink()
+                try:
+                    with TestClient(create_app(self.settings)) as restarted:
+                        response = restarted.get("/api/artifacts")
+                        self.assertEqual(response.status_code, 200, response.text)
+                        rows = [row for row in response.json()["artifacts"] if row["runId"] == candidate]
+                        self.assertEqual(len(rows), 1)
+                        self.assertTrue(rows[0]["available"])
+                        self.assertIsNone(rows[0]["sourceStageRef"])
+                finally:
+                    self.repository.put_json(run=run, destination=destination,
+                                             record_kind=original_ref.record_kind, payload=original)
+                    self.repository.layout.resolve_record(changed).unlink()
 
     def test_competing_candidate_stays_available_after_branch_head_advances(self) -> None:
         initial = self.initialize()
