@@ -100,11 +100,11 @@ try {
       const filename = id.split("?")[0].replaceAll("\\", "/"), root = webRoot.replaceAll("\\", "/");
       if (filename === `${root}/src/main.tsx`) return { code: `
         import { createRoot } from "react-dom/client";
-        import { convertToExcalidrawElements, newElementWith, CaptureUpdateAction } from "@excalidraw/excalidraw";
+        import { convertToExcalidrawElements, newElementWith, CaptureUpdateAction, FONT_FAMILY } from "@excalidraw/excalidraw";
         import Board from "./workspaces/monkeyboard/Board";
         import { UserPreferencesProvider } from "./features/settings/preferences";
         import "./styles.css";
-        window.__boardHelpers = { convertToExcalidrawElements, newElementWith, CaptureUpdateAction };
+        window.__boardHelpers = { convertToExcalidrawElements, newElementWith, CaptureUpdateAction, FONT_FAMILY };
         window.__boardInitialElements = convertToExcalidrawElements(${JSON.stringify(seeds)}, { regenerateIds: false });
         createRoot(document.getElementById("root")).render(<UserPreferencesProvider><Board onSubmit={() => { throw new Error("Unexpected design handoff"); }} /></UserPreferencesProvider>);
       `, map: null };
@@ -301,8 +301,68 @@ try {
   assert.deepEqual(activeIds(afterUpload, "frame"), activeIds(reopened, "frame"));
   assert.deepEqual(activeIds(afterUpload, "image"), activeIds(reopened, "image"));
   assert.deepEqual(saved.elements, persisted(afterUpload.elements), "The dialog completes only after its updated scene is saved");
+
+  // Clear marks through both real buttons, with a single keyboard undo/redo.
+  // Include a real Crit pen stroke and arrow/text bindings to a retained page.
+  await page.getByRole("button", { name: "Crit mode", exact: true }).click();
+  await page.mouse.move(800, 450); await page.mouse.down();
+  await page.mouse.move(840, 470, { steps: 6 }); await page.mouse.move(890, 450, { steps: 6 }); await page.mouse.up();
+  await page.waitForFunction(() => window.__boardApi.getSceneElements().some((element) => element.type === "freedraw"));
+  await page.evaluate(() => {
+    const api = window.__boardApi;
+    const { newElementWith, convertToExcalidrawElements, CaptureUpdateAction } = window.__boardHelpers;
+    const marks = convertToExcalidrawElements([
+      { type: "arrow", id: "bound-arrow", x: 950, y: 200, width: 150, height: 80, points: [[0, 0], [150, 80]] },
+      { type: "text", id: "arrow-label", x: 960, y: 210, text: "Move this edge", fontFamily: window.__boardHelpers.FONT_FAMILY.Helvetica },
+      { type: "text", id: "loose-note", x: 1000, y: 350, text: "Review note", fontFamily: window.__boardHelpers.FONT_FAMILY.Helvetica },
+      { type: "rectangle", id: "box-mark", x: 1000, y: 450, width: 120, height: 60 },
+      { type: "diamond", id: "diamond-mark", x: 1000, y: 550, width: 80, height: 80 },
+    ], { regenerateIds: false }).map((element) => element.id === "bound-arrow"
+      ? newElementWith(element, { startBinding: { elementId: "kept-image", focus: 0, gap: 1, fixedPoint: null }, boundElements: [{ id: "arrow-label", type: "text" }] })
+      : element.id === "arrow-label" ? newElementWith(element, { containerId: "bound-arrow" }) : element);
+    const elements = api.getSceneElementsIncludingDeleted().map((element) => element.id === "kept-image"
+      ? newElementWith(element, { boundElements: [{ id: "bound-arrow", type: "arrow" }] }) : element);
+    api.updateScene({ elements: [...elements, ...marks], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  });
+  await page.getByRole("button", { name: "Exit", exact: true }).click();
+  const beforeClear = await readScene();
+  const markIds = beforeClear.elements.filter((element) => !element.isDeleted && !["image", "frame"].includes(element.type)).map(({ id }) => id).sort();
+  assert.ok(markIds.length >= 8, "The fixture covers freehand, lines, shapes, bound text and loose notes");
+  const preservedIds = beforeClear.elements.filter((element) => !element.isDeleted && ["image", "frame"].includes(element.type)).map(({ id }) => id).sort();
+  const clear = page.getByRole("button", { name: "Clear annotations", exact: true });
+  const waitCleared = () => page.waitForFunction((ids) => ids.every((id) => !window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
+  const waitRestored = () => page.waitForFunction((ids) => ids.every((id) => window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
+  await clear.click(); await waitCleared();
+  assert.equal(await clear.isEnabled(), false);
+  const cleared = await readScene();
+  for (const id of preservedIds) {
+    assert.deepEqual(geometry(byId(cleared, id)), geometry(byId(beforeClear, id)), `Clear preserves page/frame geometry: ${id}`);
+    assert.deepEqual(byId(cleared, id).customData, byId(beforeClear, id).customData);
+    assert.equal(byId(cleared, id).fileId, byId(beforeClear, id).fileId);
+    assert.equal(byId(cleared, id).name, byId(beforeClear, id).name);
+  }
+  assert.deepEqual(byId(cleared, "kept-image").boundElements, [], "Retained pages must not point at deleted arrows");
+  // No extra canvas click: the button must restore keyboard focus itself.
+  await page.keyboard.press("Control+z"); await waitRestored();
+  assert.deepEqual(byId(await readScene(), "kept-image").boundElements, byId(beforeClear, "kept-image").boundElements);
+  await page.keyboard.press("Control+Shift+z"); await waitCleared();
+  await page.keyboard.press("Control+z"); await waitRestored();
+  await page.getByRole("button", { name: "Crit mode", exact: true }).click();
+  await clear.click(); await waitCleared();
+  await page.keyboard.press("Control+z"); await waitRestored();
+  await clear.click(); await waitCleared();
+  await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "Saved");
+  assert.ok(markIds.every((id) => saved.elements.find((element) => element.id === id)?.isDeleted));
+  const seenBeforeReopen = [...saved.seenDocuments];
+  await page.goto(`${origin}/?view=board&lang=zh-CN`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
+  await waitCleared();
+  assert.equal(await page.getByRole("button", { name: "清除批注", exact: true }).isEnabled(), false);
+  assert.deepEqual(activeIds(await readScene(), "image"), activeIds(beforeClear, "image"));
+  assert.deepEqual(activeIds(await readScene(), "frame"), activeIds(beforeClear, "frame"));
+  assert.deepEqual(saved.seenDocuments, seenBeforeReopen);
   assert.deepEqual(failures, []); assert.deepEqual(escaped, []);
-  console.log(JSON.stringify({ passed: "real Excalidraw page 1 to page 0 replacement, crop rescaling, concurrent edits, save/reload and upload UI mapping", writes: writes.length, uploads: uploads.length, documentReads, fileReads: fileReads.length }));
+  console.log(JSON.stringify({ passed: "real Excalidraw page replacement, clear annotations, immediate undo/redo in normal/Crit modes, and save/reopen", writes: writes.length, uploads: uploads.length, documentReads, fileReads: fileReads.length }));
 } catch (error) {
   console.error(JSON.stringify({ failures, escaped, writes: writes.length, documentReads,
     visible: await page?.locator("body").innerText().catch(() => "") }));
