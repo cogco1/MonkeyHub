@@ -191,7 +191,7 @@ try {
 ` + marker), map: null };
         }
         if (modulePath !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;
-        const marker = '  const booting = session.status === "idle" || session.status === "loading";';
+        const marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
         assert.equal(source.split(marker).length, 2);
         return { code: source.replace(marker, marker + `
           (window as unknown as { __candidatePreview: unknown }).__candidatePreview = {
@@ -912,6 +912,8 @@ try {
   });
 
   await step("drawing wait ends only after its returned revision is downloaded and painted", async () => {
+    const viewTools = page.locator('button[aria-controls="view-tools"]');
+    if (await viewTools.getAttribute("aria-expanded") === "false") await viewTools.click();
     documentGate = deferred();
     await page.evaluate(() => { let resolve; const promise = new Promise((done) => { resolve = done; });
       window.__documentRenderGate = { waiting: false, promise, resolve }; });
@@ -935,6 +937,9 @@ try {
   });
 
   await step("failed drawing requests close their independent action without model tokens", async () => {
+    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
+    const viewTools = page.locator('button[aria-controls="view-tools"]');
+    if (await viewTools.getAttribute("aria-expanded") === "false") await viewTools.click();
     drawingFailure = true;
     await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
     const root = await until(() => latestDiagnostic("drawing_wait"), (row) => row.status === "failed", "Drawing did not report failure");
