@@ -22,6 +22,7 @@ _DETAIL_KEYS = {
     "model_inference_ms", "active_wait_ms", "between_actions_ms", "unattributed_ms", "input_bytes", "output_bytes",
     "retry_attempt", "retry_reason", "wait_reason", "http_status", "duplicate_status", "comparison_event_id",
     "duplicate_reason", "opportunity_refs", "stable_input_parts",
+    "context_budget", "task_type", "success", "validator_pass", "validator_scope", "escalation",
 }
 _IDENTITY_KEYS = {
     "context_digest", "prompt_sha256", "provider_fingerprint", "program_digest", "source_program_digest",
@@ -35,6 +36,58 @@ _LIST_DETAILS = {
 }
 _COUNT_DETAILS = {"model_inference_ms", "active_wait_ms", "between_actions_ms", "unattributed_ms", "input_bytes",
                   "output_bytes", "retry_attempt", "http_status"}
+_CONTEXT_SECTIONS = {"intent", "system", "schema", "state", "preferences", "dependencies", "overhead"}
+_CONTEXT_CONTRIBUTORS = _CONTEXT_SECTIONS | {
+    "all_components", "type_registry", "relations", "parameters", "component_definitions",
+    "levels", "grids", "readings", "entities", "constraints",
+}
+
+
+def _context_budget(value: object) -> None:
+    """The only allowed context report contains bounded labels and numeric estimates."""
+
+    keys = {
+        "basis", "estimator", "section_tokens", "estimated_input_tokens", "budget_tokens",
+        "exceeded", "expected_max_output_tokens", "image_count", "image_tokens",
+        "provider_overhead_included", "largest_contributors",
+    }
+    if not isinstance(value, Mapping) or set(value) != keys:
+        raise ValueError("unsupported context budget field")
+    if value["basis"] != "text_estimate":
+        raise ValueError("context budget is an estimate, never provider usage")
+    if not isinstance(value["estimator"], str) or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,80}", value["estimator"]):
+        raise ValueError("context estimator must be a bounded identifier")
+    sections = value["section_tokens"]
+    if not isinstance(sections, Mapping) or set(sections) != _CONTEXT_SECTIONS:
+        raise ValueError("unsupported context section")
+    for name, count in sections.items():
+        _count(count, name)
+        if count is None:
+            raise ValueError("context section estimate must be known")
+    for name in ("estimated_input_tokens", "budget_tokens", "expected_max_output_tokens", "image_count"):
+        _count(value[name], name)
+        if name != "expected_max_output_tokens" and value[name] is None:
+            raise ValueError("context budget count must be known")
+    if value["estimated_input_tokens"] != sum(sections.values()):
+        raise ValueError("context total must sum disjoint text sections")
+    if type(value["exceeded"]) is not bool or value["exceeded"] != (value["estimated_input_tokens"] > value["budget_tokens"]):
+        raise ValueError("context exceeded flag must reflect its estimate")
+    if value["provider_overhead_included"] is not False or value["image_tokens"] is not None:
+        raise ValueError("text estimates cannot claim provider framing or image usage")
+    largest = value["largest_contributors"]
+    if not isinstance(largest, (list, tuple)) or len(largest) > 5:
+        raise ValueError("context report must have at most five contributors")
+    names = set()
+    for entry in largest:
+        if not isinstance(entry, Mapping) or set(entry) != {"name", "estimated_tokens"}:
+            raise ValueError("unsupported context contributor field")
+        name = entry["name"]
+        if not isinstance(name, str) or name not in _CONTEXT_CONTRIBUTORS or name in names:
+            raise ValueError("unsupported or duplicate context contributor")
+        names.add(name)
+        _count(entry["estimated_tokens"], "estimated_tokens")
+        if entry["estimated_tokens"] is None:
+            raise ValueError("context contributor estimate must be known")
 
 
 def diagnostic_details(value: Mapping[str, object]) -> dict[str, object]:
@@ -46,6 +99,17 @@ def diagnostic_details(value: Mapping[str, object]) -> dict[str, object]:
     for name, detail in result.items():
         if name in _COUNT_DETAILS:
             _count(detail, name)
+        elif name == "context_budget":
+            _context_budget(detail)
+        elif name in {"success", "validator_pass", "escalation"}:
+            if detail is not None and type(detail) is not bool:
+                raise ValueError(f"{name} must be bool or None")
+        elif name == "task_type":
+            if not isinstance(detail, str) or detail not in {"scalar", "component", "design", "scalar_edit", "component_edit", "design_edit", "unknown"}:
+                raise ValueError("unsupported context task type")
+        elif name == "validator_scope":
+            if detail is not None and detail != "request_output":
+                raise ValueError("unsupported model validator scope")
         elif name in _LIST_DETAILS:
             if not isinstance(detail, (list, tuple)) or any(not isinstance(item, str) or not item.strip() for item in detail):
                 raise ValueError(f"{name} must contain identifier strings")

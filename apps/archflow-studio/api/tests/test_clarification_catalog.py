@@ -217,6 +217,22 @@ class CameraAndCompassTests(VillaLikeTestCase):
         self.assertIn("orientation", pending["missingSlots"])
         self.assertEqual(sorted(c["elementId"] for c in pending["candidates"]), ["portico-columns-east", "portico-columns-west"])
 
+    def test_a_resolved_containing_kind_does_not_hide_other_instructions(self) -> None:
+        for utterance in (
+            "不要把左侧柱廊的柱子提高 0.1m",
+            "如果空间允许，把左侧柱廊的柱子提高 0.1m",
+            "把左侧柱廊的柱子提高 0.1m，同时保持屋顶不变",
+            "把左侧柱廊的柱子提高 0.1m keep entity:level-ground",
+            "把左侧柱廊的柱子提高 0.1m，再把屋顶提高 0.2m",
+            "把左侧柱廊的柱子提高 0.1-0.2m",
+            "把左侧柱廊的柱子提高到 0.1m",
+            "把左侧保护柱廊的柱子提高 0.1m",
+        ):
+            with self.subTest(utterance=utterance):
+                status, payload = self.ask(utterance, camera=CAMERA)
+                self.assertNotEqual(status, 201, payload)
+                self.assertNotIn("proposal", payload)
+
     def test_a_declared_name_names_the_component_outright(self) -> None:
         status, payload = self.ask("把西边的柱子提高 0.1m")
         self.assertEqual(status, 201, payload)

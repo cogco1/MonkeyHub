@@ -132,7 +132,7 @@
     },
     {
       "path": "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
-      "function": "compile",
+      "function": "_compile_once",
       "operations": [
         "write_text",
         "write_bytes"

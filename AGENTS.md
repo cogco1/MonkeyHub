@@ -126,9 +126,13 @@ registry (`governance/module_registry.json`, rendered as `docs/SYSTEM_MAP.md`). 
 capability has exactly one owner there. `docs/CANONICAL_SPINE.md` records the earlier
 consolidation decision, not a migration to rerun. Before writing code:
 
-1. Locate the relevant owner in `docs/SYSTEM_MAP.md`; read that entry, not the whole tree.
-2. Find the capability the request needs in the registry: which module `owns` it, what that
-   module `does_not_own`, its contract (`inputs`, `outputs`, `public_api`, `invariants`).
+1. Find the owner with `python tools/devctl.py module <id-or-keywords>` (for example,
+   `module wall`), then query the exact module id. It returns the registered contract,
+   dependencies, source paths and tests without dumping the whole registry or system map.
+2. Read what that module `owns`, `does_not_own`, and its contract (`inputs`, `outputs`,
+   `public_api`, `invariants`). Output is paged: follow any omitted-entry notice with
+   `--section <name> --offset <n>`; use `--json` for structured output. Read the matching
+   `docs/SYSTEM_MAP.md` entry only when additional map context is needed.
 3. Check that owner's public API and real callers for an existing implementation.
 4. Decide EXTEND (default), REFACTOR, or CREATE. CREATE needs a written reason why no owner
    fits; a second implementation of an owned capability is allowed only behind an interface

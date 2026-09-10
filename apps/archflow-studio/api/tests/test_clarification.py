@@ -18,11 +18,16 @@ contract, not the agent.
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
+from dataclasses import replace
 import shutil
 import tempfile
 import unittest
 
 from fastapi.testclient import TestClient
+
+from archflow.project.repository import FilesystemProjectRepository
+from archflow.state.state_record import Entity, Parameter
 
 from archflow_studio_api.application import clarification
 from archflow_studio_api.application.binding import bound_project
@@ -33,16 +38,18 @@ from archflow_studio_api.application.clarification import (
     resolve,
 )
 from archflow_studio_api.application.intent_agent import CODEX, Compilation, Selection
-from archflow_studio_api.application.projection import project_state
+from archflow_studio_api.application.projection import _elements, project_state
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
 from .support import (
     PROJECT_ID,
+    RECORD_PAYLOAD,
     advance_head,
     make_portico_project,
     retain_runner_receipt,
     runner_state_digest,
+    write_runner_record,
 )
 
 ROOFS = "portico-roofs"
@@ -491,6 +498,229 @@ class TheResolverAnswersWithoutAnAgent(PorticoTestCase):
             {answer.outcome for answer in (compiled, asks, missing, stalled)},
             set(clarification.OUTCOMES),
         )
+
+
+class ExplicitMetricWallAssignments(PorticoTestCase):
+    """A complete numeric wall request yields a proposal without an agent call."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository = FilesystemProjectRepository.initialize(
+            self.root / PROJECT_ID, project_id=PROJECT_ID,
+            initial_state={"project_id": PROJECT_ID, "version": 0},
+        )
+        self.wall_payload = deepcopy(RECORD_PAYLOAD)
+        self.wall_payload["entities"] = [entity for entity in self.wall_payload["entities"] if entity["schema"] != "Element@1"]
+        self.wall_payload["entities"].append({
+            "entity_id": "wall-07", "schema": "Element@1", "parent_id": "portico",
+            "fields": {
+                "component_id": "portico", "producer": "wall", "params": {"height": 3.0, "thickness": 0.2},
+                "references": {"base": {"level": "level-ground"}, "line": {
+                    "from": {"axis_point": {"axis": "front", "along": 0.0}},
+                    "to": {"axis_point": {"axis": "front", "along": 4.0}},
+                }},
+            },
+        })
+        self.wall_payload["parameters"] = []
+        self.wall_payload["relations"] = []
+        self.run_count = 0
+        self.use_payload(self.wall_payload)
+
+    def use_payload(self, payload):
+        self.run_count += 1
+        run_id = f"wall-reference-{self.run_count}"
+        run = self.repository.create_run(run_id)
+        write_runner_record(self.repository, payload)
+        self.state_digest = runner_state_digest(self.repository, run_id, payload)
+        retain_runner_receipt(self.repository, run, design_state_digest=self.state_digest, record_payload=payload)
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID, reference_run=run_id))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        self.addCleanup(self.app.state.jobs.shutdown)
+
+    def test_english_chinese_and_exact_id_assignments_skip_the_configured_agent(self):
+        compiler = scripted(status="question", question="The shortcut should handle this request.")
+        self.app.state.intent_compiler = compiler
+        for message, field, expected in (
+            ("把这面墙的高度改成 3200 毫米", "height", 3.2),
+            ("set this wall height to 3.2 m", "height", 3.2),
+            ("请将选中的墙的厚度设置为 30 厘米。", "thickness", 0.3),
+            ("change wall-07 thickness to 300 mm", "thickness", 0.3),
+        ):
+            with self.subTest(message=message):
+                status, payload = self.say(message, targetComponentId="portico", elementId="wall-07")
+                self.assertEqual(status, 201, payload)
+                self.assertEqual(payload["proposal"]["target"]["elementId"], "wall-07")
+                self.assertEqual(payload["proposal"]["change"]["new"], expected)
+                self.assertEqual(payload["agent"]["provider"], "deterministic")
+                self.assertEqual(payload["agent"]["compiledUtterance"], f"set {field} to {expected}")
+        self.assertEqual(compiler.calls, [])
+
+    def test_extra_instructions_values_conditions_and_missing_units_reach_the_agent_unchanged(self):
+        for message in (
+            "set this wall height to 3.2 m and thickness to 0.3 m",
+            "set this wall height to 3.2 or 3.5 m",
+            "set this wall height to 3.2-3.5 m",
+            "set this wall height to 3.2 m if it fits",
+            "do not set this wall height to 3.2 m",
+            "set this wall height to 3.2 m and raise the roof by 1 m",
+            "set wall-07 height to 3.2 m and wall-08 height to 3.5 m",
+            "set this wall height to 3.2 m keep entity:level-ground",
+            "把这面墙的高度改成3200毫米，同时保持屋顶不变",
+            "set this wall height to 3.2",
+            "set this wall height to 10 ft",
+        ):
+            with self.subTest(message=message):
+                compiler = scripted(status="question", question="Please resolve the remaining design choice.")
+                self.app.state.intent_compiler = compiler
+                status, payload = self.say(message, targetComponentId="portico", elementId="wall-07")
+                self.assertNotEqual(status, 201, payload)
+                self.assertEqual([call["message"] for call in compiler.calls], [message])
+
+    def test_original_grammar_keeps_protection_and_existing_delta_still_skips_the_agent(self):
+        compiler = scripted(status="question", question="The grammar should handle this request.")
+        self.app.state.intent_compiler = compiler
+        original = "set height to 3.2 keep entity:level-ground"
+        status, payload = self.say(original, targetComponentId="portico", elementId="wall-07")
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(payload["agent"]["compiledUtterance"], original)
+        status, payload = self.say("把这面墙的高度提高100毫米", targetComponentId="portico", elementId="wall-07")
+        self.assertEqual(status, 201, payload)
+        self.assertEqual(payload["proposal"]["change"]["new"], 3.1)
+        self.assertEqual(compiler.calls, [])
+
+    def test_delta_never_discards_protection_negation_ranges_or_other_work(self):
+        for message in (
+            "raise this wall height by 100 mm keep entity:level-ground",
+            "do not raise this wall height by 100 mm",
+            "raise this wall height to 3.2 m",
+            "raise this wall height by 100 mm if it fits",
+            "raise this wall height by 100-200 mm",
+            "raise this wall height by 100 mm and thickness by 20 mm",
+            "raise this wall height rotate the wall by 100 mm",
+            "把这面墙的高度提高100毫米，同时保持屋顶不变",
+            "不要把这面墙的高度提高100毫米",
+            "把这面墙的高度提高到3200毫米",
+        ):
+            with self.subTest(message=message):
+                compiler = scripted(status="question", question="The remaining request must be preserved.")
+                self.app.state.intent_compiler = compiler
+                status, payload = self.say(message, targetComponentId="portico", elementId="wall-07")
+                self.assertNotEqual(status, 201, payload)
+                self.assertEqual([call["message"] for call in compiler.calls], [message])
+
+    def test_exclusive_declared_metre_parameter_is_edited_without_replacing_its_binding(self):
+        payload = deepcopy(self.wall_payload)
+        payload["entities"][-1]["fields"]["params"]["height"] = "@wall-height"
+        payload["parameters"] = [Parameter("wall-height", 3.0, "m", epistemic_status="declared").to_dict()]
+        self.use_payload(payload)
+        compiler = scripted(status="question", question="The shortcut should preserve the parameter binding.")
+        self.app.state.intent_compiler = compiler
+        status, answer = self.say("把这面墙的高度改成3200毫米", targetComponentId="portico", elementId="wall-07")
+        self.assertEqual(status, 201, answer)
+        self.assertEqual(answer["agent"]["compiledUtterance"], "set parameter:wall-height to 3.2")
+        self.assertEqual(answer["proposal"]["change"]["new"], 3.2)
+        self.assertEqual(compiler.calls, [])
+        self.assertEqual(self.projection().record.entity("wall-07").fields["params"]["height"], "@wall-height")
+
+    def test_unknown_producer_and_bound_units_do_not_gain_an_implicit_conversion(self):
+        for producer, unit in (("prism", None), ("wall", "mm"), ("wall", ""), ("wall", "deg")):
+            with self.subTest(producer=producer, unit=unit):
+                payload = deepcopy(self.wall_payload)
+                payload["entities"][-1]["fields"]["producer"] = producer
+                if unit is not None:
+                    payload["entities"][-1]["fields"]["params"]["height"] = "@wall-height"
+                    payload["parameters"] = [Parameter("wall-height", 3.0, unit, epistemic_status="declared").to_dict()]
+                self.use_payload(payload)
+                compiler = scripted(status="question", question="The native unit needs to be established.")
+                self.app.state.intent_compiler = compiler
+                message = "set this wall height to 3.2 m"
+                status, answer = self.say(message, targetComponentId="portico", elementId="wall-07")
+                self.assertNotEqual(status, 201, answer)
+                self.assertEqual([call["message"] for call in compiler.calls], [message])
+
+    def test_unresolved_controls_and_shared_derived_or_locked_bindings_are_not_shortcuts(self):
+        projection = self.projection()
+        message = "set this wall height to 3.2 m"
+        resolution = resolve(projection, utterance=message, selection=Selection("portico", "wall-07"))
+        self.assertEqual(resolution.outcome, clarification.COMPILED)
+        variants = (
+            replace(resolution, selection=None),
+            replace(resolution, outcome=clarification.NEEDS_CLARIFICATION),
+            replace(resolution, pending=replace(resolution.pending, requested_semantic_property="thickness")),
+            replace(resolution, pending=replace(resolution.pending, element_id=None)),
+        )
+        for unresolved in variants:
+            self.assertIsNone(clarification.grammar_sentence_for(message, resolution=unresolved, projection=projection))
+        wall = projection.record.entity("wall-07")
+        for parameter, shared in (
+            (Parameter("wall-height", 3.0, "m", epistemic_status="declared", lock_authority="human:lock"), False),
+            (Parameter("wall-height", 3.0, "m", epistemic_status="derived"), False),
+            (Parameter("wall-height", 3.0, "m", expr="3.0", epistemic_status="derived"), False),
+            (Parameter("wall-height", 3.0, "m", epistemic_status="declared"), True),
+        ):
+            fields = {**wall.fields, "params": {**wall.fields["params"], "height": "@wall-height"}}
+            entities = tuple(replace(item, fields=fields) if item.entity_id == wall.entity_id else item for item in projection.record.entities)
+            if shared:
+                entities += (replace(wall, entity_id="wall-08", fields=fields),)
+            record = replace(projection.record, entities=entities, parameters=(parameter,))
+            elements, error = _elements(record)
+            self.assertIsNone(error)
+            variant = replace(projection, record=record, elements=elements, parameters=record.parameters)
+            self.assertIsNone(clarification.grammar_sentence_for(message, resolution=resolution, projection=variant))
+
+    def test_transitive_type_and_nested_reference_consumers_use_the_same_action_preflight(self):
+        projection = self.projection()
+        wall = projection.record.entity("wall-07")
+        source = Parameter("source_height", 3.0, "m", epistemic_status="declared")
+        doubled = Parameter("double_height", 6.0, "m", expr="2 * source_height", epistemic_status="derived")
+        target = replace(wall, fields={**wall.fields, "params": {**wall.fields["params"], "height": "@source_height"}})
+        consumer = replace(wall, entity_id="wall-08", fields={
+            **wall.fields, "params": {**wall.fields["params"], "height": "@double_height"},
+        })
+        shared_type = Entity("shared-wall-type", "Type@1", {"producer": "wall", "params": {"height": "@source_height"}})
+        typed_consumer = replace(wall, entity_id="wall-08", fields={
+            **wall.fields, "type_ref": "shared-wall-type", "params": {"thickness": 0.2},
+        })
+        nested_consumer = replace(wall, entity_id="wall-08", fields={
+            **wall.fields, "references": {**wall.fields["references"], "line": {
+                "from": {"axis_point": {"axis": "front", "along": "@source_height"}},
+                "to": {"axis_point": {"axis": "front", "along": 4.0}},
+            }},
+        })
+        message = "set this wall height to 3.2 m"
+        for label, extra, parameters in (
+            ("derived parameter consumer", (consumer,), (source, doubled)),
+            ("type default consumer", (shared_type, typed_consumer), (source,)),
+            ("nested reference consumer", (nested_consumer,), (source,)),
+        ):
+            with self.subTest(case=label):
+                record = replace(projection.record, parameters=parameters,
+                    entities=tuple(target if item.entity_id == wall.entity_id else item for item in projection.record.entities) + extra)
+                payload = record.to_dict()
+                self.use_payload(payload)
+                compiler = scripted(status="question", question="Which shared dimensions should change?")
+                self.app.state.intent_compiler = compiler
+                status, answer = self.say(message, targetComponentId="portico", elementId="wall-07")
+                self.assertNotEqual(status, 201, answer)
+                self.assertEqual([call["message"] for call in compiler.calls], [message])
+
+    def test_inherited_top_reference_cannot_be_overwritten_by_the_shortcut(self):
+        projection = self.projection()
+        wall = projection.record.entity("wall-07")
+        wall_type = Entity("wall-type", "Type@1", {"producer": "wall", "references": {"top": {"level": "level-ground"}}})
+        target = replace(wall, fields={**wall.fields, "type_ref": "wall-type"})
+        record = replace(projection.record, entities=tuple(target if item.entity_id == wall.entity_id else item for item in projection.record.entities) + (wall_type,))
+        elements, error = _elements(record)
+        self.assertIsNone(error)
+        variant = replace(projection, record=record, elements=elements)
+        message = "set this wall height to 3.2 m"
+        # A no-catalog resolution still cannot bypass record-based inherited
+        # top checks at this last deterministic entry point.
+        resolution = resolve(variant, utterance=message, selection=Selection("portico", "wall-07"))
+        self.assertEqual(resolution.outcome, clarification.COMPILED)
+        self.assertIsNone(clarification.grammar_sentence_for(message, resolution=resolution, projection=variant))
 
 
 def clarification_payload() -> dict[str, object]:

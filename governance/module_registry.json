@@ -3881,7 +3881,10 @@
         "retaining local work-item options, common comparison base, explicit scope and selected option in the common-base run; checking scope and unchanged composed contents without issuing or superseding other work items",
         "preparing transient client-rendered document page and saved-ink PNGs for the existing Codex and Anthropic compilers; distinguishing one exact edit page from explicitly selected reference pages and retaining their metadata in the existing document comment",
         "explicit initial Stage acceptance, candidate acceptance and historical fork through portfolio rules and P036; WorkingCopy remains Exploration",
-        "preserving optional exact baseStageRef on new Explorations while legacy WorkingCopy labels and choices remain readable without inferred acceptance"
+        "preserving optional exact baseStageRef on new Explorations while legacy WorkingCopy labels and choices remain readable without inferred acceptance",
+        "Compiling scalar/component numeric actions or a complete design request; the StateRecord dependency closure remains private while model-facing facts expose only requested controls and relevant design consequences; at most two exact-reference supplements preserve writable targets and the original checkpoint",
+        "Preflight text-section budget estimates and response-schema/request-scope checks before the existing proposal compiler; repeated JSON subschemas are shared without changing their accepted values",
+        "Offline context-size benchmark using the same request preparation with an in-memory provider capture, with tokenizer identity or an explicit heuristic and no inference call"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4014,7 +4017,8 @@
         "adapters.three_dm_inspector",
         "studio.shell",
         "state.design_portfolio",
-        "project.repository"
+        "project.repository",
+        "state.stage_workflow"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4059,7 +4063,10 @@
         "clarification continuations reuse the original transient document image bytes and references; explicit context changes are refused; complete ink travels as an overlay with concise annotation summaries, never a full point array in the model prompt; deduplicated images and their purpose mapping bind the existing model invocation identity",
         "candidate generation and option selection never commit a Stage; explicit acceptance verifies retained replay, model and validation before exact branch-head CAS",
         "ordinary Stage acceptance never issues canonical HEAD; repeat acceptance returns the same committed Stage",
-        "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base"
+        "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base",
+        "A scoped request retains the complete validation closure privately; the model proposes numeric actions without copying records, identifiers, bindings or provenance. Server adaptation preserves untouched data, normalizes declared units, and refuses silent shared, derived or locked-control changes; ambiguous and structural requests retain full design context",
+        "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
+        "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters"
       ],
       "status": "canonical",
       "tests": [
@@ -4077,7 +4084,11 @@
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_document_visual_providers.py",
         "apps/archflow-studio/api/tests/test_design_history.py",
-        "apps/archflow-studio/api/tests/test_model_usage.py"
+        "apps/archflow-studio/api/tests/test_model_usage.py",
+        "apps/archflow-studio/api/tests/test_intent_context.py",
+        "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
+        "apps/archflow-studio/api/tests/test_intent_context_providers.py",
+        "apps/archflow-studio/api/tests/test_intent_budget.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4096,7 +4107,11 @@
         "apps/archflow-studio/api/archflow_studio_api/application/episodes.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
         "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_budget.py",
+        "tools/benchmark_intent_context.py"
       ]
     },
     {
@@ -4117,7 +4132,8 @@
         "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call",
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
-        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web"
+        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web",
+        "Reading a positive advisory intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4472,11 +4488,12 @@
     {
       "module_id": "tools.devctl",
       "owner_path": "tools/devctl.py",
-      "purpose": "Read governance/work_registry.json and render the two generated ledgers: the dynamic map and the planning index.",
+      "purpose": "Read governance registries through bounded module lookup and render the generated development, capability and semantic maps.",
       "owns": [
         "loading ArchFlowDevelopmentRegistry@2 and its statuses (active, ready, blocked)",
         "the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished",
-        "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER"
+        "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
+        "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
@@ -4484,14 +4501,17 @@
         "any archflow behaviour: it reads the semantic tables and the phase ladder to render them and defines none of them"
       ],
       "inputs": [
-        "governance/work_registry.json"
+        "governance/work_registry.json",
+        "governance/module_registry.json",
+        "module query, optional section and bounded page limit/offset"
       ],
       "outputs": [
         "docs/DYNAMIC_MAP.md",
         "docs/mapping/planning/INDEX.md",
         "docs/SYSTEM_MAP.md",
         "docs/SEMANTIC_REGISTRY.md",
-        "exit code"
+        "exit code",
+        "Bounded plain-text or JSON module lookup on stdout, including omitted-section counts"
       ],
       "public_api": [
         "load_registry",
@@ -4509,12 +4529,14 @@
       "invariants": [
         "the registry holds only unfinished work; a finished card is deleted along with its entry",
         "both ledgers are generated, never hand-edited",
-        "the ladder table is generated from PHASE_LADDER, never hand-written, so the map cannot drift from the enum"
+        "the ladder table is generated from PHASE_LADDER, never hand-written, so the map cannot drift from the enum",
+        "Module lookup reads the registry only, imports no target source, and changes neither registry nor generated maps"
       ],
       "status": "canonical",
-      "tests": [],
-      "notes": "Pure governance tooling; it puts its own tree on sys.path so a worktree renders itself and not whichever archflow is importable.",
-      "untested_reason": "governance CLI that renders docs from the registries; run by hand, output is committed and diffed"
+      "tests": [
+        "tests/test_devctl_module.py"
+      ],
+      "notes": "Pure governance tooling; it puts its own tree on sys.path so a worktree renders itself and not whichever archflow is importable."
     },
     {
       "module_id": "tools.freeze_project_stage_workflow",
@@ -5284,7 +5306,8 @@
         "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads",
         "Read-only HTTP delivery of the four shared appearance, translation and base-style assets through the existing loopback boundary",
         "Explicitly selected Codex task/child-source families and known turn intervals; distinct model-call, service, client-wait and agent-turn timing views",
-        "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities"
+        "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities",
+        "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -5343,7 +5366,8 @@
         "Shared asset URLs are an exact allowlist with JavaScript or CSS content types; other paths never expose a source directory",
         "Only explicitly selected Codex paths are read; lineage uses recorded session/parent ids, repeated source snapshots count once and token event gaps never become model duration",
         "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration",
-        "Interaction wall time comes only from an explicit client root; active waits and between-action time remain separate and overlapping child durations are never summed into a total; repeated inputs alone do not prove an avoidable retry or eligible provider cache"
+        "Interaction wall time comes only from an explicit client root; active waits and between-action time remain separate and overlapping child durations are never summed into a total; repeated inputs alone do not prove an avoidable retry or eligible provider cache",
+        "Estimated section tokens never substitute for actual provider input/output/cache tokens; each context expansion keeps its own usage and model"
       ],
       "status": "canonical",
       "tests": [
@@ -5351,7 +5375,8 @@
         "tests/monkeymonitor/test_server.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",
         "tests/monkeymonitor/test_web_timing.py",
-        "apps/archflow-studio/api/tests/test_model_load_monitoring.py"
+        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "apps/archflow-studio/api/tests/test_intent_budget.py"
       ],
       "notes": "CREATE explicitly requested by user. Existing ports.model owns provider receipt transport; neither it nor architectural workflow/evaluation owners owns cross-application token accounting, rates and engineering budget advice. Independent Python package and local UI; no separate architectural authority.",
       "files": [
