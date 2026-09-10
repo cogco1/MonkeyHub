@@ -1152,9 +1152,14 @@ def _metric_delta(utterance: str, element_id: str, key: str) -> float | None:
                           for word in words if not word.isascii() and word not in (*_INCREASE_WORDS, *_DECREASE_WORDS)), None)
     field = alternatives((key, *((chinese_field,) if chinese_field else ())))
     target = rf"(?:{re.escape(element_id)}|{noun})"
+    chinese_noun = alternatives(word for _, words in _KIND_WORDS for word in words if not word.isascii())
+    # A resolved object can be named through one containing kind, as in
+    # "柱廊的柱子". Only this noun phrase expands; the complete request still
+    # excludes conditions, protection clauses and any other operation.
+    chinese_target = rf"(?:{chinese_noun}\s*的\s*)?{target}"
     quantity = r"(?P<number>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm|m|毫米|厘米|米)\s*[.!。！]?"
     patterns = (
-        rf"(?:请\s*)?(?:把|将)?\s*(?:(?:这面|这堵|这个|选中的|{position})\s*的?\s*)?(?:{target}\s*的?\s*)?(?:{field}\s*)?(?P<direction>{direction})\s*{quantity}",
+        rf"(?:请\s*)?(?:把|将)?\s*(?:(?:这面|这堵|这个|选中的|{position})\s*的?\s*)?(?:{chinese_target}\s*的?\s*)?(?:{field}\s*)?(?P<direction>{direction})\s*{quantity}",
         rf"(?:please\s+)?(?P<direction>raise|increase|lower|decrease|reduce)\s+(?:(?:(?:the|this|selected)\s+)?(?:{position}\s+)?{target}(?:'s)?\s+)?(?:{field}\s+)?(?:by\s+)?{quantity}",
         rf"(?:(?:(?:the|this|selected)\s+)?(?:{position}\s+)?{target}(?:'s)?\s+)?(?:{field}\s+)?(?P<direction>taller|higher|longer|wider|thicker|shorter|thinner|narrower|up|down)\s+by\s+{quantity}",
     )
