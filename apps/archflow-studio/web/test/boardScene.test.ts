@@ -28,7 +28,7 @@ async function harness(t: TestContext) {
 }
 
 test("drawing revisions remain distinct when their file bytes are identical", async (t) => {
-  const { documentKey, drawingLineageKey, pageKey, pageSource, findSource } = await harness(t);
+  const { documentKey, pageKey, pageSource, findSource } = await harness(t);
   const first = document();
   const second = document({ revisionRef: "project://project-a/runs/drawing-run/records/drawing-revision-2.json" });
   const anotherRun = document({ runId: "another-run" });
@@ -39,9 +39,25 @@ test("drawing revisions remain distinct when their file bytes are identical", as
   assert.notEqual(pageKey(pageSource(first, 0)), pageKey(pageSource(first, 1)));
   assert.equal(findSource([second, anotherRun, first], pageSource(first, 1)), first);
   assert.equal(findSource([first], pageSource(second, 1)), undefined, "matching pixels cannot substitute another drawing revision");
-  assert.equal(drawingLineageKey(first), drawingLineageKey(second), "revisions of one named drawing occupy one board position");
-  assert.notEqual(drawingLineageKey(first), drawingLineageKey(document({ drawingId: "west-elevation" })));
-  assert.equal(drawingLineageKey(document({ drawingId: null, revisionRef: null })), null, "uploaded originals are never guessed to replace each other");
+});
+
+test("explicit page replacements resolve reordered deliveries without guessing names or page numbers", async (t) => {
+  const { pageKey, pageSource, pageReplacements } = await harness(t);
+  const original = document({ drawingId: null, revisionRef: null });
+  const middle = document({ runId: "middle", assetSha256: "b".repeat(64), drawingId: null, revisionRef: null,
+    pageCount: 1, pages: [{ pageIndex: 0, width: 800, height: 1200, rotation: 90 }],
+    replacesPages: [{ ...pageSource(original, 1), newPageIndex: 0 }] });
+  const latest = document({ runId: "latest", assetSha256: "c".repeat(64), drawingId: null, revisionRef: null,
+    replacesPages: [{ ...pageSource(middle, 0), newPageIndex: 1 }] });
+  for (const documents of [[latest, original, middle], [original, middle, latest]]) {
+    const mapping = pageReplacements(documents);
+    assert.deepEqual(mapping.get(pageKey(pageSource(original, 1))), pageSource(latest, 1));
+    assert.deepEqual(mapping.get(pageKey(pageSource(middle, 0))), pageSource(latest, 1));
+    assert.equal(mapping.has(pageKey(pageSource(original, 0))), false, "another page in the same file is not replaced");
+  }
+  assert.equal(pageReplacements([original, document({ runId: "same-name", assetSha256: "d".repeat(64) })]).size, 0);
+  assert.throws(() => pageReplacements([original, middle, { ...latest, replacesPages: [{ ...pageSource(original, 1), newPageIndex: 0 }] }]), /competing/);
+  assert.throws(() => pageReplacements([{ ...original, replacesPages: [{ ...pageSource(middle, 0), newPageIndex: 1 }] }, middle]), /earlier page/);
 });
 
 test("retained received identities keep a removed drawing absent while allowing its next revision", async (t) => {

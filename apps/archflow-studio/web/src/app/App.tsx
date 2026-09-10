@@ -215,7 +215,7 @@ export default function App({ server, initialDocumentIntent }: {
     },
     [append],
   );
-  const { session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
+  const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
     initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef } : undefined);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
   const documentIntentStarted = useRef(false);
@@ -2400,9 +2400,11 @@ export default function App({ server, initialDocumentIntent }: {
   // The tab is still starting up until the API has answered for the binding. This carries
   // the launcher's exact-status convention into the browser and ends when the shell has a
   // project to name.
-  const booting = session.status === "idle" || session.status === "loading";
+  // Registered source pages need a project binding, not a restored 3D editing base.
+  const canOpenDocuments = documentView.open && documentView.runId !== null && binding !== null;
+  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");
 
-  if (session.status === "failed" || missingChosenModel) {
+  if ((session.status === "failed" || missingChosenModel) && !canOpenDocuments) {
     const error = session.status === "failed" ? session.error
       : artifacts.status === "failed" ? artifacts.error : baseError;
     return (
@@ -2424,6 +2426,10 @@ export default function App({ server, initialDocumentIntent }: {
             onClick={() => void changeEditingBase(null)}>
             {t("stage.base.default")}
           </button>
+          {binding && documentView.mounted && documentView.runId && <button type="button" className="btn"
+            onClick={() => setDocumentView((current) => ({ ...current, open: true }))}>
+            {t("workspace.monkeydiagram")}
+          </button>}
         </div>
       </div>
     );
@@ -2594,7 +2600,7 @@ export default function App({ server, initialDocumentIntent }: {
         ) : null}
         stage={
           <Stage
-            key={project?.projectId ?? "unbound"}
+            key={binding?.projectId ?? "unbound"}
             viewportRef={viewportRef}
             message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : viewerMessage}
             status={artifactLoadingSha !== null ? "loading" : viewerStatus}
@@ -2611,7 +2617,7 @@ export default function App({ server, initialDocumentIntent }: {
             annotationsReady={modelAnnotations.ready && !modelLoading &&
               (loadedArtifacts.length > 0 || sourceLabel === LOCAL_SOURCE_LABEL)}
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
-            documentProjectId={project?.projectId ?? null}
+            documentProjectId={binding?.projectId ?? null}
             documentView={documentView}
             drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
               dismissError: () => setDrawingError(null), generate: (view) => { void generateElevation(view); } } : undefined}
@@ -2672,7 +2678,7 @@ export default function App({ server, initialDocumentIntent }: {
             explicitBase={sourceRunId !== null}
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}
-            baseActionBusy={proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy || selectingWorkingCopy}
+            baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy || selectingWorkingCopy}
             onContinue={(runId) => void changeEditingBase(runId)}
             onDefaultBase={() => void changeEditingBase(null)}
             evidenceCounts={evidenceCounts}

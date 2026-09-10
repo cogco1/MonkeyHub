@@ -3374,7 +3374,8 @@
         "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
         "registering model-axis elevation revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt",
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
-        "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation"
+        "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation",
+        "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3390,7 +3391,8 @@
         "run id and base64 PNG bytes",
         "named run, source file name, MIME type and base64 original bytes",
         "optional StudioEventSink for successful API registration or option additions",
-        "optional source run for project-wide discovery or project source-material upload"
+        "optional source run for project-wide discovery or project source-material upload",
+        "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices"
       ],
       "outputs": [
         "ArtifactListing",
@@ -3420,6 +3422,7 @@
         "document_bytes",
         "SourceDocument",
         "DocumentPage",
+        "DocumentPageReplacement",
         "ModelSource",
         "register_model_asset",
         "require_model_source",
@@ -3461,7 +3464,8 @@
         "only a completed new model registration emits model_asset.registered; exact-source retries, including concurrent requests in one process, and failed registration emit no new-model event",
         "drawing requests refuse a partial native STEP for a complete composed model; document bytes resolve the requested drawing revision and verify its retained source and artifact hashes",
         "new generated drawing registrations retain their original UTC generatedAt through cold reads and idempotent reuse; legacy and uploaded documents carry no inferred generation time",
-        "GET documents without runId returns all registered project documents with each original run/revision; an omitted upload run uses studio-documents and creates no model, design Stage or canonical transition"
+        "GET documents without runId returns all registered project documents with each original run/revision; an omitted upload run uses studio-documents and creates no model, design Stage or canonical transition",
+        "replacement mappings never infer correspondence from filenames or drawing names, never rewrite the old source or its annotations, and require equal visible-page aspect ratios for in-place board updates"
       ],
       "status": "canonical",
       "tests": [
@@ -3491,7 +3495,8 @@
         "optimistic scene replacement against the exact last saved revision; a stale tab cannot overwrite another save",
         "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts",
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
-        "mapping one explicitly selected drawing and its board marks to page coordinates, then handing its exact saved annotations and user feedback to the existing Studio intent workflow"
+        "mapping one explicitly selected drawing and its board marks to page coordinates, then handing its exact saved annotations and user feedback to the existing Studio intent workflow",
+        "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -3548,7 +3553,8 @@
         "apps/archflow-studio/web/test/boardSaveQueue.test.ts",
         "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
         "apps/archflow-studio/web/test/boardFeedback.test.ts",
-        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs"
+        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
+        "apps/archflow-studio/web/test/boardReplacement.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },

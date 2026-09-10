@@ -304,7 +304,9 @@
         "apps/archflow-studio/web/src/features/settings/SettingsPanel.tsx",
         "apps/archflow-studio/web/test/settingsPanel.browser.mjs",
         "apps/archflow-studio/web/test/versionNotifications.browser.mjs",
-        "apps/archflow-studio/api/requirements.txt"
+        "apps/archflow-studio/api/requirements.txt",
+        "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
+        "apps/archflow-studio/web/test/documentLink.browser.mjs"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [

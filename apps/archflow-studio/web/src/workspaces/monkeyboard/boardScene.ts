@@ -20,13 +20,33 @@ export function pageSource(document: SourceDocumentDto, pageIndex: number): Page
     revisionRef: document.revisionRef ?? null, pageIndex };
 }
 
-/**
- * A generated drawing revision replaces the same named drawing on a board.
- * Uploaded files deliberately have no such identity: two files with the same
- * name remain two independently placed sources.
- */
-export function drawingLineageKey(document: Pick<SourceDocumentDto, "drawingId" | "viewRecipe">): string | null {
-  return document.drawingId === null ? null : JSON.stringify([document.drawingId, document.viewRecipe ?? null]);
+/** Exact page mappings travel with the delivered file; names never choose a target. */
+export function pageReplacements(documents: readonly SourceDocumentDto[]): Map<string, PageSource> {
+  const edges = new Map<string, PageSource>();
+  for (const document of documents) {
+    for (const replacement of document.replacesPages ?? []) {
+      const key = pageKey({ ...replacement, revisionRef: replacement.revisionRef ?? null });
+      const target = pageSource(document, replacement.newPageIndex);
+      const previous = edges.get(key);
+      if (previous && pageKey(previous) !== pageKey(target)) throw new Error("A drawing page has competing replacements. Choose its current revision before returning another update.");
+      edges.set(key, target);
+    }
+  }
+  const result = new Map<string, PageSource>();
+  for (const [key, first] of edges) {
+    const visited = new Set([key]);
+    let target = first;
+    while (true) {
+      const nextKey = pageKey(target);
+      if (visited.has(nextKey)) throw new Error("A drawing replacement refers back to an earlier page.");
+      visited.add(nextKey);
+      const next = edges.get(nextKey);
+      if (!next) break;
+      target = next;
+    }
+    result.set(key, target);
+  }
+  return result;
 }
 
 export function imageSource(element: Record<string, unknown>): PageSource | null {

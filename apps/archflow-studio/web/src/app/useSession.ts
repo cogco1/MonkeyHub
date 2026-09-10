@@ -36,6 +36,8 @@ export interface Session {
 }
 
 interface SessionSnapshot {
+  /** Project identity is available before, and independently of, its 3D editing base. */
+  readonly binding: ProjectBindingDto | null;
   readonly session: Loadable<Session>;
   readonly changingBase: boolean;
   readonly baseError: StudioApiError | null;
@@ -53,7 +55,7 @@ export interface SessionHandle extends SessionSnapshot {
 /** The hook's async transitions, also usable by isolated tests without a browser. */
 export function createSessionController(serverBaseUrl = connection.baseUrl, capabilities: readonly string[] = []) {
   let snapshot: SessionSnapshot = {
-    session: idle, changingBase: false, baseError: null, persistenceFailed: false,
+    binding: null, session: idle, changingBase: false, baseError: null, persistenceFailed: false,
   };
   let request = 0;
   let workingCopiesRead = 0;
@@ -74,7 +76,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
       project = await studio.project();
       if (currentRequest !== request) return null;
       const sameProject = previous.status === "ready" && previous.value.project.projectId === project.projectId;
-      if (!sameProject) publish({ ...snapshot, session: loading });
+      publish({ ...snapshot, binding: project, session: sameProject ? previous : loading });
       if (previous.status === "ready" && !sameProject && requestedRunId != null) {
         throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
           "The server now binds another project. Retry to read that project's own editing choice." });
@@ -119,7 +121,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
         try { persistenceFailed = !editingBasePreferences.write(serverBaseUrl, project.projectId, runId); }
         catch { persistenceFailed = true; }
       }
-      publish({ session: ready(next), changingBase: false, baseError: null, persistenceFailed });
+      publish({ binding: project, session: ready(next), changingBase: false, baseError: null, persistenceFailed });
       return next;
     } catch (cause) {
       if (currentRequest !== request) return null;
@@ -128,7 +130,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
       // A failed restoration/revalidation cannot silently become the default.
       const retainPrevious = requestedRunId !== undefined && previous.status === "ready" &&
         project?.projectId === previous.value.project.projectId && error.code !== "EDITING_PROJECT_CHANGED";
-      publish({ ...snapshot, session: retainPrevious ? previous : failed(error), changingBase: false, baseError: error });
+      publish({ ...snapshot, binding: project, session: retainPrevious ? previous : failed(error), changingBase: false, baseError: error });
       return null;
     }
   };

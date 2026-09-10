@@ -48,6 +48,20 @@ def image_bytes(format: str = "PNG", *, color: str = "blue", orientation: int | 
     return output.getvalue()
 
 
+def sized_pdf(*sizes: tuple[float, float]) -> bytes:
+    writer = PdfWriter()
+    for width, height in sizes:
+        writer.add_blank_page(width=width, height=height)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def replacement_page(document: dict, page_index: int = 0, new_page_index: int = 0) -> dict:
+    return {"runId": document["runId"], "assetSha256": document["assetSha256"],
+            "revisionRef": document["revisionRef"], "pageIndex": page_index, "newPageIndex": new_page_index}
+
+
 class SourceDocumentTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="studio-documents-")
@@ -61,10 +75,12 @@ class SourceDocumentTests(unittest.TestCase):
         self.addCleanup(client.close)
         return client
 
-    def upload(self, data: bytes, name: str = "研究图纸.pdf", mime: str = "application/pdf", run_id: str = REFERENCE_RUN_ID):
+    def upload(self, data: bytes, name: str = "研究图纸.pdf", mime: str = "application/pdf",
+               run_id: str | None = REFERENCE_RUN_ID, **extra):
         return self.client.post("/api/documents", json={
             "projectId": PROJECT_ID, "runId": run_id, "fileName": name,
             "mimeType": mime, "contentBase64": base64.b64encode(data).decode("ascii"),
+            **extra,
         })
 
     def test_real_pdf_pages_crop_and_rotation_are_read_from_retained_original(self) -> None:
@@ -81,6 +97,7 @@ class SourceDocumentTests(unittest.TestCase):
         digest = hashlib.sha256(data).hexdigest()
         self.assertEqual(document["assetSha256"], digest)
         self.assertEqual(document["sizeBytes"], len(data))
+        self.assertEqual(document["replacesPages"], [])
         reopened = self.new_client()
         response = reopened.get(f"/api/documents/{digest}/bytes", params={"runId": REFERENCE_RUN_ID})
         self.assertEqual(response.status_code, 200, response.text)
@@ -173,6 +190,107 @@ class SourceDocumentTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["code"], "PROJECT_MISMATCH")
         self.assertEqual(self.client.get("/api/documents", params={"runId": REFERENCE_RUN_ID}).json()["documents"], [])
+
+    def test_explicit_replacements_cross_runs_and_reorder_pdf_pages_after_restart(self) -> None:
+        before = self.repository.read_head()
+        original = self.upload(sized_pdf((400, 300), (300, 200), (500, 600))).json()
+        updated_bytes = sized_pdf((1000, 1200), (800, 600))
+        mapping = [replacement_page(original, 2, 0), replacement_page(original, 0, 1)]
+        response = self.upload(updated_bytes, "updated.pdf", run_id=None, replacesPages=mapping)
+        self.assertEqual(response.status_code, 201, response.text)
+        updated = response.json()
+        self.assertEqual(updated["runId"], "studio-documents")
+        self.assertEqual(updated["replacesPages"], mapping)
+        self.assertEqual(self.upload(updated_bytes, "retry.pdf", run_id=None, replacesPages=list(reversed(mapping))).json(), updated)
+        self.assertEqual(self.upload(updated_bytes, run_id=None).json(), updated)
+        reopened = self.new_client()
+        self.assertCountEqual(reopened.get("/api/documents").json()["documents"], [original, updated])
+        self.assertEqual(reopened.get(f"/api/documents/{updated['assetSha256']}/bytes",
+                                      params={"runId": updated["runId"]}).content, updated_bytes)
+        retained = self.repository.list_json(
+            run=self.repository.load_run("studio-documents"),
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="studio-documents"),
+        )
+        self.assertEqual(len(retained), 1, "Retries reuse the same source registration.")
+        self.assertEqual(retained[0].record_kind, "studio-source-document")
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_invalid_replacements_do_not_create_a_run_object_or_registration(self) -> None:
+        original = self.upload(image_bytes(), "original.png", "image/png").json()
+        mapping = replacement_page(original)
+        new_bytes = image_bytes(color="red")
+        invalid_mappings = [
+            [{**mapping, "runId": "missing-run"}],
+            [{**mapping, "assetSha256": "0" * 64}],
+            [{**mapping, "revisionRef": "project://wrong/records/revision.json"}],
+            [{**mapping, "pageIndex": 1}],
+            [{**mapping, "newPageIndex": 1}],
+            [mapping, mapping],
+            [{**mapping, "pageIndex": True}],
+            [{**mapping, "newPageIndex": -1}],
+        ]
+        runs_before = sorted(path.name for path in self.repository.layout.runs.iterdir())
+        for replacements in invalid_mappings:
+            with self.subTest(replacements=replacements):
+                response = self.upload(new_bytes, "updated.png", "image/png", None, replacesPages=replacements)
+                self.assertIn(response.status_code, (404, 422), response.text)
+        self_reference = self.upload(image_bytes(), "self.png", "image/png", replacesPages=[mapping])
+        self.assertEqual(self_reference.status_code, 422, self_reference.text)
+        wrong_ratio = self.upload(sized_pdf((400, 300)), run_id=None, replacesPages=[mapping])
+        self.assertEqual(wrong_ratio.status_code, 422, wrong_ratio.text)
+        digest = hashlib.sha256(new_bytes).hexdigest()
+        self.assertFalse((self.repository.layout.objects / digest[:2] / digest).exists())
+        self.assertEqual(sorted(path.name for path in self.repository.layout.runs.iterdir()), runs_before)
+        self.assertEqual(self.client.get("/api/documents").json()["documents"], [original])
+
+    def test_replacement_requires_readable_original_bytes_before_any_write(self) -> None:
+        original = self.upload(image_bytes(), "original.png", "image/png").json()
+        digest = original["assetSha256"]
+        original_path = self.repository.layout.objects / digest[:2] / digest
+        original_path.write_bytes(b"corrupt")
+        for expected in ("DOCUMENT_DIGEST_MISMATCH", "DOCUMENT_UNAVAILABLE"):
+            response = self.upload(image_bytes(color="red"), "updated.png", "image/png", None,
+                                   replacesPages=[replacement_page(original)])
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json()["code"], expected)
+            self.assertFalse((self.repository.layout.runs / "studio-documents").exists())
+            if original_path.exists():
+                original_path.unlink()
+
+    def test_replacement_mapping_is_immutable_and_competing_successors_are_refused(self) -> None:
+        original = self.upload(image_bytes(), "original.png", "image/png").json()
+        other = self.upload(image_bytes(color="yellow"), "other.png", "image/png").json()
+        updated_bytes = image_bytes(color="red")
+        updated = self.upload(updated_bytes, "updated.png", "image/png", None,
+                              replacesPages=[replacement_page(original)]).json()
+        rebound = self.upload(updated_bytes, "updated.png", "image/png", None,
+                              replacesPages=[replacement_page(other)])
+        self.assertEqual(rebound.status_code, 409, rebound.text)
+        self.assertEqual(rebound.json()["code"], "DOCUMENT_SOURCE_IMMUTABLE")
+        unmapped_rebind = self.upload(image_bytes(color="yellow"), "other.png", "image/png",
+                                      replacesPages=[replacement_page(original)])
+        self.assertEqual(unmapped_rebind.status_code, 409, unmapped_rebind.text)
+        competing = self.upload(image_bytes(color="green"), "competing.png", "image/png", None,
+                                replacesPages=[replacement_page(original)])
+        self.assertEqual(competing.status_code, 409, competing.text)
+        self.assertEqual(competing.json()["code"], "DOCUMENT_REPLACEMENT_CONFLICT")
+        self.assertEqual(len(self.client.get("/api/documents").json()["documents"]), 3)
+        next_revision = self.upload(image_bytes(color="green"), "next.png", "image/png", None,
+                                    replacesPages=[replacement_page(updated)])
+        self.assertEqual(next_revision.status_code, 201, next_revision.text)
+
+    def test_replacements_use_visible_crop_rotation_and_aspect_ratio_tolerance(self) -> None:
+        original = self.upload(two_page_pdf()).json()
+        mapped = self.upload(sized_pdf((1000, 1200)), run_id=None,
+                             replacesPages=[replacement_page(original, 1)])
+        self.assertEqual(mapped.status_code, 201, mapped.text)
+        landscape = self.upload(sized_pdf((1200, 800))).json()
+        outside = self.upload(sized_pdf((15011, 10000)), run_id=None,
+                              replacesPages=[replacement_page(landscape)])
+        self.assertEqual(outside.status_code, 422, outside.text)
+        inside = self.upload(sized_pdf((15009, 10000)), run_id=None,
+                             replacesPages=[replacement_page(landscape)])
+        self.assertEqual(inside.status_code, 201, inside.text)
 
     def test_encrypted_pdf_is_refused_before_it_is_retained(self) -> None:
         writer = PdfWriter()
