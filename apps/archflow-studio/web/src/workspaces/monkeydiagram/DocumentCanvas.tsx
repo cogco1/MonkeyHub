@@ -13,7 +13,8 @@ import { renderDocumentVisual } from "./documentVisualInput";
 import "./DocumentCanvas.css";
 
 type DrawingTool = "freehand" | "line" | "arrow" | "circle";
-type DocumentTool = DrawingTool | "eraser" | "pan" | "text";
+type VectorEditTool = "select";
+type DocumentTool = DrawingTool | VectorEditTool | "eraser" | "pan" | "text";
 
 function usesNativeTextEditing(event: ReactKeyboardEvent): boolean {
   return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
@@ -24,6 +25,7 @@ function Icon({ name }: { name: DocumentTool | "undo" | "redo" | "fit" }) {
   const paths = {
     freehand: "M4 17l1-5L15 2l4 4L9 16l-5 1zm1-5 4 4M13 4l4 4",
     text: "M3 4h16M11 4v16M7 20h8M3 4v3m16-3v3",
+    select: "M4 3l14 8-7 2-3 7L4 3zm7 10 5 6",
     line: "M4 17L18 3", arrow: "M4 17L18 3M9 3h9v9",
     circle: "M19 10a9 7 0 1 1-18 0 9 7 0 1 1 18 0",
     eraser: "M3 12l9-9a2 2 0 0 1 3 0l4 4a2 2 0 0 1 0 3l-7 7H8l-5-5zm4-4 8 8M9 17h10",
@@ -118,7 +120,27 @@ const SavedInk = memo(function SavedInk({ annotations, width, height }: {
 type Interaction = {
   pointerId: number; mode: DocumentTool; start: PagePoint; view: PageView;
   points: PagePoint[]; gesture: DocumentGestureDto; remaining: readonly DocumentGestureDto[];
+  editingPoint?: number;
 };
+
+function isEditableVector(mark: DocumentGestureDto): boolean {
+  return (mark.kind === "line" || mark.kind === "arrow") && mark.points.length >= 2;
+}
+
+function editableVectorHandle(annotations: readonly DocumentGestureDto[], point: PagePoint,
+  width: number, height: number, scale: number): { mark: DocumentGestureDto; pointIndex: number } | null {
+  const radius = 12;
+  for (const mark of [...annotations].reverse()) {
+    if (!isEditableVector(mark)) continue;
+    for (const pointIndex of [0, mark.points.length - 1]) {
+      const handle = mark.points[pointIndex];
+      if (Math.hypot((handle[0] - point[0]) * width * scale, (handle[1] - point[1]) * height * scale) <= radius) {
+        return { mark, pointIndex };
+      }
+    }
+  }
+  return null;
+}
 
 /** Input stays in page coordinates. Only the current path is updated during a stroke. */
 export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo }: {
@@ -135,6 +157,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
   const space = useRef(false);
   const fitted = useRef(false);
   const [tool, setTool] = useState<DocumentTool>("freehand");
+  const [selectedVectorId, setSelectedVectorId] = useState<string | null>(null);
   const [color, setColor] = useState("#2f80ed");
   const [lineWidth, setLineWidth] = useState(0.004);
   const [fontSize, setFontSize] = useState(0.024);
@@ -146,6 +169,8 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
   const fallback = useRef<{ move(event: PointerEvent): void; up(event: PointerEvent): void; cancel(): void } | null>(null);
   const updateView = useCallback((next: PageView) => { viewRef.current = next; setView(next); }, []);
   const ready = useCallback((value: boolean) => setRenderReady(value), []);
+  const selectedVector = annotations.find((mark) => mark.id === selectedVectorId && isEditableVector(mark)) ?? null;
+  useEffect(() => { if (selectedVectorId !== null && selectedVector === null) setSelectedVectorId(null); }, [selectedVector, selectedVectorId]);
   const fit = useCallback(() => {
     const node = host.current;
     if (!node) return;
@@ -229,7 +254,8 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
       });
     } else {
       const points = current.mode === "freehand" ? current.points : [current.points[0], current.points[current.points.length - 1]];
-      live.current?.setAttribute("d", inkPath({ ...current.gesture, points }, page.width, page.height));
+      const gesture = current.mode === "select" ? current.gesture : { ...current.gesture, points };
+      live.current?.setAttribute("d", inkPath(gesture, page.width, page.height));
       live.current?.setAttribute("stroke", current.gesture.color);
       live.current?.setAttribute("stroke-width", String(current.gesture.lineWidth * Math.min(page.width, page.height)));
     }
@@ -242,6 +268,13 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
       viewRef.current = { ...current.view, x: current.view.x + event.clientX - current.start[0], y: current.view.y + event.clientY - current.start[1] };
     } else {
       const point = pagePoint(event);
+      if (current.mode === "select") {
+        const index = current.editingPoint;
+        if (index !== undefined) current.gesture = { ...current.gesture,
+          points: current.gesture.points.map((value, pointIndex) => pointIndex === index ? point : value) };
+        schedulePaint();
+        return;
+      }
       const previous = current.points[current.points.length - 1];
       if (current.mode === "eraser") current.remaining = eraseAt(current.remaining, previous, point,
         page.width * viewRef.current.scale, page.height * viewRef.current.scale, 9);
@@ -260,6 +293,17 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
     if (mode !== "pan" && (x < 0 || y < 0 || x > page.width * viewRef.current.scale || y > page.height * viewRef.current.scale)) return;
     event.preventDefault(); node.focus({ preventScroll: true });
     const point = pagePoint(event);
+    if (mode === "select") {
+      const hit = editableVectorHandle(annotations, point, page.width, page.height, viewRef.current.scale);
+      if (hit === null) { setSelectedVectorId(null); return; }
+      setSelectedVectorId(hit.mark.id);
+      active.current = { pointerId: event.pointerId, mode, start: [event.clientX, event.clientY], view: viewRef.current,
+        points: [point], remaining: annotations, gesture: hit.mark, editingPoint: hit.pointIndex };
+      ink.current?.querySelector<SVGPathElement>(`[data-stroke-id="${hit.mark.id}"]`)?.setAttribute("visibility", "hidden");
+      if (typeof node.setPointerCapture === "function") node.setPointerCapture(event.pointerId);
+      setIsActive(true); schedulePaint();
+      return;
+    }
     active.current = { pointerId: event.pointerId, mode, start: [event.clientX, event.clientY], view: viewRef.current,
       points: [point], remaining: annotations,
       gesture: { id: crypto.randomUUID(), kind: mode === "pan" || mode === "eraser" ? "freehand" : mode, points: [], color, lineWidth } };
@@ -280,6 +324,8 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
     const current = active.current;
     if (current.mode === "eraser") {
       if (current.remaining.length !== annotations.length) onChange(current.remaining);
+    } else if (current.mode === "select") {
+      onChange(annotations.map((mark) => mark.id === current.gesture.id ? current.gesture : mark));
     } else if (current.mode !== "pan") {
       const points = current.mode === "freehand" ? current.points : [current.points[0], current.points[current.points.length - 1]];
       onChange([...annotations, { ...current.gesture, points }]);
@@ -290,9 +336,9 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
 
   return <div className="document-canvas">
     <div className="document-tools" role="toolbar" aria-label={t("document.tools")}>
-      {(["freehand", "line", "arrow", "circle", "text", "eraser", "pan"] as const).map((kind) => <button key={kind} type="button"
+      {(["select", "freehand", "line", "arrow", "circle", "text", "eraser", "pan"] as const).map((kind) => <button key={kind} type="button"
         disabled={readOnly && kind !== "pan"} aria-pressed={tool === kind} aria-label={t(`document.tool.${kind}`)} title={t(`document.tool.${kind}`)}
-        onClick={() => { cancel(); setTool(kind); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
+        onClick={() => { cancel(); setTool(kind); if (kind !== "select") setSelectedVectorId(null); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
       <span className="document-tools__separator" />
       <button type="button" disabled={!canUndo || readOnly} onClick={onUndo} title={t("document.undo")} aria-label={t("document.undo")}><Icon name="undo" /></button>
       <button type="button" disabled={!canRedo || readOnly} onClick={onRedo} title={t("document.redo")} aria-label={t("document.redo")}><Icon name="redo" /></button>
@@ -324,6 +370,8 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
         <DocumentSurface file={file} page={page} scale={view.scale} onReady={ready} />
         <svg ref={ink} className="document-page__ink" viewBox={`0 0 ${page.width} ${page.height}`} aria-hidden="true">
           <SavedInk annotations={annotations} width={page.width} height={page.height} />
+          {selectedVector && <g className="document-vector-selection">{[selectedVector.points[0], selectedVector.points[selectedVector.points.length - 1]].map((point, index) =>
+            <circle key={index} cx={point[0] * page.width} cy={point[1] * page.height} r={7 / view.scale} />)}</g>}
           <path ref={live} data-live-ink="true" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         <DocumentTextLayer annotations={annotations} width={page.width} height={page.height} scale={view.scale}

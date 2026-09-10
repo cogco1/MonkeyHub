@@ -34,6 +34,7 @@ export const messagesZhCN = {
   "document.empty": "打开图纸，标出需要调整的位置。",
   "document.formats": "多页 PDF、PNG 或 JPG · 最大 32 MB",
   "document.tools": "页面批注工具",
+  "document.tool.select": "编辑线条",
   "document.tool.freehand": "画笔",
   "document.tool.line": "直线",
   "document.tool.arrow": "箭头",
