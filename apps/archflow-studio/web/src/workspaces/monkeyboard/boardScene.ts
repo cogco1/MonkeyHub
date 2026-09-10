@@ -20,6 +20,15 @@ export function pageSource(document: SourceDocumentDto, pageIndex: number): Page
     revisionRef: document.revisionRef ?? null, pageIndex };
 }
 
+/**
+ * A generated drawing revision replaces the same named drawing on a board.
+ * Uploaded files deliberately have no such identity: two files with the same
+ * name remain two independently placed sources.
+ */
+export function drawingLineageKey(document: Pick<SourceDocumentDto, "drawingId" | "viewRecipe">): string | null {
+  return document.drawingId === null ? null : JSON.stringify([document.drawingId, document.viewRecipe ?? null]);
+}
+
 export function imageSource(element: Record<string, unknown>): PageSource | null {
   if (element.type !== "image") return null;
   const custom = element.customData;
