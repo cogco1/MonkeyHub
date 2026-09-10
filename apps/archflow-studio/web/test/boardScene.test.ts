@@ -28,7 +28,7 @@ async function harness(t: TestContext) {
 }
 
 test("drawing revisions remain distinct when their file bytes are identical", async (t) => {
-  const { documentKey, pageKey, pageSource, findSource } = await harness(t);
+  const { documentKey, drawingLineageKey, pageKey, pageSource, findSource } = await harness(t);
   const first = document();
   const second = document({ revisionRef: "project://project-a/runs/drawing-run/records/drawing-revision-2.json" });
   const anotherRun = document({ runId: "another-run" });
@@ -39,6 +39,9 @@ test("drawing revisions remain distinct when their file bytes are identical", as
   assert.notEqual(pageKey(pageSource(first, 0)), pageKey(pageSource(first, 1)));
   assert.equal(findSource([second, anotherRun, first], pageSource(first, 1)), first);
   assert.equal(findSource([first], pageSource(second, 1)), undefined, "matching pixels cannot substitute another drawing revision");
+  assert.equal(drawingLineageKey(first), drawingLineageKey(second), "revisions of one named drawing occupy one board position");
+  assert.notEqual(drawingLineageKey(first), drawingLineageKey(document({ drawingId: "west-elevation" })));
+  assert.equal(drawingLineageKey(document({ drawingId: null, revisionRef: null })), null, "uploaded originals are never guessed to replace each other");
 });
 
 test("retained received identities keep a removed drawing absent while allowing its next revision", async (t) => {
