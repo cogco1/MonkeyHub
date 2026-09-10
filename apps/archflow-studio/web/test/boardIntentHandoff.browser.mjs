@@ -174,6 +174,9 @@ try {
       assert.equal(intents.length, before, "Refresh preserves the page URL without replaying its one-time intent");
     }
     assert.deepEqual(failures, []); passed.push(scenario); console.log(`PASS ${scenario}`);
+    // Unmount the document while API interception is still active. Closing the
+    // context directly can remove its page routes before a new ink read starts.
+    await page.goto("about:blank");
     await context.close(); page = null;
   }
   assert.deepEqual(escaped, []); console.log(JSON.stringify({ passed }));

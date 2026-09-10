@@ -8,6 +8,7 @@ const link = new URL(process.env.DOCUMENT_LINK_URL);
 assert.equal(link.searchParams.get("view"), "documents");
 const runId = link.searchParams.get("documentRun");
 const sourceSha = link.searchParams.get("documentSource");
+const revisionRef = link.searchParams.get("documentRevision");
 const pageText = link.searchParams.get("documentPage");
 const pageIndex = Number(pageText);
 assert.ok(runId && sourceSha && pageText !== null, "the link must name its run, source and zero-based page");
@@ -24,6 +25,7 @@ let metadata;
 
 async function freshPage() {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1100 }, deviceScaleFactor: 1 });
+  context.on("page", (page) => page.on("pageerror", (error) => pageErrors.push({ test: activeCase, message: String(error) })));
   // A regression must fail before an unexpected application request can alter
   // the real project. Normal navigation here needs only GET requests.
   await context.route(/\/api\//, async (route) => {
@@ -33,7 +35,6 @@ async function freshPage() {
     await route.abort("blockedbyclient");
   });
   const page = await context.newPage();
-  page.on("pageerror", (error) => pageErrors.push({ test: activeCase, message: String(error) }));
   currentPage = page;
   return { context, page };
 }
@@ -59,10 +60,10 @@ async function runCase(name, action) {
   }
 }
 
-async function selected(page, sha, index) {
-  await page.waitForFunction(({ sha, index }) =>
-    document.querySelector(".document-header > select")?.value === sha &&
-    document.querySelector(".document-pages select")?.value === String(index), { sha, index });
+async function selected(page, sha, index, revision = revisionRef) {
+  await page.waitForFunction(({ sha, index, revision }) =>
+    document.querySelector(".document-header > select")?.value === (revision ?? sha) &&
+    document.querySelector(".document-pages select")?.value === String(index), { sha, index, revision });
 }
 
 async function documentView(page) {
@@ -86,13 +87,36 @@ async function unavailable(page, url) {
 }
 
 try {
+  await runCase("clicking the Board source link opens its exact drawing in a new page", async (page, context) => {
+    const board = new URL(link);
+    board.searchParams.set("view", "board");
+    await page.goto(board.href);
+    const sources = page.locator(".monkeyboard-source-link");
+    await sources.first().waitFor();
+    const hrefs = await sources.evaluateAll((items) => items.map((item) => item.href));
+    const index = hrefs.findIndex((href) => {
+      const query = new URL(href).searchParams;
+      return query.get("documentRun") === runId && query.get("documentSource") === sourceSha &&
+        query.get("documentPage") === pageText && query.get("documentRevision") === revisionRef;
+    });
+    assert.ok(index >= 0, "the Board lists the requested drawing page");
+    const opened = context.waitForEvent("page");
+    await sources.nth(index).click();
+    const drawing = await opened;
+    await drawing.waitForLoadState("domcontentloaded");
+    await documentView(drawing);
+    await selected(drawing, sourceSha, pageIndex);
+    await drawing.locator('.document-viewport[data-ready="true"]').waitFor();
+  });
+
   await runCase("valid deep link opens the exact source/page with a ready raster and enabled pen", async (page, context) => {
     const query = new URLSearchParams({ runId });
     const response = await context.request.get(`${link.origin}/api/documents?${query}`);
     assert.equal(response.status(), 200, "same-origin document API is available");
     const listing = await response.json();
     assert.equal(listing.runId, runId);
-    const source = listing.documents.find((item) => item.assetSha256 === sourceSha);
+    const source = listing.documents.find((item) => item.assetSha256 === sourceSha &&
+      (revisionRef === null || item.revisionRef === revisionRef));
     assert.ok(source, "the requested source belongs to the requested run");
     const pageInfo = source.pages.find((item) => item.pageIndex === pageIndex);
     assert.ok(pageInfo, "the requested visible page exists");
@@ -115,10 +139,42 @@ try {
     for (const url of documentReads) {
       assert.equal(url.searchParams.get("runId"), runId, "document bytes and ink use the URL run");
       if (url.pathname === "/api/document-annotations") {
+        assert.equal(url.searchParams.get("drawingRevisionRef"), revisionRef, "ink uses the URL drawing revision");
         assert.equal(url.searchParams.get("assetSha256"), sourceSha);
         assert.equal(url.searchParams.get("pageIndex"), String(pageIndex));
-      } else assert.ok(url.pathname.includes(`/${sourceSha}/bytes`));
+      } else {
+        assert.equal(url.searchParams.get("revisionRef"), revisionRef, "document bytes use the URL drawing revision");
+        assert.ok(url.pathname.includes(`/${sourceSha}/bytes`));
+      }
     }
+  });
+
+  await runCase("a failed 3D editing-base restore does not prevent opening the linked document", async (page) => {
+    await page.route(/\/api\/state(?:\?|$)/, (route) => route.fulfill({ status: 404, contentType: "application/json",
+      body: JSON.stringify({ code: "STATE_RECORD_NOT_FOUND", detail: "This test's 3D editing base is unavailable." }) }));
+    await page.goto(link.href);
+    await documentView(page);
+    await selected(page, sourceSha, pageIndex);
+    await page.locator('.document-viewport[data-ready="true"]').waitFor();
+    await page.waitForFunction(() => document.querySelector(".document-tools button")?.disabled === false);
+    await page.locator(".stage-mode-switch button").nth(0).click();
+    await page.locator(".refusal__title").waitFor();
+    await page.getByRole("button", { name: /MonkeyDiagram/ }).click();
+    await selected(page, sourceSha, pageIndex);
+    await page.locator('.document-viewport[data-ready="true"]').waitFor();
+  });
+
+  await runCase("the linked page is usable while 3D state is still pending", async (page) => {
+    let release;
+    const pending = new Promise((resolve) => { release = resolve; });
+    await page.route(/\/api\/state(?:\?|$)/, async (route) => { await pending; await route.continue(); });
+    try {
+      await page.goto(link.href);
+      await selected(page, sourceSha, pageIndex);
+      await page.locator('.document-viewport[data-ready="true"]').waitFor();
+      await page.waitForFunction(() => document.querySelector(".document-tools button")?.disabled === false);
+      assert.equal(await page.locator('.boot[data-mode="boot"]').count(), 0, "3D loading must not cover the document");
+    } finally { release(); }
   });
 
   await runCase("switching from the linked page to 3D and back preserves its source and page", async (page) => {

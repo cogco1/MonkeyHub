@@ -201,6 +201,17 @@ class DocumentPage:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentPageReplacement:
+    """An exact registered old page and its corresponding uploaded page."""
+
+    run_id: str
+    asset_sha256: str
+    revision_ref: str | None
+    page_index: int
+    new_page_index: int
+
+
+@dataclass(frozen=True, slots=True)
 class SourceDocument:
     """An imported reference or a retained drawing, never a design state."""
 
@@ -218,6 +229,7 @@ class SourceDocument:
     source_stage_ref: str | None = None
     view_recipe: dict[str, Any] | None = None
     generated_at: str | None = None
+    replaces_pages: tuple[DocumentPageReplacement, ...] = ()
 
 
 def _document_pages(data: bytes, mime_type: str) -> tuple[DocumentPage, ...]:
@@ -287,6 +299,7 @@ def list_documents(binding: ProjectBinding, run_id: str | None = None) -> tuple[
             drawing_id=payload.get("drawingId"), revision_ref=payload.get("revisionRef"),
             source_stage_ref=payload.get("sourceStageRef"), view_recipe=payload.get("viewRecipe"),
             generated_at=payload.get("generatedAt"),
+            replaces_pages=tuple(DocumentPageReplacement(**page) for page in payload.get("replaces_pages", ())),
         )
         key = document.revision_ref or document.asset_sha256
         previous = documents.get(key)
@@ -335,6 +348,11 @@ def document_bytes(
                      and (binding_ref is None or row.model_source_binding_ref == binding_ref)), None)
     if document is None:
         raise StudioError(404, "DOCUMENT_NOT_FOUND", f"Run {run_id} has no source document {asset_sha256}.")
+    return document, _registered_document_bytes(binding, document)
+
+
+def _registered_document_bytes(binding: ProjectBinding, document: SourceDocument) -> bytes:
+    run_id, asset_sha256 = document.run_id, document.asset_sha256
     if document.revision_ref is not None:
         from monkeydiagram.drawing_elevation import DrawingElevationError, read_model_axis_elevation
 
@@ -344,7 +362,7 @@ def document_bytes(
             raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The retained drawing revision cannot be read.") from exc
         if drawing.png_ref.sha256 != asset_sha256 or drawing.receipt["source"]["run_id"] != run_id or drawing.receipt["view"] != document.view_recipe:
             raise StudioError(409, "DOCUMENT_SOURCE_CONFLICT", "The drawing revision does not match its registered source and view.")
-        return document, drawing.png
+        return drawing.png
     try:
         path = binding.repository.layout.resolve_relative(f"objects/sha256/{asset_sha256[:2]}/{asset_sha256}")
         data = path.read_bytes()
@@ -352,12 +370,46 @@ def document_bytes(
         raise StudioError(409, "DOCUMENT_UNAVAILABLE", "The registered source document cannot be read.") from exc
     if hashlib.sha256(data).hexdigest() != asset_sha256:
         raise StudioError(409, "DOCUMENT_DIGEST_MISMATCH", "The source file no longer matches the version this document names.")
-    return document, data
+    return data
+
+
+def _validate_page_replacements(
+    binding: ProjectBinding, run_id: str, digest: str, pages: tuple[DocumentPage, ...],
+    replacements: tuple[DocumentPageReplacement, ...], documents: tuple[SourceDocument, ...],
+) -> None:
+    old_pages: set[tuple[str, str, str | None, int]] = set()
+    for replacement in replacements:
+        identity = (replacement.run_id, replacement.asset_sha256, replacement.revision_ref)
+        old_page = (*identity, replacement.page_index)
+        if old_page in old_pages:
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Each old page may appear only once in a replacement upload.")
+        old_pages.add(old_page)
+        if identity == (run_id, digest, None):
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "A source document cannot replace itself.")
+        previous = next((document for document in documents if (
+            document.run_id, document.asset_sha256, document.revision_ref
+        ) == identity), None)
+        if previous is None:
+            raise StudioError(404, "DOCUMENT_NOT_FOUND", "The page to replace does not name an exact registered source document.")
+        old = next((page for page in previous.pages if page.page_index == replacement.page_index), None)
+        new = next((page for page in pages if page.page_index == replacement.new_page_index), None)
+        if old is None or new is None:
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Both replacement page indices must exist in their documents.")
+        _registered_document_bytes(binding, previous)
+        if not math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001):
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Replacement pages must have the same visible aspect ratio to preserve board marks.")
+    for document in documents:
+        if (document.run_id, document.asset_sha256, document.revision_ref) == (run_id, digest, None):
+            continue
+        if any((page.run_id, page.asset_sha256, page.revision_ref, page.page_index) in old_pages
+               for page in document.replaces_pages):
+            raise StudioError(409, "DOCUMENT_REPLACEMENT_CONFLICT", "An old page already has a registered replacement; replace that newer page instead.")
 
 
 def save_document(
     binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
+    replaces_pages: tuple[DocumentPageReplacement, ...] = (),
 ) -> SourceDocument:
     """Retain original bytes in a named run or the project's source-document run."""
 
@@ -379,6 +431,21 @@ def save_document(
     pages = _document_pages(data, mime_type)
     digest = hashlib.sha256(data).hexdigest()
     with _document_source_lock:
+        target_run_id = run_id if run_id is not None else DOCUMENT_UPLOAD_RUN_ID
+        documents = list_documents(binding) if replaces_pages else ()
+        _validate_page_replacements(binding, target_run_id, digest, pages, replaces_pages, documents)
+        existing_documents = documents if replaces_pages else (
+            list_documents(binding, target_run_id) if target_run_id in binding.run_ids() else ()
+        )
+        existing = next((row for row in existing_documents
+                         if row.run_id == target_run_id and row.asset_sha256 == digest), None)
+        if existing is not None:
+            if existing.model_source != model_source:
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
+            if replaces_pages and set(existing.replaces_pages) != set(replaces_pages):
+                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's replacement pages are already retained and cannot be rebound.")
+            _registered_document_bytes(binding, existing)
+            return existing
         if run is None:
             # A general P036 run stores references without inventing a model
             # or a design Stage. Invalid uploads never create this envelope.
@@ -388,13 +455,8 @@ def save_document(
             except (ProjectRepositoryError, OSError) as exc:
                 raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document run could not be retained in its project.") from exc
             run_id = run.run_id
-        existing = next((row for row in list_documents(binding, run_id) if row.asset_sha256 == digest), None)
-        if existing is not None:
-            if existing.model_source != model_source:
-                raise StudioError(409, "DOCUMENT_SOURCE_IMMUTABLE", "This document's model source is already retained. Its saved pages cannot be rebound to another model.")
-            document_bytes(binding, run_id, digest)
-            return existing
-        document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages, model_source)
+        document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages,
+                                  model_source, replaces_pages=replaces_pages)
         try:
             binding.repository.ingest(
                 run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),

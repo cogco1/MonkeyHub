@@ -362,7 +362,7 @@ export const studio = {
   },
 
   /** Upload the original bytes; the server validates the MIME type and size. */
-  async uploadDocument(projectId: string, runId: string | null, file: File): Promise<SourceDocumentDto> {
+  async uploadDocument(projectId: string, runId: string | null, file: File, replacesPages?: SourceDocumentRequestDto["replacesPages"]): Promise<SourceDocumentDto> {
     const contentBase64 = base64Of(await file.arrayBuffer());
     return call(
       "POST /api/documents",
@@ -373,6 +373,7 @@ export const studio = {
           fileName: file.name,
           mimeType: file.type as SourceDocumentRequestDto["mimeType"],
           contentBase64,
+          ...(replacesPages ? { replacesPages } : {}),
         },
       }),
     );

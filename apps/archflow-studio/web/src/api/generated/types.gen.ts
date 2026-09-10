@@ -1414,6 +1414,32 @@ export type DocumentPageDto = {
 };
 
 /**
+ * DocumentPageReplacementDto
+ */
+export type DocumentPageReplacementDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Newpageindex
+     */
+    newPageIndex: number;
+};
+
+/**
  * DocumentVisualInputDto
  *
  * Transient visible-page PNGs, rendered by the client from a registered source.
@@ -4053,6 +4079,10 @@ export type SourceDocumentDto = {
      * Generatedat
      */
     generatedAt?: string | null;
+    /**
+     * Replacespages
+     */
+    replacesPages?: Array<DocumentPageReplacementDto>;
 };
 
 /**
@@ -4104,6 +4134,10 @@ export type SourceDocumentRequestDto = {
      */
     contentBase64: string;
     modelSource?: ModelSourceDto | null;
+    /**
+     * Replacespages
+     */
+    replacesPages?: Array<DocumentPageReplacementDto>;
 };
 
 /**

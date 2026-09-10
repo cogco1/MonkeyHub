@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent } from "react";
-import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, FONT_FAMILY, MainMenu, viewportCoordsToSceneCoords, WelcomeScreen } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, convertToExcalidrawElements, Excalidraw, FONT_FAMILY, MainMenu, newElementWith, viewportCoordsToSceneCoords, WelcomeScreen } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement, FileId } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import "@excalidraw/excalidraw/index.css";
@@ -11,7 +11,7 @@ import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
-import { documentKey, documentMime, documentUrl, drawingLineageKey, findSource, imageSource, nextDocumentPosition, pageKey, pageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, type BoardDraft, type PageSource } from "./boardScene";
 import "./board.css";
 
 const copy = {
@@ -19,6 +19,45 @@ const copy = {
   "zh-CN": { loading: "正在打开画布…", loadFailed: "画布暂时无法打开。", retry: "重试", sources: "项目资料", upload: "上传 PDF / 图片", title: "画布标题", saved: "已保存", saving: "正在保存…", dirty: "有未保存的修改", saveError: "修改尚未保存。", conflict: "已有另一份保存版本。当前画布已保留，请另开已保存画布进行比较。", compare: "另开已保存画布", save: "立即保存", add: "添加此页", open: "在 MonkeyDiagram 中打开", fit: "查看全部", busy: "正在接收资料…", crit: "Crit 模式", critSubmit: "提交", critExit: "退出", export: "整理导出图墙图纸", exportClean: "清洁原图 · 不含批注", exportMerged: "合并 PDF", exportPages: "单页 PDF", exportPng: "PNG", exportJpeg: "JPEG", exportZip: "传输 ZIP", exporting: "正在整理导出…", exportDone: "导出已就绪。", exportEmpty: "请先在图墙中摆放至少一页已登记图纸。", welcome: "把项目放在一起讨论", welcomeBody: "摆放图纸、连接想法、标记讨论。MonkeyDiagram 的新资料会自动来到这里。", empty: "上传 PDF、PNG 或 JPEG 开始。项目的新图纸也会自动出现在这里。", hint: "滚轮缩放 · 空格或鼠标中键平移 · Shift 多选", auto: "自动接收新资料", previewError: "部分页面预览未能载入，已保留原有布局。", unsupported: "请使用 PDF、PNG 或 JPEG 文件。", unbound: "这张图片没有项目来源，请先上传原始文件。", page: "第", pages: "页", received: "已接收", pending: "待接收", dismiss: "关闭提示", sourceError: "项目资料暂时无法刷新。", select: "选中图纸可打开原始页面。", refresh: "重试预览 / 接收", unknown: "未知错误" },
 };
 type Copy = typeof copy.en;
+
+const replacementCopy = {
+  en: { action: "Update this page", file: "Updated PDF / image", page: "Page number in the new file", hint: "Replace this page wherever it is placed on the board. Keep its position, scale and marks. The new page must have the same aspect ratio; the original remains in project documents.", cancel: "Cancel", submit: "Update in place", sending: "Updating page…" },
+  "zh-CN": { action: "更新此页原图", file: "更新后的 PDF / 图片", page: "新文件中的页码", hint: "更新图墙中此页的所有副本，保留位置、缩放与批注。新页须保持相同宽高比；旧原图仍保存在项目资料中。", cancel: "取消", submit: "原位更新", sending: "正在更新…" },
+};
+
+function ReplacementDialog({ target, language, onCancel, onSubmit }: {
+  target: { document: SourceDocumentDto; pageIndex: number }; language: "en" | "zh-CN";
+  onCancel: () => void; onSubmit: (file: File, newPageIndex: number) => Promise<void>;
+}) {
+  const dialog = useRef<HTMLDialogElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [page, setPage] = useState(1);
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const [error, setError] = useState("");
+  const text = replacementCopy[language];
+  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
+  const submit = async () => {
+    if (!file || sendingRef.current) return;
+    sendingRef.current = true; setSending(true); setError("");
+    try { await onSubmit(file, page - 1); }
+    catch (cause) { setError(errorText(cause)); }
+    finally { sendingRef.current = false; setSending(false); }
+  };
+  return <dialog ref={dialog} className="monkeyboard-feedback" aria-labelledby="monkeyboard-replacement-title" onCancel={(event) => { event.preventDefault(); if (!sendingRef.current) onCancel(); }}>
+    <form onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-busy={sending}>
+      <h2 id="monkeyboard-replacement-title">{text.action}</h2>
+      <p className="monkeyboard-feedback-source">{target.document.fileName} · {target.pageIndex + 1}/{target.document.pageCount}</p>
+      <p>{text.hint}</p>
+      <label htmlFor="monkeyboard-replacement-file">{text.file}</label>
+      <input id="monkeyboard-replacement-file" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg" required autoFocus disabled={sending} onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+      <label htmlFor="monkeyboard-replacement-page">{text.page}</label>
+      <input id="monkeyboard-replacement-page" type="number" min={1} step={1} required value={page} disabled={sending} onChange={(event) => setPage(event.target.valueAsNumber)} />
+      {error && <p className="monkeyboard-feedback-error" role="alert">{error}</p>}
+      <div className="monkeyboard-feedback-actions"><button type="button" onClick={onCancel} disabled={sending}>{text.cancel}</button><button className="monkeyboard-primary" type="submit" disabled={sending || !file}>{sending ? text.sending : text.submit}</button></div>
+    </form>
+  </dialog>;
+}
 
 const feedbackCopy = {
   en: { action: "Send design feedback", title: "Discuss this drawing", hint: "Select one drawing or its frame, together with the marks you want to send.", description: "The selected marks will join this drawing page. Continue the discussion in MonkeyArch to review a proposal or answer a design question.", label: "What would you like to change?", placeholder: "Describe the change and what should stay as it is.", send: "Send to design", sending: "Preparing drawing…", cancel: "Cancel", marks: "selected marks", modelRequired: "Link this drawing to its model in MonkeyDiagram before sending a design change.", sourceChanged: "This drawing's source changed. Close this dialog and select the drawing again.", modelChanged: "The drawing's linked model changed or cannot be opened for editing. Check its source in MonkeyDiagram.", empty: "Write the change you want to discuss.", failed: "The feedback could not be sent." },
@@ -174,6 +213,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const [selected, setSelected] = useState<PageSource | null>(null);
   const [feedback, setFeedback] = useState<BoardFeedbackSelection | null>(null);
   const feedbackOpen = useRef(false);
+  const [replacement, setReplacement] = useState<{ document: SourceDocumentDto; pageIndex: number } | null>(null);
+  const replacementOpen = useRef(false);
   const feedbackQueued = useRef(false);
   const [feedbackWaiting, setFeedbackWaiting] = useState(false);
   const [pages, setPages] = useState<Record<string, number>>({});
@@ -232,68 +273,74 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     capture(elements);
     if (!automatic || elements.length === additions.length) api.scrollToContent(additions, { fitToContent: true, animate: false });
   }, [capture, preview, queue]);
-  /**
-   * A regenerated elevation is a new retained source, but it is not a new
-   * board location. Keep the first existing placement (and every annotation
-   * around it), replace only its image file/source binding, and remove any
-   * older auto-created image copies of that exact logical drawing.
-   */
-  const replaceDeliveredPage = useCallback(async (document: SourceDocumentDto, pageIndex: number): Promise<boolean> => {
-    const lineage = drawingLineageKey(document);
-    if (lineage === null) return false;
-    const api = canvas.current;
-    if (!alive.current || !api || !initialized.current || queue.getState().conflict) return false;
-    const current = api.getSceneElementsIncludingDeleted();
-    const matches = current.filter((element) => {
-      if (element.type !== "image" || element.isDeleted) return false;
-      const source = imageSource(element);
-      const previous = source === null ? undefined : findSource(documentsRef.current, source);
-      return source?.pageIndex === pageIndex && previous !== undefined && drawingLineageKey(previous) === lineage;
-    });
-    if (matches.length === 0) return false;
-    const rendered = await preview(document, pageIndex);
-    if (!alive.current || queue.getState().conflict) return false;
-    const retained = matches[0];
-    const duplicateIds = new Set(matches.slice(1).map((element) => element.id));
-    const fileId = crypto.randomUUID() as FileId;
-    const source = pageSource(document, pageIndex);
-    const elements: ExcalidrawElement[] = current.map((element): ExcalidrawElement => {
-      if (element.id === retained.id) {
-        const customData = typeof element.customData === "object" && element.customData !== null
-          ? element.customData as Record<string, unknown> : {};
-        return { ...element, fileId, status: "saved", customData: { ...customData, sourceDocument: source } } as ExcalidrawElement;
-      }
-      // These are copies the old automatic receiver created. Deliberate marks
-      // are separate board elements and are never removed here.
-      if (duplicateIds.has(element.id)) return { ...element, isDeleted: true } as ExcalidrawElement;
-      const children = element.type === "frame"
-        ? (element as unknown as { children?: readonly string[] }).children : undefined;
-      if (children?.length === 1 && duplicateIds.has(children[0])) {
-        return { ...element, isDeleted: true } as ExcalidrawElement;
-      }
-      return element;
-    });
-    api.addFiles([{ id: fileId, dataURL: rendered.dataURL, mimeType: "image/png", created: Date.now() }]);
-    seen.current.add(documentKey(document));
-    api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-    capture(elements);
-    return true;
-  }, [capture, preview, queue]);
   const acceptDocuments = useCallback((next: SourceDocumentDto[]) => {
     documentsRef.current = next;
     setDocuments(next);
   }, []);
   const receive = useCallback(async (next: SourceDocumentDto[]) => {
+    const replacements = pageReplacements(next);
+    const pending = next.filter((document) => !seen.current.has(documentKey(document)) && (document.replacesPages?.length ?? 0) > 0);
+    if (pending.length > 0) {
+      const rendered = new Map<string, { source: PageSource; preview: Preview; fileId: FileId }>();
+      while (true) {
+        const target = (canvas.current?.getSceneElements() ?? []).flatMap((element) => {
+          const source = imageSource(element);
+          const next = source && replacements.get(pageKey(source));
+          return next && !rendered.has(pageKey(next)) ? [next] : [];
+        })[0];
+        if (!target || !alive.current) break;
+        const document = findSource(next, target);
+        if (!document) throw new Error("The replacement drawing page is unavailable.");
+        rendered.set(pageKey(target), { source: target, preview: await preview(document, target.pageIndex), fileId: crypto.randomUUID() as FileId });
+      }
+      const api = canvas.current;
+      if (!alive.current || !api || !initialized.current || queue.getState().conflict) return;
+      // Rendering may take seconds. Read the live scene only after every await:
+      // user moves, deletions, new marks and frame membership win over snapshots.
+      const elements = api.getSceneElementsIncludingDeleted().map((element) => {
+        if (element.type !== "image" || element.isDeleted) return element;
+        const source = imageSource(element);
+        const target = source && replacements.get(pageKey(source));
+        const ready = target && rendered.get(pageKey(target));
+        if (!ready) return element;
+        const crop = element.crop;
+        // Excalidraw crop coordinates use source pixels, not board units.
+        const nextCrop = crop ? {
+          x: crop.x / crop.naturalWidth * ready.preview.width,
+          y: crop.y / crop.naturalHeight * ready.preview.height,
+          width: crop.width / crop.naturalWidth * ready.preview.width,
+          height: crop.height / crop.naturalHeight * ready.preview.height,
+          naturalWidth: ready.preview.width, naturalHeight: ready.preview.height,
+        } : null;
+        return newElementWith(element, { fileId: ready.fileId, status: "saved", crop: nextCrop, customData: { ...element.customData, sourceDocument: ready.source } });
+      });
+      api.addFiles([...rendered.values()].map((item) => ({ id: item.fileId, dataURL: item.preview.dataURL, mimeType: "image/png", created: Date.now() })));
+      api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+      capture(elements);
+    }
     for (const document of next) {
       const key = documentKey(document);
       if (seen.current.has(key) || skipped.current.has(key) || queue.getState().conflict) continue;
+      if ((document.replacesPages?.length ?? 0) > 0) continue;
       try {
-        const page = document.pages[0].pageIndex;
-        if (!await replaceDeliveredPage(document, page)) await addPage(document, page, true);
+        const target = replacements.get(pageKey(pageSource(document, document.pages[0].pageIndex)));
+        const latest = target ? findSource(next, target) : document;
+        if (!latest) throw new Error("The replacement drawing page is unavailable.");
+        await addPage(latest, target?.pageIndex ?? document.pages[0].pageIndex, true);
+        seen.current.add(key);
       }
       catch (error) { skipped.current.add(key); if (alive.current) setNotice(`${document.fileName}: ${errorText(error)}`); }
     }
-  }, [addPage, queue, replaceDeliveredPage]);
+    const waitingForPreview = new Set(next.flatMap((document) => {
+      if (!skipped.current.has(documentKey(document))) return [];
+      const target = replacements.get(pageKey(pageSource(document, document.pages[0].pageIndex)));
+      return target ? [documentKey(target)] : [];
+    }));
+    for (const document of pending) {
+      if (!waitingForPreview.has(documentKey(document))) seen.current.add(documentKey(document));
+    }
+    capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []);
+  }, [addPage, capture, preview, queue]);
   const upload = useCallback((incoming: File[]) => serial(async () => {
     for (const file of incoming) {
       const mime = documentMime(file);
@@ -305,6 +352,25 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       await addPage(document, document.pages[0].pageIndex);
     }
   }), [acceptDocuments, addPage, board.projectId, serial]);
+  const replacePage = async (file: File, newPageIndex: number) => {
+    if (!replacement) return;
+    const mime = documentMime(file);
+    if (!mime) throw new Error(text.unsupported);
+    await work.current;
+    if (!alive.current || queue.getState().conflict) throw new Error(text.conflict);
+    busyRef.current = true; setBusy(true);
+    try {
+      await queue.retry();
+      const original = file.type === mime ? file : new File([file], file.name, { type: mime });
+      const updated = await studio.uploadDocument(board.projectId, null, original, [{ ...pageSource(replacement.document, replacement.pageIndex), newPageIndex }]);
+      if (!alive.current) return;
+      const next = [...documentsRef.current.filter((item) => documentKey(item) !== documentKey(updated)), updated];
+      acceptDocuments(next);
+      await receive(next);
+      await queue.flush();
+      replacementOpen.current = false; setReplacement(null);
+    } finally { busyRef.current = false; if (alive.current) setBusy(false); }
+  };
 
   useEffect(() => {
     alive.current = true;
@@ -331,7 +397,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     let active = true;
     let refreshing = false;
     const refresh = async () => {
-      if (!active || refreshing || document.hidden || feedbackOpen.current) return;
+      if (!active || refreshing || document.hidden || feedbackOpen.current || replacementOpen.current) return;
       refreshing = true;
       try {
         await serial(async () => {
@@ -507,6 +573,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <p className="monkeyboard-received">{seen.current.has(key) ? text.received : text.pending}{document.generatedAt ? ` · ${new Date(document.generatedAt).toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>
             <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
             <a className="monkeyboard-source-link" href={documentUrl(window.location.href, pageSource(document, page))} target="_blank" rel="noopener noreferrer">{text.open} ↗</a>
+            <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => { replacementOpen.current = true; setReplacement({ document, pageIndex: page }); }}>{replacementCopy[language].action}</button>
           </article>;
         })}</div>
       </aside>
@@ -542,5 +609,6 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     </div>
     <footer className="monkeyboard-footer"><span>{text.hint}</span>{source && selected ? <a href={documentUrl(window.location.href, selected)} target="_blank" rel="noopener noreferrer">{source.fileName} · {selected.pageIndex + 1}/{source.pageCount} · {text.open} ↗</a> : <span>{text.select}</span>}</footer>
     {feedback && <FeedbackDialog selection={feedback} language={language} onCancel={() => { feedbackOpen.current = false; setFeedback(null); }} onSubmit={submitFeedback} />}
+    {replacement && <ReplacementDialog target={replacement} language={language} onCancel={() => { replacementOpen.current = false; setReplacement(null); }} onSubmit={replacePage} />}
   </section>;
 }
