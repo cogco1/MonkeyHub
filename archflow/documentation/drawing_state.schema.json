@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DrawingState",
+  "description": "Structure only. Cross-record references, scales, dimensions, factual status and paper containment are checked by validate_drawing_state.",
+  "type": "object",
+  "required": ["source", "project", "sheets", "views", "dimensions", "dimension_chains", "references", "components", "materials", "schedules", "notes", "interfaces", "revisions"],
+  "properties": {
+    "source": {"type": "object", "minProperties": 1},
+    "project": {"type": "object", "minProperties": 1},
+    "sheets": {"type": "array", "items": {"$ref": "#/$defs/sheet"}},
+    "views": {"type": "array", "items": {"$ref": "#/$defs/view"}},
+    "dimensions": {"type": "array", "items": {"$ref": "#/$defs/dimension"}},
+    "dimension_chains": {"type": "array", "items": {"$ref": "#/$defs/dimension_chain"}},
+    "references": {"type": "array", "items": {"$ref": "#/$defs/reference"}},
+    "components": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+    "materials": {"type": "array", "items": {"$ref": "#/$defs/material"}},
+    "schedules": {"type": "array", "items": {"$ref": "#/$defs/schedule"}},
+    "notes": {"type": "array", "items": {"$ref": "#/$defs/note"}},
+    "interfaces": {"type": "array", "items": {"$ref": "#/$defs/interface"}},
+    "revisions": {"type": "array", "items": {"$ref": "#/$defs/revision"}}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "text_list": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+    "rectangle": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4, "description": "[xmin,ymin,xmax,ymax] in paper mm, bottom-left origin"},
+    "source_ref": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "object", "minProperties": 1, "properties": {"dimension_ids": {"$ref": "#/$defs/text_list"}, "object_ids": {"$ref": "#/$defs/text_list"}}}]},
+    "responsibility": {"oneOf": [{"$ref": "#/$defs/text"}, {"$ref": "#/$defs/text_list"}]},
+    "sheet": {
+      "type": "object",
+      "required": ["number", "title", "purpose", "size_mm", "printable_rect_mm", "view_ids"],
+      "properties": {
+        "number": {"$ref": "#/$defs/text"}, "title": {"$ref": "#/$defs/text"}, "purpose": {"$ref": "#/$defs/text"},
+        "size_mm": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
+        "printable_rect_mm": {"$ref": "#/$defs/rectangle"}, "view_ids": {"$ref": "#/$defs/text_list"},
+        "primitive_bounds_mm": {"type": "array", "items": {"$ref": "#/$defs/rectangle"}}
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": ["id", "sheet", "number", "name", "drawing_type", "purpose", "scale", "object_ids", "bounds_mm"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "sheet": {"$ref": "#/$defs/text"}, "number": {"$ref": "#/$defs/text"},
+        "name": {"$ref": "#/$defs/text"}, "drawing_type": {"$ref": "#/$defs/text"}, "purpose": {"$ref": "#/$defs/text"},
+        "scale": {"type": ["number", "null"]}, "scale_group": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]},
+        "scale_exception_reason": {"$ref": "#/$defs/text"}, "object_ids": {"$ref": "#/$defs/text_list"},
+        "bounds_mm": {"$ref": "#/$defs/rectangle"}, "information": {"$ref": "#/$defs/text_list"}
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["id", "view_id", "axis", "datum", "start", "end", "value", "role", "certainty", "representation", "actions", "use", "source"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "view_id": {"$ref": "#/$defs/text"}, "axis": {"$ref": "#/$defs/text"}, "datum": {"$ref": "#/$defs/text"},
+        "start": {"type": "number"}, "end": {"type": "number"}, "value": {"type": "number"}, "role": {"$ref": "#/$defs/text"},
+        "certainty": {"$ref": "#/$defs/text"}, "representation": {"$ref": "#/$defs/text"}, "actions": {"$ref": "#/$defs/text_list"},
+        "use": {"$ref": "#/$defs/text"}, "source": {"$ref": "#/$defs/source_ref"}
+      }
+    },
+    "dimension_chain": {
+      "type": "object", "required": ["id", "dimension_ids", "overall_dimension_id"],
+      "properties": {"id": {"$ref": "#/$defs/text"}, "dimension_ids": {"$ref": "#/$defs/text_list"}, "overall_dimension_id": {"$ref": "#/$defs/text"}}
+    },
+    "reference": {
+      "type": "object", "required": ["source_view_id", "target_view_id"],
+      "properties": {"source_view_id": {"$ref": "#/$defs/text"}, "target_view_id": {"$ref": "#/$defs/text"}}
+    },
+    "component": {
+      "type": "object", "required": ["object_id", "tag", "material_tag", "certainty", "representation", "actions"],
+      "properties": {
+        "object_id": {"$ref": "#/$defs/text"}, "tag": {"$ref": "#/$defs/text"}, "material_tag": {"$ref": "#/$defs/text"},
+        "certainty": {"$ref": "#/$defs/text"}, "representation": {"$ref": "#/$defs/text"}, "actions": {"$ref": "#/$defs/text_list"},
+        "construction_scope": {"$ref": "#/$defs/text"}
+      }
+    },
+    "material": {
+      "type": "object", "required": ["tag", "name", "certainty"],
+      "properties": {"tag": {"$ref": "#/$defs/text"}, "name": {"$ref": "#/$defs/text"}, "thickness_mm": {"type": "number"}, "certainty": {"$ref": "#/$defs/text"}}
+    },
+    "schedule": {
+      "type": "object", "required": ["object_id", "component_tag", "material_tag"],
+      "properties": {"object_id": {"$ref": "#/$defs/text"}, "component_tag": {"$ref": "#/$defs/text"}, "material_tag": {"$ref": "#/$defs/text"}, "view_id": {"$ref": "#/$defs/text"}}
+    },
+    "note": {
+      "type": "object", "required": ["id", "text", "view_ids", "repeat_allowed"],
+      "properties": {"id": {"$ref": "#/$defs/text"}, "text": {"$ref": "#/$defs/text"}, "view_ids": {"$ref": "#/$defs/text_list"}, "repeat_allowed": {"type": "boolean"}}
+    },
+    "interface": {
+      "type": "object", "required": ["id", "object_ids", "design_provides", "field_verify", "vendor_provides", "status"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "object_ids": {"$ref": "#/$defs/text_list"}, "view_ids": {"$ref": "#/$defs/text_list"},
+        "design_provides": {"$ref": "#/$defs/responsibility"}, "field_verify": {"$ref": "#/$defs/responsibility"},
+        "vendor_provides": {"$ref": "#/$defs/responsibility"}, "status": {"$ref": "#/$defs/text"}
+      }
+    },
+    "revision": {
+      "type": "object", "required": ["id", "date", "description", "issued_by", "issue_status", "changed_view_ids"],
+      "properties": {
+        "id": {"$ref": "#/$defs/text"}, "date": {"$ref": "#/$defs/text"}, "description": {"$ref": "#/$defs/text"},
+        "issued_by": {"oneOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]}, "issue_status": {"$ref": "#/$defs/text"},
+        "changed_view_ids": {"$ref": "#/$defs/text_list"}, "changed_object_ids": {"$ref": "#/$defs/text_list"}, "changes": {"type": "array"}
+      }
+    }
+  }
+}

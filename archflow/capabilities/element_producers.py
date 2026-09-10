@@ -65,9 +65,10 @@ class ElementProducerError(ValueError):
 def producer_signatures() -> dict[str, dict[str, Any]]:
     """The semantic authoring contracts the Studio can query and execute.
 
-    The first authoring consumer is a wall with hosted apertures. Other
-    existing producers remain executable; they are not advertised as semantic
-    creation tools until their authored parameter contract is exposed here.
+    Walls with hosted apertures, prisms and bounded planar surfaces expose their
+    authored parameters here. Other existing producers remain executable;
+    they are not advertised as semantic creation tools until their authored
+    parameter contract is exposed here.
     Values and placements belong to the project's record, never this table.
     """
 
@@ -147,6 +148,41 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "A semicircular aperture requires spring_height >= sill and head - spring_height = width / 2.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
+        ],
+    }, "prism": {
+        "description": "A stated XZ profile extruded upward by a positive height from its referenced base and elevation offset.",
+        "parameters": obj({
+            "profile": {"type": "array", "minItems": 3,
+                        "items": {"type": "array", "items": scalar, "minItems": 2, "maxItems": 2}},
+            "height": {**scalar, "description": "Positive extrusion height in metres; optional when references.top determines it."},
+            "elevation": {**scalar, "description": "Vertical offset in metres above references.base, added to that reference's explicit offset; defaults to zero."},
+        }),
+        "references": obj({
+            "base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]},
+            "top": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]},
+        }),
+        "requiredParameters": ["profile"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "Provide height or references.top; if both are stated, base datum plus reference offset plus elevation plus height must agree with top.",
+            "The single XZ profile is closed by the existing prism extrusion; separate holes are unsupported.",
+            "Without a top reference, changing elevation moves the whole prism and changing height keeps its bottom fixed.",
+            "Use explicit @parameter bindings for dimensions that subsequent changes must share.",
+        ],
+    }, "planar-surface": {
+        "description": "A visible horizontal surface with a stated boundary and elevation; no construction thickness or inferred supporting solid.",
+        "parameters": obj({
+            "profile": {"type": "array", "minItems": 4,
+                        "items": {"type": "array", "items": scalar, "minItems": 2, "maxItems": 2}},
+            "elevation": {**scalar, "description": "Vertical offset in metres above references.base, added to that reference's explicit offset; defaults to zero."},
+        }),
+        "references": obj({"base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]}}),
+        "requiredParameters": ["profile"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "The profile is one simple XZ boundary with its first vertex explicitly repeated at the end; holes are unsupported.",
+            "The surface elevation is its resolved base datum plus the reference offset plus parameters.elevation.",
+            "Use an explicit @parameter binding for an elevation that subsequent changes must share.",
         ],
     }}
 
@@ -412,7 +448,7 @@ def _base(row: ElementRow, context: ProductionContext) -> tuple[str, float]:
     return resolve_elevation(parse_reference(base), context.references)
 
 
-def _height(row: ElementRow, context: ProductionContext, base_datum: str) -> float:
+def _height(row: ElementRow, context: ProductionContext, base_datum: str, *, base_offset: float | None = None) -> float:
     params = row.params
     declared = _positive(params["height"], f"{row.element_id} height") if "height" in params else None
     top = row.references.get("top")
@@ -425,7 +461,8 @@ def _height(row: ElementRow, context: ProductionContext, base_datum: str) -> flo
         offset = _finite(top.get("offset", 0.0), f"{row.element_id} top offset")
     else:
         top_id, offset = resolve_elevation(parse_reference(top), context.references)
-    _, base_offset = _base(row, context)
+    if base_offset is None:
+        _, base_offset = _base(row, context)
     height = round(context.datum_value(top_id) + offset - context.datum_value(base_datum) - base_offset, 9)
     if height <= 0.0:
         raise ElementProducerError(f"{row.element_id}: top {top_id!r} is not above base {base_datum!r}")
@@ -669,13 +706,36 @@ def _plan_point(row: ElementRow, context: ProductionContext, key: str = "at") ->
     return resolve_plan(parse_reference(reference), context.references)
 
 
+def produce_planar_surface(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """The stated visible surface at a datum, with no inferred thickness or support."""
+
+    unknown = set(row.params) - {"profile", "elevation"}
+    if unknown:
+        raise ElementProducerError(f"{row.element_id}: planar-surface does not support {sorted(unknown)}")
+    if set(row.references) != {"base"}:
+        raise ElementProducerError(f"{row.element_id}: planar-surface requires only an explicit base reference")
+    base_datum, base_offset = _base(row, context)
+    base_offset += _finite(row.params.get("elevation", 0.0), f"{row.element_id} elevation")
+    profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in row.params["profile"]]
+    if len(profile) < 4 or profile[0] != profile[-1]:
+        raise ElementProducerError(f"{row.element_id}: planar-surface profile must explicitly close at its first point")
+    parameters = [_points("profile", profile)]
+    if base_offset:
+        parameters.insert(0, GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=base_offset, unit=_M))
+    operation = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.PLANAR_SURFACE,
+                                  output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id,
+                                  parameters=tuple(parameters), semantic_binding_ids=(row.binding_id,))
+    return ProducedElement((operation,), (_bind(row.element_id, base_datum),))
+
+
 def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElement:
-    """A straight extrusion of a declared profile, standing on a datum (an offset only as the base reference says)."""
+    """Extrude upward from the base plus the stated elevation, keeping height independent."""
 
     p = row.params
     base_datum, base_offset = _base(row, context)
+    base_offset += _finite(p.get("elevation", 0.0), f"{row.element_id} elevation")
     profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in p["profile"]]
-    height = _height(row, context, base_datum)
+    height = _height(row, context, base_datum, base_offset=base_offset)
     op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset)
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top  # a prism is what other elements sit on: it publishes its top like a beam does
@@ -1017,7 +1077,7 @@ def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedEle
 
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
-    "prism": produce_prism, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
+    "prism": produce_prism, "planar-surface": produce_planar_surface, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
     "stair": produce_stair, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
 }
 

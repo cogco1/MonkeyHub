@@ -9,7 +9,8 @@ tessellated for a viewer-readable mesh ``.3dm`` from the same model.
 
 What this module owns is the kernel-facing mechanics only: loading the
 binding, the one-time coordinate mapping, building shapes, measuring them,
-writing and cold-reading STEP, tessellating, and writing the mesh preview.
+writing and cold-reading STEP, tessellating, writing the mesh preview, and
+extracting named orthographic and section polylines from the same B-reps.
 The export identity, the readback verification against the analytic
 predictor and the receipt live in ``adapters.cad_execution``; nothing here
 knows a project, a run or a workspace rule.
@@ -21,7 +22,8 @@ mapping at point construction (``cad_point``), so STEP, preview and the
 Rhino ``.3dm`` share one frame and one set of expected bounds.
 
 Capability.  Only the operation kinds the initial consumers actually use are
-realized: ``solid`` (box), ``revolve`` (cylinder or conical frustum), ``extrusion``, polyline ``loft`` (capped into a
+realized: ``solid`` (box), ``revolve`` (cylinder or conical frustum), ``extrusion``,
+``planar_surface`` (one bounded planar face without thickness), polyline ``loft`` (capped into a
 closed solid, or with ``cap_ends`` false the lofted surface itself, open at
 both end sections, for a source that gives a drum or a dome as a surface
 without thickness), the three booleans, and the linear ``array`` the
@@ -107,6 +109,7 @@ SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
         "solid",
         "revolve",
         "extrusion",
+        "planar_surface",
         "loft",
         "boolean_union",
         "boolean_difference",
@@ -116,12 +119,12 @@ SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
 )
 
 #: What an operation declares it delivers: a closed solid, or (an uncapped
-#: loft) the lofted surface open at its end sections.
+#: loft or bounded planar face) an open surface without thickness.
 CLOSED_SOLID = "closed_solid"
 OPEN_SURFACE = "open_surface"
 
 _UNSUPPORTED_REASONS: Mapping[str, str] = {
-    "curve": "curve objects are not B-rep deliveries; the OCCT executor writes solids and lofted surfaces only",
+    "curve": "curve objects are not B-rep deliveries; the OCCT executor writes solids and surfaces only",
     "transform": "transform has no exact realization (the Rhino translation only copies it)",
     "radial_array": "radial block instancing is not realized by the OCCT executor yet",
     "sweep": "sweep is not realized by the OCCT executor yet",
@@ -165,6 +168,7 @@ def _occt() -> SimpleNamespace:
             for name in (
                 "gp",
                 "BRep",
+                "BRepAdaptor",
                 "BRepAlgoAPI",
                 "BRepBndLib",
                 "BRepBuilderAPI",
@@ -174,14 +178,19 @@ def _occt() -> SimpleNamespace:
                 "BRepMesh",
                 "BRepOffsetAPI",
                 "BRepPrimAPI",
+                "BRepTools",
                 "Bnd",
                 "GProp",
+                "GCPnts",
+                "HLRAlgo",
+                "HLRBRep",
                 "IFSelect",
                 "Interface",
                 "Message",
                 "Quantity",
                 "STEPCAFControl",
                 "STEPControl",
+                "ShapeAnalysis",
                 "ShapeUpgrade",
                 "TCollection",
                 "TDF",
@@ -321,12 +330,14 @@ def declared_delivery(operation) -> str:
     """``CLOSED_SOLID`` or ``OPEN_SURFACE``: what the operation itself says it delivers.
 
     Read off the operation's own parameters, never off a built shape: a
-    ``loft`` whose ``cap_ends`` is false is the open lofted surface; every
-    other realized kind is a closed solid.  The readback verification uses
+    ``planar_surface`` and a ``loft`` whose ``cap_ends`` is false are open
+    surfaces; every other realized kind is a closed solid. The readback verification uses
     the same word to decide which checks a saved object must pass.
     """
 
-    if operation.kind.value == "loft" and _params(operation).get("cap_ends", True) is False:
+    if operation.kind.value == "planar_surface" or (
+        operation.kind.value == "loft" and _params(operation).get("cap_ends", True) is False
+    ):
         return OPEN_SURFACE
     return CLOSED_SOLID
 
@@ -347,6 +358,11 @@ def _build_operation(
         return occ.BRepPrimAPI.BRepPrimAPI_MakeBox(
             _gp_point(occ, origin), _gp_point(occ, far)
         ).Shape()
+    if kind == "planar_surface":
+        profile = lift_to_base_level(params["profile"], params, op_id)
+        # GeometryOperation already requires an explicitly closed, planar,
+        # simple boundary. The polygon builder owns closing the final edge.
+        return _planar_face(occ, profile[:-1], op_id)
     if kind == "extrusion":
         profile = lift_to_base_level(params["profile"], params, op_id)
         vector = [float(value) for value in params["vector"]]
@@ -549,7 +565,7 @@ def _require_built_shape(occ: SimpleNamespace, shape, op_id: str, kind: str, *, 
         if _count(occ, shape, occ.TopAbs.TopAbs_FACE) == 0:
             raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no surface")
         if solids or _free_edge_count(occ, shape) == 0:
-            raise OcctBuildError(f"{op_id} ({kind}): the uncapped loft closed into a solid instead of an open surface")
+            raise OcctBuildError(f"{op_id} ({kind}): the declared surface closed instead of retaining an open boundary")
     elif solids == 0:
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no solid")
     if not occ.BRepCheck.BRepCheck_Analyzer(shape).IsValid():
@@ -681,7 +697,7 @@ def classify_program_point(shape, program_xyz: Sequence[float]) -> str:
 
 @dataclass(frozen=True)
 class StepObject:
-    """One named shape to write (a solid, or an open lofted surface): identity, layer and display colour."""
+    """One named solid or surface to write: identity, layer and display colour."""
 
     object_id: str
     shape: Any
@@ -697,6 +713,291 @@ class StepEntry:
     layers: tuple[str, ...]
     color: tuple[int, int, int] | None
     shape: Any
+
+
+@dataclass(frozen=True, slots=True)
+class OcctDrawingPolyline:
+    """One object's visible, hidden or section edge in the caller's drawing frame."""
+
+    object_id: str
+    kind: str
+    points: tuple[tuple[float, float], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OcctDrawingRegion:
+    """One solid's section boundaries; fill these closed loops with even-odd winding."""
+
+    object_id: str
+    loops: tuple[tuple[tuple[float, float], ...], ...]
+
+
+def _drawing_frame(origin, right, up, linear_deflection):
+    vectors = []
+    for label, value in (("origin", origin), ("right", right), ("up", up)):
+        if (not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 3
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in value)):
+            raise OcctBackendError(f"drawing {label} must be three finite numbers")
+        vectors.append(tuple(float(v) for v in value))
+    origin, right, up = vectors
+    for label, vector in (("right", right), ("up", up)):
+        if not math.isclose(math.hypot(*vector), 1.0, rel_tol=0.0, abs_tol=1e-9):
+            raise OcctBackendError(f"drawing {label} must be a unit direction")
+    if abs(sum(r * u for r, u in zip(right, up))) > 1e-9:
+        raise OcctBackendError("drawing right and up must be perpendicular")
+    if (isinstance(linear_deflection, bool) or not isinstance(linear_deflection, (int, float))
+            or not math.isfinite(linear_deflection) or linear_deflection <= 0.0):
+        raise OcctBackendError("drawing linear_deflection must be finite and positive in the shape's unit")
+    right = tuple(v / math.hypot(*right) for v in right)
+    normal = (right[1] * up[2] - right[2] * up[1],
+              right[2] * up[0] - right[0] * up[2],
+              right[0] * up[1] - right[1] * up[0])
+    # Match gp_Ax2's orthonormal frame exactly, including accepted numeric roundoff.
+    normal = tuple(v / math.hypot(*normal) for v in normal)
+    up = (normal[1] * right[2] - normal[2] * right[1],
+          normal[2] * right[0] - normal[0] * right[2],
+          normal[0] * right[1] - normal[1] * right[0])
+    return origin, right, up, normal
+
+
+def _drawing_entries(occ, entries: Sequence[StepEntry], object_ids: Sequence[str]) -> tuple[StepEntry, ...]:
+    if (not isinstance(object_ids, Sequence) or isinstance(object_ids, (str, bytes)) or not object_ids
+            or any(not isinstance(name, str) or not name.strip() for name in object_ids)
+            or len(set(object_ids)) != len(object_ids)):
+        raise OcctBackendError("drawing object_ids must name at least one unique, non-empty object")
+    by_name: dict[str, list[StepEntry]] = {}
+    for entry in entries:
+        if not isinstance(entry, StepEntry):
+            raise OcctBackendError("drawing entries must be StepEntry values")
+        if entry.name is not None:
+            by_name.setdefault(entry.name, []).append(entry)
+    selected = []
+    for name in sorted(object_ids):
+        matches = by_name.get(name, [])
+        if len(matches) != 1:
+            raise OcctBackendError(f"drawing object {name!r} is {'unknown' if not matches else 'ambiguous'}")
+        entry = matches[0]
+        shape = entry.shape
+        if (not isinstance(shape, occ.TopoDS.TopoDS_Shape) or shape.IsNull()
+                or _count(occ, shape, occ.TopAbs.TopAbs_EDGE) == 0):
+            raise OcctBackendError(f"drawing object {name!r} has no non-empty shape")
+        if not occ.BRepCheck.BRepCheck_Analyzer(shape).IsValid():
+            raise OcctBackendError(f"drawing object {name!r} has an invalid shape")
+        selected.append(entry)
+    return tuple(selected)
+
+
+def _drawing_point(point, frame):
+    if frame is None:
+        return (point.X(), point.Y())
+    origin, right, up, _ = frame
+    delta = tuple(v - o for v, o in zip((point.X(), point.Y(), point.Z()), origin))
+    return (sum(v * r for v, r in zip(delta, right)), sum(v * u for v, u in zip(delta, up)))
+
+
+def _drawing_edge_points(occ, edge, object_id: str, *, frame, linear_deflection: float):
+    if occ.BRep.BRep_Tool.Degenerated_s(edge):
+        return ()
+    curve = occ.BRepAdaptor.BRepAdaptor_Curve(edge)
+    sample = occ.GCPnts.GCPnts_UniformDeflection(curve, linear_deflection, True)
+    if not sample.IsDone():
+        raise OcctBuildError(f"drawing object {object_id!r}: edge discretization failed")
+    points = []
+    for index in range(1, sample.NbPoints() + 1):
+        xy = _drawing_point(sample.Value(index), frame)
+        if not points or xy != points[-1]:
+            points.append(xy)
+    return tuple(points)
+
+
+def _drawing_polylines(occ, shape, object_id: str, kind: str, *, frame, linear_deflection: float):
+    """Discretize actual B-rep edges; HLR edges already lie in drawing XY."""
+
+    if shape.IsNull():
+        return ()
+    lines = []
+    for item in _explore(occ, shape, occ.TopAbs.TopAbs_EDGE):
+        edge = occ.TopoDS.TopoDS.Edge_s(item)
+        points = _drawing_edge_points(occ, edge, object_id, frame=frame, linear_deflection=linear_deflection)
+        if len(points) > 1:
+            lines.append(OcctDrawingPolyline(object_id, kind, min(points, tuple(reversed(points)))))
+    return tuple(lines)
+
+
+def project_occt_lines(
+    entries: Sequence[StepEntry], *, object_ids: Sequence[str],
+    origin: Sequence[float], right: Sequence[float], up: Sequence[float],
+    linear_deflection: float,
+) -> tuple[OcctDrawingPolyline, ...]:
+    """Orthographic sharp edges and silhouettes, with visibility among selected objects.
+
+    Inputs are named shapes, normally from ``read_step``. Origin and all output
+    points use that read's CAD Z-up frame and length unit; right/up are unit,
+    perpendicular directions. ``right cross up`` points toward the viewer.
+    ``linear_deflection`` is the maximum chord deviation in that same unit
+    (0.0001 for a 0.1 mm drawing from metre shapes). Nothing is written.
+
+    All selected shapes participate in one HLR calculation, then their lines
+    are extracted by object name. Coincident front/back edges can carry both
+    kinds; draw hidden lines before visible ones. Unselected shapes do not hide.
+    """
+
+    frame = _drawing_frame(origin, right, up, linear_deflection)
+    occ = _occt()
+    selected = _drawing_entries(occ, entries, object_ids)
+    origin, right, _, normal = frame
+    try:
+        algorithm = occ.HLRBRep.HLRBRep_Algo()
+        for entry in selected:
+            algorithm.Add(entry.shape)
+        axis = occ.gp.gp_Ax2(occ.gp.gp_Pnt(*origin), occ.gp.gp_Dir(*normal), occ.gp.gp_Dir(*right))
+        algorithm.Projector(occ.HLRAlgo.HLRAlgo_Projector(axis))
+        algorithm.Update()
+        algorithm.Hide()
+        extraction = occ.HLRBRep.HLRBRep_HLRToShape(algorithm)
+        lines = []
+        for entry in selected:
+            for kind, methods in (("visible", ("VCompound", "OutLineVCompound")),
+                                  ("hidden", ("HCompound", "OutLineHCompound"))):
+                for method in methods:
+                    lines.extend(_drawing_polylines(occ, getattr(extraction, method)(entry.shape), entry.name, kind,
+                                                     frame=None, linear_deflection=linear_deflection))
+    except OcctBackendError:
+        raise
+    except Exception as exc:
+        raise OcctBuildError(f"orthographic projection failed: {exc}") from exc
+    return tuple(sorted(set(lines), key=lambda line: (line.object_id, line.kind, line.points)))
+
+
+def _plane_section(occ, shape, object_id: str, plane):
+    try:
+        section = occ.BRepAlgoAPI.BRepAlgoAPI_Section(shape, plane, False)
+        section.Build()
+        if not section.IsDone():
+            raise OcctBuildError(f"drawing object {object_id!r}: plane section failed")
+        return section.Shape()
+    except OcctBackendError:
+        raise
+    except Exception as exc:
+        raise OcctBuildError(f"drawing object {object_id!r}: plane section failed: {exc}") from exc
+
+
+def section_occt_lines(
+    entries: Sequence[StepEntry], *, object_ids: Sequence[str],
+    origin: Sequence[float], right: Sequence[float], up: Sequence[float],
+    linear_deflection: float,
+) -> tuple[OcctDrawingPolyline, ...]:
+    """Intersect named shapes with the plane through origin spanned by right/up.
+
+    Frame, output units and chord deviation follow ``project_occt_lines``;
+    every returned line has kind ``section``. A valid shape missed by the
+    plane contributes no lines; unknown, ambiguous and empty selected objects
+    are errors. These are cut edges, not projected background geometry.
+    """
+
+    frame = _drawing_frame(origin, right, up, linear_deflection)
+    occ = _occt()
+    selected = _drawing_entries(occ, entries, object_ids)
+    origin, _, _, normal = frame
+    plane = occ.gp.gp_Pln(occ.gp.gp_Pnt(*origin), occ.gp.gp_Dir(*normal))
+    lines = []
+    for entry in selected:
+        try:
+            section = _plane_section(occ, entry.shape, entry.name, plane)
+            lines.extend(_drawing_polylines(occ, section, entry.name, "section",
+                                             frame=frame, linear_deflection=linear_deflection))
+        except OcctBackendError:
+            raise
+        except Exception as exc:
+            raise OcctBuildError(f"drawing object {entry.name!r}: plane section failed: {exc}") from exc
+    return tuple(sorted(set(lines), key=lambda line: (line.object_id, line.kind, line.points)))
+
+
+def _section_loops(occ, section, object_id: str, *, frame, linear_deflection: float):
+    edges = occ.TopTools.TopTools_HSequenceOfShape()
+    for item in _explore(occ, section, occ.TopAbs.TopAbs_EDGE):
+        edge = occ.TopoDS.TopoDS.Edge_s(item)
+        if not occ.BRep.BRep_Tool.Degenerated_s(edge):
+            edges.Append(edge)
+    wires = occ.TopTools.TopTools_HSequenceOfShape()
+    # Shared topology only: proximity must never turn an open cut into material.
+    occ.ShapeAnalysis.ShapeAnalysis_FreeBounds.ConnectEdgesToWires_s(edges, 0.0, True, wires)
+    loops = []
+    for index in range(1, wires.Length() + 1):
+        wire = occ.TopoDS.TopoDS.Wire_s(wires.Value(index))
+        if not occ.BRep.BRep_Tool.IsClosed_s(wire):
+            continue
+        explorer = occ.BRepTools.BRepTools_WireExplorer(wire)
+        points = []
+        visited = 0
+        while explorer.More():
+            edge = explorer.Current()
+            segment = list(_drawing_edge_points(occ, edge, object_id, frame=frame,
+                                                linear_deflection=linear_deflection))
+            if edge.Orientation() == occ.TopAbs.TopAbs_REVERSED:
+                segment.reverse()
+            if len(segment) < 2:
+                raise OcctBuildError(f"drawing object {object_id!r}: section edge has no drawable extent")
+            # Sampled curve endpoints can differ by roundoff; use their shared
+            # B-rep vertices, whose connectivity has already proved closure.
+            for position, vertex in ((0, occ.TopExp.TopExp.FirstVertex_s(edge, True)),
+                                     (-1, occ.TopExp.TopExp.LastVertex_s(edge, True))):
+                segment[position] = _drawing_point(occ.BRep.BRep_Tool.Pnt_s(vertex), frame)
+            if points and points[-1] != segment[0]:
+                raise OcctBuildError(f"drawing object {object_id!r}: section wire is not connected")
+            points.extend(segment[1:] if points else segment)
+            visited += 1
+            explorer.Next()
+        if visited != _count(occ, wire, occ.TopAbs.TopAbs_EDGE) or not points or points[0] != points[-1]:
+            raise OcctBuildError(f"drawing object {object_id!r}: section wire traversal is incomplete")
+        if len(set(points)) < 3:
+            continue
+        ring = tuple(points[:-1])
+        first = min(ring)
+        rotations = []
+        for direction in (ring, tuple(reversed(ring))):
+            for start, point in enumerate(direction):
+                if point == first:
+                    rotations.append(direction[start:] + direction[:start])
+        ring = min(rotations)
+        loops.append(ring + (ring[0],))
+    return tuple(sorted(set(loops)))
+
+
+def section_occt_regions(
+    entries: Sequence[StepEntry], *, object_ids: Sequence[str],
+    origin: Sequence[float], right: Sequence[float], up: Sequence[float],
+    linear_deflection: float,
+) -> tuple[OcctDrawingRegion, ...]:
+    """Closed material sections in the same frame and units as ``section_occt_lines``.
+
+    Each value contains one solid's actual closed cut boundaries, including
+    holes and disconnected pieces. Fill its loops together using even-odd;
+    fill separate values separately, even when their object_id is the same.
+    Open surfaces and shells contribute no material, and missed or tangent
+    cuts with no closed boundary contribute no region. Open cut edges are
+    never joined by proximity or closed with an invented segment.
+    """
+
+    frame = _drawing_frame(origin, right, up, linear_deflection)
+    occ = _occt()
+    selected = _drawing_entries(occ, entries, object_ids)
+    origin, _, _, normal = frame
+    plane = occ.gp.gp_Pln(occ.gp.gp_Pnt(*origin), occ.gp.gp_Dir(*normal))
+    regions = []
+    for entry in selected:
+        try:
+            for solid in _explore(occ, entry.shape, occ.TopAbs.TopAbs_SOLID):
+                section = _plane_section(occ, solid, entry.name, plane)
+                loops = _section_loops(occ, section, entry.name, frame=frame,
+                                       linear_deflection=linear_deflection)
+                if loops:
+                    regions.append(OcctDrawingRegion(entry.name, loops))
+        except OcctBackendError:
+            raise
+        except Exception as exc:
+            raise OcctBuildError(f"drawing object {entry.name!r}: section regions failed: {exc}") from exc
+    return tuple(sorted(set(regions), key=lambda region: (region.object_id, region.loops)))
 
 
 def _step_units(occ: SimpleNamespace, length_unit: str) -> None:
@@ -788,21 +1089,24 @@ def read_step(path: Path, *, length_unit: str) -> tuple[StepEntry, ...]:
         shape = shape_tool.GetShape_s(label)
         layers = _layers_of(occ, layer_tool, label)
         rgb = _color_of(occ, color_tool, shape)
-        if shape.ShapeType() == occ.TopAbs.TopAbs_COMPOUND:
+        if shape.ShapeType() in (occ.TopAbs.TopAbs_COMPOUND, occ.TopAbs.TopAbs_SHELL):
             # A compound (an array's copies) is written as one named shape,
             # but the reader files its layer and colour on each solid, not
             # on the compound's label.  The entry reports them only when
             # every solid agrees; a mixed compound stays unlayered and is
             # refused by the readback verification.
-            solids = tuple(_explore(occ, shape, occ.TopAbs.TopAbs_SOLID))
-            if not layers and solids:
-                per_solid = {_layers_of(occ, layer_tool, solid) for solid in solids}
-                if len(per_solid) == 1:
-                    layers = per_solid.pop()
-            if rgb is None and solids:
-                per_solid_color = {_color_of(occ, color_tool, solid) for solid in solids}
-                if len(per_solid_color) == 1:
-                    rgb = per_solid_color.pop()
+            # A bounded planar face is cold-read as a shell with attributes
+            # on its face. Read that actual metadata, retaining the same
+            # all-members-agree requirement as the solid array path.
+            members = tuple(_explore(occ, shape, occ.TopAbs.TopAbs_SOLID)) or tuple(_explore(occ, shape, occ.TopAbs.TopAbs_FACE))
+            if not layers and members:
+                per_member = {_layers_of(occ, layer_tool, member) for member in members}
+                if len(per_member) == 1:
+                    layers = per_member.pop()
+            if rgb is None and members:
+                per_member_color = {_color_of(occ, color_tool, member) for member in members}
+                if len(per_member_color) == 1:
+                    rgb = per_member_color.pop()
         entries.append(
             StepEntry(name=_label_name(occ, label), layers=layers, color=rgb, shape=shape)
         )

@@ -47,6 +47,64 @@ def _finite(value: object, field: str) -> float:
         raise GeometryProgramError(str(exc)) from exc
 
 
+def _require_planar_surface_profile(profile) -> None:
+    """One explicitly closed, simple planar polygon; never repair its boundary."""
+
+    if len(profile) < 4 or profile[0] != profile[-1]:
+        raise GeometryProgramError("planar_surface profile must explicitly close at its first point")
+    points = [tuple(point) for point in profile[:-1]]
+    if len(set(points)) != len(points):
+        raise GeometryProgramError("planar_surface profile repeats a boundary vertex")
+    # Work relative to the first vertex so drawing coordinates do not inflate
+    # the planarity tolerance or cancel the normal's area calculation.
+    origin = points[0]
+    relative = [tuple(point[i] - origin[i] for i in range(3)) for point in points]
+    scale = max(abs(value) for point in relative for value in point)
+    tolerance = max(scale * 1e-9, 1e-12)
+    normal = [0.0, 0.0, 0.0]
+    for a, b in zip(relative, relative[1:] + relative[:1]):
+        normal[0] += a[1] * b[2] - a[2] * b[1]
+        normal[1] += a[2] * b[0] - a[0] * b[2]
+        normal[2] += a[0] * b[1] - a[1] * b[0]
+    magnitude = math.sqrt(sum(value * value for value in normal))
+    if magnitude <= tolerance * scale:
+        raise GeometryProgramError("planar_surface profile has zero area or a crossing boundary")
+    if any(abs(sum(p[i] * normal[i] for i in range(3))) > tolerance * magnitude for p in relative):
+        raise GeometryProgramError("planar_surface profile is not planar")
+    omit = max(range(3), key=lambda i: abs(normal[i]))
+    planar = [tuple(point[i] for i in range(3) if i != omit) for point in relative]
+    area_tolerance = tolerance * scale
+
+    def turn(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def on_segment(a, b, c):
+        return abs(turn(a, b, c)) <= area_tolerance and all(
+            min(a[i], b[i]) - tolerance <= c[i] <= max(a[i], b[i]) + tolerance for i in range(2)
+        )
+
+    count = len(planar)
+    for i, a in enumerate(planar):
+        b, previous = planar[(i + 1) % count], planar[i - 1]
+        if math.dist(a, b) <= tolerance:
+            raise GeometryProgramError("planar_surface profile has a zero-length edge")
+        if abs(turn(previous, a, b)) <= area_tolerance and sum(
+            (a[k] - previous[k]) * (b[k] - a[k]) for k in range(2)
+        ) < 0:
+            raise GeometryProgramError("planar_surface profile has overlapping adjacent edges")
+        for j in range(i + 2, count):
+            if i == 0 and j == count - 1:
+                continue
+            c, d = planar[j], planar[(j + 1) % count]
+            ab_c, ab_d, cd_a, cd_b = turn(a, b, c), turn(a, b, d), turn(c, d, a), turn(c, d, b)
+            crosses = ((ab_c > area_tolerance and ab_d < -area_tolerance) or
+                       (ab_c < -area_tolerance and ab_d > area_tolerance)) and (
+                       (cd_a > area_tolerance and cd_b < -area_tolerance) or
+                       (cd_a < -area_tolerance and cd_b > area_tolerance))
+            if crosses or any((on_segment(a, b, c), on_segment(a, b, d), on_segment(c, d, a), on_segment(c, d, b))):
+                raise GeometryProgramError("planar_surface profile has a self-intersecting boundary")
+
+
 class LengthUnit(StrEnum):
     MILLIMETER = "millimeter"
     METER = "meter"
@@ -59,6 +117,7 @@ class GeometryOperationKind(StrEnum):
     SOLID = "solid"
     TRANSFORM = "transform"
     EXTRUSION = "extrusion"
+    PLANAR_SURFACE = "planar_surface"
     REVOLVE = "revolve"
     LOFT = "loft"
     SWEEP = "sweep"
@@ -525,6 +584,11 @@ class GeometryOperation:
             raise GeometryProgramError(
                 "parameters require unique deterministic names"
             )
+        if self.kind is GeometryOperationKind.PLANAR_SURFACE:
+            profile = next((item for item in self.parameters if item.name == "profile"), None)
+            if profile is None or profile.kind is not GeometryParameterKind.POINTS3:
+                raise GeometryProgramError("planar_surface requires a POINTS3 profile")
+            _require_planar_surface_profile(json.loads(profile.value_json))
         object.__setattr__(self, "statements", _statements(self.statements))
         _ids(self.semantic_binding_ids, "operation semantic_binding_ids")
         _ids(

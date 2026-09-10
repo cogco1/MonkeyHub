@@ -435,7 +435,8 @@ def solve_wall(
         raise WallSolverError("opening ids must be unique")
     for opening in openings:
         for a0, a1 in opening.instances():
-            if a0 < 0.0 or a1 > wall.length:
+            # Compare at the same precision as the emitted geometry; keep authored dimensions.
+            if round(a0, 9) < 0.0 or round(a1, 9) > round(wall.length, 9):
                 raise WallSolverError(f"opening {opening.opening_id} lies outside the wall length")
         if opening.head > wall.height:
             raise WallSolverError(f"opening {opening.opening_id} head is above the wall top")

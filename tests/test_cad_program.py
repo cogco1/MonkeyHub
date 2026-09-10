@@ -48,6 +48,17 @@ def program(*operations, bindings=()):
 
 
 class TranslateTest(unittest.TestCase):
+    def test_planar_surface_uses_the_explicit_closed_boundary_at_its_datum(self):
+        build = program(op("floor", "planar_surface", ("floor-object",),
+                           profile=[[0, 0, 0], [2, 0, 0], [2, 0, 3], [0, 0, 0]], base_level=2.7, base_offset=-0.1))
+        translation = translate_to_rhino_python(build)
+        self.assertIn("rs.AddPlanarSrf(_crv)", translation.script)
+        self.assertNotIn("CapPlanarHoles", translation.script)
+        self.assertNotIn("ExtrudeCurve", translation.script)
+        self.assertIn("(2.0,3.0,2.6)", translation.script)
+        self.assertEqual(expected_object_bounds(build)["floor-object"],
+                         {"bbox_min": [0.0, 2.6, 0.0], "bbox_max": [2.0, 2.6, 3.0], "brep_count": 1})
+
     def test_curve_can_be_retained_as_a_saved_inspection_witness(self):
         build = program(
             op(

@@ -225,6 +225,107 @@ class SemanticWallContractTests(unittest.TestCase):
             validate_element_contract(candidate, (wall.entity_id,))
 
 
+class PlanarSurfaceProducerTests(unittest.TestCase):
+    def test_a_bound_elevation_edit_moves_the_surface_and_keeps_the_base(self) -> None:
+        from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+        from tests.support import shared_bound_state
+
+        record = authored_record()
+        surface = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
+            "producer": "planar-surface", "component_id": "envelope",
+            "references": {"base": {"offset_from": {"level": PN, "offset": -0.1}}},
+            "params": {"elevation": "@ceiling_height", "profile": [[0, 0], [2, 0], [2, 3], [0, 0]]},
+        })
+        record = replace(record, entities=tuple(surface if e.entity_id == surface.entity_id else e for e in record.entities),
+                         parameters=record.parameters + (Parameter("ceiling_height", 2.7, "m"),)).bound_to(shared_bound_state()[1])
+        changed = apply_state_record_operator(record, StateRecordOperator(
+            kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+            target_ref="parameter:ceiling_height", key="ceiling_height", value=3.2,
+        ))
+        elevations = []
+        for value in (record, changed):
+            validate_element_contract(value, (surface.entity_id,))
+            row = next(row for row in element_rows_of(value) if row.element_id == surface.entity_id)
+            produced, context = _produce((row,))
+            element = produced[0]
+            self.assertEqual(row.references, surface.fields["references"])
+            self.assertEqual(element.bindings[0].datum_id, PN)
+            self.assertEqual((element.datums, element.relations, context.published), ((), (), {}))
+            elevations.append(_op_params(element.operations[0])["base_offset"])
+        self.assertAlmostEqual(elevations[1] - elevations[0], 0.5)
+
+    def test_missing_closure_and_unimplemented_thickness_are_not_repaired(self) -> None:
+        row = ElementRow("surface", "envelope", "planar-surface", {"base": {"level": PN}},
+                         {"profile": [[0, 0], [2, 0], [2, 3], [0, 0]]}, BASIS)
+        for params, message in (({"profile": row.params["profile"][:-1]}, "explicitly close"),
+                                ({**row.params, "thickness": 0.1}, "does not support")):
+            with self.subTest(message=message), self.assertRaisesRegex(ElementProducerError, message):
+                _produce((replace(row, params=params),))
+
+
+class PrismElevationTests(unittest.TestCase):
+    def test_top_reference_accounts_for_both_base_offset_and_elevation(self) -> None:
+        row = ElementRow("panel", "envelope", "prism",
+                         {"base": {"offset_from": {"level": "level-ground", "offset": 0.2}}, "top": {"level": PN}},
+                         {"profile": [[0, 0], [2, 0], [2, 3], [0, 3]], "elevation": 3.358, "height": 0.012}, BASIS)
+        for params in (row.params, {k: v for k, v in row.params.items() if k != "height"}):
+            produced, context = _produce((replace(row, params=params),))
+            self.assertAlmostEqual(_op_params(produced[0].operations[0])["vector"][1], 0.012)
+            self.assertAlmostEqual(context.datum_value("panel-top"), 3.57)
+        with self.assertRaisesRegex(ElementProducerError, "conflicts with the top reference"):
+            _produce((replace(row, params={**row.params, "elevation": 3.35}),))
+
+    def test_parameter_edits_keep_panel_elevation_and_thickness_independent(self) -> None:
+        from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+        from tests.support import shared_bound_state
+
+        record = authored_record()
+        panel = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
+            "producer": "prism", "component_id": "envelope", "references": {"base": {"level": "level-ground"}},
+            "params": {"elevation": "@ceiling_level", "height": "@board_thickness", "profile": [[0, 0], [2, 0], [2, 3], [0, 3]]},
+        })
+        record = replace(record, entities=tuple(panel if e.entity_id == panel.entity_id else e for e in record.entities),
+                         parameters=record.parameters + (Parameter("ceiling_level", 2.9, "m"), Parameter("board_thickness", 0.012, "m"))).bound_to(shared_bound_state()[1])
+        for key, value, expected_bottom, expected_thickness in (("ceiling_level", 3.0, 3.0, 0.012), ("board_thickness", 0.024, 2.9, 0.024)):
+            with self.subTest(key=key):
+                changed = apply_state_record_operator(record, StateRecordOperator(
+                    kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                    target_ref=f"parameter:{key}", key=key, value=value,
+                ))
+                validate_element_contract(changed, (panel.entity_id,))
+                row = next(row for row in element_rows_of(changed) if row.element_id == panel.entity_id)
+                self.assertEqual(row.references, panel.fields["references"])
+                produced, context = _produce((row,))
+                params = _op_params(produced[0].operations[0])
+                self.assertAlmostEqual(params["base_offset"], expected_bottom)
+                self.assertAlmostEqual(params["vector"][1], expected_thickness)
+                self.assertAlmostEqual(context.datum_value(f"{panel.entity_id}-top"), expected_bottom + expected_thickness)
+
+
+class PlanarSurfaceProposalTests(ProducerFixture):
+    async def test_surface_passes_the_real_proposal_contract_and_datum_compiler(self) -> None:
+        from archflow.capabilities.geometry_proposal import proposal_authoring_output
+        from tests.support import ScriptedProvider
+
+        context = ProductionContext(references=ReferenceContext(grids=_grids(), levels=_levels()), published={}, frame_id="world")
+        row = ElementRow("surface", "building", "planar-surface", {"base": {"level": PN}},
+                         {"elevation": -0.1, "profile": [[0, 0], [2, 0], [2, 3], [0, 0]]}, BASIS)
+        produced = produce_rows((row,), context)
+        binding = self.proposal.semantic_bindings[0]
+        operations = tuple(replace(op, semantic_binding_ids=(binding.binding_id,)) for op in produced[0].operations)
+        proposal = replace(self.proposal, operations=operations, assemblies=(),
+                           semantic_bindings=(replace(binding, object_ids=("obj-surface",)),))
+        result = await self.produce(ScriptedProvider((proposal_authoring_output(proposal),)),
+                                    interface_datums=_levels().datums(), datum_bindings=produced[0].bindings)
+        self.assertIs(result.status, GeometryProposalStatus.ACCEPTED, [
+            (issue["code"], issue["detail"]) for ref in result.round_refs
+            for issue in self.repository.load_json(ref).get("issues", [])
+        ])
+        bounds = expected_object_bounds(result.program)["obj-surface"]
+        self.assertAlmostEqual(bounds["bbox_min"][1], 3.47)
+        self.assertEqual(bounds["bbox_min"][1], bounds["bbox_max"][1])
+
+
 class OpeningIdScopeTests(unittest.TestCase):
     """An opening id is unique inside its wall; the operation id says which wall."""
 

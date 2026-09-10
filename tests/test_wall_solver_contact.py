@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 import unittest
 from dataclasses import replace
 
@@ -26,6 +28,46 @@ class OverlapTests(unittest.TestCase):
         b = ((0.5, 0.5, 0.9), (1.5, 1.5, 2.0))
         self.assertTrue(_overlaps(a, b))
         self.assertTrue(_overlaps(a, b, tolerance=0.0))
+
+
+class WallEndOpeningTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.wall = WallElement("wall", (0.0, 6.86), (0.0, 1.0),
+                                math.hypot(0.0, 9.68 - 6.86), 0.02, 3.0,
+                                "level-ground", "world", "binding-wall")
+        self.opening = OpeningRequest("window", OpeningKind.WINDOW, 1.485, 2.67,
+                                      0.9, 2.4, "binding-opening")
+
+    def test_opening_at_wall_end_keeps_its_full_width(self) -> None:
+        result = solve_wall(self.wall, (self.opening,))
+        profiles = {
+            op.op_id: json.loads(parameter.value_json)
+            for op in result.operations for parameter in op.parameters
+            if parameter.name == "profile"
+        }
+        self.assertEqual(max(p[2] for p in profiles["wall"]), 9.68)
+        self.assertEqual({p[2] for p in profiles["wall-void-window"]}, {7.01, 9.68})
+        self.assertAlmostEqual(result.voids[0].width, 2.67)
+
+    def test_opening_at_wall_start_tolerates_subtraction_roundoff(self) -> None:
+        opening = replace(self.opening, along=0.15, width=0.30000000000000004)
+        result = solve_wall(self.wall, (opening,))
+        tool = next(op for op in result.operations if op.op_id == "wall-void-window")
+        profile = json.loads(next(p.value_json for p in tool.parameters if p.name == "profile"))
+        self.assertEqual({p[2] for p in profile}, {6.86, 7.16})
+
+    def test_actual_overrun_at_either_end_or_a_repeated_end_is_refused(self) -> None:
+        for excess in (1e-8, 0.001):
+            openings = (
+                replace(self.opening, along=self.opening.width / 2.0 - excess),
+                replace(self.opening, along=self.opening.along + excess),
+                replace(self.opening, along=0.485, width=0.67, count=2, step=2.0 + excess),
+            )
+            for opening in openings:
+                with self.subTest(excess=excess, opening=opening), self.assertRaisesRegex(
+                    WallSolverError, "lies outside the wall length"
+                ):
+                    solve_wall(self.wall, (opening,))
 
 
 class ArchOpeningTests(unittest.TestCase):

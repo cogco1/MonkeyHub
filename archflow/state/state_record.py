@@ -1583,7 +1583,7 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
     top = max(elevations[-1], elevations[0] + 1.0)
     design_components = tuple(replace_volume_ids(c, ("block",) if c.parent_component_id is None else ()) for c in design_components_of(record, source_ref=evidence_ref))
     pack = SchematicPack(project_id=record.project_id, option_id=option_id, label=f"{record.project_id} state record {record.digest[:12]}", typology=str(record.entity(components[0].entity_id).fields.get("typology", "declared")),
-                         rationale="view of a StateRecord@1; not a second source of truth", evidence_refs=(evidence_ref,),
+                         rationale="view of a StateRecord@1; not a second source of truth", evidence_refs=evidence,
                          levels=({"level_id": "record", "base_y": int(elevations[0]), "height": max(1, int(top - elevations[0] + 0.999))},),
                          volumes=({"volume_id": "block", "min": [-1, int(elevations[0]), -1], "max": [1, int(top + 0.999), 1], "level_ids": ["record"]},),
                          zones=({"zone_id": "record-zone", "program_node_refs": ["program-node:record"], "level_ids": ["record"], "volume_ids": ["block"]},),

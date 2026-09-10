@@ -35,6 +35,9 @@ from archflow.adapters.cad_execution import (
     OcctExecutionReceipt,
     RhinoCadProgramBinding,
     execute_occt_export,
+    project_occt_lines,
+    section_occt_lines,
+    section_occt_regions,
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm
 from archflow.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
@@ -48,6 +51,7 @@ from archflow.state.geometry_program import (
     GeometryOperationKind,
     GeometryParameter,
     GeometryParameterKind,
+    GeometryProgramError,
     LengthUnit,
 )
 from archflow.state.state_record import StateRecord, project_grids_of, project_levels_of
@@ -156,6 +160,188 @@ def _compile(record: StateRecord) -> CompiledGeometryProgram:
 
 
 @NEEDS_OCCT
+class OcctDrawingTests(unittest.TestCase):
+    """Draw exact geometry cold-read from STEP, including a real through hole."""
+
+    def setUp(self) -> None:
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+        from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.path = Path(temporary.name) / "drawing-source.step"
+        panel = BRepPrimAPI_MakeBox(gp_Pnt(2, 3, 4), 2, 4, 3).Shape()
+        hole = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(1, 5, 5.5), gp_Dir(1, 0, 0)), 0.4, 4).Shape()
+        panel = BRepAlgoAPI_Cut(panel, hole).Shape()
+        cover = BRepPrimAPI_MakeBox(gp_Pnt(0.5, 4.5, 5.0), 0.5, 1, 1).Shape()
+        occt_backend.write_step(self.path, (
+            occt_backend.StepObject("panel", panel, "panels"),
+            occt_backend.StepObject("cover", cover, "panels"),
+        ), length_unit="meter")
+        self.entries = occt_backend.read_step(self.path, length_unit="meter")
+        self.frame = dict(origin=(0, 3, 4), right=(0, -1, 0), up=(0, 0, 1), linear_deflection=0.0001)
+
+    def assert_circle(self, lines, *, center=(-2, 1.5), radius=0.4, deflection=0.0001):
+        curves = [line for line in lines if len(line.points) > 2]
+        self.assertTrue(curves, "the circular hole must not become four bounding-box edges")
+        for line in curves:
+            for x, y in line.points:
+                self.assertAlmostEqual(math.hypot(x - center[0], y - center[1]), radius, places=7)
+            for a, b in zip(line.points, line.points[1:]):
+                midpoint = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+                deviation = radius - math.hypot(midpoint[0] - center[0], midpoint[1] - center[1])
+                self.assertLessEqual(deviation, deflection * 1.00001)
+
+    def test_projection_retains_hole_curves_and_declared_camera_coordinates(self) -> None:
+        lines = project_occt_lines(self.entries, object_ids=("panel",), **self.frame)
+        self.assertEqual({line.object_id for line in lines}, {"panel"})
+        visible = [line for line in lines if line.kind == "visible"]
+        self.assert_circle(visible)
+        self.assertEqual(min(x for line in visible for x, _ in line.points), -4.0)
+        self.assertEqual(max(y for line in visible for _, y in line.points), 3.0)
+        rotated = project_occt_lines(self.entries, object_ids=("panel",), **{
+            **self.frame, "origin": (0, 2, 3), "right": (0, 0, 1), "up": (0, 1, 0),
+        })
+        self.assert_circle([line for line in rotated if line.kind == "visible"], center=(2.5, 3.0))
+
+    def test_selected_objects_occlude_each_other_and_keep_their_identity(self) -> None:
+        lines = project_occt_lines(self.entries, object_ids=("panel", "cover"), **self.frame)
+        self.assertEqual({line.object_id for line in lines}, {"panel", "cover"})
+        panel = [line for line in lines if line.object_id == "panel"]
+        self.assert_circle([line for line in panel if line.kind == "hidden"])
+        self.assertFalse(any(len(line.points) > 2 for line in panel if line.kind == "visible"))
+        self.assertTrue(any(line.kind == "visible" for line in lines if line.object_id == "cover"))
+        self.assertEqual(lines, project_occt_lines(tuple(reversed(self.entries)),
+                                                  object_ids=("cover", "panel"), **self.frame))
+
+    def test_section_intersects_the_hole_in_the_same_drawing_frame(self) -> None:
+        lines = section_occt_lines(self.entries, object_ids=("panel",), **{**self.frame, "origin": (3, 3, 4)})
+        self.assertEqual({(line.object_id, line.kind) for line in lines}, {("panel", "section")})
+        self.assert_circle(lines)
+        self.assertEqual(min(x for line in lines for x, _ in line.points), -4.0)
+        self.assertEqual(max(y for line in lines for _, y in line.points), 3.0)
+        self.assertEqual(section_occt_lines(self.entries, object_ids=("panel",),
+                                            **{**self.frame, "origin": (10, 3, 4)}), ())
+
+    @staticmethod
+    def region_contains(region, point):
+        x, y = point
+        inside = False
+        for loop in region.loops:
+            for (ax, ay), (bx, by) in zip(loop, loop[1:]):
+                if (ay > y) != (by > y) and x < ax + (bx - ax) * (y - ay) / (by - ay):
+                    inside = not inside
+        return inside
+
+    def test_section_regions_retain_real_hole_and_camera_coordinates(self) -> None:
+        for frame, center, material in (
+            ({**self.frame, "origin": (3, 3, 4)}, (-2, 1.5), (-0.5, 0.5)),
+            ({**self.frame, "origin": (3, 2, 3), "right": (0, 0, 1), "up": (0, 1, 0)},
+             (2.5, 3.0), (1.5, 1.5)),
+        ):
+            with self.subTest(frame=frame):
+                (region,) = section_occt_regions(self.entries, object_ids=("panel",), **frame)
+                self.assertEqual(region.object_id, "panel")
+                self.assertEqual(len(region.loops), 2)
+                self.assertTrue(all(loop[0] == loop[-1] for loop in region.loops))
+                curves = [occt_backend.OcctDrawingPolyline("panel", "section", loop)
+                          for loop in region.loops if len(loop) > 5]
+                self.assert_circle(curves, center=center)
+                self.assertTrue(self.region_contains(region, material))
+                self.assertFalse(self.region_contains(region, center), "the through hole must stay unfilled")
+                self.assertFalse(self.region_contains(region, (20, 20)))
+        self.assertEqual(section_occt_regions(self.entries, object_ids=("panel",),
+                                              **{**self.frame, "origin": (10, 3, 4)}), ())
+
+    def test_section_regions_preserve_disconnected_cuts_of_one_solid(self) -> None:
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.gp import gp_Pnt
+
+        block = BRepPrimAPI_MakeBox(gp_Pnt(0, 0, 0), 4, 2, 4).Shape()
+        notch = BRepPrimAPI_MakeBox(gp_Pnt(1, -1, 1), 2, 4, 4).Shape()
+        fork = BRepAlgoAPI_Cut(block, notch).Shape()
+        occt_backend.write_step(self.path, (occt_backend.StepObject("fork", fork, "panels"),),
+                                length_unit="meter")
+        entries = occt_backend.read_step(self.path, length_unit="meter")
+        (region,) = section_occt_regions(entries, object_ids=("fork",), origin=(0, 0, 2),
+                                        right=(1, 0, 0), up=(0, 1, 0), linear_deflection=0.0001)
+        self.assertEqual(len(region.loops), 2)
+        self.assertTrue(all(loop[0] == loop[-1] for loop in region.loops))
+        self.assertTrue(self.region_contains(region, (0.5, 1)))
+        self.assertTrue(self.region_contains(region, (3.5, 1)))
+        self.assertFalse(self.region_contains(region, (2, 1)), "separate legs must not gain a filled bridge")
+
+    def test_section_regions_do_not_turn_open_shells_into_material(self) -> None:
+        from OCP.BRep import BRep_Builder
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+        from OCP.TopoDS import TopoDS_Shell
+
+        builder = BRep_Builder()
+        shell = TopoDS_Shell()
+        builder.MakeShell(shell)
+        builder.Add(shell, BRepPrimAPI_MakeCylinder(1, 3).Face())
+        entries = (occt_backend.StepEntry("skin", (), None, shell),)
+        frame = dict(origin=(0, 0, 1), right=(1, 0, 0), up=(0, 1, 0), linear_deflection=0.0001)
+        self.assertTrue(section_occt_lines(entries, object_ids=("skin",), **frame))
+        self.assertEqual(section_occt_regions(entries, object_ids=("skin",), **frame), ())
+
+    def test_compound_solids_remain_separate_even_odd_regions(self) -> None:
+        from OCP.BRep import BRep_Builder
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+        from OCP.TopoDS import TopoDS_Compound
+        from OCP.gp import gp_Pnt
+
+        builder = BRep_Builder()
+        compound = TopoDS_Compound()
+        builder.MakeCompound(compound)
+        for start in (0, 1):
+            builder.Add(compound, BRepPrimAPI_MakeBox(gp_Pnt(start, 0, 0), 2, 2, 2).Shape())
+        entries = (occt_backend.StepEntry("pair", (), None, compound),)
+        regions = section_occt_regions(entries, object_ids=("pair",), origin=(0, 0, 1),
+                                       right=(1, 0, 0), up=(0, 1, 0), linear_deflection=0.0001)
+        self.assertEqual(len(regions), 2)
+        self.assertEqual({region.object_id for region in regions}, {"pair"})
+        self.assertTrue(all(self.region_contains(region, (1.5, 1)) for region in regions))
+
+    def test_drawing_coordinates_and_deflection_use_the_step_read_unit(self) -> None:
+        millimeters = occt_backend.read_step(self.path, length_unit="millimeter")
+        frame = dict(origin=(3000, 3000, 4000), right=(0, -1, 0), up=(0, 0, 1), linear_deflection=0.1)
+        for operation in (project_occt_lines, section_occt_lines):
+            with self.subTest(operation=operation.__name__):
+                lines = operation(millimeters, object_ids=("panel",), **frame)
+                self.assert_circle(lines, center=(-2000, 1500), radius=400, deflection=0.1)
+                self.assertEqual(min(x for line in lines for x, _ in line.points), -4000.0)
+        (region,) = section_occt_regions(millimeters, object_ids=("panel",), **frame)
+        curves = [occt_backend.OcctDrawingPolyline("panel", "section", loop)
+                  for loop in region.loops if len(loop) > 5]
+        self.assert_circle(curves, center=(-2000, 1500), radius=400, deflection=0.1)
+        self.assertEqual(min(x for loop in region.loops for x, _ in loop), -4000.0)
+        self.assertFalse(self.region_contains(region, (-2000, 1500)))
+        self.assertTrue(self.region_contains(region, (-500, 500)))
+
+    def test_unknown_ambiguous_and_empty_selections_and_invalid_frames_are_refused(self) -> None:
+        from OCP.TopoDS import TopoDS_Shape
+
+        panel = next(entry for entry in self.entries if entry.name == "panel")
+        for operation in (project_occt_lines, section_occt_lines, section_occt_regions):
+            for entries, ids, frame in (
+                (self.entries, (), self.frame),
+                (self.entries, ("missing",), self.frame),
+                (self.entries, ("panel", "panel"), self.frame),
+                ((panel, panel), ("panel",), self.frame),
+                ((replace(panel, shape=TopoDS_Shape()),), ("panel",), self.frame),
+                (self.entries, ("panel",), {**self.frame, "right": (0, -2, 0)}),
+                (self.entries, ("panel",), {**self.frame, "up": (0, -1, 0)}),
+                (self.entries, ("panel",), {**self.frame, "origin": (float("nan"), 0, 0)}),
+                (self.entries, ("panel",), {**self.frame, "linear_deflection": 0}),
+            ):
+                with self.subTest(operation=operation.__name__, ids=ids, frame=frame), self.assertRaises(occt_backend.OcctBackendError):
+                    operation(entries, object_ids=ids, **frame)
+
+
+@NEEDS_OCCT
 class OpenLoftExecutionTests(unittest.TestCase):
     """A loft row with ``cap_ends: false`` is delivered as the lofted surface, open at both rings, with no volume claimed.
 
@@ -179,7 +365,7 @@ class OpenLoftExecutionTests(unittest.TestCase):
             self.assertEqual(receipt.physical_object_ids, ("obj-drum-east",))
             self.assertEqual(receipt.exact_artifact["deliveries"], {"obj-drum-east": "open_surface"})
             self.assertEqual(receipt.exact_artifact["carries"][2],
-                             "exact B-rep in the CAD frame and the program unit: 0 closed solid object(s), 1 open surface object(s) from uncapped lofts")
+                             "exact B-rep in the CAD frame and the program unit: 0 closed solid object(s), 1 open surface object(s) from planar faces or uncapped lofts")
             self.assertEqual(receipt.expected_bounds["obj-drum-east"], {"min": [-1.0, -1.0, 0.0], "max": [1.0, 1.0, 1.0]})
 
             # the exact delivery: an open shell of eight ruled faces, sixteen free edges (two open rings), no solid, no volume
@@ -311,6 +497,94 @@ def _assert_bbox(case: unittest.TestCase, measure: occt_backend.ShapeMeasure, lo
 
 
 # ---------------------------------------------------------------- acceptance
+
+
+@NEEDS_OCCT
+class PlanarSurfaceExecutionTests(unittest.TestCase):
+    def test_surface_retains_its_outline_and_level_without_solid_or_volume(self) -> None:
+        # Concave outline, intentionally no construction thickness. Moving
+        # its datum is a revision of the same visible surface.
+        element = {
+            "entity_id": "ceiling", "schema": "Element@1", "parent_id": "primary-support",
+            "fields": {"component_id": "primary-support", "producer": "planar-surface",
+                       "references": {"base": {"offset_from": {"level": "level-ground", "offset": 0.2}}},
+                       "params": {"elevation": 2.5, "profile": [[0, 0], [3, 0], [3, 1], [1, 1], [1, 2], [0, 2], [0, 0]]}},
+            "basis_refs": [EVIDENCE],
+        }
+        for elevation in (2.7, 3.1):
+            with self.subTest(elevation=elevation), tempfile.TemporaryDirectory() as tmp:
+                current = json.loads(json.dumps(element))
+                current["fields"]["params"]["elevation"] = elevation - 0.2
+                program = _compile(_record_with(current))
+                workspace = Path(tmp).resolve()
+                receipt, _ = _execute(program, _persisted_binding(program, "stage-planar-surface"), workspace, "surface")
+                self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                self.assertEqual(receipt.exact_artifact["deliveries"], {"obj-ceiling": "open_surface"})
+                self.assertEqual(receipt.expected_bounds["obj-ceiling"], {"min": [0.0, 0.0, elevation], "max": [3.0, 2.0, elevation]})
+                entry = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])["obj-ceiling"]
+                measure = occt_backend.measure_shape(entry.shape)
+                self.assertEqual((measure.valid, measure.solid_count, measure.closed, measure.face_count, measure.free_edge_count), (True, 0, False, 1, 6))
+                self.assertIsNone(measure.volume)
+                _assert_bbox(self, measure, (0, 0, elevation), (3, 2, elevation), places=6)
+                # Read the actual render mesh too: the concave missing corner
+                # must not be filled in by a bounding-box or fan stand-in.
+                import rhino3dm
+                model = rhino3dm.File3dm.Read(str(workspace / receipt.preview_artifact["relative_path"]))
+                self.assertEqual(len(model.Objects), 1)
+                mesh = model.Objects[0].Geometry
+                self.assertIsInstance(mesh, rhino3dm.Mesh)
+                self.assertFalse(mesh.IsClosed)
+                area = 0.0
+                for i in range(len(mesh.Faces)):
+                    a, b, c, d = mesh.Faces[i]
+                    for triangle in ((a, b, c),) if c == d else ((a, b, c), (a, c, d)):
+                        p, q, r = (mesh.Vertices[index] for index in triangle)
+                        self.assertAlmostEqual(p.Z, elevation, places=6)
+                        area += abs((q.X - p.X) * (r.Y - p.Y) - (q.Y - p.Y) * (r.X - p.X)) / 2
+                self.assertAlmostEqual(area, 4.0, places=6)
+
+
+@NEEDS_OCCT
+class PrismElevationExecutionTests(unittest.TestCase):
+    def test_saved_panel_bottom_tracks_elevation_while_thickness_grows_upward(self) -> None:
+        for elevation, height in ((2.9, 0.012), (3.0, 0.012), (2.9, 0.024)):
+            with self.subTest(elevation=elevation, height=height), tempfile.TemporaryDirectory() as tmp:
+                element = {
+                    "entity_id": "panel", "schema": "Element@1", "parent_id": "primary-support",
+                    "fields": {"component_id": "primary-support", "producer": "prism",
+                               "references": {"base": {"level": "level-ground"}},
+                               "params": {"elevation": elevation, "height": height,
+                                          "profile": [[0, 0], [2, 0], [2, 3], [0, 3], [0, 0]]}},
+                    "basis_refs": [EVIDENCE],
+                }
+                program = _compile(_record_with(element))
+                workspace = Path(tmp).resolve()
+                receipt, _ = _execute(program, _persisted_binding(program, "stage-panel"), workspace, "panel")
+                self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                entry = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])["obj-panel"]
+                measure = occt_backend.measure_shape(entry.shape)
+                self.assertTrue(measure.closed)
+                self.assertEqual(measure.solid_count, 1)
+                self.assertAlmostEqual(measure.volume, 6 * height, places=6)
+                _assert_bbox(self, measure, (0, 0, elevation), (2, 3, elevation + height), places=6)
+
+
+class PlanarSurfaceBoundaryTests(unittest.TestCase):
+    def test_open_nonplanar_crossing_and_degenerate_boundaries_are_refused(self) -> None:
+        invalid = (
+            ([[0, 0, 0], [2, 0, 0], [2, 0, 2], [0, 0, 2]], "explicitly close"),
+            ([[0, 0, 0], [2, 0, 0], [2, 1, 2], [0, 0, 2], [0, 0, 0]], "not planar"),
+            ([[0, 0, 0], [3, 0, 0], [0, 0, 2], [2, 0, 2], [0, 0, 0]], "self-intersecting"),
+            ([[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 0, 0]], "zero area"),
+            ([[0, 0, 0], [3, 0, 0], [2, 0, 0], [2, 0, 2], [0, 0, 0]], "overlapping|self-intersecting"),
+        )
+        for points, message in invalid:
+            with self.subTest(message=message), self.assertRaisesRegex(GeometryProgramError, message):
+                GeometryOperation(
+                    op_id="face", kind=GeometryOperationKind.PLANAR_SURFACE, output_object_ids=("face-object",),
+                    input_object_ids=(), frame_id="world", semantic_binding_ids=("binding",),
+                    parameters=(GeometryParameter.create(name="profile", kind=GeometryParameterKind.POINTS3, value=points, unit=LengthUnit.METER),),
+                )
 
 
 @NEEDS_OCCT
@@ -1330,7 +1604,7 @@ class CapabilityBoundaryTests(unittest.TestCase):
                 self.assertAlmostEqual(row["bbox"]["min"][axis], low, places=6)
                 self.assertAlmostEqual(row["bbox"]["max"][axis], high, places=6)
             self.assertEqual(receipt.exact_artifact["deliveries"], {"tube-object": "open_surface"})
-            self.assertIn("1 open surface object(s) from uncapped lofts", receipt.exact_artifact["carries"][2])
+            self.assertIn("1 open surface object(s) from planar faces or uncapped lofts", receipt.exact_artifact["carries"][2])
 
     def test_an_open_surface_is_not_a_solid_for_the_array_or_the_booleans(self) -> None:
         """The solid-only checks stay: repeating or fusing an open loft is a build failure, never a solid."""
@@ -1381,7 +1655,7 @@ class ImportBoundaryTests(unittest.TestCase):
     def test_the_backend_names_what_it_does_not_realize(self) -> None:
         self.assertEqual(
             occt_backend.SUPPORTED_OPERATION_KINDS,
-            {"solid", "revolve", "extrusion", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
+            {"solid", "revolve", "extrusion", "planar_surface", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
         )
         for unsupported in ("radial_array", "transform", "sweep", "curve", "asset_instance"):
             self.assertNotIn(unsupported, occt_backend.SUPPORTED_OPERATION_KINDS)
