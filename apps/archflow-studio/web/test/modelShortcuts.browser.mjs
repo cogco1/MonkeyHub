@@ -897,11 +897,11 @@ await delay(600);
 assert.equal(sent.slice(callsBeforeDelayed).filter((row) => row.path === "/api/proposals/delete").length, 0,
   "a Delete pressed while a pick was unanswered sent a delete anyway");
 assert.deepEqual(await runIds(), beforeDelayed, "and it must have changed nothing");
-await page.unroute(pendingPickPath);
 // When B's answer does arrive, it is B that is picked — not the A it replaced.
 const resolvedB = await settled((state) => state.picked !== null, "B's delayed answer never landed");
 assert.notEqual(resolvedB.picked, resolvedA.picked,
   "the delayed click was meant to land on a different object than the one before it");
+await page.unroute(pendingPickPath);
 
 // ---- 13. a real empty ray on the unobstructed canvas clears every pick state
 console.log("13 · clicking empty canvas clears the selection and its highlight");
