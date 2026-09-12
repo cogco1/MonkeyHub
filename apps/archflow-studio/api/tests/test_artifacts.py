@@ -749,10 +749,12 @@ class RhinoWorkExportRouteTests(unittest.TestCase):
     def test_a_machine_with_no_rhino_says_so_and_leaves_the_step(self) -> None:
         from archflow.adapters import cad_execution
 
-        # Nothing is configured here, as on an ordinary launch: the shell is
-        # the machine's own. Without Rhino there is nothing to export with,
-        # and the refusal says that rather than asking for a setting.
-        with unittest.mock.patch.object(cad_execution, "discover_rhino_executables", return_value=()):
+        # An ordinary launch discovers a shell, but no Rhino. Specify both
+        # discoveries so the test describes the same machine on every OS.
+        with (
+            unittest.mock.patch.object(cad_execution, "discover_powershell", return_value=Path("powershell.exe")),
+            unittest.mock.patch.object(cad_execution, "discover_rhino_executables", return_value=()),
+        ):
             response = self.export(self.step["sha256"])
 
         self.assertEqual(response.status_code, 409)
