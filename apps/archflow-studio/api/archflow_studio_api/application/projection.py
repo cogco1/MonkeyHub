@@ -37,6 +37,7 @@ from archflow.state.developed_design import (
     DevelopedDesignError,
     DevelopedDesignState,
 )
+from archflow.state.design_portfolio import DesignStage
 from archflow.state.operational_state import DependencyEdge
 from archflow.state.spatial import DesignComponent
 from archflow.state.stage_workflow import DesignPhase
@@ -172,26 +173,29 @@ def project_state(
             raise StudioError(422, "DESIGN_STAGE_REF_INVALID", error_sentence(exc)) from exc
     # Existing sourceRunId callers can continue a committed model. An exact
     # Stage selection takes precedence when a run belongs to multiple lines.
+    selected_stage: DesignStage | None = None
     if source_stage_ref is None:
         branches = binding.repository.read_design_branches()
         main_head = None if "main" not in branches else ProjectRecordRef.from_dict(branches["main"]["head_stage"])
         if run_id is None and main_head is not None:
             source_stage_ref = main_head
         elif run_id is not None and branches:
-            matches: dict[ProjectRecordRef, str] = {}
+            matches: dict[ProjectRecordRef, DesignStage] = {}
             for branch_id in branches:
                 for ref, stage in binding.design_history(branch_id):
                     if stage.candidate_id == run_id:
-                        matches[ref] = branch_id
+                        matches[ref] = stage
             if main_head in matches:
                 source_stage_ref = main_head
+                selected_stage = matches[main_head]
             elif len(matches) == 1:
-                source_stage_ref = next(iter(matches))
+                source_stage_ref, selected_stage = next(iter(matches.items()))
             elif not matches:
                 delta = binding.candidate_delta(run_id)
                 if delta is not None and delta.get("source_stage_ref") is not None:
                     source_stage_ref = ProjectRecordRef.from_dict(delta["source_stage_ref"])
-    selected_stage = None if source_stage_ref is None else binding.design_stage(source_stage_ref)
+    if source_stage_ref is not None and selected_stage is None:
+        selected_stage = binding.design_stage(source_stage_ref)
     if selected_stage is not None and (run_id is None or run_id == selected_stage.candidate_id):
         reference = ReferenceRun(binding.load_run(selected_stage.candidate_id), "query",
                                  binding.repository.load_json(selected_stage.runner_ref))

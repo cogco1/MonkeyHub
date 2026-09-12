@@ -1,0 +1,11 @@
+.model-edit-panel { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 8; width: min(310px, 100%); max-height: min(430px, 60vh); overflow: auto; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow); pointer-events: auto; font-size: 12px; }
+.model-edit-panel__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.model-edit-panel__heading button { min-width: 28px; min-height: 28px; font-size: 18px; }
+.model-edit-panel__subject { overflow-wrap: anywhere; margin: 8px 0 12px; opacity: .75; }
+.model-edit-panel__fields { display: flex; gap: 8px; margin-bottom: 10px; }
+.model-edit-panel__fields label { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.model-edit-panel__fields input, .model-edit-panel__fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: inherit; font: inherit; }
+.model-edit-panel small { display: block; line-height: 1.5; opacity: .75; }
+.model-edit-panel__uniform { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.model-edit-panel__error { overflow-wrap: anywhere; color: var(--violated); }
+.model-edit-panel__apply { width: 100%; min-height: 34px; margin-top: 12px; }

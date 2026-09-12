@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Real built Hub UI; all provider and project calls are local, synthetic fixtures.
-const root = fileURLToPath(new URL("../dist/", import.meta.url));
+const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-chat-ui-"));
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
@@ -37,6 +37,7 @@ const browser = await chromium.launch({ headless: true, channel: "chrome" });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 const errors = [], writes = [], sessions = [], providerReads = [];
+let permissionResponseGate = Promise.resolve(), permissionFailure = null;
 let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18788 };
 // The one saved preferences document: appearance and the new-conversation defaults.
 let preferences = { language: "en", theme: "light", fontScale: 1 };
@@ -84,6 +85,19 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const body = data(), project = projects.find((item) => item.projectDir === body.projectDir);
     const session = { ...body, id: `chat-${sessions.length + 1}`, projectId: project.projectId, title: "New chat", status: "idle", createdAt: "2026-09-11", updatedAt: "2026-09-11", messages: [] };
     sessions.unshift(session); return json(session);
+  }
+  const permissionMatch = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/permissions\/([^/]+)$/);
+  if (permissionMatch) {
+    assert.equal(method, "POST");
+    const session = sessions.find((item) => item.id === permissionMatch[1]);
+    assert.equal(data().projectId, session.projectId);
+    if (permissionFailure) return json({ code: "CHAT_PERMISSION_EXPIRED", detail: "This permission request is no longer pending." }, permissionFailure);
+    await permissionResponseGate;
+    const message = session.messages.find((item) => item.permission?.id === decodeURIComponent(permissionMatch[2]));
+    assert.ok(message, "only a pending permission can be answered");
+    assert.ok(data().optionId === null || message.permission.options.some((option) => option.optionId === data().optionId));
+    message.permission = null;
+    return json(session);
   }
   const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)(?:\/(messages|stop|model|fail))?$/);
   if (match) {
@@ -185,6 +199,49 @@ try {
   await page.getByText("studio_request · POST /api/issue · failed").click();
   await page.getByText("HubFailure(422): This action is not exposed to the chat.").waitFor();
 
+  // The agent's permission choices appear in its activity row and wait for an
+  // actual choice. Repeated clicks cannot answer the same request twice.
+  const pendingActivity = sessions[0].messages.find((message) => message.role === "tool" && message.status === "streaming");
+  const permission = { id: "permission-1", title: "Allow the requested command?", options: [
+    { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+    { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+  ] };
+  const permissionWrites = () => writes.filter((entry) => entry[1].includes("/permissions/"));
+  pendingActivity.permission = permission;
+  const choices = page.getByRole("group", { name: permission.title });
+  await choices.waitFor();
+  assert.deepEqual(await choices.getByRole("button").allInnerTexts(), ["Allow once", "Reject", "Cancel"]);
+  assert.equal(permissionWrites().length, 0, "rendering a permission never agrees to it");
+  await page.screenshot({ path: path.join(temporary, "permission-pending.png") });
+  let releasePermission;
+  permissionResponseGate = new Promise((resolve) => { releasePermission = resolve; });
+  const selected = page.waitForRequest((req) => req.url().endsWith("/permissions/permission-1"));
+  await choices.getByRole("button", { name: "Allow once" }).evaluate((button) => { button.click(); button.click(); });
+  await selected;
+  await page.waitForFunction(() => [...document.querySelectorAll(".chat-permission button")].every((button) => button.disabled));
+  assert.equal(permissionWrites().length, 1);
+  assert.deepEqual(permissionWrites()[0][2], { projectId: "A", optionId: "allow-once" });
+  releasePermission();
+  await choices.waitFor({ state: "hidden" });
+  permissionResponseGate = Promise.resolve();
+
+  pendingActivity.permission = { ...permission, id: "permission-cancel" };
+  await choices.waitFor();
+  await choices.getByRole("button", { name: "Cancel", exact: true }).click();
+  await choices.waitFor({ state: "hidden" });
+  assert.deepEqual(permissionWrites().at(-1)[2], { projectId: "A", optionId: null });
+
+  pendingActivity.permission = { ...permission, id: "permission-expired" };
+  permissionFailure = 409;
+  await choices.waitFor();
+  await choices.getByRole("button", { name: "Reject", exact: true }).click();
+  const permissionError = page.getByRole("alert").filter({ hasText: "CHAT_PERMISSION_EXPIRED" });
+  await permissionError.waitFor();
+  assert.equal(await choices.getByRole("button", { name: "Reject", exact: true }).isEnabled(), true);
+  await permissionError.getByRole("button", { name: "Close", exact: true }).click();
+  pendingActivity.permission = null; permissionFailure = null;
+  await choices.waitFor({ state: "hidden" });
+
   // The candidate that step produced opens beside the conversation, which the
   // panel keeps as it was.
   await page.getByRole("button", { name: "Open this candidate on the right" }).first().click();
@@ -228,6 +285,40 @@ try {
   await page.mouse.move(80, floorHandle.y + 200, { steps: 12 });
   await page.mouse.up();
   assert.ok(await boxOf(".chat-main") >= 355, `the conversation keeps its 360px floor, got ${await boxOf(".chat-main")}`);
+
+  // Expanding projects, narrowing the window and restoring a wider saved
+  // panel must resize the content, never push the tool rail off screen.
+  const assertFitted = async () => {
+    const layout = await page.evaluate(() => {
+      const rail = document.querySelector(".chat-rail").getBoundingClientRect();
+      const panel = document.querySelector(".chat-browser").getBoundingClientRect();
+      return { right: rail.right, panelRight: panel.right, railLeft: rail.left,
+        scrollWidth: document.querySelector(".chat-shell").scrollWidth, viewport: innerWidth };
+    });
+    assert.ok(Math.abs(layout.right - layout.viewport) <= 1, `the rail stays at the viewport edge: ${JSON.stringify(layout)}`);
+    assert.ok(layout.panelRight <= layout.railLeft + 1, "the embedded tool ends before the rail");
+    assert.ok(layout.scrollWidth <= layout.viewport + 1, "the shell has no hidden horizontal overflow");
+  };
+  await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+  const collapsedHandle = await handle.boundingBox();
+  await page.mouse.move(collapsedHandle.x + collapsedHandle.width / 2, collapsedHandle.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(80, collapsedHandle.y + 200, { steps: 12 });
+  await page.mouse.up();
+  const collapsedFrame = await boxOf(".chat-browser");
+  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
+  await assertFitted();
+  assert.ok(await boxOf(".chat-browser") < collapsedFrame - 100, "an expanded sidebar leaves less space for the tool");
+  for (const width of [1180, 1000, 901]) {
+    await page.setViewportSize({ width, height: 960 });
+    await assertFitted();
+    assert.ok(await boxOf(".chat-main") >= 355, "the conversation remains usable at the desktop breakpoint");
+  }
+  await page.reload();
+  await page.locator(".chat-browser").waitFor();
+  await assertFitted();
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await assertFitted();
 
   // A — the rail's own control closes and reopens the tool content.
   await page.getByRole("button", { name: "Hide tools" }).click();
@@ -344,7 +435,7 @@ try {
   const banner = page.locator(".chat-error");
   await banner.waitFor();
   const summary = await banner.locator("p").first().innerText();
-  assert.match(summary, /model is not supported when using Codex/, summary);
+  assert.equal(summary, "The current model is not available through Claude Code. Choose another model.");
   assert.ok(!summary.includes("{"), `no JSON body is used as the message: ${summary}`);
   assert.equal(await banner.locator("pre").isVisible(), false, "the technical detail stays folded away");
   await banner.getByText("Technical details").click();

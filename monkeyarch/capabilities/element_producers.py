@@ -120,6 +120,9 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     # produced, now stated as an authoring contract so a person drawing on the
     # model reaches it the way an agent reaches the wall.
     plan_point = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+    vector3 = {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}
+    work_plane = obj({"origin": vector3, "xAxis": vector3, "yAxis": vector3, "normal": vector3},
+                     ("origin", "xAxis", "yAxis", "normal"))
     cutout = obj({
         "cutout_id": identifier,
         "span0": {"type": "number"}, "span1": {"type": "number"},
@@ -129,8 +132,9 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "producer": "prism",
         "label": "轮廓与高度",
         "description": (
-            "A closed plan profile extruded to a height, standing on an existing level or on another "
-            "element's published top. The profile and the height stay the record's own parameters, so "
+            "A closed profile extruded to a height, anchored to an existing level or another "
+            "element's published top. An optional work_plane places it on an explicit drawing face. "
+            "The profile and the height stay the record's own parameters, so "
             "either can be changed afterwards by authoring the same element again. Rectangular cutouts "
             "trim an axis-aligned rectangular profile through its thickness; a profile that is not such "
             "a rectangle carries no cutouts."
@@ -142,6 +146,9 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "elevation": {**scalar, "description":
                 "Metres above references.base, added to that reference's own offset; defaults to zero. "
                 "It moves the whole prism and leaves the height alone."},
+            "work_plane": {**work_plane, "description":
+                "Optional orthonormal drawing frame relative to references.base. Profile pairs follow "
+                "xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention."},
             "rectangular_cutouts": {"type": "array", "items": cutout,
                                     "description": "Openings through an axis-aligned rectangular profile."},
         }),
@@ -159,6 +166,8 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "rectangular_cutouts require four ordered axis-aligned profile corners.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "The element this one stands on is named by references.base, never inferred from proximity.",
+            "work_plane axes are orthonormal; origin is relative to the base datum, and height follows normal.",
+            "Only a horizontal upward extrusion publishes a horizontal top datum; tilted planes cannot claim one.",
         ],
     }
     # The wall stays first: it is the signature the model schema's first
@@ -200,21 +209,22 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "producer": "planar-surface",
         "label": "可见面",
         "description": (
-            "A visible horizontal surface with a stated boundary and elevation: what a floor or a "
+            "A visible planar surface with a stated boundary and elevation: what a floor or a "
             "ceiling shows in a drawing, without a construction thickness and without inventing the "
-            "solid that would hold it up."
+            "solid that would hold it up. An optional work_plane places a drawn face in any stated orientation."
         ),
         "parameters": obj({
             "profile": {"type": "array", "items": plan_point, "minItems": 4,
-                        "description": "One simple XZ boundary with its first vertex repeated at the end."},
+                        "description": "One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end."},
             "elevation": {**scalar, "description":
                 "Metres above references.base, added to that reference's own offset; defaults to zero."},
+            "work_plane": work_plane,
         }),
         "references": obj({"base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]}}),
         "requiredParameters": ["profile"],
         "requiredReferences": ["base"],
         "constraints": [
-            "The profile is one simple XZ boundary with its first vertex explicitly repeated at the end; holes are unsupported.",
+            "The profile is one simple boundary with its first vertex explicitly repeated at the end; holes are unsupported.",
             "The surface elevation is its resolved base datum plus the reference offset plus parameters.elevation.",
             "Use an explicit @parameter binding for an elevation that subsequent changes must share.",
         ],
@@ -407,8 +417,9 @@ def _points(name: str, pts) -> GeometryParameter:
     return GeometryParameter.create(name=name, kind=GeometryParameterKind.POINTS3, value=[[round(float(c), 9) for c in p] for p in pts], unit=_M)
 
 
-def _extrusion(op_id: str, profile, height: float, binding_id: str, frame_id: str, base_offset: float | None = None) -> GeometryOperation:
-    params = [_points("profile", profile), GeometryParameter.create(name="vector", kind=GeometryParameterKind.VECTOR3, value=[0.0, round(height, 9), 0.0], unit=_M)]
+def _extrusion(op_id: str, profile, height: float, binding_id: str, frame_id: str, base_offset: float | None = None,
+               *, normal=(0.0, 1.0, 0.0)) -> GeometryOperation:
+    params = [_points("profile", profile), GeometryParameter.create(name="vector", kind=GeometryParameterKind.VECTOR3, value=[round(c * height, 9) for c in normal], unit=_M)]
     if base_offset is not None and base_offset != 0.0:
         params.insert(0, GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=round(base_offset, 9), unit=_M))
     return GeometryOperation(op_id=op_id, kind=GeometryOperationKind.EXTRUSION, output_object_ids=(f"obj-{op_id}",), input_object_ids=(), frame_id=frame_id,
@@ -740,17 +751,219 @@ def _plan_point(row: ElementRow, context: ProductionContext, key: str = "at") ->
     return resolve_plan(parse_reference(reference), context.references)
 
 
+def _profile_on_work_plane(row: ElementRow):
+    """Map authored plane coordinates without changing their explicit placement."""
+
+    plane = row.params.get("work_plane")
+    points = [(_finite(x, f"{row.element_id} profile x"), _finite(y, f"{row.element_id} profile y"))
+              for x, y in row.params["profile"]]
+    if plane is None:
+        return [(x, 0.0, y) for x, y in points], (0.0, 1.0, 0.0)
+    if not isinstance(plane, Mapping) or set(plane) != {"origin", "xAxis", "yAxis", "normal"}:
+        raise ElementProducerError(f"{row.element_id}: work_plane needs origin, xAxis, yAxis and normal")
+    checked = {}
+    for key, vector in plane.items():
+        if not isinstance(vector, (list, tuple)) or len(vector) != 3:
+            raise ElementProducerError(f"{row.element_id}: work_plane {key} must have three coordinates")
+        checked[key] = tuple(_finite(c, f"{row.element_id} work_plane {key}") for c in vector)
+    axes = [checked[key] for key in ("xAxis", "yAxis", "normal")]
+    if any(abs(sum(c * c for c in axis) - 1.0) > 1e-6 for axis in axes):
+        raise ElementProducerError(f"{row.element_id}: work_plane axes must be unit vectors")
+    if any(abs(sum(a * b for a, b in zip(axes[i], axes[j]))) > 1e-6
+           for i, j in ((0, 1), (0, 2), (1, 2))):
+        raise ElementProducerError(f"{row.element_id}: work_plane axes must be perpendicular")
+    origin, x_axis, y_axis = checked["origin"], checked["xAxis"], checked["yAxis"]
+    return [tuple(origin[i] + x * x_axis[i] + y * y_axis[i] for i in range(3)) for x, y in points], checked["normal"]
+
+
+def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str,
+                       translation=None, axis=None, angle_degrees: float = 0.0,
+                       scale=None, origin=None, distance: float = 0.0, normal=None) -> ElementRow:
+    """Revise a drawn face/prism's own parameters; never patch its exported mesh.
+
+    Explicit plane axes retain the profile and the independent pull distance.
+    A scaled profile is re-expressed in an orthonormal basis; an oblique
+    extrusion is refused because the prism's pull must remain normal to its face.
+    """
+
+    if row.producer not in {"prism", "planar-surface"}:
+        raise ElementProducerError(f"{row.element_id}: direct {kind} currently supports drawn faces and prisms, not {row.producer}")
+    if "rectangular_cutouts" in row.params or "top" in row.references:
+        raise ElementProducerError(f"{row.element_id}: direct {kind} cannot detach panel cutouts or a top-reference constraint")
+    params = dict(row.params)
+    profile, extrusion_axis = _profile_on_work_plane(row)
+    base_id, base_offset = _base(row, context)
+    vertical_origin = context.datum_value(base_id) + base_offset + _finite(params.get("elevation", 0), "elevation")
+    plane = dict(params.get("work_plane") or {
+        "origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0],
+        "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, 1.0, 0.0],
+    })
+    height = 0.0 if row.producer == "planar-surface" else _positive(params.get("height"), "height")
+
+    def vector(value, label):
+        if not isinstance(value, (list, tuple)) or len(value) != 3:
+            raise ElementProducerError(f"{label} requires three coordinates")
+        return [_finite(c, label) for c in value]
+
+    def unit(value, label):
+        result = vector(value, label)
+        length = math.sqrt(sum(c * c for c in result))
+        if length < 1e-9:
+            raise ElementProducerError(f"{label} must be nonzero")
+        return [c / length for c in result]
+
+    if kind == "push_pull":
+        distance = _finite(distance, "pull distance")
+        if abs(distance) < 1e-9:
+            raise ElementProducerError("pull distance must be nonzero")
+        face_normal = unit(normal, "face normal") if normal is not None else list(extrusion_axis)
+        dot = sum(a * b for a, b in zip(face_normal, extrusion_axis))
+        if abs(abs(dot) - 1.0) > 1e-6:
+            if row.producer != "prism" or abs(dot) > 1e-6:
+                raise ElementProducerError(f"{row.element_id}: the picked normal is not a profile end or side face")
+            vertices = [tuple(float(c) for c in point) for point in params["profile"]]
+            count = len(vertices)
+            area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(vertices, vertices[1:] + vertices[:1]))
+            if abs(area) < 1e-9:
+                raise ElementProducerError("side push/pull requires a nondegenerate profile")
+            orientation = 1 if area > 0 else -1
+
+            def convex(points):
+                for i in range(count):
+                    a, b, c = points[i - 1], points[i], points[(i + 1) % count]
+                    cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+                    if cross * orientation <= 1e-9:
+                        return False
+                return True
+
+            if not convex(vertices):
+                raise ElementProducerError("side push/pull currently supports convex profiles without collinear vertices")
+            normals, constants = [], []
+            for a, b in zip(vertices, vertices[1:] + vertices[:1]):
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                length = math.hypot(dx, dy)
+                edge_normal = (orientation * dy / length, -orientation * dx / length)
+                normals.append(edge_normal)
+                constants.append(edge_normal[0] * a[0] + edge_normal[1] * a[1])
+            local_normal = [sum(a * b for a, b in zip(face_normal, plane[key])) for key in ("xAxis", "yAxis")]
+            matching = [i for i, value in enumerate(normals) if sum(a * b for a, b in zip(value, local_normal)) > 1 - 1e-6]
+            if len(matching) != 1:
+                raise ElementProducerError("pick one unambiguous planar side face before push/pull")
+            selected = matching[0]
+            constants[selected] += distance
+            result = list(vertices)
+            for i in (selected, (selected + 1) % count):
+                left, right = (i - 1) % count, i
+                a, b = normals[left], normals[right]
+                determinant = a[0] * b[1] - a[1] * b[0]
+                if abs(determinant) < 1e-9:
+                    raise ElementProducerError("side push/pull cannot intersect parallel adjoining edges")
+                result[i] = ((constants[left] * b[1] - a[1] * constants[right]) / determinant,
+                             (a[0] * constants[right] - constants[left] * b[0]) / determinant)
+            if not convex(result):
+                raise ElementProducerError("this side pull would collapse or cross another profile edge")
+            params["profile"] = [list(point) for point in result]
+            return replace(row, params=params)
+        if row.producer == "planar-surface":
+            plane["normal"] = [c * (1 if distance > 0 else -1) for c in face_normal]
+            params["profile"] = list(params["profile"][:-1])
+            params["height"] = abs(distance)
+            params["work_plane"] = plane
+            return replace(row, producer="prism", params=params)
+        new_height = height + distance
+        if new_height < -1e-9:
+            raise ElementProducerError("push/pull cannot cross the opposite face; pull to zero first")
+        if dot < 0:
+            plane["origin"] = [float(c) + distance * n for c, n in zip(plane["origin"], face_normal)]
+        if abs(new_height) < 1e-9:
+            params.pop("height", None)
+            params["profile"] = [*params["profile"], params["profile"][0]]
+            params["work_plane"] = plane
+            return replace(row, producer="planar-surface", params=params)
+        params["height"], params["work_plane"] = new_height, plane
+        return replace(row, params=params)
+
+    if kind not in {"move", "copy", "rotate", "scale"}:
+        raise ElementProducerError(f"unsupported direct modeling action {kind}")
+    base = row.references["base"]
+    if "datum" in base and base["datum"] not in context.references.level_ids():
+        raise ElementProducerError(f"{row.element_id}: this element is anchored to {base['datum']}; direct transform cannot detach its host")
+    corners = [list(point) for point in profile]
+    if height:
+        corners += [[point[i] + height * extrusion_axis[i] for i in range(3)] for point in profile]
+    pivot = vector(origin, "transform origin") if origin is not None else [
+        (min(p[i] for p in corners) + max(p[i] for p in corners)) / 2 + (vertical_origin if i == 1 else 0)
+        for i in range(3)]
+    offset = vector(translation, "translation") if translation is not None else [0, 0, 0]
+    rotation_axis = unit(axis or [0, 1, 0], "rotation axis")
+    angle = math.radians(_finite(angle_degrees, "rotation angle"))
+    factors = vector(scale, "scale") if scale is not None else [1, 1, 1]
+    if any(abs(factor) < 1e-9 for factor in factors):
+        raise ElementProducerError("scale factors must be nonzero")
+
+    def direction(value):
+        if kind == "scale":
+            return [c * s for c, s in zip(value, factors)]
+        if kind == "rotate":
+            a, b, c = rotation_axis
+            x, y, z = value
+            dot = a * x + b * y + c * z
+            cross = (b * z - c * y, c * x - a * z, a * y - b * x)
+            return [v * math.cos(angle) + q * math.sin(angle) + k * dot * (1 - math.cos(angle))
+                    for v, q, k in zip(value, cross, rotation_axis)]
+        return list(value)
+
+    point = [float(c) + (vertical_origin if i == 1 else 0) for i, c in enumerate(plane["origin"])]
+    moved = [c - p for c, p in zip(point, pivot)]
+    moved = direction(moved)
+    plane["origin"] = [c + p + (offset[i] if kind in {"move", "copy"} else 0) - (vertical_origin if i == 1 else 0)
+                       for i, (c, p) in enumerate(zip(moved, pivot))]
+    transformed_axes = [direction(plane[key]) for key in ("xAxis", "yAxis", "normal")]
+    if kind == "scale":
+        # Non-uniform world scaling skews local U/V, not the planar profile.
+        # Reparameterize that same profile instead of rejecting its valid shape.
+        u, v, n = transformed_axes
+        x_axis = unit(u, "xAxis")
+        along_x = sum(a * b for a, b in zip(v, x_axis))
+        across_x = [a - along_x * b for a, b in zip(v, x_axis)]
+        y_axis = unit(across_x, "yAxis")
+        x_length = math.sqrt(sum(c * c for c in u))
+        y_length = math.sqrt(sum(c * c for c in across_x))
+        normal_axis = unit(n, "normal")
+        if height and any(abs(sum(a * b for a, b in zip(normal_axis, axis))) > 1e-6
+                          for axis in (x_axis, y_axis)):
+            raise ElementProducerError("non-uniform scale would make the prism extrusion oblique to its profile")
+        if not height:
+            normal_axis = [x_axis[1] * y_axis[2] - x_axis[2] * y_axis[1],
+                           x_axis[2] * y_axis[0] - x_axis[0] * y_axis[2],
+                           x_axis[0] * y_axis[1] - x_axis[1] * y_axis[0]]
+            if sum(a * b for a, b in zip(normal_axis, n)) < 0:
+                normal_axis = [-c for c in normal_axis]
+        plane.update(xAxis=x_axis, yAxis=y_axis, normal=normal_axis)
+        params["profile"] = [[x * x_length + y * along_x, y * y_length] for x, y in params["profile"]]
+        if height:
+            params["height"] = height * math.sqrt(sum(c * c for c in n))
+    else:
+        for key, transformed in zip(("xAxis", "yAxis", "normal"), transformed_axes):
+            plane[key] = unit(transformed, key)
+    params["work_plane"] = plane
+    result = replace(row, params=params)
+    _profile_on_work_plane(result)
+    return result
+
+
 def produce_planar_surface(row: ElementRow, context: ProductionContext) -> ProducedElement:
     """The stated visible surface at a datum, with no inferred thickness or support."""
 
-    unknown = set(row.params) - {"profile", "elevation"}
+    unknown = set(row.params) - {"profile", "elevation", "work_plane"}
     if unknown:
         raise ElementProducerError(f"{row.element_id}: planar-surface does not support {sorted(unknown)}")
     if set(row.references) != {"base"}:
         raise ElementProducerError(f"{row.element_id}: planar-surface requires only an explicit base reference")
     base_datum, base_offset = _base(row, context)
     base_offset += _finite(row.params.get("elevation", 0.0), f"{row.element_id} elevation")
-    profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in row.params["profile"]]
+    profile, _normal = _profile_on_work_plane(row)
+    base_offset += min(point[1] for point in profile)
     if len(profile) < 4 or profile[0] != profile[-1]:
         raise ElementProducerError(f"{row.element_id}: planar-surface profile must explicitly close at its first point")
     parameters = [_points("profile", profile)]
@@ -763,15 +976,19 @@ def produce_planar_surface(row: ElementRow, context: ProductionContext) -> Produ
 
 
 def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElement:
-    """Extrude upward from the base plus the stated elevation, keeping the height independent.
+    """Extrude on the stated work plane, or upward for retained XZ profiles.
 
-    Optional rectangular panel cuts span world X and the profile's Z thickness.
+    Height is independent of elevation; rectangular panel cuts remain horizontal-only.
     """
 
     p = row.params
     base_datum, base_offset = _base(row, context)
     base_offset += _finite(p.get("elevation", 0.0), f"{row.element_id} elevation")
-    profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in p["profile"]]
+    profile, normal = _profile_on_work_plane(row)
+    base_offset += min(point[1] for point in profile)
+    horizontal_up = all(abs(point[1] - profile[0][1]) < 1e-8 for point in profile) and abs(normal[1] - 1.0) < 1e-8
+    if not horizontal_up and ("top" in row.references or "rectangular_cutouts" in p):
+        raise ElementProducerError(f"{row.element_id}: a tilted or reversed work plane cannot use a horizontal top reference or rectangular panel cutouts")
     height = _height(row, context, base_datum, base_offset=base_offset)
     if "rectangular_cutouts" in p:
         # Restrict this first consumer to an actual axis-aligned rectangle;
@@ -795,7 +1012,12 @@ def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElemen
             # A partition or empty panel supplies no whole-prism top datum or
             # whole-prism support claim. A downstream top reference is refused.
             return ProducedElement(tuple(operations), tuple(bindings))
-    op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset)
+    op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset, normal=normal)
+    if not horizontal_up:
+        # An oriented drawing has an explicit level anchor, not a fabricated
+        # horizontal bearing surface. Only a real horizontal upper face can
+        # publish the retained <id>-top datum used by supported elements.
+        return ProducedElement((op,), (_bind(row.element_id, base_datum),))
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top  # a prism is what other elements sit on: it publishes its top like a beam does
     return ProducedElement((op,), (_bind(row.element_id, base_datum),), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)

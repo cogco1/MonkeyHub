@@ -81,6 +81,8 @@ import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { usePreferences } from "../features/settings/preferences";
 import { FrameEditor } from "../features/stage/FrameEditor";
+import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "../features/stage/ModelEditPanel";
+import type { FinishedSketch, SketchVector } from "../features/stage/sketch";
 import {
   ProgramPanel,
   edited,
@@ -121,6 +123,9 @@ import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTi
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
+
+/** The viewer is CAD Z-up; the authored building record is Y-up. */
+const buildingVector = ([x, y, z]: SketchVector): [number, number, number] => [x, z, y];
 
 function sameModelSource(left: ModelSourceDto | null | undefined, right: ModelSourceDto | null | undefined): boolean {
   return left?.runId === right?.runId && left?.stateDigest === right?.stateDigest &&
@@ -332,6 +337,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   const [proposalBusy, setProposalBusy] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
+  const [modelRunPending, setModelRunPending] = useState<string | null>(null);
   const [selectingWorkingCopy, setSelectingWorkingCopy] = useState(false);
   // The proposal drawn as a ghost over the loaded model, if any. The viewer
   // drops the drawing itself whenever a model loads or is cleared; this is the
@@ -366,15 +372,31 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   ), [transcript.entries]);
   const candidateRuns = useCandidateRuns(candidateEntries, (candidateId, status) => {
     noteJobStatus(candidateId, status);
-    if (status === "failed" || status === "cancelled") finishEditTiming(candidateTimings.current.get(candidateId), status);
+    if (status === "failed" || status === "cancelled") {
+      finishEditTiming(candidateTimings.current.get(candidateId), status);
+      setModelRunPending((current) => current === candidateId ? null : current);
+    }
   }, {
     timingFor: (id) => candidateTimings.current.get(id)?.candidate ?? null,
-    onReadFailure: (id) => finishEditTiming(candidateTimings.current.get(id), "failed"),
+    onReadFailure: (id) => {
+      finishEditTiming(candidateTimings.current.get(id), "failed");
+      setModelRunPending((current) => current === id ? null : current);
+    },
   });
   const candidates = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
     run.candidate.status === "ready" ? [[id, run.candidate.value]] : [])) as Record<string, CandidateDto>, [candidateRuns.runs]);
   const validations = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
     run.validation.status === "ready" ? [[id, run.validation.value]] : [])) as Record<string, ValidationDto>, [candidateRuns.runs]);
+  useEffect(() => {
+    const candidateId = autoShowRef.current?.candidateId;
+    if (!candidateId) return;
+    const run = candidateRuns.runs[candidateId];
+    if (run?.job.status === "ready" && run.job.value.status === "failed") {
+      setArtifactError(asStudioApiError(new Error(run.job.value.error ?? "Model generation failed.")));
+      autoShowRef.current = null;
+    } else if (run?.job.status === "failed") setArtifactError(run.job.error);
+    else if (run?.candidate.status === "failed") setArtifactError(run.candidate.error);
+  }, [candidateRuns.runs]);
   // Which candidates already have a verdict entry; a ref so the job reporter
   // never reads a stale transcript.
   const verdictsRef = useRef<Set<string>>(new Set());
@@ -1169,7 +1191,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     void loadArtifactIntoViewer(artifact, option.label, true);
   }, [artifacts, loadArtifactIntoViewer]);
 
-  const missingChosenModel = sourceRunId !== null &&
+  // The listing can lag behind the candidate already downloaded and shown.
+  // Keep that exact model visible while the independent listing catches up.
+  const chosenModelAlreadyShown = viewerStatus === "ready" && loadedModelSource !== null &&
+    loadedModelSource.runId === sourceRunId && loadedModelSource.stateDigest === projection?.stateDigest;
+  const missingChosenModel = sourceRunId !== null && !chosenModelAlreadyShown &&
     (artifacts.status === "failed" || (artifacts.status === "ready" &&
       artifacts.value.projectId === project?.projectId && referenceExports.length === 0));
 
@@ -2095,6 +2121,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       const preview = beginCandidatePreview(timing);
       try {
         const accepted = await studio.startCandidate(proposalId, timing?.candidate?.trace);
+        setModelRunPending(accepted.candidateId);
         if (timing) candidateTimings.current.set(accepted.candidateId, timing);
         if (autoShowRef.current === preview) preview.candidateId = accepted.candidateId;
         append({
@@ -2108,6 +2135,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         finishEditTiming(timing, "failed");
         if (autoShowRef.current === preview) autoShowRef.current = null;
         const error = asStudioApiError(cause);
+        setArtifactError(error);
         recoverFromStaleBase(error);
         append({
           kind: "refusal",
@@ -2133,11 +2161,16 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // part of what /api/state answers with.
   const sketchSnapPoints = useMemo<readonly (readonly [number, number])[]>(() => [], []);
   const runSketch = useCallback(
-    async (action: { profile: readonly (readonly [number, number])[]; height: number; base: number }) => {
-      if (project === null || stateDigest === null || sketchBusy) return;
+    async (action: FinishedSketch) => {
+      if (project === null || sketchBusy || modelRunPending !== null || changingBase || modelLoading) return;
+      if (viewedSource === null && stateDigest === null) {
+        setArtifactError(asStudioApiError(new Error(t("stage.sketch.noComponent"))));
+        return;
+      }
       setSketchBusy(true);
+      setArtifactError(null);
       try {
-        const base = sourceRunId ?? undefined;
+        const base = viewedSource?.runId ?? sourceRunId ?? undefined;
         const [state, frame] = await Promise.all([studio.state(base), studio.frame(base)]);
         const componentId = selection?.componentId ?? state.elements[0]?.componentId ?? null;
         if (componentId === null) {
@@ -2146,7 +2179,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         // Stand it on the level nearest the plane it was drawn on, which is
         // the record's own answer to "what is the ground here".
         const levels = [...frame.levels].sort(
-          (left, right) => Math.abs(left.elevation - action.base) - Math.abs(right.elevation - action.base),
+          (left, right) => Math.abs(left.elevation - (action.plane?.origin[2] ?? action.base)) - Math.abs(right.elevation - (action.plane?.origin[2] ?? action.base)),
         );
         const level = levels[0];
         if (level === undefined) {
@@ -2158,16 +2191,28 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         }
         const proposal = await studio.sketch({
           stateDigest: state.stateDigest,
+          projectId: project.projectId,
           componentId,
           elementId,
           profile: action.profile.map(([x, z]) => [x, z] as [number, number]),
           height: action.height,
           baseLevel: level.levelId,
           sourceRunId: base ?? null,
+          sourceStageRef: base === projection?.referenceRun.runId ? projection?.sourceStageRef ?? null : null,
+          plane: action.plane ? {
+            origin: [action.plane.origin[0], action.plane.origin[2] - level.elevation, action.plane.origin[1]],
+            xAxis: buildingVector(action.plane.xAxis),
+            yAxis: buildingVector(action.plane.yAxis),
+            normal: buildingVector(action.plane.normal),
+          } : {
+            origin: [0, action.base - level.elevation, 0],
+            xAxis: [1, 0, 0], yAxis: [0, 0, 1], normal: [0, 1, 0],
+          },
         });
         await runCandidate(proposal.proposalId);
       } catch (cause) {
         const error = asStudioApiError(cause);
+        setArtifactError(error);
         append({ kind: "system", ...systemText([
           { kind: "prose", text: t("stage.sketch.failed") + " " },
           { kind: "technical", text: error.detail },
@@ -2176,7 +2221,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         setSketchBusy(false);
       }
     },
-    [append, project, runCandidate, selection?.componentId, sketchBusy, sourceRunId, stateDigest, t],
+    [append, changingBase, modelLoading, modelRunPending, project, projection, runCandidate, selection?.componentId, sketchBusy, sourceRunId, stateDigest, t, viewedSource],
   );
 
 
@@ -2186,6 +2231,8 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // does: one deterministic proposal, then the candidate route. Nothing is
   // compiled by a model, nothing is accepted, and nothing is issued.
   const [modelEditBusy, setModelEditBusy] = useState(false);
+  const [directTool, setDirectTool] = useState<DirectModelTool | null>(null);
+  const [directError, setDirectError] = useState<string | null>(null);
   // What this tab has moved through, in order, as run ids. It is navigation,
   // not a second copy of the design: which run is current is still the
   // session's projection, and every run named here stays in the project
@@ -2219,7 +2266,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   }, [baseRunId]);
 
   const modelNavigationBusy = changingBase || selectingWorkingCopy || candidateBusy ||
-    proposalBusy || sketchBusy || modelEditBusy || modelLoading;
+    proposalBusy || sketchBusy || modelEditBusy || modelLoading || modelRunPending !== null;
   const canUndoModel = modelHistory.index > 0 && !modelNavigationBusy;
   const canRedoModel = modelHistory.index >= 0 &&
     modelHistory.index < modelHistory.runs.length - 1 && !modelNavigationBusy;
@@ -2316,6 +2363,34 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   }, [append, canDeleteModel, deletableElementId, deleteBase, project, recoverFromStaleBase,
       runCandidate]);
 
+  const applyDirectModelAction = useCallback(async (action: DirectModelAction) => {
+    if (!canDeleteModel || !deletableElementId || !deleteBase || !project) return;
+    setModelEditBusy(true);
+    setDirectError(null);
+    setArtifactError(null);
+    try {
+      const base = { ...deleteBase, projectId: project.projectId, elementId: deletableElementId };
+      const face = viewportRef.current?.workPlaneFromSelection();
+      if (action.kind === "pushPull" && !face) throw new Error("Select a face in the model before using Push/Pull.");
+      const proposal = action.kind === "pushPull"
+        ? await studio.pushPull({ ...base, distance: action.distance, normal: face ? buildingVector(face.normal) : null })
+        : await studio.transform({ ...base, kind: action.kind,
+          ...(action.kind === "move" || action.kind === "copy" ? { translation: buildingVector(action.translation) } : {}),
+          // Swapping Y/Z reverses handedness, so the rotation angle reverses too.
+          ...(action.kind === "rotate" ? { angleDegrees: -action.angleDegrees, axis: buildingVector(action.axis) } : {}),
+          ...(action.kind === "scale" ? { scale: buildingVector(action.scale) } : {}),
+        });
+      await runCandidate(proposal.proposalId);
+    } catch (cause) {
+      const error = asStudioApiError(cause);
+      setDirectError(error.detail);
+      setArtifactError(error);
+      recoverFromStaleBase(error);
+    } finally {
+      setModelEditBusy(false);
+    }
+  }, [canDeleteModel, deletableElementId, deleteBase, project, recoverFromStaleBase, runCandidate]);
+
   // A different model on screen is a different set of objects. What was *picked*
   // belonged to the picture that went away, so it stops being picked, its mark
   // is taken off, and any pick answer still on its way is dropped rather than
@@ -2339,11 +2414,13 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     viewportRef.current?.highlight(null);
   }, [loadedArtifact?.runId]);
 
-  /** Esc: nothing in flight is cancelled, and what was picked stops being picked. */
+  /** Clear the pick and invalidate its pending resolution without cancelling model work. */
   const clearModelSelection = useCallback(() => {
     pickRequestRef.current += 1;
     setSelection(null);
     setPicked(null);
+    setDirectTool(null);
+    setDirectError(null);
     viewportRef.current?.highlight(null);
   }, []);
 
@@ -2500,7 +2577,13 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     const candidate = candidates[candidateId];
     if (!candidate) return;
     const rows = viewableArtifacts(candidate.artifacts);
-    if (rows.length === 0) { finishEditTiming(preview.timing, "failed"); return; }
+    if (rows.length === 0) {
+      finishEditTiming(preview.timing, "failed");
+      setModelRunPending((current) => current === candidateId ? null : current);
+      setArtifactError(asStudioApiError(new Error("The finished candidate has no viewable model.")));
+      autoShowRef.current = null;
+      return;
+    }
     const twin =
       rows.find((row) => row.representation === "composed" && row.modelSource != null) ??
       rows.find((row) => loadedArtifact !== null && row.stageId === loadedArtifact.stageId) ??
@@ -2509,6 +2592,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     if (preview.context !== previewContext.current.revision ||
         preview.viewRequest !== modelLoadRequest.current || manualLoadRef.current) {
       finishEditTiming(preview.timing, "cancelled");
+      setModelRunPending((current) => current === candidateId ? null : current);
       append({
         kind: "system",
         ...systemText([
@@ -2530,11 +2614,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       if (autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current) return false;
       return loadArtifactIntoViewer(twin, candidateSourceLabel(candidateId), loadedArtifact !== null,
         () => autoShowRef.current === preview && preview.context === previewContext.current.revision, preview.timing?.candidate);
-    })().then((shown) => {
+    })().then(async (shown) => {
       finishEditTiming(preview.timing, shown ? "succeeded" :
         autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current ? "cancelled" : "failed");
       if (shown && preview.context === previewContext.current.revision) {
-        if (designHistoryEnabled) void reload(twin.runId).then((next) => {
+        if (designHistoryEnabled) await reload(twin.runId).then((next) => {
           if (next) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
         });
         append({
@@ -2547,6 +2631,10 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         });
       }
       if (autoShowRef.current === preview) autoShowRef.current = null;
+    }).catch((cause) => {
+      setArtifactError(asStudioApiError(cause));
+    }).finally(() => {
+      setModelRunPending((current) => current === candidateId ? null : current);
     });
   }, [append, candidates, designHistoryEnabled, loadArtifactIntoViewer, loadedArtifact, sourceLabel, reload]);
 
@@ -3010,7 +3098,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             embedded={embedded}
             hasModel={sourceLabel !== null}
             onSketch={runSketch}
-            sketchBusy={sketchBusy}
+            sketchBusy={sketchBusy || candidateBusy || modelRunPending !== null}
             snapPoints={sketchSnapPoints}
             model={{
               onDelete: () => void deleteSelected(),
@@ -3023,9 +3111,13 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
               canRedo: canRedoModel,
               onClearSelection: clearModelSelection,
               hasSelection: selection !== null || picked !== null,
+              onTool: (next) => { setDirectTool(next === "select" ? null : next); setDirectError(null); },
+              toolPanel: directTool ? <ModelEditPanel key={directTool} tool={directTool} subject={deletableElementId}
+                busy={modelNavigationBusy} error={directError} onApply={(action) => void applyDirectModelAction(action)}
+                onClose={() => { setDirectTool(null); setDirectError(null); }} /> : null,
             }}
             viewportRef={viewportRef}
-            message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : viewerMessage}
+            message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : modelRunPending !== null ? t("stage.sketch.busy") : viewerMessage}
             status={artifactLoadingSha !== null ? "loading" : viewerStatus}
             artifactError={artifactError}
             tool={tool}
@@ -3189,7 +3281,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             onRequestFile={() => fileInputRef.current?.click()}
             onOpenFile={openLocalFile}
             onSource={noteSource}
-            onPick={(pick) => void resolvePick(pick)}
+            onPick={(pick) => pick === null ? clearModelSelection() : void resolvePick(pick)}
             onOpenVersion={(artifact, label) => {
               manualLoadRef.current = true;
               void loadArtifactIntoViewer(artifact, label);

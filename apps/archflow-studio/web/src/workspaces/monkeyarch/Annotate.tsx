@@ -444,7 +444,9 @@ export function Annotate({
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
       if (event.key === "Escape") cancel();
-      if (event.code === "Space" && !event.repeat) {
+      // Only ink in hand owns temporary orbit. An idle annotation overlay
+      // must leave Space to the modeling workspace's selection tool.
+      if (event.code === "Space" && !event.repeat && (tool !== null || eraser)) {
         event.preventDefault();
         cancel();
         setTemporaryOrbit(true);
@@ -462,7 +464,7 @@ export function Annotate({
       if (paintFrameRef.current !== null) cancelAnimationFrame(paintFrameRef.current);
       paintFrameRef.current = null;
     };
-  }, [cancel]);
+  }, [cancel, tool, eraser]);
 
   const local = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
     const rect = event.currentTarget.getBoundingClientRect();

@@ -691,7 +691,8 @@
         "in-memory checking of a semantic element edit by the advertised signature and the existing producers before a candidate is queued",
         "prism rectangular_cutouts: parameter-bound rectangular openings trim a material panel through its Z thickness, retire empty panels and retain stable fragment ids",
         "prism semantic authoring: profile, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
-        "planar-surface: one explicitly closed XZ profile at its referenced base plus the declared elevation parameter; its queryable semantic signature and parameter bindings support subsequent elevation edits without inferred thickness"
+        "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
+        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -723,7 +724,8 @@
         "element_rows_of",
         "produce_rows",
         "producer_signatures",
-        "validate_element_contract"
+        "validate_element_contract",
+        "edit_drawn_element"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",
@@ -4069,7 +4071,8 @@
         "the capability index served to agents: reading the registered capability entries beside this installation, matching a goal in either language, and saying what a no-hit means",
         "describing one capability against the bound projection: the exact base, the target's movable numbers as the catalog decided them, the refs a keep clause may name, and the next request with this project's base already in it",
         "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
-        "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked"
+        "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked",
+        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4191,7 +4194,12 @@
         "capability",
         "describe_capability",
         "POST /api/proposals/delete",
-        "delete_element_proposal"
+        "delete_element_proposal",
+        "POST /api/proposals/sketch",
+        "sketch_prism_proposal",
+        "POST /api/proposals/transform",
+        "POST /api/proposals/push-pull",
+        "direct_element_proposal"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4205,6 +4213,7 @@
         "project.ports",
         "project.refs",
         "capabilities.element_producers",
+        "capabilities.reference_resolver",
         "relations.contracts",
         "semantics.registry",
         "studio.artifacts",
@@ -4285,7 +4294,8 @@
         "apps/archflow-studio/api/tests/test_intent_context_providers.py",
         "apps/archflow-studio/api/tests/test_intent_budget.py",
         "apps/archflow-studio/api/tests/test_capabilities.py",
-        "apps/archflow-studio/api/tests/test_delete.py"
+        "apps/archflow-studio/api/tests/test_delete.py",
+        "apps/archflow-studio/api/tests/test_sketch.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4713,7 +4723,7 @@
         "the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished",
         "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
-      "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with"
+        "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
@@ -5627,7 +5637,7 @@
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring",
-        "Codex/Claude CLI session lifecycle and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
+        "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
         "the bounded completion option of the design request tool: for the one capability run it names, a single accepted POST followed by reads of the existing job, candidate and comparison within a stated wait, answered as a projection of those reads"
       ],
       "does_not_own": [
@@ -5673,6 +5683,7 @@
         "GET /api/chat/sessions/{id}",
         "POST /api/chat/sessions/{id}/messages",
         "PUT /api/chat/sessions/{id}/model",
+        "POST /api/chat/sessions/{id}/permissions/{permission_id}",
         "POST /api/chat/sessions/{id}/stop"
       ],
       "invariants": [
@@ -5701,6 +5712,7 @@
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css"
       ],
@@ -5708,6 +5720,8 @@
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/api/tests/test_acp_session.py",
+        "apps/monkeyhub/api/tests/test_acp_chat.py",
         "apps/monkeyhub/web/test/chatShell.browser.mjs"
       ],
       "depends_on": [
@@ -5717,12 +5731,58 @@
       ]
     },
     {
+      "module_id": "tools.workspace",
+      "owner_path": "tools/workspace.py",
+      "status": "canonical",
+      "purpose": "Reuse one personal development root for task Git worktrees and packaging directories; create or reopen a source checkout through Git without moving existing work.",
+      "owns": [
+        "The existing archflow.package.workspace-root Git setting, portable task names and source/build/cache path resolution shared with the packaging CLI",
+        "Configured-root worktree creation and reuse after inspecting Git registration, branch identity and destination conflicts"
+      ],
+      "does_not_own": [
+        "Design project paths, project initialization or P036 persistence",
+        "Distribution building, application lifecycle or source integration",
+        "Moving or deleting existing worktrees, resetting branches or intercepting arbitrary shell writes"
+      ],
+      "inputs": [
+        "Source checkout and one configured absolute development root",
+        "Task branch, optional task directory name and explicit new-branch base"
+      ],
+      "outputs": [
+        "Resolved source-worktree, staging, output and cache paths as JSON",
+        "A Git-registered task checkout or reuse of the same existing checkout"
+      ],
+      "public_api": [
+        "configured_root",
+        "configure_root",
+        "validate_root",
+        "task_name",
+        "task_paths",
+        "create_worktree",
+        "main"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "tools.package_monkeyapps"
+      ],
+      "invariants": [
+        "The CLI resolves task paths below the saved root, outside the source checkout; no drive-root default or per-invocation dated root is invented",
+        "paths creates nothing; configure updates only the existing personal Git setting",
+        "Repeated create at the same branch and destination retains all WIP; conflicting or missing registered worktrees are reported without relocation or reset",
+        "New worktrees contain the selected committed base, not uncommitted files or design project data"
+      ],
+      "tests": [
+        "tests/test_workspace.py"
+      ],
+      "notes": "CREATE: no existing owner creates source worktrees. tools.devctl owns read-only development lookup; tools.package_monkeyapps owns distribution building. Their two real path consumers share this configuration implementation."
+    },
+    {
       "module_id": "tools.package_monkeyapps",
       "owner_path": "tools/package_monkeyapps.py",
       "status": "canonical",
-      "purpose": "Build a Windows application distribution from exact ArchFlow and optional independent MonkeyFab Git commits in caller-selected external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
+      "purpose": "Build a Windows application distribution from exact ArchFlow and optional independent MonkeyFab Git commits in external directories, reusing the saved development root or explicit overrides. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
       "owns": [
-        "Exact-commit source collection for ArchFlow and optional MonkeyFab, frontend build and one embedded Python environment in external staging/cache",
+        "Exact-commit source collection for ArchFlow and optional MonkeyFab, frontend build, locked ACP adapter and embedded Python/Node runtimes in external staging/cache",
         "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; integrated package identity binds both source commits",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell"
       ],
@@ -5733,22 +5793,28 @@
       ],
       "inputs": [
         "Exact source Git commit or ref and optional explicit MonkeyFab checkout plus commit/ref",
-        "Explicit external staging, cache and output directories",
+        "Saved development root and optional task name, or explicit external staging, cache and output directories",
         "Builder Node/npm and Windows Python runtime inputs"
       ],
       "outputs": [
-        "Windows candidate application directory with embedded Python and built web assets",
-        "ZIP, checksum and source/build metadata"
+        "Windows candidate application directory with embedded Python/Node, locked ACP adapter and built web assets",
+        "ZIP, checksum and source/build metadata",
+        "Read-only resolved packaging paths, or one-time personal root configuration through tools.workspace"
       ],
       "public_api": [
         "main",
         "package"
       ],
+      "depends_on": [
+        "tools.workspace"
+      ],
       "invariants": [
         "Only the selected committed source is collected; local WIP and project/runtime folders are not selected inputs",
         "package validates staging/output/cache against both selected source checkouts before passing paths to its write helpers",
         "The registered writer functions derive distribution outputs from those validated roots; this registration adds no project writer and is not a filesystem sandbox.",
-        "Installation targets a fresh version directory and leaves unknown existing data intact"
+        "Installation targets a fresh version directory and leaves unknown existing data intact",
+        "The shared workspace setting supplies stable task staging/output and shared cache; explicit path overrides do not modify that setting",
+        "--show-paths creates no directories and --configure writes only the personal root setting; neither command builds or accesses project data"
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"
@@ -5759,8 +5825,10 @@
         "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
         "apps/monkeyhub/installer/install.ps1"
       ],
-      "tests": [],
-      "untested_reason": "No committed unit test exists for this Windows packaging CLI. Acceptance is an explicit candidate build plus isolated installer and installed-application smoke checks; kernel test membership does not certify distribution."
+      "tests": [
+        "tests/test_package_monkeyapps.py"
+      ],
+      "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
     },
     {
       "module_id": "documentation.drawings",

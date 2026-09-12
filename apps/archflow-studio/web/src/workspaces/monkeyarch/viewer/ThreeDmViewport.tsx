@@ -22,6 +22,7 @@ import {
   LineSegments,
   LineBasicMaterial,
   Material,
+  Matrix3,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -72,6 +73,7 @@ import {
   type Point3,
 } from "./featureEdges";
 import { encodeViewportPng } from "./viewportScreenshot";
+import type { SketchPlane } from "../../../features/stage/sketch";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
@@ -137,6 +139,7 @@ export interface SketchPreview {
   readonly profile: ReadonlyArray<readonly [number, number]>;
   readonly base: number;
   readonly height: number;
+  readonly plane?: SketchPlane;
 }
 
 /** Where a pointer really is on the model, and what that place is. */
@@ -220,6 +223,9 @@ export interface ViewportController {
    * runs parallel to the plane or there is no renderer yet.
    */
   pointOnWorkPlane(clientX: number, clientY: number, height: number): Vec3 | null;
+  pointOnSketchPlane(clientX: number, clientY: number, plane: SketchPlane): Vec3 | null;
+  pointAlongAxis(clientX: number, clientY: number, origin: Vec3, axis: Vec3): Vec3 | null;
+  workPlaneFromSelection(): SketchPlane | null;
   /**
    * The point on the loaded model a pointer is really over: the end or the
    * middle of a visible edge when one is within ``radiusPx`` on screen, a
@@ -238,6 +244,7 @@ export interface ViewportController {
   sketchPreview(spec: SketchPreview | null): void;
   fitView(): void;
   frontView(): void;
+  standardView(view: "top" | "front" | "right" | "iso"): void;
   /** Encode the current rendered canvas for its caller; never writes the project. */
   capturePng(): Promise<Blob | null>;
   /** Remove temporary display projections and restore the loaded file exactly. */
@@ -256,7 +263,8 @@ interface ThreeDmViewportProps {
   onOpenFile?(file: File): void;
   /** Which file the viewport is showing, in the shell's own words. */
   onSource(sourceLabel: string | null): void;
-  onPick(pick: ViewportPick): void;
+  /** An empty primary click clears the shell's selection as well as its mark. */
+  onPick(pick: ViewportPick | null): void;
   /**
    * What an empty viewport should offer, when the shell around it knows which
    * ways into a model are actually available. Without one, the viewer keeps
@@ -651,6 +659,7 @@ function fitRuntime(runtime: ViewportRuntime): void {
   });
   const direction = new Vector3(1, -1, 0.78).normalize();
 
+  runtime.camera.up.set(0, 0, 1);
   runtime.camera.position.copy(center).addScaledVector(direction, distance);
   runtime.camera.near = Math.max(distance / 1000, 0.01);
   runtime.camera.far = Math.max(distance * 100, 1000);
@@ -736,6 +745,7 @@ export const ThreeDmViewport = forwardRef<
   const loadGenerationRef = useRef(0);
   const secondaryLoadRequest = useRef(0);
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const pickedPlaneRef = useRef<{ object: Object3D; plane: SketchPlane } | null>(null);
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
@@ -813,10 +823,13 @@ export const ThreeDmViewport = forwardRef<
       group.name = "archflow-sketch-preview";
       const closed = spec.profile.length > 2;
       const outline: number[] = [];
+      const world = (x: number, y: number, height = 0): Vec3 => spec.plane
+        ? spec.plane.origin.map((value, index) => value + x * spec.plane!.xAxis[index]! + y * spec.plane!.yAxis[index]! + height * spec.plane!.normal[index]!) as unknown as Vec3
+        : [x, y, spec.base + height];
       spec.profile.forEach(([planX, planY], index) => {
         if (index + 1 === spec.profile.length && !closed) return;
         const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
-        outline.push(planX, planY, spec.base, nextX, nextY, spec.base);
+        outline.push(...world(planX, planY), ...world(nextX, nextY));
       });
       const base = new LineSegments(
         new BufferGeometry().setAttribute("position", new Float32BufferAttribute(outline, 3)),
@@ -824,12 +837,32 @@ export const ThreeDmViewport = forwardRef<
       );
       base.renderOrder = 3;
       group.add(base);
-      if (spec.height > 0 && closed) {
+      if (closed) {
+        const points = spec.profile.map(([x, y]) => new Vector2(x, y));
+        const positions: number[] = [];
+        for (const triangle of ShapeUtils.triangulateShape(points, [])) {
+          for (const index of triangle) positions.push(...world(...spec.profile[index]!));
+          if (spec.height !== 0) for (const index of triangle) positions.push(...world(...spec.profile[index]!, spec.height));
+        }
+        if (spec.height !== 0) spec.profile.forEach(([x, y], index) => {
+          const [nx, ny] = spec.profile[(index + 1) % spec.profile.length]!;
+          positions.push(...world(x, y), ...world(nx, ny), ...world(nx, ny, spec.height),
+            ...world(x, y), ...world(nx, ny, spec.height), ...world(x, y, spec.height));
+        });
+        if (positions.length > 0) {
+          const surface = new BufferGeometry().setAttribute("position", new Float32BufferAttribute(positions, 3));
+          surface.computeVertexNormals();
+          const mesh = new Mesh(surface, new MeshStandardMaterial({ color: accent, side: DoubleSide,
+            transparent: true, opacity: 0.18, depthWrite: false }));
+          group.add(mesh);
+        }
+      }
+      if (spec.height !== 0 && closed) {
         const raised: number[] = [];
         spec.profile.forEach(([planX, planY], index) => {
           const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
-          raised.push(planX, planY, spec.base + spec.height, nextX, nextY, spec.base + spec.height);
-          raised.push(planX, planY, spec.base, planX, planY, spec.base + spec.height);
+          raised.push(...world(planX, planY, spec.height), ...world(nextX, nextY, spec.height));
+          raised.push(...world(planX, planY), ...world(planX, planY, spec.height));
         });
         const edges = new LineSegments(
           new BufferGeometry().setAttribute("position", new Float32BufferAttribute(raised, 3)),
@@ -964,6 +997,7 @@ export const ThreeDmViewport = forwardRef<
       restoreHighlight(runtime);
       const model = runtime.model;
       if (target === null || model === null) {
+        pickedPlaneRef.current = null;
         runtime.render();
         return 0;
       }
@@ -1292,6 +1326,7 @@ export const ThreeDmViewport = forwardRef<
         objectName: carrier.name || null,
         userStrings: toUserStrings(attributes?.userStrings),
         point: hit.point,
+        normal: hit.face?.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize() ?? null,
         object: carrier,
       };
     },
@@ -1303,7 +1338,22 @@ export const ThreeDmViewport = forwardRef<
       const runtime = runtimeRef.current;
       if (!runtime?.model) return;
       const hit = hitAt(clientX, clientY);
-      if (!hit) return;
+      if (!hit) {
+        callbacksRef.current.onPick(null);
+        return;
+      }
+      if (hit.normal) {
+        const normal = hit.normal;
+        const guide = Math.abs(normal.z) < 0.9 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0);
+        const xAxis = guide.cross(normal).normalize();
+        const yAxis = normal.clone().cross(xAxis).normalize();
+        pickedPlaneRef.current = { object: hit.object, plane: {
+          origin: hit.point.toArray() as Vec3,
+          xAxis: xAxis.toArray() as Vec3,
+          yAxis: yAxis.toArray() as Vec3,
+          normal: normal.toArray() as Vec3,
+        } };
+      } else pickedPlaneRef.current = null;
       callbacksRef.current.onPick({
         userStrings: hit.userStrings,
         documentUserStrings: documentUserStrings(runtime.model),
@@ -1405,6 +1455,31 @@ export const ThreeDmViewport = forwardRef<
     [rayAt],
   );
 
+  const pointOnSketchPlane = useCallback(
+    (clientX: number, clientY: number, frame: SketchPlane): Vec3 | null => {
+      const raycaster = rayAt(clientX, clientY);
+      if (!raycaster) return null;
+      const plane = new Plane().setFromNormalAndCoplanarPoint(new Vector3(...frame.normal), new Vector3(...frame.origin));
+      const point = raycaster.ray.intersectPlane(plane, new Vector3());
+      return point ? [point.x, point.y, point.z] : null;
+    }, [rayAt],
+  );
+
+  const pointAlongAxis = useCallback(
+    (clientX: number, clientY: number, origin: Vec3, direction: Vec3): Vec3 | null => {
+      const raycaster = rayAt(clientX, clientY);
+      if (!raycaster) return null;
+      const axis = new Vector3(...direction).normalize();
+      const offset = new Vector3(...origin).sub(raycaster.ray.origin);
+      const dot = raycaster.ray.direction.dot(axis);
+      const denominator = 1 - dot * dot;
+      if (denominator < 1e-8) return null;
+      const distance = (dot * raycaster.ray.direction.dot(offset) - axis.dot(offset)) / denominator;
+      const point = new Vector3(...origin).addScaledVector(axis, distance);
+      return [point.x, point.y, point.z];
+    }, [rayAt],
+  );
+
   const unprojectOnPlane = useCallback(
     (clientX: number, clientY: number, through: Vec3 | null, vertical = false): Vec3 | null => {
       const runtime = runtimeRef.current;
@@ -1437,6 +1512,15 @@ export const ThreeDmViewport = forwardRef<
       sampleAt,
       snapOnModel,
       pointOnWorkPlane,
+      pointOnSketchPlane,
+      pointAlongAxis,
+      workPlaneFromSelection: () => {
+        const picked = pickedPlaneRef.current;
+        const runtime = runtimeRef.current;
+        return picked && runtime?.model && isUnder(picked.object, runtime.model) &&
+          runtime.highlighted.some((mesh) => isUnder(mesh, picked.object))
+          ? picked.plane : null;
+      },
       sketchPreview,
       camera: cameraState,
       unprojectOnPlane,
@@ -1450,6 +1534,20 @@ export const ThreeDmViewport = forwardRef<
       frontView: () => {
         const runtime = runtimeRef.current;
         if (runtime) frontRuntime(runtime);
+      },
+      standardView: (view) => {
+        const runtime = runtimeRef.current;
+        if (!runtime?.model) return;
+        runtime.camera.up.set(0, 0, 1);
+        fitRuntime(runtime);
+        if (view === "iso") return;
+        const distance = runtime.camera.position.distanceTo(runtime.controls.target);
+        const direction = view === "top" ? new Vector3(0, 0, 1) : view === "front" ? new Vector3(0, -1, 0) : new Vector3(1, 0, 0);
+        if (view === "top") runtime.camera.up.set(0, 1, 0);
+        runtime.camera.position.copy(runtime.controls.target).addScaledVector(direction, distance);
+        runtime.controls.update();
+        runtime.fitted = false;
+        runtime.render();
       },
       capturePng: () => {
         const runtime = runtimeRef.current;
@@ -1480,6 +1578,8 @@ export const ThreeDmViewport = forwardRef<
       loadSecondary,
       openFile,
       openFiles,
+      pointOnSketchPlane,
+      pointAlongAxis,
       sampleAt,
       showOriginal,
       unprojectOnPlane,
@@ -1633,7 +1733,9 @@ export const ThreeDmViewport = forwardRef<
         if (file) { if (onOpenFile) onOpenFile(file); else void openFile(file, LOCAL_SOURCE_LABEL); }
       }}
       onPointerDown={(event) => {
-        pointerDownRef.current = { x: event.clientX, y: event.clientY };
+        pointerDownRef.current = event.button === 0 && event.target === runtimeRef.current?.renderer.domElement
+          ? { x: event.clientX, y: event.clientY }
+          : null;
       }}
       onPointerUp={(event) => {
         const down = pointerDownRef.current;
@@ -1643,6 +1745,7 @@ export const ThreeDmViewport = forwardRef<
         if (moved > CLICK_SLOP_PX) return;
         pickAt(event.clientX, event.clientY);
       }}
+      onPointerCancel={() => { pointerDownRef.current = null; }}
     >
       {visualStatus !== "ready" && (
         <div className={`viewport-state viewport-state--${visualStatus}`}>

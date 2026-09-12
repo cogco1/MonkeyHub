@@ -4365,6 +4365,48 @@ export type ProposalTargetDto = {
 };
 
 /**
+ * PushPullRequestDto
+ */
+export type PushPullRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Distance
+     */
+    distance: number;
+    /**
+     * Normal
+     */
+    normal?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Keep
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
  * ReferenceReceiptDto
  *
  * What the reference run's own receipt says it executed.
@@ -4583,6 +4625,46 @@ export type ServerIdentityDto = {
 };
 
 /**
+ * SketchPlaneDto
+ *
+ * An explicit orthonormal drawing plane in building-local Y-up coordinates.
+ */
+export type SketchPlaneDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Xaxis
+     */
+    xAxis: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Yaxis
+     */
+    yAxis: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Normal
+     */
+    normal: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
  * SketchPrismRequestDto
  *
  * A profile drawn on a work plane and the height it is pulled to.
@@ -4593,9 +4675,10 @@ export type ServerIdentityDto = {
  * or a height is changed afterwards: the record keeps both as its own
  * parameters, so nothing here is a one-way conversion into geometry.
  *
- * Plan points are the record's own ``(x, z)`` pairs and the height rises
- * along the producers' extrusion axis. The pointer preview that produced
- * them stays in the browser; only a finished action arrives here.
+ * Without a plane, points are the record's own ``(x, z)`` pairs and height
+ * follows +Y. An explicit plane keeps its origin and orthonormal axes;
+ * zero height is a real face and negative height reverses the pull. The
+ * pointer preview stays in the browser; only a finished action arrives here.
  */
 export type SketchPrismRequestDto = {
     /**
@@ -4638,9 +4721,13 @@ export type SketchPrismRequestDto = {
     /**
      * Height
      *
-     * how far the profile is pulled, in project length units
+     * Signed pull distance in project length units; zero creates a real planar face.
      */
     height: number;
+    /**
+     * Optional drawing frame. origin is relative to the resolved base datum; profile pairs are distances along xAxis/yAxis and positive height follows normal. Omit for the retained XZ plane.
+     */
+    plane?: SketchPlaneDto | null;
     /**
      * Baselevel
      */
@@ -5044,6 +5131,80 @@ export type TransferFileDto = {
      * Size
      */
     size: number;
+};
+
+/**
+ * TransformElementRequestDto
+ */
+export type TransformElementRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Kind
+     */
+    kind: 'move' | 'rotate' | 'scale' | 'copy';
+    /**
+     * Translation
+     */
+    translation?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Axis
+     */
+    axis?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Angledegrees
+     */
+    angleDegrees?: number;
+    /**
+     * Scale
+     */
+    scale?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Origin
+     */
+    origin?: [
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Copyelementid
+     */
+    copyElementId?: string | null;
+    /**
+     * Keep
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
 };
 
 /**
@@ -6601,6 +6762,76 @@ export type CreateSketchProposalApiProposalsSketchPostResponses = {
 };
 
 export type CreateSketchProposalApiProposalsSketchPostResponse = CreateSketchProposalApiProposalsSketchPostResponses[keyof CreateSketchProposalApiProposalsSketchPostResponses];
+
+export type CreateTransformProposalApiProposalsTransformPostData = {
+    body: TransformElementRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/transform';
+};
+
+export type CreateTransformProposalApiProposalsTransformPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateTransformProposalApiProposalsTransformPostError = CreateTransformProposalApiProposalsTransformPostErrors[keyof CreateTransformProposalApiProposalsTransformPostErrors];
+
+export type CreateTransformProposalApiProposalsTransformPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateTransformProposalApiProposalsTransformPostResponse = CreateTransformProposalApiProposalsTransformPostResponses[keyof CreateTransformProposalApiProposalsTransformPostResponses];
+
+export type CreatePushPullProposalApiProposalsPushPullPostData = {
+    body: PushPullRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/push-pull';
+};
+
+export type CreatePushPullProposalApiProposalsPushPullPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreatePushPullProposalApiProposalsPushPullPostError = CreatePushPullProposalApiProposalsPushPullPostErrors[keyof CreatePushPullProposalApiProposalsPushPullPostErrors];
+
+export type CreatePushPullProposalApiProposalsPushPullPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreatePushPullProposalApiProposalsPushPullPostResponse = CreatePushPullProposalApiProposalsPushPullPostResponses[keyof CreatePushPullProposalApiProposalsPushPullPostResponses];
 
 export type CreateDeleteProposalApiProposalsDeletePostData = {
     body: DeleteElementRequestDto;

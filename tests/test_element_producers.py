@@ -19,6 +19,7 @@ from monkeyarch.capabilities.element_producers import (
     ElementRow,
     ProductionContext,
     element_rows_of,
+    edit_drawn_element,
     produce_rows,
     production_order,
     producer_signatures,
@@ -275,6 +276,139 @@ class PlanarSurfaceProducerTests(unittest.TestCase):
                                 ({**row.params, "thickness": 0.1}, "does not support")):
             with self.subTest(message=message), self.assertRaisesRegex(ElementProducerError, message):
                 _produce((replace(row, params=params),))
+
+
+class DrawingPlaneTests(unittest.TestCase):
+    def row(self, **params):
+        return ElementRow("drawn", "envelope", "prism", {"base": {"level": PN}},
+                          {"profile": [[0, 0], [3, 0], [3, 2], [0, 2]], "height": 1.5, **params}, BASIS)
+
+    def test_vertical_plane_preserves_datum_relative_origin_and_normal(self):
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]}
+        produced, context = _produce((self.row(work_plane=plane),))
+        params = _op_params(produced[0].operations[0])
+        self.assertEqual(params["vector"], [0, 0, 1.5])
+        self.assertEqual(params["base_offset"], 4)
+        _assert_bbox(self, params["profile"], ((10, 13), (4, 6), (20, 20)))
+        self.assertEqual(produced[0].bindings[0].datum_id, PN)
+        self.assertEqual((produced[0].datums, produced[0].relations), ((), ()))
+        self.assertNotIn("drawn-top", context.published)
+
+    def test_negative_vertical_profile_coordinate_is_not_lost_during_datum_lift(self):
+        from archflow.adapters.cad_program import lift_to_base_level
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, -1, 0], "normal": [0, 0, 1]}
+        produced, _ = _produce((self.row(work_plane=plane),))
+        params = _op_params(produced[0].operations[0])
+        params["base_level"] = 3.57
+        points = lift_to_base_level(params["profile"], params, "drawn")
+        _assert_bbox(self, points, ((10, 13), (5.57, 7.57), (20, 20)))
+
+    def test_left_handed_frame_is_valid_but_skewed_frame_is_refused(self):
+        plane = {"origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0]}
+        self.assertTrue(_produce((self.row(work_plane=plane),))[0][0].operations)
+        with self.assertRaisesRegex(ElementProducerError, "perpendicular"):
+            _produce((self.row(work_plane={**plane, "normal": [1, 0, 0]}),))
+
+    def edit(self, row=None, **action):
+        row = row or self.row()
+        context = ProductionContext(ReferenceContext(grids=_grids(), levels=_levels()), {})
+        produce_rows((row,), context)
+        return edit_drawn_element(row, context, **action)
+
+    def test_move_rotate_scale_remain_editable_profile_and_height(self):
+        moved = self.edit(kind="move", translation=[2, 3, 4])
+        for actual, expected in zip(moved.params["work_plane"]["origin"], [2, 3, 4]):
+            self.assertAlmostEqual(actual, expected)
+        rotated = self.edit(moved, kind="rotate", axis=[0, 1, 0], angle_degrees=90, origin=[0, 0, 0])
+        self.assertAlmostEqual(rotated.params["work_plane"]["origin"][0], 4)
+        self.assertAlmostEqual(rotated.params["work_plane"]["origin"][2], -2)
+        scaled = self.edit(rotated, kind="scale", scale=[2, 2, 2])
+        self.assertEqual(scaled.params["profile"][2], [6, 4])
+        self.assertEqual(scaled.params["height"], 3)
+        produced, _ = _produce((scaled,))
+        self.assertTrue(produced[0].operations)
+
+    def test_nonuniform_scale_and_mirror_preserve_rotated_profile_geometry(self):
+        rotated = self.edit(kind="rotate", axis=[0, 1, 0], angle_degrees=30)
+        before, _ = _produce((rotated,))
+        original = _op_params(before[0].operations[0])
+        for factors in ([2, 1, 1], [-1, 0.5, 1.5]):
+            with self.subTest(factors=factors):
+                scaled = self.edit(rotated, kind="scale", scale=factors, origin=[0, 3.57, 0])
+                produced, _ = _produce((scaled,))
+                actual = _op_params(produced[0].operations[0])
+                for source, target in zip(original["profile"], actual["profile"]):
+                    for coordinate, expected, factor in zip(target, source, factors):
+                        self.assertAlmostEqual(coordinate, expected * factor)
+                for coordinate, expected, factor in zip(actual["vector"], original["vector"], factors):
+                    self.assertAlmostEqual(coordinate, expected * factor)
+                self.assertTrue(self.edit(scaled, kind="push_pull", distance=0.5).params["height"] > scaled.params["height"])
+
+    def test_nonuniform_scaling_refuses_only_an_oblique_extrusion(self):
+        rotated = self.edit(kind="rotate", axis=[1, 0, 0], angle_degrees=45)
+        with self.assertRaisesRegex(ElementProducerError, "oblique"):
+            self.edit(rotated, kind="scale", scale=[1, 2, 1])
+
+    def test_tilted_planar_face_can_be_scaled_then_pulled(self):
+        face = self.edit(kind="push_pull", distance=-1.5)
+        rotated = self.edit(face, kind="rotate", axis=[1, 0, 0], angle_degrees=45)
+        scaled = self.edit(rotated, kind="scale", scale=[1, -2, 1])
+        produced, _ = _produce((scaled,))
+        self.assertTrue(produced[0].operations)
+        pulled = self.edit(scaled, kind="push_pull", distance=1)
+        self.assertEqual(pulled.producer, "prism")
+        self.assertTrue(_produce((pulled,))[0][0].operations)
+
+    def test_mirror_keeps_positive_dimensions_and_reverses_explicit_axes(self):
+        mirrored = self.edit(kind="scale", scale=[-1, -2, 1], origin=[0, 0, 0])
+        self.assertEqual(mirrored.params["height"], 3)
+        self.assertEqual(mirrored.params["profile"], self.row().params["profile"])
+        self.assertEqual(mirrored.params["work_plane"]["xAxis"], [-1, 0, 0])
+        self.assertEqual(mirrored.params["work_plane"]["normal"], [0, -1, 0])
+        produced, _ = _produce((mirrored,))
+        self.assertEqual(_op_params(produced[0].operations[0])["vector"], [0, -3, 0])
+
+    def test_push_pull_bottom_keeps_the_opposite_face_fixed(self):
+        changed = self.edit(kind="push_pull", distance=0.5, normal=[0, -1, 0])
+        produced, context = _produce((changed,))
+        self.assertEqual(changed.params["height"], 2)
+        self.assertEqual(changed.params["work_plane"]["origin"], [0, -0.5, 0])
+        self.assertAlmostEqual(context.datum_value("drawn-top"), 3.57 + 1.5)
+
+    def test_push_pull_to_face_and_back_has_no_invented_thickness(self):
+        surface = self.edit(kind="push_pull", distance=-1.5)
+        self.assertEqual(surface.producer, "planar-surface")
+        self.assertNotIn("height", surface.params)
+        self.assertEqual(surface.params["profile"][0], surface.params["profile"][-1])
+        prism = self.edit(surface, kind="push_pull", distance=-2)
+        self.assertEqual(prism.producer, "prism")
+        self.assertEqual(prism.params["height"], 2)
+        self.assertEqual(prism.params["work_plane"]["normal"], [0, -1, 0])
+        self.assertEqual(len(prism.params["profile"]), 4)
+
+    def test_all_four_rectangle_sides_pull_without_changing_height(self):
+        for normal, expected in (([1, 0, 0], ((0, 4), (0, 2))),
+                                 ([-1, 0, 0], ((-1, 3), (0, 2))),
+                                 ([0, 0, 1], ((0, 3), (0, 3))),
+                                 ([0, 0, -1], ((0, 3), (-1, 2)))):
+            with self.subTest(normal=normal):
+                changed = self.edit(kind="push_pull", distance=1, normal=normal)
+                points = changed.params["profile"]
+                for axis, bounds in enumerate(expected):
+                    self.assertEqual((min(p[axis] for p in points), max(p[axis] for p in points)), bounds)
+                self.assertEqual(changed.params["height"], 1.5)
+
+    def test_rotated_rectangle_side_pull_and_crossing_refusal(self):
+        rotated = self.edit(kind="rotate", angle_degrees=90, axis=[0, 1, 0])
+        changed = self.edit(rotated, kind="push_pull", distance=-1, normal=[0, 0, -1])
+        self.assertAlmostEqual(max(point[0] for point in changed.params["profile"]), 2)
+        with self.assertRaisesRegex(ElementProducerError, "collapse or cross"):
+            self.edit(kind="push_pull", distance=-4, normal=[1, 0, 0])
+
+    def test_side_pull_refuses_an_ambiguous_or_concave_profile(self):
+        row = self.row(profile=[[0, 0], [3, 0], [3, 2], [1, 1], [0, 2]])
+        with self.assertRaisesRegex(ElementProducerError, "convex profiles"):
+            self.edit(row, kind="push_pull", distance=1, normal=[1, 0, 0])
 
 
 class PrismElevationTests(unittest.TestCase):

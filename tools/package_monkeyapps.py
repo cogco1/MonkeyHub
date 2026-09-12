@@ -1,7 +1,9 @@
 """Build a Windows x64 MonkeyHub candidate, optionally with an exact MonkeyFab commit.
 
 This is a distribution builder, not a launcher or project writer. All build,
-dependency and output files go to the supplied external directories. The
+dependency and output files go to the selected external directories. Use
+--configure --workspace-root once to remember a root in personal Git config;
+later builds reuse task directories and caches there. The
 installed application uses the existing apps/monkeyhub/run.py and launch-hub.ps1.
 """
 from __future__ import annotations
@@ -26,6 +28,11 @@ PYTHON_VERSION = "3.13.15"
 PYTHON_SHA256 = "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf"
 PYTHON_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/python-{PYTHON_VERSION}-embed-amd64.zip"
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+from tools.workspace import (
+    WORKSPACE_CONFIG_KEY, configured_root, configure_root, task_name, task_paths, validate_root,
+)
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
@@ -34,6 +41,7 @@ SOURCE_PATHS = (
     "apps/archflow-studio/assets", "apps/archflow-studio/launch-studio.ps1",
     "apps/monkeyhub", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
     "README.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
+    "governance/module_registry.json",
 )
 MONKEYFAB_SOURCE_PATHS = ("src/monkeyfab", "pyproject.toml", "README.md")
 
@@ -117,6 +125,10 @@ def prepare_runtime(source: Path, destination: Path, cache: Path,
 
 
 def build_web(source: Path, node: Path, npm_cli: Path, environment: dict[str, str]) -> None:
+    # The adapter uses the user's installed Codex through CODEX_PATH. Its
+    # optional native Codex copies are not needed in the Hub distribution.
+    run([str(node), str(npm_cli), "ci", "--omit=dev", "--omit=optional", "--no-audit", "--no-fund"],
+        cwd=source / "apps/monkeyhub", environment=environment)
     for relative in ("apps/archflow-studio/web", "apps/monkeyhub/web"):
         web = source / relative
         run([str(node), str(npm_cli), "ci", "--no-audit", "--no-fund"], cwd=web, environment=environment)
@@ -126,11 +138,15 @@ def build_web(source: Path, node: Path, npm_cli: Path, environment: dict[str, st
 
 
 def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str, str]) -> str:
-    """Copy the installed production dependency notices named by both lockfiles."""
+    """Copy the production notices named by the frontend and adapter lockfiles."""
     rows = []
     copied: dict[tuple[str, str], list[tuple[str, str]]] = {}
-    for application in ("archflow-studio", "monkeyhub"):
-        web = source / "apps" / application / "web"
+    for application, relative_root in (
+        ("archflow-studio", "apps/archflow-studio/web"),
+        ("monkeyhub", "apps/monkeyhub/web"),
+        ("monkeyhub ACP", "apps/monkeyhub"),
+    ):
+        web = source / relative_root
         locked = json.loads((web / "package-lock.json").read_text(encoding="utf-8"))
         for relative, metadata in sorted(locked["packages"].items()):
             if not relative or metadata.get("dev"):
@@ -139,7 +155,7 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
             if not (dependency / "package.json").is_file():
                 if metadata.get("optional"):
                     continue  # Optional native packages for another platform.
-                raise ValueError(f"Production web dependency is not installed: {application}/{relative}")
+                raise ValueError(f"Production dependency is not installed: {application}/{relative}")
             package = json.loads((dependency / "package.json").read_text(encoding="utf-8"))
             name, version = package["name"], package["version"]
             identity = (name, version)
@@ -154,9 +170,19 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
                     copied[identity].append((text.name, filename))
                 if not texts:
                     supplement = f"web-supplement/{stem}-LICENSE.txt"
-                    if supplement not in supplemental_links:
+                    if name == "@openai/codex" and re.fullmatch(r"\d+\.\d+\.\d+", version):
+                        # This npm shim omits its upstream notices. Retrieve
+                        # the exact locked release's originals at build time.
+                        for label in ("LICENSE", "NOTICE"):
+                            filename = f"web-{stem}-{label}.txt"
+                            url = f"https://raw.githubusercontent.com/openai/codex/rust-v{version}/{label}"
+                            with urllib.request.urlopen(url, timeout=60) as response, (target / filename).open("wb") as output:
+                                shutil.copyfileobj(response, output)
+                            copied[identity].append((f"{label} (upstream release)", filename))
+                    elif supplement not in supplemental_links:
                         raise ValueError(f"No upstream license text for {name} {version}; add its exact-version web supplement")
-                    copied[identity].append(("LICENSE (upstream supplement)", supplemental_links[supplement]))
+                    else:
+                        copied[identity].append(("LICENSE (upstream supplement)", supplemental_links[supplement]))
             row = f"- {application}: {name} {version} — " + ", ".join(
                 f"[{label}]({filename})" for label, filename in copied[identity])
             if row not in rows:
@@ -165,7 +191,7 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
 
 
 def collect_application(source: Path, bundle: Path, commit: str,
-                        monkeyfab_source: Path | None = None) -> None:
+                        monkeyfab_source: Path | None = None, *, node: Path) -> None:
     bundle.mkdir()
     # These trees only contain the committed snapshot, before runtime writes.
     for name in ("archflow", "monkeyarch", "monkeydiagram", "monkeymonitor"):
@@ -197,9 +223,22 @@ def collect_application(source: Path, bundle: Path, commit: str,
     notice_readme = re.sub(r"\]\(([^)]+)\)",
                           lambda match: "](" + links[match[1]] + ")" if match[1] in links else match[0],
                           notice_readme)
-    notice_readme += "\n## 前端随包许可\n\n原文来自各前端按 package-lock.json 安装的生产依赖。\n\n"
+    notice_readme += "\n## 前端与 ACP 随包许可\n\n原文来自各 package-lock.json 安装的生产依赖。\n\n"
     notice_readme += collect_web_notices(source, notice_target, links)
+    node_version = run([str(node), "--version"], capture=True)
+    if not re.fullmatch(r"v\d+\.\d+\.\d+", node_version):
+        raise ValueError("The selected Node runtime did not report a release version.")
+    node_license = f"node-{node_version}-LICENSE.txt"
+    node_license_url = f"https://raw.githubusercontent.com/nodejs/node/{node_version}/LICENSE"
+    with urllib.request.urlopen(node_license_url, timeout=60) as response, (notice_target / node_license).open("wb") as output:
+        shutil.copyfileobj(response, output)
+    notice_readme += f"\n- Node.js {node_version}: [LICENSE and bundled dependency notices]({node_license})\n"
     (notice_target / "README.md").write_text(notice_readme, encoding="utf-8")
+    node_runtime = bundle / "_runtime/node"
+    node_runtime.mkdir(parents=True)
+    shutil.copy2(node, node_runtime / "node.exe")
+    shutil.copytree(source / "apps/monkeyhub/node_modules", bundle / "apps/monkeyhub/node_modules",
+                    ignore=shutil.ignore_patterns(".bin"))
     for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
         shutil.copytree(source / relative, bundle / relative)
     # The capability index the Studio serves at /api/capabilities is read from
@@ -236,6 +275,15 @@ def smoke_runtime(bundle: Path) -> None:
         "print('Bundled Python, API, image/PDF and OCCT/3DM imports: PASS')"
     )], cwd=bundle)
     run([str(python), "-B", str(bundle / "apps/monkeyhub/run.py"), "--help"], cwd=bundle)
+    run([str(python), "-B", "-c", (
+        "from pathlib import Path; from monkeyhub_api.chat import _codex_acp_command; "
+        "root=Path.cwd(); command=_codex_acp_command(); "
+        "assert command and Path(command[0])==root/'_runtime/node/node.exe'; "
+        "assert Path(command[1]).is_relative_to(root); "
+        "print('Bundled ACP SDK, adapter and Node resolution: PASS')"
+    )], cwd=bundle)
+    run([str(bundle / "_runtime/node/node.exe"), "--check",
+         str(bundle / "apps/monkeyhub/node_modules/@agentclientprotocol/codex-acp/dist/index.js")], cwd=bundle)
     if (bundle / "apps/monkeyfab/src/monkeyfab").is_dir():
         profiles = json.loads(run(
             [str(python), "-B", "-m", "monkeyfab", "profiles", "--json"], cwd=bundle, capture=True))
@@ -313,7 +361,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
         print(f"MonkeyFab source: {fab_commit}", flush=True)
     build_web(source, node, npm_cli, environment)
     bundle = build / f"MonkeyHub-{version}-windows-x64"
-    collect_application(source, bundle, commit, fab_snapshot)
+    collect_application(source, bundle, commit, fab_snapshot, node=node)
     prepare_runtime(source, bundle / "_runtime/python", cache, environment, fab_snapshot)
     smoke_runtime(bundle)
     # Version + exact inputs are distribution metadata, not project records.
@@ -345,18 +393,55 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-ref", default="HEAD", help="exact integrated commit or ref; working files are not packaged")
     parser.add_argument("--monkeyfab-source", type=Path, help="independent MonkeyFab Git checkout; pair with --monkeyfab-ref")
     parser.add_argument("--monkeyfab-ref", help="MonkeyFab commit or ref to include; working files are not packaged")
-    parser.add_argument("--staging-dir", required=True, type=Path)
-    parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--cache-dir", type=Path, help="defaults to <staging-dir>/cache")
+    parser.add_argument("--workspace-root", type=Path,
+                        help=f"external build root; defaults to Git config {WORKSPACE_CONFIG_KEY}")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--configure", action="store_true",
+                        help="save --workspace-root in personal Git config and show paths without building")
+    action.add_argument("--show-paths", action="store_true", help="show resolved paths without creating directories or building")
+    parser.add_argument("--task", help="task directory name; defaults to the current branch")
+    parser.add_argument("--staging-dir", type=Path, help="overrides <workspace-root>/temp/package-monkeyapps/<task>")
+    parser.add_argument("--output-dir", type=Path, help="overrides <workspace-root>/packages/<task>")
+    parser.add_argument("--cache-dir", type=Path,
+                        help="overrides <workspace-root>/cache/package-monkeyapps; otherwise defaults to <staging-dir>/cache")
     parser.add_argument("--node", type=Path, default=Path(shutil.which("node") or "node.exe"))
     parser.add_argument("--npm-cli", type=Path, help="path to npm/bin/npm-cli.js; no shell or npm.cmd interpolation")
     args = parser.parse_args(argv)
     npm_cli = args.npm_cli or args.node.resolve().parent / "node_modules/npm/bin/npm-cli.js"
     try:
+        source = args.source_root.resolve()
+        if args.configure and args.workspace_root is None:
+            raise ValueError("--configure requires --workspace-root.")
+        workspace = validate_root(source, args.workspace_root.expanduser()) if args.workspace_root else configured_root(source)
+        task = None
+        if workspace is not None:
+            task = task_name(source, args.task)
+            selected = task_paths(workspace, task)
+            args.staging_dir = args.staging_dir or selected["stagingDir"]
+            args.output_dir = args.output_dir or selected["outputDir"]
+            args.cache_dir = args.cache_dir or selected["cacheDir"]
+        elif args.task is not None:
+            raise ValueError("--task requires a configured or explicit --workspace-root.")
+        if args.staging_dir is None or args.output_dir is None:
+            raise ValueError("Run --configure --workspace-root <external directory> once, or supply --staging-dir and --output-dir.")
+        staging, output, cache = (external(path, source) for path in (
+            args.staging_dir, args.output_dir, args.cache_dir or args.staging_dir / "cache"))
+        if args.monkeyfab_source is not None:
+            for path in (staging, output, cache):
+                external(path, args.monkeyfab_source.resolve())
+        if args.configure:
+            configure_root(source, workspace)
+        if args.configure or args.show_paths:
+            print(json.dumps({
+                "sourceRoot": str(source), "sourceRef": args.source_ref,
+                "workspaceRoot": str(workspace) if workspace else None, "task": task,
+                "stagingDir": str(staging), "outputDir": str(output), "cacheDir": str(cache),
+                "projectData": "Not accessed by this packaging command.",
+            }, ensure_ascii=False, indent=2))
+            return 0
         if not args.node.is_file() or not npm_cli.is_file():
             raise ValueError("The builder needs Node and npm-cli.js; supply --node and --npm-cli.")
-        package(args.source_root, args.source_ref, args.staging_dir, args.output_dir,
-                args.cache_dir or args.staging_dir / "cache", args.node, npm_cli,
+        package(source, args.source_ref, staging, output, cache, args.node, npm_cli,
                 args.monkeyfab_source, args.monkeyfab_ref)
     except (OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, f"package_monkeyapps: {error}\n")

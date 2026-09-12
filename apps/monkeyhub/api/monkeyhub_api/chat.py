@@ -8,12 +8,15 @@ the existing Studio interfaces, reached through the small stdio tool below.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
+from concurrent.futures import Future, InvalidStateError
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import importlib.util
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
@@ -21,7 +24,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Mapping
+from typing import Literal, Mapping
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
@@ -42,6 +45,7 @@ from archflow_studio_api.settings import read_application_settings
 
 from .models import (
     ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatPermission, ChatPermissionOption, ChatPermissionRequest,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubFailure,
 )
 
@@ -224,8 +228,40 @@ def _toml_value(value) -> str:
     return json.dumps(value)
 
 
+def _codex_acp_command() -> tuple[str, ...] | None:
+    """Use the application's locked adapter; never download during a turn."""
+    hub = Path(__file__).resolve().parents[2]
+    bundled_node = hub.parents[1] / "_runtime/node/node.exe"
+    node = str(bundled_node) if bundled_node.is_file() else shutil.which("node")
+    adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
+    if node and adapter.is_file() and importlib.util.find_spec("acp") is not None:
+        return (node, str(adapter))
+    return None
+
+
+def _native_codex(command: tuple[str, ...]) -> str:
+    """Resolve the native executable in the installed CLI, not the adapter's copy."""
+    executable = Path(command[0]).resolve()
+    if os.name != "nt" or executable.suffix.lower() == ".exe":
+        return str(executable)
+    arm = platform.machine().lower() in {"arm64", "aarch64"}
+    package = "codex-win32-arm64" if arm else "codex-win32-x64"
+    target = "aarch64-pc-windows-msvc" if arm else "x86_64-pc-windows-msvc"
+    modules = executable.parent / "node_modules/@openai"
+    roots = (modules / "codex/node_modules/@openai" / package, modules / package, modules / "codex")
+    for root in roots:
+        binary = root / "vendor" / target / "bin/codex.exe"
+        if binary.is_file():
+            return str(binary.resolve())
+    raise HubFailure(503, "CHAT_CODEX_EXECUTABLE_MISSING", "The installed Codex native executable could not be located. Repair the existing Codex installation.")
+
+
 class _SavedChat(ChatDetail):
     nativeSessionId: str | None = None
+    # Records written before ACP retain the exact native CLI continuation path.
+    transport: Literal["cli", "acp"] = "cli"
+    acpSessionId: str | None = None
+    acpDefaultModel: str | None = None
 
 
 # What a tool result is asked for by name. Anything else stays in the result
@@ -374,6 +410,7 @@ class _Running:
     stop: threading.Event = field(default_factory=threading.Event)
     process: subprocess.Popen | None = None
     thread: threading.Thread | None = None
+    last_save: float = 0.0
 
 
 # How long a connection check stays good before it is asked again, and how long
@@ -553,12 +590,17 @@ def _check_providers(commands: Mapping[str, tuple[str, ...]], environment: Mappi
 
 
 class ChatStore:
-    def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, timeout_s: float = 900):
+    def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None, timeout_s: float = 900):
         self.root = runtime_root / "chats"
         self.runtime_root = runtime_root
         self.hub_url = hub_url
         self.applications = applications
         self.commands = commands
+        self._use_acp = acp_command is not None or commands is None
+        self._acp_command = tuple(acp_command) if acp_command is not None else (_codex_acp_command() if commands is None else None)
+        self._acp_sessions = {}
+        self._acp_tools: dict[str, dict[str, dict]] = {}
+        self._permissions: dict[tuple[str, str], Future] = {}
         self.timeout_s = timeout_s
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
@@ -591,6 +633,7 @@ class ChatStore:
                 for message in session.messages:
                     if message.status == "streaming":
                         message.status = "interrupted"
+                    message.permission = None
                 self._save(session)
         self._loaded = True
 
@@ -657,6 +700,14 @@ class ChatStore:
                          detail="Uses the Claude CLI's existing Anthropic-compatible endpoint and authentication." if configured_plan and "claude" in commands
                          else "No executable Coding Plan configuration was found. Configure the existing Claude CLI endpoint and authentication first."),
         ]
+        if self._use_acp:
+            codex = rows[0]
+            codex.label = "Codex"
+            if codex.installed and self._acp_command is None:
+                codex.available = False
+                codex.detail = "Install this Hub's locked ACP adapter with npm ci in apps/monkeyhub and its api/requirements.txt in the Hub Python environment."
+            elif codex.installed:
+                codex.detail = "Persistent ACP sessions through this Hub's adapter, using the installed Codex and its saved login."
         for row in rows:
             if not row.installed:
                 row.modelCatalog, row.modelDetail = "unavailable", "Install this CLI to read the models it offers."
@@ -771,6 +822,7 @@ class ChatStore:
                 id=str(uuid4()), projectId=project_id, projectDir=project_dir,
                 title=request.title or "New chat", provider=request.provider, model=request.model,
                 createdAt=now, updatedAt=now,
+                transport="acp" if self._use_acp and request.provider == "codex" else "cli",
             )
             self._save(session)
             self._sessions[session.id] = session
@@ -813,7 +865,8 @@ class ChatStore:
                 if not configured or str(Path(configured).resolve()) != session.projectDir:
                     raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The running Studio belongs to another project.")
             provider = next(row for row in self.providers() if row.id == session.provider)
-            if not provider.available:
+            legacy_codex = session.provider == "codex" and session.transport == "cli" and provider.installed
+            if not provider.available and not legacy_codex:
                 raise HubFailure(503, "CHAT_PROVIDER_UNAVAILABLE", provider.detail)
             content = _redact(request.content.strip(), _claude_env())
             if not content:
@@ -830,12 +883,48 @@ class ChatStore:
             running.thread.start()
             return self.get(session_id)
 
+    def _tool_connection(self, session: _SavedChat) -> dict:
+        return {"command": sys.executable, "args": [str(Path(__file__).resolve()), "--mcp",
+                "--hub-url", self.hub_url, "--chat-id", session.id]}
+
+    def _codex_mcp(self, session: _SavedChat, command, environment) -> dict:
+        """Keep the same project-only MCP configuration for both native transports."""
+        mcp = self._tool_connection(session)
+        listing = subprocess.run(
+            [*command, "-C", session.projectDir, "mcp", "list", "--json"],
+            cwd=session.projectDir, env=environment, stdin=subprocess.DEVNULL,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        try:
+            servers = json.loads(listing.stdout)
+            if listing.returncode or not isinstance(servers, list):
+                raise ValueError("invalid MCP listing")
+            mcp_servers = {}
+            for row in servers:
+                kind_name = row["transport"]["type"]
+                if kind_name == "stdio":
+                    transport = mcp
+                elif kind_name == "streamable_http":
+                    transport = {"url": self.hub_url}
+                else:
+                    raise ValueError("unsupported MCP transport")
+                mcp_servers[row["name"]] = {**transport, "enabled": False, "required": False}
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
+        tool_names = ("studio_schema", "studio_request", "fab_request")
+        mcp_servers["monkeyhub"] = {
+            **mcp, "enabled": True, "required": True,
+            "enabled_tools": list(tool_names),
+            "tools": {name: {"approval_mode": "approve"} for name in tool_names},
+        }
+        return mcp_servers
+
     def _command(self, session: _SavedChat) -> tuple[list[str], dict[str, str]]:
         commands = self.commands if self.commands is not None else _cli_commands()
         kind = "codex" if session.provider == "codex" else "claude"
         environment = _claude_env() if kind == "claude" else dict(os.environ)
-        bridge = [str(Path(__file__).resolve()), "--mcp", "--hub-url", self.hub_url, "--chat-id", session.id]
-        mcp = {"command": sys.executable, "args": bridge}
+        mcp = self._tool_connection(session)
         model = session.model
         # The assistant works where the work is: this Hub's own source tree when
         # it is a checkout, with the bound project writable beside it, so a
@@ -846,40 +935,7 @@ class ChatStore:
             # Let Codex read its native profile, provider and credentials.
             # Its table overrides merge, so disable the effective MCP names
             # explicitly. Never copy credential-bearing config into argv.
-            listing = subprocess.run(
-                [*commands[kind], "-C", session.projectDir, "mcp", "list", "--json"],
-                cwd=session.projectDir, env=environment, stdin=subprocess.DEVNULL,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            try:
-                servers = json.loads(listing.stdout)
-                if listing.returncode or not isinstance(servers, list):
-                    raise ValueError("invalid MCP listing")
-                # Disabled overrides must still declare a valid transport of
-                # the original kind. Values stay local and contain no saved
-                # server credentials.
-                mcp_servers = {}
-                for row in servers:
-                    kind_name = row["transport"]["type"]
-                    if kind_name == "stdio":
-                        transport = mcp
-                    elif kind_name == "streamable_http":
-                        transport = {"url": self.hub_url}
-                    else:
-                        raise ValueError("unsupported MCP transport")
-                    mcp_servers[row["name"]] = {**transport, "enabled": False, "required": False}
-            except (ValueError, KeyError, TypeError) as exc:
-                raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
-            # exec cannot display an MCP approval prompt. Authorize only the
-            # three project-bound actions this adapter exposes for the turn;
-            # shell/project files retain the read-only sandbox below.
-            tool_names = ("studio_schema", "studio_request", "fab_request")
-            mcp_servers["monkeyhub"] = {
-                **mcp, "enabled": True, "required": True,
-                "enabled_tools": list(tool_names),
-                "tools": {name: {"approval_mode": "approve"} for name in tool_names},
-            }
+            mcp_servers = self._codex_mcp(session, commands[kind], environment)
             command = [*commands[kind], "exec", "--json", "--skip-git-repo-check",
                        "-C", workdir, "-s", "workspace-write", "--color", "never",
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
@@ -906,6 +962,151 @@ class ChatStore:
                 command += ["--model", model]
         return command, environment
 
+    def _acp_permission(self, session_id: str, request: dict) -> Future:
+        future = Future()
+        with self._lock:
+            session = self._session(session_id)
+            running = self._running.get(session_id)
+            if self._closing or running is None or running.stop.is_set() or request.get("sessionId") != session.acpSessionId:
+                future.set_result(None)
+                return future
+            permission = ChatPermission(
+                id=str(uuid4()), title=_redact(str(request.get("toolCall", {}).get("title") or "Permission requested")),
+                options=[ChatPermissionOption.model_validate(item) for item in request["options"]],
+            )
+            session.messages.append(ChatMessage(
+                id=f"{_turn_id(session)}:permission:{permission.id}", role="tool", content=permission.title,
+                createdAt=_now(), status="streaming", permission=permission,
+            ))
+            self._permissions[(session_id, permission.id)] = future
+            self._save(session)
+        return future
+
+    def resolve_permission(self, session_id: str, permission_id: str, request: ChatPermissionRequest) -> ChatDetail:
+        with self._lock:
+            session = self._session(session_id)
+            if request.projectId != session.projectId or _project(session.projectDir) != (session.projectId, session.projectDir):
+                raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This permission belongs to a different project.")
+            future = self._permissions.get((session_id, permission_id))
+            message = next((row for row in session.messages if row.permission and row.permission.id == permission_id), None)
+            if future is None or future.done() or message is None or session_id not in self._running:
+                raise HubFailure(409, "CHAT_PERMISSION_EXPIRED", "This permission request is no longer waiting for a decision.")
+            option = next((item for item in message.permission.options if item.optionId == request.optionId), None)
+            if request.optionId is not None and option is None:
+                raise HubFailure(422, "CHAT_PERMISSION_OPTION_INVALID", "Choose an option from this permission request.")
+            try:
+                future.set_result(request.optionId)
+            except InvalidStateError:
+                message.permission, message.status = None, "interrupted"
+                self._permissions.pop((session_id, permission_id), None)
+                self._save(session)
+                raise HubFailure(409, "CHAT_PERMISSION_EXPIRED", "This permission request is no longer waiting for a decision.") from None
+            message.content += " · " + (option.name if option else "Cancelled")
+            message.permission, message.status = None, "complete"
+            self._save(session)
+            self._permissions.pop((session_id, permission_id))
+            return self.get(session_id)
+
+    def _clear_permissions(self, session_id: str) -> None:
+        for key, future in list(self._permissions.items()):
+            if key[0] == session_id:
+                self._permissions.pop(key)
+                with suppress(InvalidStateError):
+                    future.set_result(None)
+        for message in self._sessions[session_id].messages:
+            if message.permission is not None:
+                message.permission, message.status = None, "interrupted"
+
+    def _acp_update(self, session_id: str, event: dict, environment: dict) -> None:
+        with self._lock:
+            session = self._session(session_id)
+            running = self._running.get(session_id)
+            if running is None or running.stop.is_set() or event.get("sessionId") != session.acpSessionId:
+                return
+            update = event["update"]
+            kind = update.get("sessionUpdate")
+            if kind == "agent_message_chunk" and update.get("content", {}).get("type") == "text":
+                identifier = f"{_turn_id(session)}:acp-answer"
+                message = next((row for row in session.messages if row.id == identifier), None)
+                if message is None:
+                    message = ChatMessage(id=identifier, role="assistant", content="", createdAt=_now(), status="streaming")
+                    session.messages.append(message)
+                message.content += _redact(update["content"]["text"], environment)
+            elif kind in {"tool_call", "tool_call_update"}:
+                call_id = update["toolCallId"]
+                call = self._acp_tools.setdefault(session_id, {}).setdefault(call_id, {})
+                call.update(update)
+                raw_input = call.get("rawInput") if isinstance(call.get("rawInput"), dict) else {}
+                raw_output = call.get("rawOutput") if isinstance(call.get("rawOutput"), dict) else {}
+                mcp = call.get("_meta", {}).get("is_mcp_tool_call") is True
+                item = {
+                    "id": call_id, "server": raw_input.get("server") if mcp else None,
+                    "tool": raw_input.get("tool") if mcp else call.get("title", "tool"),
+                    "arguments": raw_input.get("arguments") if mcp else raw_input,
+                    "status": call.get("status", "in_progress"),
+                    "result": raw_output.get("result") if mcp else call.get("rawOutput"),
+                    "error": raw_output.get("error") if mcp else None,
+                }
+                self._tool_message(session, item, "item.started" if item["status"] in {"pending", "in_progress"} else "item.completed", environment)
+            else:
+                return
+            session.updatedAt = _now()
+            now = time.monotonic()
+            if now - running.last_save >= 0.3:
+                self._save(session)
+                running.last_save = now
+
+    def _run_acp(self, session_id: str, prompt: str, running: _Running) -> HubError | None:
+        from .acp_session import AcpCancelled, CodexAcpSession
+
+        environment = dict(os.environ)
+        try:
+            with self._lock:
+                session = self._sessions[session_id]
+                client = self._acp_sessions.get(session_id)
+                self._acp_tools[session_id] = {}
+            if client is None:
+                commands = self.commands if self.commands is not None else _cli_commands()
+                environment["CODEX_PATH"] = _native_codex(commands["codex"])
+                # In this pinned adapter, read-only means workspace-write with
+                # user approvals. Its default agent mode uses auto-review.
+                environment["INITIAL_AGENT_MODE"] = "read-only"
+                environment["CODEX_CONFIG"] = json.dumps({
+                    "mcp_servers": self._codex_mcp(session, commands["codex"], environment),
+                    "sandbox_workspace_write": {"writable_roots": [session.projectDir]},
+                })
+                client = CodexAcpSession(
+                    command=self._acp_command, cwd=str(_source_checkout() or session.projectDir),
+                    environment=environment,
+                    # Nonempty ACP mcpServers would replace the disabled entries
+                    # above. This per-chat adapter already has the exact binding.
+                    mcp_servers=[], default_model=session.acpDefaultModel,
+                    on_update=lambda event: self._acp_update(session_id, event, environment),
+                    on_permission=lambda request: self._acp_permission(session_id, request),
+                )
+                with self._lock:
+                    self._acp_sessions[session_id] = client
+            if running.stop.is_set():
+                raise AcpCancelled("The chat was stopped before its turn was sent.")
+
+            def connected(identifier: str) -> None:
+                with self._lock:
+                    session.acpSessionId = identifier
+                    session.acpDefaultModel = client.default_model
+                    self._save(session)
+
+            client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s)
+            return None
+        except AcpCancelled:
+            running.stop.set()
+            return None
+        except Exception as exc:
+            with self._lock:
+                client = self._acp_sessions.pop(session_id, None)
+            if client is not None:
+                client.close()
+            return HubError(code="CHAT_ACP_FAILED", detail=_redact(str(exc), environment)[:1000])
+
     def _run(self, session_id: str, content: str, running: _Running) -> None:
         error: HubError | None = None
         stderr: list[str] = []
@@ -919,11 +1120,9 @@ class ChatStore:
                     "Project files are read-only: never edit project.json, HEAD, input, runs or records directly. "
                     "The studio_request description already states the usual actions, their fields and their units: "
                     "follow it and call them. Read a schema only for something it does not cover. "
-                    "To make a form that is not there yet: state, frame, /api/proposals/sketch, then its "
-                    "candidate route. To change something already modelled, do not draw it again: describe "
-                    "the target through /api/capabilities and send the request it hands back with "
-                    "awaitSeconds, which finishes it in that one call. Read only what you do not already "
-                    "know from this conversation; do not re-read to confirm what you have just been told. "
+                    "For an existing numeric control, use its documented modification flow instead of drawing it again. "
+                    "Read only what you do not already know from this conversation; do not re-read to confirm "
+                    "what you have just been told. "
                     "Choose reasonable, reversible defaults for sizes nobody stated rather than stopping to ask, "
                     "and say plainly which numbers you chose. Ask at most one short question, and only when the answer "
                     "would change the design itself — never for internal ids, digests or payload shapes, which are yours to read. "
@@ -945,6 +1144,9 @@ class ChatStore:
                     "If a required domain action is unavailable, say what cannot be done.\n\n"
                     + content
                 )
+            if session.transport == "acp":
+                error = self._run_acp(session_id, prompt, running)
+                return
             command, environment = self._command(session)
             if running.stop.is_set():
                 return
@@ -1014,6 +1216,8 @@ class ChatStore:
         finally:
             with self._lock:
                 session = self._sessions[session_id]
+                self._clear_permissions(session_id)
+                self._acp_tools.pop(session_id, None)
                 session.status = "interrupted" if running.stop.is_set() else "failed" if error else "idle"
                 session.error = HubError(code="CHAT_STOPPED", detail="The response was stopped.") if running.stop.is_set() else error
                 for message in session.messages:
@@ -1106,6 +1310,10 @@ class ChatStore:
                 return self.get(session_id)
             running.stop.set()
             process, thread = running.process, running.thread
+            client = self._acp_sessions.get(session_id)
+            self._clear_permissions(session_id)
+        if client is not None:
+            client.cancel()
         if process is not None:
             _stop_process(process)
         if thread is not None:
@@ -1115,6 +1323,8 @@ class ChatStore:
     def shutdown(self) -> None:
         with self._lock:
             self._closing = True
+            for session_id in list(self._running):
+                self._clear_permissions(session_id)
             threads = [item.thread for item in self._running.values() if item.thread]
             checking = self._check_thread
         # A connection check is read-only and short; let it finish rather than
@@ -1125,6 +1335,9 @@ class ChatStore:
         # endpoint only terminates that chat's own process tree.
         for thread in threads:
             thread.join()
+        for client in self._acp_sessions.values():
+            client.close()
+        self._acp_sessions.clear()
 
 
 def _stop_process(process: subprocess.Popen) -> None:

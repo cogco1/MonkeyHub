@@ -1,5 +1,14 @@
 # P115 — 能力总索引与逐项整理
 
+### 开发目录复用（2026-09-12）
+
+- [x] `tools/workspace.py` 与打包 CLI 共用已保存的开发根；新增源码 worktree 位于
+  `workspace/worktrees/<task>`，打包暂存、输出和缓存也从同一配置取得。
+  新增 `tools.workspace` 是因为既有 `tools.devctl` 只做查询，打包 owner 不负责源码检出。
+  重复创建会复用同一 worktree；已有其他位置的分支报告原目录，保留各检出的 WIP。
+  两个工具共 11 项检查及 `tools/archcheck.py` 通过；已随本轮源码整合接入。
+  新工作区只含选定的已提交版本，旧工作区可通过绝对路径调用此工具。
+
 ### 本地执行与共享项目（2026-09-09 夜间）
 
 用户已授权在其他任务空闲后实施，从交付分支 `4a887f15` 建立隔离工作区。
@@ -28,7 +37,7 @@
 
 ## 功能节点图与开发校准
 
-**核对日期：2026-09-11。** 本图把本卡的功能清单连接到现有实现；第 6 节覆盖当前注册表的全部 75 个 owner。
+**核对日期：2026-09-12。** 本图把本卡的功能清单连接到现有实现；第 6 节覆盖当前注册表的全部 76 个 owner。
 图中节点是功能的阅读入口，箭头表示输入、调用或成果交接，不新增模块或持久化对象。
 注册表中的 `canonical` 表示能力归口已确立，不表示所有入口、真实项目和安装包都已验收。
 
@@ -254,6 +263,14 @@ Monitor 记录本轮 6 次模型调用、88.3 秒，旧入口同类修改为 8 �
 两轮使用同一聊天、模型与项目，聊天上下文和缓存条件不同，因此这是单次调用链对比，尚不能作为受控性能结论。
 随后同一助手从新候选继续改到 4.5 m，来源正确，实际 3DM 仍仅改变主体高度，其余五个对象保持一致。
 该续改为 6 次模型调用、55.7 秒；它验证候选可接续，不与不同目标的旧轮次混作加速比例。
+
+2026-09-12，Hub 新 Codex 对话已接入 ACP Python SDK 0.12.1 与上游 Codex 适配器 1.11.0，
+使用本机 Codex 0.153.4，沿用原项目绑定 MCP。旧 CLI 对话仍保留其原生续接路径。
+真实测试使用已有 P036 测试项目：同一适配器进程连续两轮，第二轮经 Studio 草图与候选接口生成并读回
+`studio-cand-20260912-093759-7da78730-6d17`；重启 Hub 后恢复同一 ACP 会话，能回忆原代号与候选，
+恢复轮没有再次提交工具操作，项目文件前后相同。此轮关闭 CAD 导出，不代表独立几何或安装包验收。
+权限选择、取消、超时和子进程退出已有聚焦回归；首次空白项目仍缺建模基础初始化入口。
+本轮证明了进程与会话复用，尚未做用量完整性核对或受控性能比较。
 
 **已完成的执行耗时优化：明确数值修改。** 保留原生 Codex／Claude CLI 和同一项目执行链，
 优先将提交之后的等待、读回与比较交给程序连续执行，减少模型逐步调度；不新增模型编译器或工作流引擎。
@@ -711,7 +728,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 
 ## 6. 全部 owner 的覆盖索引
 
-下表覆盖 2026-09-11 注册表中的全部 75 个 owner，每个只列一次，按主要职责归组；一个能力可服务其他组，不能因此复制 owner。
+下表覆盖 2026-09-12 注册表中的全部 76 个 owner，每个只列一次，按主要职责归组；一个能力可服务其他组，不能因此复制 owner。
 精确 `owner_path`、API、tests 与 invariants 链接回 [SYSTEM_MAP](../../SYSTEM_MAP.md)，本卡不镜像这些字段。
 
 | 分类 | owner ID |
@@ -726,7 +743,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 | 共享：项目与版本（11） | `project.containers`、`project.digests`、`project.inputs`、`project.issue`、`project.layout`、`project.location`、`project.manifest`、`project.ports`、`project.record_kinds`、`project.refs`、`project.repository` |
 | 共享：通用契约（3） | `contracts.authority`、`contracts.canonical`、`contracts.fields` |
 | 实际命令入口（7） | `tools.freeze_project_stage_workflow`、`tools.open_stage_run`、`tools.run_project`、`tools.issue_project`、`tools.verify_state_record`、`tools.reindex_project`、`tools.create_project` |
-| 运行观测与研发支撑（4） | `monkeymonitor`、`tools.archcheck`、`tools.devctl`、`tools.package_monkeyapps` |
+| 运行观测与研发支撑（5） | `monkeymonitor`、`tools.archcheck`、`tools.devctl`、`tools.package_monkeyapps`、`tools.workspace` |
 
 ## 7. 本卡边界与检查
 
@@ -735,7 +752,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 - 今晚 API 实现沿已有 P108 的工作范围：controls 三文件、main／router 挂载、episodes／candidate／proposal decision 路由、intents／intent／intent_agent／clarification 入口与对应测试；PROTOCOL、模块 registry 和 OpenAPI 生成 SDK 由主代理统一同步。P115 只索引这些子项，不重复占有 P108 的 API 路径。
 - 后续切片只有在具体目标／调用者核清后才扩展本卡 write_scope；已有 owner、既有行为测试优先。
 - 保留私人项目、当前服务／浏览器／Rhino 和未知 WIP；2026-09-11 的已提交分支合并、GitHub 推送与旧分支清理按用户本轮明确授权执行。
-- 文档检查：链接可达、75 owner 完整对应、生成地图无漂移、scoped diff。C03 使用现有编译器、接口 datum、语义几何测试及 `tools/archcheck.py`。
+- 文档检查：链接可达、76 owner 完整对应、生成地图无漂移、scoped diff。C03 使用现有编译器、接口 datum、语义几何测试及 `tools/archcheck.py`。
 
 **本轮收尾（2026-09-06）：** API 全套 558 passed／2 skipped；Web 30 passed／2 skipped；
 编译器相关 27 测、OpenAPI 生成一致性、类型检查／生产构建、archcheck（213 files）与 diff 检查通过。

@@ -33,6 +33,7 @@ Scene.prototype.add = function (...objects) {
 };
 const viewportRef = window.viewport = createRef();
 window.submitted = [];
+window.toolChanges = [];
 const noop = () => {};
 createRoot(document.getElementById("root")).render(
   React.createElement(UserPreferencesProvider, null, React.createElement(Stage, {
@@ -45,6 +46,9 @@ createRoot(document.getElementById("root")).render(
     blend: null, captureState: "idle", onTool: noop, onInspection: noop, onStatus: noop,
     onRequestFile: noop, onOpenFile: noop, onSource: noop, onPick: noop,
     onSketch: async (action) => { window.submitted.push(action); },
+    model: { onDelete: noop, canDelete: true, deleting: false, subject: "Fixture", onUndo: noop, canUndo: true,
+      onRedo: noop, canRedo: true, onClearSelection: noop, hasSelection: true,
+      onTool: (tool) => { window.toolChanges.push(tool); } },
   })),
 );
 window.projectPoint = (point) => {
@@ -112,6 +116,8 @@ try {
   await page.evaluate(() => { window.previewBounds = null; });
   await page.mouse.click(...anchor);
   await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "profile");
+  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isDisabled(), true);
   await page.mouse.move(...corner);
   await page.waitForFunction(() => window.previewBounds !== null);
   await page.mouse.click(...corner);
@@ -131,6 +137,8 @@ try {
   if (process.env.SKETCH_SCREENSHOT) await page.screenshot({ path: process.env.SKETCH_SCREENSHOT });
   await page.mouse.click(...top);
   await page.waitForFunction(() => window.submitted.length === 1);
+  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isDisabled(), false);
+  assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isDisabled(), false);
   const [action] = await page.evaluate(() => window.submitted);
   const expectedProfile = [[0, 0], [3, 0], [3, 2], [0, 2]];
   action.profile.forEach((point, index) => point.forEach((value, axis) =>
@@ -141,8 +149,111 @@ try {
   assert.ok(Math.abs(previewTop - 2.4) < 0.02,
     `the preview must stand where the action says it does; got ${previewTop}`);
   assert.equal(action.base, 0);
+  // The ordinary drawing keys arm the same real tools their buttons use.
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector(".stage-sketch") === null);
+  await page.keyboard.press("c");
+  await page.getByRole("button", { name: "Circle", exact: true }).waitFor();
+  const circleCenter = await page.evaluate(() => window.projectPoint([4, 0, 0]));
+  const circleEdge = await page.evaluate(() => window.projectPoint([5.5, 0, 0]));
+  await page.mouse.click(...circleCenter);
+  await page.mouse.move(...circleEdge);
+  await page.mouse.click(...circleEdge);
+  await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "height");
+  const sizeInput = page.locator(".sketch-entry input");
+  await sizeInput.fill("2");
+  await sizeInput.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 2);
+  const circle = await page.evaluate(() => window.submitted[1]);
+  assert.equal(circle.profile.length, 32);
+  assert.equal(circle.height, 2);
+  assert.ok(Math.abs(circle.profile[0][0] - 5.5) < 0.02);
+
+  // Typed width/depth and an explicit zero create a face, not a zero-height
+  // pointer accident, through the very same completion callback.
+  await page.keyboard.press("r");
+  await page.mouse.click(...anchor);
+  await sizeInput.fill("4,2");
+  await sizeInput.press("Enter");
+  await sizeInput.fill("0");
+  await sizeInput.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 3);
+  const face = await page.evaluate(() => window.submitted[2]);
+  assert.equal(face.height, 0);
+  assert.ok(Math.abs(face.profile[2][0] - 4) < 0.02);
+  assert.ok(Math.abs(face.profile[2][1] - 2) < 0.02);
+
+  await page.keyboard.press("l");
+  for (const point of [[0, 0, 0], [3, 0, 0], [2, 2, 0], [0, 0, 0]]) {
+    const screen = await page.evaluate((value) => window.projectPoint(value), point);
+    await page.mouse.click(...screen);
+  }
+  await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "height");
+  await sizeInput.fill("1.5");
+  await sizeInput.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 4);
+  const polygon = await page.evaluate(() => window.submitted[3]);
+  assert.equal(polygon.profile.length, 3);
+  assert.equal(polygon.height, 1.5);
+
+  // A vertical rectangle remains local 2D plus its explicit world frame.
+  await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xz");
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  const verticalCorner = await page.evaluate(() => window.projectPoint([2, 0, 3]));
+  await page.mouse.click(...anchor);
+  await page.mouse.move(...verticalCorner);
+  await page.mouse.click(...verticalCorner);
+  await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "height");
+  await sizeInput.fill("-1.25");
+  await sizeInput.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 5);
+  const vertical = await page.evaluate(() => window.submitted[4]);
+  assert.deepEqual(vertical.plane.xAxis, [1, 0, 0]);
+  assert.deepEqual(vertical.plane.yAxis, [0, 0, 1]);
+  assert.equal(vertical.height, -1.25);
+  assert.ok(Math.abs(vertical.profile[2][0] - 2) < 0.02);
+  assert.ok(Math.abs(vertical.profile[2][1] - 3) < 0.02);
+
+  // T reads a true 3D distance, and its temporary line keeps both elevations.
+  await page.keyboard.press("t");
+  await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "from");
+  await page.evaluate(() => {
+    window.originalSnap = window.viewport.current.snapOnModel;
+    window.measurePoint = [1, 2, 3];
+    window.viewport.current.snapOnModel = () => ({ point: window.measurePoint, kind: "endpoint", objectName: "fixture" });
+  });
+  await page.mouse.click(...anchor);
+  await page.evaluate(() => { window.measurePoint = [1, 2, 6]; });
+  await page.mouse.move(anchor[0] + 20, anchor[1] - 20);
+  await page.mouse.click(anchor[0] + 20, anchor[1] - 20);
+  await page.getByText("3.000 m", { exact: false }).waitFor();
+  const measured = await page.evaluate(() => window.previewBounds);
+  [1, 2, 3].forEach((expected, index) => assert.ok(Math.abs(measured.min[index] - expected) < 1e-6));
+  [1, 2, 6].forEach((expected, index) => assert.ok(Math.abs(measured.max[index] - expected) < 1e-6));
+  assert.equal(await page.evaluate(() => window.submitted.length), 5, "measurement submits no model action");
+  await page.evaluate(() => { window.viewport.current.snapOnModel = window.originalSnap; });
+  await page.keyboard.press("Space");
+  for (const key of ["p", "m", "q", "s"]) await page.keyboard.press(key);
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.toolChanges.filter((tool) => tool !== "select").slice(-5)), ["pushPull", "move", "rotate", "scale", "copy"]);
+  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isEnabled(), true);
+  await page.keyboard.press("r");
+  await page.mouse.click(...anchor);
+  await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "profile");
+  const cameraBefore = await page.evaluate(() => window.viewport.current.camera());
+  for (const button of ["middle", "right"]) {
+    await page.mouse.move(anchor[0] + 50, anchor[1] + 50);
+    await page.mouse.down({ button });
+    await page.mouse.move(anchor[0] + 105, anchor[1] + 85, { steps: 4 });
+    await page.mouse.up({ button });
+    assert.equal(await page.locator(".stage-sketch").getAttribute("data-phase"), "profile", "navigation preserves the drawing action");
+    assert.equal(await page.evaluate(() => window.submitted.length), 5, "navigation never submits a shape");
+  }
+  const cameraAfter = await page.evaluate(() => window.viewport.current.camera());
+  assert.notDeepEqual(cameraAfter.position, cameraBefore.position, "the camera really moved while drawing");
   assert.deepEqual(errors, []);
-  console.log("PASS Z-up work plane, preview bounds, pointer rectangle and height submission; no API calls");
+  console.log("PASS drawing shortcuts, rectangle/circle/polygon, exact dimensions, explicit face and signed elevation-plane extrusion; no API calls");
 } catch (error) {
   if (page && !page.isClosed()) {
     if (process.env.SKETCH_SCREENSHOT) await page.screenshot({ path: process.env.SKETCH_SCREENSHOT });

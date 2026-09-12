@@ -18,6 +18,8 @@
  *   - an edit made after an undo drops the redo branch and keeps every run;
  *   - Delete and Ctrl+Z inside a text field belong to the text;
  *   - Esc clears the selection and changes no model;
+ *   - blank canvas clicks clear the pick, selection and highlight, including
+ *     when a real pick answer arrives late; camera gestures do not clear them;
  *   - a held key is one deletion, not a stream of them.
  *
  * No user service, project, browser profile or accepted design is touched.
@@ -43,6 +45,7 @@ const rhino = await rhino3dm();
 const root = await mkdtemp(path.join(tmpdir(), "monkeyarch-model-shortcuts-"));
 const projectDir = path.join(root, "demo-project");
 const errors = [];
+const modelUiOnly = process.env.MONKEYARCH_MODEL_UI_ONLY === "1";
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -54,6 +57,7 @@ function fail(message) {
 
 // ---- the project, built by the API's own fixture so nothing here invents one
 
+try {
 const build = spawnSync(python, ["-c", `
 import sys
 sys.path.insert(0, r"${apiRoot.replaceAll("\\", "/")}")
@@ -133,6 +137,8 @@ async function exported(runId) {
             x: Number((box.max[0] - box.min[0]).toFixed(3)),
             y: Number((box.max[1] - box.min[1]).toFixed(3)),
             z: Number((box.max[2] - box.min[2]).toFixed(3)),
+            min: box.min.map((value) => Number(value.toFixed(3))),
+            max: box.max.map((value) => Number(value.toFixed(3))),
           });
         }
         document.delete();
@@ -174,6 +180,48 @@ vite = await createServer({
     enforce: "pre",
     transform(source, id) {
       const modulePath = id.split("?")[0].replaceAll("\\", "/");
+      if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx`) {
+        const marker = "  const pickAt = useCallback(";
+        assert.equal(source.split(marker).length, 2);
+        return {
+          code: source.replace(marker, `
+            (window as unknown as { __viewportProbe: unknown }).__viewportProbe = {
+              hitAt: (x: number, y: number) => hitAt(x, y) !== null,
+              pointForObject: (name: string) => {
+                const runtime = runtimeRef.current;
+                const object = runtime?.model?.getObjectByName(name);
+                if (!runtime || !object) return null;
+                const box = new Box3().setFromObject(object);
+                const rect = runtime.renderer.domElement.getBoundingClientRect();
+                const min = box.min.toArray(), max = box.max.toArray();
+                for (const axis of [0, 1, 2]) for (const side of [0, 1]) {
+                  for (const u of [0.25, 0.5, 0.75]) for (const v of [0.25, 0.5, 0.75]) {
+                    const ratios = [u, v, 0];
+                    ratios[axis] = side;
+                    ratios[(axis + 1) % 3] = u;
+                    ratios[(axis + 2) % 3] = v;
+                    const point = new Vector3(...min.map((value, index) => value + (max[index]! - value) * ratios[index]!) as [number, number, number]).project(runtime.camera);
+                    const x = rect.left + (point.x + 1) * rect.width / 2;
+                    const y = rect.top + (1 - point.y) * rect.height / 2;
+                    if (point.z >= -1 && point.z <= 1 && document.elementFromPoint(x, y) === runtime.renderer.domElement && hitAt(x, y)?.objectName === name) return { x, y };
+                  }
+                }
+                return null;
+              },
+              state: () => {
+                const modelNames: string[] = [];
+                runtimeRef.current?.model?.traverse((object) => { if (object.name) modelNames.push(object.name); });
+                return {
+                  highlighted: runtimeRef.current?.highlighted.length ?? 0,
+                  camera: runtimeRef.current?.camera.position.toArray() ?? null,
+                  modelNames,
+                };
+              },
+            };
+          ` + marker),
+          map: null,
+        };
+      }
       if (modulePath !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;
       const marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
       assert.equal(source.split(marker).length, 2);
@@ -192,6 +240,12 @@ vite = await createServer({
             canUndo: canUndoModel,
             canRedo: canRedoModel,
             busy: modelNavigationBusy,
+            pending: modelRunPending,
+            artifactError: artifactError?.detail ?? null,
+            sourceLabel,
+            missingChosenModel,
+            artifactsStatus: artifacts.status,
+            catalogRunIds: artifacts.status === "ready" ? artifacts.value.artifacts.map((row) => row.runId) : [],
             history: modelHistory.runs,
             historyIndex: modelHistory.index,
             ink: gestures.length,
@@ -273,7 +327,11 @@ page.on("response", (answer) => {
   }
 });
 
-const snapshot = () => page.evaluate(() => window.__shortcuts);
+const snapshot = () => page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve({
+  ...window.__shortcuts,
+  highlighted: window.__viewportProbe?.state().highlighted ?? 0,
+  modelNames: window.__viewportProbe?.state().modelNames ?? [],
+})))));
 const modelHistoryOf = (state) => state?.history ?? [];
 
 async function settled(predicate, what, timeout = 120000) {
@@ -352,11 +410,31 @@ async function pickAnything() {
 
 async function pickOn(elementId, options = {}) {
   const seen = new Set();
-  for (const point of sweep) {
+  const beforePick = await snapshot();
+  assert.ok(beforePick.modelNames.includes(`obj-${elementId}`),
+    `the actual viewport lost ${elementId}: ${JSON.stringify({ loadedRunId: beforePick.loadedRunId, editingRunId: beforePick.editingRunId, status: beforePick.status, pending: beforePick.pending, artifactError: beforePick.artifactError, modelNames: beforePick.modelNames })}`);
+  const visiblePoint = await page.evaluate((id) => window.__viewportProbe.pointForObject('obj-' + id), elementId);
+  if (!visiblePoint && options.requireVisible) {
+    const obstruction = await page.evaluate(() => {
+      const canvas = document.querySelector(".viewport-host canvas");
+      const rect = canvas?.getBoundingClientRect();
+      if (!rect) return null;
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { hit: hit?.className, overlay: hit?.closest(".stage-sketch,.stage-empty,.model-edit-panel")?.className,
+        layers: [...document.querySelectorAll(".stage-sketch,.stage-empty,.model-edit-panel")].map((element) => element.className) };
+    });
+    throw new Error(`the loaded target has no unobstructed visible face: ${JSON.stringify({ target: elementId,
+      loadedRunId: beforePick.loadedRunId, editingRunId: beforePick.editingRunId, sourceLabel: beforePick.sourceLabel,
+      missingChosenModel: beforePick.missingChosenModel, artifactsStatus: beforePick.artifactsStatus, obstruction })}`);
+  }
+  let lastPick;
+  const points = options.requireVisible ? [visiblePoint] : visiblePoint ? [visiblePoint, ...sweep] : sweep;
+  for (const point of points) {
     await page.mouse.click(point.x, point.y);
     const deadline = Date.now() + 1200;
     while (Date.now() < deadline) {
       const state = await snapshot();
+      lastPick = state;
       if (state?.picked) {
         seen.add(`${state.picked}:${state.pickedStatus}`);
         remember(point, state.picked);
@@ -367,10 +445,13 @@ async function pickOn(elementId, options = {}) {
       await delay(60);
     }
   }
-  throw new Error(`no click resolved to ${elementId}; the clicks that hit anything found ${[...seen].join(", ") || "nothing"}`);
+  throw new Error(`no click resolved to ${elementId}; the clicks that hit anything found ${[...seen].join(", ") || "nothing"}; last state ${JSON.stringify(lastPick)}`);
 }
 
 // ---- 1. the embed opens on a candidate, and a click there is a selection
+let uiSourceRun = seedRun;
+let uiSourceArtifacts;
+if (!modelUiOnly) {
 console.log("1 · the embed opens on a candidate");
 //
 // This is the case the Delete key was useless in: the Hub opens the tool page
@@ -396,6 +477,7 @@ assert.deepEqual(await runIds(), runsBeforeRefusal,
 assert.equal(refused.editingRunId, seedRun, "and it must not move the editing base");
 await page.keyboard.press("Escape");
 await settled((state) => state.selection === null, "Esc after the refusal");
+}
 
 // ---- 2. a rectangle drawn with a typed height comes out at that height
 console.log("2 · a rectangle drawn with a typed height");
@@ -406,6 +488,8 @@ console.log("2 · a rectangle drawn with a typed height");
  */
 async function drawRectangle(side, height, from, whileArmed) {
   const before = await snapshot();
+  const requestStart = sent.length;
+  const drawnBase = before.loadedRunId ?? before.editingRunId;
   await page.getByRole("button", { name: "Rectangle" }).click();
   await page.mouse.move(from.x, from.y);
   await page.mouse.click(from.x, from.y);
@@ -417,15 +501,17 @@ async function drawRectangle(side, height, from, whileArmed) {
   await entry.press("Enter");
   const done = await settled(
     (state) => state.editingRunId !== null && state.editingRunId !== before.editingRunId &&
-      !state.loading && state.status === "ready",
+      state.loadedRunId === state.editingRunId && !state.loading && !state.busy && state.status === "ready",
     "the drawn rectangle never became the run being edited",
   );
+  const drawingRequest = sent.slice(requestStart).find((row) => row.path === "/api/proposals/sketch");
+  assert.equal(drawingRequest?.body.sourceRunId, drawnBase, "a drawing must continue from the model actually on screen");
   if (whileArmed) await whileArmed({ before: before.editingRunId, after: done.editingRunId });
   // The tool stays armed after an action, which is what lets a second
   // rectangle follow the first. Put it away, so the next click is a pick.
   await page.getByRole("button", { name: "Rectangle" }).click();
   await page.waitForSelector(".sketch-entry", { state: "detached", timeout: 10000 });
-  const added = new Set((await call("GET", `/api/state?run=${before.editingRunId}`)).elements.map((row) => row.elementId));
+  const added = new Set((await call("GET", `/api/state?run=${drawnBase}`)).elements.map((row) => row.elementId));
   const state = await call("GET", `/api/state?run=${done.editingRunId}`);
   const element = state.elements.map((row) => row.elementId).find((id) => !added.has(id));
   assert.ok(element, "the drawing added no element to the record");
@@ -436,9 +522,12 @@ async function drawRectangle(side, height, from, whileArmed) {
     `the typed height must be the exported height, on the Z-up axis; got ${JSON.stringify(box)}`);
   assert.equal(box.x, side, `the typed side must be the exported side; got ${JSON.stringify(box)}`);
   assert.equal(box.y, side, `the typed side must be the exported side; got ${JSON.stringify(box)}`);
-  return { runId: done.editingRunId, element, model };
+  assert.ok(done.modelNames.includes(`obj-${element}`), "the saved drawing is missing from the actual loaded viewport model");
+  assert.equal(done.pending, null, "the model stayed locked after its new view and editing base were ready");
+  return { runId: done.editingRunId, baseRunId: drawnBase, element, model };
 }
 
+if (!modelUiOnly) {
 const firstDrawing = await drawRectangle(3, 2.4, { x: centre.x - 120, y: centre.y + 60 }, async (runs) => {
   // An armed tool with nothing in progress owns no keys: the rectangle is
   // committed, so Ctrl+Z here is the model's and takes back the volume just
@@ -771,26 +860,30 @@ await settled((state) => state.editingRunId === fromViewed.editingRunId && !stat
 
 console.log("12 · a click on B leaves nothing of A to delete");
 const beforeDelayed = await runIds();
-// Two points that hit two different objects *on the picture as it stands*.
-// What each remembered point used to hit is no guide: runs have come and gone
-// since, so the pair is settled by pointing at them now.
-assert.ok(hits.length >= 2, `two known hits are needed; known: ${
-  JSON.stringify(hits.map((row) => row.elementId))}`);
-const first = await pickAt(hits[0]);
-let pointA = hits[0];
+// Runs, objects and camera framing have changed since the earlier picks.
+// Locate unobstructed faces in the current model before resolving both clicks.
+const currentHits = await page.evaluate(() => window.__viewportProbe.state().modelNames
+  .filter((name) => name.startsWith("obj-"))
+  .flatMap((name) => {
+    const point = window.__viewportProbe.pointForObject(name);
+    return point ? [{ ...point, objectName: name }] : [];
+  }));
+assert.ok(currentHits.length >= 2, `two currently visible objects are needed; found: ${JSON.stringify(currentHits)}`);
+const pointA = currentHits[0];
+const first = await pickAt(pointA);
 let pointB = null;
-for (const known of hits.slice(1)) {
+for (const known of currentHits.slice(1)) {
   const state = await pickAt(known, 3000).catch(() => null);
   if (state && state.picked !== first.picked) { pointB = known; break; }
 }
-assert.ok(pointB, `no second known point hits another object: ${
-  JSON.stringify(hits.map((row) => row.elementId))}`);
+assert.ok(pointB, `no second visible point resolves to another object: ${JSON.stringify(currentHits)}`);
 // A is picked again, so there is a real resolved answer in hand when B is
 // clicked — which is the whole point of this case.
 const resolvedA = await pickAt(pointA);
 assert.ok(resolvedA.picked, "A has to be resolved before B is clicked");
 const callsBeforeDelayed = sent.length;
-await page.route((url) => url.pathname === "/api/pick/resolve", async (route) => {
+const pendingPickPath = (url) => url.pathname === "/api/pick/resolve";
+await page.route(pendingPickPath, async (route) => {
   await delay(2500);
   await route.continue();
 });
@@ -804,23 +897,310 @@ await delay(600);
 assert.equal(sent.slice(callsBeforeDelayed).filter((row) => row.path === "/api/proposals/delete").length, 0,
   "a Delete pressed while a pick was unanswered sent a delete anyway");
 assert.deepEqual(await runIds(), beforeDelayed, "and it must have changed nothing");
-await page.unroute((url) => url.pathname === "/api/pick/resolve");
+await page.unroute(pendingPickPath);
 // When B's answer does arrive, it is B that is picked — not the A it replaced.
 const resolvedB = await settled((state) => state.picked !== null, "B's delayed answer never landed");
 assert.notEqual(resolvedB.picked, resolvedA.picked,
   "the delayed click was meant to land on a different object than the one before it");
 
+// ---- 13. a real empty ray on the unobstructed canvas clears every pick state
+console.log("13 · clicking empty canvas clears the selection and its highlight");
+// Looking for a blank point is read-only. The DOM hit must be the actual WebGL
+// canvas, and the viewer's own geometry ray must miss: toolbar/ink overlays and
+// guessed screen corners would not exercise the user's blank-canvas action.
+const canvasPoint = (occupied) => page.evaluate((wanted) => {
+  const canvas = document.querySelector(".viewport-host canvas");
+  if (!canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  for (let y = rect.top + 35; y < rect.bottom - 35; y += 35) {
+    for (let x = rect.left + 35; x < rect.right - 35; x += 35) {
+      if (document.elementFromPoint(x, y) === canvas && window.__viewportProbe.hitAt(x, y) === wanted) return { x, y };
+    }
+  }
+  return null;
+}, occupied);
+const blankPoint = await canvasPoint(false);
+assert.ok(blankPoint, "no unobstructed canvas point has a genuinely empty geometry ray");
+const beforeBlank = await runIds();
+const selectedBeforeBlank = await snapshot();
+assert.ok(selectedBeforeBlank.selection && selectedBeforeBlank.picked && selectedBeforeBlank.highlighted > 0,
+  "blank-click regression needs a resolved, visibly highlighted selection");
+await page.mouse.click(blankPoint.x, blankPoint.y);
+const blankCleared = await settled(
+  (state) => state.selection === null && state.picked === null && state.highlighted === 0,
+  "empty canvas left the selection, pick or highlight behind", 2500,
+);
+assert.equal(blankCleared.canDelete, false);
+assert.equal(blankCleared.editingRunId, selectedBeforeBlank.editingRunId, "deselecting moved the editing base");
+assert.deepEqual(await runIds(), beforeBlank, "deselecting wrote a candidate run");
+
+// ---- 14. a resolve already answered by the real server cannot repick later
+console.log("14 · an empty click also invalidates a pick answer still on its way");
+// Clearing selection can close its panel and resize/reframe the viewport. Old
+// screen coordinates are not object identities; reacquire a ray on this view.
+const currentHit = await canvasPoint(true);
+assert.ok(currentHit, "the deselected model has no unobstructed geometry point");
+await pickAt(currentHit);
+const pendingHit = await canvasPoint(true);
+assert.ok(pendingHit, "the selected model has no unobstructed geometry point");
+const delayedPickPath = (url) => url.pathname === "/api/pick/resolve";
+let releasePickAnswer, reportPickAnswer;
+const releasePick = new Promise((resolve) => { releasePickAnswer = resolve; });
+const pickAnswerReady = new Promise((resolve) => { reportPickAnswer = resolve; });
+const holdPickAnswer = async (route) => {
+  const answer = await route.fetch();
+  reportPickAnswer(answer.status());
+  await releasePick;
+  await route.fulfill({ response: answer });
+};
+await page.route(delayedPickPath, holdPickAnswer);
+try {
+  const requested = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/pick/resolve", { timeout: 5000 });
+  await page.mouse.click(pendingHit.x, pendingHit.y);
+  await requested;
+  assert.equal(await pickAnswerReady, 200, "the delayed reply must be a real successful pick resolution");
+  const pendingBlank = await canvasPoint(false);
+  assert.ok(pendingBlank, "the pending pick has no unobstructed blank canvas point");
+  await page.mouse.click(pendingBlank.x, pendingBlank.y);
+  await settled((state) => state.selection === null && state.picked === null && state.highlighted === 0,
+    "blank click did not clear the pending pick", 2500);
+  const delivered = page.waitForResponse((answer) => new URL(answer.url()).pathname === "/api/pick/resolve");
+  releasePickAnswer();
+  await delivered;
+  await delay(250);
+  const afterLateAnswer = await snapshot();
+  assert.equal(afterLateAnswer.selection, null, "a late resolve restored the cancelled selection");
+  assert.equal(afterLateAnswer.picked, null, "a late resolve restored the cancelled pick");
+  assert.equal(afterLateAnswer.highlighted, 0, "a late resolve restored the cancelled highlight");
+  assert.equal(afterLateAnswer.canDelete, false);
+  assert.deepEqual(await runIds(), beforeBlank, "cancelling a pending pick wrote a candidate run");
+} finally {
+  releasePickAnswer();
+  await page.unroute(delayedPickPath, holdPickAnswer);
+}
+
+// ---- 15. secondary clicks and a genuine camera orbit retain the selection
+console.log("15 · camera gestures do not act as empty primary clicks");
+const cameraHit = await canvasPoint(true);
+assert.ok(cameraHit, "the model has no unobstructed point to pick before camera navigation");
+const selectedForCamera = await pickAt(cameraHit);
+assert.ok(selectedForCamera.highlighted > 0);
+const cameraBlank = await canvasPoint(false);
+assert.ok(cameraBlank, "the selected model has no unobstructed blank canvas point");
+const resolveCount = sent.filter((row) => row.path === "/api/pick/resolve").length;
+for (const button of ["right", "middle"]) {
+  await page.mouse.click(cameraBlank.x, cameraBlank.y, { button });
+  await delay(100);
+  const afterClick = await snapshot();
+  assert.equal(afterClick.selection, selectedForCamera.selection, `${button} click cleared the selection`);
+  assert.equal(afterClick.picked, selectedForCamera.picked, `${button} click cleared the pick`);
+  assert.equal(afterClick.highlighted, selectedForCamera.highlighted, `${button} click cleared the highlight`);
+}
+const cameraBefore = await page.evaluate(() => window.__viewportProbe.state().camera);
+await page.mouse.move(cameraBlank.x, cameraBlank.y);
+await page.mouse.down();
+await page.mouse.move(cameraBlank.x + 45, cameraBlank.y + 25, { steps: 8 });
+await page.mouse.up();
+const afterOrbit = await snapshot();
+const cameraAfter = await page.evaluate(() => window.__viewportProbe.state().camera);
+assert.notDeepEqual(cameraAfter, cameraBefore, "the drag must actually orbit the camera");
+assert.equal(afterOrbit.selection, selectedForCamera.selection, "orbiting cleared the selection");
+assert.equal(afterOrbit.picked, selectedForCamera.picked, "orbiting cleared the pick");
+assert.equal(afterOrbit.highlighted, selectedForCamera.highlighted, "orbiting cleared the highlight");
+assert.equal(sent.filter((row) => row.path === "/api/pick/resolve").length, resolveCount,
+  "a secondary click or camera drag sent a new pick resolution");
+assert.deepEqual(await runIds(), beforeBlank, "camera navigation wrote a candidate run");
+uiSourceRun = otherRun;
+uiSourceArtifacts = artifacts;
+} else {
+  const source = await call("GET", `/api/state?run=${seedRun}`);
+  const proposal = await call("POST", "/api/proposals/sketch", {
+    stateDigest: source.stateDigest, sourceRunId: seedRun, componentId: "portico", elementId: "ui-source-block",
+    profile: [[14, 0], [16, 0], [16, 2], [14, 2]], height: 1.5, baseLevel: "level-ground",
+  });
+  uiSourceRun = (await finished((await call("POST", `/api/proposals/${proposal.proposalId}/candidate`)).jobId)).candidateId;
+  uiSourceArtifacts = (await call("GET", "/api/artifacts")).artifacts
+    .filter((row) => row.runId === uiSourceRun && row.available && row.fileName.endsWith(".3dm"));
+  assert.ok(uiSourceArtifacts.length > 0, "the direct UI fixture has no real source export");
+}
+
+// ---- 16. drawing from a viewed run updates the picture, then the next base
+console.log("16 · a viewed-source drawing and the next drawing both appear automatically");
+const beforeViewedDrawing = await snapshot();
+await page.evaluate((artifact) => window.__shortcuts.viewArtifact(artifact), uiSourceArtifacts[0]);
+await settled((state) => state.loadedRunId === uiSourceRun && state.editingRunId === beforeViewedDrawing.editingRunId && !state.loading,
+  "the drawing test never separated the viewed source from the editing base");
+assert.notEqual(uiSourceRun, beforeViewedDrawing.editingRunId);
+const firstContinued = await drawRectangle(2, 1.5, { x: centre.x - 180, y: centre.y + 95 });
+assert.equal(firstContinued.baseRunId, uiSourceRun, "the first drawing must start from the deliberately viewed run");
+const secondContinued = await drawRectangle(2.5, 2, { x: centre.x + 95, y: centre.y + 80 });
+assert.equal(secondContinued.baseRunId, firstContinued.runId, "the next drawing did not automatically use the first one's new base");
+assert.ok(secondContinued.model.has(`obj-${firstContinued.element}`), "the next drawing lost the previous one");
+assert.ok((await snapshot()).modelNames.includes(`obj-${firstContinued.element}`), "the viewport lost the first drawing during the second refresh");
+
+// ---- 17. the real P panel pushes the picked face and shows the saved result
+console.log("17 · P, distance, Apply changes the saved solid and the visible model");
+await pickOn(secondContinued.element, { requireVisible: true });
+const beforePush = await snapshot();
+const originalBox = secondContinued.model.get(`obj-${secondContinued.element}`);
+const pushStart = sent.length;
+await page.keyboard.press("p");
+const pushPanel = page.getByRole("form", { name: "Push/Pull P", exact: true });
+await pushPanel.waitFor({ state: "visible", timeout: 5000 });
+if (process.env.MONKEYARCH_MODEL_UI_QA_DIR) {
+  const savedTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+  for (const theme of ["light", "dark"]) {
+    await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+    await delay(150);
+    const screenshotPath = path.join(process.env.MONKEYARCH_MODEL_UI_QA_DIR, `pushpull-panel-${theme}.png`);
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`model UI screenshot: ${screenshotPath}`);
+  }
+  await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, savedTheme);
+}
+await pushPanel.getByRole("spinbutton", { name: "Distance m", exact: true }).fill("1");
+await pushPanel.getByRole("button", { name: "Apply", exact: true }).click();
+const pushed = await settled((state) => state.editingRunId !== beforePush.editingRunId &&
+  state.loadedRunId === state.editingRunId && !state.busy && !state.loading && state.status === "ready",
+  "the face push/pull never automatically became the visible model and next editing base");
+const pushRequest = sent.slice(pushStart).find((row) => row.path === "/api/proposals/push-pull");
+assert.ok(pushRequest, "the P panel submitted no push/pull proposal");
+assert.equal(pushRequest.body.sourceRunId, secondContinued.runId);
+assert.equal(pushRequest.body.elementId, secondContinued.element);
+assert.equal(pushRequest.body.distance, 1);
+assert.ok(Array.isArray(pushRequest.body.normal), "the P panel omitted the selected face normal");
+const buildingAxis = pushRequest.body.normal.findIndex((value) => Math.abs(value) > 0.99);
+assert.ok(buildingAxis >= 0, `the rectangular solid's picked face was not axis aligned: ${JSON.stringify(pushRequest.body.normal)}`);
+const cadAxis = ["x", "z", "y"][buildingAxis];
+const pushedModel = await exported(pushed.editingRunId);
+const pushedBox = pushedModel.get(`obj-${secondContinued.element}`);
+assert.ok(pushedBox);
+for (const axis of ["x", "y", "z"]) {
+  assert.equal(pushedBox[axis], Number((originalBox[axis] + (axis === cadAxis ? 1 : 0)).toFixed(3)),
+    `push/pull did not extend exactly the selected ${cadAxis} face: ${JSON.stringify(pushedBox)}`);
+}
+assert.deepEqual(pushedModel.get(`obj-${firstContinued.element}`), secondContinued.model.get(`obj-${firstContinued.element}`),
+  "pushing one face changed the previously drawn neighbouring solid");
+assert.ok(pushed.modelNames.includes(`obj-${secondContinued.element}`), "the pushed object is absent from the actual viewport model");
+assert.equal(pushed.pending, null);
+await pushPanel.getByRole("button", { name: "Close tool", exact: true }).click();
+
+// ---- 18. world-axis transforms and copy follow the same visible-source loop
+console.log("18 · M/Q/S/Copy produce saved geometry and advance the visible editing source");
+let transformRun = pushed.editingRunId;
+let transformModel = pushedModel;
+for (const spec of [
+  { kind: "move", key: "m", title: "Move M", values: [1, 2, 3] },
+  { kind: "rotate", key: "q", title: "Rotate Q", values: [30] },
+  { kind: "scale", key: "s", title: "Scale S", values: [-1, 1.5, 0.5] },
+  { kind: "copy", title: "Copy", values: [5, 0, 0] },
+]) {
+  await pickOn(secondContinued.element, { requireVisible: true });
+  const original = transformModel.get(`obj-${secondContinued.element}`);
+  const callsBefore = sent.length;
+  if (spec.key) await page.keyboard.press(spec.key);
+  else await page.getByRole("button", { name: "Copy", exact: true }).click();
+  const panel = page.getByRole("form", { name: spec.title, exact: true });
+  await panel.waitFor({ state: "visible", timeout: 5000 });
+  if (spec.kind === "scale") await panel.getByRole("checkbox", { name: /Uniform scale/ }).uncheck();
+  for (let index = 0; index < spec.values.length; index += 1) {
+    await panel.getByRole("spinbutton").nth(index).fill(String(spec.values[index]));
+  }
+  if (spec.kind === "rotate") await panel.getByRole("combobox", { name: "Axis", exact: true }).selectOption("z");
+  await panel.getByRole("button", { name: "Apply", exact: true }).click();
+  const shown = await settled((state) => state.editingRunId !== transformRun && state.loadedRunId === state.editingRunId &&
+    !state.loading && !state.busy && state.status === "ready", `${spec.kind} did not become the visible model and next editing source`);
+  const submitted = sent.slice(callsBefore).find((row) => row.path === "/api/proposals/transform");
+  assert.ok(submitted, `${spec.kind} submitted no transformation`);
+  assert.equal(submitted.body.kind, spec.kind);
+  assert.equal(submitted.body.sourceRunId, transformRun);
+  assert.equal(submitted.body.elementId, secondContinued.element);
+  const nextModel = await exported(shown.editingRunId);
+  let transformed = nextModel.get(`obj-${secondContinued.element}`);
+  if (spec.kind === "move" || spec.kind === "copy") {
+    assert.deepEqual(submitted.body.translation, [spec.values[0], spec.values[2], spec.values[1]], "Z-up UI translation was not converted to building axes");
+    if (spec.kind === "copy") {
+      const additions = [...nextModel.keys()].filter((name) => !transformModel.has(name));
+      assert.equal(additions.length, 1, "Copy must add exactly one saved object");
+      transformed = nextModel.get(additions[0]);
+      assert.deepEqual(nextModel.get(`obj-${secondContinued.element}`), original, "Copy changed its source object");
+      assert.ok(shown.modelNames.includes(additions[0]), "the copied object is not in the actual viewport model");
+    }
+    for (const bound of ["min", "max"]) {
+      assert.deepEqual(transformed[bound], original[bound].map((value, index) => Number((value + spec.values[index]).toFixed(3))),
+        `${spec.kind} did not translate the saved object along the UI's X/Y/Z axes`);
+    }
+  } else if (spec.kind === "rotate") {
+    assert.equal(submitted.body.angleDegrees, -30, "Y/Z conversion must reverse the rotation angle");
+    assert.deepEqual(submitted.body.axis, [0, 1, 0]);
+    assert.ok(Math.abs(transformed.x - (original.x * Math.cos(Math.PI / 6) + original.y * 0.5)) < 0.004);
+    assert.ok(Math.abs(transformed.y - (original.x * 0.5 + original.y * Math.cos(Math.PI / 6))) < 0.004);
+    assert.equal(transformed.z, original.z);
+  } else {
+    assert.deepEqual(submitted.body.scale, [-1, 0.5, 1.5], "negative mirror scale must survive the UI and Z-up conversion");
+    for (const [index, axis] of ["x", "y", "z"].entries()) {
+      assert.ok(Math.abs(transformed[axis] - original[axis] * Math.abs(spec.values[index])) < 0.004,
+        `scale did not resize the saved ${axis} extent`);
+    }
+  }
+  assert.ok(shown.modelNames.includes(`obj-${secondContinued.element}`));
+  assert.equal(shown.pending, null);
+  await panel.getByRole("button", { name: "Close tool", exact: true }).click();
+  transformRun = shown.editingRunId;
+  transformModel = nextModel;
+  console.log(`  ${spec.kind} · saved geometry and automatic model refresh verified`);
+}
+
+// ---- 19. a slow catalog cannot hide a candidate already downloaded and shown
+console.log("19 · the new model remains visible and pickable while the artifact catalog is delayed");
+const catalogPath = (url) => url.pathname === "/api/artifacts";
+let releaseCatalog;
+const catalogReleased = new Promise((resolve) => { releaseCatalog = resolve; });
+let heldCatalogResponses = 0;
+const holdCatalog = async (route) => {
+  const answer = await route.fetch();
+  heldCatalogResponses += 1;
+  await catalogReleased;
+  await route.fulfill({ response: answer });
+};
+await page.route(catalogPath, holdCatalog);
+try {
+  const withSlowCatalog = await drawRectangle(1.25, 1.75, { x: centre.x - 250, y: centre.y + 150 });
+  assert.ok(heldCatalogResponses > 0, "the regression did not hold a real catalog response");
+  await delay(500);
+  const whileCatalogHeld = await snapshot();
+  assert.ok(!whileCatalogHeld.catalogRunIds.includes(withSlowCatalog.runId),
+    "the displayed candidate was already in the catalog; this did not exercise a stale listing");
+  assert.equal(whileCatalogHeld.loadedRunId, withSlowCatalog.runId);
+  assert.equal(whileCatalogHeld.editingRunId, withSlowCatalog.runId);
+  assert.equal(whileCatalogHeld.missingChosenModel, false, "the stale catalog marked the already shown model missing");
+  assert.ok(whileCatalogHeld.sourceLabel, "the stale catalog cleared the displayed source label");
+  await pickOn(withSlowCatalog.element, { requireVisible: true });
+  releaseCatalog();
+  await settled((state) => state.catalogRunIds.includes(withSlowCatalog.runId), "the released real catalog never caught up");
+  const afterCatalog = await snapshot();
+  assert.equal(afterCatalog.loadedRunId, withSlowCatalog.runId, "catalog arrival replaced the already shown model");
+  assert.equal(afterCatalog.picked, withSlowCatalog.element, "catalog arrival cleared the new model's resolved pick");
+} finally {
+  releaseCatalog();
+  await page.unroute(catalogPath, holdCatalog);
+}
+
 // ---- done
 
+} finally {
 closing = true;
-await browser.close().catch(() => {});
-await vite.close().catch(() => {});
-await new Promise((resolve) => http.close(resolve));
-api.kill();
+await browser?.close().catch(() => {});
+await vite?.close().catch(() => {});
+if (http.listening) await new Promise((resolve) => http.close(resolve));
+api?.kill();
 await delay(300);
 await rm(root, { recursive: true, force: true }).catch(() => {});
+}
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exit(1);
 }
-console.log("model shortcuts: drawing height, delete, undo, redo, branch, text keys, Esc and key repeat all verified against real geometry");
+console.log(modelUiOnly
+  ? "model UI: viewed-source drawings, P/M/Q/S/Copy and delayed-catalog visibility verified against real saved geometry"
+  : "model shortcuts: drawing, deletion, history, text keys, selection, camera gestures, P/M/Q/S/Copy and delayed-catalog visibility verified against real saved geometry");

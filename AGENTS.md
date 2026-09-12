@@ -125,6 +125,13 @@ MonkeyHub is the single application entry; MonkeyArch is its modeling workspace.
 For a first session, follow section 0 of [the Hub entry guide](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
 Reuse its source/project locations and bounded lookup sequence; do not load every linked document or search the whole tree to orient yourself.
 
+For a new source worktree, use `python tools/workspace.py create --branch codex/<task>`.
+It reads the saved development root shared with `tools/package_monkeyapps.py`; use
+`python tools/workspace.py paths` to inspect it and `configure --root <absolute-directory>`
+only for first setup or an explicit root change. Reuse the assigned checkout for ongoing
+work. Do not invent dated directories at drive roots for worktrees or package staging.
+The CLI preserves existing worktrees and design projects; project writes still use P036.
+
 The repository has one production spine (`docs/ARCHITECTURE.md`) and a module contract
 registry (`governance/module_registry.json`, rendered as `docs/SYSTEM_MAP.md`). Every
 capability has exactly one owner there. `docs/CANONICAL_SPINE.md` records the earlier

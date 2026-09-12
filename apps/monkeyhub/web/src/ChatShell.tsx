@@ -197,6 +197,7 @@ export function ChatShell({ preferences, settings, configuredProject, onProjectB
   const [draftModel, setDraftModel] = useState<string | null>(defaults.model);
   const [customModel, setCustomModel] = useState<string | null>(null);
   const [modelBusy, setModelBusy] = useState(false);
+  const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<HubError | null>(null);
   const addDialog = useRef<HTMLDialogElement>(null);
   const newDialog = useRef<HTMLDialogElement>(null);
@@ -204,6 +205,7 @@ export function ChatShell({ preferences, settings, configuredProject, onProjectB
   const input = useRef<HTMLTextAreaElement>(null);
   const messages = useRef<HTMLDivElement>(null);
   const actionLock = useRef(false);
+  const permissionLock = useRef(false);
   const readLock = useRef(false);
   const selection = useRef({ chatId, projectDir }); selection.current = { chatId, projectDir };
   const project = projects.find((item) => item.projectDir === projectDir);
@@ -349,6 +351,16 @@ export function ChatShell({ preferences, settings, configuredProject, onProjectB
     try { setChat(await request<ChatDetail>(`/api/chat/sessions/${chatId}/stop`, {})); }
     catch (cause) { setError(asFailure(cause)); }
   };
+  const choosePermission = async (permissionId: string, optionId: string | null) => {
+    if (!chat || chat.id !== chatId || permissionLock.current) return;
+    const current = chat;
+    permissionLock.current = true; setPermissionBusy(permissionId); setError(null);
+    try {
+      const detail = await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(current.id)}/permissions/${encodeURIComponent(permissionId)}`, { projectId: current.projectId, optionId });
+      if (selection.current.chatId === current.id) setChat(detail);
+    } catch (cause) { if (selection.current.chatId === current.id) setError(asFailure(cause)); }
+    finally { permissionLock.current = false; setPermissionBusy(null); }
+  };
   /** Make a new empty project in the workspace and open a conversation in it. */
   const createProject = async (event: FormEvent) => {
     event.preventDefault(); if (actionLock.current || !projectName.trim()) return;
@@ -418,6 +430,13 @@ export function ChatShell({ preferences, settings, configuredProject, onProjectB
             ? <div className="chat-activity" key={message.id} data-status={message.status}>
                 <details><summary><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} /><span className="chat-activity__line">{activityLine(message.content).slice(0, 160) || t.toolActivity}</span></summary>
                   {activityDetail(message.content) ? <pre>{activityDetail(message.content)}</pre> : <p className="chat-muted">{t.activityEmpty}</p>}</details>
+                {running && message.permission && <div className="chat-permission" role="group" aria-label={message.permission.title} aria-busy={permissionBusy === message.permission.id}>
+                  <p>{message.permission.title}</p>
+                  <div className="chat-permission__actions">{message.permission.options.map((option) => <button key={option.optionId} type="button" className="chat-activity__open" disabled={permissionBusy !== null}
+                    onClick={() => void choosePermission(message.permission!.id, option.optionId)}>{option.name}</button>)}
+                    <button type="button" className="chat-activity__open" disabled={permissionBusy !== null} onClick={() => void choosePermission(message.permission!.id, null)}>{t.cancel}</button>
+                  </div>
+                </div>}
                 {message.candidateId ? <div className="chat-activity__result"><button type="button" className="chat-activity__open" title={message.candidateId} disabled={!project || Boolean(toolBusy)}
                   onClick={() => void openTool("monkeyarch", { candidate: message.candidateId! })}><Icon name="cube" /><span>{t.openCandidate}</span></button><span className="chat-muted">{t.candidateHint}</span></div> : null}
               </div>
