@@ -4,7 +4,7 @@
 `module_registry` 记录软件归口与公开契约，`work_registry` 记录未完成任务及源码范围，
 `architecture_policy` 配置静态检查。模块 owner 是软件职责，可以包含多个实现文件，不是个人姓名；工作卡不是发布证明。
 
-1. **使用独立检出和短分支。** 成员各用自己的 clone 或 worktree，从约定基线建立 `codex/<简短名称>` 分支。保留维护者主检出的 WIP 和已有明确约定；需要同步时再按实际情况合并或 rebase，不做每日强制操作。
+1. **使用独立检出和短分支。** 新 worktree 使用 `python tools/workspace.py create --branch codex/<简短名称>`，从约定基线开始时追加 `--base <ref>`；首次根目录配置见[开发环境指南](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#开发目录只配置一次)。继续任务时复用原检出，保留维护者主检出的 WIP 和已有明确约定；需要同步时再按实际情况合并或 rebase，不做每日强制操作。
 2. **复用现有工作卡。** 先找本次任务所属的 live 卡，约定结果、验收和 `write_scope`。只有没有合适归属时才新建卡；完成后从 live 清单移除，成果以提交、PR 和实际交付状态说明。
 3. **按明确源码范围修改。** 卡片范围加上 policy 的 `shared_write_scope` 是提交边界，不是运行权限。共享范围现为 `docs/mapping/`、两张 registry、`tests/`、API tests 和 `docs/PROTOCOL.md`。涉及他人负责的路径，先交接本次修改范围。提交 subject 写所属 `P###`，未写时 checker 才读取正文。
 4. **给独立功能合适的位置。** 先查现有公开函数和调用方；新的分析或出图算法可以有独立目录或外部包，通过函数、CLI、API 或 adapter 接入。不要强迫每个功能改 core 或塞进已有大文件；不要复制已有状态、持久化或发布权威。实验与接入方式见 [`labs/README.md`](labs/README.md) 和指南第 7 节。

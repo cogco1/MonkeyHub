@@ -7,7 +7,7 @@
     "sync:rhino3dm": "node scripts/sync-rhino3dm.mjs",
     "sync": "npm run sync:rhino3dm",
     "dev": "npm run sync && vite",
-    "test": "node --test test/*.test.ts",
+    "test": "node --test --test-concurrency=1 test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run sync && tsc --noEmit && vite build",
     "api:dump": "python scripts/dump-openapi.py",

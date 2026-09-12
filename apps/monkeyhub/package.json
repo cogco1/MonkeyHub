@@ -1,0 +1,7 @@
+{
+  "name": "monkeyhub-agent-adapters",
+  "private": true,
+  "dependencies": {
+    "@agentclientprotocol/codex-acp": "1.11.0"
+  }
+}

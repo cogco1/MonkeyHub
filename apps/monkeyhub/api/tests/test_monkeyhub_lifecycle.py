@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import site
 import socket
 import subprocess
 import sys
@@ -98,6 +99,13 @@ class LocalHubCase(unittest.TestCase):
             "APPDATA": str(self.appdata), "LOCALAPPDATA": str(self.root / "private local"),
             "PYTHONUTF8": "1",
         })
+        # APPDATA also locates Windows' Python user site. Keep dependencies
+        # already available to this interpreter when isolating app settings.
+        user_site = site.getusersitepackages()
+        if site.ENABLE_USER_SITE and user_site in sys.path:
+            environment["PYTHONPATH"] = os.pathsep.join(
+                value for value in (environment.get("PYTHONPATH"), user_site) if value
+            )
         environment_patch = patch.dict(os.environ, environment, clear=True)
         environment_patch.start()
         self.addCleanup(environment_patch.stop)
@@ -162,7 +170,7 @@ class HubApiLifecycleTests(LocalHubCase):
             running = self.wait_state(client, "monkeymonitor", "running")
             first_health = http_json(running["url"] + "api/health")
             self.assertEqual(first_health["name"], "MonkeyMonitor")
-            self.assertIn(running["processId"], (first_health["processId"], first_health["parentProcessId"]))
+            self.assertEqual(running["processId"], first_health["processId"])
             self.assertEqual(client.post("/api/apps/monkeymonitor/stop").status_code, 202)
             self.wait_state(client, "monkeymonitor", "stopped")
             self.assertFalse(port_open(self.monitor_port))

@@ -41,6 +41,7 @@ from ..application.intent import (
     DeterministicIntentProvider,
     buildable_components,
     component_edit_proposal,
+    direct_element_proposal,
     delete_element_proposal,
     sketch_prism_proposal,
 )
@@ -60,6 +61,8 @@ from ..transport.proposal import (
     ProposalRequestDto,
     DeleteElementRequestDto,
     SketchPrismRequestDto,
+    TransformElementRequestDto,
+    PushPullRequestDto,
     episode_dto,
     to_dto,
 )
@@ -152,6 +155,7 @@ def create_sketch_proposal(
             profile=body.profile,
             height=body.height,
             base=body.base_reference(),
+            plane=body.plane.model_dump(by_alias=True) if body.plane is not None else None,
             parent_component_id=body.parent_component_id,
             semantic_kind=body.semantic_kind,
             summary=body.summary,
@@ -164,6 +168,39 @@ def create_sketch_proposal(
         source_stage_ref=projection.source_stage_ref,
     )
     return to_dto(request.app.state.proposals.put(proposal))
+
+
+def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPullRequestDto,
+                     kind: str, **action) -> ProposalDto:
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    require_actionable(projection)
+    if body.state_digest != projection.state_digest:
+        raise StudioError(409, "STALE_BASE", f"the modeling action names state {body.state_digest}, "
+                          f"but the selected source is {projection.state_digest}. Read /api/state again.")
+    proposal = proposal_from(direct_element_proposal(
+        projection, element_id=body.element_id, kind=kind, keep_refs=tuple(body.keep), **action))
+    proposal = replace(proposal,
+                       source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
+                       source_stage_ref=projection.source_stage_ref)
+    return to_dto(request.app.state.proposals.put(proposal))
+
+
+@router.post("/proposals/transform", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
+def create_transform_proposal(request: Request, body: TransformElementRequestDto) -> ProposalDto:
+    """Move, rotate, scale or copy one recorded drawing as a reversible candidate proposal."""
+
+    return _direct_proposal(request, body, body.kind, translation=body.translation, axis=body.axis,
+                            angle_degrees=body.angle_degrees, scale=body.scale, origin=body.origin,
+                            copy_element_id=body.copy_element_id)
+
+
+@router.post("/proposals/push-pull", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
+def create_push_pull_proposal(request: Request, body: PushPullRequestDto) -> ProposalDto:
+    """Read the exact element definition and move its selected profile end face."""
+
+    return _direct_proposal(request, body, "push_pull", distance=body.distance, normal=body.normal)
 
 
 @router.post(

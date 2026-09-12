@@ -168,6 +168,7 @@ export type ChatMessage = {
      * Candidateid
      */
     candidateId?: string | null;
+    permission?: ChatPermission | null;
 };
 
 /**
@@ -180,6 +181,56 @@ export type ChatModelRequest = {
      * Model
      */
     model?: string | null;
+};
+
+/**
+ * ChatPermission
+ */
+export type ChatPermission = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Options
+     */
+    options: Array<ChatPermissionOption>;
+};
+
+/**
+ * ChatPermissionOption
+ */
+export type ChatPermissionOption = {
+    /**
+     * Optionid
+     */
+    optionId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Kind
+     */
+    kind: string;
+};
+
+/**
+ * ChatPermissionRequest
+ */
+export type ChatPermissionRequest = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Optionid
+     */
+    optionId: string | null;
 };
 
 /**
@@ -1170,6 +1221,40 @@ export type StopChatApiChatSessionsSessionIdStopPostResponses = {
 };
 
 export type StopChatApiChatSessionsSessionIdStopPostResponse = StopChatApiChatSessionsSessionIdStopPostResponses[keyof StopChatApiChatSessionsSessionIdStopPostResponses];
+
+export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostData = {
+    body: ChatPermissionRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Permission Id
+         */
+        permission_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/permissions/{permission_id}';
+};
+
+export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostError = ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors[keyof ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors];
+
+export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponse = ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses[keyof ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses];
 
 export type GetUserSettingsApiSettingsUserGetData = {
     body?: never;

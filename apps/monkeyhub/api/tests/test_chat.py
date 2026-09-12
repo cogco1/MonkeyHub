@@ -254,6 +254,33 @@ class ChatTests(unittest.TestCase):
     def calls(self):
         return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
 
+    def test_turn_envelope_reuses_connected_action_contract(self):
+        tools = {tool["name"]: tool for tool in _tools_of(chat)}
+        modelling = tools["studio_request"]["description"]
+        for contract in ("/api/proposals/sketch", "/api/capabilities", "sourceRunId",
+                         "keep", "against=<runId>", "never send the request again"):
+            self.assertIn(contract, modelling)
+        for provider in ("codex", "claude"):
+            with self.subTest(provider=provider):
+                session = self.create(provider=provider)
+                for content in ("Change the main height; keep the porch unchanged.",
+                                "Continue the same candidate with a different height."):
+                    self.post(session, content)
+                    self.assertEqual(self.finished(session).status, "idle")
+                    prompt = self.calls()[-1]["prompt"]
+                    self.assertTrue(prompt.endswith("\n\n" + content))
+                    envelope = prompt[:-(len(content) + 2)]
+                    self.assertIn("studio_request", envelope)
+                    self.assertIn(f"project {session.projectId} at {session.projectDir}", envelope)
+                    # One action contract, rather than endpoint recipes repeated
+                    # in the prompt sent to the CLI on every native-session turn.
+                    for duplicate in ("/api/proposals/sketch", "/api/capabilities", "awaitSeconds"):
+                        self.assertNotIn(duplicate, envelope)
+                    for boundary in ("Project files are read-only", "Do not call another model",
+                                     "do not claim approval, issuance or printer upload",
+                                     "Do not switch Hub configuration"):
+                        self.assertIn(boundary, envelope)
+
     def test_codex_continues_native_session_after_hub_reopen(self):
         before = {str(path.relative_to(self.project)): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
         session = self.create()
@@ -393,8 +420,9 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(self.finished(session).status, "idle")
 
     def test_http_roundtrip_invalid_project_and_old_settings(self):
-        app = create_app(HubSettings(runtime_root=self.runtime))
-        with patch("monkeyhub_api.chat._cli_commands", return_value=self.commands), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
             response = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})
             self.assertEqual(response.status_code, 201, response.text)
             session = response.json()
@@ -471,11 +499,10 @@ class ChatTests(unittest.TestCase):
         self.assertIn("AGENTS.md", call["prompt"])
         self.assertIn(str(self.project), call["prompt"])
         self.assertIn("P036", call["prompt"])
-        # Drawing makes a form that is not there; changing one already modelled
-        # goes through the capability index, not through a second drawing.
-        self.assertIn("/api/proposals/sketch", call["prompt"])
-        self.assertIn("/api/capabilities", call["prompt"])
-        self.assertIn("do not draw it again", call["prompt"])
+        # Per-turn guidance keeps the edit principle; endpoint recipes live in
+        # the connected action contract, checked by the tests below.
+        self.assertIn("existing numeric control", call["prompt"])
+        self.assertIn("documented modification flow instead of drawing it again", call["prompt"])
 
     def test_the_drawing_action_is_findable_and_callable_without_exploring(self):
         """What a request to make a form actually needs: the described path works."""
@@ -1126,6 +1153,41 @@ class ChatTests(unittest.TestCase):
         replies = [json.loads(row) for row in process.stdout.splitlines()]
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]}, {"studio_schema", "studio_request", "fab_request"})
+
+
+class AcpCommandTests(unittest.TestCase):
+    def test_packaged_node_works_without_path_and_source_keeps_path_node(self):
+        with tempfile.TemporaryDirectory(prefix="Hub ACP 路径 ") as temporary:
+            root = Path(temporary)
+            hub = root / "apps/monkeyhub"
+            adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
+            adapter.parent.mkdir(parents=True)
+            adapter.touch()
+            bundled_node = root / "_runtime/node/node.exe"
+            bundled_node.parent.mkdir(parents=True)
+            bundled_node.touch()
+            with patch.object(chat, "__file__", str(hub / "api/monkeyhub_api/chat.py")), \
+                    patch.object(chat.importlib.util, "find_spec", return_value=object()), \
+                    patch.object(chat.shutil, "which", return_value=None) as lookup:
+                self.assertEqual(chat._codex_acp_command(), (str(bundled_node), str(adapter)))
+                lookup.assert_not_called()
+                bundled_node.unlink()
+                self.assertIsNone(chat._codex_acp_command())
+                lookup.return_value = "source-node.exe"
+                self.assertEqual(chat._codex_acp_command(), ("source-node.exe", str(adapter)))
+
+    def test_missing_adapter_or_python_sdk_does_not_offer_acp(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            hub = Path(temporary) / "apps/monkeyhub"
+            adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
+            with patch.object(chat, "__file__", str(hub / "api/monkeyhub_api/chat.py")), \
+                    patch.object(chat.shutil, "which", return_value="node.exe"), \
+                    patch.object(chat.importlib.util, "find_spec", return_value=object()) as sdk:
+                self.assertIsNone(chat._codex_acp_command())
+                adapter.parent.mkdir(parents=True)
+                adapter.touch()
+                sdk.return_value = None
+                self.assertIsNone(chat._codex_acp_command())
 
 
 if __name__ == "__main__":

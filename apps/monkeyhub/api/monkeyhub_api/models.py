@@ -137,6 +137,18 @@ class ChatProject(BaseModel):
     stage: str | None = None
 
 
+class ChatPermissionOption(BaseModel):
+    optionId: str
+    name: str
+    kind: str
+
+
+class ChatPermission(BaseModel):
+    id: str
+    title: str
+    options: list[ChatPermissionOption]
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant", "tool"]
@@ -146,6 +158,7 @@ class ChatMessage(BaseModel):
     # The finished candidate this activity reported, so the conversation can
     # open that exact run. Absent on older records and on every other message.
     candidateId: str | None = None
+    permission: ChatPermission | None = None
 
 
 class ChatSummary(BaseModel):
@@ -204,3 +217,10 @@ class ChatPostRequest(BaseModel):
 
     content: str = Field(min_length=1)
     projectId: str = Field(min_length=1)
+
+
+class ChatPermissionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectId: str = Field(min_length=1)
+    optionId: str | None

@@ -6,12 +6,18 @@ import test from "node:test";
 import {
   IDLE,
   cancelled,
+  circleOf,
   enclosesArea,
   finished,
   rectangleOf,
+  lockedPoint,
+  pointFromPlane,
+  pointToPlane,
   sizedRectangle,
   snapPoint,
   typedNumber,
+  typedDimensions,
+  WORK_PLANES,
   type SketchState,
 } from "../src/features/stage/sketch.ts";
 
@@ -19,6 +25,43 @@ test("two corners make a rectangle in order", () => {
   assert.deepEqual(rectangleOf([1, 2], [4, 6]), [[1, 2], [4, 2], [4, 6], [1, 6]]);
   // Drawn the other way, it is the same four corners, still in order.
   assert.deepEqual(rectangleOf([4, 6], [1, 2]), [[4, 6], [1, 6], [1, 2], [4, 2]]);
+});
+
+test("circles close into a usable extrusion profile with the requested radius", () => {
+  const circle = circleOf([4, -2], 3);
+  assert.equal(circle.length, 32);
+  assert.equal(enclosesArea(circle), true);
+  for (const point of circle) assert.ok(Math.abs(Math.hypot(point[0] - 4, point[1] + 2) - 3) < 1e-9);
+  assert.deepEqual(circleOf([0, 0], 0), []);
+});
+
+test("typed rectangles support independent dimensions and deliberate local axis locks", () => {
+  assert.deepEqual(typedDimensions("4, 2"), [4, 2]);
+  assert.deepEqual(typedDimensions("4x2"), [4, 2]);
+  assert.deepEqual(typedDimensions("4"), [4, 4]);
+  assert.equal(typedDimensions("4,0"), null);
+  assert.deepEqual(sizedRectangle([0, 0], [1, 1], 4, 2), [[0, 0], [4, 0], [4, 2], [0, 2]]);
+  assert.deepEqual(lockedPoint([4, 3], [1, 2], "x"), [4, 2]);
+  assert.deepEqual(lockedPoint([4, 3], [1, 2], "y"), [1, 3]);
+});
+
+test("elevation and selected drawing frames retain their actual world positions", () => {
+  assert.deepEqual(pointFromPlane([2, 3], WORK_PLANES.xz), [2, 0, 3]);
+  assert.deepEqual(pointToPlane([2, 0, 3], WORK_PLANES.xz), [2, 3]);
+  assert.deepEqual(pointFromPlane([2, 3], WORK_PLANES.yz), [0, 2, 3]);
+  const elevated = { ...WORK_PLANES.xy, origin: [4, 5, 6] as const };
+  assert.deepEqual(pointFromPlane([2, 3], elevated), [6, 8, 6]);
+  assert.deepEqual(pointToPlane([6, 8, 6], elevated), [2, 3]);
+});
+
+test("a closed polygon submits a real face only on explicit confirmation, or a signed extrusion", () => {
+  const drawing: SketchState = { ...IDLE, tool: "polygon", phase: "height", plane: WORK_PLANES.xz,
+    profile: [[0, 0], [3, 0], [2, 2]], height: 0 };
+  assert.equal(finished(drawing), null, "a pointer click at zero height does not submit by accident");
+  assert.equal(finished(drawing, true)?.height, 0);
+  assert.deepEqual(finished(drawing, true)?.plane, WORK_PLANES.xz);
+  assert.equal(finished({ ...drawing, height: -2 })?.height, -2);
+  assert.equal(cancelled(drawing).plane, WORK_PLANES.xz, "Esc keeps the selected drawing plane");
 });
 
 test("a profile that encloses nothing is not a face", () => {

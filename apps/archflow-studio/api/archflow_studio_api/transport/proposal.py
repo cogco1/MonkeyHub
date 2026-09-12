@@ -92,6 +92,28 @@ def working_copy_dto(item: WorkingCopy) -> WorkingCopyDto:
                           selected_option_id=item.selected_option_id, revision_sha256=item.revision_sha256)
 
 
+class SketchPlaneDto(BaseModel):
+    """An explicit orthonormal drawing plane in building-local Y-up coordinates."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    origin: tuple[float, float, float]
+    x_axis: tuple[float, float, float] = Field(alias="xAxis")
+    y_axis: tuple[float, float, float] = Field(alias="yAxis")
+    normal: tuple[float, float, float]
+
+    @model_validator(mode="after")
+    def orthonormal_frame(self) -> "SketchPlaneDto":
+        vectors = (self.x_axis, self.y_axis, self.normal)
+        if any(not isfinite(c) for vector in (self.origin, *vectors) for c in vector):
+            raise ValueError("drawing plane coordinates must be finite")
+        if any(abs(sum(c * c for c in vector) - 1.0) > 1e-6 for vector in vectors):
+            raise ValueError("drawing plane axes and normal must be unit vectors")
+        if any(abs(sum(a * b for a, b in zip(vectors[i], vectors[j]))) > 1e-6
+               for i, j in ((0, 1), (0, 2), (1, 2))):
+            raise ValueError("drawing plane axes and normal must be perpendicular")
+        return self
+
+
 class SketchPrismRequestDto(BaseModel):
     """A profile drawn on a work plane and the height it is pulled to.
 
@@ -101,9 +123,10 @@ class SketchPrismRequestDto(BaseModel):
     or a height is changed afterwards: the record keeps both as its own
     parameters, so nothing here is a one-way conversion into geometry.
 
-    Plan points are the record's own ``(x, z)`` pairs and the height rises
-    along the producers' extrusion axis. The pointer preview that produced
-    them stays in the browser; only a finished action arrives here.
+    Without a plane, points are the record's own ``(x, z)`` pairs and height
+    follows +Y. An explicit plane keeps its origin and orthonormal axes;
+    zero height is a real face and negative height reverses the pull. The
+    pointer preview stays in the browser; only a finished action arrives here.
     """
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
@@ -138,7 +161,10 @@ class SketchPrismRequestDto(BaseModel):
         max_length=512,
         description="the closed plan profile as (x, z) pairs, in order, without repeating the first point",
     )
-    height: float = Field(gt=0, description="how far the profile is pulled, in project length units")
+    height: float = Field(description="Signed pull distance in project length units; zero creates a real planar face.")
+    plane: SketchPlaneDto | None = Field(default=None, description=
+        "Optional drawing frame. origin is relative to the resolved base datum; profile pairs "
+        "are distances along xAxis/yAxis and positive height follows normal. Omit for the retained XZ plane.")
     base_level: str | None = Field(alias="baseLevel", default=None, min_length=1)
     base_datum: str | None = Field(alias="baseDatum", default=None, min_length=1)
     summary: str | None = Field(default=None, min_length=1, max_length=240)
@@ -179,6 +205,54 @@ class SketchPrismRequestDto(BaseModel):
         """The element row's ``references.base``, as the producers read it."""
 
         return {"level": self.base_level} if self.base_level is not None else {"datum": self.base_datum}
+
+
+class TransformElementRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
+    element_id: str = Field(alias="elementId", min_length=1)
+    kind: Literal["move", "rotate", "scale", "copy"]
+    translation: tuple[float, float, float] | None = None
+    axis: tuple[float, float, float] | None = None
+    angle_degrees: float = Field(alias="angleDegrees", default=0)
+    scale: tuple[float, float, float] | None = None
+    origin: tuple[float, float, float] | None = None
+    copy_element_id: str | None = Field(alias="copyElementId", default=None, min_length=1)
+    keep: list[str] = Field(default_factory=list)
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def action_parameters(self) -> "TransformElementRequestDto":
+        if self.kind in {"move", "copy"} and self.translation is None:
+            raise ValueError("move/copy requires translation")
+        if self.kind == "scale" and self.scale is None:
+            raise ValueError("scale requires three factors")
+        if self.copy_element_id is not None and self.kind != "copy":
+            raise ValueError("copyElementId is only valid for copy")
+        numbers = [self.angle_degrees, *(c for v in (self.translation, self.axis, self.scale, self.origin) if v for c in v)]
+        if any(not isfinite(value) for value in numbers):
+            raise ValueError("transform values must be finite")
+        return self
+
+
+class PushPullRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
+    element_id: str = Field(alias="elementId", min_length=1)
+    distance: float
+    normal: tuple[float, float, float] | None = None
+    keep: list[str] = Field(default_factory=list)
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def finite_pull(self) -> "PushPullRequestDto":
+        if not isfinite(self.distance) or self.distance == 0 or any(not isfinite(c) for c in self.normal or ()):
+            raise ValueError("push/pull requires a finite nonzero distance and finite normal")
+        return self
 
 
 class DeleteElementRequestDto(BaseModel):

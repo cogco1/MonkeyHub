@@ -8,6 +8,7 @@ route as the only thing that runs.
 """
 
 from pathlib import Path
+import math
 import shutil
 import tempfile
 import time
@@ -99,7 +100,6 @@ class SketchTestCase(unittest.TestCase):
         for invalid, why in (
             ({"profile": [[0.0, 0.0], [1.0, 0.0]]}, "two points are not a profile"),
             ({"profile": [[0.0, 0.0], [1.0, 0.0], [1.0, 0.0]]}, "a repeated point"),
-            ({"height": 0.0}, "a height of nothing"),
             ({"baseLevel": None}, "no base at all"),
             ({"baseDatum": "portico-base-top"}, "two bases at once"),
         ):
@@ -111,6 +111,48 @@ class SketchTestCase(unittest.TestCase):
         status, body = self.draw(baseLevel="level-that-does-not-exist")
         self.assertEqual(status, 422, body)
         self.assertEqual(body["code"], "SEMANTIC_EDIT_INVALID")
+
+    def test_zero_height_creates_a_real_editable_face_and_negative_height_reverses_pull(self) -> None:
+        status, face = self.draw(height=0)
+        self.assertEqual(status, 201, face)
+        fields = face["change"]["edits"]["entities"][0]["fields"]
+        self.assertEqual(fields["producer"], "planar-surface")
+        self.assertNotIn("height", fields["params"])
+        self.assertEqual(fields["params"]["profile"], SQUARE + [SQUARE[0]])
+        status, negative = self.draw(height=-2)
+        self.assertEqual(status, 201, negative)
+        params = negative["change"]["edits"]["entities"][0]["fields"]["params"]
+        self.assertEqual(params["height"], 2)
+        self.assertEqual(params["work_plane"]["normal"], [0, -1, 0])
+
+    def test_direct_actions_read_the_definition_and_preserve_exact_base(self) -> None:
+        for route, action in (("transform", {"kind": "copy", "translation": [5, 0, 0]}),
+                              ("push-pull", {"distance": 0.4})):
+            body = {"stateDigest": self.state_digest, "elementId": "portico-base", **action}
+            response = self.client.post(f"/api/proposals/{route}", json=body)
+            self.assertEqual(response.status_code, 201, response.text)
+            self.assertEqual(response.json()["change"]["kind"], "edit_components")
+            stale = self.client.post(f"/api/proposals/{route}", json={**body, "stateDigest": "0" * 64})
+            self.assertEqual(stale.status_code, 409, stale.text)
+            self.assertEqual(stale.json()["code"], "STALE_BASE")
+
+    def test_direct_transform_refuses_dependencies_and_cannot_detach_a_host(self) -> None:
+        before = self.client.get("/api/state").json()
+        runs_before = sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir())
+        head = self.repository.read_head().version
+        for element, kind, expected_code in (("portico-base", "move", "ELEMENT_HAS_DEPENDENTS"),
+                                              ("portico-cornice", "rotate", "ELEMENT_HAS_DEPENDENTS"),
+                                              ("portico-cornice", "copy", "DIRECT_EDIT_UNSUPPORTED")):
+            with self.subTest(element=element, kind=kind):
+                response = self.client.post("/api/proposals/transform", json={
+                    "stateDigest": self.state_digest, "elementId": element, "kind": kind,
+                    "translation": [2, 0, 0], "angleDegrees": 90,
+                })
+                self.assertIn(response.status_code, (409, 422), response.text)
+                self.assertEqual(response.json()["code"], expected_code)
+        self.assertEqual(self.client.get("/api/state").json()["stateDigest"], before["stateDigest"])
+        self.assertEqual(self.repository.read_head().version, head)
+        self.assertEqual(sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir()), runs_before)
 
 
 class SketchCandidateTestCase(unittest.TestCase):
@@ -391,6 +433,101 @@ class SketchNewComponentTestCase(unittest.TestCase):
         spans = self.exported_spans(job["candidateId"])
         self.assertEqual(spans["obj-small-house-main"], sorted([3.0, 2.0, 4.2]), "the height change is in the export")
         self.assertEqual(spans["obj-portico-base"], sorted([4.0, 2.0, 0.6]), "the old objects are unchanged")
+
+
+class SketchDirectGeometryTestCase(unittest.TestCase):
+    setUp = SketchNewComponentTestCase.setUp
+    digest = SketchNewComponentTestCase.digest
+    run_candidate = SketchNewComponentTestCase.run_candidate
+
+    def action(self, route: str, run: str | None = None, **body) -> str:
+        response = self.client.post(f"/api/proposals/{route}", json={
+            "stateDigest": self.digest(run), **({"sourceRunId": run} if run else {}), **body,
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        job = self.run_candidate(response.json()["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        return job["candidateId"]
+
+    def bounds(self, run: str, name: str) -> tuple[list[float], list[float]]:
+        found = {}
+        for path in sorted((self.project / "runs" / run).rglob("*.3dm")):
+            for row in inspect_three_dm(path).named_object_bboxes:
+                found[str(row["name"])] = row["bbox"]
+        self.assertIn(name, found, found)
+        return tuple([round(c, 5) for c in found[name][key]] for key in ("min", "max"))
+
+    def test_face_push_pull_move_rotate_scale_copy_are_in_the_saved_model_and_reopen(self):
+        head = self.repository.read_head().version
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]}
+        face = self.action("sketch", componentId="portico", elementId="drawn-face", profile=SQUARE,
+                           height=0, plane=plane, baseLevel="level-ground")
+        self.assertEqual(self.bounds(face, "obj-drawn-face"), ([10, 20, 4], [13, 20, 6]))
+        pulled = self.action("push-pull", face, elementId="drawn-face", distance=1.5, normal=[0, 0, 1])
+        self.assertEqual(self.bounds(pulled, "obj-drawn-face"), ([10, 20, 4], [13, 21.5, 6]))
+        moved = self.action("transform", pulled, elementId="drawn-face", kind="move", translation=[2, 3, 4])
+        self.assertEqual(self.bounds(moved, "obj-drawn-face"), ([12, 24, 7], [15, 25.5, 9]))
+        rotated = self.action("transform", moved, elementId="drawn-face", kind="rotate", axis=[0, 1, 0],
+                              angleDegrees=90, origin=[0, 0, 0])
+        self.assertEqual(self.bounds(rotated, "obj-drawn-face"), ([24, -15, 7], [25.5, -12, 9]))
+        scaled = self.action("transform", rotated, elementId="drawn-face", kind="scale", scale=[2, 2, 2],
+                             origin=[0, 0, 0])
+        self.assertEqual(self.bounds(scaled, "obj-drawn-face"), ([48, -30, 14], [51, -24, 18]))
+        copied = self.action("transform", scaled, elementId="drawn-face", kind="copy", translation=[10, 0, 0],
+                             copyElementId="drawn-copy")
+        self.assertEqual(self.bounds(copied, "obj-drawn-copy"), ([58, -30, 14], [61, -24, 18]))
+        self.assertEqual(self.bounds(copied, "obj-drawn-face"), ([48, -30, 14], [51, -24, 18]))
+        self.assertEqual(self.repository.read_head().version, head)
+        # Restart the application and continue from the retained typed record.
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(cad_export="occt", project_dir=self.project)))
+        self.addCleanup(self.client.close)
+        continued = self.action("push-pull", copied, elementId="drawn-copy", distance=1)
+        self.assertEqual(self.bounds(continued, "obj-drawn-copy"), ([58, -30, 14], [62, -24, 18]))
+        self.assertEqual(self.repository.read_head().version, head)
+        self.assertEqual(self.bounds(face, "obj-drawn-face"), ([10, 20, 4], [13, 20, 6]))
+
+    def test_negative_pull_on_a_picked_work_plane_exports_in_the_stated_direction(self):
+        run = self.action("sketch", componentId="portico", elementId="reversed-prism", profile=SQUARE,
+                          height=-2, baseLevel="level-ground",
+                          plane={"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]})
+        self.assertEqual(self.bounds(run, "obj-reversed-prism"), ([10, 18, 4], [13, 20, 6]))
+
+    def test_all_six_box_faces_push_pull_in_the_saved_model(self):
+        head = self.repository.read_head().version
+        run = self.action("sketch", componentId="portico", elementId="six-face-box", profile=SQUARE,
+                          height=2.4, baseLevel="level-ground")
+        cases = (([1, 0, 0], ([0, 0, 0], [4, 2, 2.4])),
+                 ([-1, 0, 0], ([-1, 0, 0], [4, 2, 2.4])),
+                 ([0, 0, 1], ([-1, 0, 0], [4, 3, 2.4])),
+                 ([0, 0, -1], ([-1, -1, 0], [4, 3, 2.4])),
+                 ([0, 1, 0], ([-1, -1, 0], [4, 3, 3.4])),
+                 ([0, -1, 0], ([-1, -1, -1], [4, 3, 3.4])))
+        for normal, expected in cases:
+            with self.subTest(normal=normal):
+                run = self.action("push-pull", run, elementId="six-face-box", distance=1, normal=normal)
+                self.assertEqual(self.bounds(run, "obj-six-face-box"), expected)
+        self.assertEqual(self.repository.read_head().version, head)
+
+    def test_negative_scale_mirrors_the_saved_solid_and_its_next_side_pull(self):
+        run = self.action("sketch", componentId="portico", elementId="mirrored-box", profile=SQUARE,
+                          height=2.4, baseLevel="level-ground")
+        mirrored = self.action("transform", run, elementId="mirrored-box", kind="scale", scale=[-1, -1, 1],
+                               origin=[0, 0, 0])
+        self.assertEqual(self.bounds(mirrored, "obj-mirrored-box"), ([-3, 0, -2.4], [0, 2, 0]))
+        pulled = self.action("push-pull", mirrored, elementId="mirrored-box", normal=[-1, 0, 0], distance=1)
+        self.assertEqual(self.bounds(pulled, "obj-mirrored-box"), ([-4, 0, -2.4], [0, 2, 0]))
+
+    def test_tilted_plane_rotation_then_normal_pull_preserves_its_true_placement(self):
+        s = math.sqrt(0.5)
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, s, s], "normal": [0, -s, s]}
+        run = self.action("sketch", componentId="portico", elementId="tilted-box", profile=SQUARE,
+                          height=2, baseLevel="level-ground", plane=plane)
+        rotated = self.action("transform", run, elementId="tilted-box", kind="rotate", axis=[0, 1, 0],
+                              angleDegrees=90, origin=[0, 0, 0])
+        pulled = self.action("push-pull", rotated, elementId="tilted-box", normal=[s, -s, 0], distance=1)
+        expected = ([20, -13, round(4 - 3 * s, 5)], [round(20 + 5 * s, 5), -10, round(4 + 2 * s, 5)])
+        self.assertEqual(self.bounds(pulled, "obj-tilted-box"), expected)
 
 
 if __name__ == "__main__":

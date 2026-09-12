@@ -17,5 +17,6 @@ apps/archflow-studio/runtime.json
 apps/archflow-studio/.runtime/
 # Existing machine-local Python installation, not application source.
 apps/archflow-studio/web/Python/
+apps/monkeyhub/node_modules/
 .claude/
 !.claude/launch.json

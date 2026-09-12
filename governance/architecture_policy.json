@@ -209,6 +209,16 @@
       "reason": "Atomically saves chat transcripts and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
     },
     {
+      "path": "tools/workspace.py",
+      "function": "create_worktree",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "development_worktree",
+      "owner": "tools.workspace",
+      "reason": "Prepares the configured task worktree parent after checking Git branch registration and destination conflicts; Git creates the checkout. No project data or existing worktree is moved, reset or deleted."
+    },
+    {
       "path": "tools/package_monkeyapps.py",
       "function": "fetch_runtime",
       "operations": [
@@ -235,11 +245,12 @@
       "function": "collect_application",
       "operations": [
         "mkdir",
-        "write_text"
+        "write_text",
+        "open_write"
       ],
       "kind": "distribution_build",
       "owner": "tools.package_monkeyapps",
-      "reason": "Assembles the committed application snapshot and its source-version marker only in the external candidate bundle supplied by package()."
+      "reason": "Assembles the committed application snapshot, locked ACP adapter, selected Node runtime and its upstream license only in the external candidate bundle supplied by package()."
     },
     {
       "path": "tools/package_monkeyapps.py",
@@ -251,6 +262,16 @@
       "kind": "distribution_build",
       "owner": "tools.package_monkeyapps",
       "reason": "Creates explicit external staging/output paths, build metadata and the finalized archive checksum after external() rejects paths inside the selected source checkout."
+    },
+    {
+      "path": "tools/package_monkeyapps.py",
+      "function": "collect_web_notices",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Retains the locked ACP dependency release notices only under the external candidate bundle third-party directory."
     }
   ],
   "forbidden_layer_imports": [

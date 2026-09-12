@@ -36,7 +36,7 @@ from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
-    ChatModelRequest, ChatPostRequest, ChatWorkspace,
+    ChatModelRequest, ChatPostRequest, ChatWorkspace, ChatPermissionRequest,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -216,6 +216,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/chat/sessions/{session_id}/stop", response_model=ChatDetail)
     def stop_chat(session_id: str):
         return chats.stop(session_id)
+
+    @app.post("/api/chat/sessions/{session_id}/permissions/{permission_id}", response_model=ChatDetail)
+    def resolve_chat_permission(session_id: str, permission_id: str, body: ChatPermissionRequest):
+        return chats.resolve_permission(session_id, permission_id, body)
 
     app.include_router(preferences_router, prefix="/api")
     if settings.hub_web_dir is not None:

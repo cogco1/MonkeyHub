@@ -54,6 +54,7 @@ class _Child:
     log_path: Path
     state: str = "starting"
     error: HubError | None = None
+    service_pid: int | None = None
 
 
 class Applications:
@@ -112,7 +113,7 @@ class Applications:
                     url += "?view=board"
             return AppStatus(
                 appId=app_id, title=title, serviceId=service, state=state,
-                url=url, processId=child.process.pid if child.process.poll() is None else None,
+                url=url, processId=(child.service_pid or child.process.pid) if child.process.poll() is None else None,
                 error=child.error,
             )
 
@@ -135,6 +136,10 @@ class Applications:
             args, environ = self._command(service, settings)
             with socket.socket() as probe:
                 try:
+                    # POSIX servers can restart while old connections remain
+                    # in TIME_WAIT. A live listener still prevents this bind.
+                    if os.name != "nt":
+                        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     probe.bind(("127.0.0.1", port))
                 except OSError as exc:
                     raise HubFailure(409, "PORT_IN_USE", f"Port {port} is already in use. Choose another port; the existing process was left alone.") from exc
@@ -213,6 +218,9 @@ class Applications:
                     with self._lock:
                         if child.state == "starting":
                             if identity_matches and expected_name:
+                                # Windows venv launchers can own a separate
+                                # Python child. Publish the verified service PID.
+                                child.service_pid = health["processId"]
                                 child.state = "running"
                             else:
                                 child.error = HubError(code="SERVICE_IDENTITY_MISMATCH", detail="The responding service does not match this launch, source version or selected project.")

@@ -65,6 +65,8 @@ import {
   readProjectsApiProjectsGet,
   createDeleteProposalApiProposalsDeletePost,
   createSketchProposalApiProposalsSketchPost,
+  createTransformProposalApiProposalsTransformPost,
+  createPushPullProposalApiProposalsPushPullPost,
   readProposalApiProposalsProposalIdGet,
   readClosureApiStateClosurePost,
   readFrameApiStateFrameGet,
@@ -121,6 +123,8 @@ import type {
   ProjectListDto,
   ProposalDto,
   SketchPrismRequestDto,
+  TransformElementRequestDto,
+  PushPullRequestDto,
   ProposalRequestDto,
   SemanticsDto,
   SourceDocumentDto,
@@ -479,6 +483,14 @@ export const studio = {
   /** One finished drawing action, as the proposal it already is. */
   sketch(body: SketchPrismRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ body }));
+  },
+
+  transform(body: TransformElementRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/transform", createTransformProposalApiProposalsTransformPost({ body }));
+  },
+
+  pushPull(body: PushPullRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/push-pull", createPushPullProposalApiProposalsPushPullPost({ body }));
   },
 
   removeElement(body: DeleteElementRequestDto): Promise<ProposalDto> {

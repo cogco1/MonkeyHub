@@ -15,6 +15,8 @@
         "apps/archflow-studio/OPEN_MONKEYARCH.bat",
         "apps/archflow-studio/make-desktop-shortcut.ps1",
         "tools/package_monkeyapps.py",
+        "tools/workspace.py",
+        "CONTRIBUTING.md",
         ".claude/launch.json",
         ".github/workflows/verify.yml",
         ".gitignore",
@@ -343,7 +345,10 @@
         "monkeydiagram/drawing_output.py",
         "tests/test_drawing_output.py",
         "tests/test_drawing_standard.py",
-        "tests/test_project_transfer.py"
+        "tests/test_project_transfer.py",
+        "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
+        "apps/archflow-studio/web/src/features/stage/ModelEditPanel.css",
+        "docs/VILLA_DEMO_SCRIPT.md"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [

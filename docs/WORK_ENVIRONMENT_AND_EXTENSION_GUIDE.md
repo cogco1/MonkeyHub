@@ -21,6 +21,9 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 需要查看模型、图纸、画板、制作或用量时，在右侧打开该项目的现有工具页面。
 底层调用本机 Codex / Claude CLI，并以原生 session 继续对话；Coding Plan 沿用 Claude CLI
 已有的兼容端点配置。用户不再先选择“进入工作区”。项目与运行配置仍由现有 owner 保存。
+新 Codex 对话通过锁定版本的 ACP SDK 与上游适配器保持连接，旧 CLI 对话仍可续接。
+源码环境的一次依赖安装见 [Hub README](../apps/monkeyhub/README.md#python-entry-and-development)；
+权限请求直接呈现在工具活动中，停止会取消仍待回答的请求。
 右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 共用一个 Studio，切项目时重绑；
 该项目仍有聊天执行时，不允许切到另一个项目的服务。
 
@@ -51,9 +54,12 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 | 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
 | 修改已有实现 | owner 的 `source_paths`、`public_api`、`tests` | 目标实现及真实调用方；只有存在具体疑问时才在相关包中 `rg` |
 | 接续开发任务 | `python tools/devctl.py status` | 对应 live 工作卡；卡片状态不代表能力可用性 |
+| 创建或复用源码 worktree | `python tools/workspace.py create --branch codex/<task>` | 从一次配置的开发根取得目录；已有任务继续使用其原检出，详见下方“开发目录只配置一次” |
+| 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 共用开发根配置；确认来源后用 `--source-ref <ref>` 构建，仍需打包工具所需的 Node/npm |
 | 查共享工具箱 Skill | `hgs skills list <关键词> --path <toolbox-root>/skills` | `hgs skills show <id> --path <toolbox-root>/skills`，再按需读取示例或调用入口 |
 | 创建新的设计项目 | `python tools/create_project.py --project <外部项目目录>` | 第 8.3 节；已有项目直接打开完整目录，不重新初始化 |
 | 运行或配置 Studio | 第 8 节与 Studio README | 对应配置、启动命令和 API；模型内容通过既有项目读取入口取得 |
+| 查看打包目录或构建候选包 | `python tools/package_monkeyapps.py --show-paths` | 复用第 1.1 节的一次目录配置；源码仍取明确的 Git 版本 |
 
 两张能力表承担不同用途：ArchFlow 的 `governance/module_registry.json` 登记软件 owner 及已有能力的目标、范围与入口；
 共享工具箱的 `skills/*/skill.yaml` 登记工作流与入口，`generated/skills/index.md` 是它的生成视图。
@@ -120,7 +126,7 @@ Git 源码仓 / worktree
 [`archflow/project/README.md`](../archflow/project/README.md)。Studio 的共享配置模板是
 [`runtime.example.json`](../apps/archflow-studio/runtime.example.json)；填写后的配置保存在外部 Runtime，
 或保存为已被 Git 忽略的 `apps/archflow-studio/runtime.json`。它选择单个 `project_dir`，
-不统一管理 workspace/cache/temp；这些根仍由调用方显式指定，没有另一份全局 workspace manifest。
+不管理源码 worktree 或打包目录。开发工具通过下述一次配置取得这些目录，Studio 的项目选择仍沿用自己的配置。
 
 缓存和临时根不是项目记录。能被删除而不改变设计含义的内容才可以进入那里；证据、模型、
 验收回执和恢复所需数据不能借 `temp` 绕过项目存储。
@@ -139,6 +145,52 @@ Git 源码仓 / worktree
 长期源码按 **ArchFlow 公共底座、MonkeyArch 建模业务、MonkeyDiagram 图纸业务** 分清目录与依赖。
 当前代码所在位置与目标归属的具体映射只维护在 [REPO_LAYOUT.md](REPO_LAYOUT.md)；
 迁移随真实调用链进行，不在安装时复制三套代码，也不让每位成员自行决定目录结构。
+
+#### 开发目录只配置一次
+
+[`tools/workspace.py`](../tools/workspace.py) 和 [`tools/package_monkeyapps.py`](../tools/package_monkeyapps.py)
+共用个人 Git 设置 `archflow.package.workspace-root`；沿用原有键名，避免多一份工作区配置。
+首次安装或明确更换根目录时配置一次，例如本机已有的 `D:/ARCHFLOW_RUNTIME`：
+
+```powershell
+python tools/workspace.py configure --root D:/ARCHFLOW_RUNTIME
+```
+
+之后从已有源码检出运行固定入口：
+
+```powershell
+python tools/workspace.py paths
+python tools/workspace.py create --branch codex/window-edit
+```
+
+新分支默认从调用源码的已提交 `HEAD` 建立；约定其他基线时追加 `--base <ref>`。
+重复 `create` 返回该分支已有的同一 worktree，保留两边的未提交修改；已有分支不被重置。
+如果分支已在旧目录检出，命令报告原位置，继续使用那个目录，不自动搬迁。
+旧检出尚不包含该工具时，可调用已有工具的绝对路径，并用前置 `--source-root <源码检出>`
+指定操作对象，不复制工具到每个任务。新 worktree 只含选定提交，尚未提交的工具改动不会随之出现。
+
+默认任务名来自分支名，例如 `codex/window-edit` 对应 `codex-window-edit`：
+
+| 用途 | 固定位置 |
+| --- | --- |
+| Git 源码 worktree | `<root>/workspace/worktrees/<task>` |
+| 打包暂存 | `<root>/temp/package-monkeyapps/<task>` |
+| 候选安装包 | `<root>/packages/<task>` |
+| 共用可重建缓存 | `<root>/cache/package-monkeyapps` |
+| 已有设计项目 | 继续使用已配置的项目根，例如 `<root>/workspace/projects/<project_id>` |
+
+进入任务 worktree 后，打包会使用相同任务名和根目录：
+
+```powershell
+python tools/package_monkeyapps.py --show-paths
+python tools/package_monkeyapps.py --source-ref HEAD
+```
+
+任务目录跨次执行复用，每次构建仍在该任务暂存目录下创建独立候选。
+只有需要自定义名称时才传 `--task <name>`，创建和打包均使用同一名称。
+打包仍支持显式 `--staging-dir`、`--output-dir`、`--cache-dir` 覆盖；一次性覆盖不改保存的根。
+原 `--configure --workspace-root <root>` 打包配置命令继续可用。
+这些命令管理自己的目录写入，不拦截任意 shell 命令，也不迁移旧目录或初始化设计项目。
 
 ### 1.2 `main`、Git worktree 和项目 `HEAD` 是三件事
 
