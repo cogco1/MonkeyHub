@@ -7,12 +7,13 @@ write to, a project nobody chose.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ipaddress import ip_address
 import os
 from pathlib import Path
 import tempfile
 from typing import Mapping
+from urllib.parse import urlsplit
 
 from .transport.settings import ApplicationSettingsDto, UserSettingsDto
 
@@ -45,6 +46,13 @@ MONITOR_DIR_ENV = "MONKEYMONITOR_DATA_DIR"
 LOCAL_MODE = "local"
 REMOTE_MODE = "remote"
 MODES = (LOCAL_MODE, REMOTE_MODE)
+SERVICE_ROLE_ENV = "ARCHFLOW_STUDIO_SERVICE_ROLE"
+ACTORS_FILE_ENV = "ARCHFLOW_STUDIO_ACTORS_FILE"
+SYNC_URL_ENV = "ARCHFLOW_STUDIO_SYNC_URL"
+SYNC_TOKEN_ENV = "ARCHFLOW_STUDIO_SYNC_TOKEN"
+SYNC_PROJECT_ID_ENV = "ARCHFLOW_STUDIO_SYNC_PROJECT_ID"
+RUNTIME_ROLE = "runtime"
+SHARED_PROJECT_ROLE = "shared_project"
 
 # What a candidate run does with each seat's compiled program. One setting,
 # three values, and it is the only word the process has for it:
@@ -109,14 +117,22 @@ class StudioSettings:
     bind_host: str = DEFAULT_BIND_HOST
     # The bearer token every /api route but health and protocol requires in
     # remote mode. Never read in local mode.
-    api_token: str | None = None
+    api_token: str | None = field(default=None, repr=False)
     # The browser origins allowed to call this API cross-origin, in remote
     # mode only. Local mode adds no CORS at all: the dev proxy makes the two
     # halves one origin, so there is nothing to allow.
     origins: tuple[str, ...] = ()
     # Optional engineering telemetry, outside the P036 project document.
     monitor_dir: Path | None = None
+    # How much of the project a sentence may be compiled against, in tokens.
     intent_context_budget_tokens: int = 16000
+    # Process assembly, not a project authority field. Actor credentials belong
+    # to an operator-controlled file outside the project and are loaded once.
+    service_role: str = RUNTIME_ROLE
+    actors_file: Path | None = None
+    sync_url: str | None = None
+    sync_token: str | None = field(default=None, repr=False)
+    sync_project_id: str | None = None
 
     def __post_init__(self) -> None:
         """Local listeners stay on loopback; remote listeners need credentials.
@@ -138,6 +154,30 @@ class StudioSettings:
                 f"{MODE_ENV} must be one of {', '.join(MODES)}, not "
                 f"{self.mode!r}."
             )
+        if self.service_role not in (RUNTIME_ROLE, SHARED_PROJECT_ROLE):
+            raise SettingsError(f"{SERVICE_ROLE_ENV} must be runtime or shared_project.")
+        if self.actors_file is not None and self.mode != REMOTE_MODE:
+            raise SettingsError(f"{ACTORS_FILE_ENV} requires remote mode.")
+        if self.service_role == SHARED_PROJECT_ROLE and (
+            self.mode != REMOTE_MODE or self.actors_file is None
+        ):
+            raise SettingsError(f"shared_project requires remote mode and {ACTORS_FILE_ENV}.")
+        sync_values = (self.sync_url, self.sync_token, self.sync_project_id)
+        if any(value is not None for value in sync_values):
+            if not all(isinstance(value, str) and value.strip() for value in sync_values):
+                raise SettingsError("Sync requires URL, token and project id together.")
+            if self.service_role != RUNTIME_ROLE:
+                raise SettingsError("Only runtime services may configure a sync upstream.")
+            if self.mode != LOCAL_MODE or self.actors_file is not None:
+                raise SettingsError("A connected Runtime is a local single-user service bound to one upstream actor.")
+            try:
+                upstream = urlsplit(self.sync_url)
+                valid_url = upstream.scheme in {"http", "https"} and bool(upstream.hostname) and upstream.username is None and upstream.password is None and not upstream.query and not upstream.fragment
+                upstream.port
+            except ValueError:
+                valid_url = False
+            if not valid_url:
+                raise SettingsError("Sync URL must be absolute HTTP(S), without credentials, query or fragment.")
         if self.mode != REMOTE_MODE:
             try:
                 loopback = ip_address(self.bind_host).is_loopback
@@ -149,7 +189,7 @@ class StudioSettings:
                     "Use remote mode with a token and allowed origins for a network listener."
                 )
             return
-        if not self.api_token:
+        if not self.api_token and self.actors_file is None:
             raise SettingsError(
                 f"{MODE_ENV}={REMOTE_MODE} requires {TOKEN_ENV}: a remote "
                 "server without a token would answer anyone who found the "
@@ -236,6 +276,11 @@ class StudioSettings:
                 os.environ.get(BIND_ENV, "").strip() or DEFAULT_BIND_HOST
             ),
             api_token=os.environ.get(TOKEN_ENV, "").strip() or None,
+            service_role=os.environ.get(SERVICE_ROLE_ENV, "").strip() or RUNTIME_ROLE,
+            actors_file=Path(os.environ[ACTORS_FILE_ENV]) if os.environ.get(ACTORS_FILE_ENV, "").strip() else None,
+            sync_url=os.environ.get(SYNC_URL_ENV, "").strip() or None,
+            sync_token=os.environ.get(SYNC_TOKEN_ENV, "").strip() or None,
+            sync_project_id=os.environ.get(SYNC_PROJECT_ID_ENV, "").strip() or None,
             monitor_dir=Path(os.environ[MONITOR_DIR_ENV]) if os.environ.get(MONITOR_DIR_ENV, "").strip() else None,
             origins=tuple(
                 origin

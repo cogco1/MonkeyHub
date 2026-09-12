@@ -1,7 +1,7 @@
 """The Studio API application: settings in, FastAPI app out.
 
-``create_app`` touches no filesystem and binds no project; the request that
-needs the project is where a wrong project root is discovered.
+``create_app`` may read explicitly configured external actor credentials but
+binds no project; the request needing it discovers a wrong project root.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
 from . import routes
+from .application.authentication import ActorAuthorizationMiddleware, read_actor_credentials, request_action
 from .application.clarification import PendingIntentStore
 from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
@@ -38,7 +39,7 @@ from .application.options import OptionStore
 from .application.proposals import ProposalStore
 from .application.validation import ValidationStore
 from .protocol import SERVER_VERSION
-from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, StudioSettings
+from .settings import BIND_ENV, PROJECT_DIR_ENV, REMOTE_MODE, SHARED_PROJECT_ROLE, StudioSettings
 from .transport.errors import StudioError
 
 DEFAULT_PORT = 8000
@@ -202,6 +203,8 @@ async def _diagnostic_request(request: Request,
 
 
 def create_app(settings: StudioSettings) -> FastAPI:
+    credentials = read_actor_credentials(settings.actors_file, settings.project_dir) if settings.actors_file is not None else None
+    shared_project = settings.service_role == SHARED_PROJECT_ROLE
     app = FastAPI(
         title="ArchFlow Studio API", version=SERVER_VERSION, lifespan=_lifespan,
         dependencies=[Depends(_diagnostic_request)],
@@ -220,6 +223,8 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
     app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
+    if shared_project:
+        app.state.jobs.stop_accepting()
     # One validation per candidate, remembered so that reading a verdict twice
     # is one verdict and one event rather than two of each. In memory, like
     # everything above it, and lost on restart for the same reason.
@@ -246,8 +251,8 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # test can put a scripted compiler in its place and the route stays one
     # code path. A provider that cannot name its own version refuses here,
     # before a request arrives, rather than at the first sentence.
-    app.state.intent_compiler = compiler_from_settings(settings)
-    if settings.monitor_dir is not None:
+    app.state.intent_compiler = None if shared_project else compiler_from_settings(settings)
+    if settings.monitor_dir is not None and not shared_project:
         app.state.intent_compiler = MonitoredCompiler(
             app.state.intent_compiler, app.state.monitor
         )
@@ -256,14 +261,32 @@ def create_app(settings: StudioSettings) -> FastAPI:
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
     app.include_router(routes.router)
+    if shared_project:
+        original_openapi = app.openapi
+
+        def shared_openapi():
+            schema = original_openapi()
+            schema["paths"] = {
+                path: permitted for path, operations in schema["paths"].items()
+                if (permitted := {
+                    method: value for method, value in operations.items()
+                    if request_action(method.upper(), path, shared_project=True) is not None
+                })
+            }
+            return schema
+
+        app.openapi = shared_openapi
     # Remote mode, and only remote mode, adds the two middlewares below.
     # ``StudioSettings`` has already refused a remote process with no token and
     # no origins, so there is nothing left to check here. CORS is added last
     # and therefore sits outermost, which is what lets a browser read the 401
     # the token gate answers with instead of a bare network failure.
     if settings.mode == REMOTE_MODE:
-        assert settings.api_token is not None
-        app.add_middleware(BearerTokenMiddleware, token=settings.api_token)
+        if credentials is not None:
+            app.add_middleware(ActorAuthorizationMiddleware, credentials=credentials, service_role=settings.service_role)
+        else:
+            assert settings.api_token is not None
+            app.add_middleware(BearerTokenMiddleware, token=settings.api_token)
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(settings.origins),

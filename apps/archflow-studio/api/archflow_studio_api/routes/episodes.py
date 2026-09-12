@@ -19,6 +19,9 @@ from starlette.requests import Request
 
 from ..transport.proposal import EpisodeDto, episode_dto
 from ..application.binding import bound_project
+from ..application.authentication import authenticated_actor
+from ..application.synchronization import accept_shared_candidate, fork_shared_branch
+from ..transport.errors import StudioError
 from ..application.monitoring import candidate_event_id
 from ..application.design_history import (
     accept_design_candidate, fork_design_branch, initialize_design_stage,
@@ -44,6 +47,11 @@ from .proposals import _require_bound_project
 router = APIRouter(tags=["episodes"])
 
 
+def _accepted_by(request: Request) -> str:
+    actor = authenticated_actor(request)
+    return actor.actor_id if actor else "studio:explicit-user-action"
+
+
 @router.get("/design-history", response_model=DesignHistoryDto, response_model_by_alias=True)
 def read_committed_design_history(request: Request, branch_id: str = Query(default="main", alias="branchId")) -> DesignHistoryDto:
     return history_dto(read_design_history(bound_project(request.app.state), branch_id))
@@ -51,13 +59,16 @@ def read_committed_design_history(request: Request, branch_id: str = Query(defau
 
 @router.post("/design-stages/initialize", response_model=DesignStageDto, response_model_by_alias=True, status_code=201)
 def initialize_committed_design(request: Request, payload: InitializeDesignStageRequestDto) -> DesignStageDto:
+    if request.app.state.settings.sync_url:
+        raise StudioError(409, "SYNC_INITIALIZE_SHARED", "Initialize the shared project, then pull its starting Stage into this Runtime.")
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.project_id)
     source = model_source_from(payload.model_source)
     with request.app.state.monitor.measure(
         "stage_save", project_id=binding.project_id, run_id=source.run_id,
     ) as operation:
-        saved = initialize_design_stage(binding, model_source=source, branch_id=payload.branch_id, label=payload.label)
+        saved = initialize_design_stage(binding, model_source=source, branch_id=payload.branch_id, label=payload.label,
+                                        accepted_by=_accepted_by(request))
         operation["source_ref"] = saved.stage.model_ref.uri
     return stage_dto(saved)
 
@@ -66,13 +77,16 @@ def initialize_committed_design(request: Request, payload: InitializeDesignStage
 def accept_committed_design(request: Request, candidate_id: str, payload: AcceptDesignCandidateRequestDto) -> DesignStageDto:
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.project_id)
+    if request.app.state.settings.sync_url:
+        return DesignStageDto.model_validate(accept_shared_candidate(request.app.state, candidate_id, payload.model_dump(by_alias=True)))
     expected_head = stage_ref_from(binding, payload.expected_head_stage_ref)
     with request.app.state.monitor.measure(
         "stage_save", project_id=binding.project_id, run_id=candidate_id, source_ref=expected_head.uri,
         related_event_id=candidate_event_id(binding.project_id, candidate_id),
     ):
         saved = accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
-                                        expected_head=expected_head, events=request.app.state.events, label=payload.label)
+                                        expected_head=expected_head, events=request.app.state.events, label=payload.label,
+                                        accepted_by=_accepted_by(request))
     return stage_dto(saved)
 
 
@@ -80,6 +94,8 @@ def accept_committed_design(request: Request, candidate_id: str, payload: Accept
 def fork_committed_design(request: Request, payload: ForkDesignBranchRequestDto) -> DesignBranchDto:
     binding = bound_project(request.app.state)
     _require_bound_project(binding, payload.project_id)
+    if request.app.state.settings.sync_url:
+        return DesignBranchDto.model_validate(fork_shared_branch(request.app.state, payload.model_dump(by_alias=True)))
     return branch_dto(fork_design_branch(binding, branch_id=payload.branch_id, parent_branch=payload.parent_branch,
                                          stage_ref=stage_ref_from(binding, payload.stage_ref)))
 

@@ -28,10 +28,10 @@ from Rhino.
 
 from __future__ import annotations
 
-from .settings import LOCAL_MODE, StudioSettings
+from .settings import LOCAL_MODE, SHARED_PROJECT_ROLE, StudioSettings
 
 PROTOCOL_MAJOR = 2
-PROTOCOL_MINOR = 0
+PROTOCOL_MINOR = 1
 PROTOCOL = f"archflow/{PROTOCOL_MAJOR}"
 
 SERVER_NAME = "monkeyarch-api"
@@ -80,7 +80,11 @@ def server_capabilities(settings: StudioSettings) -> tuple[str, ...]:
     to hide.
     """
 
+    if settings.service_role == SHARED_PROJECT_ROLE:
+        return ("artifacts", "candidates", "design-history", "events", "project-sync", "shared-project")
     capabilities = list(BASE_CAPABILITIES)
+    if settings.sync_url:
+        capabilities.append("project-sync")
     if settings.exports:
         capabilities.append(CAD_EXPORT_CAPABILITY)
     if settings.rhino_lane:

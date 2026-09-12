@@ -22,6 +22,7 @@ class DesignStageDto(BaseModel):
     candidate_id: str = Field(alias="candidateId")
     model_source: ModelSourceDto = Field(alias="modelSource")
     record_digest: str = Field(alias="recordDigest")
+    accepted_by: str = Field(alias="acceptedBy")
 
 
 class DesignBranchDto(BaseModel):
@@ -70,7 +71,7 @@ def stage_dto(view: StageView) -> DesignStageDto:
         parent_stage_ref=None if view.stage.parent_stage is None else view.stage.parent_stage.uri,
         branch_id=view.stage.branch_id, label=view.stage.label,
         candidate_id=view.stage.candidate_id, model_source=model_source_dto(view.model_source),
-        record_digest=view.record_digest,
+        record_digest=view.record_digest, accepted_by=view.stage.accepted_by,
     )
 
 

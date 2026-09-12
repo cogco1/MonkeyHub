@@ -261,7 +261,7 @@ ArchFlow 条件使用待检验的状态编译、继承及执行方法；基线�
 
 正式复现至少需要相应代码与依赖版本、完整可访问的输入/初始工件、请求序列、方法配置、原始输出、独立评价及执行说明。共享目录存在 WIP 时，单个 commit 不能识别实际执行代码；HGR 对实验目录的快照也不会自动包含外部 ArchFlow 源码和项目输入。应保留确切被执行的版本及必要差异，或使用已固定的可访问版本。run ID 只是索引；模型服务非确定性和不可固定的版本需如实记录，不能承诺逐字节重现。日常使用、历史演示与研究样本须明确选择，不能自动纳入。
 
-几何读回复用 [CAD adapter](../archflow/adapters/cad_execution.py) / [OCCT backend](../archflow/adapters/occt_backend.py)，关系判定复用 [relation_checks](../archflow/capabilities/relation_checks.py)，run/base/程序与 STEP 字节绑定由 [project_runner](../archflow/runtime/project_runner.py) 保持。STEP 统一以米冷读，距离记米、体积记立方米。CAD 为 Z-up，现有 extent checker 为 Y-up：CAD `(x, y平面, z高度)` 的包围盒交给 checker 前转换为 `(x, z高度, y平面)`。实体对的距离/体积标量不做轴交换。单位或坐标未知时保留未测，不直接比较。
+几何读回复用 [CAD adapter](../archflow/adapters/cad_execution.py) / [OCCT backend](../archflow/adapters/occt_backend.py)，关系判定复用 [relation_checks](../monkeyarch/capabilities/relation_checks.py)，run/base/程序与 STEP 字节绑定由 [project_runner](../monkeyarch/runtime/project_runner.py) 保持。STEP 统一以米冷读，距离记米、体积记立方米。CAD 为 Z-up，现有 extent checker 为 Y-up：CAD `(x, y平面, z高度)` 的包围盒交给 checker 前转换为 `(x, z高度, y平面)`。实体对的距离/体积标量不做轴交换。单位或坐标未知时保留未测，不直接比较。
 
 当前 `solid_nonpenetration` 已对明确指定的最终实体对读回测量，不能再笼统记作系统没有实体相交检查；其余关系仍可能依据 `compiled-predicted-bounds`。该 checker 以公共体积大于零判穿透，尚无项目容差参数，不能把此实现阈值直接认作作者的正式容差。复用同一 OCCT 后端冷读仅独立于生成时的内存形体；不等于有独立评审者或第二种测量实现。协议将方法独立性与评审者独立性分别说明。
 

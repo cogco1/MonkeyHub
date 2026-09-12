@@ -768,7 +768,7 @@ export type GetFabProfilesApiFabProfilesGetData = {
 
 export type GetFabProfilesApiFabProfilesGetErrors = {
     /**
-     * Unprocessable Content
+     * Unprocessable Entity
      */
     422: HubError;
     /**
@@ -805,7 +805,7 @@ export type PrepareFabApiFabPreparePostData = {
 
 export type PrepareFabApiFabPreparePostErrors = {
     /**
-     * Unprocessable Content
+     * Unprocessable Entity
      */
     422: HubError;
     /**
@@ -838,7 +838,7 @@ export type SendFabApiFabSendPostData = {
 
 export type SendFabApiFabSendPostErrors = {
     /**
-     * Unprocessable Content
+     * Unprocessable Entity
      */
     422: HubError;
     /**
