@@ -91,6 +91,16 @@
       "reason": "Exclusively creates a deterministic Rhino script inside the explicitly supplied non-symlink speculative workspace; saved 3DM output remains non-canonical."
     },
     {
+      "path": "archflow/adapters/cad_execution.py",
+      "function": "work_model_workspace",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "M078",
+      "reason": "Creates one numbered attempt directory below the run's existing export workspace for an explicitly requested work-model export; nothing canonical is written, nothing is deleted, and a previous attempt is left where it can be read."
+    },
+    {
       "path": "tools/devctl.py",
       "function": "main",
       "operations": [

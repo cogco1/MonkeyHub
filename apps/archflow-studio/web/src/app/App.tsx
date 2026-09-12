@@ -70,6 +70,7 @@ import {
   seatOf,
 } from "../features/artifacts/artifactLabels";
 import { isViewable, viewableArtifacts } from "../features/artifacts/artifactSelection";
+import { useWorkModelExport } from "../features/artifacts/useWorkModelExport";
 import { Conversation } from "../features/conversation/Conversation";
 import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
@@ -2594,6 +2595,18 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // newest first, then every other run newest first (the run id carries its
   // stamp). Each card's exports are its seats' files; nothing here decides a
   // verdict — the word on a candidate is the one the server gave.
+  // The editable copy of the model on screen. The source is the exact STEP of
+  // the delivery actually being viewed - never the editing base, the newest
+  // run, or one seat of a picture showing several - and the export, its
+  // answer and its refusals live in one place with the rules the rest of the
+  // app reads them by.
+  const workModelControls = useWorkModelExport({
+    rows: artifacts.status === "ready" ? artifacts.value.artifacts : null,
+    viewed: { runId: loadedArtifact?.runId ?? null, shas: loadedShas },
+    exportWorkModel: studio.exportWorkModel,
+    onExported: () => loadArtifacts(true),
+  });
+
   const versions = useMemo<VersionGroup[]>(() => {
     if (artifacts.status !== "ready" || projection === null) return [];
     const launched = new Map(
@@ -3234,6 +3247,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             captureState={captureState}
             capturePath={capturePath}
             onCapture={captureViewport}
+            workModel={workModelControls}
             onEvidence={openEvidence}
           />
         }

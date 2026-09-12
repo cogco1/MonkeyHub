@@ -504,7 +504,7 @@ Miro 的无限画布习惯，从已发布候选源码 `4d2c7c2` 单独实施。P
 | M02 | 数值修改与 typed `EDIT_COMPONENTS`：构件、参数、关系增改删；显式 removals，保留条件与来源绑定 | 保留；数值语法只作内部工具，不作为所有建筑任务的边界 | `state.record`、`studio.intent` |
 | M03 | 构件生成：墙、开口、柱列、柱头、梁、山花、prism、ring、loft、dome-cap、楼梯、窗及 declined 声明 | 保留生成器；方法逐步由任务 skill 组织，不为每种构件另建应用 | `capabilities.element_producers`、`wall_solver`、`opening_solver`；[P105](P105-classical-order-producers.md) |
 | M04 | 轴网、标高、宿主、偏移、派生比例、type 继承、依赖闭包与拓扑生产 | 保留；已声明依赖的传播不等于发现正确的建筑关系 | `capabilities.reference_resolver`、`state.derivation`、`state.record` |
-| M05 | 中立 Geometry Program → 编译 → OCCT exact STEP＋mesh 3DM，或明确选择 Rhino 兼容导出；Rhino 增量 patch／rebuild | 保留共同编译和执行入口；不新增第二套几何执行器 | `state.geometry_program`、`compilers.geometry`、`adapters.cad_*` |
+| M05 | 中立 Geometry Program → 编译 → OCCT exact STEP＋mesh 3DM，或明确选择 Rhino 兼容导出；Rhino 增量 patch／rebuild。按明确请求可把该 run 的 exact STEP 逐个具名实体导入本机 Rhino，另存同一几何的可编辑 `*.work.3dm`（源 STEP 与 preview 原义保留） | 保留共同编译和执行入口；不新增第二套几何执行器 | `state.geometry_program`、`compilers.geometry`、`adapters.cad_*` |
 | M06 | 已有模型对象的语义身份读取、选择与 reindex；未映射对象不能借邻近构件的参数假装可编辑 | 保留 | `capabilities.element_reindex`、`tools.reindex_project`、`studio.binding` |
 | M07 | 整段楼梯与墙拱洞可以生成候选，但当前侧向通道的既有入口对齐仍有实际缺陷 | 继续修真实建筑效果，不再以“实体有效”结案 | [ARCHITECTURE](../../ARCHITECTURE.md)；[P108](P108-vibe-modeling-frontend.md) |
 
@@ -522,7 +522,7 @@ Miro 的无限画布习惯，从已发布候选源码 `4d2c7c2` 单独实施。P
 
 | 编号 | 能力与现状 | 处理 | 实现／工作索引 |
 | --- | --- | --- | --- |
-| O01 | 读取导出回执证明的 STEP／3DM，也可明确登记完整外部 3DM 并绑定其模型来源；提供下载和视口展示 | 保留共同 artifact 入口；登记与原生导出读回证明分别显示 | `studio.artifacts`、`ThreeDmViewport.tsx`；P108 |
+| O01 | 读取导出回执证明的 STEP／3DM，也可明确登记完整外部 3DM 并绑定其模型来源；提供下载和视口展示。工作模型经 `POST /api/artifacts/{sha256}/rhino-export`（body 带 `runId`）产生，作为同一 run 的另一条 exact 3dm 行列出，带 `sourceStepSha256` | 保留共同 artifact 入口；登记与原生导出读回证明分别显示 | `studio.artifacts`、`ThreeDmViewport.tsx`；P108 |
 | O02 | run-bound 的视口 PNG capture，模型选择、高亮、视角调整与候选比较 | 保留；这些是检查／表达交互，不是正式图纸 | `routes/captures.py`、`routes/compare.py`、`web/src/viewer/` |
 | O03 | `/api/state` 的 frame／volumes／closure projection | 归到模型查询，不计入平立剖出图能力 | `routes/state.py` |
 | O04 | exact STEP 的模型轴向立面已可生成 SVG／PNG；底层已有 BRep 剖切线／区域、图纸语法和纸面 PDF／DXF 输出。通用平剖面、正交轴测、模型关联标注、Sheet 与成套施工图的应用流程仍待完成 | 保留已有立面与固定柜的图纸消费；完整流程分别见第 3 节 | `runtime.drawing_elevation`、`adapters.drawing_svg`、`documentation.drawings`；[出图方案](../../DRAWING_MODULE_ARCHITECTURE_PLAN.md) |
@@ -630,6 +630,47 @@ UI、真实建筑项目、研究等现有任务的写入边界不因总索引而
 - **做｜M03–M05：** 扩展现有生成链的 `planar-surface` 表面表达，以及 `prism.elevation`。未知构造厚度保留已知表面；有厂家系统依据的板厚作为可修改候选，标高与厚度独立控制。复用既有 OCCT／runner，没有新增房间模块或几何执行器。墙地衔接沿 R03／F01–F02 查证原图材料与标准适用条件、M03–M05 用既有 `prism`／派生参数表达装修层及结构板、A02–A03 核对平面饰面和竖向标高；标准与跨度支持的板厚仅为候选，不是原结构实值。
 - **验｜A02–A03：** 已执行真实候选及 STEP／3DM 读回，分别验证面板标高移动和厚度变化；同时修复无 massing 的 StateRecord 投影丢失多条来源的问题。没有声明的建筑关系仍为 unchecked，不以导出成功替代图纸对应判断。
 - **出｜O01–O02：** 首轮室内候选已由 MonkeyArch 的 state／artifact API 读取，模型加载器检查通过，并生成实际模型的轴测预览。界面人工核对、其余空间与构造细化继续沿项目推进；不计为 F06–F08 的正式平立剖或施工出图能力。
+
+### 可在 Rhino 继续修改的工作模型（2026-09-12）
+
+用户要的是能在 Rhino 接手继续改的工作模型，而不是只能看的 mesh。现有链路里
+`write_preview_three_dm` 有意只写渲染网格，所以本轮补的是导出链本身：同一个 run 的
+exact STEP 按其自带的具名 shape 逐个拆成单对象 STEP（`split_step_objects`，几何不重建、
+不修补、不网格化，每份都回读并与来源实体的实体数、面数、闭合性、体积和包围盒核对），
+再由既有受管 Rhino host 逐个 `FileStp.Read` 读回，存为 `*.work.3dm`。
+
+已实测的边界与做法：rhino3dm 8.32.2 的 Python 绑定没有 face／loop／trim 构造，也无法
+可靠附加渲染网格（本机 segfault），因此纯 Python 侧无法诚实地生成闭合精确实体；
+Rhino 的 `FileStpReadOptions` 没有命名开关，批量导入后 `Attributes.Name` 全空且顺序与
+源不同，所以身份只能来自“读的是哪一个文件”，绝不按顺序或包围盒配对。一个具名 shape
+可能落成多个 Brep，保持一个语义对象对应多份实体，并按 count 严格校验。
+
+保留的性质：P036 仍是唯一写入方，退出回执沿用既有 `seat-rhino-execution`（记 `export_path:
+work-model`、来源 STEP 摘要与来源回执）；图层、`archflow:*` 语义、组件材质与玻璃透明度取自
+该次导出自己保存的 preview inspection／materials，复制不出来就明确拒绝而不是改层或改色；
+保存后在 host 内用 RhinoCommon 的体积与闭合性对照来源 STEP，再写完成标记。候选导出与
+工作导出共用同一个进程内 Rhino 锁；OCCT 自身仍不启动宿主。
+
+界面入口在 Stage 既有视图工具里（Hub 嵌入时同样可见，不隐藏在开发者模式下）：按当前所见模型
+自身的精确 STEP 导出，视图显示多席位或登记/合成模型时明确说明而不代选一席；导出的
+`*.work.3dm` 只作下载，不与同一交付的 preview 重复加载。
+
+真机侧已确证一处必修问题并已修：导出工作区路径常超过 260 字符，Rhino 内嵌 CPython 3.9.10 打不开
+这么长的普通路径（模型已写、完成标记写失败，监督端因此看不到结果）。现在按各 API 实测的接受形式
+分别取名，同一文件、回执里持久化的相对身份不变：Python 自己的文件调用与 Rhino 的读取
+（`File3dm.Read`、`FileStp.Read`）用 Windows 扩展长度名；`RhinoDoc.WriteFile` 实测拒绝该前缀，已改回
+普通绝对路径；`File3dm.Write`（RhinoCommon 归档写）已由真实导出用普通绝对路径成功写出，只是未单独
+测试其对扩展路径前缀的接受性，因此同样保持普通绝对路径。有三项真实深路径行为测试。PowerShell
+监督、host witness 与 COM 协议未改。
+
+真机验收（2026-09-12，本机 Rhino 8）：两构件与六构件装配两例整链通过。六构件一次请求 201、约 30 s，
+冷读得到 6 个有效闭合 Brep、6 条语义见证、米制；窗框与玻璃的原生材质与来源 preview 一致——窗框
+diffuse (82,52,74)，玻璃 diffuse (150,200,225)、透明度 0.6。来源不动：STEP、preview 与项目 HEAD 未变，
+下载字节的 sha 与回执一致；重复请求在毫秒级返回同一工作模型 sha，重建客户端后仍复用，不再启动宿主。
+最初提出这项需求的主楼 4.35 m 候选同样通过：一次请求 201、约 30 s，冷读 6 个有效闭合 Brep、
+每个 6 面、米制，原有对象名与语义齐全；来源 STEP、preview 与 HEAD 的摘要与导出前一致，下载字节
+校验通过，重复请求与重建客户端都在一秒内复用同一工作模型。路径过长与 STEP 导入层污染两处真机
+缺陷已修并复跑通过。
 
 本轮固定柜进一步消费了 `occt_backend` 实现并由 `cad_execution` 公开的 `project_occt_lines`／`section_occt_lines`：从真实 STEP 的 BRep 返回可见、隐藏及剖切折线，由项目消费端形成平立剖图。该结果归 M03–M05、A02–A03、F06–F08 的相关切片及 O01–O02；目前只完成本柜消费的实际验证，不代表通用自动施工图能力，也不改变上述整项状态或 checkbox。
 

@@ -119,6 +119,25 @@ class ProjectArtifactDto(BaseModel):
         "'preview' for a render mesh tessellated from the exact model so it can "
         "be looked at — never a NURBS or B-rep delivery",
     )
+    source_step_sha256: str | None = Field(
+        alias="sourceStepSha256", default=None,
+        description="for an editable work model: the sha256 of the exact STEP its "
+        "geometry was imported from, so a client can show the pair as one delivery "
+        "and never load the same geometry twice",
+    )
+
+
+class RhinoWorkExportRequestDto(BaseModel):
+    """Which run's export is being made editable.
+
+    The digest in the path names the bytes; this names the run they belong to.
+    The same STEP can be exported by more than one run, and a work model is
+    bound to the run, program and base it was asked for.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    run_id: str = Field(alias="runId")
 
 
 class ArtifactListDto(BaseModel):
@@ -267,6 +286,7 @@ def artifact_dto(record: ArtifactRecord) -> ProjectArtifactDto:
                 state_sha256=record.base_state_sha256,
             )
         ),
+        source_step_sha256=record.source_step_sha256,
         branch_id=record.branch_id,
         branch_epoch=record.branch_epoch,
         program_ref=record.program_ref,

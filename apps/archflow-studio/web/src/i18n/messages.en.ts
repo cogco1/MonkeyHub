@@ -318,6 +318,7 @@ export const messagesEn = {
   "artifact.kind.exactStep": "exact STEP",
   "artifact.kind.previewMesh": "3dm preview (mesh, not the exact model)",
   "artifact.kind.exact3dm": "3dm",
+  "artifact.kind.workModel": "editable 3dm (Rhino)",
   "candidate.saveCertifiedTitle":
     "Save the certified bytes named by the receipt",
   "candidate.unavailableNoReason":
@@ -577,6 +578,18 @@ export const messagesEn = {
   "stage.tools.screenshotFailed": "Screenshot failed",
   "stage.tools.clear": "Clear",
   "stage.tools.open3dm": "Open .3dm",
+  "stage.tools.workModel": "Export editable 3dm",
+  "stage.tools.workModelBusy": "Exporting through Rhino…",
+  "stage.tools.workModelBusyElsewhere":
+    "Another editable export is running on this machine's one Rhino. It will be ready when that one finishes",
+  "stage.tools.workModelSave": "Save the editable 3dm",
+  "stage.tools.workModelTitle":
+    "Open {fileName} in the Rhino on this machine and keep the result as an editable .3dm. Needs Rhino installed here; the exact STEP and the preview stay as they are",
+  "stage.tools.workModelNothingLoaded": "Open a model first: the editable copy is made from the model on screen",
+  "stage.tools.workModelNotAnExport":
+    "This model has no exact STEP of its own to make editable - it was registered or composed rather than exported by a run",
+  "stage.tools.workModelSeveralSeats":
+    "The view shows several seats at once. Open the one export you want to keep working on, then export it",
   "stage.review.changeOne": "{count} change",
   "stage.review.changeMany": "{count} changes",
   "stage.review.checked": "{count} checked",

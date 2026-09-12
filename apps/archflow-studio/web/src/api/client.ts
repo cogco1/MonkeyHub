@@ -52,6 +52,7 @@ import {
   readArtifactBytesApiArtifactsSha256BytesGet,
   recordModelLoadApiEventsModelLoadPost,
   recordClientTimingApiEventsTimingPost,
+  exportArtifactWorkModelApiArtifactsSha256RhinoExportPost,
   readArtifactsApiArtifactsGet,
   readCandidateApiCandidatesCandidateIdGet,
   readDocumentBytesApiDocumentsAssetSha256BytesGet,
@@ -116,6 +117,7 @@ import type {
   ProgramCandidateDto,
   ProgramDto,
   ProjectBindingDto,
+  ProjectArtifactDto,
   ProjectListDto,
   ProposalDto,
   SketchPrismRequestDto,
@@ -339,6 +341,19 @@ export const studio = {
 
   artifacts(signal?: AbortSignal): Promise<ArtifactListDto> {
     return call("GET /api/artifacts", readArtifactsApiArtifactsGet({ signal }));
+  },
+
+  /**
+   * Make this run's exact STEP into an editable ``.3dm`` through the Rhino on
+   * this machine. Ordinary and blocking - the answer is the work model's own
+   * artifact row, and asking again for the same source answers with the model
+   * already made. Without a local Rhino the server refuses by name.
+   */
+  exportWorkModel(sha256: string, runId: string): Promise<ProjectArtifactDto> {
+    return call(
+      `POST /api/artifacts/${sha256}/rhino-export`,
+      exportArtifactWorkModelApiArtifactsSha256RhinoExportPost({ path: { sha256 }, body: { runId } }),
+    );
   },
 
   recordModelLoad(body: ModelLoadTimingDto): Promise<MonitorWriteDto> {

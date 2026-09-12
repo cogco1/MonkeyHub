@@ -12,6 +12,7 @@ started, and the tests refuse any attempt to.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import os
@@ -27,7 +28,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from archflow.adapters import occt_backend
+from archflow.adapters import cad_execution, occt_backend
 from archflow.adapters.cad_execution import (
     CadCapabilityError,
     CadExecutionError,
@@ -35,11 +36,16 @@ from archflow.adapters.cad_execution import (
     CadProgramBinding,
     OcctExecutionReceipt,
     RhinoCadProgramBinding,
+    StepImportSource,
     execute_occt_export,
+    prepare_rhino_three_dm_export,
     project_occt_lines,
     section_occt_lines,
     section_occt_regions,
+    split_step_objects,
 )
+from archflow.adapters import cad_program
+from archflow.adapters.cad_program import CadTranslationError
 from archflow.adapters.three_dm_inspector import inspect_three_dm
 from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
@@ -2015,6 +2021,525 @@ class ImportBoundaryTests(unittest.TestCase):
         )
         for unsupported in ("radial_array", "transform", "sweep", "curve", "asset_instance"):
             self.assertNotIn(unsupported, occt_backend.SUPPORTED_OPERATION_KINDS)
+
+
+@NEEDS_OCCT
+class LongExportPathTests(unittest.TestCase):
+    """A run's export workspace is long, and every file call has to survive it.
+
+    Project, run id, stage, seat and attempt together pass 260 characters
+    easily. Windows refuses an ordinary name that long unless the process opts
+    in, and the Rhino host's own interpreter does not: a real export wrote its
+    model and then failed to create the completion marker beside it, so the
+    supervisor saw a run that never reported. These exercise the actual files
+    at that length rather than the shape of the generated text.
+    """
+
+    def deep_workspace(self) -> Path:
+        """A real directory whose child paths are past the ordinary limit."""
+
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, cad_execution.long_path(root), True)
+        workspace = root
+        while len(str(workspace)) < 230:
+            workspace = workspace / "cad-studio-candidate-seat-portico"
+        cad_execution.long_path(workspace).mkdir(parents=True, exist_ok=True)
+        return workspace
+
+    def script_helper(self):
+        """The ``_long`` the emitted scripts actually carry, as a callable."""
+
+        namespace: dict[str, object] = {"Path": Path}
+        exec(chr(10).join(cad_program.LONG_PATH_HELPER_SOURCE), namespace)
+        return namespace["_long"]
+
+    def test_the_emitted_helper_creates_reads_and_removes_a_long_file(self) -> None:
+        workspace = self.deep_workspace()
+        long = self.script_helper()
+        marker = workspace / "studio-candidate-seat-portico@0123456789ab.archflow-completion.json"
+        self.assertGreater(len(str(marker)), 260, str(marker))
+
+        # Exactly what the script does with the marker: exclusive create,
+        # write, and - for the raw file - read back and remove.
+        with long(marker).open("x", encoding="utf-8", newline=chr(10)) as stream:
+            stream.write('{"status":"succeeded"}')
+        self.assertTrue(long(marker).exists())
+        self.assertEqual(long(marker).read_bytes(), b'{"status":"succeeded"}')
+        # The extended-length name is a Windows spelling; elsewhere the same
+        # path is already the one the host can open, and stays as it is.
+        if os.name == "nt":
+            self.assertEqual(str(long(marker))[:4], chr(92) * 2 + "?" + chr(92))
+        else:
+            self.assertEqual(long(marker), Path(os.path.abspath(marker)))
+        long(marker).unlink()
+        self.assertFalse(long(marker).exists())
+        # The name that gets persisted is still the ordinary one.
+        self.assertEqual(marker.name, "studio-candidate-seat-portico@0123456789ab.archflow-completion.json")
+
+    def test_an_export_plan_is_written_and_read_back_at_that_length(self) -> None:
+        workspace = self.deep_workspace()
+        program = _compile(_window_record())
+        binding = _persisted_binding(program, "stage-long-path")
+        receipt, _ = _execute(program, binding, workspace, "studio-candidate-seat-portico@longpath")
+
+        self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+        step = workspace / receipt.exact_artifact["relative_path"]
+        self.assertGreater(len(str(step)), 260, str(step))
+        # The STEP was written, cold-read and split where the run actually
+        # keeps it, and each single-object file read back to the same shape.
+        objects = split_step_objects(step, destination=workspace, length_unit="meter")
+        self.assertEqual(len(objects), len(receipt.physical_object_ids))
+        for item in objects:
+            source = workspace / item.file_name
+            self.assertGreater(len(str(source)), 260, str(source))
+            self.assertEqual(
+                hashlib.sha256(cad_execution.long_path(source).read_bytes()).hexdigest(), item.sha256
+            )
+
+        plan = prepare_rhino_three_dm_export(
+            program, binding=binding, speculative_workspace=workspace,
+            artifact_name="studio-candidate-seat-portico@longpath.work.3dm",
+            readback_tolerance=0.003, provenance={"export_path": "work-model"},
+            step_import=StepImportSource(
+                step_path=step, step_sha256=hashlib.sha256(cad_execution.long_path(step).read_bytes()).hexdigest(),
+                objects=objects,
+            ),
+        )
+
+        # The script exists at that depth and the supervisor can hash it back.
+        self.assertGreater(len(str(plan.script_path)), 260, str(plan.script_path))
+        script = cad_execution.long_path(plan.script_path).read_text(encoding="utf-8")
+        self.assertIn("def _long(_path):", script)
+        # Every file the host touches is named the way that length needs.
+        for call in (
+            "_long(_marker_path).open('x'",
+            "str(_long(_raw_path))",
+            "str(_long(_output_path))",
+            "_long(_raw_path).unlink()",
+            "_path = _long(_script_directory / file_name)",
+        ):
+            self.assertIn(call, script)
+
+    def test_a_saved_work_model_is_verified_at_that_length(self) -> None:
+        import rhino3dm
+
+        workspace = self.deep_workspace()
+        occ = occt_backend._occt()
+        box = occ.BRepPrimAPI.BRepPrimAPI_MakeBox(
+            occt_backend._gp_point(occ, (0.0, 0.0, 0.0)), occt_backend._gp_point(occ, (2.0, 3.0, 1.0))
+        ).Shape()
+        step = workspace / "studio-candidate-seat-portico@longpath-source.step"
+        occt_backend.write_step(
+            cad_execution.long_path(step),
+            [occt_backend.StepObject(object_id="obj-block", shape=box, layer="archflow")],
+            length_unit="meter",
+        )
+        objects = split_step_objects(step, destination=workspace, length_unit="meter")
+        source = StepImportSource(
+            step_path=step,
+            step_sha256=hashlib.sha256(cad_execution.long_path(step).read_bytes()).hexdigest(),
+            objects=objects,
+        )
+
+        saved = workspace / "studio-candidate-seat-portico@longpath.work.3dm"
+        self.assertGreater(len(str(saved)), 260, str(saved))
+        model = rhino3dm.File3dm()
+        model.Settings.ModelUnitSystem = rhino3dm.UnitSystem.Meters
+        attributes = rhino3dm.ObjectAttributes()
+        attributes.Name = "obj-block"
+        model.Objects.AddBrep(rhino3dm.Brep.CreateFromBoundingBox(
+            rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
+        ), attributes)
+        self.assertTrue(model.Write(str(cad_execution.long_path(saved)), 7))
+
+        self.assertEqual(
+            cad_execution.verify_work_model_geometry(saved, source),
+            ({"object_id": "obj-block", "objects": 1, "solids": 1, "faces": 6, "closed": True},),
+        )
+
+
+@NEEDS_OCCT
+class StepWorkModelImportTests(unittest.TestCase):
+    """What an editable work model is made from: the exported STEP itself.
+
+    A host that imports these files gets the geometry the STEP already holds,
+    one named shape at a time, so the object a person edits in Rhino is the
+    same solid the engineering STEP carries - including its openings.
+    """
+
+    def _exported(self, workspace: Path, stem: str):
+        """One real OCCT export of the authored wall with a through window."""
+
+        program = _compile(_window_record())
+        receipt, _ = _execute(program, _persisted_binding(program, f"stage-{stem}"), workspace, f"{stem}@occt")
+        self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+        return program, workspace / receipt.exact_artifact["relative_path"]
+
+    def test_each_named_shape_becomes_its_own_step_with_the_same_geometry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-split")
+            destination = workspace / "import"
+            destination.mkdir()
+            objects = split_step_objects(step, destination=destination, length_unit="meter")
+
+            source = _entries_by_name(step)
+            self.assertEqual([item.object_id for item in objects], sorted(source))
+            for item in objects:
+                measured = occt_backend.measure_shape(source[item.object_id].shape)
+                self.assertEqual(
+                    (item.solid_count, item.face_count, item.closed),
+                    (measured.solid_count, measured.face_count, measured.closed),
+                    item.object_id,
+                )
+                self.assertAlmostEqual(item.volume, measured.volume, places=9)
+                # The file on disk is the one the script will read, and it
+                # hashes to what the plan says it does.
+                written = destination / item.file_name
+                self.assertTrue(written.is_file())
+                self.assertEqual(
+                    hashlib.sha256(written.read_bytes()).hexdigest(), item.sha256
+                )
+
+            cut = next(item for item in objects if item.object_id == "obj-wall-south-cut")
+            solid = 6.0 * 0.3 * 2.97
+            self.assertTrue(cut.closed and cut.solid_count == 1)
+            # The opening is still missing from the solid: a healed or dropped
+            # void would put the volume back up at the plain wall's.
+            self.assertLess(cut.volume, solid - 0.5)
+            self.assertGreater(cut.face_count, 6)
+
+    def test_a_repeated_or_foreign_name_is_refused_rather_than_ordered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-refuse")
+            shapes = [entry.shape for entry in occt_backend.read_step(step, length_unit="meter")][:2]
+            destination = workspace / "import"
+            destination.mkdir()
+
+            # Two shapes under one name cannot say which object each is.
+            repeated = workspace / "repeated.step"
+            occt_backend.write_step(
+                repeated,
+                [occt_backend.StepObject(object_id="obj-same", shape=shape, layer="archflow") for shape in shapes],
+                length_unit="meter",
+            )
+            with self.assertRaises(CadExecutionError) as repeated_refusal:
+                split_step_objects(repeated, destination=destination, length_unit="meter")
+            self.assertIn("obj-same", str(repeated_refusal.exception))
+
+            # A file written without object ids reads back under the STEP
+            # translator's own default label. It is a name, but it is not one
+            # of this program's objects, and the plan says so instead of
+            # pairing it with whatever object happens to be left.
+            foreign = workspace / "foreign.step"
+            occt_backend.write_step(
+                foreign,
+                [occt_backend.StepObject(object_id="", shape=shapes[0], layer="archflow")],
+                length_unit="meter",
+            )
+            stray = split_step_objects(foreign, destination=destination, length_unit="meter")
+            self.assertTrue(stray[0].object_id.startswith("Open CASCADE"), stray[0].object_id)
+            real = split_step_objects(step, destination=destination, length_unit="meter")
+            with self.assertRaises(CadTranslationError) as foreign_refusal:
+                prepare_rhino_three_dm_export(
+                    program, binding=_persisted_binding(program, "stage-work-foreign"),
+                    speculative_workspace=destination, artifact_name="foreign.work.3dm",
+                    readback_tolerance=0.003, provenance={"export_path": "work-model"},
+                    step_import=StepImportSource(
+                        step_path=foreign, step_sha256=hashlib.sha256(foreign.read_bytes()).hexdigest(),
+                        objects=(*real, *stray),
+                    ),
+                )
+            self.assertIn(stray[0].object_id, str(foreign_refusal.exception))
+
+    def test_an_import_source_that_changed_after_the_split_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-bytes")
+            objects = split_step_objects(step, destination=workspace, length_unit="meter")
+            source = StepImportSource(
+                step_path=step, step_sha256=hashlib.sha256(step.read_bytes()).hexdigest(), objects=objects
+            )
+            replaced = workspace / objects[0].file_name
+            replaced.write_text(replaced.read_text(encoding="utf-8") + "\n/* edited */\n", encoding="utf-8")
+            with self.assertRaises(CadExecutionError) as refusal:
+                prepare_rhino_three_dm_export(
+                    program, binding=_persisted_binding(program, "stage-work-bytes"),
+                    speculative_workspace=workspace, artifact_name="work-bytes.work.3dm",
+                    readback_tolerance=0.003, provenance={"export_path": "work-model"},
+                    step_import=source,
+                )
+            self.assertIn(objects[0].object_id, str(refusal.exception))
+            self.assertIn("changed after it was read", str(refusal.exception))
+
+    def test_the_import_plan_reads_every_file_and_keeps_the_rebuild_denominator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-plan")
+            binding = _persisted_binding(program, "stage-work-plan")
+            objects = split_step_objects(step, destination=workspace, length_unit="meter")
+            source = StepImportSource(
+                step_path=step, step_sha256=hashlib.sha256(step.read_bytes()).hexdigest(), objects=objects
+            )
+            imported = prepare_rhino_three_dm_export(
+                program, binding=binding, speculative_workspace=workspace,
+                artifact_name="work-plan.work.3dm", readback_tolerance=0.003,
+                provenance={"export_path": "work-model", "source_step_sha256": source.step_sha256},
+                step_import=source,
+            )
+            rebuilt = prepare_rhino_three_dm_export(
+                program, binding=binding, speculative_workspace=workspace,
+                artifact_name="work-plan.rebuild.3dm", readback_tolerance=0.003,
+                provenance={"export_path": "rebuild"},
+            )
+
+            script = imported.script_path.read_text(encoding="utf-8")
+            self.assertIn("Rhino.FileIO.FileStp.Read", script)
+            for item in objects:
+                self.assertIn(
+                    f"_import_one({item.object_id!r}, {item.file_name!r}, {item.sha256!r})", script
+                )
+            # Nothing is modelled again: the import script carries no geometry
+            # command of the program translator's vocabulary.
+            for built in ("rs.AddBox", "rs.ExtrudeCurveStraight", "rs.AddLoftSrf", "rs.BooleanDifference"):
+                self.assertNotIn(built, script)
+            # It is verified as the same document: same objects, same semantics,
+            # same expected bounds and counts as a rebuild of the same program.
+            self.assertEqual(imported.physical_object_ids, rebuilt.physical_object_ids)
+            self.assertEqual(imported.expected_semantics, rebuilt.expected_semantics)
+            self.assertEqual(imported.expected_bounds, rebuilt.expected_bounds)
+            self.assertEqual(imported.expected_object_counts, rebuilt.expected_object_counts)
+            self.assertEqual(imported.expected_layer_colors, rebuilt.expected_layer_colors)
+            self.assertIn(
+                ("archflow:source_step_sha256", source.step_sha256),
+                imported.expected_document_user_text,
+            )
+
+    def test_each_part_is_read_in_its_own_document_so_no_import_layer_arrives(self) -> None:
+        """A STEP read brings its own layer table; the delivery must not get it.
+
+        The real host showed what that costs: beside the program's own
+        ``archflow::portico`` child layer, the import left an empty top-level
+        layer whose literal name was ``archflow::portico`` too, and the saved
+        document then had two layers of the same full path - which the
+        readback refuses, rightly. So each file is read into a document of its
+        own and only its geometry is carried over.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-import-layers")
+            objects = split_step_objects(step, destination=workspace, length_unit="meter")
+            plan = prepare_rhino_three_dm_export(
+                program, binding=_persisted_binding(program, "stage-work-import-layers"),
+                speculative_workspace=workspace, artifact_name="work-import-layers.work.3dm",
+                readback_tolerance=0.003, provenance={"export_path": "work-model"},
+                step_import=StepImportSource(
+                    step_path=step, step_sha256=hashlib.sha256(step.read_bytes()).hexdigest(), objects=objects,
+                ),
+            )
+            script = plan.script_path.read_text(encoding="utf-8")
+
+            # The read happens in a document of this script's own making, and
+            # the delivered document is never handed to the STEP reader.
+            self.assertIn("_source = Rhino.RhinoDoc.CreateHeadless(None)", script)
+            self.assertIn("Rhino.FileIO.FileStp.Read(str(_path), _source, _import_options)", script)
+            self.assertNotIn("FileStp.Read(str(_path), _document", script)
+            # Units before geometry: a headless document starts in millimetres.
+            self.assertIn(
+                "_source.AdjustModelUnitSystem(_document.ModelUnitSystem, False)", script
+            )
+            self.assertLess(
+                script.index("_source.AdjustModelUnitSystem"),
+                script.index("Rhino.FileIO.FileStp.Read(str(_path), _source"),
+            )
+            # Geometry is copied object by object, with attributes of this
+            # document's own - no layer, name or material comes from the STEP.
+            for line in (
+                "for _object in list(_source.Objects):",
+                "_attributes = Rhino.DocObjects.ObjectAttributes()",
+                "_document.Objects.AddBrep(_geometry, _attributes)",
+                "_source.Dispose()",
+            ):
+                self.assertIn(line, script)
+            # A named shape may arrive as several B-reps and stays one object
+            # with that many under it.
+            self.assertIn("counts[object_id] = len(_added)", script)
+            # The layers the document ends up with are the program's own.
+            for layer_path, _color in plan.expected_layer_colors:
+                self.assertIn(f"rs.AddLayer({layer_path!r}", script)
+
+    def test_the_delivery_s_own_retained_material_is_what_the_import_wears(self) -> None:
+        """A material the export actually wrote, not one derived a second time."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-source-materials")
+            objects = split_step_objects(step, destination=workspace, length_unit="meter")
+            # What this run's own receipt retained beside its preview: a named
+            # bronze frame and a darker, more transparent glass than the
+            # role default.
+            retained = {
+                "obj-frame-wall-south-window-south": {
+                    "name": "bronze-anodised", "diffuse": [120, 85, 40], "transparency": 0.0,
+                },
+                "obj-glazing-wall-south-window-south": {
+                    "name": "low-e-glass", "diffuse": [90, 140, 160], "transparency": 0.82,
+                },
+            }
+            plan = prepare_rhino_three_dm_export(
+                program, binding=_persisted_binding(program, "stage-work-source-materials"),
+                speculative_workspace=workspace, artifact_name="work-source.work.3dm",
+                readback_tolerance=0.003, provenance={"export_path": "work-model"},
+                step_import=StepImportSource(
+                    step_path=step, step_sha256=hashlib.sha256(step.read_bytes()).hexdigest(), objects=objects,
+                ),
+                source_materials=retained,
+            )
+            script = plan.script_path.read_text(encoding="utf-8")
+
+            self.assertIn('"name": "low-e-glass"', script)
+            self.assertIn('"transparency": 0.82', script)
+            self.assertIn('"name": "bronze-anodised"', script)
+            self.assertIn('"diffuse": [120, 85, 40]', script)
+            # The role default is not what this document gets.
+            self.assertNotIn(f'"name": "{cad_execution._GLAZING_FALLBACK.name}"', script)
+            # Every material is applied before any metadata, and this
+            # delivery's own is the last one applied: assigning a material in
+            # Rhino replaces the object's attributes, so a material written
+            # after the user text would leave the object with none - which is
+            # exactly how a real six-part export lost the semantics of its two
+            # materialed objects and failed its witness count.
+            native = script.index("_assign_native_material(_g, _meta)")
+            declared = script.index("if _declared is not None: _assign_work_material(_g, _declared)")
+            named = script.index("rs.ObjectName(_g, _oid)")
+            user_text = script.index("rs.SetUserText(_g, _k, _meta['user_text'][_k])")
+            self.assertLess(native, declared)
+            self.assertLess(declared, named)
+            self.assertLess(named, user_text)
+            # Nothing re-applies a material after the metadata is written.
+            self.assertLess(script.rindex("_assign_work_material(_g"), named)
+            self.assertLess(script.rindex("_assign_native_material(_g"), named)
+
+    def test_the_imported_document_wears_the_same_materials_as_the_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            program, step = self._exported(workspace, "work-materials")
+            objects = split_step_objects(step, destination=workspace, length_unit="meter")
+            plan = prepare_rhino_three_dm_export(
+                program, binding=_persisted_binding(program, "stage-work-materials"),
+                speculative_workspace=workspace, artifact_name="work-materials.work.3dm",
+                readback_tolerance=0.003, provenance={"export_path": "work-model"},
+                step_import=StepImportSource(
+                    step_path=step, step_sha256=hashlib.sha256(step.read_bytes()).hexdigest(), objects=objects,
+                ),
+            )
+            script = plan.script_path.read_text(encoding="utf-8")
+
+            # The glazing of the window this program builds is glass in the
+            # mesh preview; the editable model carries the same material, and
+            # the glass is still see-through rather than a solid pane.
+            glass = cad_execution._GLAZING_FALLBACK
+            self.assertGreater(glass.transparency, 0.0)
+            self.assertIn('"obj-glazing-wall-south-window-south"', script)
+            self.assertIn(f'"transparency": {glass.transparency}', script)
+            self.assertIn(f'"name": "{glass.name}"', script)
+            self.assertIn(f'"diffuse": {list(glass.diffuse)}', script)
+            self.assertIn("_material.Transparency = _declared.get('transparency', 0.0)", script)
+            # The frame of the same window is its own material, not the glass.
+            self.assertIn('"obj-frame-wall-south-window-south"', script)
+            self.assertIn('"name": "frame"', script)
+            # Layers are the program's own, the same paths the preview used.
+            for layer_path, _color in plan.expected_layer_colors:
+                self.assertIn(f"rs.AddLayer({layer_path!r}", script)
+
+
+@NEEDS_OCCT
+class WorkModelReadbackTests(unittest.TestCase):
+    """The saved work model is read cold and compared with the source shape."""
+
+    def _source(self, workspace: Path):
+        """One exported box, split into the file an import would read."""
+
+        occ = occt_backend._occt()
+        box = occ.BRepPrimAPI.BRepPrimAPI_MakeBox(
+            occt_backend._gp_point(occ, (0.0, 0.0, 0.0)), occt_backend._gp_point(occ, (2.0, 3.0, 1.0))
+        ).Shape()
+        step = workspace / "one.step"
+        occt_backend.write_step(
+            step, [occt_backend.StepObject(object_id="obj-block", shape=box, layer="archflow")],
+            length_unit="meter",
+        )
+        objects = split_step_objects(step, destination=workspace, length_unit="meter")
+        return StepImportSource(
+            step_path=step, step_sha256=hashlib.sha256(step.read_bytes()).hexdigest(), objects=objects
+        ), box
+
+    def _write(self, path: Path, geometry, name: str = "obj-block") -> None:
+        import rhino3dm
+
+        model = rhino3dm.File3dm()
+        model.Settings.ModelUnitSystem = rhino3dm.UnitSystem.Meters
+        attributes = rhino3dm.ObjectAttributes()
+        attributes.Name = name
+        if isinstance(geometry, rhino3dm.Mesh):
+            model.Objects.AddMesh(geometry, attributes)
+        else:
+            model.Objects.AddBrep(geometry, attributes)
+        self.assertTrue(model.Write(str(path), 7))
+
+    def test_a_matching_brep_passes_and_reports_what_it_found(self) -> None:
+        import rhino3dm
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            source, _ = self._source(workspace)
+            saved = workspace / "match.3dm"
+            box = rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
+            self._write(saved, rhino3dm.Brep.CreateFromBoundingBox(box))
+            self.assertEqual(
+                cad_execution.verify_work_model_geometry(saved, source),
+                ({"object_id": "obj-block", "objects": 1, "solids": 1, "faces": 6, "closed": True},),
+            )
+
+    def test_a_mesh_or_a_changed_solid_is_not_an_editable_work_model(self) -> None:
+        import rhino3dm
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            source, shape = self._source(workspace)
+
+            mesh_file = workspace / "mesh.3dm"
+            vertices, triangles = occt_backend.tessellate_shape(shape, linear_deflection=0.05)
+            mesh = rhino3dm.Mesh()
+            for x, y, z in vertices:
+                mesh.Vertices.Add(x, y, z)
+            for a, b, c in triangles:
+                mesh.Faces.AddFace(a, b, c)
+            self._write(mesh_file, mesh)
+            with self.assertRaises(CadExecutionError) as mesh_refusal:
+                cad_execution.verify_work_model_geometry(mesh_file, source)
+            self.assertIn("never a mesh", str(mesh_refusal.exception))
+
+            missing = workspace / "missing.3dm"
+            self._write(missing, rhino3dm.Brep.CreateFromBoundingBox(
+                rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
+            ), name="obj-other")
+            with self.assertRaises(CadExecutionError) as name_refusal:
+                cad_execution.verify_work_model_geometry(missing, source)
+            self.assertIn("no object of that name", str(name_refusal.exception))
+
+            # A solid that arrived as a single surface: not the closed shape
+            # the STEP holds, whatever its outline looks like.
+            open_box = workspace / "open.3dm"
+            brep = rhino3dm.Brep.CreateFromBoundingBox(
+                rhino3dm.BoundingBox(rhino3dm.Point3d(0, 0, 0), rhino3dm.Point3d(2, 1, 3))
+            )
+            self._write(open_box, rhino3dm.Brep.CreateFromSurface(brep.Faces[0].UnderlyingSurface()))
+            with self.assertRaises(CadExecutionError) as open_refusal:
+                cad_execution.verify_work_model_geometry(open_box, source)
+            self.assertIn("closed solid", str(open_refusal.exception))
 
 
 if __name__ == "__main__":

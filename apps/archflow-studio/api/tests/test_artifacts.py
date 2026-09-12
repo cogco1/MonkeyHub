@@ -8,13 +8,18 @@ and is served only after those bytes hash to that digest again.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 
 from fastapi.testclient import TestClient
+
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import SEAT_RHINO_EXECUTION
 
 from archflow_studio_api.application import artifacts
 from archflow_studio_api.main import create_app
@@ -634,6 +639,219 @@ class UnboundArtifactTests(unittest.TestCase):
 
                 self.assertEqual(response.status_code, 503)
                 self.assertEqual(response.json()["code"], "PROJECT_NOT_BOUND")
+
+
+class WorkModelSourceSemanticsTests(unittest.TestCase):
+    """An editable copy keeps the layers and materials the export actually has."""
+
+    def receipt(self, *, layer: str, material: str | None) -> dict:
+        attributes = [{"key": "archflow:component", "value": "portico"}]
+        if material is not None:
+            attributes.append({"key": "archflow:material", "value": material})
+        return {
+            "preview_inspection": {
+                "object_user_strings": [
+                    {"name": "obj-portico-base", "layer_path": layer, "attributes": attributes},
+                ],
+                "layers": [{"full_path": layer, "color_rgba": [120, 85, 40, 255]}],
+            },
+            "preview_artifact": {
+                "materials": {
+                    "obj-portico-base": {
+                        "name": material or "none", "diffuse": [120, 85, 40], "transparency": 0.35,
+                    },
+                },
+            },
+        }
+
+    def test_a_non_default_layer_scheme_and_material_are_read_back(self) -> None:
+        maps = artifacts._source_component_maps(
+            self.receipt(layer="20_STRUCTURE::portico", material="bronze-anodised")
+        )
+
+        # The export's category scheme, its material declaration and the
+        # colour that material was written with, all off its own receipt.
+        self.assertEqual(maps["layer_by_component"], {"portico": "20_STRUCTURE"})
+        self.assertEqual(maps["material_by_component"], {"portico": "bronze-anodised"})
+        self.assertEqual(maps["material_colors"], {"bronze-anodised": (120, 85, 40)})
+        self.assertEqual(maps["object_layers"], {"obj-portico-base": "20_STRUCTURE::portico"})
+
+    def test_the_historical_root_is_left_unstated(self) -> None:
+        maps = artifacts._source_component_maps(self.receipt(layer="archflow::portico", material=None))
+
+        # Nothing to restate: that is the path the translator already writes.
+        self.assertEqual(maps["layer_by_component"], {})
+        self.assertEqual(maps["material_by_component"], {})
+
+    def test_a_layer_a_work_model_cannot_reproduce_is_refused_not_moved(self) -> None:
+        maps = artifacts._source_component_maps(
+            self.receipt(layer="20_STRUCTURE::portico", material=None)
+        )
+        rebuilt = {"objects": {"obj-portico-base": {"layer": "archflow::portico"}}}
+
+        with self.assertRaises(artifacts.StudioError) as refusal:
+            artifacts._require_same_semantics(maps, rebuilt)
+
+        self.assertEqual(refusal.exception.code, "WORK_MODEL_NOT_EXPORTABLE")
+        self.assertIn("20_STRUCTURE::portico", refusal.exception.detail)
+
+
+class RhinoWorkExportRouteTests(unittest.TestCase):
+    """Asking for an editable work model: what it needs, and what it refuses.
+
+    The host leg belongs to a machine with Rhino on it. What is checked here is
+    everything before and after that: which file and which run the request
+    names, what happens when this machine cannot do it, and that a work model
+    already exported is answered rather than made twice.
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root)
+        self.run = self.repository.load_run(REFERENCE_RUN_ID)
+        retain_occt_receipt(
+            self.repository, self.run, stage_id="occt-stage",
+            step_bytes=STEP_BYTES, preview_bytes=PREVIEW_BYTES,
+        )
+        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID)
+        self.client = TestClient(create_app(self.settings))
+        self.addCleanup(self.client.close)
+        rows = self.client.get("/api/artifacts").json()["artifacts"]
+        self.step = next(row for row in rows if row["format"] == "step")
+        self.preview = next(row for row in rows if row["representation"] == "preview")
+
+    def export(self, sha256: str, run_id: str = REFERENCE_RUN_ID):
+        return self.client.post(f"/api/artifacts/{sha256}/rhino-export", json={"runId": run_id})
+
+    def test_the_run_in_the_body_is_what_the_export_is_bound_to(self) -> None:
+        response = self.export(self.step["sha256"], run_id="some-other-run")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "ARTIFACT_NOT_FOUND")
+        # The refusal says where those bytes actually are rather than picking
+        # a run for the caller.
+        self.assertIn(REFERENCE_RUN_ID, response.json()["detail"])
+
+    def test_a_preview_is_not_a_source_for_an_editable_model(self) -> None:
+        response = self.export(self.preview["sha256"])
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "WORK_MODEL_SOURCE_NOT_EXACT")
+        self.assertIn("exact STEP", response.json()["detail"])
+
+    def test_a_digest_that_is_not_one_refuses_before_anything_is_read(self) -> None:
+        response = self.export("not-a-digest")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["code"], "ARTIFACT_NOT_FOUND")
+
+    def test_a_machine_with_no_rhino_says_so_and_leaves_the_step(self) -> None:
+        from archflow.adapters import cad_execution
+
+        # An ordinary launch discovers a shell, but no Rhino. Specify both
+        # discoveries so the test describes the same machine on every OS.
+        with (
+            unittest.mock.patch.object(cad_execution, "discover_powershell", return_value=Path("powershell.exe")),
+            unittest.mock.patch.object(cad_execution, "discover_rhino_executables", return_value=()),
+        ):
+            response = self.export(self.step["sha256"])
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "RHINO_HOST_UNAVAILABLE")
+        self.assertIn("Rhino", response.json()["detail"])
+        # The exact STEP is untouched and still listed.
+        listing = self.client.get("/api/artifacts").json()["artifacts"]
+        self.assertIn(self.step["sha256"], [row["sha256"] for row in listing])
+
+    def test_a_machine_with_no_shell_at_all_says_that_instead(self) -> None:
+        from archflow.adapters import cad_execution
+
+        with unittest.mock.patch.object(cad_execution, "discover_powershell", return_value=None):
+            response = self.export(self.step["sha256"])
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "RHINO_HOST_UNAVAILABLE")
+        self.assertIn("PowerShell", response.json()["detail"])
+
+    def test_a_work_model_already_exported_is_answered_not_exported_again(self) -> None:
+        work_bytes = b"3dm-work-model"
+        retain_rhino_receipt(
+            self.repository, self.run, stage_id="occt-stage",
+            file_name=f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.work.3dm",
+            payload_bytes=work_bytes, workspace_subdir="cad-occt-stage",
+        )
+        # The receipt says which exact STEP it was imported from; without that
+        # it is somebody else's Rhino export and answers for nothing here.
+        path = next(
+            item for item in (self.repository.layout.run(REFERENCE_RUN_ID).records).iterdir()
+            if item.name.startswith("seat-rhino-execution-")
+        )
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["source_step_sha256"] = self.step["sha256"]
+        payload["source_receipt_ref"] = self.step["receiptRef"]
+        payload["export_path"] = "work-model"
+        self.repository.put_json(
+            run=self.run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=REFERENCE_RUN_ID),
+            record_kind=SEAT_RHINO_EXECUTION,
+            payload=payload,
+        )
+
+        client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID)))
+        self.addCleanup(client.close)
+        from archflow.adapters import cad_execution
+
+        with unittest.mock.patch.object(
+            cad_execution, "work_model_workspace", side_effect=AssertionError("nothing is exported again")
+        ):
+            response = client.post(
+                f"/api/artifacts/{self.step['sha256']}/rhino-export", json={"runId": REFERENCE_RUN_ID},
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        row = response.json()
+        self.assertEqual(row["sha256"], sha256_of(work_bytes))
+        self.assertEqual(row["format"], "3dm")
+        self.assertEqual(row["representation"], "exact")
+        self.assertEqual(row["sourceStepSha256"], self.step["sha256"])
+        self.assertEqual(row["runId"], REFERENCE_RUN_ID)
+
+    def test_a_work_model_from_another_receipt_of_the_same_bytes_is_not_reused(self) -> None:
+        retain_rhino_receipt(
+            self.repository, self.run, stage_id="occt-stage",
+            file_name=f"occt-stage@{RHINO_PROGRAM_DIGEST[:12]}.work.3dm",
+            payload_bytes=b"3dm-work-model-of-another-export", workspace_subdir="cad-occt-stage",
+        )
+        path = next(
+            item for item in (self.repository.layout.run(REFERENCE_RUN_ID).records).iterdir()
+            if item.name.startswith("seat-rhino-execution-")
+        )
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["source_step_sha256"] = self.step["sha256"]
+        # Same bytes, but made from a different export receipt: its materials
+        # and layers came from somewhere else.
+        payload["source_receipt_ref"] = self.step["receiptRef"] + "-other"
+        payload["export_path"] = "work-model"
+        self.repository.put_json(
+            run=self.run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=REFERENCE_RUN_ID),
+            record_kind=SEAT_RHINO_EXECUTION,
+            payload=payload,
+        )
+
+        client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID)))
+        self.addCleanup(client.close)
+        from archflow.adapters import cad_execution
+
+        with unittest.mock.patch.object(cad_execution, "discover_rhino_executables", return_value=()):
+            response = client.post(
+                f"/api/artifacts/{self.step['sha256']}/rhino-export", json={"runId": REFERENCE_RUN_ID},
+            )
+
+        # Not answered with the other one: this export would have run.
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "RHINO_HOST_UNAVAILABLE")
 
 
 if __name__ == "__main__":
