@@ -43,6 +43,7 @@ from monkeyarch.compilers.geometry import (
     compile_geometry_program,
 )
 from archflow.state.developed_design import DevelopedDesignState
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.spatial import SpatialOptionProposal
 from archflow.state.geometry_program import (
     ASSET_URI_PATTERN,
@@ -1664,13 +1665,17 @@ class GeometryProposalRepository(RecordSink, Protocol):
     def load_json(self, ref: ProjectRecordRef) -> dict[str, Any]: ...
 
 
-def _as_developed_state(design_state, *, run: RunRef):
+def _as_developed_state(design_state, *, run: RunRef, phase: DesignPhase | None):
     """Accept the canonical ``StateRecord@1`` at the production entry (P102).
 
     Callers no longer author a ``DevelopedDesignState``; a record is
     forwarded through ``developed_design_view`` here, once, with lineage.
     A ``DevelopedDesignState`` is still accepted while the compiler reads
-    the legacy shape.
+    the legacy shape, and it already states its own phase.
+
+    ``phase`` is the phase of the run this production belongs to (ADR-007
+    rule 1). A record states none, so a record arriving with no phase is
+    refused here rather than projected in one this module chose.
     """
 
     from archflow.state.state_record import StateRecord, developed_design_view
@@ -1678,7 +1683,12 @@ def _as_developed_state(design_state, *, run: RunRef):
     if isinstance(design_state, StateRecord):
         if not design_state.evidence_refs:
             raise GeometryProposalProductionError("a StateRecord at the production entry must carry at least one evidence ref")
-        return developed_design_view(design_state, run=run, evidence_ref=design_state.evidence_refs[0])
+        if phase is None:
+            raise GeometryProposalProductionError(
+                "a StateRecord at the production entry states no phase: pass the phase of "
+                "the run's stage envelope (ADR-007 rule 1)"
+            )
+        return developed_design_view(design_state, run=run, evidence_ref=design_state.evidence_refs[0], phase=phase)
     return design_state
 
 
@@ -1704,6 +1714,7 @@ async def produce_geometry_program_proposal(
     datum_bindings: tuple[DatumBinding, ...] = (),
     catalog_confrontation_ref: ProjectRecordRef | None = None,
     seat_scope: tuple[str, ...] | None = None,
+    phase: DesignPhase | None = None,
 ) -> GeometryProposalProductionResult:
     """Author, compile, and persist bounded proposal rounds without fallback.
 
@@ -1717,6 +1728,12 @@ async def produce_geometry_program_proposal(
     record; when supplied, the model may select only templates that the
     confrontation selected (P093 on the write path) — a declined family
     cannot be quietly re-selected by the model.
+
+    ``phase`` is read only when ``design_state`` is a ``StateRecord@1``,
+    which states no phase of its own: it is then the phase of the run's
+    stage envelope, and the record is refused without one. A
+    ``DevelopedDesignState`` already carries the phase it was projected
+    in, so a caller handing one states nothing twice.
     """
 
     destination = require_destination(destination, producer="geometry proposal producer")
@@ -1737,7 +1754,7 @@ async def produce_geometry_program_proposal(
             raise TypeError("seat_scope must be sorted and unique")
     # the record binds the program; the projection answers the spatial-option and component questions (P102)
     state_binding = design_state
-    design_state = _as_developed_state(design_state, run=run)
+    design_state = _as_developed_state(design_state, run=run, phase=phase)
     _validate_inputs(
         run,
         destination,

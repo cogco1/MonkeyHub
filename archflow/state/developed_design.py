@@ -33,6 +33,17 @@ _MAX_ITEMS = 4_096
 _MAX_TEXT = 4_000
 
 
+# The phases a ``DevelopedDesignState`` admits. The developed projection
+# resolves a model, and these are the two phases of the ladder whose LOD
+# range it covers; every other phase either resolves none or resolves more
+# than it can carry. One set, so that a reader deciding whether a run's
+# phase can be projected asks the state itself rather than repeating a
+# pair of enum members beside it.
+DEVELOPED_PHASES: frozenset[DesignPhase] = frozenset(
+    {DesignPhase.SCHEMATIC_DESIGN, DesignPhase.DESIGN_DEVELOPMENT}
+)
+
+
 class DevelopedDesignError(ValueError):
     """A developed-design value is stale, malformed, or over-authorized."""
 
@@ -750,10 +761,7 @@ class DevelopmentDependency:
             raise TypeError(
                 "impact must be DevelopmentDependencyImpact"
             )
-        if self.return_phase not in {
-            DesignPhase.SCHEMATIC_DESIGN,
-            DesignPhase.DESIGN_DEVELOPMENT,
-        }:
+        if self.return_phase not in DEVELOPED_PHASES:
             raise DevelopedDesignError(
                 "dependency return phase must be schematic or development"
             )
@@ -1108,10 +1116,7 @@ class DevelopmentInvalidationReceipt:
             for item in self.affected_disciplines
         ):
             raise TypeError("affected_disciplines contains invalid item")
-        if self.required_return_phase not in {
-            DesignPhase.SCHEMATIC_DESIGN,
-            DesignPhase.DESIGN_DEVELOPMENT,
-        }:
+        if self.required_return_phase not in DEVELOPED_PHASES:
             raise DevelopedDesignError(
                 "invalidation return phase is invalid"
             )
@@ -1218,10 +1223,7 @@ class DevelopedDesignState:
             raise TypeError(
                 "selected_schematic must be SelectedSchematicInput"
             )
-        if self.active_phase not in {
-            DesignPhase.SCHEMATIC_DESIGN,
-            DesignPhase.DESIGN_DEVELOPMENT,
-        }:
+        if self.active_phase not in DEVELOPED_PHASES:
             raise DevelopedDesignError("active phase is invalid")
         if not isinstance(
             self.coordination_status,

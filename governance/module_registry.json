@@ -794,6 +794,7 @@
         "archflow.state.geometry_program",
         "archflow.state.operational_state",
         "archflow.state.spatial",
+        "archflow.state.stage_workflow",
         "archflow.state.state_record",
         "compilers.geometry",
         "contracts.authority",
@@ -807,7 +808,8 @@
         "state.geometry_program",
         "state.operational_state",
         "state.record",
-        "state.spatial"
+        "state.spatial",
+        "state.stage_workflow"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -3277,7 +3279,7 @@
         "developed_design_view is an adapter, not a second source of truth; design_components_of is the single component-tree builder",
         "every successor edit binds both complete content identity (record.digest) and run/base binding identity (state_digest), checks protected dependency closure and parameter locks in one function, and recomputes only declared downstream parameter expressions",
         "explicit @parameter bindings use evaluated values; ordinary numeric literals never acquire an inferred dependency; conflicting direct edits to derived or bound scalar targets are refused",
-        "the caller supplies a run's developed-view phase; the historical default and retained serialized values remain compatible without rewriting old records",
+        "developed_design_view takes the run's phase from its caller; there is no default phase (ADR-007 rule 1); retained serialized values stay readable without rewriting old records",
         "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
         "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances"
       ],

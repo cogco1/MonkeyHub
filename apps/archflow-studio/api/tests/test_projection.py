@@ -12,6 +12,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
+from archflow_studio_api.application.projection import UNSTATED_PHASE
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -31,6 +32,7 @@ from .support import (
     add_harness_run,
     add_later_run,
     add_unreadable_run,
+    freeze_workflow,
     make_empty_project,
     make_project,
     missing_workflow_ref,
@@ -100,6 +102,7 @@ class StateProjectionTests(unittest.TestCase):
             portfolio_id="declared-schematic",
             branch_id="runner-v1",
             selection_decision_ref="decision:declared-schematic-selection",
+            phase=DesignPhase.DESIGN_DEVELOPMENT,
         ).state_digest
 
         self.assertEqual(self.payload["stateDigest"], expected)
@@ -930,6 +933,46 @@ class ReferencePhaseTests(unittest.TestCase):
         payload = client.get("/api/state").json()
         self.assertEqual(payload["activePhase"], "design_development")
         self.assertIs(payload["matchesReferenceReceipt"], True)
+
+    def test_a_project_with_no_run_is_read_in_its_frozen_ladders_first_stage(self) -> None:
+        """Authored WIP before any run: the project's own frozen ladder states the phase.
+
+        There is no run to read an envelope from, so the rule falls to the
+        stage the project itself froze first rather than to a phase this
+        service chose. A candidate opened from here runs that stage.
+        """
+
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository = make_empty_project(root)
+        freeze_workflow(repository, phase=DesignPhase.SCHEMATIC_DESIGN)
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        payload = client.get("/api/state").json()
+        self.assertEqual(payload["referenceRunSource"], "none")
+        self.assertEqual(payload["activePhase"], "schematic_design")
+        self.assertEqual(
+            payload["stateDigest"],
+            runner_state_digest(
+                repository,
+                payload["referenceRun"]["runId"],
+                phase=DesignPhase.SCHEMATIC_DESIGN,
+            ),
+        )
+
+    def test_a_project_with_neither_run_nor_ladder_reads_the_last_step_of_the_rule(self) -> None:
+        """Nothing in the project states a phase, which is the only case UNSTATED_PHASE covers."""
+
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        make_empty_project(root)
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+
+        payload = client.get("/api/state").json()
+        self.assertEqual(payload["referenceRunSource"], "none")
+        self.assertEqual(payload["activePhase"], UNSTATED_PHASE.value)
 
     def test_a_phase_the_projection_cannot_carry_leaves_the_comparison_unmade_and_says_so(self) -> None:
         root = Path(tempfile.mkdtemp())

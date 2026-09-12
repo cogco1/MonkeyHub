@@ -204,12 +204,13 @@ class BootstrapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = developed_design_view(_record(), run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared")
+            state = developed_design_view(_record(), run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared", phase=DesignPhase.DESIGN_DEVELOPMENT)
             self.assertEqual(state.active_phase, DesignPhase.DESIGN_DEVELOPMENT)
             self.assertEqual(len(state.state_digest), 64)
             self.assertEqual([c.component_id for c in state.selected_schematic.option.proposal.components][:2], ["building", "exterior-walls"])
             other = repository.create_run("run-2")
-            self.assertNotEqual(state.state_digest, developed_design_view(_record(), run=other, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared").selected_schematic.run_id)
+            self.assertNotEqual(state.state_digest, developed_design_view(_record(), run=other, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared",
+                                                                        phase=DesignPhase.DESIGN_DEVELOPMENT).selected_schematic.run_id)
 
     def test_malformed_records_fail_typed(self) -> None:
         with self.assertRaises(StateRecordError):
@@ -219,7 +220,7 @@ class BootstrapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "other", project_id="other", initial_state={"schema": "TestState@1"})
             with self.assertRaises(StateRecordError):
-                developed_design_view(_record(), run=repository.create_run("run-1"), portfolio_id="declared", branch_id="b", selection_decision_ref="decision:x")
+                developed_design_view(_record(), run=repository.create_run("run-1"), portfolio_id="declared", branch_id="b", selection_decision_ref="decision:x", phase=DesignPhase.DESIGN_DEVELOPMENT)
 
 
 class _RunMixin:
@@ -837,6 +838,29 @@ class StagePhaseTests(_RunMixin, unittest.TestCase):
     projected the record in the phase its envelope binds" instead of holding
     by construction because the projection was hard-wired to one phase.
     """
+
+    def test_the_run_projects_the_record_in_the_phase_its_envelope_states(self) -> None:
+        """The phase reaches the state from the envelope, with no default in between.
+
+        ``developed_design_view`` has no default phase, so the only phase the
+        runner can be projecting in is the one its guard's envelope states.
+        The state itself is not returned, so the record the runner writes from
+        it answers: the retained ``developed-design-state`` carries the
+        envelope's phase, and the receipt's binding digest is that record
+        projected in that phase and in no other.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            options, record = _options(), _record()
+            guard = _stage_guard(repository, run, record, options, phase=DesignPhase.SCHEMATIC_DESIGN)
+            self.assertIs(guard.envelope.phase, DesignPhase.SCHEMATIC_DESIGN)                # a phase other than design_development
+            receipt = run_project(repository, run=run, stage_guard=guard, record=record, seats=_seats(DesignPhase.SCHEMATIC_DESIGN), options=options)
+            retained = repository.load_json(_ref(receipt["design_state_ref"]))
+            self.assertIs(DesignPhase(retained["active_phase"]), guard.envelope.phase)       # state.active_phase is envelope.phase
+            self.assertEqual(receipt["design_state_digest"], _state(record.bound_to(run), run, options, guard.envelope.phase).state_digest)
+            self.assertNotEqual(receipt["design_state_digest"], _state(record.bound_to(run), run, options, DesignPhase.DESIGN_DEVELOPMENT).state_digest)
 
     def test_a_schematic_design_stage_runs_to_a_satisfied_closure(self) -> None:
         repository, receipt = self._run(_record(), phase=DesignPhase.SCHEMATIC_DESIGN)

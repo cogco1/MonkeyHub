@@ -41,6 +41,14 @@ BRANCH_EPOCH = 1
 CLOSE_OBLIGATION_ID = "close-studio-candidate"
 SUBJECT_REF = "state:developed-design-state"
 
+# The phase the harness stage runs in, declared once here because this is
+# the stage: ``harness_guard`` writes it into the envelope it retains, and
+# the candidate path projects its record in this same value rather than in
+# a phase of its own (ADR-007 rule 1 - the stage is the run's, stated by
+# its envelope). Changing it here changes the stage, the envelope and the
+# candidate's state digest together, which is the point.
+HARNESS_PHASE = DesignPhase.DESIGN_DEVELOPMENT
+
 # What the candidate readout says about itself on the wire, verbatim.
 HARNESS_STATEMENT = "studio-candidate-harness (not a project stage advance)"
 
@@ -77,7 +85,7 @@ def harness_guard(
             ProjectStage(
                 stage_id=STAGE_ID,
                 stage_index=0,
-                phase=DesignPhase.DESIGN_DEVELOPMENT,
+                phase=HARNESS_PHASE,
                 required_roles=("geometry-program",),
                 required_checks=(),
                 close_obligation_id=CLOSE_OBLIGATION_ID,

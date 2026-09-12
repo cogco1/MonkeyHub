@@ -15,8 +15,10 @@ from pathlib import Path
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DependencyEffect, DesignObligation, ObligationStatus
 from archflow.project.refs import ProjectVersionRef, RunRef
+from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import (
     CHECK_KINDS,
+    RECORD_BINDING_PHASE,
     Entity,
     Lineage,
     Parameter,
@@ -611,12 +613,14 @@ class StateRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = _as_developed_state(_record(), run=run)
+            state = _as_developed_state(_record(), run=run, phase=DesignPhase.DESIGN_DEVELOPMENT)
             self.assertEqual(state.selected_schematic.option.option_id, "declared")
-            self.assertIs(_as_developed_state(state, run=run), state)                      # legacy input passes through untouched
+            self.assertIs(_as_developed_state(state, run=run, phase=None), state)          # legacy input passes through untouched, and states its own phase
             bare = StateRecord("demo", "run-1", _record().entities, decision_ref="decision:declared")
             with self.assertRaises(GeometryProposalProductionError):
-                _as_developed_state(bare, run=run)                                          # no evidence: typed refusal
+                _as_developed_state(bare, run=run, phase=DesignPhase.DESIGN_DEVELOPMENT)   # no evidence: typed refusal
+            with self.assertRaises(GeometryProposalProductionError):
+                _as_developed_state(_record(), run=run, phase=None)                         # a record states no phase: the run's must be passed
 
     def test_view_without_massing_keeps_every_evidence_source(self) -> None:
         # A record with several evidence refs and no massing entities: every component carries all of them
@@ -656,8 +660,10 @@ class StateRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / pack.project_id, project_id=pack.project_id, initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            via_record = developed_design_view(record, run=run, branch_id="runner-v1", portfolio_id="declared", selection_decision_ref="decision:declared")
-            via_pack = bootstrap_developed_state(pack, run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared")
+            via_record = developed_design_view(record, run=run, branch_id="runner-v1", portfolio_id="declared", selection_decision_ref="decision:declared",
+                                               phase=DesignPhase.DESIGN_DEVELOPMENT)
+            via_pack = bootstrap_developed_state(pack, run=run, portfolio_id="declared", branch_id="runner-v1", selection_decision_ref="decision:declared",
+                                                 phase=DesignPhase.DESIGN_DEVELOPMENT)
             self.assertEqual(via_record.state_digest, via_pack.state_digest)                    # one state, whichever door it came through
         with self.assertRaises(StateRecordError):
             StateRecord(pack.project_id, "run-1", tuple(entities), option={"label": "no id"})
@@ -694,7 +700,7 @@ class StateRecordTests(unittest.TestCase):
             run = repository.create_run("run-1")
             record = replace(_record(), run_id=run.run_id, base=run.base)
             self.assertEqual(record.run_ref, run)
-            view = developed_design_view(record, run=run)
+            view = developed_design_view(record, run=run, phase=RECORD_BINDING_PHASE)
             self.assertEqual(record.state_digest, view.state_digest)                     # the record cites its own projection
             self.assertEqual(StateRecord.from_dict(record.to_dict()).base, run.base)     # base survives the round trip
 
@@ -720,7 +726,7 @@ class StateRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = developed_design_view(_record(), run=run, option_id="declared", evidence_ref="reading:plan")
+            state = developed_design_view(_record(), run=run, option_id="declared", evidence_ref="reading:plan", phase=DesignPhase.DESIGN_DEVELOPMENT)
             ids = [c.component_id for c in state.selected_schematic.option.proposal.components]
             self.assertEqual(ids, ["building", "portico-columns", "portico-entablature", "portico-west"])
             self.assertEqual(len(state.state_digest), 64)
@@ -882,19 +888,20 @@ class StateRecordTests(unittest.TestCase):
     def test_the_view_carries_the_callers_phase_into_the_binding_identity(self) -> None:
         """The record states no phase; the caller (a run's envelope) does, and it binds the state digest."""
 
-        from archflow.state.stage_workflow import DesignPhase
-
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
             record = _record()
-            developed = developed_design_view(record, run=run)
+            with self.assertRaises(TypeError):
+                developed_design_view(record, run=run)                                           # no default: a caller says which run's phase it projects
+            developed = developed_design_view(record, run=run, phase=DesignPhase.DESIGN_DEVELOPMENT)
             schematic = developed_design_view(record, run=run, phase=DesignPhase.SCHEMATIC_DESIGN)
             self.assertIs(developed.active_phase, DesignPhase.DESIGN_DEVELOPMENT)               # the historical reading, unchanged
             self.assertIs(schematic.active_phase, DesignPhase.SCHEMATIC_DESIGN)
             self.assertNotEqual(developed.state_digest, schematic.state_digest)
             self.assertEqual(developed.selected_schematic.option.option_digest, schematic.selected_schematic.option.option_digest)   # same content
-            self.assertEqual(record.bound_to(run).state_digest, developed.state_digest)          # the record's own binding identity keeps its phase
+            self.assertIs(RECORD_BINDING_PHASE, DesignPhase.DESIGN_DEVELOPMENT)                 # the record's own binding identity names its phase
+            self.assertEqual(record.bound_to(run).state_digest, developed.state_digest)
             with self.assertRaises(StateRecordError):
                 developed_design_view(record, run=run, phase="schematic_design")                 # a phase is a DesignPhase, not text
 

@@ -328,7 +328,8 @@ def runner_state_digest(
     against the API repeating itself. ``payload`` names which record the
     project authored, for a fixture that authored something other than the
     default one; ``phase`` is the phase the run's stage envelope stated, which
-    the runner projects the record in (P112).
+    the runner projects the record in (P112). A test about a phase passes one;
+    the default is the phase ``make_project`` writes when a test says nothing.
     """
 
     run = RunRef(PROJECT_ID, run_id, repository.read_head())
@@ -703,6 +704,43 @@ def make_portico_project(root: Path) -> tuple[FilesystemProjectRepository, str]:
         record_payload=PORTICO_RECORD_PAYLOAD,
     )
     return repository, digest
+
+
+def freeze_workflow(
+    repository: FilesystemProjectRepository,
+    *,
+    phase: DesignPhase,
+    run_id: str = "workflow-001",
+    workflow_id: str = "demo-stage-ladder",
+) -> str:
+    """Freeze a one-stage project ladder, the way ``tools/freeze_project_stage_workflow`` does.
+
+    A run holding the workflow record and nothing else: no runner receipt, so
+    the reference-run survey still finds no run that answers for the project,
+    and the frozen ladder is the only thing in it that states a phase.
+    """
+
+    run = repository.create_run(run_id)
+    workflow = ProjectStageWorkflow(
+        project_id=PROJECT_ID,
+        workflow_id=workflow_id,
+        stages=(
+            ProjectStage(
+                stage_id="stage-0",
+                stage_index=0,
+                phase=phase,
+                required_roles=("seat-structure",),
+                required_checks=("relation-check",),
+                close_obligation_id="obligation-close-stage-0",
+            ),
+        ),
+    )
+    return repository.put_json(
+        run=run,
+        destination=run_records(run_id),
+        record_kind=PROJECT_STAGE_WORKFLOW,
+        payload=workflow.to_dict(),
+    ).uri
 
 
 def make_empty_project(root: Path) -> FilesystemProjectRepository:
