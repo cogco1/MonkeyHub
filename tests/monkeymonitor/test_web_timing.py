@@ -66,6 +66,8 @@ try {
   await page.locator('#event-sort').selectOption('duration_ms');
   assert.match(await page.locator('#events-body tr').first().textContent(), /400 ms/);
   const unknownCall = page.locator('#events-body tr').filter({ hasText: 'legacy-model' });
+  assert.equal(await unknownCall.locator('[data-metric="duration_ms"] .metric-value').textContent(), '—');
+  assert.equal(await page.locator('#events-body [data-event-id="client-call"] [data-metric="duration_ms"] .metric-value').textContent(), '—');
   await unknownCall.locator('button').click();
   assert.equal(await page.locator('input[name="cache_write_input_tokens"]').inputValue(), '');
   await page.locator('#close-calculator').click();
@@ -181,7 +183,7 @@ try {
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=zh-CN&theme=dark');
   await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(7)');
   assert.equal(await page.locator('#stat-duration').textContent(), '300 ms');
-  assert.match(await page.locator('#duration-stat').textContent(), /模型请求耗时中位数/);
+  assert.match(await page.locator('#duration-stat').textContent(), /等待时间/);
   await page.locator('#project-filter').selectOption('diagnostic-project');
   await page.locator('#operations > summary').click();
   const chineseEdit = page.locator('[data-operation-id="edit-one"]');
@@ -197,7 +199,146 @@ try {
 """
 
 
+BENCHMARK_BROWSER_CHECK = r"""
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
+const browser = await chromium.launch({ headless: true, channel: 'chrome' });
+try {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 960 } });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(process.env.MONITOR_TEST_URL + '/?lang=en&theme=light');
+  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(4)');
+  await page.locator('#project-filter').selectOption('benchmark-project');
+  assert.equal(await page.locator('#event-count').textContent(), '(3)');
+  assert.equal(await page.locator('.stats .stat').count(), 4);
+  assert.equal(await page.locator('#stat-cached').getAttribute('title'), '950 Token');
+  assert.equal(await page.locator('#stat-input').getAttribute('title'), '250 Token');
+  assert.equal(await page.locator('#stat-output').getAttribute('title'), '25 Token');
+  assert.equal(await page.locator('#stat-duration').textContent(), '300 ms');
+  assert.match(await page.locator('#cache-summary').textContent(), /79\.2%/);
+  for (const id of ['cached', 'input', 'output', 'duration']) {
+    const coverage = page.locator(`#stat-${id}-coverage`);
+    assert.equal(await coverage.isVisible(), true);
+    assert.match(await coverage.textContent(), /2\/3 calls recorded/);
+  }
+  assert.match(await page.locator('.stats .stat').nth(0).textContent(), /Cached input/);
+  assert.match(await page.locator('.stats .stat').nth(1).textContent(), /Uncached input/);
+  assert.match(await page.locator('.stats .stat').nth(2).textContent(), /Output/);
+  assert.match(await page.locator('.stats .stat').nth(3).textContent(), /Wait time/);
+  await page.locator('#coverage > summary').click();
+  assert.match(await page.locator('#cache-summary').textContent(), /Total input \(incl\. cache\): 1,500/);
+  assert.match(await page.locator('#coverage-content').textContent(), /Cached input: 2 recorded, 1 unknown/);
+  assert.match(await page.locator('#coverage-content').textContent(), /Uncached input: 2 recorded, 1 unknown/);
+  assert.match(await page.locator('#coverage-content').textContent(), /Output: 2 recorded, 1 unknown/);
+  assert.match(await page.locator('#coverage-content').textContent(), /Duration: 2 recorded, 1 unknown/);
+  assert.equal(await page.locator('#events-body [data-event-id="benchmark-service"]').count(), 0);
+
+  const fields = ['cached_input_tokens', 'uncached_input', 'output_tokens', 'duration_ms'];
+  const cached = page.locator('#events-body [data-event-id="benchmark-cached"]');
+  assert.deepEqual(await cached.locator('[data-metric] .metric-value').allTextContents(), ['950', '50', '25', '200 ms']);
+  const zero = page.locator('#events-body [data-event-id="benchmark-zero"]');
+  assert.deepEqual(await zero.locator('[data-metric] .metric-value').allTextContents(), ['0', '200', '0', '400 ms']);
+  const unknown = page.locator('#events-body [data-event-id="benchmark-unknown"]');
+  assert.deepEqual(await unknown.locator('[data-metric] .metric-value').allTextContents(), ['—', '—', '—', '—']);
+  for (const sort of [...fields, 'time', 'input_tokens']) {
+    await page.locator('#event-sort').selectOption(sort);
+    assert.deepEqual(await cached.locator('[data-metric]').evaluateAll(cells => cells.slice(0, 4).map(cell => cell.dataset.metric)), fields);
+    if (fields.includes(sort)) assert.equal(await page.locator('#events-body tr').last().getAttribute('data-event-id'), 'benchmark-unknown');
+    if (sort === 'input_tokens') assert.equal(await unknown.locator('[data-metric="input_tokens"] .metric-value').textContent(), '300');
+  }
+  await page.locator('#event-sort').selectOption('uncached_input');
+  assert.equal(await page.locator('#model-summary').isVisible(), true, 'A single model still has a benchmark summary');
+  await page.locator('#model-summary > summary').click();
+  const modelCells = await page.locator('#breakdown-body tr').first().locator('td').evaluateAll(cells => cells.map(cell => cell.firstChild.textContent));
+  assert.deepEqual(modelCells.slice(1), ['3', '950', '250', '25', '300 ms']);
+  for (const field of fields) assert.match(await page.locator(`#breakdown-body [data-metric="${field}"]`).textContent(), /2\/3 calls recorded/);
+
+  await page.locator('[data-source="codex"]').click();
+  assert.equal(await page.locator('#event-count').textContent(), '(1)');
+  assert.equal(await page.locator('#stat-cached').getAttribute('title'), '600 Token');
+  assert.equal(await page.locator('#stat-input').getAttribute('title'), '100 Token');
+  assert.equal(await page.locator('#stat-output').getAttribute('title'), '7 Token');
+  assert.equal(await page.locator('#stat-duration').textContent(), '—');
+  for (const id of ['cached', 'input', 'output']) assert.equal(await page.locator(`#stat-${id}-coverage`).isVisible(), false);
+  assert.equal(await page.locator('#stat-duration-coverage').isVisible(), true);
+  await page.locator('[data-source="studio"]').click();
+  await page.locator('#project-filter').selectOption('benchmark-project');
+  assert.equal(await page.locator('#stat-cached').getAttribute('title'), '950 Token');
+  assert.equal(await page.locator('#stat-input').getAttribute('title'), '250 Token');
+
+  const output = process.env.MONITOR_WEB_QA_DIR;
+  if (output) {
+    await mkdir(output, { recursive: true });
+    await page.screenshot({ path: join(output, 'monitor-benchmark-desktop.png'), fullPage: true });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const field of fields) {
+    assert.equal(await page.locator(`#events-body [data-event-id="benchmark-cached"] [data-metric="${field}"]`).isVisible(), true, `${field} must not be hidden on mobile`);
+  }
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (output) await page.screenshot({ path: join(output, 'monitor-benchmark-mobile-en.png'), fullPage: true });
+  await page.goto(process.env.MONITOR_TEST_URL + '/?lang=zh-CN&theme=dark');
+  await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(4)');
+  await page.locator('#project-filter').selectOption('benchmark-project');
+  assert.match(await page.locator('.stats .stat').nth(0).textContent(), /缓存输入/);
+  assert.match(await page.locator('.stats .stat').nth(1).textContent(), /未缓存输入/);
+  assert.match(await page.locator('.stats .stat').nth(2).textContent(), /输出/);
+  assert.match(await page.locator('.stats .stat').nth(3).textContent(), /等待时间/);
+  assert.match(await page.locator('#stat-cached-coverage').textContent(), /2\/3 次已记录/);
+  assert.equal(await page.locator('#stat-duration').textContent(), '300 ms');
+  for (const field of fields) assert.equal(await page.locator(`#events-body [data-event-id="benchmark-cached"] [data-metric="${field}"]`).isVisible(), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  if (output) await page.screenshot({ path: join(output, 'monitor-benchmark-mobile-zh.png'), fullPage: true });
+  assert.deepEqual(errors, []);
+} finally { await browser.close(); }
+"""
+
+
 class MonitorTimingWebTests(unittest.TestCase):
+    def test_disjoint_token_benchmark_and_unknown_request_waits(self):
+        runtime = Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node"
+        node = shutil.which("node") or str(runtime / "bin/node.exe")
+        playwright = Path(os.environ.get("PLAYWRIGHT_MODULE", str(runtime / "node_modules/playwright/index.mjs")))
+        if not Path(node).is_file() or not playwright.is_file():
+            self.skipTest("Node and Playwright are required for the real browser check")
+        with TemporaryDirectory(prefix="monkeymonitor-benchmark-") as directory:
+            root = Path(directory)
+            store = UsageLog(root / "usage")
+            base = UsageEvent(
+                "benchmark-cached", "studio", "test", "benchmark-model", "model_request", "succeeded",
+                "2026-09-11T10:00:00Z", TokenUsage(1000, 25, 950, 50, 0), duration_ms=200,
+                project_id="benchmark-project", timing_scope="model_call", model_call=True,
+            )
+            for event in (
+                base,
+                replace(base, event_id="benchmark-zero", started_at="2026-09-11T10:00:01Z",
+                        tokens=TokenUsage(200, 0, 0), duration_ms=400),
+                replace(base, event_id="benchmark-unknown", started_at="2026-09-11T10:00:02Z",
+                        tokens=TokenUsage(300, None, None), duration_ms=None),
+                replace(base, event_id="benchmark-service", phase="candidate", tokens=TokenUsage(),
+                        timing_scope="service", model_call=False, duration_ms=9000),
+                replace(base, event_id="benchmark-codex", source="codex", phase="agent",
+                        project_id="codex-project", tokens=TokenUsage(700, 7, 600), duration_ms=None),
+            ):
+                store.append(event)
+            server = make_server(MonitorData(root / "usage"), 0)
+            thread = Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            script = root / "benchmark.mjs"
+            script.write_text(BENCHMARK_BROWSER_CHECK, encoding="utf-8")
+            env = {**os.environ, "PLAYWRIGHT_MODULE": str(playwright), "MONITOR_TEST_URL": f"http://127.0.0.1:{server.server_port}"}
+            try:
+                result = subprocess.run([node, str(script)], env=env, capture_output=True, text=True, encoding="utf-8", timeout=90)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
     def test_timing_scopes_grouping_and_source_selection(self):
         runtime = Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node"
         node = shutil.which("node") or str(runtime / "bin/node.exe")

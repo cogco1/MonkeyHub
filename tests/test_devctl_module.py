@@ -98,5 +98,88 @@ class ModuleLookupTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
 
 
+class CapabilityLookupTests(unittest.TestCase):
+    """Finding a capability by the goal it serves, in the same registry file."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        registry_path = Path(self.temporary.name) / "modules.json"
+        entry = {
+            "capability_id": "candidate.modify_existing",
+            "owner": "studio.intent",
+            "execution_owner": "studio.candidate",
+            "kind": "authoring",
+            "status": "PARTIAL",
+            "purpose": "Change one number on a built element.",
+            "purpose_zh": "修改已建构件的一个数值。",
+            "goals": ["change a height", "改高度"],
+            "aliases": ["调整高度", "体块高度", "adjust the height", "keep another object unchanged"],
+            "reads": ["StateRecord"], "writes": ["candidate_run_via_P036"],
+            "effects": ["change_one_existing_value"],
+            "entrypoints": ["POST /api/capabilities/{capability_id}/run"],
+            "works": [f"supported case {i}" for i in range(11)],
+            "missing": ["creating an element"],
+            "inputs_ref": "OpenAPI:#/components/schemas/CapabilityRunRequestDto",
+            "estimated_cost": "one deterministic parse and one candidate run",
+        }
+        registry_path.write_text(json.dumps({
+            "schema": "ArchFlowModuleRegistry@1", "modules": [], "capabilities": [entry]}), encoding="utf-8")
+        registry_patch = patch.object(devctl, "MODULE_REGISTRY", registry_path)
+        registry_patch.start()
+        self.addCleanup(registry_patch.stop)
+
+    def run_cli(self, *args: str) -> tuple[int, str]:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = devctl.main(["capability", *args])
+        return code, output.getvalue()
+
+    def test_what_a_person_types_finds_the_entry_through_the_served_rule(self) -> None:
+        """The CLI and the running service share one matcher, so both hit these."""
+
+        from archflow_studio_api.application.capability import match_capabilities
+
+        self.assertIs(devctl._matcher(), match_capabilities)
+        for said in ("把这个体块高度改成4.2米，雨棚不动",
+                     "change the main body height to 4.2 m and keep the canopy"):
+            code, output = self.run_cli(said, "--json")
+            self.assertEqual(code, 0, said)
+            result = json.loads(output)
+            self.assertEqual(result["capability"]["capability_id"], "candidate.modify_existing", said)
+            self.assertTrue(result["matched"], said)
+
+    def test_a_goal_in_either_language_finds_the_entry_and_its_owner(self) -> None:
+        for goal in ("change a height", "改高度", "candidate.modify_existing"):
+            code, output = self.run_cli(goal, "--json")
+            self.assertEqual(code, 0, goal)
+            entry = json.loads(output)["capability"]
+            self.assertEqual(entry["capability_id"], "candidate.modify_existing")
+            self.assertEqual(entry["owner"], "studio.intent")
+            self.assertEqual(entry["execution_owner"], "studio.candidate")
+            self.assertEqual(entry["status"], "PARTIAL")
+            self.assertEqual(entry["inputs_ref"], "OpenAPI:#/components/schemas/CapabilityRunRequestDto")
+
+    def test_long_sections_page_like_a_module_contract(self) -> None:
+        _, output = self.run_cli("candidate.modify_existing", "--json")
+        result = json.loads(output)
+        self.assertEqual(len(result["capability"]["works"]), 8)
+        self.assertEqual(result["omitted"]["works"], {"before": 0, "after": 3, "total": 11})
+        _, page = self.run_cli("candidate.modify_existing", "--section", "works", "--offset", "8", "--json")
+        self.assertEqual(json.loads(page)["capability"]["works"], [f"supported case {i}" for i in range(8, 11)])
+
+    def test_no_hit_says_what_the_index_is_rather_than_that_it_is_missing(self) -> None:
+        code, output = self.run_cli("produce a working drawing set")
+        self.assertEqual(code, 1)
+        self.assertIn("is not the list of everything the system does", output)
+        self.assertIn("devctl module", output)
+        self.assertNotIn("MISSING", output)
+
+    def test_invalid_page_size_is_rejected_before_reading_anything(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as raised:
+            self.run_cli("change a height", "--limit", "0")
+        self.assertEqual(raised.exception.code, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

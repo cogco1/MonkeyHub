@@ -168,6 +168,98 @@ class ContextProviderTests(unittest.TestCase):
                 if name == "anthropic":
                     self.assertEqual(provider.calls[0]["max_tokens"], 5000)
 
+    def test_budget_blocks_initial_call_and_does_not_invent_usage_or_receipt(self):
+        for name in PROVIDERS:
+            for message in (SCALAR_MESSAGE, "reorganize the entire gallery", "replace wall-07 while keeping its base"):
+                with self.subTest(provider=name, message=message), self.provider(name, []) as provider:
+                    provider.compiler.context_budget_tokens = 1
+                    spans = []
+                    result = self.invoke(provider, message, observer=spans.append)
+                    self.assertEqual(result.status, "unsupported")
+                    self.assertIn("configured limit", result.why)
+                    self.assertIn("excludes CLI/provider overhead", result.why)
+                    self.assertIsNone(result.receipt)
+                    self.assertEqual(provider.calls, [])
+                    self.assertEqual(provider.requests, [])
+                    self.assertEqual(spans, [])
+
+    def test_local_design_provider_receives_slice_and_supplement_preserves_exact_base(self):
+        answer = {"status": "unsupported", "utterance": None, "semanticEdit": None,
+                  "targetComponentId": "facade", "elementId": "wall-07", "question": None,
+                  "why": "The available members do not support that detail.", "contextRefs": []}
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [
+                {**answer, "status": "needs_context", "contextRefs": ["entity:remote-wall"]}, answer,
+            ]) as provider:
+                self.invoke(provider, "replace wall-07 while keeping its base")
+                self.assertEqual(len(provider.calls), 2)
+                first, second = [self.sheet(call) for call in provider.calls]
+                self.assertEqual(first["editTargets"], ["wall-07"])
+                self.assertEqual(second["editTargets"], first["editTargets"])
+                self.assertNotIn("remote-wall", {row["elementId"] for row in first["elements"]})
+                self.assertIn("remote-wall", {row["elementId"] for row in second["elements"]})
+                self.assertEqual(provider.requests[0].checkpoint_digest, provider.requests[1].checkpoint_digest)
+
+    def test_budget_rechecked_before_supplement_without_second_provider_call(self):
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [supplement("entity:remote-wall")]) as provider:
+                spans = []
+                def observer(span):
+                    spans.append(span)
+                    provider.compiler.context_budget_tokens = 1
+                result = self.invoke(provider, observer=observer)
+                self.assertEqual(result.status, "unsupported")
+                self.assertEqual(len(provider.calls), 1)
+                self.assertEqual(len(spans), 1)
+                self.assertGreater(spans[0]["usage"]["input_tokens"], 0)
+
+    def test_large_project_local_design_compiles_but_global_request_is_budget_blocked(self):
+        wall = self.record.entity("wall-07")
+        unrelated = tuple(replace(wall, entity_id=f"unrelated-{index}", fields={
+            **wall.fields, "note": "Unrelated authored design information. " * 60,
+        }) for index in range(100))
+        record = replace(self.record, entities=(*self.record.entities, *unrelated))
+        elements, error = _elements(record)
+        self.assertIsNone(error)
+        self.projection = SimpleNamespace(**{**vars(self.projection), "record": record, "elements": elements,
+                                            "record_digest": record.digest})
+        answer = {"status": "compiled", "targetComponentId": "facade", "elementId": "wall-07",
+                  "utterance": None, "why": "Adjust the selected wall while retaining its base.",
+                  "question": None, "contextRefs": [], "semanticEdit": {
+                      "summary": "Adjust the selected wall.", "entities": [{
+                          "entity_id": wall.entity_id, "schema": wall.schema,
+                          "parent_id": wall.parent_id, "basis_refs": ["studio:intent"],
+                          "fields": {**deepcopy(wall.fields), "params": {"height": 3.2, "thickness": 0.3}},
+                      }], "parameters": [], "relations": [], "removeEntityIds": [],
+                      "removeParameterKeys": [], "removeRelationIds": [], "protected": [], "kept": ["Retain the base level"],
+                  }}
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [answer]) as provider:
+                result = self.invoke(provider, "reconfigure wall-07 while keeping its base")
+                self.assertEqual(result.status, "compiled")
+                self.assertIsNotNone(result.semantic_edit)
+                self.assertNotIn("unrelated-99", json.dumps(self.sheet(provider.calls[0])))
+                blocked = self.invoke(provider, "reconfigure the entire building")
+                self.assertEqual(blocked.status, "unsupported")
+                self.assertIn("configured limit", blocked.why)
+                self.assertEqual(len(provider.calls), 1)
+
+    def test_local_semantic_supplement_cannot_modify_added_read_target(self):
+        request = {"status": "needs_context", "targetComponentId": "facade", "elementId": "wall-07",
+                   "utterance": None, "semanticEdit": None, "question": None,
+                   "why": "Read the named wall.", "contextRefs": ["entity:remote-wall"]}
+        answer = {**request, "status": "compiled", "contextRefs": [], "semanticEdit": {
+            "summary": "Remove the other wall.", "entities": [], "parameters": [], "relations": [],
+            "removeEntityIds": ["remote-wall"], "removeParameterKeys": [], "removeRelationIds": [],
+            "protected": [], "kept": [],
+        }}
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [request, answer]) as provider:
+                with self.assertRaises(IntentAgentFailed) as caught:
+                    self.invoke(provider, "replace wall-07 while keeping its base")
+                self.assertEqual(caught.exception.receipt.status, ModelInvocationStatus.MALFORMED)
+                self.assertEqual(len(provider.calls), 2)
+
     def test_supplement_adds_named_context_with_same_target_base_and_individual_usage(self):
         for name in PROVIDERS:
             with self.subTest(provider=name), self.provider(name, [supplement("entity:remote-wall"), scalar_answer()]) as provider:

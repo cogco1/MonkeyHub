@@ -501,7 +501,12 @@ class SemanticIntentTests(IntentTestCase):
         self.assertIn("relationships", sheet)
         self.assertIn("frame", sheet)
         self.assertIn("types", sheet)
-        self.assertNotIn("profile", next(row for row in sheet["elements"] if row["elementId"] == "portico-base")["params"])
+        # A prism's outline is advertised authoring data now, so the sheet
+        # shows it: the agent and the person change the same element.
+        self.assertEqual(
+            next(row for row in sheet["elements"] if row["elementId"] == "portico-base")["params"]["profile"],
+            [[0, 0], [4, 0], [4, 2], [0, 2]],
+        )
 
 
 JOB_DEADLINE_S = 120.0

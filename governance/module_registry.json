@@ -37,6 +37,106 @@
       ]
     }
   ],
+  "capabilities": [
+    {
+      "capability_id": "candidate.modify_existing",
+      "owner": "studio.intent",
+      "execution_owner": "studio.candidate",
+      "kind": "authoring",
+      "status": "PARTIAL",
+      "purpose": "Change one number that already exists on a built element of the selected candidate, naming what the change must not disturb, and run the result as a new candidate on the same exact source.",
+      "purpose_zh": "在选定候选的已建构件上修改一个已有数值，显式声明不得改动的对象，并以同一精确来源运行出新候选。",
+      "goals": [
+        "modify an existing element",
+        "change a height",
+        "change an existing number",
+        "make the main volume taller",
+        "keep the rest unchanged",
+        "修改已有构件",
+        "改高度",
+        "把主体改高",
+        "修改已有数值",
+        "其余保持不变"
+      ],
+      "aliases": [
+        "adjust the height",
+        "change a dimension of something already modelled",
+        "resize an existing volume",
+        "keep another object unchanged",
+        "调整高度",
+        "改成",
+        "体块高度",
+        "保持不动"
+      ],
+      "requires": [
+        "bound_project",
+        "exact_source: the run this candidate is edited from",
+        "state_digest: the digest GET /api/state answered with",
+        "target_component_id: a Component@1 the record declares",
+        "an editable authored param on the target, not one a reference pins"
+      ],
+      "reads": [
+        "StateRecord",
+        "component_catalog",
+        "dependency_closure"
+      ],
+      "writes": [
+        "candidate_run_via_P036"
+      ],
+      "effects": [
+        "change_one_existing_value",
+        "preserve_keep_conditions"
+      ],
+      "inputs_ref": "/openapi.json#/components/schemas/CapabilityRunRequestDto",
+      "inputs_extends": "/openapi.json#/components/schemas/ProposalRequestDto",
+      "entrypoints": [
+        "GET /api/capabilities",
+        "GET /api/capabilities/{capability_id}",
+        "POST /api/capabilities/{capability_id}/run",
+        "POST /api/proposals",
+        "POST /api/proposals/{proposal_id}/candidate",
+        "GET /api/jobs/{job_id}",
+        "GET /api/candidates/{candidate_id}"
+      ],
+      "composes": [
+        "studio.intent: resolve the target and parse the utterance against the record",
+        "studio.intent: read the dependency closure as impact and refuse a change that reaches a kept ref",
+        "studio.candidate: run the proposal as a detached candidate through the kernel runner",
+        "runtime.project_runner: seat execution and geometry",
+        "studio.artifacts: the exported model the candidate is read back from"
+      ],
+      "produces": [
+        "a proposal with its before/after value and its kept refs",
+        "a candidate run id and its job",
+        "the exported model of that run, readable through GET /api/artifacts"
+      ],
+      "validators": [
+        "capabilities.relation_checks:check_relations",
+        "studio.validation: the candidate review-readiness verdict"
+      ],
+      "estimated_cost": "One deterministic parse and one candidate run; no model call is made by this capability. Actual time and tokens are Monitor's record, not this estimate.",
+      "works": [
+        "the four utterance forms (set to, set =, increase by %, decrease by %) against one authored param of one element",
+        "an explicit keep list of entity: or parameter: refs, refused as a conflict when the change reaches one",
+        "continuing on a candidate by passing it as sourceRunId"
+      ],
+      "missing": [
+        "creating an element or a component - see POST /api/proposals/sketch",
+        "moving more than one number in one request",
+        "changing a value a reference pins: it is reported as derived with its source and never compiled",
+        "verified pointer-to-model-coordinate mapping"
+      ],
+      "ui": {
+        "preview": "MonkeyArch"
+      },
+      "tests": [
+        "apps/archflow-studio/api/tests/test_capabilities.py",
+        "apps/archflow-studio/api/tests/test_proposals.py",
+        "apps/archflow-studio/api/tests/test_candidate.py"
+      ],
+      "status_note": "PARTIAL, and not yet PRODUCTION: the static entry describes a chain whose real-project run is verified separately. Runtime availability (is a project bound, is this state actionable) is answered per request, never from this entry."
+    }
+  ],
   "modules": [
     {
       "module_id": "adapters.cad_execution",
@@ -1585,6 +1685,7 @@
       "owns": [
         "the on-disk names of a project's areas (project.json, HEAD, objects/sha256, events, canonical, runs, exports, input)",
         "the run subdirectory names (RunLayout: run.json, records, branches, candidates, reviews, workspaces, recovery)",
+        "the CAD export directory name under an explicitly supplied absolute workspace root, shared by Studio, CLI and runner",
         "resolving a project-relative path or a record/artifact ref to an absolute path inside the root",
         "the names of the two authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json)",
         "the names of the three authored work-in-progress files (input/runner/state-record.json, input/runner/seats.json, input/runner/program-sheet.json)",
@@ -1613,7 +1714,8 @@
         "AUTHORED_RECORD_PATH",
         "SEAT_PACK_PATH",
         "PROGRAM_SHEET_PATH",
-        "ProjectLayout.design_branches"
+        "ProjectLayout.design_branches",
+        "cad_workspace_path"
       ],
       "depends_on": [
         "project.refs"
@@ -1633,7 +1735,8 @@
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_project_inputs.py"
+        "tests/test_project_inputs.py",
+        "tests/test_project_runner.py"
       ],
       "notes": "A path table walked by every FilesystemProjectRepository test; only the two authored-input paths are asserted directly, in tests/test_project_inputs.py. RunLayout is returned by ProjectLayout.run but never imported by name."
     },
@@ -2162,6 +2265,7 @@
         "CAD_BACKENDS"
       ],
       "depends_on": [
+        "project.layout",
         "adapters.cad_execution",
         "adapters.cad_program",
         "adapters.three_dm_inspector",
@@ -3728,7 +3832,8 @@
         "making the proposal - studio.intent",
         "resolving what a request is about, and the pending intent a clarification is carried in - studio.intent",
         "the project binding - studio.binding",
-        "deriving any successor record - state.record"
+        "deriving any successor record - state.record",
+        "the capability index, its description and the request assembly in front of them - studio.intent"
       ],
       "inputs": [
         "Proposal",
@@ -3884,7 +3989,11 @@
         "preserving optional exact baseStageRef on new Explorations while legacy WorkingCopy labels and choices remain readable without inferred acceptance",
         "Compiling scalar/component numeric actions or a complete design request; the StateRecord dependency closure remains private while model-facing facts expose only requested controls and relevant design consequences; at most two exact-reference supplements preserve writable targets and the original checkpoint",
         "Preflight text-section budget estimates and response-schema/request-scope checks before the existing proposal compiler; repeated JSON subschemas are shared without changing their accepted values",
-        "Offline context-size benchmark using the same request preparation with an in-memory provider capture, with tokenizer identity or an explicit heuristic and no inference call"
+        "Offline context-size benchmark using the same request preparation with an in-memory provider capture, with tokenizer identity or an explicit heuristic and no inference call",
+        "the capability index served to agents: reading the registered capability entries beside this installation, matching a goal in either language, and saying what a no-hit means",
+        "describing one capability against the bound projection: the exact base, the target's movable numbers as the catalog decided them, the refs a keep clause may name, and the next request with this project's base already in it",
+        "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
+        "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -3997,7 +4106,16 @@
         "POST /api/candidates/{candidate_id}/accept",
         "POST /api/design-branches",
         "read_refs_of",
-        "write_refs_of"
+        "write_refs_of",
+        "GET /api/capabilities",
+        "GET /api/capabilities/{capability_id}",
+        "POST /api/capabilities/{capability_id}/run",
+        "capability_index",
+        "find_capabilities",
+        "capability",
+        "describe_capability",
+        "POST /api/proposals/delete",
+        "delete_element_proposal"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4064,7 +4182,8 @@
         "candidate generation and option selection never commit a Stage; explicit acceptance verifies retained replay, model and validation before exact branch-head CAS",
         "ordinary Stage acceptance never issues canonical HEAD; repeat acceptance returns the same committed Stage",
         "explicit proposal endorsement retains only that choice and does not supersede alternatives or other explorations sharing its base",
-        "A scoped request retains the complete validation closure privately; the model proposes numeric actions without copying records, identifiers, bindings or provenance. Server adaptation preserves untouched data, normalizes declared units, and refuses silent shared, derived or locked-control changes; ambiguous and structural requests retain full design context",
+        "A scoped request retains the complete validation closure privately; numeric and explicitly local design requests send only relevant state, dependencies, affected hosts and applicable keep constraints. Global or unresolved design requests retain full context. Server adaptation preserves untouched data and refuses unrelated, shared, derived or locked-control changes; at most two exact-reference supplements grant no additional write scope",
+        "Before every provider attempt, the application text estimate must fit the configured context budget or return unsupported without a model invocation. This estimate excludes provider framing and image tokens and is not billed usage",
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
         "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters"
       ],
@@ -4088,7 +4207,9 @@
         "apps/archflow-studio/api/tests/test_intent_context.py",
         "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
         "apps/archflow-studio/api/tests/test_intent_context_providers.py",
-        "apps/archflow-studio/api/tests/test_intent_budget.py"
+        "apps/archflow-studio/api/tests/test_intent_budget.py",
+        "apps/archflow-studio/api/tests/test_capabilities.py",
+        "apps/archflow-studio/api/tests/test_delete.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4111,6 +4232,9 @@
         "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent_budget.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/capability.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/capabilities.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/capability.py",
         "tools/benchmark_intent_context.py"
       ]
     },
@@ -4133,7 +4257,8 @@
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web",
-        "Reading a positive advisory intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter"
+        "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
+        "Browser-local project/task navigation, transcript and editing-base pointers; independent mounted task views keep in-flight responses and pending exchanges in their originating task"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4233,7 +4358,8 @@
         "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
         "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts",
         "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations",
-        "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown"
+        "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown",
+        "Tasks use only the project and provider actually bound to the connected Studio server. Task history is personal browser storage, never project authority or implicit model input; refresh does not replay model requests or reuse old continuation tokens, and tasks do not overwrite the shared editing-base preference"
       ],
       "status": "canonical",
       "tests": [
@@ -4244,7 +4370,9 @@
         "apps/archflow-studio/web/test/connection.test.ts",
         "apps/archflow-studio/web/test/proposalCard.test.ts",
         "apps/archflow-studio/api/tests/test_monitoring.py",
-        "apps/archflow-studio/web/test/settingsPanel.browser.mjs"
+        "apps/archflow-studio/web/test/settingsPanel.browser.mjs",
+        "apps/archflow-studio/web/test/tasks.test.ts",
+        "apps/archflow-studio/web/test/taskSidebar.browser.mjs"
       ],
       "notes": "transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/archflow-studio/web/src/api/connection.ts is the client boundary. EXTEND: Studio already owns the user settings boundary and its browser preferences, interpolation, translation and styles. apps/shared-web extracts only these facilities for the real Hub and Monitor consumers, without a second preference writer. Shared JavaScript exports are listed with their source paths; the registry's symbol checker inspects Python only.",
       "files": [
@@ -4263,6 +4391,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
         "apps/archflow-studio/launch-studio.ps1",
         "apps/archflow-studio/web/src/features/settings/preferences.tsx",
+        "apps/archflow-studio/web/src/app/TaskWorkspace.tsx",
+        "apps/archflow-studio/web/src/app/TaskWorkspace.css",
+        "apps/archflow-studio/web/src/app/tasks.ts",
+        "apps/archflow-studio/web/src/app/transcript.ts",
         "apps/archflow-studio/web/src/i18n/useT.ts",
         "apps/archflow-studio/web/src/i18n/browserTranslator.ts",
         "apps/archflow-studio/web/src/styles.css",
@@ -4493,17 +4625,20 @@
         "loading ArchFlowDevelopmentRegistry@2 and its statuses (active, ready, blocked)",
         "the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished",
         "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
-        "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates"
+        "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
+      "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
         "the module registry described in CANONICAL_SPINE 4, which is a separate file from work_registry.json",
-        "any archflow behaviour: it reads the semantic tables and the phase ladder to render them and defines none of them"
+        "any archflow behaviour: it reads the semantic tables and the phase ladder to render them and defines none of them",
+        "the capability matching rule: it imports the one studio.intent serves at GET /api/capabilities so the CLI and the running service cannot disagree about what a goal finds"
       ],
       "inputs": [
         "governance/work_registry.json",
         "governance/module_registry.json",
-        "module query, optional section and bounded page limit/offset"
+        "module query, optional section and bounded page limit/offset",
+        "capability query by id or goal words, optional section and bounded page limit/offset"
       ],
       "outputs": [
         "docs/DYNAMIC_MAP.md",
@@ -4511,10 +4646,13 @@
         "docs/SYSTEM_MAP.md",
         "docs/SEMANTIC_REGISTRY.md",
         "exit code",
-        "Bounded plain-text or JSON module lookup on stdout, including omitted-section counts"
+        "Bounded plain-text or JSON module lookup on stdout, including omitted-section counts",
+        "Bounded plain-text or JSON capability lookup on stdout; no match reports the size of the index rather than a verdict"
       ],
       "public_api": [
         "load_registry",
+        "load_module_registry",
+        "capabilities",
         "is_ready",
         "render",
         "main"
@@ -4731,6 +4869,7 @@
         "_seat"
       ],
       "depends_on": [
+        "project.layout",
         "capabilities.declaration",
         "capabilities.discipline_seats",
         "capabilities.geometry_proposal",
@@ -5394,13 +5533,15 @@
       "module_id": "hub.shell",
       "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
       "status": "canonical",
-      "purpose": "Host the fixed local applications and request-scoped MonkeyFab CLI operations without a building project; existing settings and domain tools retain their ownership.",
+      "purpose": "Host project-bound conversations through installed coding CLIs and open the existing local architecture tools beside the chat; domain state and settings retain their existing owners.",
       "owns": [
-        "Project-free Hub FastAPI and the fixed MonkeyArch, MonkeyDiagram, MonkeyBoard, MonkeyMonitor and MonkeyFab application cards",
+        "Hub FastAPI, project/chat navigation, persistent CLI conversation transcripts and embedded local tool pages",
         "One owned Studio process shared by MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
-        "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring"
+        "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring",
+        "Codex/Claude CLI session lifecycle and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
+        "the bounded completion option of the design request tool: for the one capability run it names, a single accepted POST followed by reads of the existing job, candidate and comparison within a stated wait, answered as a projection of those reads"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -5412,13 +5553,15 @@
         "Optional existing project path and retained run",
         "Packaged or checkout source revision and built web directories",
         "Fixed application id and start/stop request",
-        "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code"
+        "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code",
+        "An existing complete project folder, chosen installed CLI/model and user chat message"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
         "Application status and URL",
         "Owned process lifecycle and local diagnostic logs",
-        "The independent Fab CLI result; geometry files stay in the caller-selected output directory"
+        "The independent Fab CLI result; geometry files stay in the caller-selected output directory",
+        "Project-bound chat transcripts and continuation of the same native CLI session under the explicit Hub runtime root"
       ],
       "public_api": [
         "create_app",
@@ -5435,7 +5578,15 @@
         "PUT /api/settings/user",
         "GET /api/fab/profiles",
         "POST /api/fab/prepare",
-        "POST /api/fab/send"
+        "POST /api/fab/send",
+        "GET /api/chat/providers",
+        "GET /api/chat/projects",
+        "GET /api/chat/sessions",
+        "POST /api/chat/sessions",
+        "GET /api/chat/sessions/{id}",
+        "POST /api/chat/sessions/{id}/messages",
+        "PUT /api/chat/sessions/{id}/model",
+        "POST /api/chat/sessions/{id}/stop"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -5444,7 +5595,11 @@
         "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path",
         "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces",
         "Fab uses the existing CLI, never duplicates its geometry or file-output implementation; it does not create a second project store",
-        "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing"
+        "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing",
+        "CLI tools verify the actual Hub/Studio project binding; retained design changes use existing Studio/P036 APIs, and running chats prevent cross-project service rebinding",
+        "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
+        "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
+        "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -5457,11 +5612,21 @@
         "apps/monkeyhub/api/monkeyhub_api/models.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/run.py",
-        "apps/monkeyhub/launch-hub.ps1"
+        "apps/monkeyhub/launch-hub.ps1",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
-        "apps/monkeyhub/api/tests/test_monkeyfab.py"
+        "apps/monkeyhub/api/tests/test_monkeyfab.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ],
+      "depends_on": [
+        "project.repository",
+        "project.refs",
+        "state.record"
       ]
     },
     {

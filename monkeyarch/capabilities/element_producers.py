@@ -115,6 +115,48 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "type_id": {**identifier, "description": "Only an existing compatible rectangular window or door type; omit for an empty passage."},
         "interface_ref": identifier,
     }, ("opening_id", "kind", "width", "sill", "head"))
+    # A drawn outline pulled to a height: the same row this module has always
+    # produced, now stated as an authoring contract so a person drawing on the
+    # model reaches it the way an agent reaches the wall.
+    plan_point = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+    cutout = obj({
+        "cutout_id": identifier,
+        "span0": {"type": "number"}, "span1": {"type": "number"},
+        "bottom": {"type": "number"}, "top": {"type": "number"},
+    }, ("cutout_id", "span0", "span1", "bottom", "top"))
+    prism = {
+        "producer": "prism",
+        "label": "轮廓与高度",
+        "description": (
+            "A closed plan profile extruded to a height, standing on an existing level or on another "
+            "element's published top. The profile and the height stay the record's own parameters, so "
+            "either can be changed afterwards by authoring the same element again. Rectangular cutouts "
+            "trim an axis-aligned rectangular profile through its thickness; a profile that is not such "
+            "a rectangle carries no cutouts."
+        ),
+        "parameters": obj({
+            "profile": {"type": "array", "items": plan_point, "minItems": 3,
+                        "description": "The closed plan profile in order; the first point is not repeated."},
+            "height": {**scalar, "description": "How far the profile is pulled; optional when references.top determines it."},
+            "rectangular_cutouts": {"type": "array", "items": cutout,
+                                    "description": "Openings through an axis-aligned rectangular profile."},
+        }),
+        "references": obj({
+            "base": {"anyOf": [obj({"level": level_id}, ("level",)), obj({"datum": identifier}, ("datum",))]},
+            "top": elevation,
+        }),
+        "requiredParameters": ["profile"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "Provide either height or references.top; a prism with neither has no height to build.",
+            "A profile needs at least three distinct points and does not repeat its first point.",
+            "rectangular_cutouts require four ordered axis-aligned profile corners.",
+            "Use @parameter bindings for dimensions that subsequent changes must share.",
+            "The element this one stands on is named by references.base, never inferred from proximity.",
+        ],
+    }
+    # The wall stays first: it is the signature the model schema's first
+    # element variant has always been, and order here is not a contract.
     return {"wall": {
         "producer": "wall",
         "label": "墙体与宿主开口",
@@ -148,7 +190,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
         ],
-    }}
+    }, "prism": prism}
 
 
 def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: str) -> None:

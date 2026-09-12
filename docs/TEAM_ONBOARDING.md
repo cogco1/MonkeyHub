@@ -6,15 +6,20 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 
 ## 先看这一屏
 
+**应用统一从 MonkeyHub 进入。** 启动、项目选择和 Agent 接入沿同一流程；代码开发使用现有查询命令。
+首次会话按 [Hub 入口与定向检索顺序](WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口)执行，
+不需要先读完整工具箱或模块地图。MonkeyArch 是 Hub 的建模工作区，不是另一个总入口。
+
 | 你要做什么 | 从哪里进入 | 第一个结果 |
 | --- | --- | --- |
 | 直接使用 MonkeyHub 整合包 | [Windows 候选包安装说明](../apps/monkeyhub/installer/README.md) | 完整解压后运行 `INSTALL_MONKEYHUB.cmd`，打开 Hub；无需自行安装 Python 或 Node.js |
 | 使用或改进研究工具、Skills、实验记录、图表与报告 | [共享工具箱](https://github.com/cogco1/huaguoshan-digital-infrastructure)，先读其 `AGENTS.md`、`README.md`、`docs/CLI.md` | 在自己的 Runtime 生成一次合成演示，找到报告、图表和来源 run |
 | 使用或改进 MonkeyArch 界面、模型修改与候选执行 | [ArchFlow](https://github.com/cogco1/ARCHFLOW_V4)，先读 [AGENTS.md](../AGENTS.md)，再按本文运行 | API/Web 连通，一次合成候选修改读回为 `2.2` |
-| 修改某个已有能力 | 对应仓库的现有实现；ArchFlow 查 [SYSTEM_MAP.md](SYSTEM_MAP.md) 和 [模块契约](../governance/module_registry.json) | 找到唯一负责模块、真实调用方和相关测试，约定一个小修改 |
+| 修改某个已有能力 | ArchFlow 用 `python tools/devctl.py module <关键词>` 找 owner；工具箱用 `hgs skills list/show` 查具体契约 | 找到负责模块、真实调用方和相关测试，约定一个小修改 |
 | 查看真实建筑、继续设计 | 由项目负责人提供可共享的完整项目副本和选定 run | 在自己的副本看见指定模型，再进行一次已约定的修改 |
 
-**第一次默认任务：接入复现。** 先跑工具箱；需要参与建模时再跑 ArchFlow。把版本、实际结果和最卡的一步回传到约定的 Issue/PR。没有发现真实问题，就不为了“交第一个 PR”制造代码改动。
+**第一次默认任务：接入复现。** 使用应用从 Hub 开始；开发时只准备本次任务需要的仓库与环境。
+把版本、实际结果和最卡的一步回传到约定的 Issue/PR。没有发现真实问题，就不为了“交第一个 PR”制造代码改动。
 
 整合包按包内 `source-version.txt` 标明的版本运行，更新源码不会自动更新已安装的包。第二台干净 Windows 和第二位使用者的实际验收仍需完成；下面的源码接入回路也不替代真实项目试用。
 

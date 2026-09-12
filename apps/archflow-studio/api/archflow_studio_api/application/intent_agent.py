@@ -720,20 +720,25 @@ def _parse_answer(
 # ---- providers -------------------------------------------------------------
 
 
-def _context_budget(message, context, rules, schema, *, model, budget_tokens, image_count):
+def _context_budget(message, context, rules, schema, *, model, budget_tokens, image_count, provider=CODEX):
     """Partition the sent text once; contributors diagnose, never add to the total."""
     sent_sheet = model_context(context)
-    sheet = dict(sent_sheet)
-    preferences = {key: sheet.pop(key) for key in ("readings", "preferences", "designFacts") if key in sheet}
-    dependencies = {key: sheet.pop(key) for key in (
-        "parameters", "frame", "types", "relationships", "obligations", "contextEntities", "dependencyFacts",
-    ) if key in sheet}
     encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True)
+    # Partition the actual serialized sheet, including keys and punctuation;
+    # independently re-serializing section dictionaries changes the byte count.
+    sections = {"state": "{", "preferences": "", "dependencies": ""}
+    for index, key in enumerate(sorted(sent_sheet)):
+        group = "preferences" if key in {"readings", "preferences", "designFacts"} else (
+            "dependencies" if key in {"parameters", "frame", "types", "relationships", "obligations", "contextEntities", "dependencyFacts"} else "state")
+        sections[group] += (", " if index else "") + encode(key) + ": " + encode(sent_sheet[key])
+    sections["state"] += "}"
+    overhead = "\n\n" + _prompt("", {}).replace("{}", "", 1)
+    if provider == ANTHROPIC:
+        overhead += "JSON schema of the only acceptable answer:\n"
+        overhead += "".join(f"Document image {index}; its source and purpose are in documentVisuals."
+                            for index in range(1, image_count + 1))
     return build_context_budget(
-        {"intent": message, "system": rules, "schema": encode(schema), "state": encode(sheet),
-         "preferences": encode(preferences) if preferences else "",
-         "dependencies": encode(dependencies) if dependencies else "",
-         "overhead": "RECORD SHEET (JSON):\n\nREQUEST:\n\nAnswer with one JSON object matching the schema."},
+        {**sections, "intent": message, "system": rules, "schema": json.dumps(schema), "overhead": overhead},
         model=model, task_type=context.tier, budget_tokens=budget_tokens,
         expected_max_output_tokens=MAX_OUTPUT_TOKENS[context.tier], image_count=image_count,
         contributors={label: encode(sent_sheet[key]) for key, label in (
@@ -771,11 +776,24 @@ def _compile_context_request(compiler, *, message, selection, projection, operat
         )
         if context.tier == "design":
             rules += "\n\n" + EXPANSION_RULES
+            if context.design_sheet is not None:
+                rules += ("\nThe sheet is local design context. editTargets are the only existing elements "
+                          "you may change. Return a typed semanticEdit, not a scalar utterance. "
+                          "New members must declare references or relationships connecting them to these "
+                          "targets. Other elements, shared controls and supplemental references are read-only.")
         budget = _context_budget(message, context, rules, strict_schema,
                                  model=compiler.binding.model_id,
                                  budget_tokens=compiler.context_budget_tokens,
-                                 image_count=len(_document_images(selection.document_visuals)[1]))
+                                 image_count=len(_document_images(selection.document_visuals)[1]),
+                                 provider=compiler.provider)
         budget.log_preflight(log)
+        limitation = budget.limitation()
+        if limitation is not None:
+            return Compilation(status="unsupported", provider=DETERMINISTIC, model=None,
+                               utterance=None, why=limitation, question=None,
+                               component_id=selection.component_id,
+                               element_id=selection.element_id, latency_ms=0,
+                               prompt_sha256=None, raw=None)
         spans = []
         result = receipt = None
         try:

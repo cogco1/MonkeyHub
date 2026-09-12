@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { applyAppearance, appearanceFromSearch, isLanguage, isTheme, isFontScale, type Language, type ThemePreference, type FontScale } from "../../../../../shared-web/src/appearance.js";
+import { applyAppearance, appearanceFromSearch, DEFAULT_APPEARANCE, isLanguage, isTheme, isFontScale, type Language, type ThemePreference, type FontScale } from "../../../../../shared-web/src/appearance.js";
 export type { Language, ThemePreference, FontScale } from "../../../../../shared-web/src/appearance.js";
 
 export interface UserPreferences {
@@ -106,7 +106,7 @@ function initialPreferences(): UserPreferences {
   return {
     ...appearanceFromSearch(typeof window === "undefined" ? "" : window.location.search, {
       language: languageFromQuery() ?? stored?.language ?? languageFromNavigator() ?? "en",
-      theme: stored?.theme ?? "system",
+      theme: stored?.theme ?? DEFAULT_APPEARANCE.theme,
       fontScale: stored?.fontScale ?? 1,
     }),
     eventStreamVisible: stored?.eventStreamVisible ?? true,

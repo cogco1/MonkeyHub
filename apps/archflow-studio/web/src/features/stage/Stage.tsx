@@ -6,7 +6,7 @@
  * stage decides nothing.
  */
 
-import { useEffect, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import type { StudioApiError } from "../../api/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
@@ -24,6 +24,7 @@ import {
   type ViewportController,
   type ViewportPick,
   type ViewportStatus,
+  type Vec3,
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
@@ -31,6 +32,22 @@ import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monke
 import type { ClientTimingSpan } from "../../app/clientTiming";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
+import { hostOrigin, requestStartModeling } from "../../../../../shared-web/src/hostBridge.js";
+import { distanceBetween } from "../../workspaces/monkeyarch/viewer/featureEdges";
+import {
+  IDLE as SKETCH_IDLE,
+  cancelled as cancelledSketch,
+  enclosesArea,
+  finished as finishedSketch,
+  heightAnchor,
+  rectangleOf,
+  sizedRectangle,
+  snapPoint,
+  typedNumber,
+  type FinishedSketch,
+  type PlanPoint,
+  type SketchState,
+} from "./sketch";
 
 export interface PickedFacts {
   readonly componentId: string | null;
@@ -68,6 +85,7 @@ export interface ReviewSummary {
 export type CaptureState = "idle" | "busy" | "success" | "error";
 
 export function Stage({
+  embedded = false,
   viewportRef,
   message,
   status,
@@ -125,6 +143,11 @@ export function Stage({
   onOpenRun,
   onShowHome,
   home,
+  hasModel,
+  onSketch,
+  sketchBusy = false,
+  snapPoints = [],
+  model,
   loadedRunId,
   editingBaseRunId,
   editingBaseLabel,
@@ -234,6 +257,40 @@ export function Stage({
   capturePath: string | null;
   onCapture(): Promise<void>;
   onEvidence(tab: EvidenceTab): void;
+  /** Whether anything is on screen at all, as the viewer reported its source. */
+  hasModel: boolean;
+  /**
+   * Submit one finished drawing action. Called once per completed action and
+   * never while the pointer is moving; the preview above is local.
+   */
+  onSketch?(action: FinishedSketch): Promise<void>;
+  /** True while a drawn action is on its way, so a second one cannot start. */
+  sketchBusy?: boolean;
+  /** Existing plan points a drawing may snap to, in CAD world (x, y). */
+  snapPoints?: readonly PlanPoint[];
+  /**
+   * The keys that act on the model itself, and what they may do right now.
+   *
+   * These are the model's own actions, not the ink's: the annotation undo
+   * beside them takes back a stroke on the picture and never a change to the
+   * building. The shell decides what each one means and whether it is
+   * available; this component only reads the keyboard.
+   */
+  model?: {
+    onDelete(): void;
+    canDelete: boolean;
+    deleting: boolean;
+    /** What Delete would remove, so the hint can name it rather than imply it. */
+    subject: string | null;
+    onUndo(): void;
+    canUndo: boolean;
+    onRedo(): void;
+    canRedo: boolean;
+    onClearSelection(): void;
+    hasSelection: boolean;
+  };
+  /** A host page already shows the workspace entries and the project's position. */
+  embedded?: boolean;
 }) {
   const t = useT();
   const { developerMode } = usePreferences();
@@ -248,6 +305,191 @@ export function Stage({
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
   const [viewToolsOpen, setViewToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  // One drawing action at a time, entirely local until it is finished.
+  const [sketch, setSketch] = useState<SketchState>(SKETCH_IDLE);
+  const [snapNote, setSnapNote] = useState<string | null>(null);
+  // A measurement is looking, not changing: two points off the model itself,
+  // the distance between them, and nothing retained anywhere.
+  const [measuring, setMeasuring] = useState(false);
+  const [measure, setMeasure] = useState<{ from: Vec3 | null; to: Vec3 | null; kinds: [string | null, string | null] }>(
+    { from: null, to: null, kinds: [null, null] },
+  );
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+  const showMeasure = useCallback((next: typeof measure) => {
+    setMeasure(next);
+    // The same temporary layer the drawing preview uses; it draws the line and
+    // is thrown away with it.
+    viewportRef.current?.sketchPreview(
+      next.from && next.to
+        ? { profile: [[next.from[0], next.from[1]], [next.to[0], next.to[1]]], base: next.from[2], height: 0 }
+        : null,
+    );
+  }, [viewportRef]);
+  const stopMeasuring = useCallback(() => {
+    showMeasure({ from: null, to: null, kinds: [null, null] });
+    setSnapNote(null);
+  }, [showMeasure]);
+  const sketchRef = useRef<SketchState>(SKETCH_IDLE);
+  sketchRef.current = sketch;
+  // How far a snap reaches, in world units: a fifth of what the last drawn
+  // rectangle spans, so it stays usable at any size the project is drawn at.
+  const snapRadius = useCallback(() => {
+    const spans = sketch.profile.length > 1
+      ? Math.max(...sketch.profile.map(([x]) => x)) - Math.min(...sketch.profile.map(([x]) => x))
+      : 0;
+    return Math.max(0.2, spans / 5);
+  }, [sketch.profile]);
+  const showSketch = useCallback((next: SketchState) => {
+    setSketch(next);
+    viewportRef.current?.sketchPreview(
+      next.profile.length > 1 ? { profile: next.profile, base: next.base, height: next.height } : null,
+    );
+  }, [viewportRef]);
+  const stopSketching = useCallback(() => {
+    setSnapNote(null);
+    showSketch({ ...SKETCH_IDLE, tool: sketchRef.current.tool });
+  }, [showSketch]);
+  const submitSketch = useCallback(() => {
+    const action = finishedSketch(sketchRef.current);
+    if (action === null || !onSketch) return;
+    stopSketching();
+    void onSketch(action);
+  }, [onSketch, stopSketching]);
+  // Esc belongs to the whole action, wherever the focus is.
+  useEffect(() => {
+    if (!measuring) return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      // Esc ends the measurement. Nothing was changed to undo.
+      if (measureRef.current.from === null) setMeasuring(false);
+      stopMeasuring();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [measuring, stopMeasuring]);
+  useEffect(() => {
+    if (sketch.tool === null) return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (sketchRef.current.phase === "idle") showSketch(SKETCH_IDLE);
+      else stopSketching();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [sketch.tool, showSketch, stopSketching]);
+  useEffect(() => () => { viewportRef.current?.sketchPreview(null); }, [viewportRef]);
+
+  // The keys an architect already has in their fingers, and who owns each one.
+  //
+  // There is one listener, because one press must reach one owner. Ownership is
+  // decided in order, and the first owner that is *currently doing something*
+  // takes the key:
+  //
+  //   1. text being written keeps its own editing keys;
+  //   2. the drawings workspace, while it is open, owns its own shortcuts, and
+  //      this view touches neither the model nor the ink behind it;
+  //   3. an action in progress - a rectangle being placed or pulled, a
+  //      measurement half taken - owns Esc, and nothing may delete or step the
+  //      model out from under it. An *armed* tool with nothing in progress owns
+  //      nothing: after a rectangle is committed the tool stays armed for the
+  //      next one, and Ctrl+Z there has to undo the volume just made;
+  //   4. the ink owns undo, redo and Delete while it is what is being worked
+  //      on - an annotation tool armed, or the eraser - through the same
+  //      handlers its own buttons call. Having strokes to take back does not
+  //      make it the owner: a mark drawn earlier must not swallow the Ctrl+Z
+  //      that belongs to the volume just made. Its buttons stay for that;
+  //   5. otherwise the model: its own history, its own Delete, its own Esc.
+  const modelKeysRef = useRef(model);
+  modelKeysRef.current = model;
+  const modelKeysAvailable = model !== undefined;
+  // What is *in progress*, which is not the same as what is armed.
+  const actionInProgressRef = useRef(false);
+  actionInProgressRef.current = sketch.phase !== "idle" || (measuring && measure.from !== null);
+  const inkRef = useRef({
+    undo: onUndoGesture, redo: onRedoGesture, canUndo: false, canRedo: false, busy: false,
+  });
+  inkRef.current = {
+    undo: onUndoGesture,
+    redo: onRedoGesture,
+    canUndo: canUndoGesture,
+    canRedo: canRedoGesture,
+    // What makes the ink the owner is that it is the mode in hand: a tool
+    // armed, or the eraser. Not that strokes exist — those are undone from the
+    // ink's own buttons, and a mark left on the model from an earlier round
+    // does not get to take the keyboard away from the model for good.
+    busy: annotationsReady && (tool !== null || eraser),
+  };
+  const documentOpenRef = useRef(documentOpen);
+  documentOpenRef.current = documentOpen;
+  const cancelInkRef = useRef(setAnnotationCancel);
+  cancelInkRef.current = setAnnotationCancel;
+  useEffect(() => {
+    if (!modelKeysAvailable) return;
+    const listen = (event: KeyboardEvent) => {
+      const keys = modelKeysRef.current;
+      if (!keys || event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable]") !== null)) {
+        // Someone is writing. Delete, Ctrl+Z and the rest belong to the text.
+        return;
+      }
+      // The drawings workspace owns its own keys while it is open.
+      if (documentOpenRef.current) return;
+      const control = event.ctrlKey || event.metaKey;
+      const inProgress = actionInProgressRef.current;
+      if (event.key === "Escape") {
+        // An action in progress owns Esc; its own handler cancels it. Only when
+        // none is running does Esc mean "nothing is picked any more".
+        if (inProgress || !keys.hasSelection) return;
+        event.preventDefault();
+        keys.onClearSelection();
+        return;
+      }
+      if (!control && (event.key === "Delete" || event.key === "Backspace")) {
+        // An action in progress, or the ink in hand, owns the key: with an
+        // annotation tool or the eraser armed, Delete is not the model's even
+        // when something on the model is picked.
+        if (inProgress || inkRef.current.busy) return;
+        event.preventDefault();
+        // A held key repeats; one press is one deletion.
+        if (event.repeat || !keys.canDelete) return;
+        keys.onDelete();
+        return;
+      }
+      if (!control) return;
+      const key = event.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      const redo = key === "y" || event.shiftKey;
+      const ink = inkRef.current;
+      if (ink.busy) {
+        // The ink is the mode in hand, so exactly one of the two undos happens
+        // and it is this one. With no tool armed the model has the key, even
+        // when marks from an earlier round are still on the picture.
+        event.preventDefault();
+        if (event.repeat) return;
+        cancelInkRef.current((value) => value + 1);
+        if (redo) { if (ink.canRedo) ink.redo(); return; }
+        if (ink.canUndo) ink.undo();
+        return;
+      }
+      if (inProgress) return;
+      event.preventDefault();
+      if (event.repeat) return;
+      if (redo) { if (keys.canRedo) keys.onRedo(); return; }
+      if (keys.canUndo) keys.onUndo();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+    // The handler reads the current owners through refs, so it is bound once
+    // per mount rather than re-bound on every render of the shell.
+  }, [modelKeysAvailable]);
+
+  // Only a host that named its own origin in this page's URL is one to talk to.
+  const [host] = useState(() => (embedded ? hostOrigin() : null));
   const activeTool = GESTURE_TOOLS.find((item) => item.kind === tool);
   const captureFeedback =
     captureState === "busy"
@@ -313,14 +555,17 @@ export function Stage({
   </>;
   return (
     <section className="stage" aria-label={t("stage.ariaLabel")}>
-      <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
+      {(!embedded || picked !== null) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")} data-embedded={String(embedded)}>
+        {/* A host page carries these entries in its own rail; this page would
+            only repeat them, and its board entry would leave the host. */}
+        {!embedded && <>
         <button type="button" aria-pressed={!documentOpen} onClick={() => onDocumentView({ ...documentView, open: false })}>{t("workspace.monkeyarch")}</button>
         <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); onDocumentView({ ...documentView, mounted: true, open: true }); }}>{t("workspace.monkeydiagram")}</button>
         <button type="button" onClick={() => {
           const target = new URL(window.location.href);
           target.searchParams.set("view", "board");
           window.open(target.href, "_blank", "noopener");
-        }}>{t("workspace.monkeyboard")}</button>
+        }}>{t("workspace.monkeyboard")}</button></>}
         {picked && (
           <div
             className="picked"
@@ -338,7 +583,7 @@ export function Stage({
             {developerMode && picked.status !== "resolved" && <span className="picked__meta">{picked.status}</span>}
           </div>
         )}
-      </div>
+      </div>}
       {drawing?.error && <div className="stage-drawing-error">
         <div>
           <p role="alert">{t(drawing.error.code === "DRAWING_COMPLETE_SOURCE_UNAVAILABLE" ? "stage.drawing.completeSourceUnavailable"
@@ -351,13 +596,10 @@ export function Stage({
       </div>}
       <div className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
-        onKeyDown={(event) => {
-          if (!(event.ctrlKey || event.metaKey) || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
-          if (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y") {
-            event.preventDefault(); setAnnotationCancel((value) => value + 1);
-            if (event.shiftKey || event.key.toLowerCase() === "y") onRedoGesture(); else onUndoGesture();
-          }
-        }}>
+        /* Undo and redo are decided in one place - the keyboard effect above -
+           so that one Ctrl+Z reaches exactly one owner. The ink's undo is still
+           the ink's: that effect calls these same handlers when the ink is what
+           is being worked on, and leaves the key alone when it is not. */>
       {/* A machine with no WebGL context throws while the renderer is built;
           behind its own boundary that costs the canvas and nothing else. */}
       <ErrorBoundary label={t("stage.viewer.label")}>
@@ -369,8 +611,121 @@ export function Stage({
           onOpenFile={onOpenFile}
           onSource={onSource}
           onPick={onPick}
+          idle={hasModel ? undefined : (
+            <div className="stage-empty">
+              <svg className="stage-empty__icon" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" aria-hidden="true">
+                <path d="m16 3 12 7v13l-12 7L4 23V10Z M4 10l12 7 12-7 M16 17v13" />
+              </svg>
+              <h2>{t("stage.empty.title")}</h2>
+              <p>{t(embedded && host !== null ? "stage.empty.bodyEmbedded" : "stage.empty.body")}</p>
+              <div className="stage-empty__actions">
+                {home !== null && <button type="button" className="btn"
+                  title={home.kind === "reference" ? t("stage.tools.referenceShow", { runId: home.runId })
+                      : t("stage.tools.homeShow", { runId: home.runId })}
+                  onClick={onShowHome}>
+                  {home?.kind === "fallback" ? t("stage.empty.openHome") : t("stage.empty.openReference")}
+                </button>}
+                {/* The versions strip is this page's own; embedded, the host
+                    states the project's position instead of repeating it. */}
+                {!embedded && versionCount > 0 && <button type="button" className="btn"
+                  onClick={() => { onVersionsOpen?.(); setVersionsOpen(true); }}>
+                  {t("stage.empty.chooseVersion", { count: versionCount })}
+                </button>}
+                {embedded && host !== null && <button type="button" className="btn"
+                  onClick={() => { requestStartModeling(host); }}>
+                  {t("stage.empty.startInChat")}
+                </button>}
+                <button type="button" className="btn" onClick={onRequestFile}>{t("stage.empty.openLocal")}</button>
+              </div>
+              <p className="stage-empty__hint">{t("stage.empty.hint")}</p>
+            </div>
+          )}
         />
       </ErrorBoundary>
+      {measuring && (
+        /* Two points off the loaded model, and the distance between them. It
+           reads geometry and writes nothing: no candidate, no record. */
+        <div
+          className="stage-sketch"
+          data-phase={measure.from === null ? "from" : "to"}
+          onPointerMove={(event) => {
+            if (measure.from === null) {
+              const at = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
+              setSnapNote(at && at.kind !== "surface" ? at.kind : null);
+              return;
+            }
+            const at = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
+            if (!at) return;
+            setSnapNote(at.kind !== "surface" ? at.kind : null);
+            showMeasure({ ...measure, to: at.point, kinds: [measure.kinds[0], at.kind] });
+          }}
+          onClick={(event) => {
+            const at = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
+            if (!at) return;
+            if (measure.from === null) showMeasure({ from: at.point, to: null, kinds: [at.kind, null] });
+            else showMeasure({ ...measure, to: at.point, kinds: [measure.kinds[0], at.kind] });
+          }}
+        />
+      )}
+      {sketch.tool !== null && (
+        /* Pointer work for one action. Everything it draws is the viewport's
+           temporary preview; the project is only reached when it finishes. */
+        <div
+          className="stage-sketch"
+          data-phase={sketch.phase}
+          onPointerMove={(event) => {
+            const onModel = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
+            const world = onModel && onModel.kind !== "surface"
+              ? onModel.point
+              : viewportRef.current?.pointOnWorkPlane(event.clientX, event.clientY, sketch.base);
+            if (sketch.phase === "profile" && sketch.anchor !== null) {
+              if (!world) return;
+              // A corner or a middle of a real edge wins; otherwise the plane
+              // point, still locked to the action's own axes.
+              const moved = onModel && onModel.kind !== "surface"
+                ? { point: [world[0], world[1]] as PlanPoint, snapped: { kind: onModel.kind } }
+                : snapPoint([world[0], world[1]], { endpoints: snapPoints, anchor: sketch.anchor, radius: snapRadius() });
+              setSnapNote(moved.snapped ? moved.snapped.kind : null);
+              showSketch({ ...sketch, profile: rectangleOf(sketch.anchor, moved.point) });
+            } else if (sketch.phase === "height") {
+              // The plane a height is read on stands through the corner the
+              // pointer is already at — the one that was just clicked, which
+              // is the profile's third point. Through the *first* corner it
+              // would be a different vertical plane, and the same ray would
+              // meet it at a different level: the height would jump the moment
+              // the phase changed and then read short all the way up.
+              const at = heightAnchor(sketch);
+              const raised = at && viewportRef.current?.unprojectOnPlane(
+                event.clientX, event.clientY, [at[0], at[1], sketch.base], true,
+              );
+              if (!raised) return;
+              showSketch({ ...sketch, height: Math.max(0, raised[2] - sketch.base) });
+            }
+          }}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onClick={(event) => {
+            const onModel = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
+            const world = onModel && onModel.kind !== "surface"
+              ? onModel.point
+              : viewportRef.current?.pointOnWorkPlane(event.clientX, event.clientY, sketch.base);
+            if (sketch.phase === "idle" || sketch.anchor === null) {
+              if (!world) return;
+              const start = onModel && onModel.kind !== "surface"
+                ? { point: [world[0], world[1]] as PlanPoint, snapped: { kind: onModel.kind } }
+                : snapPoint([world[0], world[1]], { endpoints: snapPoints, radius: snapRadius() });
+              setSnapNote(start.snapped ? start.snapped.kind : null);
+              showSketch({ ...sketch, phase: "profile", anchor: start.point, profile: [], height: 0, typed: "" });
+            } else if (sketch.phase === "profile") {
+              if (!enclosesArea(sketch.profile)) return;
+              showSketch({ ...sketch, phase: "height", typed: "" });
+            } else {
+              submitSketch();
+            }
+          }}
+        />
+      )}
       <Annotate
         viewportRef={viewportRef}
         tool={annotationsReady ? tool : null}
@@ -420,8 +775,29 @@ export function Stage({
         </div>
         <div className="viewtools-wrap">
           <div className="viewtools">
+            {onSketch && <button type="button" aria-pressed={sketch.tool === "rectangle"}
+              title={t("stage.sketch.rectangleTitle")} disabled={sketchBusy}
+              onClick={() => {
+                setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
+                onTool(null); setEraser(false);
+                stopSketching();
+                showSketch({ ...SKETCH_IDLE, tool: sketch.tool === "rectangle" ? null : "rectangle" });
+              }}>
+              {t("stage.sketch.rectangle")}
+            </button>}
+            <button type="button" aria-pressed={measuring} title={t("stage.measure.title")}
+              onClick={() => {
+                setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
+                onTool(null); setEraser(false);
+                stopSketching();
+                showSketch(SKETCH_IDLE);
+                stopMeasuring();
+                setMeasuring((on) => !on);
+              }}>
+              {t("stage.measure.label")}
+            </button>
             <button type="button" aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
-              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); }}>
+              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); setVersionsOpen(false); }}>
               {t("stage.tools.annotate")}{activeTool && !eraser ? ` · ${t(activeTool.labelKey)}` : ""}
             </button>
             <button type="button" aria-pressed={eraser} disabled={!annotationsReady} title={t("document.tool.eraser")}
@@ -433,7 +809,7 @@ export function Stage({
             <button type="button" onClick={() => viewportRef.current?.fitView()}>{t("stage.tools.fit")}</button>
             <button type="button" onClick={() => viewportRef.current?.frontView()}>{t("stage.tools.front")}</button>
             <button type="button" aria-expanded={viewToolsOpen} aria-controls="view-tools"
-              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); }}>{t("stage.tools.viewOptions")}</button>
+              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); }}>{t("stage.tools.viewOptions")}</button>
           </div>
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
             {GESTURE_TOOLS.map((item) => (
@@ -552,6 +928,64 @@ export function Stage({
             {t("stage.tools.open3dm")}
           </button>
           </div>}
+          {measuring && (
+            <div className="sketch-entry" role="group" aria-label={t("stage.measure.label")}>
+              <span className="sketch-entry__step" role="status">
+                {measure.from === null ? t("stage.measure.first")
+                  : measure.to === null ? t("stage.measure.second")
+                    : t("stage.measure.distance", {
+                        value: distanceBetween(
+                          [measure.from[0], measure.from[1], measure.from[2]],
+                          [measure.to[0], measure.to[1], measure.to[2]],
+                        ).toFixed(3),
+                      })}
+                {snapNote !== null && <span className="quiet"> · {t("stage.sketch.snapped", { kind: snapNote })}</span>}
+              </span>
+              <span className="quiet sketch-entry__hint">{t("stage.measure.hint")}</span>
+            </div>
+          )}
+          {sketch.tool !== null && (
+            <div className="sketch-entry" role="group" aria-label={t("stage.sketch.rectangle")}>
+              <span className="sketch-entry__step" role="status">
+                {sketchBusy ? t("stage.sketch.busy")
+                  : sketch.phase === "height" ? t("stage.sketch.pull")
+                    : sketch.anchor === null ? t("stage.sketch.firstCorner") : t("stage.sketch.secondCorner")}
+                {snapNote !== null && <span className="quiet"> · {t("stage.sketch.snapped", { kind: snapNote })}</span>}
+              </span>
+              {sketch.anchor !== null && !sketchBusy && (
+                <label className="sketch-entry__value">
+                  {sketch.phase === "height" ? t("stage.sketch.height") : t("stage.sketch.side")}
+                  <input
+                    autoFocus
+                    inputMode="decimal"
+                    value={sketch.typed}
+                    onChange={(event) => setSketch((current) => ({ ...current, typed: event.target.value }))}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      const value = typedNumber(sketch.typed);
+                      if (value === null || value <= 0) return;
+                      if (sketch.phase === "height") {
+                        // One confirmation submits once: the action is taken
+                        // off the pointer before anything is sent.
+                        const settled = { ...sketchRef.current, height: value, typed: "" };
+                        sketchRef.current = settled;
+                        showSketch(settled);
+                        submitSketch();
+                      } else {
+                        const corner = sketch.profile[2] ?? sketch.anchor!;
+                        showSketch({
+                          ...sketch, phase: "height", typed: "",
+                          profile: sizedRectangle(sketch.anchor!, corner, value),
+                        });
+                      }
+                    }}
+                  />
+                </label>
+              )}
+              <span className="quiet sketch-entry__hint">{t("stage.sketch.cancel")}</span>
+            </div>
+          )}
           {captureFeedback && <span className="viewtools__feedback" role="status" aria-live="polite" aria-atomic="true">{captureFeedback}</span>}
         </div>
       </div>
@@ -563,9 +997,12 @@ export function Stage({
       {drawer}
       </div>
       <div className="stage__foot">
-        <div className="stage__versions">
+        {/* Embedded, the host states the project's published version and Stage
+            beside the conversation; a second permanent strip here would be a
+            second answer to the same question. */}
+        {!embedded && <div className="stage__versions">
           <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
-            onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); }}>
+            onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); }}>
             {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
             {contextLabel && <span className="stage__versions-current">{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
@@ -582,7 +1019,7 @@ export function Stage({
               onOpen={onOpenVersion} onOpenRun={onOpenRun} onCompare={onCompareVersion}
             />
           </div>}
-        </div>
+        </div>}
         {developerMode && <><span className="stage__spacer" />
         <button
           type="button"

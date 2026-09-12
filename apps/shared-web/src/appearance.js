@@ -1,5 +1,5 @@
 /** Display choices only; this module never reads or writes project preferences. */
-export const DEFAULT_APPEARANCE = Object.freeze({ language: "zh-CN", theme: "system", fontScale: 1 });
+export const DEFAULT_APPEARANCE = Object.freeze({ language: "zh-CN", theme: "dark", fontScale: 1 });
 
 export function isLanguage(value) { return value === "en" || value === "zh-CN"; }
 export function isTheme(value) { return value === "dark" || value === "light" || value === "system"; }

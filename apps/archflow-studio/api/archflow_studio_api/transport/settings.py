@@ -25,6 +25,15 @@ class UserSettingsDto(BaseModel):
         default=None, alias="intentModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )
     intent_timeout_s: float | None = Field(default=None, alias="intentTimeoutS", gt=0)
+    # What a new Hub conversation starts with. An existing conversation keeps
+    # the connection and native session it was created with; changing these
+    # never reaches one.
+    chat_provider: Literal["codex", "claude", "coding-plan"] | None = Field(
+        default=None, alias="chatProvider",
+    )
+    chat_model: str | None = Field(
+        default=None, alias="chatModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
+    )
 
     @field_validator("font_scale", mode="before")
     @classmethod
@@ -41,16 +50,19 @@ class ApplicationSettingsDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", strict=True)
 
     project_dir: str | None = Field(default=None, alias="projectDir", min_length=1)
+    # Where new projects are created. A location, not a project: the chosen
+    # project stays `project_dir`, and this never becomes a second project store.
+    workspace_dir: str | None = Field(default=None, alias="workspaceDir", min_length=1)
     reference_run: str | None = Field(default=None, alias="referenceRun", min_length=1)
     cad_export: Literal["occt", "rhino", "off"] = Field(default="occt", alias="cadExport")
     studio_port: int = Field(default=8789, alias="studioPort", ge=1024, le=65535)
     monitor_port: int = Field(default=8788, alias="monitorPort", ge=1024, le=65535)
 
-    @field_validator("project_dir")
+    @field_validator("project_dir", "workspace_dir")
     @classmethod
     def absolute_project(cls, value: str | None) -> str | None:
         if value is not None:
             from pathlib import Path
             if not Path(value).is_absolute():
-                raise ValueError("projectDir must be an absolute path")
+                raise ValueError("projectDir and workspaceDir must be absolute paths")
         return value

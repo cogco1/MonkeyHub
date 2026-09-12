@@ -21,6 +21,7 @@ import { connection, type ServerIdentity } from "../api/connection";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import { documentUrl } from "../workspaces/monkeyboard/boardScene";
+import { TaskWorkspace } from "./TaskWorkspace";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { failed, loading, ready, type Loadable } from "./loadable";
@@ -108,5 +109,10 @@ export function Connected() {
 
   return new URLSearchParams(window.location.search).get("view") === "board"
     ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}><Board onSubmit={submitBoardFeedback} /></Suspense>
-    : <App server={server.value} initialDocumentIntent={documentIntent ?? undefined} />;
+    : new URLSearchParams(window.location.search).get("embedded") === "tool"
+      // An embedding page may name the exact candidate run to open, so that a
+      // conversation's own result is never read as the reference run.
+      ? <App server={server.value} initialDocumentIntent={documentIntent ?? undefined}
+             initialRunId={new URLSearchParams(window.location.search).get("candidate")} />
+      : <TaskWorkspace server={server.value} initialDocumentIntent={documentIntent ?? undefined} />;
 }

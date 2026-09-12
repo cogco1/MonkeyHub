@@ -39,6 +39,7 @@ from monkeyarch.capabilities.discipline_seats import SeatSpec  # noqa: E402
 from monkeyarch.capabilities.geometry_proposal import GeometryProposalProviderIdentity  # noqa: E402
 from archflow.state.stage_workflow import CompositeStageClosureReceipt
 from archflow.project.inputs import load_authored_record, load_seat_pack_file  # noqa: E402
+from archflow.project.layout import cad_workspace_path
 from archflow.project.repository import FilesystemProjectRepository
 from archflow.project.refs import record_ref_from_uri  # noqa: E402
 from archflow.state.state_record import StateRecord  # noqa: E402
@@ -164,12 +165,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
                          cad_backend=args.cad_backend,
-                         workspace_root=Path(args.workspace).resolve() if args.workspace else repository.layout.run(args.run).root / "workspaces", powershell=Path(args.powershell),
+                         workspace_root=Path(args.workspace).resolve() if args.workspace else repository.layout.run(args.run).workspaces, powershell=Path(args.powershell),
                          branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch, patch_oracle=args.patch_oracle)
     if options.export:
         for seat in seats:
             if not seat.reviewer:
-                (options.workspace_root / f"cad-{stage_guard.envelope.stage_id}-{seat.seat_id}").mkdir(parents=True, exist_ok=True)
+                cad_workspace_path(options.workspace_root, f"{stage_guard.envelope.stage_id}-{seat.seat_id}").mkdir(parents=True, exist_ok=True)
     receipt = run_project(repository, run=run, stage_guard=stage_guard, record=record, seats=seats, options=options)
     for seat_result in receipt["seat_results"]:
         cad = seat_result.get("cad") or {}

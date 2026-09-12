@@ -1980,6 +1980,37 @@ class IncrementalSourceRunTests(unittest.TestCase):
 
 
 class CadBackendSelectionTests(unittest.TestCase):
+    def test_export_workspace_keeps_existing_combined_stage_and_seat_names(self) -> None:
+        from monkeyarch.runtime.project_runner import _export_workspace
+
+        with tempfile.TemporaryDirectory() as temporary:
+            stage_and_seat = "s" * 60 + "-" + "t" * 60
+            workspace = Path(temporary) / f"cad-{stage_and_seat}"
+            workspace.mkdir()
+            self.assertEqual(
+                _export_workspace(_options(export=True, workspace_root=Path(temporary)), stage_and_seat),
+                workspace,
+            )
+
+    def test_export_never_uses_an_implicit_or_relative_working_directory(self) -> None:
+        from contextlib import chdir
+        from monkeyarch.runtime.project_runner import _export_workspace
+
+        with tempfile.TemporaryDirectory() as temporary, chdir(temporary):
+            workspace = Path(temporary) / "cad-stage-seat"
+            workspace.mkdir()
+            sentinel = workspace / "existing-model.3dm"
+            sentinel.write_bytes(b"keep this model")
+            for root in (None, Path(".")):
+                with self.subTest(root=root), self.assertRaisesRegex(ProjectRunnerError, "explicit absolute workspace_root"):
+                    _export_workspace(_options(export=True, workspace_root=root), "stage-seat")
+            self.assertEqual(sentinel.read_bytes(), b"keep this model")
+            self.assertEqual(list(workspace.iterdir()), [sentinel])
+            self.assertEqual(
+                _export_workspace(_options(export=True, workspace_root=Path(temporary)), "stage-seat"),
+                workspace,
+            )
+
     def test_run_options_refuse_a_backend_nobody_implements(self) -> None:
         with self.assertRaisesRegex(ProjectRunnerError, "cad_backend"):
             _options(cad_backend="freecad")

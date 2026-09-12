@@ -1,5 +1,10 @@
 # ArchFlow Studio
 
+Users enter through **MonkeyHub** and choose Modeling, Drawings or Presentation.
+MonkeyArch is the modeling workspace; Studio is their shared implementation host.
+The standalone launch commands below are for source development and focused diagnostics.
+See the [unified Hub entry](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+
 For scoped model requests, advisory context budgets and the offline size benchmark,
 see [Dependency-aware context compilation](../../docs/CONTEXT_COMPILATION.md).
 

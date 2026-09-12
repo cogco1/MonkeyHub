@@ -213,6 +213,200 @@ def _selection(context_refs: Sequence[str], prefix: str) -> str | None:
     return None
 
 
+def buildable_components(projection: StateProjection, seats: Sequence[Any]) -> tuple[str, ...]:
+    """The components some seat will actually build, roots and descendants.
+
+    A seat owns component subtrees. An element authored under a component no
+    seat owns is carried by the record and produced by nobody, so the run has
+    nothing to export for it. Asking this before proposing is what turns that
+    into an answer somebody can act on.
+    """
+
+    tree = projection.record.entities_of("Component@1")
+    children: dict[str | None, list[str]] = {}
+    for entity in tree:
+        children.setdefault(entity.parent_id, []).append(entity.entity_id)
+    reach: set[str] = set()
+    for seat in seats:
+        if getattr(seat, "reviewer", False):
+            continue
+        pending = list(seat.owned_component_ids)
+        while pending:
+            current = pending.pop()
+            if current in reach:
+                continue
+            reach.add(current)
+            pending.extend(children.get(current, ()))
+    return tuple(sorted(reach))
+
+
+def sketch_prism_proposal(
+    projection: StateProjection,
+    *,
+    component_id: str,
+    element_id: str,
+    profile: Sequence[tuple[float, float]],
+    height: float,
+    base: Mapping[str, str],
+    parent_component_id: str | None = None,
+    semantic_kind: str | None = None,
+    summary: str | None = None,
+    keep_refs: Sequence[str] = (),
+) -> Mapping[str, Any]:
+    """A profile and a height, drawn by hand, as the design edit they already are.
+
+    A drawn outline is the same ``Element@1`` row an agent authors: the
+    ``prism`` producer extrudes a closed plan profile to a height and the
+    record keeps both as its own parameters. So this states the row and hands
+    it to the one component-edit path, which types it, derives the successor,
+    and checks it against the advertised producer signatures. No geometry is
+    computed here and no second representation is created: sending the same
+    ``element_id`` again is what changes the outline or the height later.
+    """
+
+    points = [[float(x), float(z)] for x, z in profile]
+    components = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
+    rows: list[dict[str, Any]] = []
+    if component_id not in components:
+        # A new component is authored where it belongs: under an existing one.
+        # Its place in the tree is what decides which seat builds it, so a
+        # component with no parent would be carried and built by nobody.
+        if parent_component_id is None or parent_component_id not in components:
+            raise StudioError(
+                422, "COMPONENT_PARENT_REQUIRED",
+                f"{component_id} is new here: name parentComponentId as one of "
+                f"{sorted(components)} so a seat builds it.",
+            )
+        # What the new part *is* belongs to the record's own vocabulary, and
+        # nothing here may invent one: the question is architectural and short,
+        # so it is asked rather than answered with a guess.
+        if semantic_kind is None:
+            from archflow.semantics.registry import registered_ids
+
+            raise StudioError(
+                422, "COMPONENT_KIND_REQUIRED",
+                f"{component_id} is new: say what it is as semanticKind. "
+                f"The record accepts {sorted(registered_ids())}, and the words already used here: "
+                f"{sorted({str(entity.fields.get('semantic_kind')) for entity in projection.record.entities_of('Component@1') if entity.fields.get('semantic_kind')})}.",
+            )
+        rows.append({
+            "entity_id": component_id,
+            "schema": "Component@1",
+            "parent_id": parent_component_id,
+            "fields": {"intent": component_id, "semantic_kind": semantic_kind},
+        })
+    row = {
+        "entity_id": element_id,
+        "schema": "Element@1",
+        "parent_id": component_id,
+        "fields": {
+            "component_id": component_id,
+            "producer": "prism",
+            "references": {"base": dict(base)},
+            "params": {"profile": points, "height": float(height)},
+        },
+    }
+    existing = {entity.entity_id for entity in projection.record.entities}
+    said = summary or (
+        f"{'change' if element_id in existing else 'draw'} {element_id}: "
+        f"{len(points)}-point profile pulled to {height:g}"
+    )
+    return component_edit_proposal(
+        projection,
+        {
+            "summary": said,
+            "entities": [*rows, row],
+            "parameters": [],
+            "relations": [],
+            "removeEntityIds": [],
+            "removeParameterKeys": [],
+            "removeRelationIds": [],
+            "protected": [],
+            "kept": list(keep_refs),
+        },
+        utterance=said,
+        component_id=component_id,
+        keep_refs=keep_refs,
+    )
+
+
+def delete_element_proposal(
+    projection: StateProjection,
+    *,
+    element_id: str,
+    summary: str | None = None,
+    keep_refs: Sequence[str] = (),
+) -> Mapping[str, Any]:
+    """Remove one picked element, through the typed removal the record already has.
+
+    Delete is a design edit like any other: it becomes the same
+    ``StateRecordOperator`` an agent's ``removeEntityIds`` produces, and runs
+    through the same candidate. Nothing is compiled by a model — a keystroke
+    must not become a model call — and nothing beyond the named element is
+    removed.
+
+    What stands on it is the reason a delete can be refused. The kernel's own
+    dependency edges say which elements reference this one and which declared
+    relations name it; removing it under them would either dangle those
+    references or silently take objects the architect never picked. Both are
+    refused here, with the dependents named, so the answer is a fact about the
+    building rather than a failure inside the record.
+    """
+
+    record = projection.record
+    entity = next((item for item in record.entities if item.entity_id == element_id), None)
+    if entity is None or entity.schema != "Element@1":
+        raise StudioError(
+            404,
+            "ELEMENT_UNKNOWN",
+            f"{element_id} is not an Element@1 of this record. Pick the object again: a delete "
+            "names the element a pick resolved to, and this record declares "
+            f"{_listed(sorted(item.entity_id for item in record.entities_of('Element@1')))}.",
+        )
+    standing = sorted({
+        edge.downstream_ref[len("entity:"):]
+        for edge in record.dependency_edges()
+        if edge.upstream_ref == f"entity:{element_id}"
+        and edge.downstream_ref.startswith("entity:")
+        and edge.downstream_ref != f"entity:{element_id}"
+    })
+    named_by = sorted({
+        relation.relation_id for relation in record.relations
+        if element_id in (relation.subject, relation.object)
+    })
+    if standing or named_by:
+        raise StudioError(
+            409,
+            "ELEMENT_HAS_DEPENDENTS",
+            f"{element_id} cannot be removed on its own: "
+            + "; ".join(filter(None, [
+                f"{_listed(standing)} stand{'s' if len(standing) == 1 else ''} on it" if standing else "",
+                f"the record declares {_listed(named_by)} about it" if named_by else "",
+            ]))
+            + ". Change or remove what depends on it first; deleting one object never removes "
+            "objects nobody picked. Nothing was run.",
+        )
+    component_id = str(entity.fields.get("component_id") or entity.parent_id or "")
+    said = summary or f"delete {element_id}"
+    return component_edit_proposal(
+        projection,
+        {
+            "summary": said,
+            "entities": [],
+            "parameters": [],
+            "relations": [],
+            "removeEntityIds": [element_id],
+            "removeParameterKeys": [],
+            "removeRelationIds": [],
+            "protected": [],
+            "kept": list(keep_refs),
+        },
+        utterance=said,
+        component_id=component_id or None,
+        keep_refs=keep_refs,
+    )
+
+
 def component_edit_proposal(
     projection: StateProjection,
     edit: Mapping[str, Any],

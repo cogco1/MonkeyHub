@@ -32,6 +32,7 @@ from monkeyarch.capabilities.geometry_proposal import (
     load_compiled_geometry_program,
 )
 from archflow.adapters.cad_execution import patch_composed_three_dm
+from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     INTENT_COMPILATION,
@@ -322,7 +323,7 @@ def _run_successor(
         # process was configured to say so. Nothing here falls back.
         export=settings.exports,
         cad_backend=settings.cad_export if settings.exports else CAD_BACKEND_OCCT,
-        workspace_root=repository.layout.run(run_id).root / "workspaces",
+        workspace_root=repository.layout.run(run_id).workspaces,
         powershell=settings.powershell,
         source_run_receipt_ref=source_run_receipt_ref,
     )
@@ -331,9 +332,8 @@ def _run_successor(
         # be there; production's own entry point creates them the same way.
         for seat in seats:
             if not seat.reviewer:
-                (
-                    options.workspace_root
-                    / f"cad-{STAGE_ID}-{seat.seat_id}"
+                cad_workspace_path(
+                    options.workspace_root, f"{STAGE_ID}-{seat.seat_id}"
                 ).mkdir(parents=True, exist_ok=True)
     observations = {}
     if monitor is not None and monitor.store is not None:
@@ -417,6 +417,28 @@ def run_operator(
                              source_run_receipt_ref=runner_ref, monitor=monitor)
     if source_model is not None and settings.exports:
         _retain_composed_candidate(binding, source_model, run_id, receipt, source_receipt=projection.reference.receipt)
+    # A run builds the components its seats own. The receipt says which ones
+    # each seat covered, so a change whose own components appear in none of
+    # them built nothing: the record would carry it and the model would show
+    # none of it, while the job reported success. That is not a candidate of
+    # this change, and it says so instead.
+    covered: set[str] = set()
+    for seat in receipt.get("seat_results", ()):
+        covered.update(str(name) for name in seat.get("covered_components", ()))
+    authored = {
+        str(entity.fields.get("component_id") or entity.parent_id or "")
+        for entity in operator.entities
+        if entity.schema == "Element@1"
+    } - {""}
+    missed = sorted(authored - covered)
+    if missed:
+        raise StudioError(
+            409,
+            "COMPONENT_NOT_BUILT",
+            f"no seat built {', '.join(missed)}, so this change is in the record and in none of the "
+            "model: the run is not a candidate of it. Author the component under one a seat owns, or "
+            "have the project's seat pack own it.",
+        )
     return receipt
 
 

@@ -33,9 +33,11 @@ h2{font-size:calc(15px * var(--font-scale,1));font-weight:600}
 .source-filter button[aria-pressed=true]{color:var(--ink);background:var(--panel);border-color:var(--line)}
 .project-filter{display:flex;align-items:center;gap:10px;margin:-10px 0 22px;color:var(--muted);font-size:calc(13px * var(--font-scale,1))}
 .project-filter select{max-width:min(420px,75vw)}
-.stats{display:flex;gap:48px;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px}
 .stat{display:flex;flex-direction:column;gap:6px}
 .stat>span{color:var(--muted);font-size:calc(13px * var(--font-scale,1))}
+.stat>small{color:var(--muted);font-size:calc(12px * var(--font-scale,1))}
+.benchmark-help{margin-top:18px;max-width:900px;color:var(--muted);font-size:calc(12px * var(--font-scale,1));line-height:1.8}
 .stat>strong{font:500 calc(26px * var(--font-scale,1)) var(--font-mono);letter-spacing:-.7px;white-space:nowrap}
 .summary-note{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:15px 0 26px;color:var(--muted);font-size:calc(13px * var(--font-scale,1))}
 .summary-note>p{margin-right:auto}
@@ -65,11 +67,10 @@ tbody tr:hover{background:var(--surface-hover)}
 .failure-text{color:var(--violated)}
 .time-cell{width:148px;white-space:nowrap;font-size:calc(13px * var(--font-scale,1));color:var(--muted)}
 .model-cell{min-width:160px;max-width:250px;font-size:calc(14px * var(--font-scale,1))}
-.metric-cell{min-width:175px;width:25%;font-family:var(--font-mono);font-size:calc(14px * var(--font-scale,1));text-align:right}
+.metric-cell{min-width:115px;font-family:var(--font-mono);font-size:calc(14px * var(--font-scale,1));text-align:right}
 .metric-track{height:4px;background:var(--line);margin-top:7px;border-radius:2px;overflow:hidden}
 .metric-track>span{height:100%;display:block;background:var(--accent);border-radius:2px;min-width:0}
 .metric-caption{display:none}
-.extra-cell{font-family:var(--font-mono);font-size:calc(13px * var(--font-scale,1));white-space:nowrap}
 .action-cell{width:94px;text-align:right;white-space:nowrap}
 .event-quote{font-size:calc(12px * var(--font-scale,1));min-height:30px;padding:4px 9px}
 .list-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 18px;border-top:1px solid var(--line);font-size:calc(12px * var(--font-scale,1));color:var(--muted)}
@@ -162,12 +163,11 @@ legend{font-size:calc(14px * var(--font-scale,1));font-weight:500;margin-bottom:
 .estimate-details a{color:var(--accent);text-underline-offset:3px}
 
 @media(max-width:760px){.shell{padding:0 18px}
-.stats{gap:32px}
+.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
 .time-cell{width:125px}
 .model-cell{min-width:140px}
-.metric-cell{min-width:145px}
+.metric-cell{min-width:100px}
 td,th{padding-left:12px;padding-right:12px}
-.extra-cell{display:none}
 }
 
 @media(max-width:560px){body{font-size:calc(15px * var(--font-scale,1))}
@@ -194,13 +194,12 @@ h1{font-size:calc(21px * var(--font-scale,1))}
 .events-table td{display:block;border:0;padding:0;width:auto;min-width:0;max-width:none}
 .events-table .time-cell{grid-column:1;grid-row:1;font-size:calc(12px * var(--font-scale,1))}
 .time-cell .secondary-text{display:inline;margin-left:8px}
-.events-table .model-cell{grid-column:1;grid-row:2;font-size:calc(14px * var(--font-scale,1))}
+.events-table .model-cell{grid-column:1 / -1;grid-row:2;font-size:calc(14px * var(--font-scale,1))}
 .events-table .model-cell .secondary-text{display:inline;margin-left:8px}
-.events-table .metric-cell{grid-column:1;grid-row:3;text-align:left;font-size:calc(15px * var(--font-scale,1));margin-top:5px}
-.metric-caption{display:inline;font-size:calc(12px * var(--font-scale,1));font-family:var(--font-ui);color:var(--muted);margin-right:8px}
+.events-table .metric-cell{grid-column:auto;grid-row:auto;text-align:left;font-size:calc(15px * var(--font-scale,1));margin-top:8px;overflow-wrap:anywhere}
+.metric-caption{display:block;font-size:calc(12px * var(--font-scale,1));font-family:var(--font-ui);color:var(--muted);margin-bottom:2px}
 .metric-track{max-width:100%;margin-top:6px}
-.events-table .action-cell{grid-column:2;grid-row:1 / span 3;align-self:center}
-.events-table .extra-cell{display:none}
+.events-table .action-cell{grid-column:2;grid-row:1;align-self:center}
 .event-quote{font-size:calc(12px * var(--font-scale,1));min-height:34px;padding:5px 8px}
 .list-footer{padding:11px 14px}
 footer{font-size:calc(11px * var(--font-scale,1))}

@@ -4,6 +4,7 @@ html{scroll-padding-top:20px}
 body{margin:0;min-width:320px;background:var(--ground);color:var(--ink);font:calc(14px * var(--font-scale,1))/1.5 var(--font-ui);-webkit-font-smoothing:antialiased}
 h1,h2,p{margin:0}
 button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
 button:disabled{cursor:not-allowed}
 .btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;white-space:nowrap;min-height:34px;font-size:calc(13px * var(--font-scale,1))}
 .toolbar{display:flex;align-items:center;gap:10px;min-height:47px;padding:7px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
@@ -26,9 +27,14 @@ button:disabled{cursor:not-allowed}
 .app-card>p{color:var(--muted);font-size:calc(13px * var(--font-scale,1))}
 .actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:20px}
 .shared-service-note{font-size:calc(12px * var(--font-scale,1));color:var(--muted);padding:13px 1px 24px}
-.settings{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;border-top:1px solid var(--line);padding-top:23px}
+/* Three plain groups, one column of consistent controls, one save row. */
+.settings{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;border-top:1px solid var(--line);padding-top:20px;max-width:560px}
+.settings-section{min-width:0;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.settings-section:last-of-type{border-bottom:0;padding-bottom:0}
+.settings-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.settings-footer{position:sticky;bottom:0;background:var(--ground);padding-top:6px}
 .settings-section{min-width:0}
-.settings h2{font-size:calc(15px * var(--font-scale,1));font-weight:600;margin-bottom:12px}
+.settings h2{font-size:calc(14px * var(--font-scale,1));font-weight:600;margin-bottom:14px}
 .help{font-size:calc(12px * var(--font-scale,1));line-height:1.8;color:var(--muted);margin:9px 0 13px}
 label{display:flex;flex-direction:column;gap:7px;font-size:calc(12px * var(--font-scale,1));color:var(--muted)}
 input,select{min-width:0;width:100%;min-height:36px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--ink);font-size:calc(13px * var(--font-scale,1))}
@@ -48,7 +54,7 @@ footer{font-size:calc(12px * var(--font-scale,1));line-height:1.8;color:var(--mu
 .fab-settings-link{margin-left:auto}
 .fab-page .section-heading{margin-bottom:14px}
 .fab-forms{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
-.fab-form>h2{font-size:calc(18px * var(--font-scale,1));font-weight:600}
+.fab-form>h2{font-size:calc(16px * var(--font-scale,1));font-weight:600}
 .fab-form fieldset{padding:0;margin:18px 0 0;border:0;min-width:0;display:grid;gap:14px}
 .fab-form fieldset>.help,.fab-form fieldset>.actions,.fab-form fieldset>.advanced{margin:0}
 .fab-form label{font-size:calc(13px * var(--font-scale,1))}
@@ -62,7 +68,7 @@ footer{font-size:calc(12px * var(--font-scale,1));line-height:1.8;color:var(--mu
 .fab-result dd{margin:0}
 
 @media(max-width:720px){.hub{padding:23px 18px}
-.settings{grid-template-columns:1fr;gap:28px}
+.settings{grid-template-columns:1fr;gap:18px;max-width:none}
 .fab-forms{grid-template-columns:1fr}
 .app-card{padding:17px}
 .app-heading{flex-wrap:wrap;gap:4px 12px}

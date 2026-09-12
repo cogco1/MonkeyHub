@@ -8,6 +8,7 @@ from . import (
     artifacts,
     boards,
     candidates,
+    capabilities,
     drawings,
     episodes,
     events,
@@ -41,6 +42,7 @@ router.include_router(proposals.router)
 router.include_router(intents.router)
 router.include_router(options.router)
 router.include_router(candidates.router)
+router.include_router(capabilities.router)
 router.include_router(episodes.router)
 router.include_router(validation.router)
 router.include_router(events.router)

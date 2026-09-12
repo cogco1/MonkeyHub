@@ -97,6 +97,8 @@ design adequacy still need architectural judgment and real project trials. See t
 
 ## Start here
 
+- **One application entry:** open MonkeyHub. For agent access and source work, follow the [Hub entry and bounded lookup sequence](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+  It connects the source checkout, external project, capability registries and existing commands.
 - [Vision](docs/VISION.md) — long-term research, technology and product direction.
 - [Development map](docs/DYNAMIC_MAP.md) — live work and acceptance criteria.
 - [System map](docs/SYSTEM_MAP.md) — current capability owners and public APIs.

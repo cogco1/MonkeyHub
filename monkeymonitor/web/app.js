@@ -5,6 +5,17 @@ const appearance = appearanceFromSearch(window.location.search);
 applyAppearance(appearance);
 const locale = appearance.language;
 const english = {
+  "缓存输入": "Cached input",
+  "等待时间": "Wait time",
+  "等待时间 · 请求往返 P50": "Wait time · request P50",
+  "请求往返": "Request round trip",
+  "中位数": "Median",
+  "已知小计": "Known subtotal",
+  "{recorded}/{total} 次已记录": "{recorded}/{total} calls recorded",
+  "总输入（含缓存）：{total}": "Total input (incl. cache): {total}",
+  "命中率基于 {count} 次完整记录": "Cache rate based on {count} complete records",
+  "缓存输入：{recorded} 次已记录，{missing} 次未知。": "Cached input: {recorded} recorded, {missing} unknown.",
+  "缓存输入属于总输入；未缓存输入 = 总输入 − 缓存输入，含新写入缓存。输出含推理。等待时间只比较已记录的请求往返，不含工具执行或人工停留。": "Cached input is part of total input. Uncached input = total minus cached input, including cache writes. Output includes reasoning. Wait time compares recorded request round trips, not tool execution or human dwell.",
   "MonkeyMonitor · 用量": "MonkeyMonitor · Usage",
   "跳到调用列表": "Skip to calls",
   "正在连接": "Connecting",
@@ -396,6 +407,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
   function projectKey(event) { return event.project_id || "__unrecorded__"; }
   function aggregate(events, field) { let total = 0n; let recorded = 0; for (const event of events) { const value = metric(event, field); if (known(value)) { total += BigInt(value); recorded += 1; } } return { total, recorded, missing: events.length - recorded }; }
   function aggregateText(value) { return value.recorded ? integerFormat.format(value.total) : "—"; }
+  function coverageText(recorded, total) { return t("{recorded}/{total} 次已记录", { recorded, total }); }
   function tokenStat(id, summary) {
     let display = aggregateText(summary);
     if (summary.recorded && summary.total >= (locale === "en" ? 1000n : 10000n)) {
@@ -408,6 +420,8 @@ for (const attribute of ["aria-label", "placeholder"]) {
     text(id, display);
     const exact = summary.recorded ? `${integerFormat.format(summary.total)} Token` : t("未记录");
     $(id).title = exact; $(id).setAttribute("aria-label", exact);
+    text(`${id}-coverage`, `${t("已知小计")} · ${coverageText(summary.recorded, summary.recorded + summary.missing)}`);
+    $(`${id}-coverage`).hidden = !summary.missing;
   }
 
   async function request(path, options = {}) {
@@ -448,22 +462,31 @@ for (const attribute of ["aria-label", "placeholder"]) {
     const operations = sourceEvents.filter((event) => !state.project || projectKey(event) === state.project);
     const events = operations.filter(isModelCall);
     const input = aggregate(events, "uncached_input");
+    const cached = aggregate(events, "cached_input_tokens");
+    const totalInput = aggregate(events, "input_tokens");
     const output = aggregate(events, "output_tokens");
-    tokenStat("stat-input", input); tokenStat("stat-output", output);
+    tokenStat("stat-cached", cached); tokenStat("stat-input", input); tokenStat("stat-output", output);
     const durations = events.map(modelDuration).filter(known);
     text("stat-duration", duration(median(durations)));
+    text("stat-duration-coverage", `${t("中位数")} · ${coverageText(durations.length, events.length)}`);
+    $("stat-duration-coverage").hidden = !events.length;
     const paired = events.filter((event) => known(event.tokens?.input_tokens) && known(event.tokens?.cached_input_tokens));
     const pairedInput = aggregate(paired, "input_tokens");
     const pairedCache = aggregate(paired, "cached_input_tokens");
     const ratioTenths = pairedInput.total > 0n ? (pairedCache.total * 1000n + pairedInput.total / 2n) / pairedInput.total : null;
-    text("cache-summary", ratioTenths === null ? "" : t("输入中 {percent}% 命中缓存", { percent: `${ratioTenths / 10n}.${ratioTenths % 10n}` }));
-    $("cache-summary").hidden = ratioTenths === null;
+    const summary = [t("总输入（含缓存）：{total}", { total: aggregateText(totalInput) })];
+    if (totalInput.missing) summary.push(coverageText(totalInput.recorded, events.length));
+    if (ratioTenths !== null) summary.push(t("输入中 {percent}% 命中缓存", { percent: `${ratioTenths / 10n}.${ratioTenths % 10n}` }));
+    if (ratioTenths !== null && paired.length < events.length) summary.push(t("命中率基于 {count} 次完整记录", { count: paired.length }));
+    text("cache-summary", summary.join(" · "));
+    $("cache-summary").hidden = !events.length;
     const partial = events.filter((event) => partialStatuses.has(event.status)).length;
-    const incomplete = input.missing || output.missing || partial || state.warnings.length || state.excluded;
+    const incomplete = cached.missing || input.missing || output.missing || partial || state.warnings.length || state.excluded;
     const attributionUnknown = state.warnings.some((warning) => warning.includes("继承"));
     text("coverage-title", attributionUnknown ? "来源归属未核实" : incomplete ? "部分记录不完整" : "记录说明");
     const coverage = [
       "Token 汇总仅计模型调用；请求耗时只使用明确记录为 model_call 的时间，不代表纯推理时间。",
+      t("缓存输入：{recorded} 次已记录，{missing} 次未知。", { recorded: cached.recorded, missing: cached.missing }),
       t("未缓存输入：{inputRecorded} 次已记录，{inputMissing} 次未知；输出：{outputRecorded} 次已记录，{outputMissing} 次未知。", { inputRecorded: input.recorded, inputMissing: input.missing, outputRecorded: output.recorded, outputMissing: output.missing }),
       "未缓存输入为总输入减去缓存读取，包含新写入缓存的输入。只在两项均已知时计算；此排序用于比较用量，不代表费用排名。",
       t("缓存比例使用输入和缓存读取同时已知的 {recorded} 次调用，{missing} 次缺失。缓存读取仍可能计费。", { recorded: paired.length, missing: events.length - paired.length }),
@@ -732,37 +755,42 @@ for (const attribute of ["aria-label", "placeholder"]) {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(event);
     }
-    $("model-summary").hidden = groups.size <= 1;
-    if (groups.size <= 1) { $("breakdown-body").replaceChildren(); return; }
+    $("model-summary").hidden = groups.size === 0;
+    if (!groups.size) { $("breakdown-body").replaceChildren(); return; }
     const ordered = [...groups.values()].map((group) => ({ group, input: aggregate(group, "uncached_input") }));
     ordered.sort((a, b) => descending(a.input.recorded ? a.input.total : null, b.input.recorded ? b.input.total : null));
     const fragment = document.createDocumentFragment();
     for (const { group, input } of ordered) {
       const row = node("tr"); const model = node("td", "", label(group[0].model, "模型未记录"));
-      const inputCell = node("td", "number", aggregateText(input));
-      if (input.missing) inputCell.title = t("{count} 次未知", { count: input.missing });
-      row.append(model, node("td", "number", integerFormat.format(group.length)), inputCell, node("td", "number", aggregateText(aggregate(group, "output_tokens"))));
+      row.append(model, node("td", "number", integerFormat.format(group.length)));
+      for (const field of ["cached_input_tokens", "uncached_input", "output_tokens"]) {
+        const value = field === "uncached_input" ? input : aggregate(group, field);
+        const cell = node("td", "number", aggregateText(value)); cell.dataset.metric = field;
+        if (value.missing) cell.append(node("span", "secondary-text", `${t("已知小计")} · ${coverageText(value.recorded, group.length)}`));
+        row.append(cell);
+      }
+      const durations = group.map(modelDuration).filter(known);
+      const waitCell = node("td", "number", duration(median(durations))); waitCell.dataset.metric = "duration_ms";
+      waitCell.append(node("span", "secondary-text", coverageText(durations.length, group.length))); row.append(waitCell);
       fragment.append(row);
     }
     $("breakdown-body").replaceChildren(fragment); text("group-count", `(${groups.size})`);
   }
 
   function renderEvents(events) {
-    const titles = { uncached_input: "未缓存输入", input_tokens: "总输入", output_tokens: "输出", duration_ms: "耗时" };
-    const displayMetric = state.sort === "time" ? "input_tokens" : state.sort;
+    const titles = { cached_input_tokens: "缓存输入", uncached_input: "未缓存输入", input_tokens: "总输入", output_tokens: "输出", duration_ms: "等待时间" };
+    const fields = ["cached_input_tokens", "uncached_input", "output_tokens", "duration_ms"];
+    if (state.sort === "input_tokens") fields.push("input_tokens");
     const ordered = [...events].sort((a, b) => descending(metric(a, state.sort), metric(b, state.sort)));
     const shown = ordered.slice(0, state.visibleEvents);
-    const maxMetric = shown.reduce((max, event) => Math.max(max, metric(event, displayMetric) ?? 0), 0);
+    const maxMetric = shown.reduce((max, event) => Math.max(max, metric(event, state.sort) ?? 0), 0);
     const showSource = state.source === "all" && new Set(events.map((event) => event.source)).size > 1;
-    const extras = [];
-    if (displayMetric !== "output_tokens" && events.some((event) => known(event.tokens?.output_tokens))) extras.push("output_tokens");
-    if (displayMetric !== "duration_ms" && events.some((event) => known(modelDuration(event)))) extras.push("duration_ms");
     const header = node("tr");
-    for (const [name, className] of [["时间", "time-cell"], ["模型", "model-cell"], [titles[displayMetric], "number"], ...extras.map((field) => [titles[field], "number extra-cell"]), ["", "action-cell"]]) { const cell = node("th", className, t(name)); cell.scope = "col"; header.append(cell); }
+    for (const [name, className] of [["时间", "time-cell"], ["模型", "model-cell"], ...fields.map((field) => [titles[field], "number"]), ["", "action-cell"]]) { const cell = node("th", className, t(name)); cell.scope = "col"; header.append(cell); }
     $("events-head").replaceChildren(header);
     const fragment = document.createDocumentFragment();
     for (const event of shown) {
-      const row = node("tr"); const timestamp = new Date(event.started_at);
+      const row = node("tr"); row.dataset.eventId = event.event_id; const timestamp = new Date(event.started_at);
       const timeCell = node("td", "time-cell");
       const time = node("time", "", Number.isNaN(timestamp.getTime()) ? t("时间未知") : timeFormat.format(timestamp));
       if (!Number.isNaN(timestamp.getTime())) { time.dateTime = timestamp.toISOString(); time.title = timestamp.toLocaleString(locale); }
@@ -772,13 +800,15 @@ for (const attribute of ["aria-label", "placeholder"]) {
       if (["failed", "error", "cancelled", "unsupported"].includes(event.status) || partialStatuses.has(event.status)) {
         modelCell.append(node("span", "secondary-text failure-text", t(statusLabels[event.status] || "已记录")));
       }
-      const value = metric(event, displayMetric);
-      const metricCell = node("td", "metric-cell");
-      metricCell.append(node("span", "metric-caption", t(titles[displayMetric])), node("span", "", displayMetric === "duration_ms" ? duration(value) : count(value)));
-      metricCell.title = value === null ? t("未记录") : `${integerFormat.format(value)}${displayMetric === "duration_ms" ? " ms" : " Token"}`;
-      if (value !== null && maxMetric > 0) { const track = node("div", "metric-track"); track.setAttribute("aria-hidden", "true"); const bar = node("span"); bar.style.width = `${Math.min(100, value / maxMetric * 100)}%`; track.append(bar); metricCell.append(track); }
-      row.append(timeCell, modelCell, metricCell);
-      for (const field of extras) row.append(node("td", "number extra-cell", field === "duration_ms" ? duration(modelDuration(event)) : count(event.tokens?.[field])));
+      row.append(timeCell, modelCell);
+      for (const field of fields) {
+        const value = metric(event, field);
+        const metricCell = node("td", "metric-cell"); metricCell.dataset.metric = field;
+        metricCell.append(node("span", "metric-caption", t(titles[field])), node("span", "metric-value", field === "duration_ms" ? duration(value) : count(value)));
+        metricCell.title = value === null ? t("未记录") : `${integerFormat.format(value)}${field === "duration_ms" ? ` ms · ${t("请求往返")}` : " Token"}`;
+        if (field === state.sort && value !== null && maxMetric > 0) { const track = node("div", "metric-track"); track.setAttribute("aria-hidden", "true"); const bar = node("span"); bar.style.width = `${Math.min(100, value / maxMetric * 100)}%`; track.append(bar); metricCell.append(track); }
+        row.append(metricCell);
+      }
       const actionCell = node("td", "action-cell"); const button = node("button", "button event-quote", t("查看 / 估算"));
       button.type = "button"; button.setAttribute("aria-label", t("查看 / 估算：{model}", { model: label(event.model, "模型未记录") }));
       button.addEventListener("click", () => fillEvent(event)); actionCell.append(button); row.append(actionCell); fragment.append(row);

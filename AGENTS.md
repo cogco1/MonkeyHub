@@ -121,6 +121,10 @@ writing it and ask Kevin to decide its ownership.
 
 ## Before implementing anything
 
+MonkeyHub is the single application entry; MonkeyArch is its modeling workspace. Startup and agent access belong to the same Hub flow.
+For a first session, follow section 0 of [the Hub entry guide](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+Reuse its source/project locations and bounded lookup sequence; do not load every linked document or search the whole tree to orient yourself.
+
 The repository has one production spine (`docs/ARCHITECTURE.md`) and a module contract
 registry (`governance/module_registry.json`, rendered as `docs/SYSTEM_MAP.md`). Every
 capability has exactly one owner there. `docs/CANONICAL_SPINE.md` records the earlier

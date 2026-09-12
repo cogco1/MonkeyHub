@@ -99,6 +99,69 @@ class IntentRequestSchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_request_answer(answer, context, self.schema(context))
 
+    def test_local_semantic_edit_uses_typed_contract_without_dependency_write_grants(self):
+        record = _record()
+        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
+        context = compile_context("replace wall-07 while keeping its support", sheet, record=record)
+        self.assertIsNotNone(context.design_sheet)
+        answer = _design_answer()
+        answer["elementId"] = "wall-07"
+        answer["semanticEdit"]["entities"][0]["entity_id"] = "wall-07"
+        answer["semanticEdit"]["entities"][0]["fields"]["references"] = deepcopy(record.entity("wall-07").fields["references"])
+        answer["semanticEdit"]["removeEntityIds"] = []
+        validate_request_answer(answer, context, self.schema(context))
+        for target in ("support-wall", "wall-type"):
+            wrong = deepcopy(answer)
+            wrong["semanticEdit"]["entities"][0]["entity_id"] = target
+            self.assertRejected(wrong, context)
+            wrong = deepcopy(answer)
+            wrong["semanticEdit"]["removeEntityIds"] = [target]
+            self.assertRejected(wrong, context)
+        wrong = {**answer, "semanticEdit": None, "utterance": "set parameter:wall_height to 4"}
+        self.assertRejected(wrong, context)
+
+    def test_local_new_member_requires_declared_connection_to_existing_target(self):
+        record = _record()
+        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
+        context = compile_context("add a member to wall-07 while keeping its base", sheet, record=record)
+        answer = _design_answer()
+        answer["semanticEdit"]["removeEntityIds"] = []
+        answer["semanticEdit"]["entities"][0]["fields"]["references"] = deepcopy(record.entity("wall-07").fields["references"])
+        self.assertRejected(answer, context)
+        # Updating the target alongside a new member does not let their shared
+        # broad parent or common level stand in for an explicit connection.
+        with_target = deepcopy(answer)
+        target = deepcopy(with_target["semanticEdit"]["entities"][0])
+        target["entity_id"] = "wall-07"
+        with_target["semanticEdit"]["entities"].append(target)
+        self.assertRejected(with_target, context)
+        answer["semanticEdit"]["entities"][0]["fields"]["references"]["support"] = "wall-07"
+        validate_request_answer(answer, context, self.schema(context))
+
+    def test_local_design_cannot_write_locked_shared_or_unrelated_parameters(self):
+        for blocker in ("locked", "shared", "unrelated"):
+            with self.subTest(blocker=blocker):
+                record = _record(bound=True)
+                if blocker == "locked":
+                    record = replace(record, parameters=(replace(record.parameters[0], lock_authority="review:locked"),))
+                elif blocker == "shared":
+                    other = record.entity("support-wall")
+                    other = replace(other, fields={**other.fields, "params": {**other.fields["params"], "height": "@wall_height"}})
+                    record = replace(record, entities=tuple(other if row.entity_id == other.entity_id else row for row in record.entities))
+                else:
+                    record = replace(record, parameters=(*record.parameters, Parameter("unrelated", 2, "m")))
+                sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
+                context = compile_context("reconfigure wall-07 while keeping its base", sheet, record=record)
+                answer = _design_answer()
+                answer["elementId"] = "wall-07"
+                answer["semanticEdit"]["entities"] = []
+                answer["semanticEdit"]["removeEntityIds"] = []
+                answer["semanticEdit"]["parameters"] = [{
+                    "key": "unrelated" if blocker == "unrelated" else "wall_height", "value": 4,
+                    "unit": "m", "expr": None, "inputs": [], "epistemic_status": "declared", "source_ref": None,
+                }]
+                self.assertRejected(answer, context)
+
     def test_narrow_schema_accepts_actions_without_ids_or_upsert_payloads(self):
         record = _record()
         for tier, fields in (("scalar", ("height",)), ("component", ("height", "thickness"))):

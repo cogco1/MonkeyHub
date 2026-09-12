@@ -112,7 +112,7 @@ class LocalHubCase(unittest.TestCase):
 
     def configuration(self, **changes):
         return {
-            "projectDir": None, "referenceRun": None, "cadExport": "off",
+            "projectDir": None, "workspaceDir": None, "referenceRun": None, "cadExport": "off",
             "studioPort": self.studio_port, "monitorPort": self.monitor_port,
             **changes,
         }
@@ -196,10 +196,13 @@ class HubApiLifecycleTests(LocalHubCase):
             configured = self.configure(client)
             self.assertEqual(client.post("/api/apps/monkeymonitor/start").status_code, 202)
             self.wait_state(client, "monkeymonitor", "running")
-            response = client.put("/api/settings/apps", json={**configured, "cadExport": "occt"})
+            response = client.put("/api/settings/apps", json={**configured, "monitorPort": free_ports(1)[0]})
             self.assertEqual(response.status_code, 409, response.text)
             self.assertEqual(response.json()["code"], "APPS_RUNNING")
             self.assertEqual(client.get("/api/settings/apps").json(), configured)
+            changed = client.put("/api/settings/apps", json={**configured, "cadExport": "occt"})
+            self.assertEqual(changed.status_code, 200, changed.text)
+            self.assertEqual(next(row for row in client.get("/api/apps").json() if row["appId"] == "monkeymonitor")["state"], "running")
 
     def test_a_foreign_listener_is_neither_claimed_nor_stopped(self):
         class ForeignHandler(BaseHTTPRequestHandler):

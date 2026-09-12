@@ -23,6 +23,17 @@ SEAT_PACK_PATH = "input/runner/seats.json"
 PROGRAM_SHEET_PATH = "input/runner/program-sheet.json"
 
 
+def cad_workspace_path(workspace_root: Path | None, stage_id: str) -> Path:
+    """Map an export stage to its caller-owned workspace without creating it."""
+
+    if workspace_root is None or not workspace_root.is_absolute():
+        raise ValueError("CAD export requires an explicit absolute workspace_root")
+    name = require_project_relative_path(f"cad-{stage_id}")
+    if len(PurePosixPath(name).parts) != 1:
+        raise ValueError("CAD export workspace must be one directory name")
+    return workspace_root / name
+
+
 @dataclass(frozen=True, slots=True)
 class RunLayout:
     root: Path

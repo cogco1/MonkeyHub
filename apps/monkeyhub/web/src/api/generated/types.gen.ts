@@ -50,6 +50,10 @@ export type ApplicationSettingsDto = {
      */
     projectDir?: string | null;
     /**
+     * Workspacedir
+     */
+    workspaceDir?: string | null;
+    /**
      * Referencerun
      */
     referenceRun?: string | null;
@@ -65,6 +69,282 @@ export type ApplicationSettingsDto = {
      * Monitorport
      */
     monitorPort?: number;
+};
+
+/**
+ * ChatCreateRequest
+ */
+export type ChatCreateRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Provider
+     */
+    provider: 'codex' | 'claude' | 'coding-plan';
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+};
+
+/**
+ * ChatDetail
+ */
+export type ChatDetail = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Provider
+     */
+    provider: 'codex' | 'claude' | 'coding-plan';
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Status
+     */
+    status?: 'idle' | 'running' | 'failed' | 'interrupted';
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Updatedat
+     */
+    updatedAt: string;
+    error?: HubError | null;
+    /**
+     * Messages
+     */
+    messages?: Array<ChatMessage>;
+};
+
+/**
+ * ChatMessage
+ */
+export type ChatMessage = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Role
+     */
+    role: 'user' | 'assistant' | 'tool';
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Status
+     */
+    status?: 'complete' | 'streaming' | 'failed' | 'interrupted';
+    /**
+     * Candidateid
+     */
+    candidateId?: string | null;
+};
+
+/**
+ * ChatModelRequest
+ *
+ * Which model this conversation's next turns use; null means the CLI default.
+ */
+export type ChatModelRequest = {
+    /**
+     * Model
+     */
+    model?: string | null;
+};
+
+/**
+ * ChatPostRequest
+ */
+export type ChatPostRequest = {
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
+ * ChatProject
+ */
+export type ChatProject = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Chatcount
+     */
+    chatCount: number;
+    /**
+     * Version
+     */
+    version?: number | null;
+    /**
+     * Stage
+     */
+    stage?: string | null;
+};
+
+/**
+ * ChatProjectRequest
+ *
+ * Create one empty project in the workspace; the name becomes its id.
+ */
+export type ChatProjectRequest = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Workspacedir
+     */
+    workspaceDir?: string | null;
+};
+
+/**
+ * ChatProvider
+ */
+export type ChatProvider = {
+    /**
+     * Id
+     */
+    id: 'codex' | 'claude' | 'coding-plan';
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Detail
+     */
+    detail: string;
+    /**
+     * Installed
+     */
+    installed?: boolean;
+    /**
+     * Signedin
+     */
+    signedIn?: boolean | null;
+    /**
+     * Models
+     */
+    models?: Array<string>;
+    /**
+     * Modelcatalog
+     */
+    modelCatalog?: 'checking' | 'ready' | 'unavailable';
+    /**
+     * Modeldetail
+     */
+    modelDetail?: string;
+};
+
+/**
+ * ChatSummary
+ */
+export type ChatSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Provider
+     */
+    provider: 'codex' | 'claude' | 'coding-plan';
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Status
+     */
+    status?: 'idle' | 'running' | 'failed' | 'interrupted';
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Updatedat
+     */
+    updatedAt: string;
+    error?: HubError | null;
+};
+
+/**
+ * ChatWorkspace
+ *
+ * Where new projects are created, and what is already in that folder.
+ */
+export type ChatWorkspace = {
+    /**
+     * Workspacedir
+     */
+    workspaceDir: string;
+    /**
+     * Configured
+     */
+    configured: boolean;
+    /**
+     * Projects
+     */
+    projects?: Array<string>;
 };
 
 /**
@@ -301,6 +581,14 @@ export type UserSettingsDto = {
      * Intenttimeouts
      */
     intentTimeoutS?: number | null;
+    /**
+     * Chatprovider
+     */
+    chatProvider?: 'codex' | 'claude' | 'coding-plan' | null;
+    /**
+     * Chatmodel
+     */
+    chatModel?: string | null;
 };
 
 /**
@@ -480,7 +768,7 @@ export type GetFabProfilesApiFabProfilesGetData = {
 
 export type GetFabProfilesApiFabProfilesGetErrors = {
     /**
-     * Unprocessable Entity
+     * Unprocessable Content
      */
     422: HubError;
     /**
@@ -517,7 +805,7 @@ export type PrepareFabApiFabPreparePostData = {
 
 export type PrepareFabApiFabPreparePostErrors = {
     /**
-     * Unprocessable Entity
+     * Unprocessable Content
      */
     422: HubError;
     /**
@@ -550,7 +838,7 @@ export type SendFabApiFabSendPostData = {
 
 export type SendFabApiFabSendPostErrors = {
     /**
-     * Unprocessable Entity
+     * Unprocessable Content
      */
     422: HubError;
     /**
@@ -614,6 +902,274 @@ export type UpdateApplicationSettingsApiSettingsAppsPutResponses = {
 };
 
 export type UpdateApplicationSettingsApiSettingsAppsPutResponse = UpdateApplicationSettingsApiSettingsAppsPutResponses[keyof UpdateApplicationSettingsApiSettingsAppsPutResponses];
+
+export type ChatProvidersApiChatProvidersGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Refresh
+         */
+        refresh?: boolean;
+    };
+    url: '/api/chat/providers';
+};
+
+export type ChatProvidersApiChatProvidersGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChatProvidersApiChatProvidersGetError = ChatProvidersApiChatProvidersGetErrors[keyof ChatProvidersApiChatProvidersGetErrors];
+
+export type ChatProvidersApiChatProvidersGetResponses = {
+    /**
+     * Response Chat Providers Api Chat Providers Get
+     *
+     * Successful Response
+     */
+    200: Array<ChatProvider>;
+};
+
+export type ChatProvidersApiChatProvidersGetResponse = ChatProvidersApiChatProvidersGetResponses[keyof ChatProvidersApiChatProvidersGetResponses];
+
+export type ChatProjectsApiChatProjectsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/chat/projects';
+};
+
+export type ChatProjectsApiChatProjectsGetResponses = {
+    /**
+     * Response Chat Projects Api Chat Projects Get
+     *
+     * Successful Response
+     */
+    200: Array<ChatProject>;
+};
+
+export type ChatProjectsApiChatProjectsGetResponse = ChatProjectsApiChatProjectsGetResponses[keyof ChatProjectsApiChatProjectsGetResponses];
+
+export type CreateChatProjectApiChatProjectsPostData = {
+    body: ChatProjectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/projects';
+};
+
+export type CreateChatProjectApiChatProjectsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateChatProjectApiChatProjectsPostError = CreateChatProjectApiChatProjectsPostErrors[keyof CreateChatProjectApiChatProjectsPostErrors];
+
+export type CreateChatProjectApiChatProjectsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ChatProject;
+};
+
+export type CreateChatProjectApiChatProjectsPostResponse = CreateChatProjectApiChatProjectsPostResponses[keyof CreateChatProjectApiChatProjectsPostResponses];
+
+export type ChatWorkspaceApiChatWorkspaceGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/chat/workspace';
+};
+
+export type ChatWorkspaceApiChatWorkspaceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatWorkspace;
+};
+
+export type ChatWorkspaceApiChatWorkspaceGetResponse = ChatWorkspaceApiChatWorkspaceGetResponses[keyof ChatWorkspaceApiChatWorkspaceGetResponses];
+
+export type ChatSessionsApiChatSessionsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Projectid
+         */
+        projectId?: string | null;
+    };
+    url: '/api/chat/sessions';
+};
+
+export type ChatSessionsApiChatSessionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChatSessionsApiChatSessionsGetError = ChatSessionsApiChatSessionsGetErrors[keyof ChatSessionsApiChatSessionsGetErrors];
+
+export type ChatSessionsApiChatSessionsGetResponses = {
+    /**
+     * Response Chat Sessions Api Chat Sessions Get
+     *
+     * Successful Response
+     */
+    200: Array<ChatSummary>;
+};
+
+export type ChatSessionsApiChatSessionsGetResponse = ChatSessionsApiChatSessionsGetResponses[keyof ChatSessionsApiChatSessionsGetResponses];
+
+export type CreateChatApiChatSessionsPostData = {
+    body: ChatCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/sessions';
+};
+
+export type CreateChatApiChatSessionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateChatApiChatSessionsPostError = CreateChatApiChatSessionsPostErrors[keyof CreateChatApiChatSessionsPostErrors];
+
+export type CreateChatApiChatSessionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ChatDetail;
+};
+
+export type CreateChatApiChatSessionsPostResponse = CreateChatApiChatSessionsPostResponses[keyof CreateChatApiChatSessionsPostResponses];
+
+export type ReadChatApiChatSessionsSessionIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}';
+};
+
+export type ReadChatApiChatSessionsSessionIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChatApiChatSessionsSessionIdGetError = ReadChatApiChatSessionsSessionIdGetErrors[keyof ReadChatApiChatSessionsSessionIdGetErrors];
+
+export type ReadChatApiChatSessionsSessionIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type ReadChatApiChatSessionsSessionIdGetResponse = ReadChatApiChatSessionsSessionIdGetResponses[keyof ReadChatApiChatSessionsSessionIdGetResponses];
+
+export type PostChatApiChatSessionsSessionIdMessagesPostData = {
+    body: ChatPostRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/messages';
+};
+
+export type PostChatApiChatSessionsSessionIdMessagesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PostChatApiChatSessionsSessionIdMessagesPostError = PostChatApiChatSessionsSessionIdMessagesPostErrors[keyof PostChatApiChatSessionsSessionIdMessagesPostErrors];
+
+export type PostChatApiChatSessionsSessionIdMessagesPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: ChatDetail;
+};
+
+export type PostChatApiChatSessionsSessionIdMessagesPostResponse = PostChatApiChatSessionsSessionIdMessagesPostResponses[keyof PostChatApiChatSessionsSessionIdMessagesPostResponses];
+
+export type SetChatModelApiChatSessionsSessionIdModelPutData = {
+    body: ChatModelRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/model';
+};
+
+export type SetChatModelApiChatSessionsSessionIdModelPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetChatModelApiChatSessionsSessionIdModelPutError = SetChatModelApiChatSessionsSessionIdModelPutErrors[keyof SetChatModelApiChatSessionsSessionIdModelPutErrors];
+
+export type SetChatModelApiChatSessionsSessionIdModelPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type SetChatModelApiChatSessionsSessionIdModelPutResponse = SetChatModelApiChatSessionsSessionIdModelPutResponses[keyof SetChatModelApiChatSessionsSessionIdModelPutResponses];
+
+export type StopChatApiChatSessionsSessionIdStopPostData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/stop';
+};
+
+export type StopChatApiChatSessionsSessionIdStopPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type StopChatApiChatSessionsSessionIdStopPostError = StopChatApiChatSessionsSessionIdStopPostErrors[keyof StopChatApiChatSessionsSessionIdStopPostErrors];
+
+export type StopChatApiChatSessionsSessionIdStopPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type StopChatApiChatSessionsSessionIdStopPostResponse = StopChatApiChatSessionsSessionIdStopPostResponses[keyof StopChatApiChatSessionsSessionIdStopPostResponses];
 
 export type GetUserSettingsApiSettingsUserGetData = {
     body?: never;

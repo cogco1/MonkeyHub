@@ -2,16 +2,36 @@
 
 Studio prepares the model's read context and output vocabulary for the current
 request. A supported numeric edit to one known element receives the requested
-controls and relevant design facts. The complete execution and validation closure
-stays on the server. Broad or uncertain
-requests retain the complete design context. The existing deterministic compiler
-still makes no model call.
+controls and relevant design facts. A complex design request with explicit local
+targets receives a related state slice and the existing typed design output
+vocabulary. The complete source state remains private for scope and validation
+checks. Global requests and requests without a safely resolved area retain full
+design context. All provider requests must fit the application text budget before
+they can be sent. The existing deterministic compiler still makes no model call.
 
 Development lookup and runtime requests have separate costs. Use
 `python tools/devctl.py module studio.intent` to find an owner's responsibilities,
 interfaces, dependencies, source paths and tests without reading the full registry.
 `python tools/devctl.py module wall` searches ownership when a module id is not known.
 These development commands do not affect student API requests.
+
+## Browser tasks
+
+The Studio sidebar groups independent tasks under the project actually bound to
+the connected server. Each task retains its own transcript, draft, selection and
+editing run/Stage pointer in browser-local storage. Switching tasks keeps visited
+views mounted so a pending reply, candidate poll or clarification stays with its
+originating task. Hidden views are inert. Rename, archive and restore change only
+personal browser history; active work cannot be archived.
+
+Task history is not sent to the intent compiler. Reload does not replay a model
+request; unfinished requests and old clarification cards become history with a
+resend notice. Candidate jobs with known ids can be read again. Server-held
+proposal and continuation capabilities are not made durable by this sidebar.
+All tasks use the connected server's configured provider and model; this is not
+per-task model routing or a multi-server project service. Project persistence and
+formal issue retain their existing owners. Clearing browser site data clears task
+history, not project records.
 
 ## Request preparation
 
@@ -20,8 +40,9 @@ Request + explicit selection + exact StateRecord
     -> deterministic scope classification
     -> private target, dependency closure, evidence and constraints
     -> deterministic control preflight
-    -> model facts + numeric actions, or full design vocabulary
-    -> provider call
+    -> model facts + numeric actions, or scoped/full state + design vocabulary
+    -> application text budget (over limit: return unsupported without a call)
+    -> provider call when within budget
     -> request-output validation and server action adaptation
     -> existing proposal and candidate validation
 ```
@@ -36,16 +57,17 @@ There is no model router or second project store.
 | --- | --- | ---: |
 | Scalar | One recognized numeric field on one exact selected or named element. The model proposes one numeric action; the server supplies target identity and the existing scalar grammar. | 400 |
 | Component | Several existing numeric fields on one element with an advertised producer signature. The model proposes one action per requested field; the server preserves untouched record data. | 800 |
-| Design | Uncertain scope, unsupported numeric control, multiple targets, creation/removal, references/types, broad architectural work, gestures or document visuals. Keeps the full design context and output vocabulary. | 5,000 |
+| Design, local | A design operation names existing elements or a component, or explicitly refers to the selected element. Uses their related state slice and the complete typed design output vocabulary. | 5,000 |
+| Design, full | Global work, unresolved area, gestures or document visuals. Keeps the full design context and output vocabulary, subject to the same text budget. | 5,000 |
 
 These limits are enforced through Anthropic's `max_tokens`. Codex CLI output
 allowances are advisory because this invocation interface has no equivalent
 configured output cap. Neither allowance promises the model will complete an answer.
 
 The component tier is currently limited to numeric instance edits. It does not
-implement arbitrary type, reference or relationship edits with reduced context.
-Those requests use the design tier. An ambiguous request such as “change this
-window to 1200” also retains full context because the field is unresolved.
+implement arbitrary type, reference or relationship edits. Those requests use the
+design tier. An unresolved numeric field does not acquire the numeric action
+shortcut; its design request can still use a local slice when the target is clear.
 
 Private scope follows the record's declared dependency edges and affected closure.
 The internal context retains parents, types, hosts, levels, grid-role lookups,
@@ -58,6 +80,15 @@ current values, verified units, relevant design requirements and concise shared
 effects. Unrelated locks, raw expressions, source bindings, producer contracts and
 execution bookkeeping remain private. Only explicitly requested supplements expose
 additional dependency dimensions.
+
+For local design requests, an exact element name identifies that element; an exact
+component name identifies its authored descendant elements. A phrase such as
+“this wall” must agree with the selected element. Keep clauses add read context,
+not writable targets. Global scope words and unresolved areas retain the full
+design path. The local slice includes declared downstream effects, upstream
+references, relevant evidence and applicable or unscoped constraints. Mandatory
+constraints are not shortened to meet the budget. If those facts are themselves
+too large, the request is refused before inference.
 
 Both numeric tiers accept a small action envelope. An action can be:
 
@@ -84,30 +115,47 @@ The design tier retains the complete producer vocabulary, with repeated schemas
 shared through JSON Schema references. Producer signatures are removed from the
 state packet once the response schema supplies that vocabulary. Additional read
 facts never authorize another writable target or shared type.
+The local design packet states `editTargets`. Its output must use `semanticEdit`;
+existing entity writes stay within those targets. Locked, derived, shared and
+unrelated parameter writes are checked against the private source state. New
+members must declare a connection to the requested targets through references or
+relationships. Sharing a broad parent or a common level is insufficient. The
+existing proposal and candidate owners still check legal operations, geometry,
+constraints and exact-base execution.
 
 ## Bounded context supplements
 
 A model may return `needs_context` with one to sixteen exact existing references.
 Studio validates existence and progress before adding their dependency context.
 The request has at most three model calls: one initial attempt and two supplements.
-Repeated, unknown, excessive or non-progressing reference requests fail; full
-design context cannot expand. Malformed output, provider failures and diagnostic
-failures do not trigger an automatic retry. Each real attempt keeps its own usage.
+Repeated, unknown, excessive or non-progressing reference requests fail. Local
+design slices can expand; full design context cannot. The original writable
+targets and exact checkpoint remain unchanged. Each expanded request must pass
+the budget again before the next provider call. Malformed output, provider
+failures and diagnostic failures do not trigger an automatic retry. Each real
+attempt keeps its own usage.
 
 ## Context budget and usage
 
-`ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS` configures a positive advisory input budget;
+`ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS` configures a positive application text budget;
 the default is **16,000**. `MONKEY REQUEST` preflight logs report estimates for
 intent, system rules, schema, state, preferences, dependencies and application
-overhead, plus the largest contributors and expected output allowance. Going over
-budget emits a warning. It does not truncate constraints, block the call, choose a
-cheaper model or retry.
+overhead, plus the largest contributors and expected output allowance. Before
+each provider call, an estimate above the limit returns the existing `unsupported`
+outcome with the estimate, configured limit and an instruction to narrow the
+requested area. A request exactly at the limit is permitted. Required constraints
+remain intact; the rejected request is not sent and creates no model receipt or
+usage. If a supplement exceeds the budget, earlier actual attempts retain their
+own usage and no further call occurs.
 
 [`intent_budget.py`](../apps/archflow-studio/api/archflow_studio_api/application/intent_budget.py)
 uses the explicitly named `heuristic_utf8_bytes_div4` estimate by default and
-accepts an injected text tokenizer. Estimates exclude unknown provider framing
-and image-token costs. They are neither exact billing counters nor a model's
-complete context-window measurement.
+accepts an injected text tokenizer. Runtime enforcement currently uses the default
+heuristic. It counts the application's compiled rules, response schema, serialized
+state, user message and known text wrappers. Estimates exclude the CLI's own
+context, unknown provider framing and image-token costs. This is a hard limit on
+the labeled application text estimate, not an exact billing limit or a measurement
+of the provider's complete context window.
 
 With the existing `MONKEYMONITOR_DATA_DIR` diagnostics enabled, each model-request
 event retains:
@@ -158,36 +206,33 @@ Anthropic text inputs. The private validation sheet is not counted as sent text.
 Section counts are independently tokenized diagnostics and may not sum to the
 token count of concatenated request text.
 
-The fixture comparison measured the following **characters**, including
-rules, schema, request text and application wrappers:
+The benchmark includes numeric, local design and global design cases. It observes
+the production budget calculation without bypassing enforcement. `compiled`
+measures the prepared text even when blocked; `provider_boundary_reached` is false
+for a refused request. Reaching that boundary invokes only the in-memory capture,
+so `live_model_calls` remains zero for every case. `runtime_budget` reports the
+actual preflight estimator separately from the counter chosen with `--tokenizer`.
+`prepared_element_count`, `prepared_target_count` and `prepared_design_fact_count`
+describe the model-facing packet, separately from the private source counts.
 
-| Unrelated wall/type pairs | Scalar: full → compiled | Component: full → compiled | Design: full → compiled |
-| ---: | ---: | ---: | ---: |
-| 0 | 49,492 → 2,240 | 49,510 → 2,341 | 49,546 → 24,785 |
-| 100 | 105,762 → 2,240 | 105,780 → 2,341 | 105,816 → 83,255 |
-| 1,000 | 615,162 → 2,240 | 615,180 → 2,341 | 615,216 → 612,455 |
+The 2026-09-10 run with the **16,000 runtime budget** measured these application
+text estimates using `heuristic_utf8_bytes_div4`:
 
-The same prepared text measured with **`tiktoken:o200k_base` reference tokens**:
+| Unrelated wall/type pairs | Scalar | Component | Local design | Global design |
+| ---: | ---: | ---: | ---: | ---: |
+| 0 | 563 | 588 | 6,281 | 6,200 |
+| 100 | 563 | 588 | 6,281 | 20,817 — blocked |
+| 1,000 | 563 | 588 | 6,281 | 153,117 — blocked |
 
-| Unrelated wall/type pairs | Scalar: full → compiled | Component: full → compiled | Design: full → compiled |
-| ---: | ---: | ---: | ---: |
-| 0 | 13,822 → 603 | 13,829 → 639 | 13,825 → 6,791 |
-| 100 | 32,723 → 603 | 32,730 → 639 | 32,726 → 26,492 |
-| 1,000 | 202,823 → 603 | 202,830 → 639 | 202,826 → 203,792 |
+Scalar and component packets remain at 2,240 and 2,341 characters. The local
+design packet remains at 25,103 characters and two relevant element rows, while
+the private source retains the whole project. Global prepared text grows from
+24,785 to 83,255 and 612,455 characters; the latter two requests never reach the
+capture provider. Their required content is retained and measured, not truncated.
+The sum of independently rounded runtime sections can exceed the heuristic count
+of concatenated text by a few tokens.
 
-For narrow requests, the model receives one target and five design facts; it
-receives no full element or type reconstruction rows. The private validation
-context still retains two relevant elements and both obligations as unrelated
-siblings grow. The benchmark reports `sent_target_count` and `sent_design_fact_count`
-separately from `private_element_count` and `private_obligation_count` so these
-are not mistaken for the same packet. Scalar schema/state text measures 275/195
-reference tokens; component schema/state text measures 278/221.
-
-The design request retains all elements and types, so its state still grows with
-the project. The compiled full context also preserves authored fields and
-obligations omitted from the previous sheet.
-At 1,000 siblings that additional context outweighs schema savings by 966 reference
-tokens, despite slightly fewer characters. Broad requests therefore have no
-guaranteed token reduction. Re-run the command when schemas or rules change.
-These synthetic packaging measurements establish neither billed cost savings nor
-model success rates.
+The explicit `o200k_base` run reported that the local package/cache was unavailable;
+no tokenizer data was downloaded and no new reference-token figures are claimed.
+Re-run the command when schemas or rules change. These synthetic packaging
+measurements establish neither billed cost savings nor model success rates.

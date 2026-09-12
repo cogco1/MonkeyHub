@@ -2,7 +2,7 @@
 
 **用途：** 给在 ArchFlow V4 上开发、联调和保存项目结果的人一条可执行的最短路径。  
 
-**队友从第 8 节开始：GitHub 领任务 → 独立运行 → 小修改 → PR → Actions → 他人审查 → 合并。**
+**Coding agent 从第 0 节开始；首次安装环境的队友从第 8 节开始。**
 第 1–7 节供涉及内核和项目存储的开发查阅，首次启动不需要先读完。
 
 **规则分工：** `AGENTS.md` 保留少量长期规则，`CONTRIBUTING.md` 说明实际协作流程；
@@ -14,6 +14,85 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 [`archflow/project/repository.py`](../archflow/project/repository.py) 为准。
 
 下文的实现说明以当前代码和 owner 为依据；本机启动核验与第二位成员实际试用分别报告。
+
+## 0. MonkeyHub 统一入口
+
+**MonkeyHub 打开后直接聊天。** 左侧按项目组织对话，中间保留聊天记录，底部输入需求；
+需要查看模型、图纸、画板、制作或用量时，在右侧打开该项目的现有工具页面。
+底层调用本机 Codex / Claude CLI，并以原生 session 继续对话；Coding Plan 沿用 Claude CLI
+已有的兼容端点配置。用户不再先选择“进入工作区”。项目与运行配置仍由现有 owner 保存。
+右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 共用一个 Studio，切项目时重绑；
+该项目仍有聊天执行时，不允许切到另一个项目的服务。
+
+| 使用者 | 同一入口下的操作 | 当前实现 |
+| --- | --- | --- |
+| 普通用户 | 打开 MonkeyHub，添加已有项目并聊天，按需打开右侧工具页 | 当前源码已接入；已安装候选包需重新构建才包含此界面。新项目仍由现有创建命令建立 |
+| 操作已有应用的 Agent | 使用聊天提供的绑定项目与 stdio 工具，按需读取 Studio 某个动作的 schema | 调用既有确定性 proposal/candidate、图纸等接口；完整 Skill 工具箱尚未接入执行 |
+| 开发代码的 Agent | 定位源码与任务，再按下表查询 owner 或工具箱契约 | 复用 `devctl module`、`hgs skills list/show`，它们是开发与检索工具 |
+
+已运行的 Hub 以自己的设置和实际健康检查为准，不通过源码目录里的配置猜测其项目。
+源码开发单独启动 Studio 时，才读取那次启动明确指定的 runtime 配置。
+
+### Agent 按任务检索
+
+第一次任务只需要确定：**源码检出位置、此次目标，以及涉及设计时的项目目录**。
+源码目录和当前任务通常由宿主提供；设计项目使用上面的 Hub 绑定或独立 Studio 配置。
+只读取需要的字段，不把凭据或整份配置放进上下文。未指定设计项目时先完成源码查询，
+不要通过扫描磁盘猜测项目，也不要自动创建一个临时项目。
+
+首次进入时检查一次当前 Git 分支、HEAD 和 working tree。后续按下面的次序工作，
+复用已确定的位置和 owner；只有任务切换、配置改变或出现相关错误时才重新定位。
+
+| 当前需要 | 固定入口 | 接着读取什么 |
+| --- | --- | --- |
+| 了解 ArchFlow 做什么 | README 的概述与当前状态 | 涉及架构决定时才读 `docs/ARCHITECTURE.md` 的对应部分 |
+| 梳理功能或准备补一段用户操作 | [P115 功能节点图](mapping/planning/P115-capability-consolidation.md#功能节点图与开发校准) | 对照前后节点、当前缺口与 owner，再按下行查真实契约和调用方；开发后更新同一项，优先复用已有能力 |
+| 按目标查已有操作 | `python tools/devctl.py capability <目标或能力-id>` | 读取匹配项的范围与入口；绑定项目内使用 `GET /api/capabilities?goal=...`，再描述具体来源和目标。首项为已有对象的数值修改，完整行为与试用状态见 P115 |
+| 查建模、图纸、项目或应用的代码归属 | `python tools/devctl.py module <关键词>` | 用返回的精确 module id 再查契约；按 `--section`、`--offset` 补齐被省略的相关项 |
+| 修改已有实现 | owner 的 `source_paths`、`public_api`、`tests` | 目标实现及真实调用方；只有存在具体疑问时才在相关包中 `rg` |
+| 接续开发任务 | `python tools/devctl.py status` | 对应 live 工作卡；卡片状态不代表能力可用性 |
+| 查共享工具箱 Skill | `hgs skills list <关键词> --path <toolbox-root>/skills` | `hgs skills show <id> --path <toolbox-root>/skills`，再按需读取示例或调用入口 |
+| 创建新的设计项目 | `python tools/create_project.py --project <外部项目目录>` | 第 8.3 节；已有项目直接打开完整目录，不重新初始化 |
+| 运行或配置 Studio | 第 8 节与 Studio README | 对应配置、启动命令和 API；模型内容通过既有项目读取入口取得 |
+
+两张能力表承担不同用途：ArchFlow 的 `governance/module_registry.json` 登记软件 owner 及已有能力的目标、范围与入口；
+共享工具箱的 `skills/*/skill.yaml` 登记工作流与入口，`generated/skills/index.md` 是它的生成视图。
+`hgs` 使用工具箱自己的安装环境，`--path` 显式指定其已有源码目录，避免依赖当前目录。
+没有安装工具箱时仍可开发 ArchFlow；需要某项 Skill 时再按工具箱 README 安装或读取那一项 manifest。
+外部引用、入口已安装、命令可执行是不同状态，不能把登记项直接当作已接通的运行能力。
+
+这条流程不要求每次读取完整 SYSTEM_MAP、整个 registry、所有 SKILL.md 或历史会话。
+例如修窗洞代码先 `module opening`，选定 owner 后读取具体契约与实现；不要先翻历史建模脚本。
+使用已有建模能力时直接调用已接通的 CLI / API，按需读调用契约；正常改稿不要求读取实现源码。
+工具返回“没有匹配”时，使用同一能力的其他关键词或已知 API/path 查询，仍从登记入口收窄。
+
+**每次执行沿用三个位置：** 源码根放实现；运行环境根放 Python、依赖和配置；
+设计项目根放输入、候选和成果。新项目通过创建命令建立一个 P036 根，之后每次修改产生该项目中的
+run，不为每个脚本版本再建项目。程序从 `ProjectLayout` / `RunLayout` 取得区域路径；
+CAD 导出共用 `cad_workspace_path`，默认进入 `runs/<run-id>/workspaces/cad-<stage>-<seat>/`。
+调用方准备目录，runner 使用明确的绝对 workspace；不以当前 shell 目录兜底。
+图纸、截图和保留记录继续使用各自已登记的 P036 入口；临时可重建文件才使用显式 cache/temp。
+
+**当前聊天入口：** CLI 收到绑定项目和少量工具说明。修改已有构件的数值时，先用
+已知的候选来源和目标直接读取能力详情；首次不清楚能力或对象时，再查询
+`GET /api/capabilities?goal=...` 或项目状态。沿详情返回的请求执行时，`studio_request` 的
+`awaitSeconds` 可让受支持的数值修改在同一次工具调用内提交、等待任务完成，并行读取候选和比较结果。
+该选项限定为提交成功后的等待时间；超时或读取失败返回原任务的只读续查入口，不重复提交。
+未指定该选项时保持原来的单请求行为，Studio 的候选 HTTP 接口仍异步返回。
+其他动作按需查询现有 Studio schema。能力详情使用实际来源、目标字段和 keep 范围，请求结构继续引用 OpenAPI。
+每次调用核对 Hub、Studio 与聊天的项目绑定，执行继续经过已有 API；聊天记录与 CLI session id
+保存在 Hub runtime 的 `chats/`，建筑输入与结果仍在项目根。共享工具箱的自动检索与执行仍待接入，
+开发源码时继续按上表查询 owner。新成员的实际试用仍应验证首次配置、一次真实候选以及同项目续改。
+
+**与 Codex 的接入方式比较：** Codex 在启动时按固定位置发现
+[项目指令](https://learn.chatgpt.com/docs/agent-configuration/agents-md)，先呈现
+[技能名称与描述](https://learn.chatgpt.com/docs/build-skills)，选中后才读取正文；
+[本地环境配置](https://learn.chatgpt.com/docs/environments/local-environment)可复用 worktree 设置与常用动作。
+这些机制将环境准备和入口发现放进宿主，减少每次交给模型重新调查的工作。
+对 ArchFlow 的推论是：Hub 在接入时应提供简短的绑定结果和可执行入口，长指南只供安装、开发和排错查阅。
+普通使用者应沿已有 MonkeyHub 安装包的“打开应用 → 选择项目 → 提交任务”入口；
+上面的源码查询是开发路径。安装包已包含运行环境，仍需验证新用户的第一次实际项目操作是否顺畅，
+不能把文档和入口存在等同于已完成开箱试用。
 
 ## 1. 先建立正确的三层物理边界
 
@@ -77,14 +156,15 @@ Git 源码仓 / worktree
 4. 提交前再次核对暂存 diff；别人的 WIP 不提交、不格式化、不回退。
 5. 一个 worktree 完成不等于 `main` 已更新；以 `main` 实际提交图为准。
 
-## 2. 先读地图，再读目录树
+## 2. 按任务查询，再读对应实现
 
 新增或修改功能前，按这个顺序读取：
 
 1. [`AGENTS.md`](../AGENTS.md)：项目级硬边界。
-2. [`ARCHITECTURE.md`](ARCHITECTURE.md)：现有职责、已确认缺口和开发顺序；拟议能力不当作已实现。
-3. [`SYSTEM_MAP.md`](SYSTEM_MAP.md) 中与本次行为相关的条目及
-   [`module_registry.json`](../governance/module_registry.json) 中目标 capability 的 owner。
+2. `python tools/devctl.py module <关键词>`，再用精确 module id 读取 owner、公开契约、源码和测试路径。
+   需要补充架构背景时读 [`ARCHITECTURE.md`](ARCHITECTURE.md) 或 [`SYSTEM_MAP.md`](SYSTEM_MAP.md) 的对应部分。
+   拟议能力不当作已实现；不把整张地图作为每次任务的前置输入。
+3. 目标实现与真实调用方；只在这些信息不能解答具体问题时扩大搜索。
 4. 只有需要理解旧合并决定时读 [`CANONICAL_SPINE.md`](CANONICAL_SPINE.md)。它是历史决策，
    其中迁移顺序不可重跑，历史统计不是实时状态；实时 owner 仍以 registry 和代码为准。
 5. [`DYNAMIC_MAP.md`](DYNAMIC_MAP.md)：尚未完成的工作卡，不是已交付能力清单。
@@ -309,7 +389,7 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | 名称 | 用途与边界 | 当前代码标识或入口 |
 | --- | --- | --- |
 | **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `archflow/` |
-| **MonkeyHub** | 应用启动入口、服务管理与共享设置 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
+| **MonkeyHub** | 唯一对外应用入口；启动、工作区切换、服务管理与共享设置，Agent 接入也沿此入口 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
 | **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub `appId: monkeydiagram`；Studio `?view=documents` |
 | **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；Studio `?view=board` |
@@ -317,11 +397,13 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 独立 MonkeyFab CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
 **ArchFlow Studio / Studio** 指 `apps/archflow-studio/` 这个共同宿主；MonkeyArch、
-MonkeyDiagram、MonkeyBoard 是各自面向用户的入口。产品分开命名不要求各自启动一个进程：
+MonkeyDiagram、MonkeyBoard 是 MonkeyHub 中的建模、图纸和展示工作区。工作区名称不要求各自启动一个进程：
 这三个入口当前共用 Studio 服务，MonkeyMonitor 独立运行，MonkeyFab 页面由 Hub 承载。
 名称和应用列表以 [Hub 实现](../apps/monkeyhub/api/monkeyhub_api/applications.py) 及
 [启动说明](../apps/monkeyhub/README.md) 对照；现有目录、`appId`、模块 ID 与 API 不因显示名变化而迁移。
 另行约定的 **MonkeyMinecraft** 用于 Minecraft 建筑模组项目，不列作当前 Hub 已接入的应用。
+启动与 Agent 接入由 Hub 提供；MonkeyArch 是工作区名称。
+ArchFlow 保持底层技术与源码名称，Studio 保持实现名称；普通使用流程只介绍 Hub、项目和工作区。
 
 设计历史统一使用以下用语，详细动作与存储约定见
 [Stage / Branch / Candidate 方案](STAGE_BRANCH_CANDIDATE_PLAN.md)：
@@ -341,7 +423,7 @@ Stage 引用，也不表示正式 issue；设计 Branch 与 Git 源码分支是�
 
 ### 第 2 步：找到归口，选择扩展位置
 
-1. 在 `SYSTEM_MAP.md` 和 module registry 找相关 owner，读取它的公开 API、职责边界和真实调用方。
+1. 用 `python tools/devctl.py module <关键词>` 找相关 owner，再用精确 module id 查询公开 API、职责边界和源码路径，读取真实调用方。
 2. 已有能力直接复用；新的独立分析、出图算法可放在自己的领域目录或外部包，通过函数、CLI、API 或 adapter 接入。
 3. 只有确实新增状态语义、编译操作、持久接口或校核边界时，才扩展对应 core owner。应用功能不必逐层修改 core，也不必塞进已有大文件。
 4. 新增软件归口时说明已有 owner 为什么不适合；归口、公开契约或列出的测试改变时，同一改动更新 registry。替换原型时删除被替代的生产路径，保留必要的历史数据读取。

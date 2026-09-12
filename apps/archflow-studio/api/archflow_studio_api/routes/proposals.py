@@ -36,7 +36,14 @@ from starlette.requests import Request
 
 from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
-from ..application.intent import DeterministicIntentProvider, component_edit_proposal
+from ..adapters.seats import SeatsError, load_seat_pack, seats_of
+from ..application.intent import (
+    DeterministicIntentProvider,
+    buildable_components,
+    component_edit_proposal,
+    delete_element_proposal,
+    sketch_prism_proposal,
+)
 from ..application.intent_agent import DeterministicCompiler, Selection
 from ..application.jobs import SUCCEEDED, Job
 from ..application.projection import (
@@ -51,6 +58,8 @@ from ..transport.proposal import (
     ProposalDecisionRequestDto,
     ProposalDto,
     ProposalRequestDto,
+    DeleteElementRequestDto,
+    SketchPrismRequestDto,
     episode_dto,
     to_dto,
 )
@@ -85,6 +94,120 @@ def create_proposal(
     )
     proposal = replace(proposal, source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
                        source_stage_ref=projection.source_stage_ref)
+    return to_dto(request.app.state.proposals.put(proposal))
+
+
+@router.post(
+    "/proposals/sketch",
+    response_model=ProposalDto,
+    response_model_by_alias=True,
+    status_code=201,
+)
+def create_sketch_proposal(
+    request: Request, body: SketchPrismRequestDto
+) -> ProposalDto:
+    """A finished drawing action becomes the same proposal a sentence would.
+
+    One request per completed action, never per pointer move: the preview
+    lives in the browser and only the profile and height that were settled
+    arrive here. What comes back is an ordinary proposal, so running it is the
+    candidate route that already exists and nothing new executes anything.
+    """
+
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    require_actionable(projection)
+    if body.state_digest != projection.state_digest:
+        # Drawn against one exact state, like every other proposal here.
+        raise StudioError(
+            409,
+            "STALE_BASE",
+            f"the drawing names state {body.state_digest}, but "
+            f"{projection.project_id} is at {projection.state_digest}. Read "
+            "/api/state again and send the action against the state that answers now.",
+        )
+    # Which components a seat will actually build. A drawing under any other
+    # one would be carried by the record and built by nobody, so it is refused
+    # here — with the list — rather than queued into a run that reports success
+    # and exports nothing of what was asked for.
+    try:
+        seats = seats_of(load_seat_pack(binding.repository))
+    except SeatsError as exc:
+        raise StudioError(422, "SEATS_UNAVAILABLE", str(exc)) from exc
+    buildable = buildable_components(projection, seats)
+    target = body.parent_component_id or body.component_id
+    if target not in buildable:
+        raise StudioError(
+            422,
+            "COMPONENT_NOT_BUILT",
+            f"no seat builds {target}: draw under one of {list(buildable)}, "
+            "or have the project's seat pack own it. Nothing was run.",
+        )
+    proposal = proposal_from(
+        sketch_prism_proposal(
+            projection,
+            component_id=body.component_id,
+            element_id=body.element_id,
+            profile=body.profile,
+            height=body.height,
+            base=body.base_reference(),
+            parent_component_id=body.parent_component_id,
+            semantic_kind=body.semantic_kind,
+            summary=body.summary,
+            keep_refs=tuple(body.keep),
+        )
+    )
+    proposal = replace(
+        proposal,
+        source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
+        source_stage_ref=projection.source_stage_ref,
+    )
+    return to_dto(request.app.state.proposals.put(proposal))
+
+
+@router.post(
+    "/proposals/delete",
+    response_model=ProposalDto,
+    response_model_by_alias=True,
+    status_code=201,
+)
+def create_delete_proposal(
+    request: Request, body: DeleteElementRequestDto
+) -> ProposalDto:
+    """One picked element removed, as an ordinary proposal at one exact base.
+
+    The Delete key is a design edit, so it arrives the way every other design
+    edit does and runs through the candidate route that already exists. It
+    compiles nothing with a model: a keystroke that quietly spent a model call
+    would be a different thing from what the architect pressed.
+    """
+
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    require_actionable(projection)
+    if body.state_digest != projection.state_digest:
+        raise StudioError(
+            409,
+            "STALE_BASE",
+            f"the delete names state {body.state_digest}, but "
+            f"{projection.project_id} is at {projection.state_digest}. Read "
+            "/api/state again and send it against the state that answers now.",
+        )
+    proposal = proposal_from(
+        delete_element_proposal(
+            projection,
+            element_id=body.element_id,
+            summary=body.summary,
+            keep_refs=tuple(body.keep),
+        )
+    )
+    proposal = replace(
+        proposal,
+        source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
+        source_stage_ref=projection.source_stage_ref,
+    )
     return to_dto(request.app.state.proposals.put(proposal))
 
 

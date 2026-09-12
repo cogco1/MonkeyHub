@@ -212,6 +212,23 @@ button.chip:hover {
   grid-template-columns: minmax(320px, 360px) minmax(0, 1fr) 360px;
 }
 
+/* Embedded beside a host's own chrome: no bar of this page's own at the top. */
+.app[data-embedded="true"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .app[data-embedded="true"],
+  .app[data-embedded="true"][data-pinned="true"] {
+    grid-template-rows: minmax(0, 1fr) 46vh;
+  }
+
+  .app[data-embedded="true"][data-conversation="false"],
+  .app[data-embedded="true"][data-pinned="true"][data-conversation="false"] {
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
 .app[data-conversation="false"] {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -792,6 +809,115 @@ button.chip:hover {
   border-color: var(--violated);
 }
 
+/* One drawing action: the layer that reads the pointer, and the exact size
+   that belongs to the step it is on. Neither outlives the action. */
+.stage-sketch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.sketch-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  pointer-events: auto;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--overlay);
+  box-shadow: var(--shadow);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.sketch-entry__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sketch-entry__value input {
+  width: 6em;
+  height: 28px;
+  padding: 2px 6px;
+}
+
+.sketch-entry__hint {
+  font-size: calc(11px * var(--font-scale, 1));
+}
+
+/* An empty viewport offering the ways into a model that actually exist here. */
+.viewport-state:has(.stage-empty) {
+  width: min(430px, calc(100% - 32px));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.viewport-host:has(.stage-empty) .viewport-canvas {
+  opacity: 0.35;
+}
+
+.stage-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.stage-empty__icon {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 4px;
+  color: var(--faint);
+}
+
+.stage-empty h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 500;
+}
+
+.stage-empty p {
+  margin: 0;
+  max-width: 34em;
+  color: var(--muted);
+  font-size: calc(12px * var(--font-scale, 1));
+  line-height: 1.7;
+}
+
+.stage-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.stage-empty__actions .btn {
+  min-height: 34px;
+  padding: 5px 10px;
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.stage-empty__actions .btn:hover {
+  border-color: var(--line);
+  background: var(--panel-2);
+}
+
+.stage-empty .stage-empty__hint {
+  color: var(--faint);
+  font-size: calc(11px * var(--font-scale, 1));
+}
+
 .drop-target {
   border-color: var(--accent);
   background: var(--accent);
@@ -951,25 +1077,45 @@ button.chip:hover {
   color: var(--ink-2);
 }
 
+/* The viewport's own tools, centred on the picture they act on rather than
+   pinned to one side of it. The row spans the picture so that centring and
+   wrapping are measured against it, and lets pointer events through except
+   where a control actually is. */
 .viewtools-wrap {
   position: absolute;
+  left: 14px;
   right: 14px;
   bottom: 14px;
   z-index: 6;
   display: grid;
-  justify-items: end;
+  justify-items: center;
   gap: 6px;
   min-width: 0;
-  width: fit-content;
+  pointer-events: none;
+}
+
+.viewtools-wrap > * {
+  pointer-events: auto;
+}
+
+/* Standalone, the versions strip shares this row and keeps its corner. */
+.viewtools-wrap > .viewtools {
   max-width: min(560px, calc(100% - 300px));
+}
+
+/* Embedded, that strip is the host's, so the tools may use the whole width. */
+.app[data-embedded="true"] .viewtools-wrap > .viewtools {
+  max-width: 100%;
 }
 
 .viewtools--panel {
   position: absolute;
+  left: 0;
   right: 0;
   bottom: calc(100% + 6px);
   width: fit-content;
-  max-width: min(560px, calc(100vw - 28px));
+  margin-inline: auto;
+  max-width: min(560px, 100%);
   box-shadow: var(--shadow);
 }
 
@@ -1100,7 +1246,6 @@ button.chip:hover {
 
 @media (max-width: 800px) {
   .viewtools-wrap {
-    right: 14px;
     bottom: 58px;
     max-width: calc(100% - 28px);
   }

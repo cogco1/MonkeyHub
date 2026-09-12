@@ -72,7 +72,13 @@ class Applications:
 
     def configure(self, settings: ApplicationSettingsDto) -> ApplicationSettingsDto:
         with self._lock:
-            if self._closing or any(child.process.poll() is None for child in self._children.values()):
+            previous = read_application_settings(self.runtime_root)
+            changed_services = set()
+            if (settings.project_dir, settings.reference_run, settings.cad_export, settings.studio_port) != (previous.project_dir, previous.reference_run, previous.cad_export, previous.studio_port):
+                changed_services.add("studio")
+            if settings.monitor_port != previous.monitor_port:
+                changed_services.add("monitor")
+            if self._closing or any(service in changed_services and child.process.poll() is None for service, child in self._children.items()):
                 raise HubFailure(409, "APPS_RUNNING", "Stop the applications before changing their launch configuration.")
             if settings.studio_port == settings.monitor_port or self.hub_port in {settings.studio_port, settings.monitor_port}:
                 raise HubFailure(409, "PORT_CONFLICT", "Hub, Studio and Monitor must use different ports.")

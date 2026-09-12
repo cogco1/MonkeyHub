@@ -5,6 +5,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   ACESFilmicToneMapping,
@@ -29,6 +30,7 @@ import {
   Raycaster,
   Scene,
   ShapeUtils,
+  Sphere,
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -60,6 +62,15 @@ import {
   type ModelAppearance,
   type SemanticHighlightTarget,
 } from "./modelDisplay";
+import { fitDistance } from "./fitCamera";
+import {
+  candidatesOf,
+  closestOnEdge,
+  featureEdges,
+  nearestCandidate,
+  type FeatureEdge,
+  type Point3,
+} from "./featureEdges";
 import { encodeViewportPng } from "./viewportScreenshot";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
@@ -117,6 +128,25 @@ export type HighlightRequest =
 
 export type Vec3 = [number, number, number];
 
+/**
+ * A drawing in progress: the closed plan profile in CAD world ``(x, y)`` at
+ * ``base``, and how far it is being pulled along +Z. A height of zero shows
+ * the outline alone, which is what the first half of the action is.
+ */
+export interface SketchPreview {
+  readonly profile: ReadonlyArray<readonly [number, number]>;
+  readonly base: number;
+  readonly height: number;
+}
+
+/** Where a pointer really is on the model, and what that place is. */
+export interface ModelSnap {
+  readonly point: Vec3;
+  readonly kind: "endpoint" | "midpoint" | "edge" | "surface";
+  /** The object it belongs to, as the export named it. */
+  readonly objectName: string | null;
+}
+
 /** One object under a point of a stroke, read the way a click is read. */
 export interface SampleHit {
   objectName: string | null;
@@ -168,7 +198,7 @@ export interface ViewportController {
    * camera through ``through`` (or through the orbit target when null): how
    * a stroke's length and direction become model units.
    */
-  unprojectOnPlane(clientX: number, clientY: number, through: Vec3 | null): Vec3 | null;
+  unprojectOnPlane(clientX: number, clientY: number, through: Vec3 | null, vertical?: boolean): Vec3 | null;
   /**
    * Load a second file beside the loaded one for a cross-fade: the loaded
    * model is 'before', this one 'after'. Resolves with its mesh count.
@@ -184,6 +214,28 @@ export interface ViewportController {
    * loaded file carries no objects of that element, and nothing was drawn.
    */
   ghost(spec: GhostSpec | null): number;
+  /**
+   * A client point on the horizontal work plane at ``height``, in world
+   * units: where a drawing action puts its next corner. Null when the ray
+   * runs parallel to the plane or there is no renderer yet.
+   */
+  pointOnWorkPlane(clientX: number, clientY: number, height: number): Vec3 | null;
+  /**
+   * The point on the loaded model a pointer is really over: the end or the
+   * middle of a visible edge when one is within ``radiusPx`` on screen, a
+   * point along that edge when the pointer is on it, and otherwise the place
+   * the ray met the surface. Null when the ray meets nothing.
+   *
+   * The edges are the model's own: a face that was triangulated to draw it
+   * offers no diagonal, so nothing snaps to a line nobody can see.
+   */
+  snapOnModel(clientX: number, clientY: number, radiusPx?: number): ModelSnap | null;
+  /**
+   * Show a profile, and the solid it would make, while it is being drawn.
+   * This is a picture and nothing else: it is not the model, it is never
+   * saved, and ``sketchPreview(null)`` leaves the scene exactly as it was.
+   */
+  sketchPreview(spec: SketchPreview | null): void;
   fitView(): void;
   frontView(): void;
   /** Encode the current rendered canvas for its caller; never writes the project. */
@@ -205,6 +257,12 @@ interface ThreeDmViewportProps {
   /** Which file the viewport is showing, in the shell's own words. */
   onSource(sourceLabel: string | null): void;
   onPick(pick: ViewportPick): void;
+  /**
+   * What an empty viewport should offer, when the shell around it knows which
+   * ways into a model are actually available. Without one, the viewer keeps
+   * its own plain sentence and its file button.
+   */
+  idle?: ReactNode;
 }
 
 interface ViewportRuntime {
@@ -227,6 +285,10 @@ interface ViewportRuntime {
   original: WeakMap<Mesh, Material | Material[]>;
   /** The clones themselves, so they are disposed rather than leaked. */
   clones: Material[];
+  /** True while the camera still stands where a fit put it, nobody having moved it. */
+  fitted: boolean;
+  /** The drawing in progress. It is shown and thrown away; nothing saves it. */
+  sketch: Group | null;
   render: () => void;
 }
 
@@ -580,10 +642,13 @@ function fitRuntime(runtime: ViewportRuntime): void {
   const box = new Box3().setFromObject(runtime.model);
   if (box.isEmpty()) return;
   const center = box.getCenter(new Vector3());
-  const size = box.getSize(new Vector3());
-  const maximumDimension = Math.max(size.x, size.y, size.z, 1);
-  const fieldOfView = (runtime.camera.fov * Math.PI) / 180;
-  const distance = (maximumDimension / (2 * Math.tan(fieldOfView / 2))) * 1.55;
+  // The whole model, whichever way it is turned: the bounding sphere is the
+  // one radius that holds under orbit, and both frame angles decide how far
+  // back the camera has to stand for it.
+  const radius = box.getBoundingSphere(new Sphere()).radius;
+  const distance = fitDistance({
+    radius, fovDegrees: runtime.camera.fov, aspect: runtime.camera.aspect,
+  });
   const direction = new Vector3(1, -1, 0.78).normalize();
 
   runtime.camera.position.copy(center).addScaledVector(direction, distance);
@@ -592,6 +657,9 @@ function fitRuntime(runtime: ViewportRuntime): void {
   runtime.camera.updateProjectionMatrix();
   runtime.controls.target.copy(center);
   runtime.controls.update();
+  // The frame now holds the model; a later resize may keep it that way until
+  // somebody moves the camera themselves.
+  runtime.fitted = true;
   runtime.render();
 }
 
@@ -638,6 +706,8 @@ function frontRuntime(runtime: ViewportRuntime): void {
   runtime.camera.updateProjectionMatrix();
   runtime.controls.target.copy(center);
   runtime.controls.update();
+  // An explicitly chosen elevation is not the fit view; a resize keeps it.
+  runtime.fitted = false;
   runtime.render();
 }
 
@@ -658,7 +728,7 @@ export const ThreeDmViewport = forwardRef<
   ViewportController,
   ThreeDmViewportProps
 >(function ThreeDmViewport(
-  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick },
+  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick, idle },
   forwardedRef,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -722,6 +792,58 @@ export const ThreeDmViewport = forwardRef<
     runtime.ghost = null;
     runtime.render();
   }, []);
+
+  const removeSketch = useCallback(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime?.sketch) return;
+    runtime.scene.remove(runtime.sketch);
+    disposeScene(runtime.sketch);
+    runtime.sketch = null;
+    runtime.render();
+  }, []);
+
+  const sketchPreview = useCallback(
+    (spec: SketchPreview | null) => {
+      const runtime = runtimeRef.current;
+      if (!runtime) return;
+      removeSketch();
+      if (spec === null || spec.profile.length < 2) return;
+      const accent = new Color(accentColour());
+      const group = new Group();
+      group.name = "archflow-sketch-preview";
+      const closed = spec.profile.length > 2;
+      const outline: number[] = [];
+      spec.profile.forEach(([planX, planY], index) => {
+        if (index + 1 === spec.profile.length && !closed) return;
+        const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
+        outline.push(planX, planY, spec.base, nextX, nextY, spec.base);
+      });
+      const base = new LineSegments(
+        new BufferGeometry().setAttribute("position", new Float32BufferAttribute(outline, 3)),
+        new LineBasicMaterial({ color: accent, depthTest: false, transparent: true, opacity: 0.95 }),
+      );
+      base.renderOrder = 3;
+      group.add(base);
+      if (spec.height > 0 && closed) {
+        const raised: number[] = [];
+        spec.profile.forEach(([planX, planY], index) => {
+          const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
+          raised.push(planX, planY, spec.base + spec.height, nextX, nextY, spec.base + spec.height);
+          raised.push(planX, planY, spec.base, planX, planY, spec.base + spec.height);
+        });
+        const edges = new LineSegments(
+          new BufferGeometry().setAttribute("position", new Float32BufferAttribute(raised, 3)),
+          new LineBasicMaterial({ color: accent, depthTest: false, transparent: true, opacity: 0.75 }),
+        );
+        edges.renderOrder = 3;
+        group.add(edges);
+      }
+      runtime.scene.add(group);
+      runtime.sketch = group;
+      runtime.render();
+    },
+    [removeSketch],
+  );
 
   const ghost = useCallback(
     (spec: GhostSpec | null) => {
@@ -1192,6 +1314,60 @@ export const ThreeDmViewport = forwardRef<
     [hitAt],
   );
 
+  const snapOnModel = useCallback(
+    (clientX: number, clientY: number, radiusPx = 14): ModelSnap | null => {
+      const runtime = runtimeRef.current;
+      const hit = hitAt(clientX, clientY);
+      if (!runtime || !hit) return null;
+      const rect = runtime.renderer.domElement.getBoundingClientRect();
+      const pointer = [clientX - rect.left, clientY - rect.top] as const;
+      const project = (point: Point3): readonly [number, number] | null => {
+        const carried = new Vector3(point[0], point[1], point[2]).project(runtime.camera);
+        if (carried.z > 1) return null;
+        return [(carried.x + 1) / 2 * rect.width, (1 - carried.y) / 2 * rect.height];
+      };
+      // The visible edges of the object the ray met, in world coordinates,
+      // computed once per geometry and kept with it.
+      const edges: FeatureEdge[] = [];
+      hit.object.traverse((node) => {
+        const mesh = node as Mesh;
+        const geometry = mesh.geometry as BufferGeometry | undefined;
+        if (!mesh.isMesh || !geometry) return;
+        const cached = geometry.userData.archflowEdges as FeatureEdge[] | undefined;
+        const own = cached ?? featureEdges({
+          positions: (geometry.getAttribute("position") as BufferAttribute).array as ArrayLike<number>,
+          index: geometry.getIndex()?.array as ArrayLike<number> | undefined ?? null,
+        });
+        geometry.userData.archflowEdges = own;
+        mesh.updateWorldMatrix(true, false);
+        for (const edge of own) {
+          const a = new Vector3(...edge.a).applyMatrix4(mesh.matrixWorld);
+          const b = new Vector3(...edge.b).applyMatrix4(mesh.matrixWorld);
+          edges.push({ a: [a.x, a.y, a.z], b: [b.x, b.y, b.z] });
+        }
+      });
+      const candidates = edges.flatMap(candidatesOf);
+      const chosen = nearestCandidate(candidates, project, pointer, radiusPx);
+      if (chosen) {
+        return { point: [chosen.point[0], chosen.point[1], chosen.point[2]], kind: chosen.kind, objectName: hit.objectName };
+      }
+      // Not on a corner or a middle: the nearest visible edge, if the pointer
+      // is over one, else the surface itself.
+      const where: Point3 = [hit.point.x, hit.point.y, hit.point.z];
+      let onEdge: { point: Point3; distance: number } | null = null;
+      for (const edge of edges) {
+        const point = closestOnEdge(edge, where);
+        const screen = project(point);
+        if (screen === null) continue;
+        const distance = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
+        if (distance <= radiusPx && (onEdge === null || distance < onEdge.distance)) onEdge = { point, distance };
+      }
+      if (onEdge) return { point: [onEdge.point[0], onEdge.point[1], onEdge.point[2]], kind: "edge", objectName: hit.objectName };
+      return { point: [where[0], where[1], where[2]], kind: "surface", objectName: hit.objectName };
+    },
+    [hitAt],
+  );
+
   const sampleAt = useCallback(
     (clientX: number, clientY: number): SampleHit | null => {
       const hit = hitAt(clientX, clientY);
@@ -1217,13 +1393,30 @@ export const ThreeDmViewport = forwardRef<
     };
   }, []);
 
+  const pointOnWorkPlane = useCallback(
+    (clientX: number, clientY: number, height: number): Vec3 | null => {
+      const raycaster = rayAt(clientX, clientY);
+      if (!raycaster) return null;
+      // The loaded CAD model is Z-up; its horizontal work plane is XY.
+      const plane = new Plane(new Vector3(0, 0, 1), -height);
+      const point = raycaster.ray.intersectPlane(plane, new Vector3());
+      return point ? [point.x, point.y, point.z] : null;
+    },
+    [rayAt],
+  );
+
   const unprojectOnPlane = useCallback(
-    (clientX: number, clientY: number, through: Vec3 | null): Vec3 | null => {
+    (clientX: number, clientY: number, through: Vec3 | null, vertical = false): Vec3 | null => {
       const runtime = runtimeRef.current;
       if (!runtime) return null;
       const raycaster = rayAt(clientX, clientY);
       if (!raycaster) return null;
       const normal = runtime.camera.getWorldDirection(new Vector3());
+      if (vertical) {
+        normal.z = 0;
+        if (normal.lengthSq() < 1e-12) return null;
+        normal.normalize();
+      }
       const anchor = through
         ? new Vector3(through[0], through[1], through[2])
         : runtime.controls.target.clone();
@@ -1242,6 +1435,9 @@ export const ThreeDmViewport = forwardRef<
       highlight,
       ghost,
       sampleAt,
+      snapOnModel,
+      pointOnWorkPlane,
+      sketchPreview,
       camera: cameraState,
       unprojectOnPlane,
       loadSecondary,
@@ -1366,10 +1562,16 @@ export const ThreeDmViewport = forwardRef<
       highlighted: [],
       original: new WeakMap(),
       clones: [],
+      fitted: false,
+      sketch: null,
       render,
     };
     runtimeRef.current = runtime;
     controls.addEventListener("change", render);
+    // Orbiting, panning or zooming is a chosen view; from then on a resize
+    // reframes nothing. OrbitControls raises this for real input only.
+    const userTookTheCamera = () => { runtime.fitted = false; };
+    controls.addEventListener("start", userTookTheCamera);
 
     const resize = () => {
       const width = Math.max(host.clientWidth, 1);
@@ -1377,7 +1579,11 @@ export const ThreeDmViewport = forwardRef<
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      render();
+      // A panel that just became narrower sees less across than it did. The
+      // fit view is recomputed for the frame it is now in; a hand-placed
+      // camera is left alone.
+      if (runtime.fitted && runtime.model) fitRuntime(runtime);
+      else render();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
@@ -1387,6 +1593,7 @@ export const ThreeDmViewport = forwardRef<
       loadGenerationRef.current += 1;
       observer.disconnect();
       controls.removeEventListener("change", render);
+      controls.removeEventListener("start", userTookTheCamera);
       controls.dispose();
       // Give the highlighted meshes their own materials back, so what is
       // disposed below is the file's and the clones go with the mark.
@@ -1442,12 +1649,16 @@ export const ThreeDmViewport = forwardRef<
           {visualStatus === "loading" && (
             <span className="activity-rail activity-rail--compact" aria-hidden="true" />
           )}
-          <p aria-live="polite">{visualMessage}</p>
-          {(visualStatus === "idle" || visualStatus === "error") && (
-            <button className="button" type="button" onClick={onRequestFile}>
-              Open a local .3dm
-            </button>
-          )}
+          {/* An empty viewport is a place to start from when the shell
+              handed one in; otherwise it states what it holds. */}
+          {visualStatus === "idle" && idle ? idle : <>
+            <p aria-live="polite">{visualMessage}</p>
+            {(visualStatus === "idle" || visualStatus === "error") && (
+              <button className="button" type="button" onClick={onRequestFile}>
+                Open a local .3dm
+              </button>
+            )}
+          </>}
         </div>
       )}
       {dragActive && <div className="drop-target">Release to open locally</div>}

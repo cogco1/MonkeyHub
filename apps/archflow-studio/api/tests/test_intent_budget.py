@@ -108,6 +108,14 @@ class ContextBudgetTests(unittest.TestCase):
                 build_context_budget({"intent": "edit"}, model="test", task_type="scalar",
                                      count_tokens=lambda text: invalid)
 
+    def test_enforced_budget_boundary_is_inclusive_and_does_not_claim_provider_tokens(self):
+        report = build_context_budget({"intent": "1234"}, model="test", task_type="design", budget_tokens=1)
+        self.assertIsNone(report.limitation())
+        report = build_context_budget({"intent": "12345"}, model="test", task_type="design", budget_tokens=1)
+        self.assertIn("estimated at 2", report.limitation())
+        self.assertIn("Required design constraints have been retained", report.limitation())
+        self.assertIn("excludes CLI/provider overhead and image token costs", report.limitation())
+
 
 class PerAttemptUsageTests(unittest.TestCase):
     def test_expansion_preserves_each_call_usage_model_and_validation_without_double_counting(self):

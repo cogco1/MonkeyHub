@@ -62,6 +62,8 @@ import {
   readWorkingCopiesApiWorkingCopiesGet,
   readProjectApiProjectGet,
   readProjectsApiProjectsGet,
+  createDeleteProposalApiProposalsDeletePost,
+  createSketchProposalApiProposalsSketchPost,
   readProposalApiProposalsProposalIdGet,
   readClosureApiStateClosurePost,
   readFrameApiStateFrameGet,
@@ -105,6 +107,7 @@ import type {
   ModelSourceDto,
   ModelLoadTimingDto,
   ClientTimingDto,
+  DeleteElementRequestDto,
   MonitorWriteDto,
   OptionsDto,
   PickRequestDto,
@@ -115,6 +118,7 @@ import type {
   ProjectBindingDto,
   ProjectListDto,
   ProposalDto,
+  SketchPrismRequestDto,
   ProposalRequestDto,
   SemanticsDto,
   SourceDocumentDto,
@@ -454,6 +458,15 @@ export const studio = {
    */
   compileIntent(body: IntentRequestDto, trace?: OperationTrace): Promise<IntentDto> {
     return call("POST /api/intents", compileIntentApiIntentsPost({ body, headers: traceHeaders(trace) }));
+  },
+
+  /** One finished drawing action, as the proposal it already is. */
+  sketch(body: SketchPrismRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ body }));
+  },
+
+  removeElement(body: DeleteElementRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/delete", createDeleteProposalApiProposalsDeletePost({ body }));
   },
 
   proposal(proposalId: string): Promise<ProposalDto> {

@@ -440,6 +440,7 @@ export function Annotate({
   }, []);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (canvasRef.current?.closest("[inert], [aria-hidden='true']")) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
       if (event.key === "Escape") cancel();

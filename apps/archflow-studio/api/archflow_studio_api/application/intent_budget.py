@@ -1,4 +1,4 @@
-"""Content-free, advisory estimates for one compiled model request.
+"""Content-free text estimates for the enforced application request budget.
 
 Section strings describe disjoint text actually sent by a provider adapter.
 Contributor strings are optional subsets for diagnosis, never additional input.
@@ -55,6 +55,18 @@ class ContextBudget:
     def exceeded(self) -> bool:
         return self.estimated_input_tokens > self.budget_tokens
 
+    def limitation(self) -> str | None:
+        """An over-budget request cannot be sent or silently shortened."""
+        if not self.exceeded:
+            return None
+        return (
+            f"The required application context is estimated at {self.estimated_input_tokens} text tokens, "
+            f"above the configured limit of {self.budget_tokens}. Narrow the request to a selected "
+            "object or a smaller named area. Required design constraints have been retained; "
+            "this request was not sent to the model. This limit excludes CLI/provider overhead "
+            "and image token costs."
+        )
+
     def to_details(self) -> dict[str, object]:
         """Bounded diagnostic metadata; the supplied source text is never retained."""
 
@@ -76,7 +88,7 @@ class ContextBudget:
         }
 
     def log_preflight(self, logger: logging.Logger) -> None:
-        """Warn without truncation, retries, enforcement or a new persistence path."""
+        """Log estimates; the caller enforces the budget before provider invocation."""
 
         sections = ", ".join(f"{name}={count}" for name, count in self.section_tokens)
         largest = ", ".join(f"{name}={count}" for name, count in self.largest_contributors)

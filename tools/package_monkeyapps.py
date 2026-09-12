@@ -202,8 +202,12 @@ def collect_application(source: Path, bundle: Path, commit: str,
     (notice_target / "README.md").write_text(notice_readme, encoding="utf-8")
     for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
         shutil.copytree(source / relative, bundle / relative)
+    # The capability index the Studio serves at /api/capabilities is read from
+    # this registry beside the application, so the installed product answers
+    # from the same file the checkout does instead of an embedded copy.
     for relative in ("apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
                      "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
+                     "governance/module_registry.json",
                      "apps/shared-web/src/appearance.js", "apps/shared-web/src/i18n.js",
                      "apps/shared-web/src/browserTranslator.js", "apps/shared-web/src/base.css",
                      "tools/create_project.py", "tools/run_project.py"):

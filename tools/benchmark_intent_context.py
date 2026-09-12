@@ -29,7 +29,7 @@ from archflow.state.stage_workflow import DesignPhase
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
 from archflow_studio_api.application.binding import ReferenceRun
 from archflow_studio_api.application.intent_agent import (
-    MAX_OUTPUT_TOKENS, SYSTEM_PROMPT, Selection, _compile_context_request, _prompt,
+    MAX_OUTPUT_TOKENS, SYSTEM_PROMPT, Selection, _compile_context_request, _context_budget, _prompt,
     record_sheet, response_schema,
 )
 from archflow_studio_api.application.projection import StateProjection, _elements
@@ -123,10 +123,20 @@ class CaptureCompiler:
     """Replace the external call while exercising the real preparation loop."""
 
     binding = SimpleNamespace(model_id="offline-benchmark")
+    provider = "anthropic"
     context_budget_tokens = 16_000
 
     def __init__(self):
         self.prepared = None
+        self.preflight = None
+        self.budget = None
+
+    def observe_budget(self, message, context, rules, schema, **kwargs):
+        # Observe the actual runtime estimate without changing its result or
+        # bypassing the enforcement that follows it in request preparation.
+        self.preflight = {"context": context, "schema": schema, "rules": rules}
+        self.budget = _context_budget(message, context, rules, schema, **kwargs)
+        return self.budget
 
     def _compile_once(self, **prepared):
         self.prepared = prepared
@@ -153,18 +163,28 @@ def benchmark(sibling_counts, count):
         projection = fixture(sibling_count)
         selection = Selection("facade", "wall-07")
         sheet = record_sheet(projection, selection)
-        for expected_tier, message in (
-            ("scalar", "set this wall thickness to 0.3"),
-            ("component", "set this wall thickness to 0.3 and height to 3.5"),
-            ("design", "reorganize the upper gallery while preserving structural and circulation constraints"),
+        for case, expected_tier, message in (
+            ("scalar", "scalar", "set this wall thickness to 0.3"),
+            ("component", "component", "set this wall thickness to 0.3 and height to 3.5"),
+            ("local_design", "design", "reconfigure wall-07 while preserving its base and parapet support"),
+            ("global_design", "design", "reorganize the upper gallery while preserving structural and circulation constraints"),
         ):
             compiler = CaptureCompiler()
             # Preflight warnings are already tested by the runtime suite. This
             # command's only output is its machine-readable benchmark result.
-            with patch("archflow_studio_api.application.intent_agent.log"):
-                _compile_context_request(compiler, message=message, selection=selection,
-                                         projection=projection, operation_observer=None)
-            prepared = compiler.prepared
+            with patch("archflow_studio_api.application.intent_agent.log"), patch(
+                "archflow_studio_api.application.intent_agent._context_budget", side_effect=compiler.observe_budget,
+            ):
+                result = _compile_context_request(compiler, message=message, selection=selection,
+                                                  projection=projection, operation_observer=None)
+            prepared = compiler.preflight
+            if prepared is None:
+                raise ValueError(f"benchmark case {case} did not reach context preparation")
+            blocked = compiler.budget.exceeded
+            if blocked and (compiler.prepared is not None or result.status != "unsupported"):
+                raise ValueError("an over-budget benchmark request reached the provider boundary")
+            if not blocked and compiler.prepared is None:
+                raise ValueError("an in-budget benchmark request did not reach the capture provider")
             context = prepared["context"]
             if context.tier != expected_tier:
                 raise ValueError(f"benchmark case {expected_tier} unexpectedly compiled as {context.tier}")
@@ -172,12 +192,16 @@ def benchmark(sibling_counts, count):
             sent_sheet = model_context(context)
             compiled = _measure(message, sent_sheet, prepared["schema"], prepared["rules"], count)
             rows.append({
-                "sibling_count": sibling_count, "task_type": context.tier,
+                "sibling_count": sibling_count, "case": case, "task_type": context.tier,
+                "status": "budget_blocked" if blocked else "prepared",
+                "provider_boundary_reached": compiler.prepared is not None,
+                "limitation": result.why if blocked else None,
+                "runtime_budget": compiler.budget.to_details()["context_budget"],
                 "project_element_count": len(projection.elements),
-                "sent_element_count": len(sent_sheet.get("elements", [])),
-                "sent_type_count": len(sent_sheet.get("types", [])),
-                "sent_target_count": len(sent_sheet.get("targets", [])),
-                "sent_design_fact_count": len(sent_sheet.get("designFacts", [])),
+                "prepared_element_count": len(sent_sheet.get("elements", [])),
+                "prepared_type_count": len(sent_sheet.get("types", [])),
+                "prepared_target_count": len(sent_sheet.get("targets", sent_sheet.get("editTargets", []))),
+                "prepared_design_fact_count": len(sent_sheet.get("designFacts", [])),
                 "private_element_count": len(context.sheet.get("elements", [])),
                 "private_obligation_count": len(context.sheet.get("obligations", [])),
                 "max_output_tokens": MAX_OUTPUT_TOKENS[context.tier],
@@ -206,6 +230,9 @@ def main(argv=None):
         "notes": [
             "The local encoding is not an exact Anthropic or Codex billing tokenizer.",
             "Section token counts are independent diagnostics and may not sum to concatenated text tokens.",
+            "Runtime budget enforcement uses its labeled text estimator even when the benchmark uses a different local counter.",
+            "Compiled text is measured before budget enforcement; budget_blocked cases never reach the capture provider.",
+            "Provider framing, CLI overhead and image token costs are outside this application text budget.",
             "Synthetic requests measure packaging, not model output success, cached usage, geometry or architectural validity.",
         ],
         "cases": benchmark(args.siblings, count),

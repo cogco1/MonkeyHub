@@ -186,6 +186,19 @@
       "reason": "Creates only stdout/stderr logs for this Hub's own service children under its explicit nonproject runtime root; it never writes a project."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/chat.py",
+      "function": "_save",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_conversation",
+      "owner": "hub.shell",
+      "reason": "Atomically saves chat transcripts and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
+    },
+    {
       "path": "tools/package_monkeyapps.py",
       "function": "fetch_runtime",
       "operations": [

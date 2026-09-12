@@ -30,10 +30,13 @@ from archflow_studio_api.transport.errors import StudioError
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 
 from .applications import Applications
+from .chat import ChatStore
 from .fabrication import Fabrication
 from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
+    ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
+    ChatModelRequest, ChatPostRequest, ChatWorkspace,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -63,15 +66,18 @@ class HubSettings:
 def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> FastAPI:
     applications = Applications(source_root, settings.runtime_root, settings.studio_web_dir, settings.port)
     fabrication = Fabrication(source_root)
+    chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications)
 
     @asynccontextmanager
     async def lifespan(app):
         yield
+        await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
 
     app = FastAPI(title="MonkeyHub API", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.state.applications = applications
+    app.state.chats = chats
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
@@ -79,6 +85,11 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.exception_handler(RequestValidationError)
     async def handle_request_validation(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/chat/"):
+            return JSONResponse(
+                {"code": "CHAT_REQUEST_INVALID", "detail": "Invalid chat request. Check the project, provider and message fields."},
+                status_code=422,
+            )
         if request.url.path.startswith("/api/fab/"):
             return JSONResponse(
                 {"code": "FAB_REQUEST_INVALID", "detail": "Invalid fabrication request. Check the required paths, field types and options."},
@@ -135,11 +146,13 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.post("/api/apps/{app_id}/start", response_model=AppStatus, status_code=202, responses=error_responses)
     def start_app(app_id: AppId) -> AppStatus:
-        return applications.start(app_id)
+        with chats.application_lifecycle(app_id):
+            return applications.start(app_id)
 
     @app.post("/api/apps/{app_id}/stop", response_model=AppStatus, status_code=202, responses=error_responses)
     def stop_app(app_id: AppId) -> AppStatus:
-        return applications.stop(app_id)
+        with chats.application_lifecycle(app_id, stopping=True):
+            return applications.stop(app_id)
 
     fab_errors = {422: {"model": HubError}, 502: {"model": HubError}, 503: {"model": HubError}}
 
@@ -161,7 +174,48 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.put("/api/settings/apps", response_model=ApplicationSettingsDto, response_model_by_alias=True)
     def update_application_settings(body: ApplicationSettingsDto) -> ApplicationSettingsDto:
-        return applications.configure(body)
+        with chats.project_configuration(body.project_dir):
+            return applications.configure(body)
+
+    @app.get("/api/chat/providers", response_model=list[ChatProvider])
+    def chat_providers(refresh: bool = False):
+        return chats.providers(refresh)
+
+    @app.get("/api/chat/projects", response_model=list[ChatProject])
+    def chat_projects():
+        return chats.projects()
+
+    @app.get("/api/chat/workspace", response_model=ChatWorkspace)
+    def chat_workspace():
+        return chats.workspace()
+
+    @app.post("/api/chat/projects", response_model=ChatProject, status_code=201)
+    def create_chat_project(body: ChatProjectRequest):
+        return chats.create_project(body)
+
+    @app.get("/api/chat/sessions", response_model=list[ChatSummary])
+    def chat_sessions(projectId: str | None = None):
+        return chats.list(projectId)
+
+    @app.post("/api/chat/sessions", response_model=ChatDetail, status_code=201)
+    def create_chat(body: ChatCreateRequest):
+        return chats.create(body)
+
+    @app.get("/api/chat/sessions/{session_id}", response_model=ChatDetail)
+    def read_chat(session_id: str):
+        return chats.get(session_id)
+
+    @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatDetail, status_code=202)
+    def post_chat(session_id: str, body: ChatPostRequest):
+        return chats.post(session_id, body)
+
+    @app.put("/api/chat/sessions/{session_id}/model", response_model=ChatDetail)
+    def set_chat_model(session_id: str, body: ChatModelRequest):
+        return chats.set_model(session_id, body.model)
+
+    @app.post("/api/chat/sessions/{session_id}/stop", response_model=ChatDetail)
+    def stop_chat(session_id: str):
+        return chats.stop(session_id)
 
     app.include_router(preferences_router, prefix="/api")
     if settings.hub_web_dir is not None:
@@ -206,6 +260,7 @@ def main(argv: list[str] | None = None) -> None:
             for line in sys.stdin:
                 if line.strip() == "stop":
                     break
+            app.state.chats.shutdown()
             app.state.applications.begin_shutdown()
             server.should_exit = True
         threading.Thread(target=watch_stdin, daemon=True).start()

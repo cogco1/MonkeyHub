@@ -107,7 +107,7 @@ import {
   semanticObjectNames,
   type ModelDisplayMode,
 } from "../workspaces/monkeyarch/viewer/modelDisplay";
-import { AppShell } from "./AppShell";
+import { AppShell, embeddedInHost } from "./AppShell";
 import { ErrorPanel } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
 import { failed, idle, loading, ready, type Loadable } from "./loadable";
@@ -203,12 +203,19 @@ interface HomeArtifacts extends HomeModel {
   readonly referenceRunId: string;
 }
 
-export default function App({ server, initialDocumentIntent }: {
+export default function App({ server, initialDocumentIntent, initialRunId, task, active = true }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
+  /** The exact run this page was opened on, such as a candidate named by the host. */
+  initialRunId?: string | null;
+  task?: import("./tasks").StudioTaskHandle; active?: boolean;
 }) {
   const t = useT();
   const { developerMode } = usePreferences();
-  const transcript = useTranscript();
+  // A host page (the Hub tool panel) draws the workspace entries, the project
+  // position and the settings entry itself.
+  const [embedded] = useState(embeddedInHost);
+  const [initialTask] = useState(() => task?.getSnapshot());
+  const transcript = useTranscript(task?.transcript);
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
     (line: string) => {
@@ -217,7 +224,8 @@ export default function App({ server, initialDocumentIntent }: {
     [append],
   );
   const { binding, session, changingBase, baseError, persistenceFailed, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
-    initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef } : undefined);
+    initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef }
+      : initialRunId ? { runId: initialRunId, sourceStageRef: null } : initialTask?.view.base, !task, initialTask?.projectId);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
   const documentIntentStarted = useRef(false);
   const documentIntentSubmitted = useRef(false);
@@ -244,7 +252,7 @@ export default function App({ server, initialDocumentIntent }: {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [picked, setPicked] = useState<PickedFacts | null>(null);
   const pickRequestRef = useRef(0);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialTask?.view.draft ?? "");
   // The one clarification this tab is in the middle of, as the server described
   // it. A ref rather than state because it is not drawn: the cards show what
   // the server said, and this holds the token and its document source guard.
@@ -316,6 +324,7 @@ export default function App({ server, initialDocumentIntent }: {
   const loadedShas = loadedArtifacts
     .map((artifact) => artifact.sha256)
     .filter((sha): sha is string => sha !== null);
+
 
   const [proposalBusy, setProposalBusy] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
@@ -410,11 +419,13 @@ export default function App({ server, initialDocumentIntent }: {
     }
   });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [conversationOpen, setConversationOpen] = useState(initialDocumentIntent !== undefined);
+  const [conversationOpen, setConversationOpen] = useState(task !== undefined || initialDocumentIntent !== undefined);
 
   useEffect(() => {
-    if (conversationOpen) document.querySelector<HTMLInputElement>("#conversation-panel .composer__box input")?.focus();
-  }, [conversationOpen]);
+    if (conversationOpen && active) document.querySelector<HTMLInputElement>(task
+      ? `[data-studio-task="${task.id}"] .composer__box input` : "#conversation-panel .composer__box input")?.focus();
+  }, [conversationOpen, active, task]);
+  useEffect(() => { if (!active) setSettingsOpen(false); }, [active]);
 
   const projection: StateProjectionDto | null =
     session.status === "ready" ? session.value.projection : null;
@@ -440,17 +451,30 @@ export default function App({ server, initialDocumentIntent }: {
       drawingTiming.current?.finish("cancelled");
     };
   }, [contextKey]);
+  const restoredSelection = useRef(false);
   // A new editing base starts a new exchange, without discarding the draft or history.
   useEffect(() => {
     pickRequestRef.current += 1;
     pendingIntentRef.current = null;
-    setSelection(null);
+    const restore = !restoredSelection.current && projection && initialTask?.view.base.stateDigest === projection.stateDigest;
+    setSelection(restore ? initialTask?.view.selection ?? null : null);
+    if (projection) restoredSelection.current = true;
     setPicked(null);
     setTool(null);
     setGhostProposalId(null);
     viewportRef.current?.ghost(null);
     refinePending.current.clear();
   }, [project?.projectId, projection?.stateDigest, projection?.sourceStageRef]);
+  useEffect(() => {
+    if (!task || !project || !projection || changingBase || project.projectId !== initialTask?.projectId) return;
+    task.saveView({ draft, selection, base: {
+      runId: projection.referenceRunSource === "none" ? null : sourceRunId ?? projection.referenceRun.runId,
+      sourceStageRef: projection.sourceStageRef ?? null, stateDigest: projection.stateDigest,
+    } }, pendingIntentRef.current);
+  }, [task, project, projection, changingBase, draft, selection, sourceRunId, transcript.entries, initialTask]);
+  useEffect(() => {
+    task?.setBusy(proposalBusy || candidateBusy || drawingBusy || historyBusy || optionsBusy || applyingProgram || selectingWorkingCopy || refiningEntryId !== null);
+  }, [task, proposalBusy, candidateBusy, drawingBusy, historyBusy, optionsBusy, applyingProgram, selectingWorkingCopy, refiningEntryId]);
   const [viewerCatalog, setViewerCatalog] = useState<CatalogDto | null>(null);
   const modelSources = useMemo(() => {
     const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
@@ -492,6 +516,19 @@ export default function App({ server, initialDocumentIntent }: {
   useEffect(() => {
     setDrawingError(null);
   }, [contextKey, loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, viewerStatus]);
+  // What is on screen and can be worked on.
+  //
+  // Looking at a candidate is not editing it, and this changes neither: it is
+  // the exact source the viewer is showing, read off the model it loaded. A
+  // pick is resolved against *that* state, and a change made by pointing at it
+  // continues from it — because the object under the ray belongs to the picture
+  // on screen and to no other run. Nothing here accepts, issues or moves HEAD;
+  // it asks nobody to press Continue first to be allowed to point at something.
+  //
+  // A local file, or a model with no retained source, has no run to continue
+  // from and stays outside this: those keep the existing boundary.
+  const viewedSource = loadedModelSource;
+
   const editingSources = modelSources.filter((row) =>
     row.modelSource.runId === projection?.referenceRun.runId && row.modelSource.stateDigest === projection.stateDigest &&
     artifacts.status === "ready" && viewableArtifacts(artifacts.value.artifacts).some((artifact) =>
@@ -1241,27 +1278,34 @@ export default function App({ server, initialDocumentIntent }: {
   const resolvePick = useCallback(
     async (pick: ViewportPick) => {
       const request = ++pickRequestRef.current;
+      // The old pick is over the moment a new click is made. It goes before the
+      // new one is asked for, not after it answers: between the click on B and
+      // the server's answer, Delete must be able to remove nothing at all -
+      // least of all A, which is what the last answer happened to be about.
+      setPicked(null);
       // What the ray met, lit at once: the click has an answer on the model
       // before the server has said what it is. A resolved pick widens the mark
       // to every object of the element below; an unresolved one leaves it here.
       viewportRef.current?.highlight({ object: pick.object });
-      if (stateDigest === null) {
-        append({
-          kind: "system",
-          text: "a pick is resolved against a state; the projection has not loaded yet",
-          parts: [
-            {
-              kind: "prose",
-              text: "a pick is resolved against a state; the projection has not loaded yet",
-            },
-          ],
-        });
+      // The state this click is resolved against is the one the picture came
+      // from: the viewed source when the viewer is showing a retained run, and
+      // the editing projection when it is showing that. A picture with neither
+      // — a local file, or an export with no retained source — has no state a
+      // click can be resolved against, and says so instead of guessing one.
+      const against = viewedSource !== null
+        ? { stateDigest: viewedSource.stateDigest, runId: viewedSource.runId }
+        : stateDigest !== null ? { stateDigest, runId: sourceRunId } : null;
+      if (against === null) {
+        const why = sourceLabel === LOCAL_SOURCE_LABEL
+          ? "this picture is a file, not a run of this project · a pick is resolved against a retained state"
+          : "a pick is resolved against a state; the projection has not loaded yet";
+        append({ kind: "system", text: why, parts: [{ kind: "prose", text: why }] });
         return;
       }
       try {
         const resolution = await studio.resolvePick({
-          stateDigest,
-          sourceRunId,
+          stateDigest: against.stateDigest,
+          sourceRunId: against.runId,
           userStrings: pick.userStrings,
           documentUserStrings:
             pick.documentUserStrings ?? receiptDocumentStrings(loadedArtifact),
@@ -1334,7 +1378,8 @@ export default function App({ server, initialDocumentIntent }: {
         append({ kind: "refusal", error, what: "POST /api/pick/resolve" });
       }
     },
-    [append, loadedArtifact, projection, recoverFromStaleBase, semanticCatalog, sourceRunId, stateDigest],
+    [append, loadedArtifact, projection, recoverFromStaleBase, semanticCatalog, sourceLabel,
+     sourceRunId, stateDigest, viewedSource],
   );
 
   // One proposal in flight at a time. The busy flag renders the button; this
@@ -2038,6 +2083,232 @@ export default function App({ server, initialDocumentIntent }: {
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
 
+  // One finished drawing action: the profile and height that were settled,
+  // through the proposal and candidate routes every other change uses. The
+  // pointer preview that produced them stayed in the viewport and never came
+  // near here, so this runs once per action rather than once per move.
+  const [sketchBusy, setSketchBusy] = useState(false);
+  // Where a drawing may snap to what is already there. The projection's
+  // element rows carry numeric fields, not the plan profile a prism was drawn
+  // from, so there is nothing here to offer yet: an action still locks to its
+  // own axes, and endpoint and midpoint snapping waits for the outline to be
+  // part of what /api/state answers with.
+  const sketchSnapPoints = useMemo<readonly (readonly [number, number])[]>(() => [], []);
+  const runSketch = useCallback(
+    async (action: { profile: readonly (readonly [number, number])[]; height: number; base: number }) => {
+      if (project === null || stateDigest === null || sketchBusy) return;
+      setSketchBusy(true);
+      try {
+        const base = sourceRunId ?? undefined;
+        const [state, frame] = await Promise.all([studio.state(base), studio.frame(base)]);
+        const componentId = selection?.componentId ?? state.elements[0]?.componentId ?? null;
+        if (componentId === null) {
+          throw asStudioApiError(new Error(t("stage.sketch.noComponent")));
+        }
+        // Stand it on the level nearest the plane it was drawn on, which is
+        // the record's own answer to "what is the ground here".
+        const levels = [...frame.levels].sort(
+          (left, right) => Math.abs(left.elevation - action.base) - Math.abs(right.elevation - action.base),
+        );
+        const level = levels[0];
+        if (level === undefined) {
+          throw asStudioApiError(new Error(t("stage.sketch.noLevel")));
+        }
+        const elementId = `drawn-${crypto.randomUUID().slice(0, 8)}`;
+        if (state.stateDigest === null) {
+          throw asStudioApiError(new Error(t("stage.sketch.noComponent")));
+        }
+        const proposal = await studio.sketch({
+          stateDigest: state.stateDigest,
+          componentId,
+          elementId,
+          profile: action.profile.map(([x, z]) => [x, z] as [number, number]),
+          height: action.height,
+          baseLevel: level.levelId,
+          sourceRunId: base ?? null,
+        });
+        await runCandidate(proposal.proposalId);
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        append({ kind: "system", ...systemText([
+          { kind: "prose", text: t("stage.sketch.failed") + " " },
+          { kind: "technical", text: error.detail },
+        ]) });
+      } finally {
+        setSketchBusy(false);
+      }
+    },
+    [append, project, runCandidate, selection?.componentId, sketchBusy, sourceRunId, stateDigest, t],
+  );
+
+
+  // ---- Delete, undo and redo: the model's own, distinct from the ink's.
+  //
+  // A keystroke is a design edit here, so it takes the same road a sentence
+  // does: one deterministic proposal, then the candidate route. Nothing is
+  // compiled by a model, nothing is accepted, and nothing is issued.
+  const [modelEditBusy, setModelEditBusy] = useState(false);
+  // What this tab has moved through, in order, as run ids. It is navigation,
+  // not a second copy of the design: which run is current is still the
+  // session's projection, and every run named here stays in the project
+  // whether or not this list still points at it.
+  const [modelHistory, setModelHistory] = useState<{ runs: readonly string[]; index: number }>(
+    { runs: [], index: -1 },
+  );
+  const navigatingHistory = useRef<string | null>(null);
+  // The run on screen, which is what a step back has to return to: a change
+  // made while looking at a candidate was made *from* that candidate, and undo
+  // means the picture before it. When nothing retained is shown - a local file
+  // - there is nothing to step through.
+  const baseRunId = loadedArtifact?.runId ?? projection?.referenceRun.runId ?? null;
+  useEffect(() => {
+    if (baseRunId === null) return;
+    // Read once, outside the update: whether this base is one an undo or a redo
+    // moved to is a fact about the action that just happened, and the updater
+    // itself stays a pure function of the history it is given.
+    const navigatedTo = navigatingHistory.current;
+    navigatingHistory.current = null;
+    setModelHistory((current) => {
+      const known = current.runs.indexOf(baseRunId);
+      if (navigatedTo === baseRunId && known !== -1) return { ...current, index: known };
+      if (current.runs[current.index] === baseRunId) return current;
+      // A new edit from here: what was undone stops being reachable forwards.
+      // The runs themselves are untouched — they are still in the project and
+      // still in the versions list; only this tab's way back to them is gone.
+      const kept = current.runs.slice(0, current.index + 1).filter((runId) => runId !== baseRunId);
+      return { runs: [...kept, baseRunId], index: kept.length };
+    });
+  }, [baseRunId]);
+
+  const modelNavigationBusy = changingBase || selectingWorkingCopy || candidateBusy ||
+    proposalBusy || sketchBusy || modelEditBusy || modelLoading;
+  const canUndoModel = modelHistory.index > 0 && !modelNavigationBusy;
+  const canRedoModel = modelHistory.index >= 0 &&
+    modelHistory.index < modelHistory.runs.length - 1 && !modelNavigationBusy;
+
+  /** Show one retained run as both the picture and the base edits continue from. */
+  const showRunAsBase = useCallback(async (runId: string) => {
+    navigatingHistory.current = runId;
+    const next = await changeEditingBase(runId);
+    if (next === null) {
+      navigatingHistory.current = null;
+      return false;
+    }
+    const rows = artifacts.status === "ready"
+      ? viewableArtifacts(artifacts.value.artifacts.filter((row) => row.runId === runId))
+      : [];
+    if (rows.length > 0) {
+      manualLoadRef.current = true;
+      await loadRunIntoViewer(rows, runSourceLabel(runId, rows), true);
+    }
+    return true;
+  }, [artifacts, changeEditingBase, loadRunIntoViewer, runSourceLabel]);
+
+  const undoModel = useCallback(async () => {
+    if (!canUndoModel) return;
+    const runId = modelHistory.runs[modelHistory.index - 1];
+    if (runId === undefined) return;
+    append({ kind: "system", ...systemText([
+      { kind: "prose", text: "Undo · back to " }, { kind: "technical", text: runId },
+      { kind: "prose", text: " · the run you left is still there" },
+    ]) });
+    await showRunAsBase(runId);
+  }, [append, canUndoModel, modelHistory, showRunAsBase]);
+
+  const redoModel = useCallback(async () => {
+    if (!canRedoModel) return;
+    const runId = modelHistory.runs[modelHistory.index + 1];
+    if (runId === undefined) return;
+    append({ kind: "system", ...systemText([
+      { kind: "prose", text: "Redo · forward to " }, { kind: "technical", text: runId },
+    ]) });
+    await showRunAsBase(runId);
+  }, [append, canRedoModel, modelHistory, showRunAsBase]);
+
+  /**
+   * Delete what the pick resolved to, and only that.
+   *
+   * The element comes from the server's own resolution of the click, so what
+   * goes is the object on screen rather than the component it belongs to. An
+   * element another one stands on is refused by the server, naming what stands
+   * on it; that refusal is shown as itself.
+   */
+  // Only a pick the server resolved on the picture now on screen. A selection
+  // carried over from another run names a real element, but it is not what the
+  // architect is pointing at, and Delete is a gesture at a thing on screen.
+  const deletableElementId = picked?.status === "resolved" ? picked.elementId : null;
+  // The base a delete is made against: the source on screen, which is the one
+  // the picked object belongs to. When the viewer is showing the editing
+  // projection those are the same thing and its Stage travels too.
+  const deleteBase = viewedSource !== null
+    ? {
+        stateDigest: viewedSource.stateDigest,
+        sourceRunId: viewedSource.runId,
+        sourceStageRef: viewedSource.runId === projection?.referenceRun.runId
+          ? projection?.sourceStageRef ?? null : null,
+      }
+    : stateDigest !== null
+      ? {
+          stateDigest,
+          sourceRunId: sourceRunId ?? projection?.referenceRun.runId ?? null,
+          sourceStageRef: projection?.sourceStageRef ?? null,
+        }
+      : null;
+  const canDeleteModel = deletableElementId !== null && deleteBase !== null &&
+    project !== null && !modelNavigationBusy;
+  const deleteSelected = useCallback(async () => {
+    if (!canDeleteModel || deletableElementId === null || deleteBase === null) return;
+    setModelEditBusy(true);
+    try {
+      const proposal = await studio.removeElement({
+        stateDigest: deleteBase.stateDigest,
+        elementId: deletableElementId,
+        sourceRunId: deleteBase.sourceRunId,
+        sourceStageRef: deleteBase.sourceStageRef,
+        projectId: project?.projectId ?? null,
+      });
+      await runCandidate(proposal.proposalId);
+    } catch (cause) {
+      const error = asStudioApiError(cause);
+      recoverFromStaleBase(error);
+      append({ kind: "refusal", error, what: "POST /api/proposals/delete" });
+    } finally {
+      setModelEditBusy(false);
+    }
+  }, [append, canDeleteModel, deletableElementId, deleteBase, project, recoverFromStaleBase,
+      runCandidate]);
+
+  // A different model on screen is a different set of objects. What was *picked*
+  // belonged to the picture that went away, so it stops being picked, its mark
+  // is taken off, and any pick answer still on its way is dropped rather than
+  // landing on the new picture.
+  //
+  // The selection is not cleared with it. A selection is what the conversation
+  // is about — a component and an element of the record — and it stays true
+  // while the architect looks at another run. Only the picked object, which is
+  // this picture's own, goes; and an action on the model asks for a pick on the
+  // picture it is acting on rather than inheriting one from a picture nobody is
+  // looking at any more.
+  const shownRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    const runId = loadedArtifact?.runId ?? null;
+    if (shownRunRef.current === runId) return;
+    const first = shownRunRef.current === null;
+    shownRunRef.current = runId;
+    if (first) return;
+    pickRequestRef.current += 1;
+    setPicked(null);
+    viewportRef.current?.highlight(null);
+  }, [loadedArtifact?.runId]);
+
+  /** Esc: nothing in flight is cancelled, and what was picked stops being picked. */
+  const clearModelSelection = useCallback(() => {
+    pickRequestRef.current += 1;
+    setSelection(null);
+    setPicked(null);
+    viewportRef.current?.highlight(null);
+  }, []);
+
   /**
    * One massing option, made by the server and put on the table.
    *
@@ -2548,6 +2819,7 @@ export default function App({ server, initialDocumentIntent }: {
         }}
       />
       <AppShell
+        embedded={embedded}
         toolbar={
           <>
             <span
@@ -2685,6 +2957,23 @@ export default function App({ server, initialDocumentIntent }: {
         stage={
           <Stage
             key={binding?.projectId ?? "unbound"}
+            embedded={embedded}
+            hasModel={sourceLabel !== null}
+            onSketch={runSketch}
+            sketchBusy={sketchBusy}
+            snapPoints={sketchSnapPoints}
+            model={{
+              onDelete: () => void deleteSelected(),
+              canDelete: canDeleteModel,
+              deleting: modelEditBusy,
+              subject: deletableElementId,
+              onUndo: () => void undoModel(),
+              canUndo: canUndoModel,
+              onRedo: () => void redoModel(),
+              canRedo: canRedoModel,
+              onClearSelection: clearModelSelection,
+              hasSelection: selection !== null || picked !== null,
+            }}
             viewportRef={viewportRef}
             message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : viewerMessage}
             status={artifactLoadingSha !== null ? "loading" : viewerStatus}

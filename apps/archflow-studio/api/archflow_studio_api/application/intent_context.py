@@ -1,8 +1,8 @@
 """Compile a request's read context; the record still owns change propagation.
 
-Narrowing is deliberately opt-in: a known numeric request about one exact
-element gets its dependencies, while unresolved or architectural work retains
-the complete sheet. More read context never enlarges the permitted edit.
+Known numeric requests use actions; explicitly located design work uses a
+dependency slice with the existing semantic output contract. Unresolved or
+global work retains the complete sheet. More reads never enlarge permitted edits.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ class IntentContext:
     escalation: tuple[str, ...] = ()
     expansion_count: int = 0
     supplemental_refs: tuple[str, ...] = ()
+    design_sheet: Mapping[str, Any] | None = None
 
 
 def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dict[str, Any]:
@@ -187,7 +188,42 @@ def _scope(message: str, sheet: Mapping[str, Any]):
     return (target["elementId"],), tuple(sorted(fields)), None
 
 
-def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, changed: set[str]) -> tuple[dict[str, Any], tuple[str, ...]]:
+def _design_targets(message: str, sheet: Mapping[str, Any]) -> tuple[str, ...]:
+    """Only explicit local anchors can bound a semantic design request."""
+    if sheet.get("documentVisuals") or sheet.get("gestures"):
+        return ()
+    if re.search(r"\b(all|every|entire|whole|building|circulation|stack|datum)\b|全部|所有|整体|整层|整栋|流线|交通组织", message, re.I):
+        return ()
+    if not re.search(r"\b(add|remove|replace|change|set|adjust|rework|reconfigure|redesign|reorganize|widen|narrow)\b|增加|添加|增设|补齐|安装|移除|删除|替换|调整|改成|修改|重组", message, re.I):
+        return ()
+    # Keep clauses are read requirements, not additional change targets.
+    action = re.split(r"\b(?:keep|keeping|preserve|preserving|retain|retaining)\b|保持|保留|不改变", message, maxsplit=1, flags=re.I)[0]
+    elements = list(sheet.get("elements", ()))
+    targets = {row["elementId"] for row in elements if _has_id(action, row["elementId"])}
+    components = {row["componentId"] for row in sheet.get("components", ()) if _has_id(action, row["componentId"])}
+    # An explicitly named component includes its authored descendants.
+    while True:
+        nested = components | {row["componentId"] for row in sheet.get("components", ()) if row.get("parentId") in components}
+        if nested == components:
+            break
+        components = nested
+    targets.update(row["elementId"] for row in elements if row.get("componentId") in components)
+    if not targets and re.search(r"\b(this|selected)\b|这个|这扇|这面|选中", action, re.I):
+        selected = sheet.get("selection", {}).get("elementId")
+        target = next((row for row in elements if row["elementId"] == selected), None)
+        if target is not None:
+            from .clarification import kinds_in
+            # The words next to the deictic must agree with the selection;
+            # an added object elsewhere in the sentence may be a new kind.
+            anchor = re.search(r"\b(?:this|selected)\s+([\w-]+)|(?:这个|这扇|这面|选中的?)([^，。\s]{1,4})", action, re.I)
+            kinds = kinds_in(anchor.group(0)) if anchor else set()
+            target_kinds = kinds_in(" ".join(str(target.get(key, "")) for key in ("elementId", "componentId", "producer")))
+            if not kinds or kinds.issubset(target_kinds):
+                targets.add(selected)
+    return tuple(sorted(targets))
+
+
+def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, changed: set[str], include_global_locks: bool = True) -> tuple[dict[str, Any], tuple[str, ...]]:
     rows = _rows(sheet)
     included = set(seeds)
     included.update(record.closure(tuple(changed)))
@@ -211,9 +247,12 @@ def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, ch
     for name in ("obligations", "preferences", "constraints"):
         globals_.extend((name, row) for row in sheet.get(name, ()) if isinstance(row, Mapping))
     for row in sheet.get("parameters", ()):
-        if row.get("lockAuthority"):
+        if include_global_locks and row.get("lockAuthority"):
             included.add("parameter:" + row["key"])
-    retained_global: dict[str, list[Mapping[str, Any]]] = {name: [] for name in ("obligations", "preferences", "constraints") if name in sheet}
+    retained_global: dict[str, list[Any]] = {
+        name: [deepcopy(row) for row in sheet[name] if not isinstance(row, Mapping)]
+        for name in ("obligations", "preferences", "constraints") if name in sheet
+    }
     while True:
         previous = set(included)
         for ref in tuple(included):
@@ -251,7 +290,8 @@ def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, ch
     result["producerSignatures"] = {key: deepcopy(value) for key, value in sheet.get("producerSignatures", {}).items() if key in producers}
     # Broad semantic vocabulary is needed for authoring new components, not
     # for changing the declared numeric controls of one current element.
-    result.pop("semanticIds", None)
+    if include_global_locks:
+        result.pop("semanticIds", None)
     return result, tuple(sorted(included.intersection(rows)))
 
 
@@ -268,6 +308,18 @@ def compile_context(message: str, sheet: Mapping[str, Any], *, record: StateReco
         elif not set(fields).issubset(signature.get("parameters", {}).get("properties", {})):
             reason = "component_fields_not_advertised"
     if reason is not None:
+        design_targets = _design_targets(message, full) if record is not None else ()
+        if design_targets:
+            seeds = {"entity:" + target for target in design_targets}
+            # Exact references in keep clauses also seed mandatory read context.
+            seeds.update(ref for ref in _rows(full) if _has_id(message, ref.split(":", 1)[1]))
+            narrowed, refs = _slice(full, seeds, record,
+                                   changed={"entity:" + target for target in design_targets},
+                                   include_global_locks=False)
+            # The complete source remains private for scope/validation checks.
+            return IntentContext("design", full, design_targets,
+                                 tuple(sorted(full.get("producerSignatures", {}))),
+                                 included_refs=refs, escalation=(reason,), design_sheet=narrowed)
         return IntentContext("design", full, producer_ids=tuple(sorted(full.get("producerSignatures", {}))), included_refs=tuple(sorted(_rows(full))), escalation=(reason,))
     target = next(row for row in full["elements"] if row["elementId"] == targets[0])
     changed = {"entity:" + item for item in targets}
@@ -281,7 +333,7 @@ def compile_context(message: str, sheet: Mapping[str, Any], *, record: StateReco
 
 def expand_context(context: IntentContext, sheet: Mapping[str, Any], requested_refs: Sequence[str], *, record: StateRecord | None = None) -> IntentContext:
     """Add exact known read references with bounded retries and no scope grant."""
-    if context.tier == "design" or record is None:
+    if (context.tier == "design" and context.design_sheet is None) or record is None:
         raise ValueError("full context cannot expand")
     if context.expansion_count >= 2:
         raise ValueError("context expansion limit reached")
@@ -294,8 +346,11 @@ def expand_context(context: IntentContext, sheet: Mapping[str, Any], requested_r
     added = set(requested_refs) - set(context.included_refs)
     if not added:
         raise ValueError("context expansion made no progress")
-    narrowed, refs = _slice(full, set(context.included_refs) | added, record, changed=set())
-    return replace(context, sheet=narrowed, included_refs=refs, expansion_count=context.expansion_count + 1,
+    narrowed, refs = _slice(full, set(context.included_refs) | added, record, changed=set(),
+                           include_global_locks=context.tier != "design")
+    return replace(context, sheet=full if context.tier == "design" else narrowed,
+                   design_sheet=narrowed if context.tier == "design" else None,
+                   included_refs=refs, expansion_count=context.expansion_count + 1,
                    supplemental_refs=tuple(sorted(set(context.supplemental_refs) | added)),
                    escalation=(*context.escalation, "expanded_context"))
 
@@ -383,8 +438,10 @@ def model_context(context: IntentContext) -> dict[str, Any]:
     grants edits, changes references or evaluates a candidate's constraints.
     """
     if context.tier == "design":
-        result = deepcopy(dict(context.sheet))
+        result = deepcopy(dict(context.design_sheet if context.design_sheet is not None else context.sheet))
         result.pop("producerSignatures", None)  # The response schema supplies authoring vocabulary.
+        if context.design_sheet is not None:
+            result["editTargets"] = list(context.target_ids)
         return result
     rows = _rows(context.sheet)
     elements = {row["elementId"]: row for row in context.sheet.get("elements", ())}

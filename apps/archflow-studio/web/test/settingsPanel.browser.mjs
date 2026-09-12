@@ -286,7 +286,7 @@ test("user settings use the existing panel without changing the running model or
     await until(async () => local.requests.length, 1);
     assert.equal(await local.page.getByRole("dialog").count(), 0);
     assert.equal(await local.page.locator("html").getAttribute("lang"), "en");
-    assert.equal(await local.page.locator("html").getAttribute("data-theme"), "system");
+    assert.equal(await local.page.locator("html").getAttribute("data-theme"), "dark");
     await local.page.getByRole("button", { name: "Open settings", exact: true }).click();
     await local.page.getByRole("tab", { name: "Model", exact: true }).click();
     await until(() => local.page.getByLabel("Model name", { exact: true }).inputValue(), "saved-model");

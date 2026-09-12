@@ -14,9 +14,10 @@ with the kernel.
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..application.episodes import DeliberationEpisode, EpisodeProposal, WorkingCopy, WorkingCopyOption
 from ..application.proposals import PERSISTENCE, Proposal
@@ -89,6 +90,125 @@ def working_copy_dto(item: WorkingCopy) -> WorkingCopyDto:
                           common_base=model_source_dto(item.common_base), scope=list(item.scope),
                           options=[WorkingCopyOptionDto(**option.to_dict()) for option in item.options],
                           selected_option_id=item.selected_option_id, revision_sha256=item.revision_sha256)
+
+
+class SketchPrismRequestDto(BaseModel):
+    """A profile drawn on a work plane and the height it is pulled to.
+
+    This is the same design edit ``edit_components`` already carries — one
+    ``Element@1`` row whose producer is ``prism`` — stated in the terms the
+    person drew it in. Sending the same ``elementId`` again is how an outline
+    or a height is changed afterwards: the record keeps both as its own
+    parameters, so nothing here is a one-way conversion into geometry.
+
+    Plan points are the record's own ``(x, z)`` pairs and the height rises
+    along the producers' extrusion axis. The pointer preview that produced
+    them stays in the browser; only a finished action arrives here.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    state_digest: str = Field(
+        alias="stateDigest",
+        pattern=STATE_DIGEST_PATTERN,
+        description="the stateDigest /api/state answered with; any other base is STALE_BASE",
+    )
+    component_id: str = Field(alias="componentId", min_length=1)
+    parent_component_id: str | None = Field(
+        alias="parentComponentId",
+        default=None,
+        min_length=1,
+        description="required when componentId is new here: the existing component it belongs under, "
+                    "which is what decides the seat that builds it",
+    )
+    semantic_kind: str | None = Field(
+        alias="semanticKind",
+        default=None,
+        min_length=1,
+        description="what a new component is, in the record's own vocabulary; required only when "
+                    "componentId is new here",
+    )
+    element_id: str = Field(
+        alias="elementId",
+        min_length=1,
+        description="the Element@1 this action authors; an existing id edits that element",
+    )
+    profile: list[tuple[float, float]] = Field(
+        min_length=3,
+        max_length=512,
+        description="the closed plan profile as (x, z) pairs, in order, without repeating the first point",
+    )
+    height: float = Field(gt=0, description="how far the profile is pulled, in project length units")
+    base_level: str | None = Field(alias="baseLevel", default=None, min_length=1)
+    base_datum: str | None = Field(alias="baseDatum", default=None, min_length=1)
+    summary: str | None = Field(default=None, min_length=1, max_length=240)
+    keep: list[str] = Field(default_factory=list, description="refs this action must not change")
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+    @field_validator("profile")
+    @classmethod
+    def real_plan_points(cls, value: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        for x, z in value:
+            if not isfinite(x) or not isfinite(z):
+                raise ValueError("a profile point must be a finite number")
+        rounded = [(round(x, 9), round(z, 9)) for x, z in value]
+        if any(a == b for a, b in zip(rounded, rounded[1:] + rounded[:1])):
+            raise ValueError("a profile cannot repeat a point; it closes on its own")
+        if len(set(rounded)) != len(rounded):
+            raise ValueError("a profile cannot visit the same point twice")
+        return value
+
+    @field_validator("height")
+    @classmethod
+    def real_height(cls, value: float) -> float:
+        if not isfinite(value):
+            raise ValueError("height must be a finite number")
+        return value
+
+    @model_validator(mode="after")
+    def one_base(self) -> "SketchPrismRequestDto":
+        # What it stands on is one fact: a published level, or another
+        # element's top. Both, or neither, is a request nobody can execute.
+        if (self.base_level is None) == (self.base_datum is None):
+            raise ValueError("state exactly one of baseLevel or baseDatum")
+        return self
+
+    def base_reference(self) -> dict[str, str]:
+        """The element row's ``references.base``, as the producers read it."""
+
+        return {"level": self.base_level} if self.base_level is not None else {"datum": self.base_datum}
+
+
+class DeleteElementRequestDto(BaseModel):
+    """Remove one element the architect picked, and nothing else.
+
+    The same typed removal ``edit_components`` already carries, stated as the
+    one thing a Delete key means: this element, at this exact base. It names no
+    component to delete — pressing Delete on an object the architect picked has
+    never meant "and the rest of what it belongs to" — and it cascades into
+    nothing: an element another element stands on is refused, naming what
+    stands on it, rather than quietly taking the neighbours with it.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    state_digest: str = Field(
+        alias="stateDigest",
+        pattern=STATE_DIGEST_PATTERN,
+        description="the stateDigest /api/state answered with; any other base is STALE_BASE",
+    )
+    element_id: str = Field(
+        alias="elementId",
+        min_length=1,
+        description="the Element@1 the pick resolved to; the only thing removed",
+    )
+    summary: str | None = Field(default=None, min_length=1, max_length=240)
+    keep: list[str] = Field(default_factory=list, description="refs this action must not change")
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
 
 
 class ProposalRequestDto(BaseModel):

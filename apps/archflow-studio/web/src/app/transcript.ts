@@ -8,10 +8,10 @@
  *
  * One entry is edited after the fact: a candidate's, whose job status changes
  * while it runs. Everything else is history, and history is not version
- * history — this list lives in React state and is dropped with the tab.
+ * history. The task workspace may retain it as personal browser history.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import type { StudioApiError } from "../api/client";
 import type { AgentReadingDto, CompareDto, ProposalDto } from "../api/generated";
@@ -130,22 +130,31 @@ export interface Transcript {
   hasVerdictFor(candidateId: string): boolean;
 }
 
-export function useTranscript(): Transcript {
-  const [entries, setEntries] = useState<readonly Entry[]>([]);
-  const counter = useRef(0);
-
-  const append = useCallback((draft: EntryDraft): string => {
-    counter.current += 1;
-    const id = `e${counter.current}`;
+/** One task owns its transcript, including replies arriving while another task is visible. */
+export function createTranscript(initial: readonly Entry[] = [], changed?: (entries: readonly Entry[]) => void) {
+  let entries = initial;
+  let counter = initial.length;
+  const listeners = new Set<() => void>();
+  const setEntries = (update: (current: readonly Entry[]) => readonly Entry[]) => {
+    const next = update(entries);
+    if (next === entries) return;
+    entries = next;
+    changed?.(entries);
+    listeners.forEach((listener) => listener());
+  };
+  const append = (draft: EntryDraft): string => {
+    let id: string;
+    do { id = `e${++counter}`; } while (entries.some((entry) => entry.id === id));
     setEntries((current) => [...current, { ...draft, id } as Entry]);
     return id;
-  }, []);
+  };
 
-  const remove = useCallback((entryId: string) => {
+  const remove = (entryId: string) => {
     setEntries((current) => current.filter((entry) => entry.id !== entryId));
-  }, []);
+  };
 
-  const noteJobStatus = useCallback((candidateId: string, status: string) => {
+  const noteJobStatus = (candidateId: string, status: string) => {
+    if (!entries.some((entry) => entry.kind === "candidate" && entry.candidateId === candidateId && entry.status !== status)) return;
     setEntries((current) =>
       current.map((entry) =>
         entry.kind === "candidate" &&
@@ -155,9 +164,9 @@ export function useTranscript(): Transcript {
           : entry,
       ),
     );
-  }, []);
+  };
 
-  const replaceProposal = useCallback(
+  const replaceProposal =
     (entryId: string, proposal: ProposalDto, agent: AgentReadingDto | null) => {
       setEntries((current) =>
         current.map((entry) =>
@@ -166,17 +175,26 @@ export function useTranscript(): Transcript {
             : entry,
         ),
       );
-    },
-    [],
-  );
+    };
 
-  const hasVerdictFor = useCallback(
+  const hasVerdictFor =
     (candidateId: string) =>
       entries.some(
         (entry) => entry.kind === "verdict" && entry.candidateId === candidateId,
-      ),
-    [entries],
-  );
+      );
 
-  return { entries, append, remove, noteJobStatus, replaceProposal, hasVerdictFor };
+  return {
+    getSnapshot: () => entries,
+    subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    append, remove, noteJobStatus, replaceProposal, hasVerdictFor,
+  };
+}
+
+export type TranscriptController = ReturnType<typeof createTranscript>;
+
+export function useTranscript(owned?: TranscriptController): Transcript {
+  const [local] = useState(createTranscript);
+  const controller = owned ?? local;
+  const entries = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
+  return { ...controller, entries };
 }

@@ -103,3 +103,104 @@ class FabSendResult(BaseModel):
     host: str
     status: Literal["validated", "uploaded"]
     print_started: Literal[False]
+
+
+ChatProviderId = Literal["codex", "claude", "coding-plan"]
+ChatStatus = Literal["idle", "running", "failed", "interrupted"]
+
+
+class ChatProvider(BaseModel):
+    id: ChatProviderId
+    label: str
+    available: bool
+    detail: str
+    # What was actually found about this connection, kept apart so nothing has
+    # to be inferred from one sentence. `models` holds exactly what the
+    # installed CLI's own read-only catalogue answered; it is never a guess,
+    # and a connection whose catalogue cannot be read says why instead.
+    installed: bool = False
+    signedIn: bool | None = None
+    models: list[str] = Field(default_factory=list)
+    modelCatalog: Literal["checking", "ready", "unavailable"] = "checking"
+    modelDetail: str = ""
+
+
+class ChatProject(BaseModel):
+    projectId: str
+    projectDir: str
+    name: str
+    chatCount: int
+    # The project's own published position, read through its existing P036
+    # interfaces so a conversation can say which version it is talking about.
+    # A candidate is not a version and never appears here.
+    version: int | None = None
+    stage: str | None = None
+
+
+class ChatMessage(BaseModel):
+    id: str
+    role: Literal["user", "assistant", "tool"]
+    content: str
+    createdAt: str
+    status: Literal["complete", "streaming", "failed", "interrupted"] = "complete"
+    # The finished candidate this activity reported, so the conversation can
+    # open that exact run. Absent on older records and on every other message.
+    candidateId: str | None = None
+
+
+class ChatSummary(BaseModel):
+    id: str
+    projectId: str
+    projectDir: str
+    title: str
+    provider: ChatProviderId
+    model: str | None = None
+    status: ChatStatus = "idle"
+    createdAt: str
+    updatedAt: str
+    error: HubError | None = None
+
+
+class ChatDetail(ChatSummary):
+    messages: list[ChatMessage] = Field(default_factory=list)
+
+
+class ChatCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectDir: str = Field(min_length=1)
+    provider: ChatProviderId
+    model: str | None = Field(default=None, min_length=1)
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatWorkspace(BaseModel):
+    """Where new projects are created, and what is already in that folder."""
+
+    workspaceDir: str
+    configured: bool
+    projects: list[str] = Field(default_factory=list)
+
+
+class ChatProjectRequest(BaseModel):
+    """Create one empty project in the workspace; the name becomes its id."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    workspaceDir: str | None = Field(default=None, min_length=1)
+
+
+class ChatModelRequest(BaseModel):
+    """Which model this conversation's next turns use; null means the CLI default."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatPostRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    content: str = Field(min_length=1)
+    projectId: str = Field(min_length=1)

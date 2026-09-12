@@ -540,6 +540,37 @@ export type CandidateSeatResultDto = {
 };
 
 /**
+ * CapabilityDetailDto
+ *
+ * One capability, and what it means for the project that is bound.
+ */
+export type CapabilityDetailDto = {
+    /**
+     * Capability
+     *
+     * the registered entry, verbatim: goals, requires, entrypoints, composes, produces, validators, works and missing
+     */
+    capability: {
+        [key: string]: unknown;
+    };
+    source: CapabilitySourceDto;
+    target?: CapabilityTargetDto | null;
+    keep?: KeepScopeDto | null;
+    /**
+     * Request
+     *
+     * the next request with this project's real base already in it; null when the target has no number this capability can move
+     */
+    request?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Honesty
+     */
+    honesty?: Array<string>;
+};
+
+/**
  * CapabilityDto
  *
  * One number a change can move: its value and whether, and from where.
@@ -598,6 +629,265 @@ export type CapabilityDto = {
      * Validatorrefs
      */
     validatorRefs: Array<string>;
+};
+
+/**
+ * CapabilityIndexDto
+ *
+ * Every registered capability, or the ones a goal matched.
+ */
+export type CapabilityIndexDto = {
+    /**
+     * Capabilities
+     */
+    capabilities: Array<CapabilitySummaryDto>;
+    /**
+     * Matchcount
+     */
+    matchCount: number;
+    /**
+     * Registered
+     *
+     * how many capabilities are written down in total, so that an empty match reads as the size of the index and not as a verdict
+     */
+    registered: number;
+    /**
+     * Note
+     *
+     * present only when nothing matched: what this index is, and why no match is not a claim that the system cannot do it
+     */
+    note?: string | null;
+};
+
+/**
+ * CapabilityRunDto
+ *
+ * What one capability run started, and where to read the result.
+ */
+export type CapabilityRunDto = {
+    /**
+     * Capabilityid
+     */
+    capabilityId: string;
+    /**
+     * Proposalid
+     */
+    proposalId: string;
+    /**
+     * Jobid
+     */
+    jobId: string;
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    /**
+     * Status
+     *
+     * the run was accepted onto the existing candidate queue; it is not accepted as the project's design and issues nothing
+     */
+    status?: 'queued';
+    /**
+     * Target
+     */
+    target: {
+        [key: string]: unknown;
+    };
+    /**
+     * Change
+     */
+    change: {
+        [key: string]: unknown;
+    };
+    /**
+     * Kept
+     */
+    kept: Array<string>;
+    /**
+     * Next
+     *
+     * the existing reads that finish this: poll the job, then read the candidate and compare it against the run it came from
+     */
+    next: Array<string>;
+};
+
+/**
+ * CapabilityRunRequestDto
+ *
+ * A proposal request, plus the keep list written as a list.
+ *
+ * Every other field *is* ``ProposalRequestDto``'s — inherited, not copied, so
+ * there is one definition of ``stateDigest``, ``targetComponentId``,
+ * ``elementId``, ``utterance``, ``projectId``, ``sourceRunId`` and
+ * ``sourceStageRef`` and no second schema to keep in step. ``keep`` is the
+ * one addition: the same protected refs the grammar takes as a ``keep``
+ * clause, as a list a client can build without writing a sentence.
+ */
+export type CapabilityRunRequestDto = {
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Statedigest
+     *
+     * the stateDigest /api/state answered with; a proposal against any other state is refused as STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Targetcomponentid
+     *
+     * the selected Component@1; selection comes from the request, never from the utterance
+     */
+    targetComponentId: string;
+    /**
+     * Elementid
+     *
+     * the selected Element@1, when one was picked; it must belong to targetComponentId
+     */
+    elementId?: string | null;
+    /**
+     * Utterance
+     *
+     * one sentence in the intent grammar; anything else comes back as BLOCKED_NEEDS_HUMAN with the accepted forms
+     */
+    utterance: string;
+    /**
+     * Projectid
+     *
+     * the project the client believes it is proposing against; a different one is refused as PROJECT_MISMATCH
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     *
+     * the retained run selected as the editing base; omitted uses the project's default state projection
+     */
+    sourceRunId?: string | null;
+    /**
+     * Keep
+     *
+     * refs this change must not disturb, as entity:<id> or parameter:<key>; a change that reaches one comes back as a conflict and is not run
+     */
+    keep?: Array<string>;
+};
+
+/**
+ * CapabilitySourceDto
+ *
+ * The exact base a description was read from.
+ */
+export type CapabilitySourceDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string | null;
+    /**
+     * Exactsource
+     */
+    exactSource: boolean;
+    /**
+     * Actionable
+     *
+     * whether this state can be proposed against now; distinct from the capability's written-down status
+     */
+    actionable: boolean;
+    /**
+     * Sourcestageref
+     *
+     * the Stage this description was read against, when one was selected; it travels into the request below so the run is made from the source that was read
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Readwith
+     *
+     * how to read this same base again: a read selects a retained run with the ?run= query parameter
+     */
+    readWith: string;
+    /**
+     * Writewith
+     *
+     * how to write against this same base: a write names the run as sourceRunId in the body, never as a query parameter
+     */
+    writeWith: string;
+};
+
+/**
+ * CapabilitySummaryDto
+ *
+ * One line of the index: enough to choose, not the whole entry.
+ */
+export type CapabilitySummaryDto = {
+    /**
+     * Capabilityid
+     */
+    capabilityId: string;
+    /**
+     * Owner
+     */
+    owner?: string | null;
+    /**
+     * Kind
+     */
+    kind?: string | null;
+    /**
+     * Status
+     *
+     * how far the capability is written down and implemented; it never states whether the bound project can run it now
+     */
+    status?: string | null;
+    /**
+     * Purpose
+     */
+    purpose?: string | null;
+    /**
+     * Purposezh
+     */
+    purposeZh?: string | null;
+    /**
+     * Goals
+     */
+    goals?: Array<string>;
+    /**
+     * Entrypoints
+     */
+    entrypoints?: Array<string>;
+    /**
+     * Matched
+     *
+     * the written-down words of this entry that the goal contained; empty when the whole index was read without a goal
+     */
+    matched?: Array<string>;
+};
+
+/**
+ * CapabilityTargetDto
+ */
+export type CapabilityTargetDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Elementid
+     */
+    elementId: string | null;
+    /**
+     * Editable
+     */
+    editable: Array<EditableFieldDto>;
+    /**
+     * Noteditable
+     */
+    notEditable: Array<EditableFieldDto>;
 };
 
 /**
@@ -1145,6 +1435,55 @@ export type CoverageDto = {
 };
 
 /**
+ * DeleteElementRequestDto
+ *
+ * Remove one element the architect picked, and nothing else.
+ *
+ * The same typed removal ``edit_components`` already carries, stated as the
+ * one thing a Delete key means: this element, at this exact base. It names no
+ * component to delete — pressing Delete on an object the architect picked has
+ * never meant "and the rest of what it belongs to" — and it cascades into
+ * nothing: an element another element stands on is refused, naming what
+ * stands on it, rather than quietly taking the neighbours with it.
+ */
+export type DeleteElementRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest /api/state answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Elementid
+     *
+     * the Element@1 the pick resolved to; the only thing removed
+     */
+    elementId: string;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+    /**
+     * Keep
+     *
+     * refs this action must not change
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
  * DependencyEdgeDto
  *
  * One kernel dependency edge, with the refs still prefixed.
@@ -1568,6 +1907,54 @@ export type DocumentVisualInputDto = {
      * Referencenote
      */
     referenceNote?: string | null;
+};
+
+/**
+ * EditableFieldDto
+ */
+export type EditableFieldDto = {
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Componentid
+     *
+     * the component this element belongs to; send this as targetComponentId, which is not always the component that was asked about when a parent was described
+     */
+    componentId: string;
+    /**
+     * Field
+     */
+    field: string;
+    /**
+     * Value
+     */
+    value: number | number;
+    /**
+     * Unit
+     */
+    unit: string | null;
+    /**
+     * Status
+     *
+     * editable, derived or locked, as the catalog decided
+     */
+    status: string;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Capabilityid
+     */
+    capabilityId: string;
+    /**
+     * Utterance
+     *
+     * this field written in the intent grammar, holding the value it already has: a shape to edit, not a proposed change
+     */
+    utterance: string;
 };
 
 /**
@@ -2467,6 +2854,24 @@ export type JobDto = {
      * where this job lives; it is not version history
      */
     persistence: string;
+};
+
+/**
+ * KeepScopeDto
+ */
+export type KeepScopeDto = {
+    /**
+     * Accepted
+     */
+    accepted: Array<string>;
+    /**
+     * Remaining
+     */
+    remaining: number;
+    /**
+     * Note
+     */
+    note: string;
 };
 
 /**
@@ -4098,6 +4503,97 @@ export type ServerIdentityDto = {
 };
 
 /**
+ * SketchPrismRequestDto
+ *
+ * A profile drawn on a work plane and the height it is pulled to.
+ *
+ * This is the same design edit ``edit_components`` already carries — one
+ * ``Element@1`` row whose producer is ``prism`` — stated in the terms the
+ * person drew it in. Sending the same ``elementId`` again is how an outline
+ * or a height is changed afterwards: the record keeps both as its own
+ * parameters, so nothing here is a one-way conversion into geometry.
+ *
+ * Plan points are the record's own ``(x, z)`` pairs and the height rises
+ * along the producers' extrusion axis. The pointer preview that produced
+ * them stays in the browser; only a finished action arrives here.
+ */
+export type SketchPrismRequestDto = {
+    /**
+     * Statedigest
+     *
+     * the stateDigest /api/state answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentcomponentid
+     *
+     * required when componentId is new here: the existing component it belongs under, which is what decides the seat that builds it
+     */
+    parentComponentId?: string | null;
+    /**
+     * Semantickind
+     *
+     * what a new component is, in the record's own vocabulary; required only when componentId is new here
+     */
+    semanticKind?: string | null;
+    /**
+     * Elementid
+     *
+     * the Element@1 this action authors; an existing id edits that element
+     */
+    elementId: string;
+    /**
+     * Profile
+     *
+     * the closed plan profile as (x, z) pairs, in order, without repeating the first point
+     */
+    profile: Array<[
+        number,
+        number
+    ]>;
+    /**
+     * Height
+     *
+     * how far the profile is pulled, in project length units
+     */
+    height: number;
+    /**
+     * Baselevel
+     */
+    baseLevel?: string | null;
+    /**
+     * Basedatum
+     */
+    baseDatum?: string | null;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+    /**
+     * Keep
+     *
+     * refs this action must not change
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
  * SourceDocumentDto
  *
  * An imported reference document, separate from certified model artifacts.
@@ -4476,6 +4972,14 @@ export type UserSettingsDto = {
      * Intenttimeouts
      */
     intentTimeoutS?: number | null;
+    /**
+     * Chatprovider
+     */
+    chatProvider?: 'codex' | 'claude' | 'coding-plan' | null;
+    /**
+     * Chatmodel
+     */
+    chatModel?: string | null;
 };
 
 /**
@@ -5903,6 +6407,76 @@ export type CreateProposalApiProposalsPostResponses = {
 
 export type CreateProposalApiProposalsPostResponse = CreateProposalApiProposalsPostResponses[keyof CreateProposalApiProposalsPostResponses];
 
+export type CreateSketchProposalApiProposalsSketchPostData = {
+    body: SketchPrismRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/sketch';
+};
+
+export type CreateSketchProposalApiProposalsSketchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateSketchProposalApiProposalsSketchPostError = CreateSketchProposalApiProposalsSketchPostErrors[keyof CreateSketchProposalApiProposalsSketchPostErrors];
+
+export type CreateSketchProposalApiProposalsSketchPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateSketchProposalApiProposalsSketchPostResponse = CreateSketchProposalApiProposalsSketchPostResponses[keyof CreateSketchProposalApiProposalsSketchPostResponses];
+
+export type CreateDeleteProposalApiProposalsDeletePostData = {
+    body: DeleteElementRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/delete';
+};
+
+export type CreateDeleteProposalApiProposalsDeletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDeleteProposalApiProposalsDeletePostError = CreateDeleteProposalApiProposalsDeletePostErrors[keyof CreateDeleteProposalApiProposalsDeletePostErrors];
+
+export type CreateDeleteProposalApiProposalsDeletePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateDeleteProposalApiProposalsDeletePostResponse = CreateDeleteProposalApiProposalsDeletePostResponses[keyof CreateDeleteProposalApiProposalsDeletePostResponses];
+
 export type ReadProposalApiProposalsProposalIdGetData = {
     body?: never;
     headers?: {
@@ -6552,6 +7126,149 @@ export type CompareCandidateApiCandidatesCandidateIdCompareGetResponses = {
 };
 
 export type CompareCandidateApiCandidatesCandidateIdCompareGetResponse = CompareCandidateApiCandidatesCandidateIdCompareGetResponses[keyof CompareCandidateApiCandidatesCandidateIdCompareGetResponses];
+
+export type ReadCapabilitiesApiCapabilitiesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Goal
+         *
+         * what the user is trying to do, in English or Chinese; omitted returns the whole index
+         */
+        goal?: string | null;
+    };
+    url: '/api/capabilities';
+};
+
+export type ReadCapabilitiesApiCapabilitiesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCapabilitiesApiCapabilitiesGetError = ReadCapabilitiesApiCapabilitiesGetErrors[keyof ReadCapabilitiesApiCapabilitiesGetErrors];
+
+export type ReadCapabilitiesApiCapabilitiesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CapabilityIndexDto;
+};
+
+export type ReadCapabilitiesApiCapabilitiesGetResponse = ReadCapabilitiesApiCapabilitiesGetResponses[keyof ReadCapabilitiesApiCapabilitiesGetResponses];
+
+export type ReadCapabilityApiCapabilitiesCapabilityIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Capability Id
+         */
+        capability_id: string;
+    };
+    query?: {
+        /**
+         * Target
+         *
+         * the Component@1 this is about; with it the answer names the numbers that can move and what may be kept
+         */
+        target?: string | null;
+        /**
+         * Elementid
+         */
+        elementId?: string | null;
+        /**
+         * Run
+         *
+         * describe against this retained run instead of the project's default projection
+         */
+        run?: string | null;
+        /**
+         * Sourcestageref
+         */
+        sourceStageRef?: string | null;
+    };
+    url: '/api/capabilities/{capability_id}';
+};
+
+export type ReadCapabilityApiCapabilitiesCapabilityIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCapabilityApiCapabilitiesCapabilityIdGetError = ReadCapabilityApiCapabilitiesCapabilityIdGetErrors[keyof ReadCapabilityApiCapabilitiesCapabilityIdGetErrors];
+
+export type ReadCapabilityApiCapabilitiesCapabilityIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CapabilityDetailDto;
+};
+
+export type ReadCapabilityApiCapabilitiesCapabilityIdGetResponse = ReadCapabilityApiCapabilitiesCapabilityIdGetResponses[keyof ReadCapabilityApiCapabilitiesCapabilityIdGetResponses];
+
+export type RunCapabilityApiCapabilitiesCapabilityIdRunPostData = {
+    body: CapabilityRunRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Capability Id
+         */
+        capability_id: string;
+    };
+    query?: never;
+    url: '/api/capabilities/{capability_id}/run';
+};
+
+export type RunCapabilityApiCapabilitiesCapabilityIdRunPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RunCapabilityApiCapabilitiesCapabilityIdRunPostError = RunCapabilityApiCapabilitiesCapabilityIdRunPostErrors[keyof RunCapabilityApiCapabilitiesCapabilityIdRunPostErrors];
+
+export type RunCapabilityApiCapabilitiesCapabilityIdRunPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: CapabilityRunDto;
+};
+
+export type RunCapabilityApiCapabilitiesCapabilityIdRunPostResponse = RunCapabilityApiCapabilitiesCapabilityIdRunPostResponses[keyof RunCapabilityApiCapabilitiesCapabilityIdRunPostResponses];
 
 export type ReadCommittedDesignHistoryApiDesignHistoryGetData = {
     body?: never;

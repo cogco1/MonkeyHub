@@ -1,4 +1,22 @@
-# MonkeyHub local services
+# MonkeyHub — application entry
+
+MonkeyHub opens directly into project conversations: projects and chats on the left, the conversation and composer in the center, and existing Arch, Diagram, Board, Fab or Monitor pages in a resizable panel on the right. Those five entries live in one vertical rail along the far right edge, which also carries the bound project and the control that opens or closes the tool panel; a tool page embedded there draws no second copy of them. The installed Codex or Claude CLI continues each conversation using its native session. See the [shared entry and agent lookup sequence](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+
+New project creates one in the workspace: name it, and Hub initializes an empty P036 project at version 0 through the same path `tools/create_project.py` uses, then opens a conversation in it. The workspace is a location in Hub settings — the saved folder, else the folder the current project already lives in, else `workspace/projects` under this Hub's runtime root. A name that is not a project id, a name that would leave that folder, and a folder that already holds anything are each refused by their own reason, and nothing existing is written over. An existing complete ArchFlow project folder can still be added directly. Send a message to start.
+
+Hub settings, bottom left, hold the global choices: language, theme, text size, the default CLI connection and the default model. Each connection is checked once per run, read-only: whether its CLI is installed, whether that CLI reports itself signed in, and which models it lists. Codex answers `model/list` on its own app-server protocol and Claude Code carries its list in the SDK control protocol's initialize answer — the same one `supportedModels()` reads — so each catalogue is that account's own. A connection that cannot be read says why and still accepts a model id typed by hand. Nothing is guessed, no conversation is started to find out, and no credential is read or reported. A check is reused until it ages out; the transcript's polling never starts a CLI, and Hub settings can ask again.
+
+A new conversation starts from those defaults; an existing conversation keeps the connection, model and native CLI session it was created with, and changing a default never reaches one. The composer states which connection is answering and offers that conversation's model. Changing it applies to that conversation's next messages only: its connection, its native CLI session and its project stay as they are, the global default is not rewritten, and a reply already running keeps the model it started with. The connection itself is still chosen once, in Hub settings. Coding Plan uses the installed Claude CLI's configured Anthropic-compatible endpoint and authentication. A connection being available means its executable/configuration was found; login or provider errors are reported when the CLI runs.
+
+Before a message or tool page opens, Hub binds its managed Studio to that chat's project. A running chat prevents switching that service to another project. Chat tools inspect the actual Studio schema and call its existing deterministic proposal/candidate and drawing APIs; they do not call the intent model a second time. Available domain actions remain limited to those APIs. Review, endorsement and formal issue retain their existing application flows.
+
+Each of those calls stays in the conversation as one row: the tool, its method and path, and the CLI's own word for how it ended. Both installed CLIs are read the same way — Codex reports one MCP item per call, Claude reports a `tool_use` block answered later by a `tool_result`, joined by its tool id — and a CLI's own file tools appear as the activity they are. Only this adapter's bound tools speak for the project: a result from anything else, or from a failed call, never names a candidate. A refused or failed call remains visible instead of disappearing. The diagnostics under a row are collapsed and bounded — the values a person can act on, or a short preview with the remaining length stated; a whole state or schema document is never copied into the transcript. The rows are saved with the conversation, so reloading the page or reopening Hub shows the same history.
+
+The rail's project entry answers for the conversation's own project: its name, folder, published version and accepted Stage as the project itself records them, and the candidates this conversation has produced or read. A candidate is named as a candidate — not endorsed, not issued — and never as a version. Selecting a conversation in another project re-reads that project; a conversation with no project says so.
+
+When a call reports that a candidate finished, that row offers to open it: the right panel opens MonkeyArch on `?embedded=tool&candidate=<run>`, which binds that exact candidate run rather than the project's reference run, and the conversation stays where it was. A run that cannot be opened is refused by name; no default view stands in for a conversation's own result. Opening a candidate is looking at it — it is not acceptance, endorsement or issue.
+
+The home page labels these workspaces by their task: Modeling, Drawings, Usage, Presentation and Fabrication. Existing MonkeyArch/Diagram/Board/Monitor/Fab API identifiers and service boundaries remain the implementation names.
 
 MonkeyHub opens without a building project. It starts MonkeyMonitor independently and shares one Studio service between MonkeyArch, MonkeyDiagram and MonkeyBoard. MonkeyDiagram opens that service at /?view=documents; MonkeyBoard opens at /?view=board for single-operator drawing layout and meeting presentation.
 
@@ -38,24 +56,33 @@ Run `npm --prefix apps/monkeyhub/web run dev` for the web development server on 
 
 For a headless test, add --managed-stdin --managed-instance-id followed by a fresh UUID and keep the process's stdin pipe. Writing stop followed by a newline, or closing that owned pipe, requests shutdown. --no-browser suppresses automatic browser opening. Normal standalone CLI use remains available.
 
+To try uncommitted work, build both web apps and start `launch-hub.ps1` with an external runtime root and ports of its own, keeping the installed package untouched. Such a run is a source trial: it runs the working tree, and the packaged installer still exports a committed Git snapshot, so a source trial never means the installed application has been updated. Give a source trial its own project — `tools/create_project.py`, or for a disposable one the shared `make_project` fixture — rather than opening a real building project.
+
 ## Configuration and data
 
 The default runtime root is LOCALAPPDATA/MonkeyHub; --runtime-root selects another absolute nonproject directory.
 
 | Content | Owner and location |
 | --- | --- |
-| Language, theme, font scale and model defaults | Existing Studio settings owner; APPDATA/MonkeyArch/settings.json |
-| Chosen Studio project/run, CAD export and service ports | Same settings owner; runtime-root/config/applications.json |
+| Language, theme, font scale, model defaults, and the default chat connection and model | Existing Studio settings owner; APPDATA/MonkeyArch/settings.json |
+| Chosen Studio project/run, workspace folder for new projects, CAD export and service ports | Same settings owner; runtime-root/config/applications.json |
 | Hub-owned child stdout/stderr | runtime-root/logs/ |
+| Chat transcripts, project associations and native CLI session ids | runtime-root/chats/; these are conversations, not building state |
 | Optional Studio usage diagnostics read by Monitor | runtime-root/diagnostics/monkeymonitor/ |
 | Building data and retained runs | The selected project's existing ArchFlow project interfaces |
 | Print STL parts and assembly table | The new or empty absolute output directory explicitly entered in the Fab page; the independent CLI writes it |
 
 User preferences and application launch configuration have separate purposes and cannot overwrite one another. No credentials are stored in application configuration. Hub reads the existing saved model defaults when it starts Studio; changing a saved default does not replace an already running compiler.
 
-No StudioSettings object is created for the Hub. Choose an existing complete project before starting MonkeyArch, MonkeyDiagram or MonkeyBoard; the Studio health check must confirm that binding. Clearing the Hub's selected path does not delete a project. Stop the applications before changing their project or ports.
+No StudioSettings object is created for the Hub. Choose an existing complete project before starting MonkeyArch, MonkeyDiagram or MonkeyBoard; the Studio health check must confirm that binding. Clearing the Hub's selected path does not delete a project. Stop the affected service before changing its launch configuration; an independent Monitor can stay running while Studio changes project.
 
 ## HTTP contract
+
+Agents use this same Hub: read health, application status and selected application settings, then use the actual running service URL and its relevant API contract. Hub's chat CLI receives its bound project and a small stdio tool connection that reads the selected Studio action schema on demand. Source development uses `devctl module`, and shared toolbox lookup uses `hgs skills list/show`; the shared skill catalog is not yet an executable chat tool.
+
+Chat API: `GET /api/chat/providers` (add `?refresh=true` to check the installed CLIs again), `GET /api/chat/workspace`, `POST /api/chat/projects`, `GET /api/chat/projects`, `GET /api/chat/sessions`, `POST /api/chat/sessions`, `GET /api/chat/sessions/{id}`, `POST /api/chat/sessions/{id}/messages`, `PUT /api/chat/sessions/{id}/model` and `POST /api/chat/sessions/{id}/stop`. The same native CLI session is resumed on the next turn; an interrupted Hub run remains visible and can be continued after reopening.
+
+A chat project carries the published `version` and accepted `stage` its own P036 records hold, or null when they cannot be read; a candidate is never reported there. A chat message has role `user`, `assistant` or `tool`. A `tool` message is one MCP call: its first content line is the summary and the rest are its bounded diagnostics; `candidateId` names a finished candidate when that call reported one, and is absent everywhere else, including in records written before this field existed.
 
 The actual schema is available at GET /openapi.json. Generate a client from this running schema and use a separate client instance for each service.
 

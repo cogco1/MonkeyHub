@@ -143,6 +143,59 @@ class IntentContextTests(unittest.TestCase):
         _, sheet = fixture()
         self.assertEqual(compile_context("set window-23 width to 1.2", sheet).tier, "design")
 
+    def test_local_design_keeps_dependencies_and_conditions_without_remote_state(self):
+        record, sheet = fixture()
+        sheet["constraints"] = ["Retain the agreed material specification"]
+        context = compile_context("replace window-23 with a wider opening while keeping the host wall and daylight ratio", sheet, record=record)
+        self.assertEqual(context.tier, "design")
+        self.assertEqual(context.target_ids, ("window-23",))
+        public = model_context(context)
+        self.assertEqual(public["editTargets"], ["window-23"])
+        self.assertEqual({row["elementId"] for row in public["elements"]}, {"window-23", "wall-07"})
+        self.assertIn("parameter:module", context.included_refs)
+        self.assertIn("Keep the opening daylight ratio", json.dumps(public))
+        self.assertIn("Preserve agreed project limits", json.dumps(public))
+        self.assertEqual(public["constraints"], sheet["constraints"])
+        self.assertIn("remote-wall", {row["elementId"] for row in context.sheet["elements"]})
+        self.assertNotIn("Unrelated wall finish", json.dumps(public))
+
+    def test_named_keep_target_is_read_only_and_supplement_cannot_expand_writes(self):
+        record, sheet = fixture()
+        context = compile_context("replace window-23 while keeping wall-07", sheet, record=record)
+        self.assertEqual(context.target_ids, ("window-23",))
+        expanded = expand_context(context, sheet, ["entity:remote-wall"], record=record)
+        self.assertEqual(expanded.target_ids, context.target_ids)
+        self.assertEqual(model_context(expanded)["editTargets"], ["window-23"])
+        self.assertIn("remote-wall", {row["elementId"] for row in model_context(expanded)["elements"]})
+        self.assertNotIn("remote-wall", {row["elementId"] for row in model_context(context)["elements"]})
+
+    def test_local_design_keeps_declared_downstream_dependency_without_a_relation(self):
+        record, _ = fixture()
+        remote = record.entity("remote-wall")
+        remote = replace(remote, fields={**remote.fields, "host": "wall-07"})
+        record = replace(record, entities=tuple(remote if row.entity_id == remote.entity_id else row for row in record.entities))
+        context = compile_context("reconfigure wall-07 while keeping its base", sheet_of(record), record=record)
+        self.assertEqual(context.target_ids, ("wall-07",))
+        self.assertIn("entity:remote-wall", record.closure(("entity:wall-07",)))
+        self.assertIn("remote-wall", {row["elementId"] for row in model_context(context)["elements"]})
+        self.assertIn("Unrelated wall finish", json.dumps(model_context(context)))
+
+    def test_clear_component_and_multiple_named_local_targets_are_supported(self):
+        record, sheet = fixture()
+        context = compile_context("reconfigure window-23 and window-24 while preserving daylight", sheet, record=record)
+        self.assertEqual(context.target_ids, ("window-23", "window-24"))
+        self.assertNotIn("remote-wall", {row["elementId"] for row in model_context(context)["elements"]})
+        component = compile_context("reconfigure facade while keeping its material", sheet, record=record)
+        self.assertEqual(set(component.target_ids), {"wall-07", "window-23", "window-24", "remote-wall"})
+
+    def test_global_and_unanchored_design_does_not_claim_local_scope(self):
+        record, sheet = fixture()
+        for message in ("redesign the entire building", "add a window while keeping width 1.2", "set this wall height to 3.2", "change window-23 and improve circulation"):
+            with self.subTest(message=message):
+                context = compile_context(message, sheet, record=record)
+                self.assertIsNone(context.design_sheet)
+                self.assertNotIn("editTargets", model_context(context))
+
     def test_expansion_adds_read_context_and_preserves_edit_boundary(self):
         record, sheet = fixture()
         context = compile_context("set window-23 width to 1.2", sheet, record=record)

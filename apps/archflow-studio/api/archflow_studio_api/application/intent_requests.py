@@ -16,7 +16,7 @@ from typing import Any, Mapping
 from archflow.state.state_record import StateRecord, parameter_bindings_of, resolve_element_bindings
 from jsonschema import Draft202012Validator
 
-from .intent_context import IntentContext, control_unit
+from .intent_context import IntentContext, control_unit, _named_refs, _rows
 
 
 MAX_OUTPUT_TOKENS = {"scalar": 400, "component": 800, "design": 5000}
@@ -166,6 +166,85 @@ def validate_request_answer(answer: Mapping[str, Any], context: IntentContext,
         raise ValueError("only a context supplement may request additional refs")
     if answer["status"] == "compiled" and (answer.get("utterance") is None) == (answer.get("semanticEdit") is None):
         raise ValueError("a compiled answer must supply exactly one scalar or component edit")
+    if context.design_sheet is not None and answer["status"] == "compiled":
+        _validate_design_scope(answer, context)
+
+
+def _validate_design_scope(answer: Mapping[str, Any], context: IntentContext) -> None:
+    """A dependency supplement grants reads, never existing-object writes."""
+    targets = set(context.target_ids)
+    edit = answer.get("semanticEdit")
+    if edit is None:
+        # Numeric actions already have a safer existing adapter. A semantic
+        # slice must not bypass shared/derived checks through scalar grammar.
+        raise ValueError("a scoped design answer requires a typed component edit")
+    rows = _rows(context.sheet)
+    entities = {row["entity_id"]: row for row in edit["entities"]}
+    created = {key for key in entities if "entity:" + key not in rows}
+    if answer.get("elementId") is not None and answer["elementId"] not in targets | created:
+        raise ValueError("the design answer changes a target outside the requested scope")
+    components = {rows["entity:" + target][1]["componentId"] for target in targets}
+    components.update(key for key in created if entities[key]["schema"] == "Component@1")
+    if answer.get("targetComponentId") is not None and answer["targetComponentId"] not in components:
+        raise ValueError("the design answer names a component outside the requested scope")
+    existing_writes = (set(entities) | set(edit["removeEntityIds"])) - created
+    if not existing_writes.issubset(targets):
+        raise ValueError("the design answer edits an existing dependency outside the requested scope")
+    changed_parameters = {row["key"] for row in edit["parameters"]} | set(edit["removeParameterKeys"])
+    existing_parameters = {row["key"]: row for row in context.sheet.get("parameters", ())}
+    used_parameters = set()
+    for target in targets:
+        used_parameters.update(ref.removeprefix("parameter:") for ref in _named_refs(rows["entity:" + target][1], rows) if ref.startswith("parameter:"))
+    while True:
+        extended = used_parameters | {key for used in used_parameters for key in existing_parameters.get(used, {}).get("inputs", ())}
+        if extended == used_parameters:
+            break
+        used_parameters = extended
+    if not (changed_parameters & set(existing_parameters)).issubset(used_parameters):
+        raise ValueError("the design answer edits a control outside the requested scope")
+    affected = changed_parameters & set(existing_parameters)
+    while True:
+        extended = affected | {key for key, row in existing_parameters.items() if affected.intersection(row.get("inputs", ()))}
+        if extended == affected:
+            break
+        affected = extended
+    for key in changed_parameters & set(existing_parameters):
+        if existing_parameters[key].get("lockAuthority") or existing_parameters[key].get("expr"):
+            raise ValueError("the design answer changes a locked or derived control")
+    for ref, (group, row) in rows.items():
+        if group in {"elements", "types", "contextEntities"} and ref.removeprefix("entity:") not in targets:
+            if _named_refs(row, rows).intersection("parameter:" + key for key in affected):
+                raise ValueError("the design answer changes a shared control outside the requested scope")
+    relations = {row["relation_id"]: row for row in context.sheet.get("relationships", ())}
+    for key in edit["removeRelationIds"]:
+        relation = relations.get(key)
+        if relation is None or not {relation["subject"], relation["object"]}.intersection(targets):
+            raise ValueError("the design answer removes a relationship outside the requested scope")
+    # New members must have declared connections to the requested objects;
+    # sharing a broad component parent alone is not a local connection.
+    connected = set(targets)
+    links = []
+    for relation in edit["relations"]:
+        old = relations.get(relation["relation_id"])
+        if old is not None and not {old["subject"], old["object"]}.intersection(targets):
+            raise ValueError("the design answer edits a relationship outside the requested scope")
+        endpoints = {relation["subject"], relation["object"]}
+        if not endpoints.intersection(targets | created):
+            raise ValueError("the design answer adds an unrelated relationship")
+        links.append(endpoints & (targets | created))
+    known = {**rows, **{"entity:" + key: None for key in created}}
+    for key, row in entities.items():
+        refs = _named_refs(row.get("fields", {}).get("references", {}), known)
+        refs.update(_named_refs(row.get("parent_id"), known))
+        refs.update(_named_refs(row.get("fields", {}).get("type_ref"), known))
+        links.append({key} | ({ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")} & (targets | created)))
+    while True:
+        extended = connected | set().union(*(link for link in links if link.intersection(connected)))
+        if extended == connected:
+            break
+        connected = extended
+    if not created.issubset(connected):
+        raise ValueError("new design members must declare their connection to the requested targets")
 
 
 def _finite(value: object) -> bool:

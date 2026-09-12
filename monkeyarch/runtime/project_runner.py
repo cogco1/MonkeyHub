@@ -104,6 +104,7 @@ from archflow.project.record_kinds import (
     STATE_RECORD,
     stage_geometry_program,
 )
+from archflow.project.layout import cad_workspace_path
 from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef, record_ref_from_uri
@@ -654,7 +655,10 @@ def _prior_export(records_dir: Path, workspace: Path, stage_id: str, program_dig
 def _export_workspace(options: RunOptions, stage_id: str) -> Path:
     """The caller-prepared stage workspace an export may write into; the runner never creates it."""
 
-    workspace = (options.workspace_root or Path(".")) / f"cad-{stage_id}"
+    try:
+        workspace = cad_workspace_path(options.workspace_root, stage_id)
+    except ValueError as exc:
+        raise ProjectRunnerError(str(exc)) from exc
     if not workspace.is_dir():
         raise ProjectRunnerError(f"export workspace {workspace} does not exist: the caller prepares workspaces; the runner never creates files outside records")
     return workspace

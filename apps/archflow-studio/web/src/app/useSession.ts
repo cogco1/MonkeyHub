@@ -53,7 +53,7 @@ export interface SessionHandle extends SessionSnapshot {
 }
 
 /** The hook's async transitions, also usable by isolated tests without a browser. */
-export function createSessionController(serverBaseUrl = connection.baseUrl, capabilities: readonly string[] = []) {
+export function createSessionController(serverBaseUrl = connection.baseUrl, capabilities: readonly string[] = [], persistEditingBase = true, expectedProjectId?: string) {
   let snapshot: SessionSnapshot = {
     binding: null, session: idle, changingBase: false, baseError: null, persistenceFailed: false,
   };
@@ -75,6 +75,10 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
       // learning which project it would be read in.
       project = await studio.project();
       if (currentRequest !== request) return null;
+      if (expectedProjectId !== undefined && project.projectId !== expectedProjectId) {
+        throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
+          "This task belongs to another project. Reload the page to open the server's current project." });
+      }
       const sameProject = previous.status === "ready" && previous.value.project.projectId === project.projectId;
       publish({ ...snapshot, binding: project, session: sameProject ? previous : loading });
       if (previous.status === "ready" && !sameProject && requestedRunId != null) {
@@ -88,7 +92,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
       const useHead = designHistory !== null && (requestedRunId === null || (!sameProject && requestedRunId === undefined));
       const runId = useHead ? defaultStage?.modelSource.runId ?? null : requestedRunId !== undefined ? requestedRunId
         : sameProject && previous.status === "ready" ? previous.value.sourceRunId
-          : editingBasePreferences.read(serverBaseUrl, project.projectId);
+          : persistEditingBase ? editingBasePreferences.read(serverBaseUrl, project.projectId) : null;
       const workingCopies = capabilities.includes("working-copies")
         ? (await studio.workingCopies()).workingCopies : [];
       if (currentRequest !== request) return null;
@@ -117,7 +121,7 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
       // Reading a model or refreshing a session never records consent. Only the
       // explicit continuation/default action reaches the existing preference writer.
       let persistenceFailed = snapshot.persistenceFailed;
-      if (requestedRunId !== undefined) {
+      if (requestedRunId !== undefined && persistEditingBase) {
         try { persistenceFailed = !editingBasePreferences.write(serverBaseUrl, project.projectId, runId); }
         catch { persistenceFailed = true; }
       }
@@ -182,9 +186,9 @@ export function editingDigestForView(
 }
 
 export function useSession(notice: (line: string) => void, capabilities: readonly string[] = [], initialBase?: {
-  runId: string; sourceStageRef: string | null;
-}): SessionHandle {
-  const [controller] = useState(() => createSessionController(connection.baseUrl, capabilities));
+  runId: string | null; sourceStageRef: string | null;
+}, persistEditingBase = true, expectedProjectId?: string): SessionHandle {
+  const [controller] = useState(() => createSessionController(connection.baseUrl, capabilities, persistEditingBase, expectedProjectId));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const { reload } = controller;
   const noticeRef = useRef(notice);

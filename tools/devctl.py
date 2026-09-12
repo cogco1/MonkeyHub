@@ -28,14 +28,141 @@ MODULE_SECTIONS = (
     "owns", "does_not_own", "public_api", "depends_on", "source_paths", "tests",
     "inputs", "outputs", "invariants",
 )
+# The capability index lives in the same registry file: a capability names the
+# goals it serves, the owner that implements it and the entry points that
+# already exist. It is a search index over registered owners, not a second
+# place where software is registered.
+CAPABILITY_SECTIONS = (
+    "goals", "aliases", "requires", "reads", "writes", "effects", "entrypoints",
+    "composes", "produces", "validators", "works", "missing", "tests",
+)
+
+
+def _matcher():
+    """The one capability matching rule, imported from the module that serves it.
+
+    The rule belongs to the capability index the Studio answers ``GET
+    /api/capabilities`` with; keeping a second copy here would let the
+    governance CLI and the running service disagree about what a goal finds.
+    This CLI still owns the registry path, the paging and the printing — only
+    the rule is borrowed, and the module it comes from imports nothing but the
+    standard library to be borrowed this cheaply.
+    """
+
+    studio = ROOT / "apps" / "archflow-studio" / "api"
+    if str(studio) not in sys.path:
+        sys.path.append(str(studio))
+    from archflow_studio_api.application.capability import match_capabilities
+
+    return match_capabilities
+
+
+def load_module_registry() -> dict:
+    """The module registry, schema-checked once for every reader here."""
+
+    data = json.loads(MODULE_REGISTRY.read_text(encoding="utf-8"))
+    if data.get("schema") != "ArchFlowModuleRegistry@1":
+        raise SystemExit(f"unsupported module registry schema: {data.get('schema')!r}")
+    return data
+
+
+def capabilities() -> list[dict]:
+    """Every registered capability entry, in registry order."""
+
+    return list(load_module_registry().get("capabilities", []))
+
+
+def _capability_lookup(query: str, *, section: str | None, limit: int, offset: int) -> dict:
+    """Find capabilities by id or by the words a goal is written in.
+
+    No hit is not a claim that nothing can do this: the index covers the
+    capabilities that have been written down, and the answer says so and
+    points at the module lookup, which covers every registered owner.
+    """
+
+    entries = capabilities()
+    if not query.strip():
+        raise SystemExit("capability query must not be empty")
+    matches, evidence, note = _matcher()(entries, query)
+    matches, evidence = list(matches), list(evidence)
+    result = {"query": query, "match_count": len(matches), "offset": offset, "limit": limit,
+              "registered": len(entries)}
+    if len(matches) != 1:
+        result["candidates"] = [
+            {"capability_id": c["capability_id"], "owner": c.get("owner"), "status": c.get("status"),
+             "purpose": c.get("purpose", ""), "matched": list(evidence[index + offset][1])}
+            for index, c in enumerate(matches[offset:offset + limit])
+        ]
+        result["remaining"] = max(0, len(matches) - offset - limit)
+        if note is not None:
+            result["note"] = note + (
+                " Look the owner up with `devctl module <keywords>`: every registered owner is there, "
+                "whether or not a capability entry has been written for it."
+            )
+        return result
+    result["matched"] = list(evidence[0][1])
+    entry = matches[0]
+    detail = {k: entry[k] for k in ("capability_id", "owner", "execution_owner", "kind", "status",
+                                    "purpose", "purpose_zh", "inputs_ref", "estimated_cost",
+                                    "status_note") if k in entry}
+    omitted = {}
+    for name in (section,) if section else CAPABILITY_SECTIONS:
+        values = entry.get(name, [])
+        detail[name] = values[offset:offset + limit]
+        before, after = min(offset, len(values)), max(0, len(values) - offset - limit)
+        if before or after:
+            omitted[name] = {"before": before, "after": after, "total": len(values)}
+    result["capability"] = detail
+    result["omitted"] = omitted
+    return result
+
+
+def _print_capability_lookup(result: dict) -> None:
+    if "capability" not in result:
+        if not result["match_count"]:
+            print(result["note"])
+            return
+        print(f"{result['match_count']} capabilities are relevant to {result['query']!r}; "
+              "read one with its exact capability id:")
+        for candidate in result["candidates"]:
+            print(f"- {candidate['capability_id']} ({candidate['status']}) - owner {candidate['owner']}")
+            print(f"  {candidate['purpose']}")
+            if candidate.get("matched"):
+                print(f"  matched on: {', '.join(candidate['matched'])}")
+        if result["remaining"]:
+            print(f"{result['remaining']} more; next page: --offset {result['offset'] + result['limit']}")
+        return
+    entry = result["capability"]
+    if result.get("matched"):
+        print(f"relevant to {result['query']!r} on: {', '.join(result['matched'])}")
+    print(f"{entry['capability_id']} ({entry.get('status')}) - owner {entry.get('owner')}"
+          + (f", executed by {entry['execution_owner']}" if entry.get("execution_owner") else ""))
+    print(entry.get("purpose", ""))
+    if entry.get("purpose_zh"):
+        print(entry["purpose_zh"])
+    if entry.get("inputs_ref"):
+        print(f"inputs: {entry['inputs_ref']}")
+    for section in CAPABILITY_SECTIONS:
+        if section not in entry:
+            continue
+        print(f"\n{section}:")
+        for value in entry[section]:
+            print(f"- {value}")
+        if not entry[section]:
+            print("- (no entries on this page)" if section in result["omitted"] else "- (none declared)")
+        if section in result["omitted"]:
+            page = result["omitted"][section]
+            print(f"  [{page['total']} total; {page['before']} earlier, {page['after']} later]")
+    if entry.get("estimated_cost"):
+        print(f"\nestimated cost: {entry['estimated_cost']}")
+    if entry.get("status_note"):
+        print(f"status: {entry['status_note']}")
 
 
 def _module_lookup(query: str, *, section: str | None, limit: int, offset: int) -> dict:
     """Read registry metadata only; never import or walk the matching source."""
 
-    data = json.loads(MODULE_REGISTRY.read_text(encoding="utf-8"))
-    if data.get("schema") != "ArchFlowModuleRegistry@1":
-        raise SystemExit(f"unsupported module registry schema: {data.get('schema')!r}")
+    data = load_module_registry()
     needle = query.strip().casefold()
     if not needle:
         raise SystemExit("module query must not be empty")
@@ -281,7 +408,23 @@ def main(argv: list[str] | None = None) -> int:
     module_parser.add_argument("--section", choices=MODULE_SECTIONS, help="read only one contract section")
     module_parser.add_argument("--limit", type=int, default=8, help="entries per section or candidate page (1-20; default: 8)")
     module_parser.add_argument("--offset", type=int, default=0, help="skip this many section entries or candidates")
+    capability_parser = sub.add_parser(
+        "capability", help="find a registered capability by goal or id, without reading the whole registry")
+    capability_parser.add_argument("query", help="exact capability id or goal words, e.g. 'change a height'")
+    capability_parser.add_argument("--json", action="store_true", help="emit structured lookup output")
+    capability_parser.add_argument("--section", choices=CAPABILITY_SECTIONS, help="read only one section")
+    capability_parser.add_argument("--limit", type=int, default=8, help="entries per section or candidate page (1-20; default: 8)")
+    capability_parser.add_argument("--offset", type=int, default=0, help="skip this many section entries or candidates")
     args = parser.parse_args(argv)
+    if args.command == "capability":
+        if not 1 <= args.limit <= 20 or args.offset < 0:
+            parser.error("capability requires --limit between 1 and 20 and --offset >= 0")
+        result = _capability_lookup(args.query, section=args.section, limit=args.limit, offset=args.offset)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            _print_capability_lookup(result)
+        return 0 if result["match_count"] else 1
     if args.command == "module":
         if not 1 <= args.limit <= 20 or args.offset < 0:
             parser.error("module requires --limit between 1 and 20 and --offset >= 0")

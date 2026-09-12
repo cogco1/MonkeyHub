@@ -12,6 +12,328 @@
 
 **2026-09-09 Stage 收敛。** 用户已同意 [Stage / Branch / Candidate 方案](../../STAGE_BRANCH_CANDIDATE_PLAN.md)。本地实现已接常驻候选预览、显式 Stage 接受和历史 fork、确切模型立面、跨 run 局部复用及同 Stage 独立修改合并；相关 API／OCCT、41 个隔离浏览器场景、构建和架构检查已通过。沿现有 owner 实施，保留真实项目的显式初始接受与正式 issue 边界。此项不关闭 C08 的建筑方法闭环或其他未完成任务。
 
+## 功能节点图与开发校准
+
+**核对日期：2026-09-11。** 本图把本卡的功能清单连接到现有实现；第 6 节覆盖当前注册表的全部 74 个 owner。
+图中节点是功能的阅读入口，箭头表示输入、调用或成果交接，不新增模块或持久化对象。
+注册表中的 `canonical` 表示能力归口已确立，不表示所有入口、真实项目和安装包都已验收。
+
+### 从用户操作看全景
+
+```mermaid
+flowchart TB
+    H[MonkeyHub：项目、聊天、工具页与设置]
+    H --> R[资料与任务书 R01–R04]
+    H --> M[MonkeyArch：方案与建模 M01–M07]
+    H --> D[MonkeyDiagram：文档、标注与模型立面 O01–O04]
+    H --> B[MonkeyBoard：画板、布局与重开]
+    H --> F[MonkeyFab：独立 CLI 的制作入口]
+    H --> U[MonkeyMonitor：时间、Token 与价格]
+    R --> S[StateRecord：实体、参数、关系、证据与义务]
+    M --> S
+    S --> G[已声明的依赖、引用与派生值]
+    G --> C[构件生成、编译与 CAD 执行]
+    C --> K[真实模型读回、关系检查与验证 A01–A04]
+    K --> V[可查看、比较、继续修改的候选]
+    V --> M
+    V --> D
+    D --> B
+    V --> F
+    V --> T[显式接受 Stage、历史分支与重开]
+    T --> I[独立正式 issue：推进 HEAD]
+    P[P036：共享项目、输入、run、记录与成果] --- S
+    P --- V
+    P --- T
+    U -. 观察实际调用与执行 .-> C
+    E[devctl、archcheck、实际 CLI 与打包] -. 查归口、检查和交付 .-> H
+```
+
+资料抽取、环境模拟、通用平剖面与施工图等尚未形成完整服务的方向，仍见第 2–3 节。
+模型立面已有 exact STEP → SVG/PNG 的实现；文档画布、模型截图和正式图纸各自沿现有入口使用。
+MonkeyFab 的算法在独立项目中，Hub 只调用其 CLI；它不是本仓缺少的另一套建模模块。
+
+### 建模时两条 Agent 入口与同一条执行链
+
+```mermaid
+flowchart TB
+    Q[当前项目、选定候选、对象、需求与 keep 条件]
+    Q --> A[Hub：原生 Codex / Claude 会话]
+    A --> X[MCP：读取 State、调用既有 Studio 动作]
+    Q --> L[Studio 意图入口]
+    L --> CT[compile_context：目标、依赖闭包、上下文裁剪]
+    CT --> IA[意图解析与模型输出适配]
+    X --> P[既有 proposal / sketch / program / options]
+    IA --> P
+    UI[鼠标绘制与对象编辑：部分接通] -.-> P
+    P --> CA[studio.candidate：绑定精确来源并执行]
+    CA --> S[StateRecord operator：候选后继状态]
+    S --> EP[element_producers + 引用解析 + 派生值]
+    EP --> GC[compile_geometry_program]
+    GC --> CAD[OCCT 或明确选择的 Rhino 执行]
+    CAD --> CK[保存后读回、关系检查、候选结果]
+    CK --> V[实际模型、比较、人工检查]
+    V -->|sourceRunId 继续同一候选| Q
+```
+
+State/Graph 查询、`dependency_edges` / `closure` 和 `compile_context` 已有实现。
+Hub CLI 通过 MCP 调用确定性动作，与 Studio 意图入口是两条实际路径；不能假定前者已经自动经过后者的上下文裁剪。
+后续接线应核对当前选择、来源和必要依赖怎样进入实际调用，而不是另造 State、Graph 或上下文编译器。
+主要入口见 [chat.py](../../../apps/monkeyhub/api/monkeyhub_api/chat.py)、
+[state.py](../../../apps/archflow-studio/api/archflow_studio_api/routes/state.py)、
+[intent_context.py](../../../apps/archflow-studio/api/archflow_studio_api/application/intent_context.py) 和
+[candidate.py](../../../apps/archflow-studio/api/archflow_studio_api/application/candidate.py)。
+
+### 当前六组交互的节点状态
+
+本表记录本轮源码与实际试用的差别；未列为完成的部分继续留在本卡，不能从枚举、数据类型或按钮存在推断可用。
+
+| 功能节点 | 已有能力与本轮结果 | 尚需补上的连接或行为 | 沿用 owner |
+| --- | --- | --- | --- |
+| F01 线、矩形、圆、闭合成面、面分割 | 闭合 profile → prism 的确定性候选 API 与矩形交互初版已有 | 线、圆、通用成面、面分割及其可编辑结果未交付 | `studio.intent`、`state.geometry_program`、`capabilities.element_producers` |
+| F02 盒子、推拉、改轮廓／高度、局部开口 | prism 已实际生成并续改高度；默认矩形沿 XY 画底、沿 Z 拉高，第二角点拉高的预览与提交通过验证；producer 已有 `rectangular_cutouts` | cutouts 的 sketch 字段／UI 未接；空项目首体块未完成 | `studio.intent`、`studio.candidate`、`capabilities.element_producers`、`compilers.geometry`、`runtime.project_runner` |
+| F03 工作平面、吸附、轴锁、精确输入 | 轴网、标高、frame、单位和引用解析已有；默认 XY 工作面与 Z-up 视口路径已修正；视口吸附、轴锁与数值输入有初版 | 过滤遮挡点；验证其他工作面与更广的吸附场景 | `studio.shell`、`state.geometry_program`、`capabilities.reference_resolver` |
+| F04 选择、移动、旋转、复制 | 对象拾取、高亮和身份读取已有；当前视图上的单对象删除已通过真实候选与几何读回；几何程序存在变换与阵列词汇 | 完整变换入口与结果未交付，枚举存在不算实现验收 | `studio.binding`、`studio.intent`、`state.record`、`state.geometry_program` |
+| F05 组、组件定义、实例、隔离编辑、独立化 | Component、语义绑定、类型引用与资产实例表示已有 | 共享定义联动、实例变换、隔离编辑、Make Unique 的完整行为未交付；新增子组件不等于这些功能完成 | `state.record`、`state.geometry_program`、`studio.intent` |
+| F06 视角、测量、Esc、模型撤销 | 相机工具已有；当前页面的 Delete、Ctrl+Z、Ctrl+Y、Esc 已实际验证；12 个连续浏览器场景通过，覆盖批注／图纸模式、非默认来源、重做与撤销后再编辑 | 更广的测量与交互扩展仍暂停 | `studio.shell`、`studio.binding`、`studio.candidate`、`state.design_portfolio` |
+
+**优先补的断点：** 新建项目 → 第一可执行构件；手绘坐标 → 实际模型位置与高度；
+当前选择／候选 → Agent 修改同一对象；完成修改 → 检查并继续。
+新建项目已经创建空 StateRecord 与 P036 根，缺的是可执行建模起点的接线；沿用 `tools.create_project`、
+`project.inputs`、`studio.binding` 和 `studio.candidate` 核对，不以样例项目的 seat 假装普通空项目可用。
+
+**本轮已实测：** 在既有试用项目中，Hub 助手生成 8 × 6 × 3.3 m 主体和入口雨棚，随后将主体改为 4.2 m；
+读取实际 3DM 确认平面与雨棚不变。首次调用曾将无执行 seat 覆盖的 `building` 根目标报告成功却漏掉新几何；
+当前源码已改为准确拒绝，并支持在已有可执行范围下创建合法子组件。
+这项修正、compare 的 `against` 参数说明和中性的候选查看提示已通过检查，**本次记录时尚未更新试用服务**。
+
+### 开发时如何按图校准
+
+1. 从本图和第 2 节定位用户要完成的动作，查看它的前后节点及第 6 节 owner。
+2. 用 `python tools/devctl.py module <owner-id>` 读取当前契约，再查真实调用方；明确是已有能力、接线缺口、行为缺失还是尚未验证。
+3. 在原 owner 内补本次断点，用实际输入到实际结果的短路径验证。只有现有 owner 确实不能承担时才提出新增；功能类别不是建包清单。
+4. 修改完成后更新本表对应行与原 live 项；公开契约变化才改 module registry，随后用既有 `render-map` 更新生成视图。
+
+### 功能 Graph：在现有注册表上补任务层
+
+当前已有机器可读的 module registry、`devctl module --json` 和运行时 `server_capabilities(settings)`。
+缺少的是从用户目标检索到**具有明确适用范围、可执行入口和组合关系的能力**，而不是从零建立软件归口或依赖图。
+以下是本轮合并后的扩展设计；能力查询、同源 MCP 投影和自动校准尚未实现。
+
+```mermaid
+flowchart TB
+    G[USER GOAL：改已有构件、创建墙、出剖面、Pin-up]
+    C[CAPABILITY：目的、适用范围、状态、组合与缺口]
+    O[OPERATORS / TOOLS：已有查询、typed operator、候选及出图动作]
+    I[IMPLEMENTATION：已登记 owner、API / Python / CAD backend]
+    G --> C --> O --> I
+    R[module registry：现有 owner + 拟补 capabilities 元数据] --> C
+    API[现有 OpenAPI / Python 公共契约] --> O
+    API --> I
+    C --> AI[生成 Agent 短索引与按需查询]
+    C --> MCP[生成 MCP 可执行入口描述]
+    C --> APP[生成 Hub 工具页关联]
+    RT[现有运行时能力、项目绑定与权限] --> MCP
+    RT --> APP
+    CODE[Graphify：源码实际关系图] -. 核对入口与调用关系 .-> I
+```
+
+| 层 | 回答的问题 | 复用位置与拟补内容 |
+| --- | --- | --- |
+| User goal | 这次用户要完成什么？ | 在能力条目中补 `goals`／检索词；一个目标可关联多个能力，一个能力可服务多个目标 |
+| Capability | 现有哪项能力适用，完成到什么程度？ | 扩展现有 module registry 的能力条目，引用 owner；补状态、范围、组合和已知缺口，不复制 owner 的契约全文 |
+| Operators / tools | 通过什么已存在的操作完成？ | 指向真实 API 与 typed operator；输入类型引用 OpenAPI／原 Python 契约，避免手写第二套字段定义 |
+| Implementation | 由谁执行、在哪里实现？ | 继续引用现有 module id、公开入口、backend 与测试；Graphify 作为实现关系的辅助证据 |
+
+**三类图各自回答不同问题。** 功能 Graph 连接目标与能力；Graphify 的代码关系图连接实现；
+设计 dependency graph 连接当前建筑的实体、参数、引用和条件。后者继续由 StateRecord 与已有解析器负责。
+
+#### 能力条目保持短，并绑定真实适用范围
+
+建议在现有 `module_registry.json` 中增加可检索的 `capabilities` 条目，保留 `modules` 的 owner 语义。
+一个 owner 可以实现多个能力；一个组合能力通过 `composes` 引用已有能力，不能把组合清单写成第二套执行引擎。
+`kind` 可区分 primitive、workflow、analysis、authoring、representation，仅用于检索与展示。
+
+下面是**拟议条目格式**，示例入口和 schema 名已对照当前代码；它尚未登记为运行时能力：
+
+```yaml
+id: authoring.prism.create
+owner: studio.intent
+kind: authoring
+status: PARTIAL
+purpose: 在已有可执行项目中，从闭合轮廓创建或修改 prism 候选。
+goals: [创建体块, 修改轮廓, 修改高度]
+requires: [bound_project, exact_source, buildable_component, base_reference]
+reads: [StateRecord, project_levels, component_membership, authored_seat_scope]
+writes: [candidate_run_via_P036]
+effects: [create_or_update_element, preserve_keep_conditions]
+inputs_ref: "OpenAPI:#/components/schemas/SketchPrismRequestDto"
+entrypoints:
+  - "POST /api/proposals/sketch"
+  - "POST /api/proposals/{proposal_id}/candidate"
+  - "GET /api/jobs/{job_id}"
+  - "GET /api/candidates/{candidate_id}"
+validators:
+  - "compilers.geometry:compile_geometry_program"
+  - "capabilities.relation_checks:check_relations"
+execution:
+  owner: studio.candidate
+  backend: existing_StudioSettings_cad_export
+ui:
+  preview: MonkeyArch
+tests:
+  - apps/archflow-studio/api/tests/test_sketch.py
+missing:
+  - ordinary_empty_project_first_form
+  - verified_pointer_to_model_coordinate_mapping
+```
+
+`reads`／`writes`／`effects` 说明契约，不授予写入能力；validator 列表只指向实际会运行的检查，也不表示全部建筑要求已检查。
+运行环境中的 backend 可用性继续由现有设置与健康检查决定，不把本机暂时不可用改写成全局功能缺失。
+
+#### 状态与查询行为
+
+| 状态 | 准确含义 | Agent 的下一步 |
+| --- | --- | --- |
+| PRODUCTION | 在条目声明的范围和前提下，有当前生产调用路径及相应结果验证 | 直接复用；遇到缺陷时在已有 owner 内修复 |
+| EXPERIMENTAL | 有明确试验入口，但尚未成为生产路径 | 返回试验边界，不能默认代替生产调用 |
+| PARTIAL | 已有部分可用链路，未覆盖的行为明确列出 | 使用支持的部分；开发请求沿原 owner 补缺口 |
+| DEPRECATED | 已被替代，或仅保留历史读取用途 | 指向替代能力，不用于新工作 |
+| MISSING | 对本次明确目标确认没有等价能力或可用组合 | 开发授权内补实现；需要用户决定的设计取舍才询问 |
+
+这些状态属于**具体能力与适用范围**，不能直接复制 module 的 `canonical` 或工作卡的 `active/blocked`。
+暂缺证据时保留未判定，不硬塞进 PRODUCTION 或 MISSING。`capability.query` 没命中时，先查同义词、组合能力、
+现有 owner 和公共入口；搜索无结果不等于已确认缺失。
+
+开发原则是：**任何实现前先查等价能力；找到就复用、修复或扩展，确认缺失后才新增。**
+已有 PRODUCTION 的 bug 和 PARTIAL 的缺口仍可修改；不采用“只有 MISSING 才能碰源码”的规则。
+
+#### 组合关系先描述真实链路
+
+“修改已有候选”先引用当前来源，再查目标和改动影响，经既有 operator、producer、compiler、CAD 与检查返回候选。
+这项能力的输入是已有候选，不应被替换为从零生成建筑。组合关系应描述已查明的执行顺序、输入输出与 keep 条件；
+不同入口实际没有调用的步骤不能为了画齐图而接上。例如 Hub CLI 当前没有自动经过 Studio `compile_context`。
+
+MCP 工具描述、Agent 索引、Skill 的能力入口摘要和 Hub 工具页关联应由同一组能力元数据生成；
+请求 schema 继续引用 OpenAPI，长篇方法 Skill 按需读取。Hub Apps 使用显式 `ui` 关联聚合能力，不为每项能力新建 App。
+只有真实存在、当前可用且符合原有权限范围的入口可以成为可执行工具；MISSING 节点保留检索说明，不暴露伪工具。
+动态执行权限、项目绑定及正式 issue 的授权仍由原 owner 检查。
+
+#### 第一段实现范围
+
+沿 `tools.devctl` 扩展有界的能力检索，在现有 `hub.shell` 工具入口使用同一份短索引。
+**2026-09-11 已授权实施：先闭合“修改已有构件 → 生成候选 → 查看与继续”。** 六组交互扩展继续暂停，
+创建空项目首体块和指向／坐标映射留在这条路径验收之后。
+首能力 `candidate.modify_existing` 限于当前支持的数值修改和显式 keep 条件；沿 `studio.intent` 的目标解析、
+上下文和 proposal 契约进入 `studio.candidate`，Hub 不额外调用一次模型编译。能力查询、描述与执行共享现有注册表，
+不将每个 owner 单独暴露成工具。`composes` 和 `produces` 只描述真实调用及成果；检查入口统一使用 `validators`，
+`estimated_cost` 仅提示执行开销，实测时间和 Token 仍由 Monitor 记录。
+
+验收从同一个已留存的 3.3 m 候选开始：主体改到 4.2 m，雨棚不动，查看实际模型并继续修改同一对象。
+正常 Agent 执行应调用已知能力或检索结果中的现成入口，不读实现源码、不写临时 Python、不猜接口；目标、精确来源与 keep 条件贯穿执行。
+核对实际模型尺寸与保留对象，检查返回结果准确说明范围；静态状态在实测通过后才能按已验证范围标为 PRODUCTION。
+同类旧路径的基线约为 62 秒、8 次模型调用；首次创建的约 4 分 31 秒、15 次调用不是这次改高的直接比较基线。
+新旧入口共用现有状态、编译器和 P036；本轮比较入口查找、请求组合及结果保持，不据此归因于新增持久状态或证明建筑语义优于通用 Agent runtime。
+
+2026-09-11 实际 Hub 聊天已从上述 3.3 m 来源，通过能力查询、描述和执行生成新候选。
+独立读回 3DM：主体为 8 × 6 × 4.2 m，其余五个对象（含雨棚与两根柱）的完整几何与来源一致，正式 HEAD 未变。
+Monitor 记录本轮 6 次模型调用、88.3 秒，旧入口同类修改为 8 次、61.8 秒；调用减少两次，但本轮没有加速。
+两轮使用同一聊天、模型与项目，聊天上下文和缓存条件不同，因此这是单次调用链对比，尚不能作为受控性能结论。
+随后同一助手从新候选继续改到 4.5 m，来源正确，实际 3DM 仍仅改变主体高度，其余五个对象保持一致。
+该续改为 6 次模型调用、55.7 秒；它验证候选可接续，不与不同目标的旧轮次混作加速比例。
+
+**已完成的执行耗时优化：明确数值修改。** 保留原生 Codex／Claude CLI 和同一项目执行链，
+优先将提交之后的等待、读回与比较交给程序连续执行，减少模型逐步调度；不新增模型编译器或工作流引擎。
+正常路径返回实际候选、精确来源和保持检查，失败、冲突与等待超时保留可继续处理的真实状态，不重复提交候选。
+优化前的同轮调用顺序为：能力索引与状态、目标详情、提交、查询任务、候选与比较、最终回复，共六次模型调用。
+调用端曾用 `Promise.all` 派发两组独立读取，但 stdio 转接仍逐条执行 `tools/call`，未形成端到端并行。
+本轮将独立绑定读取和任务完成后的候选／比较读取放在一次工具调用内部并发；有依赖的提交与等待仍顺序执行。
+2026-09-11 对当前十二个 run 的项目进行三次只读请求测量：候选读取中位数约 601 ms，比较 81 ms，
+28,665 字节模型下载 347 ms；工具绑定检查中的项目读取约 205 ms，聊天记录读取约 11 ms。
+独立进程的调用分析定位到候选与下载均先枚举全部 run 的工件，候选还读取默认项目投影；
+这些是已定位的次要热点，不能把完整模型调用耗时归为几何计算或建筑推理。
+
+首轮加载优化后，真实的 4.2 → 4.5 m 修改仅调用一次能力详情和一次完整执行工具；
+实际 3DM 仍为六个对象，主体 8 × 6 × 4.5 m，其余五个对象的完整几何与来源一致，正式 HEAD 未变。
+但该轮记录到十次模型调用、约 71.0 秒：原生 CLI 在运行中压缩长会话，外层执行包装器又以一秒提前返回，
+增加了等待轮次。因此本轮不能报告加速；已进一步要求包装器保留默认等待，让完整工具调用直接结束后返回。
+本轮刚重启服务，候选执行记录为 1.555 秒，亦不与此前暖服务的 0.233 秒当作同条件比较。
+
+修正等待指引后，在同一会话的暖服务上继续执行 4.5 → 4.2 m：三次模型调用、26.3 秒，
+工具顺序为一次能力详情、一次包含提交与读回的完整调用、最终回复。候选执行记录为 0.226 秒。
+实际模型仍为六个对象，主体为 8 × 6 × 4.2 m，其余五个对象的完整几何未变，正式 HEAD 仍为 v0。
+此次会话已压缩，输入上下文与 55.7 秒基线不同；结果说明调度轮次减少，不作为受控加速比例。
+绑定读取及候选／比较读取的并发、超时后保留真实任务与只读续查，已由 31 项 Hub chat 测试验证。
+
+**同轮新增修复：对象删除与常用快捷键。** 将当前视图的已绑定选择接到既有 typed 删除与候选执行，
+Delete／Backspace 删除实际选中的对象；Ctrl+Z 撤销模型操作，Ctrl+Y／Ctrl+Shift+Z 重做，Esc 取消操作或清除选择。
+撤销与重做沿留存候选恢复实际模型和编辑来源；撤销后另作修改结束当前重做分支，但保留旧候选与正式 HEAD。
+输入文本时保留原生编辑按键，批注撤销与模型撤销按操作范围区分。删除已有依赖时使用现有完整性检查，
+不静默扩大到未选对象；此项不恢复其他暂停中的交互扩展。
+当前试用页已实际验证：在 4.2 m 候选中选中主体并删除，3DM 只少了该对象，其余五个对象完整几何不变；
+Ctrl+Z 恢复、Ctrl+Y 重做、再次 Ctrl+Z 返回完整 4.2 m 方案。正式 HEAD 保持 v0。
+隔离浏览器的 12 个连续场景已通过，覆盖真实 3DM 删除、撤销／重做、撤销后再编辑、文本输入、
+批注与图纸模式、视图来源不同于编辑来源，以及拾取回答尚未返回时禁止误删旧选择。
+范围外仍有两项浏览器检查未通过：`candidatePreview` 的跨项目重载、`intentViewSource` 的本地文件点击遮挡。
+当前结果不代表全部浏览器回归通过；这两项未扩大到本轮修复。
+
+验收看 Agent 是否查到并调用现成入口、是否保持选定来源、是否准确返回支持范围，以及实际候选能否继续修改。
+已有 MCP 手写摘要由对应生成视图逐项替换，不同时保留两份可编辑的同类描述；无需新建注册服务、插件平台或编排引擎。
+
+[Graphify](https://github.com/Graphify-Labs/graphify) 可为上述第 2 步提供代码调用、依赖及文件关系图。
+它的查询、增量更新和 Agent 指引帮助保持图与源码一致；自动提取的实现关系仍需与本卡的目标、注册表归口及实际结果对照。
+图谱没有发现某条边，不足以判定能力不存在；代码里已有某个节点，也不证明用户能完成该功能。
+代码关系图采用工具的生成结果，本卡继续保存功能判断与缺口，不再复制一份功能注册表。
+
+## 2026-09-11：项目现状与下一步待讨论
+
+**本次结论。** 已有模型上的受支持修改、候选执行、保存与接续已形成实际调用链。把模糊指示发展为建筑方案，再检查、修正并交出完整成果，仍缺一段应用内的工作循环。本次先梳理现状；C08/C09 相关下一项建筑任务的范围，待 Kaiwen 白天思考后确定。
+
+**历史背景。** Kaiwen 补充：ARCH400 工作开展时，State 和 dependency graph 尚未完全做出来。项目脚本承担了当时缺失的建模和编排工作，并留下真实模型、图纸与可研究的方法。不能用今天的底座反推当时不该写脚本，也不能把这些成果归为无效工作。现在要判断的是：已有底座能够接管哪些反复发生的修改，哪些设计关系还留在每个项目的代码中。
+
+### 当前有三个不同的代码基线
+
+| 位置 | 本次核对时的状态 | 可以据此判断什么 |
+| --- | --- | --- |
+| `D:/ARCHFLOW_V4` | `main`，HEAD `3ca85aff`，含已有未提交的上下文与任务界面等修改 | 下表描述当前主线工作区的实际代码路径；不把已有 WIP 一并计作安装包能力 |
+| `E:/ArchFlowEfficiency/20260910` | `codex/model-load-efficiency`，HEAD `3ffba934`，含本轮实验修改 | 已有输入精简、显式禁用工具的模型调用、限定请求的字段保持约束及相应验证；尚待集成 |
+| 桌面快捷方式指向的 MonkeyHub | `versions/52b0cc25990f-fab-6128f99c8fbc`，candidate 安装包 | 比上述工作区旧；工作区中的改进不能直接算作桌面已交付 |
+
+E 盘真模型复验验证了输入编译、回答与内存 operator 行为；另有模拟模型回答驱动的真实候选、持久化和重启测试。这两类证据尚未合成真实模型自主设计、检查、修复和 CAD 交付的整轮证明。详细记录见本机实验说明：`E:/MonkeyHubBuild/perf-comparison/20260910/efficiency/input-cleanup-20260911/输入精简与保持约束_20260911.md`。
+
+### 按一轮建筑工作看现有链路
+
+| 工作 | 已接通的部分 | 尚需补齐的部分 |
+| --- | --- | --- |
+| 接指示、读取项目 | 所选 candidate/Stage 的状态投影；scalar/component/design 上下文分层；至多两轮明确引用补查 | 从零散 brief 建立可工作的初态；跨轮持续取用相关设计决定。已有 authored StateRecord、尚无 run 的启动不等于空白项目生成建筑 |
+| 推敲方案、选方法 | 模型把请求编译为受支持的结构化修改 | 检索相关资料、选择方法、调用建模工具、查看结果并修正的完整循环；目前补查循环只处理上下文，不处理候选执行失败后的修复 |
+| 建模改稿 | 增删改 operator、真实 runner 与几何导出；墙及 hosted openings 的语义创建入口 | 更广的语义创建与整项建筑编排。执行器支持的构件种类多于聊天创建契约，不能将两者等同 |
+| 连带修改 | 参数、派生表达式、引用与声明关系的依赖传播；已有局部接触关系重建 | 自动发现必要但遗漏的建筑关系，并判断改动应如何传递；普通数值和描述文字不会自动取得这种能力 |
+| 检查与纠错 | 接触、间距、洞口、搭接及实体穿透等限定检查；缺项可以报告 unchecked | 完整项目要求进入验收；通行组织等建筑检查；模型读取诊断后自动修复。目前几何检查不代表结构承载或全面规范审查 |
+| 保存与接续 | 精确来源的候选、显式接受 Stage、历史分支、重启回读与续改；正式 HEAD 独立 | 阶段目的、仍有效的保留条件与设计理由完整进入下一轮理解。Stage 已能固定接受的模型，设计判断的连续继承仍需核对 |
+| 出图与汇报 | 模型导出、指定来源的精确立面、图板及其来源接线 | ARCH400 的剖切位置、平剖组合、比例、版面和部分校核仍由项目脚本编排，尚未形成通用的整套成果工作流 |
+| 正式交付 | `project.issue` 与 CLI 可推进正式 HEAD | 成套成果编制、跨图校核、审签和发送。底层发布动作不能代替事务所交付流程 |
+
+实现入口与边界见 [ARCHITECTURE](../../ARCHITECTURE.md#architectural-revision-responsibilities-and-actual-gaps)、[上下文编译](../../CONTEXT_COMPILATION.md)和 [Stage / Branch / Candidate](../../STAGE_BRANCH_CANDIDATE_PLAN.md)。本次核对实际源码与已有验证记录，未新增模型调用或重跑应用测试。
+
+### State 与依赖图接下来应承担什么
+
+下一轮已经能读取所选版本的结构化状态，已声明的参数关系也能继续执行。ARCH400 的部分历史脚本则在 Python 中保存布局、循环、构造规则和逐版修补，再把部分设计信息与生成结果写入记录。这类结果可以保存、展示或重放；涉及其隐含生成关系的修改，仍可能需要回读和改写脚本。
+
+因此需要分别看三件事：当前 State 能否表达继续设计所需的事实和条件；依赖关系是否进入实际计算；稳定工具能否依据修改后的状态重新生成结果。只保存快照，或只保留一张没有执行作用的关系图，都不能独立消除反复重建上下文的成本。当前实现已在部分修改上做到这些，整项建筑上的覆盖仍需真实改稿检验。
+
+代码仍适合实现可复用算法，新方法也可能需要写代码。需要逐步减少的是：每轮常规改稿都让模型阅读并改写某栋建筑的专用生成脚本。设计中出现的新关系应能保留下来，让下一轮从当前设计接续。
+
+ARCH400 会话的课程项目位于 `D:/PROJECTS/02_SCHOOL_课程项目/ARCH 401 HOUSING`。当前模型与图纸以其 `docs/CURRENT_STATE.md` 为准；本次读取的 E 平面、B 结构和组合生成脚本用于理解历史工作方式，不替代当前成果或用户的后续模型修改。
+
+### 留给白天考虑的两个问题
+
+1. **下一轮先验证什么？** 从已有建筑的一次关联修改进入，可以集中检验 State、依赖和工具是否真正接管续改；从少量 brief 形成第一版候选进入，可以检验初态建立与设计创作，但还会涉及当前缺失的入口。先选择一个真实任务，不同时铺开两条路线。
+2. **这一轮要交回什么，才足以继续设计？** 结合该任务明确需要查看的模型、图纸和建筑条件；Stage 应保留当轮被接受的结果及相关决定，不必把每次试验都变成阶段承诺。
+
+可用于判断接续能力的一个标准是：同一项任务连续改两轮，第二轮能从当前状态、相关决定和工具契约出发，无需重新追回第一轮专用脚本。已有关系合法传播，必要的新关系可以被提出、检查和保留。具体任务尚未选定，这一标准不构成已经实现的能力。
+
+上述问题回到既有 C08/C09 及其真实消费者处理；本次不新增模块、任务卡或另一套项目状态。
+
 ## 1. 先记住四块
 
 ### Dependency-aware context compilation（2026-09-10）
@@ -189,7 +511,7 @@ Miro 的无限画布习惯，从已发布候选源码 `4d2c7c2` 单独实施。P
 | O01 | 读取导出回执证明的 STEP／3DM，也可明确登记完整外部 3DM 并绑定其模型来源；提供下载和视口展示 | 保留共同 artifact 入口；登记与原生导出读回证明分别显示 | `studio.artifacts`、`ThreeDmViewport.tsx`；P108 |
 | O02 | run-bound 的视口 PNG capture，模型选择、高亮、视角调整与候选比较 | 保留；这些是检查／表达交互，不是正式图纸 | `routes/captures.py`、`routes/compare.py`、`web/src/viewer/` |
 | O03 | `/api/state` 的 frame／volumes／closure projection | 归到模型查询，不计入平立剖出图能力 | `routes/state.py` |
-| O04 | 平面、立面、剖面、正交轴测、模型关联标注、Sheet、施工图、建筑渲染与色稿 | 待实现，分别见第 3 节；截图／CAD 导出不替代它们 | [出图方案](../../DRAWING_MODULE_ARCHITECTURE_PLAN.md) |
+| O04 | exact STEP 的模型轴向立面已可生成 SVG／PNG；通用平面、剖面、正交轴测、模型关联标注、Sheet、施工图、建筑渲染与色稿仍是后续范围 | 保留已有立面；其余分别见第 3 节，截图／CAD 导出不替代它们 | `runtime.drawing_elevation`、`adapters.drawing_svg`；[出图方案](../../DRAWING_MODULE_ARCHITECTURE_PLAN.md) |
 
 ### 2.5 Agent、工作台与共享底座
 
@@ -334,7 +656,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 
 ## 6. 全部 owner 的覆盖索引
 
-下表每个 owner 只列一次，按主要职责归组；一个能力可服务其他组，不能因此复制 owner。
+下表覆盖 2026-09-11 注册表中的全部 74 个 owner，每个只列一次，按主要职责归组；一个能力可服务其他组，不能因此复制 owner。
 精确 `owner_path`、API、tests 与 invariants 链接回 [SYSTEM_MAP](../../SYSTEM_MAP.md)，本卡不镜像这些字段。
 
 | 分类 | owner ID |
@@ -343,13 +665,13 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 | 方案与建模（10） | `capabilities.element_producers`、`capabilities.geometry_proposal`、`capabilities.opening_solver`、`capabilities.reference_resolver`、`capabilities.wall_solver`、`capabilities.element_reindex`、`state.spatial`、`state.developed_design`、`state.decision_operator`、`studio.options` |
 | 分析与校核（7） | `capabilities.declaration`、`capabilities.relation_checks`、`state.massing_metrics`、`validation.engine`、`validation.model`、`studio.validation`、`adapters.three_dm_inspector` |
 | 表达与出图（4） | `studio.artifacts`、`studio.board`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
-| Agent 与工作台（6） | `ports.model`、`capabilities.discipline_seats`、`studio.binding`、`studio.candidate`、`studio.intent`、`studio.shell` |
+| Agent 与工作台（7） | `ports.model`、`capabilities.discipline_seats`、`studio.binding`、`studio.candidate`、`studio.intent`、`studio.shell`、`hub.shell` |
 | 共享：状态与语义（12） | `state.commitments`、`state.derivation`、`state.design_portfolio`、`state.model`、`state.operational_state`、`state.record`、`state.stage_workflow`、`relations.contracts`、`semantics.conditions`、`semantics.registry`、`semantics.roles`、`submission.model` |
 | 建模编译与共用 CAD 执行（6） | `state.geometry_program`、`compilers.geometry`、`runtime.project_runner`、`adapters.cad_execution`、`adapters.cad_patch`、`adapters.cad_program` |
 | 共享：项目与版本（11） | `project.containers`、`project.digests`、`project.inputs`、`project.issue`、`project.layout`、`project.location`、`project.manifest`、`project.ports`、`project.record_kinds`、`project.refs`、`project.repository` |
 | 共享：通用契约（3） | `contracts.authority`、`contracts.canonical`、`contracts.fields` |
-| 实际命令入口（6） | `tools.freeze_project_stage_workflow`、`tools.open_stage_run`、`tools.run_project`、`tools.issue_project`、`tools.verify_state_record`、`tools.reindex_project` |
-| 研发支撑（2） | `tools.archcheck`、`tools.devctl` |
+| 实际命令入口（7） | `tools.freeze_project_stage_workflow`、`tools.open_stage_run`、`tools.run_project`、`tools.issue_project`、`tools.verify_state_record`、`tools.reindex_project`、`tools.create_project` |
+| 运行观测与研发支撑（4） | `monkeymonitor`、`tools.archcheck`、`tools.devctl`、`tools.package_monkeyapps` |
 
 ## 7. 本卡边界与检查
 
@@ -358,7 +680,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 - 今晚 API 实现沿已有 P108 的工作范围：controls 三文件、main／router 挂载、episodes／candidate／proposal decision 路由、intents／intent／intent_agent／clarification 入口与对应测试；PROTOCOL、模块 registry 和 OpenAPI 生成 SDK 由主代理统一同步。P115 只索引这些子项，不重复占有 P108 的 API 路径。
 - 后续切片只有在具体目标／调用者核清后才扩展本卡 write_scope；已有 owner、既有行为测试优先。
 - 不改私人项目、当前服务／浏览器／Rhino、不推送、不自动归档未知 WIP，不创建清理专用工具或元数据。
-- 文档检查：链接可达、69 owner 完整对应、生成地图无漂移、scoped diff。C03 使用现有编译器、接口 datum、语义几何测试及 `tools/archcheck.py`。
+- 文档检查：链接可达、74 owner 完整对应、生成地图无漂移、scoped diff。C03 使用现有编译器、接口 datum、语义几何测试及 `tools/archcheck.py`。
 
 **本轮收尾（2026-09-06）：** API 全套 558 passed／2 skipped；Web 30 passed／2 skipped；
 编译器相关 27 测、OpenAPI 生成一致性、类型检查／生产构建、archcheck（213 files）与 diff 检查通过。
