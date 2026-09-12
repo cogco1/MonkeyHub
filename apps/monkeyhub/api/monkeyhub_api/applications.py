@@ -136,6 +136,10 @@ class Applications:
             args, environ = self._command(service, settings)
             with socket.socket() as probe:
                 try:
+                    # POSIX servers can restart while old connections remain
+                    # in TIME_WAIT. A live listener still prevents this bind.
+                    if os.name != "nt":
+                        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     probe.bind(("127.0.0.1", port))
                 except OSError as exc:
                     raise HubFailure(409, "PORT_IN_USE", f"Port {port} is already in use. Choose another port; the existing process was left alone.") from exc
