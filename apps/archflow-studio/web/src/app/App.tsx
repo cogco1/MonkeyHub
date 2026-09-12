@@ -34,6 +34,7 @@ import type { ServerIdentity } from "../api/connection";
 import type {
   ArtifactListDto,
   CatalogDto,
+  DesignHistoryDto,
   DesignStageDto,
   ElevationRequestDto,
   DocumentAnnotationRefDto,
@@ -264,6 +265,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   const [artifacts, setArtifacts] = useState<Loadable<ArtifactListDto>>(idle);
   const artifactsReadRef = useRef(0);
+  const artifactsReadAbort = useRef<AbortController | null>(null);
   const artifactProjectRef = useRef<string | null>(null);
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
     null,
@@ -295,6 +297,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // because a refused file leaves the previous model on screen.
   const pendingArtifacts = useRef<readonly ProjectArtifactDto[]>([]);
   const modelLoadRequest = useRef(0);
+  const modelDownloadAbort = useRef<AbortController | null>(null);
   const previewContext = useRef({ key: "", revision: 0 });
   const autoShowRef = useRef<{
     candidateId: string | null; context: number; viewRequest: number; started?: boolean;
@@ -551,28 +554,40 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   );
   const editingModelSourceReady = artifacts.status === "ready" && (stageModelSource === null || sourceAvailableForEditing(stageModelSource)) && (editingModelSource !== null ||
     !modelSources.some((row) => row.modelSource.runId === projection?.referenceRun.runId));
-  const [candidateStageSources, setCandidateStageSources] = useState<Record<string, string>>({});
-  const [acceptedModelSources, setAcceptedModelSources] = useState<readonly ModelSourceDto[]>([]);
+  const [acceptedHistory, setAcceptedHistory] = useState<{
+    history: DesignHistoryDto; sources: readonly ModelSourceDto[];
+  } | null>(null);
+  const acceptedModelSources = useMemo(() => {
+    if (designHistory?.projectId !== project?.projectId) return [];
+    return acceptedHistory?.history === designHistory ? acceptedHistory.sources
+      : designHistory?.stages.map((stage) => stage.modelSource) ?? [];
+  }, [acceptedHistory, designHistory, project?.projectId]);
   useEffect(() => {
     if (!designHistoryEnabled || !project || !designHistory) return;
     let current = true;
+    const controller = new AbortController();
     void (async () => {
       const histories = await Promise.all(designHistory.branches.map((branch) => branch.branchId === designHistory.branchId
-        ? designHistory : studio.designHistory(branch.branchId)));
+        ? designHistory : studio.designHistory(branch.branchId, controller.signal)));
       if (!current) return;
+      if (histories.some((history) => history.projectId !== project.projectId)) {
+        throw new Error("The design history belongs to another project.");
+      }
       const accepted = histories.flatMap((history) => history.stages.map((stage) => stage.modelSource));
-      setAcceptedModelSources(accepted);
-      const unaccepted = modelSources.filter(({ modelSource }) => !accepted.some((source) => source.runId === modelSource.runId));
-      const rows = await Promise.allSettled(unaccepted.map(async ({ modelSource }) => {
-        const answer = await studio.state(modelSource.runId);
-        return answer.projectId === project.projectId && answer.stateDigest === modelSource.stateDigest && answer.sourceStageRef
-          ? [modelSource.runId, answer.sourceStageRef] as const : null;
-      }));
-      if (current) setCandidateStageSources(Object.fromEntries(rows.flatMap((row) => row.status === "fulfilled" && row.value ? [row.value] : [])));
+      setAcceptedHistory({ history: designHistory, sources: accepted });
     })()
       .catch((cause) => { if (current) setHistoryError(asStudioApiError(cause).detail); });
-    return () => { current = false; };
-  }, [designHistoryEnabled, designHistory, modelSources, project?.projectId]);
+    return () => { current = false; controller.abort(); };
+  }, [designHistoryEnabled, designHistory, project?.projectId]);
+  const retainedCandidates = useMemo(() => {
+    if (artifacts.status !== "ready" || artifacts.value.projectId !== project?.projectId ||
+        acceptedHistory?.history !== designHistory) return [];
+    return modelSources.flatMap((source) => {
+      if (acceptedModelSources.some((accepted) => accepted.runId === source.modelSource.runId)) return [];
+      const artifact = artifacts.value.artifacts.find((row) => sameModelSource(row.modelSource, source.modelSource));
+      return artifact?.sourceStageRef ? [{ ...source, sourceStageRef: artifact.sourceStageRef }] : [];
+    });
+  }, [artifacts, modelSources, acceptedModelSources, acceptedHistory, designHistory, project?.projectId]);
   documentEditingRef.current = { projectId: project?.projectId ?? null, modelSource: editingModelSource };
   const pendingDocument = pendingIntentRef.current;
   const documentContinuation = pendingDocument?.continuationToken && pendingDocument.documentContext?.projectId === project?.projectId &&
@@ -598,14 +613,15 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   useEffect(() => {
     const runId = loadedArtifact?.runId;
-    if (runId === undefined || projection?.catalog?.inspectionRun === runId) {
+    if (changingBase || selectingWorkingCopy || modelLoading || runId === undefined || projection?.catalog?.inspectionRun === runId) {
       setViewerCatalog(null);
       return;
     }
     let current = true;
+    const controller = new AbortController();
     setViewerCatalog(null);
     void studio
-      .state(runId)
+      .state(runId, undefined, controller.signal)
       .then((answer) => {
         if (current) {
           setViewerCatalog(answer.catalog?.inspectionRun === runId ? answer.catalog : null);
@@ -616,8 +632,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       });
     return () => {
       current = false;
+      controller.abort();
     };
-  }, [loadedArtifact?.runId, projection?.catalog]);
+  }, [changingBase, selectingWorkingCopy, modelLoading, loadedArtifact?.runId, projection?.catalog]);
 
   useEffect(() => {
     setCaptureState("idle");
@@ -728,6 +745,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   const loadArtifacts = useCallback(async (background = false) => {
     const request = ++artifactsReadRef.current;
+    artifactsReadAbort.current?.abort();
+    const controller = new AbortController();
+    artifactsReadAbort.current = controller;
     const projectId = artifactProjectRef.current;
     const isCurrent = () => request === artifactsReadRef.current && projectId === artifactProjectRef.current;
     if (!background) setArtifacts(loading);
@@ -735,7 +755,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     for (let attempt = 0; attempt < (background ? 3 : 1); attempt += 1) {
       if (!isCurrent()) return;
       try {
-        const answer = await studio.artifacts();
+        const answer = await studio.artifacts(controller.signal);
         if (!isCurrent()) return;
         if (answer.projectId !== projectId) throw new Error("The model list belongs to another project.");
         setArtifacts(ready(answer));
@@ -754,7 +774,16 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     }
   }, []);
 
-  useEffect(() => () => { artifactsReadRef.current += 1; comparisonRequest.current += 1; }, []);
+  useEffect(() => () => {
+    artifactsReadRef.current += 1;
+    comparisonRequest.current += 1;
+    modelLoadRequest.current += 1;
+    artifactsReadAbort.current?.abort();
+    modelDownloadAbort.current?.abort();
+    pendingArtifacts.current = [];
+    setArtifactLoadingSha(null);
+    setArtifactLoadPhase(null);
+  }, [project?.projectId]);
 
   useEffect(() => {
     if (session.status === "ready") void loadArtifacts();
@@ -927,6 +956,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     finishEditTiming(activeEditTiming.current, "cancelled");
     drawingTiming.current?.finish("cancelled");
     modelLoadRequest.current += 1;
+    modelDownloadAbort.current?.abort();
     pendingArtifacts.current = [];
     setArtifactLoadingSha(null);
     setArtifactLoadPhase(null);
@@ -957,6 +987,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     async (artifact: ProjectArtifactDto, label: string, preserveCamera = false, stillCurrent?: () => boolean, parentTiming?: ClientTimingSpan): Promise<boolean> => {
       if (!parentTiming) finishEditTiming(autoShowRef.current?.timing, "cancelled");
       const request = ++modelLoadRequest.current;
+      modelDownloadAbort.current?.abort();
+      const controller = new AbortController();
+      modelDownloadAbort.current = controller;
       const projectId = artifactProjectRef.current;
       const isCurrent = () => request === modelLoadRequest.current &&
         projectId === artifactProjectRef.current && (stillCurrent?.() ?? true);
@@ -1002,6 +1035,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
           artifact.sha256,
           artifact.fileName,
           download?.trace,
+          controller.signal,
         );
         download?.finish(isCurrent() ? "succeeded" : "cancelled", { input_bytes: file.size });
         if (!isCurrent()) return false;
@@ -1056,6 +1090,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         return;
       }
       const request = ++modelLoadRequest.current;
+      modelDownloadAbort.current?.abort();
+      const controller = new AbortController();
+      modelDownloadAbort.current = controller;
       const projectId = artifactProjectRef.current;
       const isCurrent = () => request === modelLoadRequest.current && projectId === artifactProjectRef.current;
       setArtifactLoadingSha(servable[0].sha256);
@@ -1066,7 +1103,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         // Every seat, or none: a picture missing a seat that nobody was told
         // about would read as the run being smaller than it is.
         const files = await Promise.all(
-          servable.map((row) => studio.artifactFile(row.sha256, row.fileName)),
+          servable.map((row) => studio.artifactFile(row.sha256, row.fileName, undefined, controller.signal)),
         );
         if (!isCurrent()) return;
         pendingArtifacts.current = servable;
@@ -3026,8 +3063,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
               history: designHistory, currentStageRef: projection?.sourceStageRef ?? null,
               acceptedModelSources,
               currentModelSource: loadedModelSource,
-              candidates: modelSources.filter(({ modelSource }) => candidateStageSources[modelSource.runId] &&
-                !acceptedModelSources.some((source) => sameModelSource(source, modelSource))).map((source) => ({ ...source, sourceStageRef: candidateStageSources[source.modelSource.runId] })),
+              candidates: retainedCandidates,
               busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy || applyingProgram || optionsBusy,
               error: historyError,
               onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },

@@ -22,7 +22,7 @@ const candidateStartQueues = new Map();
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
 let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0, nextProgram = null;
 let historyEnabled = false, acceptFailure = false, annotationFailure = false, lastDrawing = null, nextCombined = null;
-let drawingFailure = false, drawingGate = null, monitorFailure = false;
+let drawingFailure = false, drawingGate = null, monitorFailure = false, historyGate = null;
 let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
 let projectionOnly = false;
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
@@ -45,7 +45,9 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
 const digest = (text) => createHash("sha256").update(text).digest("hex");
 const stateDigest = (run) => digest(`state:${run}`);
-const artifactDto = ({ projectId: _owner, ...artifact }) => artifact;
+const artifactDto = ({ projectId: _owner, ...artifact }) => ({
+  ...artifact, sourceStageRef: candidateBases.get(artifact.runId) ?? null,
+});
 function makeArtifact(runId, width = 1, owner = projectId) {
   const document = new rhino.File3dm(), mesh = new rhino.Mesh(), attributes = new rhino.ObjectAttributes();
   mesh.vertices().add(0, 0, 0); mesh.vertices().add(width, 0, 0);
@@ -252,7 +254,14 @@ try {
           if (projectionOnly) value.sourceStageRef = null;
           return await json(value);
         }
-        if (name === "/api/design-history") return await json(historyDto(url.searchParams.get("branchId") ?? "main"));
+        if (name === "/api/design-history") {
+          const branchId = url.searchParams.get("branchId") ?? "main", gate = historyGate;
+          if (gate?.branchId === branchId) {
+            gate.requested = true; await gate.promise;
+            if (gate.failed) return await json({ code: "HISTORY_UNAVAILABLE", detail: "Other branch history unavailable." }, 503);
+          }
+          return await json(historyDto(branchId));
+        }
         if (name === "/api/documents") return await json({ projectId, runId: url.searchParams.get("runId"), documents: documents.filter((doc) => doc.runId === url.searchParams.get("runId")) });
         if (name === "/api/document-comments") return await json({ projectId, runId: url.searchParams.get("runId"), comments: [] });
         if (name === "/api/document-annotations") {
@@ -530,11 +539,24 @@ try {
     assert.equal((await snapshot()).editingRunId, other.runId);
   });
 
-  await step("switching projects blocks the previous project's late candidate", async () => {
+  await step("switching projects releases a pending parse and blocks the previous project's late candidate", async () => {
     await page.evaluate((source) => window.__candidatePreview.changeBase(source.runId, source), home.modelSource); await rendered(home.runId);
     const candidate = prepare("late-project"); await launch(candidate);
+    const parsing = prepare("late-project-parse");
+    await page.evaluate((fileName) => {
+      let release; const promise = new Promise((resolve) => { release = resolve; });
+      window.__previewParseGates[fileName] = { promise, release, waiting: false };
+    }, parsing.artifacts[0].fileName);
+    await launch(parsing); await complete(parsing);
+    await page.waitForFunction((fileName) => window.__previewParseGates[fileName].waiting, parsing.artifacts[0].fileName);
+    assert.equal((await snapshot()).loadingSha, parsing.artifacts[0].sha256, "The old project's artifact must be pending in the actual parser");
     projectId = "different-project"; currentHome = makeArtifact("other-project-home", 12); allArtifacts.push(currentHome);
-    await page.evaluate(() => window.__candidatePreview.reload()); await rendered(currentHome.runId); await complete(candidate);
+    await page.evaluate(() => window.__candidatePreview.reload()); await rendered(currentHome.runId);
+    assert.deepEqual((await snapshot()).loadedModelSource, currentHome.modelSource,
+      "The new project's default model must load without waiting for the old pending parse");
+    await page.evaluate((fileName) => window.__previewParseGates[fileName].release(), parsing.artifacts[0].fileName);
+    await reportedLoad(parsing.artifacts[0], "cancelled"); await rendered(currentHome.runId);
+    await complete(candidate);
     await until(snapshot, (value) => value.runs[candidate.candidateId].candidate.status === "ready", "The previous project job did not finish");
     await delay(150); await rendered(currentHome.runId);
     assert.equal((await snapshot()).projectId, projectId);
@@ -565,6 +587,16 @@ try {
     await launch(historyA); await complete(historyA); await rendered(historyA.candidateId);
     await until(snapshot, (value) => value.editingRunId === historyA.candidateId, "Preview did not become the candidate editing context");
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef);
+    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0 · 当前提交", exact: true }).click();
+    await rendered(currentHome.runId);
+    const continueReadStart = requests.length;
+    await page.locator('[data-preview-candidate="history-a"]').getByRole("button", { name: "预览并继续修改", exact: true }).click();
+    await rendered(historyA.candidateId);
+    await until(snapshot, (value) => value.editingRunId === historyA.candidateId && !value.changingBase,
+      "Continuing the retained candidate did not finish switching its editing context");
+    assert.deepEqual(requests.slice(continueReadStart).filter((row) => row.method === "GET" && row.name === "/api/state" &&
+      row.query.run === currentHome.runId).map((row) => row.query.run), [],
+      "Switching from S0 to the retained candidate must not read the departed model's state for its catalog");
     await page.evaluate(() => window.__candidatePreview.propose("record candidate context"));
     const intent = requests.findLast((row) => row.name === "/api/intents");
     assert.equal(intent.body.sourceRunId, historyA.candidateId);
@@ -604,23 +636,63 @@ try {
 
   await step("cold candidate recovery and same-Stage combination reuse the normal preview lifecycle", async () => {
     historyB = prepare("history-b"); historyC = prepare("history-c");
-    for (const candidate of [historyB, historyC]) { candidateBases.set(candidate.candidateId, s0.stageRef); jobs.get(candidate.jobId).status = "succeeded"; allArtifacts.push(...candidate.artifacts); }
+    const otherStage = prepare("history-other-stage");
+    for (const [candidate, stage] of [[historyB, s0], [historyC, s0], [otherStage, s1]]) {
+      candidateBases.set(candidate.candidateId, stage.stageRef);
+      jobs.get(candidate.jobId).status = "succeeded"; allArtifacts.push(...candidate.artifacts);
+    }
+    const readStart = requests.length;
+    const unselectedStateReads = () => requests.slice(readStart).filter((row) => row.method === "GET" && row.name === "/api/state" &&
+      [historyB, historyC, otherStage].some((candidate) => candidate.candidateId === row.query.run)).map((row) => row.query.run);
+    historyGate = { ...deferred(), branchId: "alternate", failed: true };
+    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
+    await until(() => historyGate.requested, Boolean, "The other branch's history was not requested");
+    assert.deepEqual(unselectedStateReads(), [], "Cold reopen must not project every retained candidate before one is selected");
+    await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0,
+      "A model already accepted on main must not appear as an unaccepted candidate while another branch is still loading");
+    assert.equal(await page.locator('[data-preview-candidate="history-b"]').count(), 0,
+      "Cold candidate classification must wait for the accepted sources from every branch");
+    historyGate.resolve();
+    await until(snapshot, (value) => value.historyError?.includes("Other branch history unavailable."), "The branch history failure was hidden");
+    assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0,
+      "A failed other-branch read must not turn the accepted main model into a candidate");
+    assert.deepEqual(unselectedStateReads(), [], "A failed branch history read must not fall back to projecting unselected candidates");
+    historyGate = null;
     await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
     await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    await page.locator('[data-preview-candidate="history-b"]').waitFor();
+    await page.locator('[data-preview-candidate="history-c"]').waitFor();
+    await page.locator('[data-preview-candidate="history-other-stage"]').waitFor();
+    assert.deepEqual(unselectedStateReads(), [], "Opening the candidate list must use retained artifact metadata without reading candidate states");
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("alternate"); await rendered(currentHome.runId);
     await page.locator('[data-preview-candidate="history-b"]').waitFor();
     assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0, "A model accepted on main must not become an unaccepted candidate on another branch");
     assert.equal((await snapshot()).candidateEntries.length, 0);
-    await page.locator('[data-preview-candidate="history-b"] input[type="checkbox"]').check();
-    await page.locator('[data-preview-candidate="history-c"] input[type="checkbox"]').check();
+    const checkB = page.locator('[data-preview-candidate="history-b"] input[type="checkbox"]');
+    const checkC = page.locator('[data-preview-candidate="history-c"] input[type="checkbox"]');
+    const checkOtherStage = page.locator('[data-preview-candidate="history-other-stage"] input[type="checkbox"]');
+    const combine = page.getByRole("button", { name: "合并选中候选并预览", exact: true });
+    await checkOtherStage.check();
+    assert.equal(await checkB.isDisabled(), true, "Candidates from S0 cannot join a selected candidate from S1");
+    assert.equal(await checkC.isDisabled(), true);
+    assert.equal(await combine.isDisabled(), true);
+    await checkOtherStage.uncheck();
+    await checkB.check();
+    assert.equal(await checkOtherStage.isDisabled(), true, "The same source-Stage restriction must hold when selection starts from S0");
+    assert.equal(await checkC.isEnabled(), true);
+    await checkC.check();
+    assert.equal(await combine.isEnabled(), true, "Two cold candidates from the same Stage must remain combinable");
+    assert.deepEqual(unselectedStateReads(), [], "Changing branches and selecting candidates for combination must not load their complete state");
     nextCombined = prepare("history-combined"); candidateBases.set(nextCombined.candidateId, s0.stageRef); const combined = nextCombined;
-    await page.getByRole("button", { name: "合并选中候选并预览", exact: true }).click();
+    await combine.click();
     await until(snapshot, (value) => value.runs[combined.candidateId]?.job.status === "ready", "Combined job was not observed");
     const request = requests.findLast((row) => row.name === "/api/candidates/combine");
     assert.deepEqual(request.body.candidateIds.sort(), [historyB.candidateId, historyC.candidateId]);
     await complete(combined); await rendered(combined.candidateId);
     await until(snapshot, (value) => value.editingRunId === combined.candidateId, "Combined preview was not editable");
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef); assert.equal(branches.size, 2);
+    assert.deepEqual(unselectedStateReads(), [], "Previewing the combined result must not load the unviewed source candidates");
   });
 
   await step("drawing errors stay above the viewport, dismiss, reset on direction changes, and ignore stale replies", async () => {
@@ -965,6 +1037,7 @@ try {
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);
 } finally {
+  historyGate?.resolve();
   drawingGate?.resolve();
   intentGate?.resolve(); documentGate?.resolve(); timingGate?.resolve();
   for (const gate of [...validationGates.values(), ...modelGates.values(), ...stateGates.values()]) gate.resolve();

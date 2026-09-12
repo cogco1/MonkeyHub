@@ -3482,7 +3482,8 @@
         "registering model-axis elevation revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt",
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
         "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation",
-        "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration"
+        "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration",
+        "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3505,6 +3506,7 @@
       "outputs": [
         "ArtifactListing",
         "ArtifactRecord",
+        "nullable sourceStageRef listing metadata; continuation and acceptance retain their complete state checks",
         "raw .3dm bytes",
         "ViewportCapture",
         "SourceDocument",
