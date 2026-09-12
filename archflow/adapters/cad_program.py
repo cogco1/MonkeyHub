@@ -68,6 +68,7 @@ from dataclasses import dataclass
 from typing import Iterable, Mapping
 
 _SUPPORTED = {
+    "planar_surface",
     "solid",
     "revolve",
     "extrusion",
@@ -561,6 +562,16 @@ def translate_to_rhino_python(
                     "rs.DeleteObjects([_c0, _c1])",
                 ]
             )
+        elif kind == "planar_surface":
+            profile = lift_to_base_level(params["profile"], params, op_id)
+            pts = ", ".join(f"({p[0]},{p[2]},{p[1]})" for p in profile)
+            lines.extend([
+                f"_crv = rs.AddPolyline([{pts}])",
+                "_srf = rs.AddPlanarSrf(_crv)",
+                "if not _srf or len(_srf) != 1: raise RuntimeError('planar_surface did not produce one face')",
+                f"_register({out!r}, _srf)",
+                "rs.DeleteObject(_crv)",
+            ])
         elif kind == "extrusion":
             profile = lift_to_base_level(params["profile"], params, op_id)
             vector = params["vector"]
@@ -830,6 +841,9 @@ def expected_object_bounds(program) -> dict[str, dict]:
             ]
             counts[out] = 1
             boxes.add(out)
+        elif kind == "planar_surface":
+            points[out] = lift_to_base_level(params["profile"], params, op_id)
+            counts[out] = 1
         elif kind == "extrusion":
             profile = lift_to_base_level(params["profile"], params, op_id)
             vector = params["vector"]

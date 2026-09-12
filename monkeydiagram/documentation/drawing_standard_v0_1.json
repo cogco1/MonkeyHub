@@ -1,0 +1,139 @@
+{
+  "SheetSystem": {
+    "paper_unit": "mm",
+    "bounds_format": "xmin,ymin,xmax,ymax",
+    "title_block_hierarchy": ["number", "title", "project", "purpose", "date", "people", "revision"],
+    "unknown_title_block_fields": "leave_blank"
+  },
+  "ViewSystem": {
+    "preferred_scale_denominators": [100, 50, 20, 10, 5, 2, 1],
+    "scale_exception_field": "scale_exception_reason",
+    "title_fields": ["number", "name", "scale"],
+    "reference_target_fields": ["sheet", "number"],
+    "same_scale_group": true,
+    "scale_to_fit": false
+  },
+  "GraphicSystem": {
+    "paper_unit": "mm",
+    "styles": {
+      "cut": {"line_width_mm": 0.50, "line_type": "continuous", "gray": 0.0},
+      "silhouette": {"line_width_mm": 0.35, "line_type": "continuous", "gray": 0.0},
+      "visible": {"line_width_mm": 0.25, "line_type": "continuous", "gray": 0.0},
+      "secondary": {"line_width_mm": 0.18, "line_type": "continuous", "gray": 0.25},
+      "existing_reference": {"line_width_mm": 0.13, "line_type": "continuous", "gray": 0.55},
+      "hidden_overhead_clearance": {"line_width_mm": 0.13, "line_type": "dashed", "gray": 0.35, "dash_mm": [2.0, 1.0]}
+    },
+    "section_fill": {"boundary": "actual_closed_material_regions", "spacing_mm": 2.0, "line_width_mm": 0.10},
+    "construction_scope": ["EXISTING", "NEW", "DEMOLISH"],
+    "construction_scope_styles": {
+      "EXISTING": {"style": "existing_reference"},
+      "NEW": {"style": "visible"},
+      "DEMOLISH": {"style": "visible", "line_type": "dashed", "dash_mm": [3.0, 1.0], "gray": 0.45}
+    },
+    "action_styles": {
+      "BY_OTHERS": {"style": "hidden_overhead_clearance", "line_type": "dashed", "dash_mm": [5.0, 1.0, 1.0, 1.0], "gray": 0.45}
+    }
+  },
+  "AnnotationSystem": {
+    "dimension_roles": ["overall", "setting_out", "component"],
+    "dimension_offset_mm": {"component": 8.0, "setting_out": 15.0, "overall": 22.0},
+    "dimension_chain_spacing_mm": 7.0,
+    "extension_gap_mm": 1.5,
+    "extension_overrun_mm": 2.0,
+    "text_height_mm": {"dimension": 2.5, "note": 2.5, "view_title": 3.5, "sheet_title": 5.0},
+    "dimension_tolerance_mm": 0.001,
+    "dimension_value": "end_minus_start",
+    "tag_assignment": "retain_existing_tags_and_append_new_tags"
+  },
+  "InformationSystem": {
+    "drawing_types": {
+      "GENERAL_DESIGN_INTENT": {
+        "purpose": "Overall appearance, placement and principal dimensional relationships",
+        "required": ["overall_form", "principal_dimensions"],
+        "optional": ["placement", "selected_components", "local_notes"],
+        "forbidden": ["full_internal_component_inventory"],
+        "preferred_scales": [100, 50, 20, 10],
+        "graphic_hierarchy": ["silhouette", "visible", "secondary"],
+        "annotation_hierarchy": ["overall", "setting_out"],
+        "reference_rule": "Reference detailed assembly and section views by stable view id"
+      },
+      "ASSEMBLY_ACCESS": {
+        "purpose": "Assembly arrangement, opening and maintenance access",
+        "required": ["assembly", "access"],
+        "optional": ["horizontal_section", "selected_hidden_lines", "local_notes"],
+        "forbidden": ["unrelated_hidden_inventory"],
+        "preferred_scales": [50, 20, 10, 5],
+        "graphic_hierarchy": ["cut", "visible", "hidden_overhead_clearance"],
+        "annotation_hierarchy": ["setting_out", "component"],
+        "reference_rule": "Reference section and interface details when shown"
+      },
+      "SECTION_INTERFACE": {
+        "purpose": "Actual cut geometry, clearance and installation interfaces",
+        "required": ["actual_section", "clearance", "interfaces"],
+        "optional": ["material_hatch", "connection_detail", "local_notes"],
+        "forbidden": ["envelope_as_solid_material"],
+        "preferred_scales": [20, 10, 5, 2, 1],
+        "graphic_hierarchy": ["cut", "visible", "hidden_overhead_clearance"],
+        "annotation_hierarchy": ["setting_out", "component"],
+        "reference_rule": "Reference the originating view and shared interface item"
+      },
+      "FABRICATION_PROJECTION": {
+        "purpose": "Identify component projections at a common scale and match schedules",
+        "required": ["component_tags", "component_dimensions", "schedule_reference"],
+        "optional": ["material_tags", "connection_detail", "local_notes"],
+        "forbidden": ["unverified_cnc_instructions"],
+        "preferred_scales": [20, 10, 5, 2, 1],
+        "graphic_hierarchy": ["silhouette", "visible", "secondary"],
+        "annotation_hierarchy": ["component", "overall"],
+        "reference_rule": "Map component tags to schedule rows using stable object ids"
+      },
+      "SCHEDULE_RESPONSIBILITY": {
+        "purpose": "Component and material schedules, shared notes and interface responsibilities",
+        "required": ["schedules", "responsibilities"],
+        "optional": ["general_notes", "legend", "abbreviations", "issue_history"],
+        "forbidden": [],
+        "preferred_scales": [],
+        "allow_unscaled": true,
+        "graphic_hierarchy": ["visible", "secondary"],
+        "annotation_hierarchy": [],
+        "reference_rule": "Use shared component, material, note and interface definitions"
+      }
+    },
+    "general_notes": {
+      "UNITS": "All dimensions are in millimetres unless stated otherwise.",
+      "DO_NOT_SCALE": "Use written dimensions; do not scale from the drawing.",
+      "FIELD_VERIFY": "Verify existing site dimensions and interfaces before manufacture or installation.",
+      "PRE_FAB_CHECK": "Check coordinated dimensions and approved material selections before fabrication.",
+      "REPORT_DISCREPANCIES": "Report discrepancies for resolution before affected work proceeds.",
+      "VENDOR_INTERFACE": "Coordinate vendor dimensions, fixings and service requirements against the shared interface schedule."
+    },
+    "legend": {
+      "cut": "Actual cut material boundary",
+      "hidden_overhead_clearance": "Hidden, overhead or clearance line; identify the meaning locally",
+      "ENVELOPE_ONLY": "Spatial envelope; not an assertion of solid material"
+    },
+    "abbreviations": {"NTS": "Not to scale", "TBC": "To be confirmed", "FFL": "Finished floor level"}
+  },
+  "StatusSystem": {
+    "certainty": ["CONFIRMED", "ASSUMED", "UNRESOLVED"],
+    "representation": ["ACTUAL", "REFERENCE_ONLY", "ENVELOPE_ONLY"],
+    "actions": ["FIELD_VERIFY", "BY_OTHERS"],
+    "dimension_use": ["control", "coordination", "reference"],
+    "control_requires_certainty": "CONFIRMED",
+    "responsibility": "explicit_project_role",
+    "derived_values": "retain_source_certainty_and_use_limits"
+  },
+  "CoordinationSystem": {
+    "interface_fields": ["id", "object_ids", "design_provides", "field_verify", "vendor_provides", "status"],
+    "status": ["CONFIRMED", "ASSUMED", "UNRESOLVED"],
+    "notes_and_schedule": "use_same_interface_item"
+  },
+  "RevisionSystem": {
+    "required_fields": ["id", "date", "description", "issued_by", "issue_status", "changed_view_ids"],
+    "date_format": "YYYY-MM-DD",
+    "issue_status": ["draft", "issued"],
+    "draft_allows_unknown_issuer": true,
+    "date_source": "explicit_input",
+    "change_extent": "explicit_changed_views_and_optional_changed_object_ids"
+  }
+}

@@ -145,6 +145,18 @@ async function reportedLoad(artifact, status) {
   assert.ok(Date.parse(body.endedAt) >= Date.parse(body.startedAt));
   return body;
 }
+/** Open the view tools if a step has since opened the panel that closes them. */
+async function openViewTools() {
+  const toggle = page.locator('button[aria-controls="view-tools"]');
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+}
+
+/** Open the versions panel if a step has since opened the tools that close it. */
+async function openVersions() {
+  const toggle = page.locator('button[aria-controls="stage-versions-panel"]');
+  if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
+}
+
 async function rendered(id, fileName = `${id}.3dm`) {
   await until(snapshot, (value) => value.loadedRunId === id && value.loadedFileName === fileName && value.status === "ready" && value.loadingSha === null,
     `${id} did not finish parsing and become the displayed model`, 45_000);
@@ -551,23 +563,45 @@ try {
     await page.waitForFunction((fileName) => window.__previewParseGates[fileName].waiting, parsing.artifacts[0].fileName);
     assert.equal((await snapshot()).loadingSha, parsing.artifacts[0].sha256, "The old project's artifact must be pending in the actual parser");
     projectId = "different-project"; currentHome = makeArtifact("other-project-home", 12); allArtifacts.push(currentHome);
-    await page.evaluate(() => window.__candidatePreview.reload()); await rendered(currentHome.runId);
-    assert.deepEqual((await snapshot()).loadedModelSource, currentHome.modelSource,
-      "The new project's default model must load without waiting for the old pending parse");
+    // A task belongs to the project it was opened for. When the server turns
+    // out to be bound to another one, refreshing this task refuses rather than
+    // quietly adopting it: the session fails, which clears what the viewer was
+    // holding, and no model of either project is put in its place.
+    await page.evaluate(() => window.__candidatePreview.reload());
+    await until(snapshot, (value) => value.baseError === "EDITING_PROJECT_CHANGED",
+                "The task must refuse a server that now binds another project");
+    assert.notEqual((await snapshot()).loadedRunId, currentHome.runId,
+                    "The other project's model must not be adopted by this task");
+    // The parse that was still running belonged to the project this task left
+    // behind: releasing it reports a cancelled load and shows nothing.
     await page.evaluate((fileName) => window.__previewParseGates[fileName].release(), parsing.artifacts[0].fileName);
-    await reportedLoad(parsing.artifacts[0], "cancelled"); await rendered(currentHome.runId);
+    await reportedLoad(parsing.artifacts[0], "cancelled");
     await complete(candidate);
     await until(snapshot, (value) => value.runs[candidate.candidateId].candidate.status === "ready", "The previous project job did not finish");
-    await delay(150); await rendered(currentHome.runId);
-    assert.equal((await snapshot()).projectId, projectId);
+    await delay(150);
+    // Neither project's newer work reaches this view: the refused task shows
+    // the other project nothing, and its own late candidate nothing either.
+    assert.ok(![currentHome.runId, candidate.candidateId].includes((await snapshot()).loadedRunId),
+              "no model of either project may be adopted after the refusal");
+    // Opening the project the server actually binds is a fresh page, which is
+    // what the refusal above tells the architect to do. The reload that follows
+    // this step is that page, and it renders the new project's own model.
   });
 
   assert.deepEqual(errors, []);
   assert.equal(requests.some((row) => /\/(decision|accept|issue)(\/|$)/.test(row.name)), false, "Preview must never accept or issue a design");
   historyEnabled = true;
+  // Opening the project the server binds is a fresh page, which is what the
+  // refusal above tells the architect to do. Nothing of the project this task
+  // left behind may come with it.
   await page.reload({ waitUntil: "domcontentloaded" });
   await rendered(currentHome.runId);
-  await page.locator('button[aria-controls="stage-versions-panel"]').click();
+  assert.equal((await snapshot()).projectId, projectId, "The reopened page binds the project the server serves");
+  assert.deepEqual((await snapshot()).loadedModelSource, currentHome.modelSource,
+                   "and shows that project's own model");
+  assert.deepEqual((await snapshot()).artifacts, [currentHome.runId],
+                   "and lists only that project's exports");
+  await openVersions();
   let s0, s1, historyA, historyB, historyC;
 
   await step("S0 requires one explicit confirmation and cold reopen restores the committed head", async () => {
@@ -579,7 +613,7 @@ try {
     assert.deepEqual(s0.modelSource, currentHome.modelSource);
     await page.reload({ waitUntil: "domcontentloaded" }); await rendered(currentHome.runId);
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef);
-    await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    await openVersions();
   });
 
   await step("a preview becomes the editable candidate context while retaining its actual source Stage", async () => {
@@ -587,6 +621,7 @@ try {
     await launch(historyA); await complete(historyA); await rendered(historyA.candidateId);
     await until(snapshot, (value) => value.editingRunId === historyA.candidateId, "Preview did not become the candidate editing context");
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef);
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0 · 当前提交", exact: true }).click();
     await rendered(currentHome.runId);
     const continueReadStart = requests.length;
@@ -616,16 +651,18 @@ try {
     assert.equal(s1.parentStageRef, s0.stageRef); assert.equal(branches.size, 1);
     await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
     assert.equal((await snapshot()).sourceStageRef, s1.stageRef);
-    await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    await openVersions();
   });
 
   await step("historical Stage selection changes the real editing source and branch creation is explicit", async () => {
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
     await rendered(currentHome.runId);
     await page.evaluate(() => window.__candidatePreview.propose("record historical context"));
     const intent = requests.findLast((row) => row.name === "/api/intents");
     assert.equal(intent.body.sourceRunId, currentHome.runId); assert.equal(intent.body.sourceStageRef, s0.stageRef);
     assert.equal(branches.size, 1);
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "从这里新建分支" }).click();
     await page.getByPlaceholder("alternate-layout").fill("alternate");
     await page.getByRole("button", { name: "创建分支", exact: true }).click();
@@ -645,10 +682,14 @@ try {
     const unselectedStateReads = () => requests.slice(readStart).filter((row) => row.method === "GET" && row.name === "/api/state" &&
       [historyB, historyC, otherStage].some((candidate) => candidate.candidateId === row.query.run)).map((row) => row.query.run);
     historyGate = { ...deferred(), branchId: "alternate", failed: true };
-    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
+    // Reopening this task returns to the source the architect last selected —
+    // S0, chosen in the step above — not to whatever main has since accepted.
+    // The task saves that base (App.saveView) and restores it on mount
+    // (useSession's first reload), which is what continuing work means here.
+    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(currentHome.runId);
     await until(() => historyGate.requested, Boolean, "The other branch's history was not requested");
     assert.deepEqual(unselectedStateReads(), [], "Cold reopen must not project every retained candidate before one is selected");
-    await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    await openVersions();
     assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0,
       "A model already accepted on main must not appear as an unaccepted candidate while another branch is still loading");
     assert.equal(await page.locator('[data-preview-candidate="history-b"]').count(), 0,
@@ -659,16 +700,20 @@ try {
       "A failed other-branch read must not turn the accepted main model into a candidate");
     assert.deepEqual(unselectedStateReads(), [], "A failed branch history read must not fall back to projecting unselected candidates");
     historyGate = null;
-    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
-    await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(currentHome.runId);
+    await openVersions();
     await page.locator('[data-preview-candidate="history-b"]').waitFor();
     await page.locator('[data-preview-candidate="history-c"]').waitFor();
     await page.locator('[data-preview-candidate="history-other-stage"]').waitFor();
     assert.deepEqual(unselectedStateReads(), [], "Opening the candidate list must use retained artifact metadata without reading candidate states");
+    await openVersions();
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("alternate"); await rendered(currentHome.runId);
     await page.locator('[data-preview-candidate="history-b"]').waitFor();
     assert.equal(await page.locator('[data-preview-candidate="history-a"]').count(), 0, "A model accepted on main must not become an unaccepted candidate on another branch");
-    assert.equal((await snapshot()).candidateEntries.length, 0);
+    // The reopened task carries the candidate it actually launched and nothing
+    // else: the cold ones are recovered from retained artifacts, never turned
+    // into conversation rows this task never had.
+    assert.deepEqual((await snapshot()).candidateEntries.map((entry) => entry.candidateId), [historyA.candidateId]);
     const checkB = page.locator('[data-preview-candidate="history-b"] input[type="checkbox"]');
     const checkC = page.locator('[data-preview-candidate="history-c"] input[type="checkbox"]');
     const checkOtherStage = page.locator('[data-preview-candidate="history-other-stage"] input[type="checkbox"]');
@@ -696,6 +741,7 @@ try {
   });
 
   await step("drawing errors stay above the viewport, dismiss, reset on direction changes, and ignore stale replies", async () => {
+    await openVersions();
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("main"); await rendered(historyA.candidateId);
     const viewTools = page.locator('button[aria-controls="view-tools"]');
     if (await viewTools.getAttribute("aria-expanded") === "true") await viewTools.click();
@@ -704,6 +750,7 @@ try {
     drawingFailure = true;
     const generate = page.locator("#view-tools").getByRole("button", { name: "Generate elevation", exact: true });
     const error = page.locator(".stage-drawing-error");
+    await openViewTools();
     await generate.click(); await error.waitFor();
     assert.equal(await error.locator('[role="alert"]').textContent(), "This model is missing its matching exact geometry file, so a complete elevation cannot be generated yet.");
     assert.equal(await error.locator("details").getAttribute("open"), null);
@@ -713,30 +760,43 @@ try {
     assert.ok(bounds && viewport && bounds.y + bounds.height <= viewport.y + 1, "Drawing error must occupy its own row above the model");
     await page.getByRole("button", { name: "Dismiss drawing error", exact: true }).click();
     assert.equal(await error.count(), 0);
+    await openViewTools();
     await generate.click(); await error.waitFor();
+    await openViewTools();
     await page.getByRole("combobox", { name: "Elevation direction", exact: true }).selectOption("back");
     assert.equal(await error.count(), 0);
+    await openViewTools();
     await generate.click(); await error.waitFor();
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
     await rendered(currentHome.runId); assert.equal(await error.count(), 0);
     drawingGate = deferred();
+    await openViewTools();
     await generate.click();
+    await openVersions();
     await page.locator('[data-design-stage="S1"]').getByRole("button", { name: /^S1/ }).click();
     await rendered(historyA.candidateId);
     drawingGate.resolve(); drawingGate = null;
-    await until(() => generate.isEnabled(), Boolean, "The old drawing request did not finish");
+    await until(async () => { await openViewTools(); return generate.isEnabled(); }, Boolean,
+                 "The old drawing request did not finish");
     assert.equal(await error.count(), 0);
     assert.equal((await snapshot()).drawingError, null);
     drawingFailure = false;
+    await openViewTools();
     await page.getByRole("combobox", { name: "Elevation direction", exact: true }).selectOption("front");
   });
 
   await step("generated elevation opens the returned immutable revision with no chat expansion", async () => {
+    // Inside a task the conversation is part of the workspace, so what this
+    // holds to is that generating a drawing leaves it exactly as it was.
+    const conversationBefore = await page.locator("#conversation-panel").count();
+    await openViewTools();
     await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
     await page.locator('.document-workspace:not([aria-hidden="true"]) .document-viewport[data-ready="true"]').waitFor();
     const value = await snapshot();
     assert.equal(value.documentView.open, true); assert.equal(value.documentView.revisionRef, lastDrawing.revisionRef);
-    assert.equal(await page.locator("#conversation-panel").count(), 0);
+    assert.equal(await page.locator("#conversation-panel").count(), conversationBefore,
+                 "Opening a drawing must not expand or collapse the conversation");
     assert.equal(requests.findLast((row) => row.name === "/api/drawings/elevations").body.sourceStageRef, s1.stageRef);
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, lastDrawing.revisionRef);
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), lastDrawing.revisionRef);
@@ -746,6 +806,7 @@ try {
     annotationFailure = true;
     await page.locator("#document-comment").fill("Keep the terrace line.");
     await until(async () => page.locator(".document-error").count(), (value) => value > 0, "Autosave failure did not remain visible");
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
     await delay(150); await rendered(historyA.candidateId);
     assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
@@ -753,6 +814,7 @@ try {
     annotationFailure = false;
     await page.locator(".document-error button").first().click();
     await until(async () => page.locator(".document-error").count(), (value) => value === 0, "Retry did not save the retained draft");
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
     await rendered(currentHome.runId);
     assert.equal((await snapshot()).documentView.runId, currentHome.runId);
@@ -767,6 +829,7 @@ try {
       revisionRef: `${lastDrawing.revisionRef}-different-model`, generatedAt: "2026-09-09T10:00:00.000Z" };
     // The first row is older; the globally newest row belongs to another exact model.
     documents.splice(0, documents.length, old, latest, mismatched);
+    await openVersions();
     await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click();
     await rendered(historyA.candidateId);
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
@@ -775,17 +838,21 @@ try {
   });
 
   await step("an only drawing from a different model stays unselected, and undated matching revisions are not guessed", async () => {
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click(); await rendered(currentHome.runId);
     documents.splice(0, documents.length, { ...lastDrawing, modelSource: { ...lastDrawing.modelSource, assetSha256: "e".repeat(64) }, generatedAt: "2026-09-09T11:00:00.000Z" });
     const before = requests.filter((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).length;
+    await openVersions();
     await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click(); await rendered(historyA.candidateId);
     await page.getByRole("combobox", { name: "Source document", exact: true }).waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), "");
     assert.equal(await page.locator(".document-viewport").count(), 0);
     assert.equal(requests.filter((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).length, before);
+    await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click(); await rendered(currentHome.runId);
     documents.splice(0, documents.length, { ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-undated-a`, generatedAt: null },
       { ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-undated-b`, generatedAt: null });
+    await openVersions();
     await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click(); await rendered(historyA.candidateId);
     await page.getByRole("combobox", { name: "Source document", exact: true }).waitFor();
     assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), "");
@@ -804,8 +871,9 @@ try {
     assert.deepEqual((await snapshot()).loadedModelSource, pinned.modelSource);
     assert.deepEqual((await snapshot()).editingModelSource, pinned.modelSource);
     assert.equal(workingCopies[0].selectedOptionId, "B", "Cold Stage restore must not change the saved working option");
-    await page.locator('button[aria-controls="stage-versions-panel"]').click();
+    await openVersions();
     await view(alternate);
+    await openVersions();
     const stageButton = page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true });
     assert.equal(await stageButton.getAttribute("aria-pressed"), "false", "Sharing the Stage run is insufficient to claim its pinned model is shown");
     await page.evaluate(() => window.__candidatePreview.changeBase(null)); await rendered(pinned.runId);
@@ -989,6 +1057,7 @@ try {
     documentGate = deferred();
     await page.evaluate(() => { let resolve; const promise = new Promise((done) => { resolve = done; });
       window.__documentRenderGate = { waiting: false, promise, resolve }; });
+    await openViewTools();
     await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
     await until(() => documentGate.requested, Boolean, "Drawing bytes did not start");
     const root = latestDiagnostic("drawing_wait"); assert.equal(root.status, "running");
@@ -1013,6 +1082,7 @@ try {
     const viewTools = page.locator('button[aria-controls="view-tools"]');
     if (await viewTools.getAttribute("aria-expanded") === "false") await viewTools.click();
     drawingFailure = true;
+    await openViewTools();
     await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
     const root = await until(() => latestDiagnostic("drawing_wait"), (row) => row.status === "failed", "Drawing did not report failure");
     assert.ok(root.durationMs >= 0);

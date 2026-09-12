@@ -89,10 +89,28 @@ class IntentContextTests(unittest.TestCase):
         self.assertEqual(context.editable_fields, ("height", "thickness"))
 
     def test_component_request_without_advertised_producer_uses_design_tier(self):
+        # A producer the owner advertises no authoring signature for: a
+        # multi-field component request about it cannot be checked against one,
+        # so the request is read at the design tier.
         record, sheet = fixture()
+        # The element's producer has to match its type's, so both name the
+        # unadvertised one; the record refuses any other pairing.
+        record = replace(record, entities=tuple(
+            replace(item, fields={**item.fields, "producer": "loft"})
+            if item.entity_id in {"window-23", "window-type"} else item
+            for item in record.entities))
+        sheet = sheet_of(record, Selection("facade", "window-23"))
         context = compile_context("set this window width to 1.2 and height to 1.5", sheet, record=record)
         self.assertEqual(context.tier, "design")
         self.assertEqual(context.escalation, ("component_signature_unavailable",))
+
+    def test_component_request_for_fields_the_signature_does_not_advertise_uses_design_tier(self):
+        # The same tier, for the other reason: this producer does advertise a
+        # signature, and width is not one of the parameters it names.
+        record, sheet = fixture()
+        context = compile_context("set this window width to 1.2 and height to 1.5", sheet, record=record)
+        self.assertEqual(context.tier, "design")
+        self.assertEqual(context.escalation, ("component_fields_not_advertised",))
 
     def test_chinese_scalar_request(self):
         record, sheet = fixture()

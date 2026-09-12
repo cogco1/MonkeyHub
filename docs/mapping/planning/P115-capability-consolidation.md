@@ -14,7 +14,7 @@
 
 ## 功能节点图与开发校准
 
-**核对日期：2026-09-11。** 本图把本卡的功能清单连接到现有实现；第 6 节覆盖当前注册表的全部 74 个 owner。
+**核对日期：2026-09-11。** 本图把本卡的功能清单连接到现有实现；第 6 节覆盖当前注册表的全部 75 个 owner。
 图中节点是功能的阅读入口，箭头表示输入、调用或成果交接，不新增模块或持久化对象。
 注册表中的 `canonical` 表示能力归口已确立，不表示所有入口、真实项目和安装包都已验收。
 
@@ -273,8 +273,8 @@ Delete／Backspace 删除实际选中的对象；Ctrl+Z 撤销模型操作，Ctr
 Ctrl+Z 恢复、Ctrl+Y 重做、再次 Ctrl+Z 返回完整 4.2 m 方案。正式 HEAD 保持 v0。
 隔离浏览器的 12 个连续场景已通过，覆盖真实 3DM 删除、撤销／重做、撤销后再编辑、文本输入、
 批注与图纸模式、视图来源不同于编辑来源，以及拾取回答尚未返回时禁止误删旧选择。
-范围外仍有两项浏览器检查未通过：`candidatePreview` 的跨项目重载、`intentViewSource` 的本地文件点击遮挡。
-当前结果不代表全部浏览器回归通过；这两项未扩大到本轮修复。
+2026-09-11 分支整合时，`candidatePreview` 已按当前任务绑定、显式编辑来源恢复及互斥面板行为修正旧测试，35 个完整场景通过；生产项目隔离检查保持原样。
+`intentViewSource` 的本地文件点击遮挡仍为上轮保留的浏览器检查限制，未纳入此次修复；当前结果不代表全部浏览器场景通过。
 
 验收看 Agent 是否查到并调用现成入口、是否保持选定来源、是否准确返回支持范围，以及实际候选能否继续修改。
 已有 MCP 手写摘要由对应生成视图逐项替换，不同时保留两份可编辑的同类描述；无需新建注册服务、插件平台或编排引擎。
@@ -511,7 +511,7 @@ Miro 的无限画布习惯，从已发布候选源码 `4d2c7c2` 单独实施。P
 | O01 | 读取导出回执证明的 STEP／3DM，也可明确登记完整外部 3DM 并绑定其模型来源；提供下载和视口展示 | 保留共同 artifact 入口；登记与原生导出读回证明分别显示 | `studio.artifacts`、`ThreeDmViewport.tsx`；P108 |
 | O02 | run-bound 的视口 PNG capture，模型选择、高亮、视角调整与候选比较 | 保留；这些是检查／表达交互，不是正式图纸 | `routes/captures.py`、`routes/compare.py`、`web/src/viewer/` |
 | O03 | `/api/state` 的 frame／volumes／closure projection | 归到模型查询，不计入平立剖出图能力 | `routes/state.py` |
-| O04 | exact STEP 的模型轴向立面已可生成 SVG／PNG；通用平面、剖面、正交轴测、模型关联标注、Sheet、施工图、建筑渲染与色稿仍是后续范围 | 保留已有立面；其余分别见第 3 节，截图／CAD 导出不替代它们 | `runtime.drawing_elevation`、`adapters.drawing_svg`；[出图方案](../../DRAWING_MODULE_ARCHITECTURE_PLAN.md) |
+| O04 | exact STEP 的模型轴向立面已可生成 SVG／PNG；底层已有 BRep 剖切线／区域、图纸语法和纸面 PDF／DXF 输出。通用平剖面、正交轴测、模型关联标注、Sheet 与成套施工图的应用流程仍待完成 | 保留已有立面与固定柜的图纸消费；完整流程分别见第 3 节 | `runtime.drawing_elevation`、`adapters.drawing_svg`、`documentation.drawings`；[出图方案](../../DRAWING_MODULE_ARCHITECTURE_PLAN.md) |
 
 ### 2.5 Agent、工作台与共享底座
 
@@ -610,7 +610,7 @@ UI、真实建筑项目、研究等现有任务的写入边界不因总索引而
 
 **持续功能推进（2026-09-08）。** 用户要求继续实施未完成能力后，当前切片落在 P108 的完整模型与图纸批注连续使用，以及独立的 P114 用户设置。P108 包括完整资产显示、图纸到模型的明确来源、同一事项的 A／B 继续与重启恢复、3D 批注保存、后续候选保留外部设备。先完成同一入口的实际使用，再回填已验收结果；不同时启动其余研究、分析或制造计划。
 
-**室内施工图试用（2026-09-06，c518 工作树）。** 本轮实现和检查位于独立工作树，尚未合入主检出；不改变上方整项能力的完成状态。
+**室内施工图试用（2026-09-06，c518 工作树；2026-09-11 整合）。** 平面表面、棱柱独立标高、OCCT 剖切及纸面 PDF／DXF 输出现已整合到主检出，图纸语法与纸面输出统一归 `monkeydiagram` 的 `documentation.drawings`；不改变上方整项能力的完成状态。
 
 - **读｜R03／F01–F02：** 读图定位、单位换算、平立面对齐及缺失厚度的标准／厂家做法查证，已整理为个人 skill `rebuild-interior-from-drawings`。当前没有已实现的规范 RAG；本轮使用官方网页和厂家手册检索，将具体来源及选用理由放入项目既有 Reading，由参数的 `source_ref` 引用。
 - **做｜M03–M05：** 扩展现有生成链的 `planar-surface` 表面表达，以及 `prism.elevation`。未知构造厚度保留已知表面；有厂家系统依据的板厚作为可修改候选，标高与厚度独立控制。复用既有 OCCT／runner，没有新增房间模块或几何执行器。墙地衔接沿 R03／F01–F02 查证原图材料与标准适用条件、M03–M05 用既有 `prism`／派生参数表达装修层及结构板、A02–A03 核对平面饰面和竖向标高；标准与跨度支持的板厚仅为候选，不是原结构实值。
@@ -656,7 +656,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 
 ## 6. 全部 owner 的覆盖索引
 
-下表覆盖 2026-09-11 注册表中的全部 74 个 owner，每个只列一次，按主要职责归组；一个能力可服务其他组，不能因此复制 owner。
+下表覆盖 2026-09-11 注册表中的全部 75 个 owner，每个只列一次，按主要职责归组；一个能力可服务其他组，不能因此复制 owner。
 精确 `owner_path`、API、tests 与 invariants 链接回 [SYSTEM_MAP](../../SYSTEM_MAP.md)，本卡不镜像这些字段。
 
 | 分类 | owner ID |
@@ -664,7 +664,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 | 资料与任务（3） | `state.program`、`state.program_sheet`、`studio.program` |
 | 方案与建模（10） | `capabilities.element_producers`、`capabilities.geometry_proposal`、`capabilities.opening_solver`、`capabilities.reference_resolver`、`capabilities.wall_solver`、`capabilities.element_reindex`、`state.spatial`、`state.developed_design`、`state.decision_operator`、`studio.options` |
 | 分析与校核（7） | `capabilities.declaration`、`capabilities.relation_checks`、`state.massing_metrics`、`validation.engine`、`validation.model`、`studio.validation`、`adapters.three_dm_inspector` |
-| 表达与出图（4） | `studio.artifacts`、`studio.board`、`adapters.drawing_svg`、`runtime.drawing_elevation` |
+| 表达与出图（5） | `studio.artifacts`、`studio.board`、`adapters.drawing_svg`、`runtime.drawing_elevation`、`documentation.drawings` |
 | Agent 与工作台（7） | `ports.model`、`capabilities.discipline_seats`、`studio.binding`、`studio.candidate`、`studio.intent`、`studio.shell`、`hub.shell` |
 | 共享：状态与语义（12） | `state.commitments`、`state.derivation`、`state.design_portfolio`、`state.model`、`state.operational_state`、`state.record`、`state.stage_workflow`、`relations.contracts`、`semantics.conditions`、`semantics.registry`、`semantics.roles`、`submission.model` |
 | 建模编译与共用 CAD 执行（6） | `state.geometry_program`、`compilers.geometry`、`runtime.project_runner`、`adapters.cad_execution`、`adapters.cad_patch`、`adapters.cad_program` |
@@ -680,7 +680,7 @@ P094 原 9/7 的“资格未知”表述也属于 12% 的立即文稿纠错，�
 - 今晚 API 实现沿已有 P108 的工作范围：controls 三文件、main／router 挂载、episodes／candidate／proposal decision 路由、intents／intent／intent_agent／clarification 入口与对应测试；PROTOCOL、模块 registry 和 OpenAPI 生成 SDK 由主代理统一同步。P115 只索引这些子项，不重复占有 P108 的 API 路径。
 - 后续切片只有在具体目标／调用者核清后才扩展本卡 write_scope；已有 owner、既有行为测试优先。
 - 不改私人项目、当前服务／浏览器／Rhino、不推送、不自动归档未知 WIP，不创建清理专用工具或元数据。
-- 文档检查：链接可达、74 owner 完整对应、生成地图无漂移、scoped diff。C03 使用现有编译器、接口 datum、语义几何测试及 `tools/archcheck.py`。
+- 文档检查：链接可达、75 owner 完整对应、生成地图无漂移、scoped diff。C03 使用现有编译器、接口 datum、语义几何测试及 `tools/archcheck.py`。
 
 **本轮收尾（2026-09-06）：** API 全套 558 passed／2 skipped；Web 30 passed／2 skipped；
 编译器相关 27 测、OpenAPI 生成一致性、类型检查／生产构建、archcheck（213 files）与 diff 检查通过。

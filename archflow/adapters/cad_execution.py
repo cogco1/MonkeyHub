@@ -40,6 +40,7 @@ from archflow.adapters.occt_backend import (
     OcctBackendError,
     OcctCapabilityError,
     OcctDrawingPolyline,
+    OcctDrawingRegion,
     OcctUnavailableError,
     PreviewMaterial,
     PreviewObject,
@@ -52,6 +53,8 @@ from archflow.adapters.occt_backend import (
     measure_occt_solid_pairs,
     project_occt_lines,
     read_step,
+    section_occt_lines,
+    section_occt_regions,
     write_preview_three_dm,
     write_step,
 )
@@ -2811,7 +2814,7 @@ def execute_occt_export(
     declared: present exactly once under its id, valid, bounds within
     ``readback_tolerance`` of the analytic predictor, on its semantic layer,
     and either exactly the expected number of closed solids (every
-    operation but an uncapped loft) or an open surface - no solid, an
+    solid operation) or an open surface - no solid, an
     actual open boundary, no volume claimed.  The preview is read back
     through ``inspect_three_dm`` and checked against the same denominator.
     No process is started.
@@ -3149,7 +3152,7 @@ def _exact_artifact(path: Path, workspace: Path, deliveries: Mapping[str, str]) 
     surfaces = sum(1 for delivery in deliveries.values() if delivery == OPEN_SURFACE)
     geometry = f"exact B-rep in the CAD frame and the program unit: {solids} closed solid object(s)"
     if surfaces:
-        geometry += f", {surfaces} open surface object(s) from uncapped lofts"
+        geometry += f", {surfaces} open surface object(s) from planar faces or uncapped lofts"
     return {
         "format": _STEP_FORMAT,
         "relative_path": path.relative_to(workspace).as_posix(),

@@ -254,6 +254,14 @@ _FUNCTION_CONTRACTS: dict[str, dict[str, object]] = {
             ),
         ),
     ),
+    "planar_surface": _function_contract(
+        minimum_inputs=0,
+        maximum_inputs=0,
+        parameters=(
+            _function_parameter("profile", GeometryParameterKind.POINTS3, unit=_METER),
+            _function_parameter("base_offset", GeometryParameterKind.NUMBER, unit=_METER, required=False),
+        ),
+    ),
     "loft": _function_contract(
         minimum_inputs=0,
         maximum_inputs=0,

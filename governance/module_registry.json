@@ -141,7 +141,7 @@
     {
       "module_id": "adapters.cad_execution",
       "owner_path": "archflow/adapters/cad_execution.py",
-      "purpose": "Execute an exact compiled program through the declared CAD execution interface: in-process OCCT exact STEP with mesh .3dm preview, or explicit supervised Rhino compatibility export; verify saved artifacts before reporting success.",
+      "purpose": "Execute an exact compiled program through the declared CAD execution interface: in-process OCCT exact STEP with mesh .3dm preview, or explicit supervised Rhino compatibility export; verify saved artifacts before reporting success. Extract named drawing edges and material sections from existing OCCT shapes.",
       "owns": [
         "RhinoCadProgramBinding and RhinoCadExportIdentity: the P036 record/branch/stage identity an export is bound to",
         "the immutable export plan: workspace layout, script, completion token, host witness and the full validation denominator digest",
@@ -149,10 +149,11 @@
         "supervising the blocking worker, collecting its output, and independently cleaning the Rhino host it started",
         "readback verification: the saved file's physical objects, semantics, bounds, counts, layer colours and document user text against the denominator",
         "the execution receipt and its status",
-        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
+        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
         "native preview material assignment and readback for caller-declared component materials and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
         "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
+        "plane-section extraction from the same selected shapes in the same frame (section_occt_lines, section_occt_regions): OcctDrawingPolyline values carry the section kind, and OcctDrawingRegion values carry each solid's closed material boundaries, including holes and disconnected cuts, to be filled even-odd",
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
         "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs",
@@ -163,7 +164,8 @@
         "selecting what a patch rebuilds - adapters.cad_patch",
         "reading the .3dm - adapters.three_dm_inspector",
         "writing anything into the project repository - it has no project-repository or canonical-write authority; runtime.project_runner retains the receipt",
-        "choosing the workspace - the caller supplies an existing speculative workspace"
+        "choosing the workspace - the caller supplies an existing speculative workspace",
+        "drawing styles, dimensions, sheet composition or persistence of drawing artifacts"
       ],
       "inputs": [
         "CompiledGeometryProgram",
@@ -172,13 +174,16 @@
         "RhinoPatchBase",
         "provenance",
         "material and layer maps",
-        "Optional operation_observer and parent event id for actual OCCT reuse checks, geometry, STEP, tessellation and preview stages; no diagnostic write or project authority"
+        "Optional operation_observer and parent event id for actual OCCT reuse checks, geometry, STEP, tessellation and preview stages; no diagnostic write or project authority",
+        "named StepEntry shapes, explicit object selection, drawing origin/right/up and linear deflection in the shape's length unit"
       ],
       "outputs": [
         "RhinoCadExportPlan",
         "RhinoCadExecutionReceipt",
         "ThreeDmInspection (embedded)",
-        "OcctExecutionReceipt: exact STEP and preview artifact identities, saved B-rep readback matched to declared solid or open-surface geometry, preview inspection, backend identity and measured timings"
+        "OcctExecutionReceipt: exact STEP and preview artifact identities, saved B-rep readback matched to declared solid or open-surface geometry, preview inspection, backend identity and measured timings",
+        "OcctDrawingPolyline values with object_id, visible/hidden/section kind and 2D points; no writes or receipt",
+        "OcctDrawingRegion values with object_id and closed 2D loops for one solid's section, filled together using even-odd; separate solids remain separate values"
       ],
       "public_api": [
         "prepare_rhino_three_dm_export",
@@ -197,8 +202,12 @@
         "OcctExecutionReceipt",
         "measure_occt_solid_pairs",
         "CadCapabilityError",
+        "OcctBackendError",
         "project_occt_lines",
+        "section_occt_lines",
+        "section_occt_regions",
         "OcctDrawingPolyline",
+        "OcctDrawingRegion",
         "StepEntry",
         "read_step",
         "patch_composed_three_dm"
@@ -234,9 +243,11 @@
         "discovery is read-only: it never launches or attaches to Rhino",
         "OCCT execution never starts Rhino and never silently falls back; unsupported operations are named before file writes",
         "STEP carries exact B-rep geometry; mesh .3dm is explicitly a tessellated preview, with the same program/object semantics and one x-y-up-z-plan to Z-up coordinate conversion",
-        "OCCT saved geometry is re-read with a fresh STEP reader and checked for named shapes, semantic layers and predicted bounds; solids retain closure and count checks, explicitly uncapped lofts retain open boundaries and report no volume; this is not a separate geometry instrument or a structural bearing proof",
+        "OCCT saved geometry is re-read with a fresh STEP reader and checked for named shapes, semantic layers and predicted bounds; solids retain closure and count checks, bounded planar faces and explicitly uncapped lofts retain open boundaries and report no volume; this is not a separate geometry instrument or a structural bearing proof",
         "revolve realizes the existing axis and end-radius contract as an exact OCCT cylinder or conical frustum; its datum placement and radius rule are shared with the existing translator and bounds predictor",
-        "projection is a plain value: every selected object takes part in the one visibility solve (an object outside the near/far slab is excluded, one crossing it is cut there), each polyline names its object and its kind, output is sorted and deterministic, and nothing is written"
+        "projection is a plain value: every selected object takes part in the one visibility solve (an object outside the near/far slab is excluded, one crossing it is cut there), each polyline names its object and its kind, output is sorted and deterministic, and nothing is written",
+        "sections intersect their actual B-reps with the requested plane rather than projecting bounds; material section loops connect shared B-rep vertices only, open cuts are never closed by proximity or invented edges, open surfaces and shells contribute no material region, and holes stay inside their solid's even-odd region while separate solids are filled separately",
+        "drawing origin/right/up are explicit in the CAD Z-up frame; right and up are orthonormal and right cross up faces the viewer; output coordinates and positive chord deflection share the source shape's unit; unknown, ambiguous or empty selected shapes and invalid frames fail explicitly"
       ],
       "status": "canonical",
       "tests": [
@@ -308,7 +319,7 @@
       "owner_path": "archflow/adapters/cad_program.py",
       "purpose": "Translate a compiled neutral geometry program into one deterministic, semantics-carrying rhinoscriptsyntax build script, plus the analytic denominator it must reproduce.",
       "owns": [
-        "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
+        "the supported operation vocabulary and its rhinoscriptsyntax emission (solid, revolve, extrusion, planar_surface, loft, boolean union/difference/intersection, linear and radial array, transform, curve)",
         "the layer path and layer colour tables derived from components and material assignment",
         "the archflow:* object user text each physical object must carry (expected_object_semantics)",
         "writing each of an operation's statements through as an archflow:<key> user string, verbatim, and the reserved identity keys a statement may not take",
@@ -363,7 +374,8 @@
         "the same program translates to the same script bytes - the emission is deterministic and self-contained",
         "coordinates pass through as the program states them; the translator performs no frame conversion",
         "every physical object is named and carries its archflow:* identity strings",
-        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError"
+        "an object carries its operation's statements as archflow:* user strings (wedge: low/high/axis/sense, where wedge_sense is the world-anchored rise direction +x|-x|+z|-z in the kernel plan; shell: thickness/kind); the value is written verbatim, geometry is never measured or recomputed to make one, and a statement naming a reserved identity key (component, object_ref, producer_op and the rest) fails CadTranslationError",
+        "planar_surface preserves its explicitly closed profile and datum elevation with AddPlanarSrf, without extrusion or capping; analytic bounds retain the zero-thickness plane"
       ],
       "status": "canonical",
       "tests": [
@@ -384,7 +396,7 @@
       "does_not_own": [
         "projecting geometry - adapters.cad_execution (project_occt_lines)",
         "choosing the view, verifying the source or writing anything - runtime.drawing_elevation through project.repository",
-        "PDF/DXF sheets, line-weight standards, annotations, title blocks: not implemented"
+        "PDF/DXF sheets and the drawing standard behind them - documentation.drawings; line-weight standards, annotations and title blocks are that owner's conventions, not this serializer's"
       ],
       "inputs": [
         "OcctDrawingPolyline tuple",
@@ -648,7 +660,7 @@
       "owner_path": "monkeyarch/capabilities/element_producers.py",
       "purpose": "Turn a State Record's Element@1 rows into geometry operations, datum bindings, published datums and materialized relations, reading references rather than computing coordinates.",
       "owns": [
-        "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, ring, loft, dome-cap, stair, wedge, shell, declined",
+        "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, planar-surface, ring, loft, dome-cap, stair, wedge, shell, declined",
         "reading Element@1 entities off a StateRecord into ElementRow, in production order, using state.record's existing expression evaluator projection for explicit @parameter bindings",
         "topological production order: an element that names another (or its published `<id>-top`) is produced after it",
         "publishing `<id>-top` interface datums an element grants to what it supports",
@@ -659,7 +671,9 @@
         "declaring on the operation, as statements and never as parameters, the row facts the produced solid cannot show (a wedge's low/high/axis/sense, a shell's thickness/kind), already formatted as the text the export will carry; wedge_sense is the world-anchored rise direction +x|-x|+z|-z, derived from the row's declared from->to line and slope_across, never measured back off the geometry",
         "the queryable semantic authoring signature of the wall producer and its rectangular or semicircular hosted apertures; project values remain in StateRecord",
         "in-memory checking of a semantic element edit by the advertised signature and the existing producers before a candidate is queued",
-        "prism rectangular_cutouts: parameter-bound rectangular openings trim a material panel through its Z thickness, retire empty panels and retain stable fragment ids"
+        "prism rectangular_cutouts: parameter-bound rectangular openings trim a material panel through its Z thickness, retire empty panels and retain stable fragment ids",
+        "prism semantic authoring: profile, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
+        "planar-surface: one explicitly closed XZ profile at its referenced base plus the declared elevation parameter; its queryable semantic signature and parameter bindings support subsequent elevation edits without inferred thickness"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -723,7 +737,9 @@
         "the stair emits one whole solid and retains its declared endpoint, width and top datum; positive thin-tread thickness is refused rather than reinterpreted as a whole-flight slab",
         "a direct loft row preserves its explicit cap_ends boolean, defaulting to true, without changing closure of other producers; declared profile_basis is passed through and unsupported open section profiles are refused",
         "an unfilled semicircular wall opening passes its explicit shape and spring height to wall_solver and creates no frame or leaf",
-        "rectangular_cutouts require an ordered axis-aligned rectangular prism profile; untouched panels retain their original operation id, and a cut panel publishes no whole-prism top datum"
+        "rectangular_cutouts require an ordered axis-aligned rectangular prism profile; untouched panels retain their original operation id, and a cut panel publishes no whole-prism top datum",
+        "a planar-surface produces no top datum or support relation; its single outer boundary must be simple and explicitly closed; holes, thickness and extra fields are refused",
+        "a prism elevation defaults to zero for retained inputs; without a top reference elevation moves the whole extrusion while height leaves its bottom fixed; with a top reference both declared height and derived height account for elevation"
       ],
       "status": "canonical",
       "tests": [
@@ -746,7 +762,8 @@
         "decoding a provider's full or edit-shaped answer into a typed GeometryProgramProposal without inventing geometry",
         "semantic coverage validation of a proposal against the state, commitments, seat scope and required component bindings",
         "the lineage / round / proposal / deferral / escalation records and their persistence through the repository",
-        "reloading one exact compiled program from its retained record"
+        "reloading one exact compiled program from its retained record",
+        "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects"
       ],
       "does_not_own": [
         "compiling the proposal into objects and digests - compilers.geometry",
@@ -2864,7 +2881,8 @@
         "published interface datums, parameter-to-datum binding and direction checks (InterfaceDatum, InterfaceDatumKind, DatumBinding, verify_datum_directions)",
         "the program proposal record and its digest (GeometryProgramProposal)",
         "project levels and grid axes as published datums (ProjectLevel, ProjectLevels, ProjectGridAxis, ProjectGrids, verify_project_datums)",
-        "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters"
+        "compiled geometry program/object values, asset substitution receipts and their retained serialization shared by the MonkeyArch compiler and ArchFlow CAD adapters",
+        "PLANAR_SURFACE: one explicitly closed planar polygon without thickness; operation construction rejects open, non-planar, self-intersecting and degenerate boundaries"
       ],
       "does_not_own": [
         "producing operations from design content (capabilities/element_producers.py, wall_solver, opening_solver)",
@@ -5678,6 +5696,72 @@
       ],
       "tests": [],
       "untested_reason": "No committed unit test exists for this Windows packaging CLI. Acceptance is an explicit candidate build plus isolated installer and installed-application smoke checks; kernel test membership does not certify distribution."
+    },
+    {
+      "module_id": "documentation.drawings",
+      "owner_path": "monkeydiagram/documentation/drawings.py",
+      "purpose": "Validate and compile caller-supplied drawing information against a configurable drawing standard, and render common paper scenes to PDF and editable DXF.",
+      "owns": [
+        "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
+        "DrawingState structural and cross-record validation: preferred scales, view references, dimension values and chains, source certainty, note placement, tags, interfaces, revisions and paper bounds",
+        "DrawingPlan as a detached plain domain value without receipt, digest or persistence authority",
+        "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF serialization of those same scenes"
+      ],
+      "does_not_own": [
+        "source design objects, dimensions, parameter dependencies or confirmation decisions",
+        "CAD geometry, hidden-line or material-section extraction - adapters.cad_execution",
+        "project-specific selection, camera, section locations, content or material choices",
+        "choosing artifact destinations, persistent writes, canonical promotion or issuance - existing project ports and explicit project decisions"
+      ],
+      "inputs": [
+        "caller-supplied DrawingState mapping",
+        "Drawing Standard configuration mapping",
+        "paper drawing operations and explicit font mapping",
+        "optional named source geometry projections for DXF modelspace"
+      ],
+      "outputs": [
+        "DrawingFinding tuple",
+        "DrawingPlan",
+        "common paper scenes with printable bounds",
+        "PDF bytes",
+        "DXF bytes"
+      ],
+      "public_api": [
+        "DrawingFinding",
+        "DrawingPlan",
+        "validate_drawing_state",
+        "compile_drawing_state",
+        "PaperPrimitive",
+        "PaperSheet",
+        "PaperCanvas",
+        "render_pdf",
+        "render_dxf"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "tests/test_drawing_standard.py",
+        "tests/test_drawing_output.py"
+      ],
+      "invariants": [
+        "Source design and project information remain the only facts; drawing values do not confirm or mutate them.",
+        "Scale is an explicit drawing convention, never a packing result; exceptions carry an explicit reason.",
+        "Derived dimensions retain their source certainty and unresolved dimensions cannot become construction control.",
+        "Tags, section references and revisions resolve against stable ids; actual paper primitives must fit the stated printable area.",
+        "PDF and DXF are serialized from the same paper scenes; neither is reconstructed from the other.",
+        "The grammar uses ordinary values and no filesystem IO. Output adapters return bytes and never choose or write a project path."
+      ],
+      "status": "canonical",
+      "files": [
+        "monkeydiagram/documentation/drawings.py",
+        "monkeydiagram/documentation/drawing_standard_v0_1.json",
+        "monkeydiagram/documentation/drawing_state.schema.json",
+        "monkeydiagram/drawing_output.py"
+      ],
+      "tests": [
+        "tests/test_drawing_standard.py",
+        "tests/test_drawing_output.py"
+      ],
+      "notes": "CREATE justified in docs/DRAWING_STANDARD_V0.1.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
     }
   ]
 }

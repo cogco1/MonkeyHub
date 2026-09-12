@@ -630,12 +630,34 @@ class StateRecordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
             run = repository.create_run("run-1")
-            state = developed_design_view(record, run=run, evidence_ref="reading:detail-review")
+            # The record projects in its own binding phase, as the round-trip test above does.
+            state = developed_design_view(record, run=run, evidence_ref="reading:detail-review",
+                                          phase=RECORD_BINDING_PHASE)
         proposal = state.selected_schematic.option.proposal
         self.assertEqual(proposal.evidence_refs, ("reading:detail-review", "reading:manufacturer-board", "reading:plan", "reading:section"))
         self.assertTrue(proposal.components)
         for component in proposal.components:
             self.assertEqual(set(component.source_refs), set(proposal.evidence_refs))    # nothing dropped, nothing invented
+
+    def test_record_without_massing_preserves_all_drawing_and_material_sources(self) -> None:
+        manufacturer = "reading:manufacturer-board"
+        review = "reading:detail-review"
+        original = _record()
+        record = replace(original, evidence_refs=tuple(sorted((*original.evidence_refs, manufacturer))), entities=original.entities + (
+            Entity("manufacturer-board", "Reading@1", {"source_ref": "source:manufacturer-board.pdf", "thickness_m": 0.012},
+                   basis_refs=(manufacturer,)),
+        ))
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FilesystemProjectRepository.initialize(Path(tmp) / "demo", project_id="demo", initial_state={"schema": "TestState@1"})
+            run = repository.create_run("run-1")
+            state = developed_design_view(record, run=run, evidence_ref=review, phase=RECORD_BINDING_PHASE)
+        proposal = state.selected_schematic.option.proposal
+        self.assertEqual(set(proposal.evidence_refs), {"reading:plan", manufacturer, review})
+        self.assertTrue(proposal.components)
+        for component in proposal.components:
+            self.assertTrue(set(record.evidence_refs) <= set(component.source_refs))
+            self.assertTrue(set(component.source_refs) <= set(proposal.evidence_refs))
+        self.assertEqual(record.entity("manufacturer-board").fields["source_ref"], "source:manufacturer-board.pdf")
 
     def test_massing_entities_rebuild_the_spatial_option_exactly(self) -> None:
         from monkeyarch.runtime.project_runner import SchematicPack, bootstrap_developed_state

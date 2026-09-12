@@ -499,6 +499,7 @@ def solve_wall(
             # (every _points/_number rounds to 9 decimals): an opening whose edge
             # is the wall end differs from the resolved length only by float
             # roundoff, while a real overrun of 10 nm or more is still refused.
+            # The authored dimensions themselves are kept as they were written.
             if round(a0, 9) < 0.0 or round(a1, 9) > round(wall.length, 9):
                 raise WallSolverError(f"opening {opening.opening_id} lies outside the wall length")
         if opening.head > wall.height:

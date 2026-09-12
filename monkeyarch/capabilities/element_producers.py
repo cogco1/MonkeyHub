@@ -65,9 +65,10 @@ class ElementProducerError(ValueError):
 def producer_signatures() -> dict[str, dict[str, Any]]:
     """The semantic authoring contracts the Studio can query and execute.
 
-    The first authoring consumer is a wall with hosted apertures. Other
-    existing producers remain executable; they are not advertised as semantic
-    creation tools until their authored parameter contract is exposed here.
+    Walls with hosted apertures, prisms and bounded planar surfaces expose their
+    authored parameters here. Other existing producers remain executable;
+    they are not advertised as semantic creation tools until their authored
+    parameter contract is exposed here.
     Values and placements belong to the project's record, never this table.
     """
 
@@ -138,17 +139,22 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "profile": {"type": "array", "items": plan_point, "minItems": 3,
                         "description": "The closed plan profile in order; the first point is not repeated."},
             "height": {**scalar, "description": "How far the profile is pulled; optional when references.top determines it."},
+            "elevation": {**scalar, "description":
+                "Metres above references.base, added to that reference's own offset; defaults to zero. "
+                "It moves the whole prism and leaves the height alone."},
             "rectangular_cutouts": {"type": "array", "items": cutout,
                                     "description": "Openings through an axis-aligned rectangular profile."},
         }),
         "references": obj({
-            "base": {"anyOf": [obj({"level": level_id}, ("level",)), obj({"datum": identifier}, ("datum",))]},
+            "base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]},
             "top": elevation,
         }),
         "requiredParameters": ["profile"],
         "requiredReferences": ["base"],
         "constraints": [
             "Provide either height or references.top; a prism with neither has no height to build.",
+            "With a top reference, base datum plus the reference offset plus elevation plus height must agree with it.",
+            "Without a top reference, changing elevation moves the whole prism and changing height keeps its bottom fixed.",
             "A profile needs at least three distinct points and does not repeat its first point.",
             "rectangular_cutouts require four ordered axis-aligned profile corners.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
@@ -190,7 +196,29 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
         ],
-    }, "prism": prism}
+    }, "prism": prism, "planar-surface": {
+        "producer": "planar-surface",
+        "label": "可见面",
+        "description": (
+            "A visible horizontal surface with a stated boundary and elevation: what a floor or a "
+            "ceiling shows in a drawing, without a construction thickness and without inventing the "
+            "solid that would hold it up."
+        ),
+        "parameters": obj({
+            "profile": {"type": "array", "items": plan_point, "minItems": 4,
+                        "description": "One simple XZ boundary with its first vertex repeated at the end."},
+            "elevation": {**scalar, "description":
+                "Metres above references.base, added to that reference's own offset; defaults to zero."},
+        }),
+        "references": obj({"base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]}}),
+        "requiredParameters": ["profile"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "The profile is one simple XZ boundary with its first vertex explicitly repeated at the end; holes are unsupported.",
+            "The surface elevation is its resolved base datum plus the reference offset plus parameters.elevation.",
+            "Use an explicit @parameter binding for an elevation that subsequent changes must share.",
+        ],
+    }}
 
 
 def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: str) -> None:
@@ -454,7 +482,7 @@ def _base(row: ElementRow, context: ProductionContext) -> tuple[str, float]:
     return resolve_elevation(parse_reference(base), context.references)
 
 
-def _height(row: ElementRow, context: ProductionContext, base_datum: str) -> float:
+def _height(row: ElementRow, context: ProductionContext, base_datum: str, *, base_offset: float | None = None) -> float:
     params = row.params
     declared = _positive(params["height"], f"{row.element_id} height") if "height" in params else None
     top = row.references.get("top")
@@ -467,7 +495,8 @@ def _height(row: ElementRow, context: ProductionContext, base_datum: str) -> flo
         offset = _finite(top.get("offset", 0.0), f"{row.element_id} top offset")
     else:
         top_id, offset = resolve_elevation(parse_reference(top), context.references)
-    _, base_offset = _base(row, context)
+    if base_offset is None:
+        _, base_offset = _base(row, context)
     height = round(context.datum_value(top_id) + offset - context.datum_value(base_datum) - base_offset, 9)
     if height <= 0.0:
         raise ElementProducerError(f"{row.element_id}: top {top_id!r} is not above base {base_datum!r}")
@@ -711,13 +740,39 @@ def _plan_point(row: ElementRow, context: ProductionContext, key: str = "at") ->
     return resolve_plan(parse_reference(reference), context.references)
 
 
+def produce_planar_surface(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """The stated visible surface at a datum, with no inferred thickness or support."""
+
+    unknown = set(row.params) - {"profile", "elevation"}
+    if unknown:
+        raise ElementProducerError(f"{row.element_id}: planar-surface does not support {sorted(unknown)}")
+    if set(row.references) != {"base"}:
+        raise ElementProducerError(f"{row.element_id}: planar-surface requires only an explicit base reference")
+    base_datum, base_offset = _base(row, context)
+    base_offset += _finite(row.params.get("elevation", 0.0), f"{row.element_id} elevation")
+    profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in row.params["profile"]]
+    if len(profile) < 4 or profile[0] != profile[-1]:
+        raise ElementProducerError(f"{row.element_id}: planar-surface profile must explicitly close at its first point")
+    parameters = [_points("profile", profile)]
+    if base_offset:
+        parameters.insert(0, GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=base_offset, unit=_M))
+    operation = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.PLANAR_SURFACE,
+                                  output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id,
+                                  parameters=tuple(parameters), semantic_binding_ids=(row.binding_id,))
+    return ProducedElement((operation,), (_bind(row.element_id, base_datum),))
+
+
 def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElement:
-    """Extrude a profile; optional rectangular panel cuts span world X and its Z thickness."""
+    """Extrude upward from the base plus the stated elevation, keeping the height independent.
+
+    Optional rectangular panel cuts span world X and the profile's Z thickness.
+    """
 
     p = row.params
     base_datum, base_offset = _base(row, context)
+    base_offset += _finite(p.get("elevation", 0.0), f"{row.element_id} elevation")
     profile = [(_finite(x, f"{row.element_id} profile x"), 0.0, _finite(z, f"{row.element_id} profile z")) for x, z in p["profile"]]
-    height = _height(row, context, base_datum)
+    height = _height(row, context, base_datum, base_offset=base_offset)
     if "rectangular_cutouts" in p:
         # Restrict this first consumer to an actual axis-aligned rectangle;
         # its bounds alone cannot prove an arbitrary profile is rectangular.
@@ -1087,7 +1142,7 @@ def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedEle
 
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
-    "prism": produce_prism, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
+    "prism": produce_prism, "planar-surface": produce_planar_surface, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
     "stair": produce_stair, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
 }
 
