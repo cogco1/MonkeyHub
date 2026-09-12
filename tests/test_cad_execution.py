@@ -256,28 +256,32 @@ def _inspection(plan) -> ThreeDmInspection:
                     }
                 )
         if producer not in array_ops:
-            named_rows.append(
-                {
-                    "object_id": f"named-{object_id}",
-                    "name": object_id,
-                    "type": "Brep",
-                    "layer_path": semantic["layer"],
-                    "bbox": plan.expected_bounds[object_id],
-                    "bbox_source": "brep_face_render_mesh_vertices",
-                    "mesh_face_count": 1,
-                    "mesh_vertex_count": 8,
-                }
-            )
-            visible_witnesses.append(
-                {
-                    "object_id": f"named-{object_id}",
-                    "name": object_id,
-                    "type": "Brep",
-                    "source": "brep_face_render_mesh_vertices",
-                    "mesh_face_count": 1,
-                    "mesh_vertex_count": 8,
-                }
-            )
+            # An object is delivered as the number of Breps its count states:
+            # one for an ordinary solid, and - where there are no blocks, as in
+            # an imported document - one per copy of an array.
+            for copy in range(expected_counts[object_id]):
+                named_rows.append(
+                    {
+                        "object_id": f"named-{object_id}-{copy}",
+                        "name": object_id,
+                        "type": "Brep",
+                        "layer_path": semantic["layer"],
+                        "bbox": plan.expected_bounds[object_id],
+                        "bbox_source": "brep_face_render_mesh_vertices",
+                        "mesh_face_count": 1,
+                        "mesh_vertex_count": 8,
+                    }
+                )
+                visible_witnesses.append(
+                    {
+                        "object_id": f"named-{object_id}-{copy}",
+                        "name": object_id,
+                        "type": "Brep",
+                        "source": "brep_face_render_mesh_vertices",
+                        "mesh_face_count": 1,
+                        "mesh_vertex_count": 8,
+                    }
+                )
     definitions = tuple(
         {
             "id": f"definition-{name.removeprefix('archflow-family-')}",

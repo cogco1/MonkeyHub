@@ -10,11 +10,13 @@ denominator, native semantics, instance counts, and expected bounds.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import base64
 import json
 import math
 import os
 import subprocess
+import threading
 import time
 from contextlib import contextmanager
 from copy import deepcopy
@@ -26,11 +28,13 @@ from typing import Callable, Mapping
 
 from archflow.adapters.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
 from archflow.adapters.cad_program import (
+    LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
     _physical_ids,
     _resolved_layer_colors,
     expected_object_bounds,
     expected_object_semantics,
+    translate_step_import_to_rhino_python,
     translate_to_rhino_python,
 )
 from archflow.adapters.occt_backend import (
@@ -70,6 +74,10 @@ from archflow.contracts.canonical import canonical_digest
 
 
 _MAX_PROCESS_TEXT = 2_000
+# The ``export_path`` provenance of an export an architect asked for rather
+# than one that realizes a seat. The runner's reuse and patch lookups read it
+# to leave these alone: a work model is a delivery, never a seat's own output.
+WORK_MODEL_EXPORT_PATH = "work-model"
 _UNIT_TO_RHINO = {
     "millimeter": ("Millimeters", "Millimeters"),
     "meter": ("Meters", "Meters"),
@@ -628,6 +636,280 @@ class RhinoPatchBase:
             raise TypeError("prior_program must be CompiledGeometryProgram")
 
 
+@dataclass(frozen=True, slots=True)
+class StepImportObject:
+    """One named shape of an exported STEP, alone in a file of its own.
+
+    The measures are the kernel's own reading of the shape that was written,
+    taken after the single-object file was read back: what a host import has
+    to arrive at, and what a silently healed or dropped hole would disagree
+    with.
+    """
+
+    object_id: str
+    file_name: str
+    sha256: str
+    solid_count: int
+    closed: bool
+    face_count: int
+    volume: float | None
+    bbox_min: tuple[float, float, float]
+    bbox_max: tuple[float, float, float]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "object_id": self.object_id,
+            "file_name": self.file_name,
+            "sha256": self.sha256,
+            "solid_count": self.solid_count,
+            "closed": self.closed,
+            "face_count": self.face_count,
+            "volume": self.volume,
+            "bbox": {"min": list(self.bbox_min), "max": list(self.bbox_max)},
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class StepImportSource:
+    """The exported STEP an import-based export reads, split by named shape."""
+
+    step_path: Path
+    step_sha256: str
+    objects: tuple[StepImportObject, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "step_file_name": self.step_path.name,
+            "step_sha256": self.step_sha256,
+            "objects": [item.to_dict() for item in self.objects],
+        }
+
+
+def work_model_workspace(speculative_root: Path, *, source_sha256: str) -> Path:
+    """A fresh speculative directory for one export attempt, under a named root.
+
+    The caller states the root - the run's own CAD export workspace, from the
+    P036 layout - and this only makes one attempt directory inside it. No path
+    is inferred from a file's neighbours, and no second workspace convention
+    is introduced.
+
+    Attempts are numbered rather than cleaned up: a previous failure keeps its
+    script, marker and partial output where they can be read, and never stands
+    in the way of the next attempt. Nothing is removed.
+    """
+
+    if not isinstance(speculative_root, Path):
+        raise TypeError("speculative_root must be pathlib.Path")
+    require_sha256(source_sha256, "source_sha256")
+    root = _strict_workspace(speculative_root) / "work-model"
+    long_path(root).mkdir(parents=True, exist_ok=True)
+    stem = source_sha256[:12]
+    attempt = 1
+    while long_path(root / f"{stem}-{attempt}").exists():
+        attempt += 1
+    workspace = root / f"{stem}-{attempt}"
+    long_path(workspace).mkdir()
+    return workspace
+
+
+def split_step_objects(
+    step_path: Path, *, destination: Path, length_unit: str
+) -> tuple[StepImportObject, ...]:
+    """Write each named shape of one exported STEP into a file of its own.
+
+    The shapes are the ones the kernel reads out of that STEP; nothing is
+    recompiled, healed or tessellated, and the same writer that produced the
+    source file writes each single-object file. Every file is then read back
+    and measured: a shape whose solids, faces, closure, volume or bounds
+    disagree with the shape it came from fails here, before any host sees it.
+
+    Identity is the STEP's own shape name. A file whose shapes are unnamed or
+    share a name is refused rather than guessed at by order or position.
+    """
+
+    if not isinstance(step_path, Path) or not isinstance(destination, Path):
+        raise TypeError("step_path and destination must be pathlib.Path")
+    if not destination.is_dir():
+        raise CadExecutionError(f"the destination directory does not exist: {destination}")
+    entries = read_step(long_path(step_path), length_unit=length_unit)
+    if not entries:
+        raise CadExecutionError(f"{step_path.name} holds no shape to import")
+    unnamed = sum(1 for entry in entries if not entry.name)
+    if unnamed:
+        raise CadExecutionError(
+            f"{step_path.name} has {unnamed} unnamed shape(s): an import binds each "
+            "file to the object id its shape is named with, and never to import order"
+        )
+    names = [entry.name for entry in entries]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise CadExecutionError(
+            f"{step_path.name} names the same shape more than once: {', '.join(duplicates)}"
+        )
+    written: list[StepImportObject] = []
+    for entry in entries:
+        object_id = str(entry.name)
+        file_name = f"{_import_file_stem(object_id)}.step"
+        target = destination / file_name
+        _strict_child(destination, target, require_exists=False)
+        if long_path(target).exists():
+            raise CadExecutionError(f"speculative import source already exists: {file_name}")
+        layer = entry.layers[0] if entry.layers else ""
+        write_step(
+            long_path(target),
+            (StepObject(object_id=object_id, shape=entry.shape, layer=layer, color=entry.color),),
+            length_unit=length_unit,
+        )
+        source_measure = measure_shape(entry.shape)
+        cold = read_step(long_path(target), length_unit=length_unit)
+        if len(cold) != 1 or cold[0].name != object_id:
+            raise CadExecutionError(
+                f"{file_name} did not read back as the one shape named {object_id}"
+            )
+        saved_measure = measure_shape(cold[0].shape)
+        _require_same_shape(object_id, source_measure, saved_measure)
+        written.append(
+            StepImportObject(
+                object_id=object_id,
+                file_name=file_name,
+                sha256=_sha256_bytes(long_path(target).read_bytes()),
+                solid_count=saved_measure.solid_count,
+                closed=saved_measure.closed,
+                face_count=saved_measure.face_count,
+                volume=saved_measure.volume,
+                bbox_min=saved_measure.bbox_min,
+                bbox_max=saved_measure.bbox_max,
+            )
+        )
+    return tuple(sorted(written, key=lambda item: item.object_id))
+
+
+def _require_file_digest(path: Path, expected: str, subject: str) -> None:
+    """The file on disk is the one whose digest was declared, or this fails."""
+
+    require_sha256(expected, f"{subject} sha256")
+    try:
+        actual = _sha256_bytes(long_path(path).read_bytes())
+    except OSError as exc:
+        raise CadExecutionError(f"{subject} cannot be read: {exc}") from exc
+    if actual != expected:
+        raise CadExecutionError(
+            f"{subject} is {actual} on disk where {expected} was declared: the file "
+            "changed after it was read, and nothing is imported from it"
+        )
+
+
+def verify_work_model_geometry(
+    model_path: Path, source: StepImportSource
+) -> tuple[dict[str, object], ...]:
+    """Read the saved document and compare each object with the shape it came from.
+
+    This is the reader's own second look, outside the host: per named object
+    it checks that the geometry is a B-rep (never a mesh), that the solids and
+    faces are the ones the STEP shape had - a healed-away opening shows up
+    here as missing faces - and that a closed source stayed closed. Volume and
+    exact placement are checked inside the host, where mass properties and
+    trimmed-surface bounds are available; an openNURBS bounding box read here
+    would include untrimmed control surfaces and could refuse a correct file.
+    It returns one row per object; a disagreement raises.
+    """
+
+    try:
+        rhino3dm = importlib.import_module("rhino3dm")
+    except ImportError as exc:  # pragma: no cover - the export itself needs it
+        raise CadExecutionError("rhino3dm is required to verify a saved work model") from exc
+    if not isinstance(source, StepImportSource):
+        raise TypeError("source must be StepImportSource")
+    model = rhino3dm.File3dm.Read(str(long_path(model_path)))
+    if model is None:
+        raise CadExecutionError(f"the saved work model cannot be read: {model_path.name}")
+    by_name: dict[str, list[object]] = {}
+    for item in model.Objects:
+        by_name.setdefault(item.Attributes.Name or "", []).append(item.Geometry)
+    rows: list[dict[str, object]] = []
+    for expected in source.objects:
+        found = by_name.get(expected.object_id, [])
+        if not found:
+            raise CadExecutionError(
+                f"{expected.object_id}: the saved work model has no object of that name"
+            )
+        solids = faces = 0
+        for geometry in found:
+            kind = type(geometry).__name__
+            if kind == "Extrusion":
+                brep = geometry.ToBrep(False)
+            elif kind == "Brep":
+                brep = geometry
+            else:
+                raise CadExecutionError(
+                    f"{expected.object_id}: the saved work model holds {kind} geometry; an "
+                    "editable work model carries B-rep surfaces, never a mesh"
+                )
+            if brep is None:
+                raise CadExecutionError(f"{expected.object_id}: saved geometry has no B-rep form")
+            faces += len(brep.Faces)
+            solids += 1 if brep.IsSolid else 0
+        if expected.closed and solids != expected.solid_count:
+            raise CadExecutionError(
+                f"{expected.object_id}: the exported shape is {expected.solid_count} closed "
+                f"solid(s); the saved work model has {solids}"
+            )
+        if faces != expected.face_count:
+            raise CadExecutionError(
+                f"{expected.object_id}: the exported shape has {expected.face_count} faces; the "
+                f"saved work model has {faces}. An opening or a face was not carried over"
+            )
+        rows.append({
+            "object_id": expected.object_id,
+            "objects": len(found),
+            "solids": solids,
+            "faces": faces,
+            "closed": bool(expected.closed and solids == expected.solid_count),
+        })
+    return tuple(rows)
+
+
+def _import_file_stem(object_id: str) -> str:
+    """A file name that stays inside the workspace and keeps the id readable."""
+
+    stem = "".join(char if (char.isalnum() or char in "-_.") else "-" for char in object_id)
+    stem = stem.strip(".-") or "object"
+    return f"{stem[:80]}@{_sha256_text(object_id)[:12]}"
+
+
+def _require_same_shape(object_id: str, source, saved) -> None:
+    """The single-object file holds the shape it was written from, or fails."""
+
+    for field in ("solid_count", "face_count", "closed"):
+        expected, actual = getattr(source, field), getattr(saved, field)
+        if expected != actual:
+            raise CadExecutionError(
+                f"{object_id}: the single-object STEP has {field}={actual!r} where the "
+                f"exported shape has {expected!r}"
+            )
+    if (source.volume is None) != (saved.volume is None):
+        raise CadExecutionError(
+            f"{object_id}: the single-object STEP {'has' if saved.volume is not None else 'has no'} "
+            "volume where the exported shape does not"
+        )
+    if source.volume is not None and saved.volume is not None:
+        scale = max(abs(source.volume), abs(saved.volume), 1e-9)
+        if abs(source.volume - saved.volume) / scale > 1e-6:
+            raise CadExecutionError(
+                f"{object_id}: the single-object STEP encloses {saved.volume!r} where the "
+                f"exported shape encloses {source.volume!r}"
+            )
+    for corner, expected, actual in (
+        ("min", source.bbox_min, saved.bbox_min),
+        ("max", source.bbox_max, saved.bbox_max),
+    ):
+        if any(abs(float(a) - float(b)) > 1e-7 for a, b in zip(expected, actual)):
+            raise CadExecutionError(
+                f"{object_id}: the single-object STEP bounds {corner} {actual} differ from "
+                f"the exported shape's {expected}"
+            )
+
+
 def prepare_rhino_three_dm_export(
     program: CompiledGeometryProgram,
     *,
@@ -640,12 +922,22 @@ def prepare_rhino_three_dm_export(
     material_colors: Mapping[str, tuple[int, int, int]] | None = None,
     patch: RhinoPatchBase | None = None,
     layer_by_component: Mapping[str, str] | None = None,
+    step_import: StepImportSource | None = None,
+    source_materials: Mapping[str, Mapping[str, object]] | None = None,
 ) -> RhinoCadExportPlan:
     """Prepare one immutable export plan in an existing explicit workspace.
 
     With ``patch`` the plan rebuilds only the selected operations on top of
     the prior document's kept objects; the readback denominator is still
     the whole program, so a patch is verified exactly like a rebuild.
+
+    With ``step_import`` the host builds nothing: it reads back the exact
+    STEP this program already exported, one named shape per file, and the
+    document is the same geometry rather than a second realization of it.
+    The denominator is still the whole program, so an imported document is
+    verified exactly like a rebuilt one. ``source_materials`` is that
+    delivery's own retained material table, per object id, and is what the
+    imported objects end up wearing.
     """
 
     if not isinstance(binding, RhinoCadProgramBinding):
@@ -700,14 +992,67 @@ def prepare_rhino_three_dm_export(
             "prior_model_path": str(prior_model),
             "prior_model_sha256": _sha256_bytes(prior_model.read_bytes()),
         }
-    translation = translate_to_rhino_python(
-        program,
-        provenance=supplied,
-        material_by_component=material_by_component,
-        material_colors=material_colors,
-        operation_subset=None if selection is None else selection.rebuilt_op_ids,
-        layer_by_component=layer_by_component,
-    )
+    if step_import is not None:
+        if patch is not None:
+            raise CadExecutionError("an imported document has no patch base to build on")
+        if not isinstance(step_import, StepImportSource):
+            raise TypeError("step_import must be StepImportSource")
+        # The digests are what binds this plan to bytes rather than to file
+        # names: a source STEP or a single-object file swapped between the
+        # split and the export is a different document, and is refused here
+        # rather than imported and then described as the one that was asked for.
+        _require_file_digest(step_import.step_path, step_import.step_sha256, "the exported STEP")
+        for item in step_import.objects:
+            source_file = workspace / item.file_name
+            _strict_child(workspace, source_file, require_exists=True)
+            _require_file_digest(source_file, item.sha256, f"the import source for {item.object_id}")
+        # The materials this delivery already wears. The caller passes the
+        # table its own export receipt retained, so an imported document keeps
+        # the materials that model was actually written with - glass included,
+        # with its transparency. Only a receipt that recorded none falls back
+        # to deriving them from the program the same way the preview did.
+        import_semantics = _json_copy(
+            expected_object_semantics(
+                program,
+                material_by_component=material_by_component,
+                layer_by_component=layer_by_component,
+            )
+        )
+        import_layer_colors = dict(
+            _resolved_layer_colors(
+                {row["layer"] for row in import_semantics["objects"].values()},
+                material_by_component=material_by_component,
+                material_colors=material_colors,
+            )
+        )
+        translation = translate_step_import_to_rhino_python(
+            program,
+            step_file_by_object={item.object_id: item.file_name for item in step_import.objects},
+            step_sha256_by_object={item.object_id: item.sha256 for item in step_import.objects},
+            object_materials=dict(source_materials) if source_materials else {
+                object_id: material.to_dict()
+                for object_id, material in _preview_materials(
+                    program,
+                    physical=tuple(sorted(import_semantics["objects"])),
+                    semantics=import_semantics,
+                    layer_colors=import_layer_colors,
+                    material_colors=material_colors,
+                ).items()
+            },
+            provenance=supplied,
+            material_by_component=material_by_component,
+            material_colors=material_colors,
+            layer_by_component=layer_by_component,
+        )
+    else:
+        translation = translate_to_rhino_python(
+            program,
+            provenance=supplied,
+            material_by_component=material_by_component,
+            material_colors=material_colors,
+            operation_subset=None if selection is None else selection.rebuilt_op_ids,
+            layer_by_component=layer_by_component,
+        )
     if translation.losses:
         raise CadExecutionError(
             "CAD translation has typed losses and cannot be exported strictly: "
@@ -720,6 +1065,14 @@ def prepare_rhino_three_dm_export(
             layer_by_component=layer_by_component,
         )
     )
+    if step_import is not None:
+        # A rebuilt document repeats an array as a block definition and its
+        # instances; an imported one holds the solids the STEP already carries,
+        # one named object per copy. The denominator states the representation
+        # this export actually delivers rather than the other one's: the
+        # objects, their names, layers, semantics and counts are all still
+        # verified, and this is where the count of each is stated.
+        semantics["blocks"] = {}
     raw_bounds = expected_object_bounds(program)
     bounds = {
         object_id: _bounds_to_rhino(value)
@@ -768,9 +1121,18 @@ def prepare_rhino_three_dm_export(
         length_unit=unit,
         readback_tolerance=tolerance,
         patch_prelude=patch_prelude,
+        source_measures=None if step_import is None else {
+            item.object_id: {
+                "solid_count": item.solid_count,
+                "face_count": item.face_count,
+                "closed": item.closed,
+                "volume": item.volume,
+            }
+            for item in step_import.objects
+        },
     )
     try:
-        with script_path.open("x", encoding="utf-8", newline="\n") as stream:
+        with long_path(script_path).open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(script)
     except FileExistsError as exc:
         raise CadExecutionError(
@@ -810,6 +1172,26 @@ def discover_rhino_executables() -> tuple[Path, ...]:
         if candidate.is_file() and not candidate.is_symlink():
             candidates.append(candidate.resolve())
     return tuple(candidates)
+
+
+def discover_powershell() -> Path | None:
+    """The shell that supervises the host, when the caller named none.
+
+    Read-only and ordinary: the two places Windows keeps its own PowerShell,
+    in the order an operator would expect. A caller's explicit executable
+    always wins; this only answers the case where nothing was configured, so
+    a machine that has Rhino and PowerShell can export without being asked to
+    fill in a path it did not choose. Nothing is launched here.
+    """
+
+    system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
+    for candidate in (
+        system_root / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "PowerShell" / "7" / "pwsh.exe",
+    ):
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate.resolve()
+    return None
 
 
 def build_rhino_com_powershell_source(
@@ -1035,6 +1417,13 @@ def _build_rhino_cleanup_powershell_command(
     )
 
 
+#: One Rhino host at a time in this process. A candidate's export and an
+#: explicitly requested export are the same machine resource, so they take
+#: the same lock here rather than each trusting its own caller's queue: a
+#: queue orders the callers it knows about, and this orders every caller.
+_RHINO_HOST_LOCK = threading.Lock()
+
+
 def execute_rhino_three_dm_export(
     plan: RhinoCadExportPlan,
     *,
@@ -1044,11 +1433,55 @@ def execute_rhino_three_dm_export(
     cleanup_runner: Callable[..., object] | None = None,
     monotonic: Callable[[], float] | None = None,
     sleeper: Callable[[float], None] | None = None,
+    host_wait_seconds: float = 0.0,
 ) -> RhinoCadExecutionReceipt:
-    """Supervise a blocking COM worker, then independently clean its Rhino."""
+    """Supervise a blocking COM worker, then independently clean its Rhino.
+
+    Only one export drives the host at a time. ``host_wait_seconds`` is how
+    long this call waits for the one already running; the default waits not
+    at all and answers ``cad_execution.host_busy`` rather than queueing
+    invisibly behind work the caller cannot see.
+    """
 
     if not isinstance(plan, RhinoCadExportPlan):
         raise TypeError("plan must be RhinoCadExportPlan")
+    wait = _positive_finite(host_wait_seconds, "host_wait_seconds") if host_wait_seconds else 0.0
+    acquired = (
+        _RHINO_HOST_LOCK.acquire(timeout=wait) if wait else _RHINO_HOST_LOCK.acquire(blocking=False)
+    )
+    if not acquired:
+        return _failure_receipt(
+            plan,
+            _powershell_executable(powershell_executable).name,
+            "cad_execution.host_busy",
+            "another export is driving this machine's Rhino; this one was not started",
+        )
+    try:
+        return _execute_rhino_three_dm_export(
+            plan,
+            powershell_executable=powershell_executable,
+            timeout_seconds=timeout_seconds,
+            runner=runner,
+            cleanup_runner=cleanup_runner,
+            monotonic=monotonic,
+            sleeper=sleeper,
+        )
+    finally:
+        _RHINO_HOST_LOCK.release()
+
+
+def _execute_rhino_three_dm_export(
+    plan: RhinoCadExportPlan,
+    *,
+    powershell_executable: Path,
+    timeout_seconds: float = 300.0,
+    runner: Callable[..., object] | None = None,
+    cleanup_runner: Callable[..., object] | None = None,
+    monotonic: Callable[[], float] | None = None,
+    sleeper: Callable[[float], None] | None = None,
+) -> RhinoCadExecutionReceipt:
+    """The supervision itself, with the host already held by the caller."""
+
     timeout = _positive_finite(timeout_seconds, "timeout_seconds")
     executable = _powershell_executable(powershell_executable)
     try:
@@ -1070,7 +1503,7 @@ def execute_rhino_three_dm_export(
             str(exc),
         )
     try:
-        current_script_sha = _sha256_bytes(plan.script_path.read_bytes())
+        current_script_sha = _sha256_bytes(long_path(plan.script_path).read_bytes())
     except OSError as exc:
         return _failure_receipt(
             plan,
@@ -1612,8 +2045,10 @@ def verify_rhino_export_readback(
     named_rows: dict[str, list[dict[str, object]]] = {}
     for row in inspection.named_object_bboxes:
         named_rows.setdefault(str(row["name"]), []).append(row)
+    expected_named_counts = dict(plan.expected_object_counts)
     if set(named_rows) != direct_ids or any(
-        len(rows) != 1 for rows in named_rows.values()
+        len(rows) != expected_named_counts.get(object_id, 1)
+        for object_id, rows in named_rows.items()
     ):
         failures.append(
             _failure(
@@ -1686,6 +2121,55 @@ def verify_rhino_export_readback(
     )
 
 
+def _saved_geometry_check(source_measures: Mapping[str, Mapping[str, object]] | None) -> tuple[str, ...]:
+    """The lines that compare the saved document with the shapes it came from.
+
+    Only an import-based export has shapes to compare against, and this is the
+    one place where the host can say what the saved geometry actually is: the
+    kernel's solid count, face count, closure and volume are checked against
+    the objects in the file that was just written, through RhinoCommon's own
+    mass properties, before the completion marker exists. A healed-away
+    opening or a solid that arrived as a surface fails the export here rather
+    than being reported as an exact work model.
+    """
+
+    if not source_measures:
+        return ()
+    return (
+        "_source_measures = json.loads("
+        + repr(json.dumps({key: dict(value) for key, value in sorted(source_measures.items())}, sort_keys=True))
+        + ")",
+        "_saved_by_name = {}",
+        "for _saved in _final_archive.Objects:",
+        "    _saved_by_name.setdefault(_saved.Attributes.Name or '', []).append(_saved.Geometry)",
+        "for _oid in sorted(_source_measures):",
+        "    _expected = _source_measures[_oid]",
+        "    _geometries = _saved_by_name.get(_oid) or []",
+        "    if not _geometries: raise Exception('saved work model has no object named ' + _oid)",
+        "    _solids = 0",
+        "    _faces = 0",
+        "    _volume = 0.0",
+        "    for _geometry in _geometries:",
+        "        if isinstance(_geometry, Rhino.Geometry.Extrusion): _geometry = _geometry.ToBrep(False)",
+        "        if not isinstance(_geometry, Rhino.Geometry.Brep):",
+        "            raise Exception(_oid + ': saved geometry is ' + type(_geometry).__name__ + ', not a B-rep')",
+        "        _faces += _geometry.Faces.Count",
+        "        if _geometry.IsSolid: _solids += 1",
+        "        _mass = Rhino.Geometry.VolumeMassProperties.Compute(_geometry)",
+        "        if _mass is not None: _volume += _mass.Volume",
+        "    if _solids != _expected['solid_count']:",
+        "        raise Exception(_oid + ': saved solids ' + str(_solids) + ' != ' + str(_expected['solid_count']))",
+        "    if _faces != _expected['face_count']:",
+        "        raise Exception(_oid + ': saved faces ' + str(_faces) + ' != ' + str(_expected['face_count']))",
+        "    if _expected['closed'] and _solids < 1:",
+        "        raise Exception(_oid + ': the exported shape is closed; the saved object is not')",
+        "    if _expected.get('volume') is not None:",
+        "        _allowed = max(abs(_expected['volume']) * 1e-6, 1e-9)",
+        "        if abs(_volume - _expected['volume']) > _allowed:",
+        "            raise Exception(_oid + ': saved volume ' + str(_volume) + ' != ' + str(_expected['volume']))",
+    )
+
+
 def _export_script(
     translated_script: str,
     *,
@@ -1695,6 +2179,7 @@ def _export_script(
     length_unit: str,
     readback_tolerance: float,
     patch_prelude: str | None = None,
+    source_measures: Mapping[str, Mapping[str, object]] | None = None,
 ) -> str:
     unit_enum = _UNIT_TO_RHINO[length_unit][0]
     mesh_tolerance = _positive_finite(
@@ -1756,16 +2241,16 @@ def _export_script(
             "_output_path = (_script_directory / _artifact_name).resolve()",
             "if _output_path.parent != _script_directory:",
             "    raise Exception('output escaped script workspace')",
-            "if _output_path.exists(): raise Exception('output exists')",
+            "if _long(_output_path).exists(): raise Exception('output exists')",
             "_raw_path = (_script_directory / (Path(_artifact_name).stem + '.archflow-raw.3dm')).resolve()",
-            "if _raw_path.parent != _script_directory or _raw_path.exists():",
+            "if _raw_path.parent != _script_directory or _long(_raw_path).exists():",
             "    raise Exception('raw output path is invalid or occupied')",
             "_write_options = Rhino.FileIO.FileWriteOptions()",
             "_write_options.SuppressDialogBoxes = True",
             "_write_options.IncludeRenderMeshes = True",
             "if not Rhino.RhinoDoc.ActiveDoc.WriteFile(str(_raw_path), _write_options):",
             "    raise Exception('raw 3dm save failed')",
-            "_archive = Rhino.FileIO.File3dm.Read(str(_raw_path))",
+            "_archive = Rhino.FileIO.File3dm.Read(str(_long(_raw_path)))",
             "if _archive is None:",
             "    raise Exception('raw 3dm readback failed inside Rhino')",
             "_archive_sources = {str(_item.Attributes.ObjectId): _item for _item in _archive.Objects}",
@@ -1799,10 +2284,11 @@ def _export_script(
             "_archive_options.SaveUserData = True",
             "if not _archive.Write(str(_output_path), _archive_options):",
             "    raise Exception('final 3dm save failed')",
-            "_final_archive = Rhino.FileIO.File3dm.Read(str(_output_path))",
+            "_final_archive = Rhino.FileIO.File3dm.Read(str(_long(_output_path)))",
             "if _final_archive is None or _final_archive.Objects.Count != _archive.Objects.Count:",
             "    raise Exception('explicit witness mesh archive count mismatch after save')",
-            "_raw_path.unlink()",
+            *_saved_geometry_check(source_measures),
+            "_long(_raw_path).unlink()",
         )
     )
     indented_body = "\n".join(
@@ -1815,12 +2301,16 @@ def _export_script(
             "from pathlib import Path",
             "import Rhino",
             "import rhinoscriptsyntax as rs",
+            *LONG_PATH_HELPER_SOURCE,
             "_script_directory = Path(__file__).resolve().parent",
             f"_marker_path = _script_directory / {completion_marker_name!r}",
             f"_completion_token = {completion_token!r}",
             "def _write_completion_marker(_payload):",
             "    _text = json.dumps(_payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))",
-            "    with _marker_path.open('x', encoding='utf-8', newline='\\n') as _stream:",
+            # The marker is the one file a failure still has to write, and it
+            # sits deepest in the workspace: like every other file call in this
+            # script it is made through the extended-length name.
+            "    with _long(_marker_path).open('x', encoding='utf-8', newline='\\n') as _stream:",
             "        _stream.write(_text)",
             "try:",
             indented_body,
@@ -1945,7 +2435,7 @@ def _read_completion_marker(
 ) -> dict[str, str] | None:
     """Return ``None`` only for the exact successful marker witness."""
 
-    if not plan.completion_marker_path.exists():
+    if not long_path(plan.completion_marker_path).exists():
         return _failure(
             "cad_execution.completion_marker_missing",
             "Rhino COM command returned without a completion marker",
@@ -1956,7 +2446,7 @@ def _read_completion_marker(
             plan.completion_marker_path,
             require_exists=True,
         )
-        marker_bytes = plan.completion_marker_path.read_bytes()
+        marker_bytes = long_path(plan.completion_marker_path).read_bytes()
     except (CadExecutionError, OSError) as exc:
         return _failure("cad_execution.completion_marker_unreadable", str(exc))
     marker_sha256 = _sha256_bytes(marker_bytes)
@@ -2028,7 +2518,7 @@ def _read_completion_marker(
 def _read_host_witness(
     plan: RhinoCadExportPlan,
 ) -> tuple[dict[str, object] | None, str | None, dict[str, str] | None]:
-    if not plan.host_witness_path.exists():
+    if not long_path(plan.host_witness_path).exists():
         return (
             None,
             None,
@@ -2039,7 +2529,7 @@ def _read_host_witness(
         )
     try:
         _strict_child(plan.workspace, plan.host_witness_path, require_exists=True)
-        witness_bytes = plan.host_witness_path.read_bytes()
+        witness_bytes = long_path(plan.host_witness_path).read_bytes()
     except (CadExecutionError, OSError) as exc:
         return (
             None,
@@ -2488,6 +2978,37 @@ def _failure_receipt(
         inspection=None,
         failures=(_failure(code, detail),),
     )
+
+
+def long_path(path: Path) -> Path:
+    """The same file, named so Windows accepts it past about 260 characters.
+
+    A run's export workspace - project, run id, stage, seat, attempt - reaches
+    that length easily, and the ordinary name then fails to open on a host
+    whose interpreter does not honour the machine's long-path setting. The
+    extended-length form is the identical file.
+
+    Where it is used is decided by what each writer and reader was actually
+    observed to accept on a real Rhino host, never by generalizing from one of
+    them: Python's own file calls and Rhino's readers (``File3dm.Read``,
+    ``FileStp.Read``) take it; ``RhinoDoc.WriteFile`` was seen to refuse it and
+    keeps the ordinary absolute name, and the ``File3dm`` archive write - which
+    real exports write through on that ordinary name - keeps it too, its
+    acceptance of the prefix never having been tested separately. Nothing
+    persisted changes either way - receipts keep the ordinary relative
+    identities.
+    """
+
+    text = os.fspath(path)
+    if os.name != "nt":
+        return Path(text)
+    extended = chr(92) * 2 + "?" + chr(92)
+    text = os.path.abspath(text)
+    if text.startswith(extended):
+        return Path(text)
+    if text.startswith(chr(92) * 2):
+        return Path(extended + "UNC" + text[1:])
+    return Path(extended + text)
 
 
 def _sha256_text(value: str) -> str:
@@ -3156,7 +3677,7 @@ def _exact_artifact(path: Path, workspace: Path, deliveries: Mapping[str, str]) 
     return {
         "format": _STEP_FORMAT,
         "relative_path": path.relative_to(workspace).as_posix(),
-        "sha256": _sha256_bytes(path.read_bytes()),
+        "sha256": _sha256_bytes(long_path(path).read_bytes()),
         "exact_brep": True,
         "carries": [
             "one named shape per physical object (name = object id)",
@@ -3178,7 +3699,7 @@ def _preview_artifact(
     artifact: dict[str, object] = {
         "format": _PREVIEW_FORMAT,
         "relative_path": path.relative_to(workspace).as_posix(),
-        "sha256": _sha256_bytes(path.read_bytes()),
+        "sha256": _sha256_bytes(long_path(path).read_bytes()),
         "exact_brep": False,
         "geometry": "render mesh tessellated from the same OCCT model as the STEP file",
         "tessellator": "BRepMesh_IncrementalMesh",
@@ -3672,9 +4193,16 @@ __all__ = [
     "OcctExecutionReceipt",
     "measure_occt_solid_pairs",
     "StepEntry",
+    "WORK_MODEL_EXPORT_PATH",
+    "StepImportObject",
+    "StepImportSource",
     "backend_identity",
     "project_occt_lines",
     "read_step",
+    "long_path",
+    "split_step_objects",
+    "work_model_workspace",
+    "verify_work_model_geometry",
     "RhinoCadExecutionReceipt",
     "RhinoCadExportIdentity",
     "RhinoCadExportPlan",

@@ -157,7 +157,12 @@
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
         "patching caller-supplied composed 3dm bytes from exact prior/current compiled programs and a native replacement preview, preserving unchanged objects and shared block/material tables with explicit unit conversion",
         "verifying source OCCT STEP shape reuse for unchanged physical objects while rebuilding changed operations and required intermediate inputs",
-        "composed replacements without explicit donor materials inherit the same source object material or a unique source component material, preserving native PBR and textures"
+        "composed replacements without explicit donor materials inherit the same source object material or a unique source component material, preserving native PBR and textures",
+        "splitting one exported STEP into a single-object STEP per named shape, each re-read and measured against the shape it was written from (split_step_objects); identity is the STEP's own shape name, never import order or position",
+        "the import-based Rhino export: the host reads those files back one at a time instead of rebuilding, the saved document is compared with the source shapes' solids, faces, closure and volume inside the host before a completion marker exists, and the delivery's own retained materials are what the imported objects wear",
+        "one numbered speculative attempt directory inside a caller-supplied export workspace (work_model_workspace), and the reader's own cold check of a saved work model (verify_work_model_geometry)",
+        "read-only discovery of the PowerShell that supervises a host export when the caller configured none (discover_powershell); an explicit executable always wins and nothing is launched by discovery",
+        "one process-wide Rhino host lock: a candidate's export and an explicitly requested work export are the same machine resource and take the same lock"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -210,7 +215,14 @@
         "OcctDrawingRegion",
         "StepEntry",
         "read_step",
-        "patch_composed_three_dm"
+        "patch_composed_three_dm",
+        "split_step_objects",
+        "StepImportObject",
+        "StepImportSource",
+        "work_model_workspace",
+        "verify_work_model_geometry",
+        "discover_powershell",
+        "WORK_MODEL_EXPORT_PATH"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -247,7 +259,10 @@
         "revolve realizes the existing axis and end-radius contract as an exact OCCT cylinder or conical frustum; its datum placement and radius rule are shared with the existing translator and bounds predictor",
         "projection is a plain value: every selected object takes part in the one visibility solve (an object outside the near/far slab is excluded, one crossing it is cut there), each polyline names its object and its kind, output is sorted and deterministic, and nothing is written",
         "sections intersect their actual B-reps with the requested plane rather than projecting bounds; material section loops connect shared B-rep vertices only, open cuts are never closed by proximity or invented edges, open surfaces and shells contribute no material region, and holes stay inside their solid's even-odd region while separate solids are filled separately",
-        "drawing origin/right/up are explicit in the CAD Z-up frame; right and up are orthonormal and right cross up faces the viewer; output coordinates and positive chord deflection share the source shape's unit; unknown, ambiguous or empty selected shapes and invalid frames fail explicitly"
+        "drawing origin/right/up are explicit in the CAD Z-up frame; right and up are orthonormal and right cross up faces the viewer; output coordinates and positive chord deflection share the source shape's unit; unknown, ambiguous or empty selected shapes and invalid frames fail explicitly",
+        "an import-based export rebuilds nothing: every object comes from the exact STEP this program already exported, each single-object file is bound to its digest in the plan and checked again in the host before it is read, and a file that changed in between is refused",
+        "an imported document is verified against the same program denominator as a rebuilt one, stated in the representation it actually delivers: no block definitions, and each named object delivered as the number of B-reps its count states",
+        "only one export drives this machine's Rhino at a time, and a caller that will not wait is told the host is busy rather than queued invisibly"
       ],
       "status": "canonical",
       "tests": [
@@ -326,7 +341,8 @@
         "the analytic per-object bounds the realization must reproduce (expected_object_bounds)",
         "applying a datum-bound base_level to profile points (lift_to_base_level)",
         "the P103 partial emission of an operation subset",
-        "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours"
+        "native Rhino object material assignment from the caller-declared material and colour maps, in addition to layer display colours",
+        "the STEP-import script: the same header, semantics tail and layer table as the program script, with each named object read from its own single-object STEP under a digest check, and the delivery's own retained material applied last so nothing overwrites it"
       ],
       "does_not_own": [
         "running the script, saving the file or verifying the readback - adapters.cad_execution",
@@ -354,7 +370,9 @@
         "expected_object_bounds",
         "lift_to_base_level",
         "CadTranslation",
-        "CadTranslationError"
+        "CadTranslationError",
+        "translate_step_import_to_rhino_python",
+        "ROOT_LAYER"
       ],
       "depends_on": [],
       "used_by": [
@@ -2366,7 +2384,8 @@
         "extent relations use compiled-predicted bounds and say so; solid_nonpenetration waits until final exports, verifies their retained receipts/STEP hashes and names, and reports true OCCT solid measurements or unchecked once in the existing seat-relation-check records; a SATISFIED stage covers its explicit required checker ids and is not proof that every architectural relation was measured",
         "the developed projection receives the actual envelope phase; the existing guard still rejects a different state or phase",
         "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production",
-        "Export observer failure never fails or repeats an export; the workflow imports no monitoring implementation"
+        "Export observer failure never fails or repeats an export; the workflow imports no monitoring implementation",
+        "an explicitly requested work-model export realizes no seat: its retained receipt is skipped when looking for a prior export to reuse or patch"
       ],
       "status": "canonical",
       "tests": [
@@ -3513,7 +3532,8 @@
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
         "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation",
         "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration",
-        "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states"
+        "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states",
+        "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3571,19 +3591,25 @@
         "POST /api/documents/{asset_sha256}/model-source",
         "POST /api/drawings/elevations",
         "generate_elevation",
-        "require_complete_model"
+        "require_complete_model",
+        "POST /api/artifacts/{sha256}/rhino-export",
+        "export_rhino_work_model"
       ],
       "depends_on": [
+        "adapters.cad_execution",
+        "adapters.cad_program",
+        "adapters.three_dm_inspector",
         "archflow.project.refs",
         "archflow.project.repository",
+        "capabilities.geometry_proposal",
+        "project.layout",
         "project.ports",
         "project.record_kinds",
         "project.refs",
         "project.repository",
-        "adapters.three_dm_inspector",
+        "runtime.drawing_elevation",
         "studio.binding",
-        "studio.shell",
-        "runtime.drawing_elevation"
+        "studio.shell"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3605,7 +3631,10 @@
         "drawing requests refuse a partial native STEP for a complete composed model; document bytes resolve the requested drawing revision and verify its retained source and artifact hashes",
         "new generated drawing registrations retain their original UTC generatedAt through cold reads and idempotent reuse; legacy and uploaded documents carry no inferred generation time",
         "GET documents without runId returns all registered project documents with each original run/revision; an omitted upload run uses studio-documents and creates no model, design Stage or canonical transition",
-        "replacement mappings never infer correspondence from filenames or drawing names, never rewrite the old source or its annotations, and require equal visible-page aspect ratios for in-place board updates"
+        "replacement mappings never infer correspondence from filenames or drawing names, never rewrite the old source or its annotations, and require equal visible-page aspect ratios for in-place board updates",
+        "a work model is bound to the run named in the request, not to the first row with those bytes: the same STEP can be exported by more than one run",
+        "an existing work model answers again only when its run, stage, program, state, source STEP digest and source receipt are all the one being asked for; a failed attempt keeps its own directory and never blocks the next one",
+        "the exact STEP and the mesh preview keep their meaning: the work model is an additional exact 3dm delivery beside them, and no preview is ever relabelled"
       ],
       "status": "canonical",
       "tests": [
@@ -4306,7 +4335,8 @@
         "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "Browser-local project/task navigation, transcript and editing-base pointers; independent mounted task views keep in-flight responses and pending exchanges in their originating task",
-        "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority"
+        "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
+        "Browser entry for the editable work model: the stage's own view tools offer it wherever the viewer is, embedded in the Hub included, bound to the exact STEP of the delivery on screen and never to the editing base, the newest run or one seat of a picture that shows several"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4412,7 +4442,8 @@
         "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations",
         "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown",
         "Tasks use only the project and provider actually bound to the connected Studio server. Task history is personal browser storage, never project authority or implicit model input; refresh does not replay model requests or reuse old continuation tokens, and tasks do not overwrite the shared editing-base preference",
-        "configured actors never fall back to the legacy token; authorization uses the authenticated actor and actual project binding; shared services reject computation before route execution; accept grants do not imply release"
+        "configured actors never fall back to the legacy token; authorization uses the authenticated actor and actual project binding; shared services reject computation before route execution; accept grants do not imply release",
+        "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery"
       ],
       "status": "canonical",
       "tests": [

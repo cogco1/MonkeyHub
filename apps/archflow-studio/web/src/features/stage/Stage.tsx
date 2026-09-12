@@ -164,6 +164,7 @@ export function Stage({
   captureState,
   capturePath,
   onCapture,
+  workModel,
   onEvidence,
 }: {
   viewportRef: RefObject<ViewportController | null>;
@@ -256,6 +257,20 @@ export function Stage({
   /** Relative project path returned after the server stores the PNG. */
   capturePath: string | null;
   onCapture(): Promise<void>;
+  /**
+   * The editable copy of the model on screen: what it would be made from, what
+   * has already been made, and how it last went. ``source`` is the exact STEP
+   * of the very delivery being viewed, or a word saying why there is not
+   * exactly one - the export never picks a seat on the architect's behalf.
+   */
+  workModel?: {
+    source: ProjectArtifactDto | null;
+    refusal: "nothing-loaded" | "not-an-export" | "several-seats" | "busy-elsewhere" | null;
+    exported: ProjectArtifactDto | null;
+    busy: boolean;
+    error: string | null;
+    onExport(): void;
+  };
   onEvidence(tab: EvidenceTab): void;
   /** Whether anything is on screen at all, as the viewer reported its source. */
   hasModel: boolean;
@@ -927,6 +942,45 @@ export function Stage({
           <button type="button" onClick={onRequestFile}>
             {t("stage.tools.open3dm")}
           </button>
+          {/* The editable copy of what is on screen. It is made from that
+              model's own exact STEP by the Rhino on this machine, so it is
+              offered only when the picture is one delivery, and the title says
+              which file - or why there is no single one to make. */}
+          {workModel && (
+            <button
+              type="button"
+              data-work-model-export
+              disabled={workModel.source === null || workModel.busy}
+              title={
+                workModel.refusal === "busy-elsewhere"
+                  ? t("stage.tools.workModelBusyElsewhere")
+                  : workModel.refusal === "several-seats"
+                  ? t("stage.tools.workModelSeveralSeats")
+                  : workModel.refusal === "not-an-export"
+                    ? t("stage.tools.workModelNotAnExport")
+                    : workModel.refusal === "nothing-loaded"
+                      ? t("stage.tools.workModelNothingLoaded")
+                      : t("stage.tools.workModelTitle", { fileName: workModel.source?.fileName ?? "" })
+              }
+              onClick={workModel.onExport}
+            >
+              {workModel.busy ? t("stage.tools.workModelBusy") : t("stage.tools.workModel")}
+            </button>
+          )}
+          {workModel?.exported?.sha256 && (
+            <a
+              className="vcard__save"
+              data-work-model-save
+              href={`/api/artifacts/${workModel.exported.sha256}/bytes`}
+              download={workModel.exported.fileName}
+              title={t("stage.versions.saveTitle", { fileName: workModel.exported.fileName })}
+            >
+              {t("stage.tools.workModelSave")}
+            </a>
+          )}
+          {workModel?.error && (
+            <p className="quiet" role="alert" data-work-model-error>{workModel.error}</p>
+          )}
           </div>}
           {measuring && (
             <div className="sketch-entry" role="group" aria-label={t("stage.measure.label")}>

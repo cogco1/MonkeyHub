@@ -9,7 +9,7 @@ import type { DesignHistoryDto, DesignStageDto, ModelSourceDto, ProjectArtifactD
 import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
-import { artifactKindKey, isServable, isViewable } from "../artifacts/artifactSelection";
+import { artifactKindKey, isServable, isViewable, isWorkModel } from "../artifacts/artifactSelection";
 
 export interface VersionExport {
   readonly artifact: ProjectArtifactDto;
@@ -171,7 +171,12 @@ export function VersionsStrip({
         // What the stage can show: the 3dm rows (a Rhino export, or the mesh
         // preview beside an exact STEP). The STEP is saved, never parsed, so
         // an in-process receipt's two files are one seat button and two saves.
-        const viewable = group.exports.filter((item) => isViewable(item.artifact));
+        // An editable copy stays out of this list for the same reason the
+        // viewer is never handed one: it is the delivery already on screen as
+        // its preview, and it is reached by saving it, not by opening it.
+        const viewable = group.exports.filter(
+          (item) => isViewable(item.artifact) && !isWorkModel(item.artifact),
+        );
         const servable = viewable.filter((item) => isServable(item.artifact));
         const saves = group.exports.filter((item) => isServable(item.artifact));
         const namedArtifact = group.exports.find(({ artifact }) => artifact.representation === "composed")?.artifact ?? viewable[0]?.artifact ?? group.exports[0]?.artifact;
@@ -256,7 +261,24 @@ export function VersionsStrip({
                   </button>
                 );
               })}
-              {developerMode && saves.map(({ artifact, seat }) => (
+              {/* An editable copy is a delivery a person asked for, so its save
+                  link is always here; the other per-seat files stay a
+                  developer's view of the run. An export that failed its
+                  readback can still leave a readable file behind - that file
+                  is not the delivery, so only a succeeded one is offered. */}
+              {saves.filter(({ artifact }) => isWorkModel(artifact) && artifact.status === "succeeded").map(({ artifact }) => (
+                <a
+                  key={`work-model-${artifact.artifactId}`}
+                  className="vcard__save"
+                  data-work-model-save
+                  href={`/api/artifacts/${artifact.sha256}/bytes`}
+                  download={artifact.fileName}
+                  title={t("stage.versions.saveTitle", { fileName: artifact.fileName })}
+                >
+                  {t("stage.tools.workModelSave")}
+                </a>
+              ))}
+              {developerMode && saves.filter(({ artifact }) => !(isWorkModel(artifact) && artifact.status === "succeeded")).map(({ artifact, seat }) => (
                 <a
                   key={`save-${artifact.artifactId}`}
                   className="vcard__save"

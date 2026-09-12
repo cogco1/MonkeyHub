@@ -54,6 +54,8 @@ from archflow.project.record_kinds import (
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
 from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, ThreeDmInspectionError
+from archflow.adapters.cad_program import ROOT_LAYER
+from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
@@ -164,6 +166,15 @@ class ArtifactRecord:
     # The committed source declared by this run's retained candidate delta.
     # Listing metadata only; continuing or accepting still verifies the state.
     source_stage_ref: str | None = None
+    # For an editable work model: the digest of the exact STEP it was imported
+    # from. It is what makes the pair readable - this file is that file, made
+    # editable - and what stops another run's identical bytes from answering
+    # for this one.
+    source_step_sha256: str | None = None
+    # And the export receipt it was made from. Not on the wire: it is how this
+    # module recognizes a work model as this delivery's own, materials and all,
+    # rather than one made from a different receipt of the same bytes.
+    source_receipt_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -679,6 +690,351 @@ def require_complete_model(record: ArtifactRecord, runner_receipt: Mapping[str, 
         raise StudioError(409, "MODEL_SOURCE_INCOMPLETE", "This native export does not establish coverage of every producing seat. Select a complete composed model or the run's complete native delivery.")
 
 
+# How long a work export waits for the one Rhino this machine has, and how
+# long the host itself is given once it starts.
+WORK_MODEL_HOST_WAIT_S = 30.0
+WORK_MODEL_TIMEOUT_S = 900.0
+
+_work_model_lock = threading.RLock()
+
+
+def export_rhino_work_model(
+    binding: ProjectBinding, settings: Any, *, run_id: str, sha256: str,
+) -> ArtifactRecord:
+    """Import one run's exact STEP into Rhino and keep the editable ``.3dm``.
+
+    The STEP is named by the run it belongs to *and* its digest: the same
+    bytes can be exported by more than one run, and the work model belongs to
+    the run whose receipt, program and base it was asked for.
+
+    Nothing is recompiled. The shapes in that STEP are split into one file per
+    named object, the supervised Rhino host reads those files back, and the
+    saved document is verified against both the program's denominator and the
+    shapes it came from. A work model that already exists for the same source
+    is answered again rather than exported twice; a failed attempt leaves its
+    own directory behind and never blocks the next one.
+    """
+
+    from archflow.adapters.cad_execution import (  # imported late: the kernel CAD adapter
+        WORK_MODEL_EXPORT_PATH, CadExecutionError, CadProgramBinding, StepImportSource,
+        discover_powershell, discover_rhino_executables, execute_rhino_three_dm_export,
+        prepare_rhino_three_dm_export, split_step_objects, verify_work_model_geometry,
+        work_model_workspace,
+    )
+    from archflow.adapters.cad_program import CadTranslationError
+    from archflow.project.refs import BranchRef
+    from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+
+    with _work_model_lock:
+        listing = list_artifacts(binding)
+        source_record = _work_model_source(listing, run_id=run_id, sha256=sha256)
+        existing = _existing_work_model(listing, source_record)
+        if existing is not None:
+            return existing
+        if not source_record.available or source_record.path is None:
+            raise _unavailable(binding, source_record)
+        powershell = settings.powershell or discover_powershell()
+        if powershell is None:
+            raise StudioError(
+                409, "RHINO_HOST_UNAVAILABLE",
+                "An editable work model is supervised by a local PowerShell, and none was "
+                "configured or found on this machine.",
+            )
+        if not discover_rhino_executables():
+            raise StudioError(
+                409, "RHINO_HOST_UNAVAILABLE",
+                "An editable work model is written by this machine's Rhino, and no "
+                "Rhino installation was found here. The exact STEP is available now.",
+            )
+        if source_record.program_ref is None:
+            raise StudioError(
+                409, "WORK_MODEL_SOURCE_UNBOUND",
+                "This export's receipt names no compiled program, so there is nothing to bind "
+                "an editable work model to.",
+            )
+        receipt = binding.repository.load_json(
+            record_ref_from_uri(source_record.receipt_ref, binding.project_id)
+        )
+        receipt_binding = _mapping(_mapping(receipt.get("identity")).get("binding"))
+        program_ref = record_ref_from_uri(source_record.program_ref, binding.project_id)
+        program = load_compiled_geometry_program(binding.repository.load_json(program_ref))
+        run = binding.load_run(run_id)
+        cad_binding = CadProgramBinding(
+            program_ref=program_ref,
+            branch=BranchRef(run=run, branch_id=source_record.branch_id, epoch=source_record.branch_epoch),
+            stage_id=source_record.stage_id,
+            program_digest=source_record.program_digest,
+            design_state_digest=source_record.design_state_digest,
+            # The program this export realized may continue an earlier one.
+            # bind_program checks the pair, so the predecessor is read off the
+            # receipt that was written for it rather than assumed absent.
+            predecessor_program_digest=_text(receipt_binding.get("predecessor_program_digest")),
+        )
+        # The export workspace is the run's own, from the P036 layout, and the
+        # attempt directory is made inside it.
+        workspace = work_model_workspace(
+            cad_workspace_path(binding.repository.layout.run(run_id).workspaces, source_record.stage_id),
+            source_sha256=sha256,
+        )
+        try:
+            objects = split_step_objects(
+                source_record.path, destination=workspace, length_unit=source_record.length_unit or "meter",
+            )
+            maps = _source_component_maps(receipt)
+            plan = prepare_rhino_three_dm_export(
+                program,
+                binding=cad_binding,
+                speculative_workspace=workspace,
+                artifact_name=f"{Path(source_record.file_name).stem}.work.3dm",
+                readback_tolerance=0.003,
+                provenance={"export_path": WORK_MODEL_EXPORT_PATH, "source_step_sha256": sha256},
+                # The layers and material declarations this model was exported
+                # with, read off its own receipt, so an editable copy keeps them.
+                layer_by_component=maps["layer_by_component"],
+                material_by_component=maps["material_by_component"],
+                material_colors=maps["material_colors"],
+                step_import=StepImportSource(
+                    step_path=source_record.path, step_sha256=sha256, objects=objects,
+                ),
+                # The material table this very export retained beside its mesh
+                # preview: the work model wears the materials this model was
+                # written with, not a second derivation of them.
+                source_materials={
+                    object_id: _mapping(value)
+                    for object_id, value in _mapping(
+                        _mapping(receipt.get("preview_artifact")).get("materials")
+                    ).items()
+                },
+            )
+        except (CadExecutionError, CadTranslationError) as exc:
+            raise StudioError(409, "WORK_MODEL_NOT_EXPORTABLE", error_sentence(str(exc))) from exc
+        _require_same_semantics(maps, plan.expected_semantics, plan.expected_layer_colors)
+        execution = execute_rhino_three_dm_export(
+            plan,
+            powershell_executable=powershell,
+            timeout_seconds=WORK_MODEL_TIMEOUT_S,
+            host_wait_seconds=WORK_MODEL_HOST_WAIT_S,
+        )
+        payload = {
+            **execution.to_dict(),
+            "export_path": WORK_MODEL_EXPORT_PATH,
+            "source_step_sha256": sha256,
+            "source_receipt_ref": source_record.receipt_ref,
+            "import_objects": [item.to_dict() for item in objects],
+        }
+        if execution.status.value == "succeeded":
+            try:
+                payload["work_model_objects"] = list(
+                    verify_work_model_geometry(plan.model_path, StepImportSource(
+                        step_path=source_record.path, step_sha256=sha256, objects=objects,
+                    ))
+                )
+            except CadExecutionError as exc:
+                raise StudioError(409, "WORK_MODEL_NOT_EXACT", error_sentence(str(exc))) from exc
+        binding.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=SEAT_RHINO_EXECUTION,
+            payload=payload,
+        )
+        if execution.status.value != "succeeded":
+            raise StudioError(
+                409, "WORK_MODEL_EXPORT_FAILED",
+                error_sentence(_work_model_failure(execution)),
+            )
+        exported = _existing_work_model(list_artifacts(binding), source_record)
+        if exported is None:  # pragma: no cover - the receipt was just retained
+            raise StudioError(
+                409, "WORK_MODEL_EXPORT_FAILED",
+                "The export reported success but its work model is not in this run's artifacts.",
+            )
+        return exported
+
+
+def _source_component_maps(receipt: Mapping[str, Any]) -> dict[str, dict]:
+    """The layers and materials this export actually wrote, per component.
+
+    Read off the receipt's own preview inspection - each object's recorded
+    layer path and its ``archflow:component`` / ``archflow:material`` user
+    text - and the preview's material table for the colours. They are the
+    same three maps the export was made with, so rebuilding the document's
+    semantics from them reproduces the layers and material declarations that
+    model already has instead of resetting it to the program's defaults.
+
+    An object whose component cannot be read, or whose component is recorded
+    with two different layers or materials, contributes nothing rather than a
+    guess; ``export_rhino_work_model`` then refuses if what it can rebuild
+    does not match what the source recorded.
+    """
+
+    inspection = _mapping(receipt.get("preview_inspection"))
+    layer_by_component: dict[str, str] = {}
+    material_by_component: dict[str, str] = {}
+    conflicting: set[str] = set()
+    for row in inspection.get("object_user_strings") or ():
+        item = _mapping(row)
+        attributes = {
+            _text(_mapping(entry).get("key")): _text(_mapping(entry).get("value"))
+            for entry in item.get("attributes") or ()
+        }
+        component = attributes.get("archflow:component")
+        layer = _text(item.get("layer_path"))
+        if component is None or "+" in component or layer is None:
+            continue
+        # A layer path is ``<category>::<components>``; the export's scheme is
+        # the category, and the historical root is the default the translator
+        # already produces, so it is left unstated rather than restated.
+        category = layer[: -len(f"::{component}")] if layer.endswith(f"::{component}") else None
+        material = attributes.get("archflow:material")
+        for table, value in (
+            (layer_by_component, None if category in (None, ROOT_LAYER) else category),
+            (material_by_component, material),
+        ):
+            if value is None:
+                continue
+            if table.setdefault(component, value) != value:
+                conflicting.add(component)
+    for component in conflicting:
+        layer_by_component.pop(component, None)
+        material_by_component.pop(component, None)
+    colors: dict[str, tuple[int, int, int]] = {}
+    materials = _mapping(_mapping(receipt.get("preview_artifact")).get("materials"))
+    for value in materials.values():
+        row = _mapping(value)
+        name, diffuse = _text(row.get("name")), row.get("diffuse")
+        if name is not None and isinstance(diffuse, list) and len(diffuse) == 3:
+            colors.setdefault(name, tuple(int(channel) for channel in diffuse))
+    layer_colors = {
+        _text(_mapping(row).get("full_path")): tuple(
+            int(channel) for channel in (_mapping(row).get("color_rgba") or ())[:3]
+        )
+        for row in inspection.get("layers") or ()
+        if len(_mapping(row).get("color_rgba") or ()) >= 3
+    }
+    # A material's logical name (the ``archflow:material`` declaration) need
+    # not be the name of the native material the preview wrote - a glazing
+    # member carries the role's own. Where the table cannot answer for the
+    # declared name, the colour that component's layer actually has in the
+    # exported model does, so a layer keeps its colour instead of falling back
+    # to the path-derived default.
+    for component, material in material_by_component.items():
+        if material in colors:
+            continue
+        layer_path = f"{layer_by_component.get(component, ROOT_LAYER)}::{component}"
+        recorded = layer_colors.get(layer_path)
+        if recorded is not None:
+            colors[material] = recorded
+    return {
+        "layer_by_component": layer_by_component,
+        "material_by_component": material_by_component,
+        "material_colors": colors,
+        "layer_colors": layer_colors,
+        "object_layers": {
+            _text(_mapping(row).get("name")): _text(_mapping(row).get("layer_path"))
+            for row in inspection.get("object_user_strings") or ()
+        },
+    }
+
+
+def _require_same_semantics(
+    maps: Mapping[str, Any], semantics: Mapping[str, Any],
+    layer_colors: Iterable[tuple[str, tuple[int, int, int]]] = (),
+) -> None:
+    """What the work model will carry must be what the source model carries."""
+
+    for layer_path, color in layer_colors:
+        recorded_color = maps.get("layer_colors", {}).get(layer_path)
+        if recorded_color is not None and tuple(color) != tuple(recorded_color):
+            raise StudioError(
+                409, "WORK_MODEL_NOT_EXPORTABLE",
+                error_sentence(
+                    f"layer {layer_path!r} is {recorded_color} in the exported model, and an "
+                    f"editable copy would make it {tuple(color)}. The export is refused rather "
+                    "than recolouring it."
+                ),
+            )
+    recorded = maps["object_layers"]
+    for object_id, row in _mapping(semantics.get("objects")).items():
+        expected = recorded.get(object_id)
+        if expected is not None and _mapping(row).get("layer") != expected:
+            raise StudioError(
+                409, "WORK_MODEL_NOT_EXPORTABLE",
+                error_sentence(
+                    f"{object_id} is on layer {expected!r} in the exported model, and an editable "
+                    f"copy would put it on {_mapping(row).get('layer')!r}. The export is refused "
+                    "rather than moving it."
+                ),
+            )
+
+
+def _work_model_source(listing: ArtifactListing, *, run_id: str, sha256: str) -> ArtifactRecord:
+    """The exact STEP of that run and digest, or a refusal naming which is wrong."""
+
+    if SHA256_HEX.match(sha256) is None:
+        raise StudioError(
+            404, "ARTIFACT_NOT_FOUND",
+            f"{sha256!r} is not an artifact digest: artifacts are addressed by the 64 "
+            "lowercase hex characters of their sha256.",
+        )
+    same_digest = [row for row in listing.artifacts if row.sha256 == sha256]
+    candidates = [row for row in same_digest if row.run_id == run_id]
+    if not candidates:
+        runs = sorted({row.run_id for row in same_digest})
+        detail = (
+            f"No artifact {sha256} belongs to run {run_id}."
+            + (f" That file is exported by {', '.join(runs)}." if runs else "")
+            + _unsearched(listing.skipped_runs)
+        )
+        raise StudioError(404, "ARTIFACT_NOT_FOUND", detail)
+    step = [row for row in candidates if row.format == FORMAT_STEP]
+    if not step:
+        raise StudioError(
+            409, "WORK_MODEL_SOURCE_NOT_EXACT",
+            "An editable work model is imported from the run's exact STEP; "
+            f"{candidates[0].file_name} is a {candidates[0].format} "
+            f"{candidates[0].representation} file.",
+        )
+    return step[0]
+
+
+def _existing_work_model(listing: ArtifactListing, source: ArtifactRecord) -> ArtifactRecord | None:
+    """The work model already exported from this exact source, if it is still there.
+
+    Matched on the run and the source digest the receipt itself recorded, so
+    another run's identical STEP never answers for this one, and a file that
+    has since gone missing is re-exported rather than reported as present.
+    """
+
+    for row in listing.artifacts:
+        if (
+            row.format == FORMAT_3DM
+            and row.representation == EXACT
+            and row.status == "succeeded"
+            and row.available
+            and row.source_step_sha256 == source.sha256
+            # Same run, same stage, same compiled program and the same exact
+            # state that program was compiled against: a work model made from
+            # another run's identical bytes, or from a different program or
+            # state, is a different delivery and is not answered with here.
+            and row.source_receipt_ref == source.receipt_ref
+            and (row.run_id, row.stage_id, row.program_ref, row.program_digest, row.design_state_digest)
+            == (source.run_id, source.stage_id, source.program_ref, source.program_digest, source.design_state_digest)
+        ):
+            return row
+    return None
+
+
+def _work_model_failure(execution: Any) -> str:
+    """The host's own reason, not a summary of it."""
+
+    for failure in execution.failures:
+        detail = failure.get("detail") if isinstance(failure, Mapping) else None
+        code = failure.get("code") if isinstance(failure, Mapping) else None
+        if detail or code:
+            return f"The Rhino work export did not finish: {code}: {detail}"
+    return "The Rhino work export did not finish, and reported no reason."
+
+
 _model_asset_lock = threading.RLock()
 
 
@@ -984,16 +1340,21 @@ def _artifacts(
 
     if receipt.get("schema") != OCCT_RECEIPT_SCHEMA:
         inspection = _mapping(receipt.get("inspection"))
-        return (
-            row(
-                Path(_text(receipt.get("artifact_relative_path")) or "").name,
-                _text(inspection.get("file_sha256")),
-                format=FORMAT_3DM,
-                representation=EXACT,
-                size_bytes=_whole(inspection.get("file_bytes")),
-                object_count=_whole(inspection.get("object_count")),
-            ),
+        native = row(
+            Path(_text(receipt.get("artifact_relative_path")) or "").name,
+            _text(inspection.get("file_sha256")),
+            format=FORMAT_3DM,
+            representation=EXACT,
+            size_bytes=_whole(inspection.get("file_bytes")),
+            object_count=_whole(inspection.get("object_count")),
         )
+        # A work model says which exact STEP it was imported from; a seat's
+        # own Rhino export says nothing there and stays as it was.
+        return (replace(
+            native,
+            source_step_sha256=_text(receipt.get("source_step_sha256")),
+            source_receipt_ref=_text(receipt.get("source_receipt_ref")),
+        ),)
 
     physical = receipt.get("physical_object_ids")
     object_count = len(physical) if isinstance(physical, list) else None

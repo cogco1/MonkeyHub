@@ -31,7 +31,7 @@ from __future__ import annotations
 from .settings import LOCAL_MODE, SHARED_PROJECT_ROLE, StudioSettings
 
 PROTOCOL_MAJOR = 2
-PROTOCOL_MINOR = 1
+PROTOCOL_MINOR = 2
 PROTOCOL = f"archflow/{PROTOCOL_MAJOR}"
 
 SERVER_NAME = "monkeyarch-api"

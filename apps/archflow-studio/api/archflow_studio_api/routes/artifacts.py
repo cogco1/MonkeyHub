@@ -10,6 +10,7 @@ from starlette.requests import Request
 
 from ..application.artifacts import (
     artifact_bytes,
+    export_rhino_work_model,
     bind_document_model_source,
     DocumentPageReplacement,
     document_bytes,
@@ -25,6 +26,7 @@ from ..transport.artifacts import (
     ModelAssetRequestDto,
     DocumentModelSourceRequestDto,
     ProjectArtifactDto,
+    RhinoWorkExportRequestDto,
     SourceDocumentDto,
     SourceDocumentListDto,
     SourceDocumentRequestDto,
@@ -120,6 +122,34 @@ def create_viewport_capture(
             bound_project(request.app.state),
             payload.run_id,
             payload.png_base64,
+        )
+    )
+
+
+@router.post(
+    "/artifacts/{sha256}/rhino-export",
+    response_model=ProjectArtifactDto,
+    response_model_by_alias=True,
+    status_code=201,
+)
+def export_artifact_work_model(
+    request: Request, sha256: str, payload: RhinoWorkExportRequestDto
+) -> ProjectArtifactDto:
+    """Make this run's exact STEP into an editable ``.3dm`` through Rhino.
+
+    Ordinary and blocking: it drives this machine's Rhino once, one export at
+    a time, and answers with the work model's own artifact row. The run is
+    named in the body because the same bytes can be exported by more than one
+    run, and this export belongs to the one that was asked for. Asking again
+    for the same source answers with the model already made.
+    """
+
+    return artifact_dto(
+        export_rhino_work_model(
+            bound_project(request.app.state),
+            request.app.state.settings,
+            run_id=payload.run_id,
+            sha256=sha256,
         )
     )
 

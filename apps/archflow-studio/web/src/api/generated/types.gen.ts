@@ -3984,6 +3984,12 @@ export type ProjectArtifactDto = {
      * what the receipt claims the geometry is: 'exact' for the delivered model (a STEP B-rep, or a Rhino export that was read back), 'preview' for a render mesh tessellated from the exact model so it can be looked at — never a NURBS or B-rep delivery
      */
     representation: string;
+    /**
+     * Sourcestepsha256
+     *
+     * for an editable work model: the sha256 of the exact STEP its geometry was imported from, so a client can show the pair as one delivery and never load the same geometry twice
+     */
+    sourceStepSha256?: string | null;
 };
 
 /**
@@ -4428,6 +4434,22 @@ export type RelationChecksDto = {
      * every declared relation was actually checked
      */
     fullyChecked: boolean;
+};
+
+/**
+ * RhinoWorkExportRequestDto
+ *
+ * Which run's export is being made editable.
+ *
+ * The digest in the path names the bytes; this names the run they belong to.
+ * The same STEP can be exported by more than one run, and a work model is
+ * bound to the run, program and base it was asked for.
+ */
+export type RhinoWorkExportRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
 };
 
 /**
@@ -6258,6 +6280,46 @@ export type CreateViewportCaptureApiCapturesPostResponses = {
 };
 
 export type CreateViewportCaptureApiCapturesPostResponse = CreateViewportCaptureApiCapturesPostResponses[keyof CreateViewportCaptureApiCapturesPostResponses];
+
+export type ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostData = {
+    body: RhinoWorkExportRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Sha256
+         */
+        sha256: string;
+    };
+    query?: never;
+    url: '/api/artifacts/{sha256}/rhino-export';
+};
+
+export type ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostError = ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostErrors[keyof ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostErrors];
+
+export type ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProjectArtifactDto;
+};
+
+export type ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostResponse = ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostResponses[keyof ExportArtifactWorkModelApiArtifactsSha256RhinoExportPostResponses];
 
 export type ReadArtifactBytesApiArtifactsSha256BytesGetData = {
     body?: never;

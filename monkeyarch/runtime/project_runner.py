@@ -638,9 +638,15 @@ def _prior_export(records_dir: Path, workspace: Path, stage_id: str, program_dig
     prior export realizes exactly this program.
     """
 
+    from archflow.adapters.cad_execution import WORK_MODEL_EXPORT_PATH
+
     for path in sorted(records_dir.glob("seat-rhino-execution-*.json"), key=lambda q: q.stat().st_mtime, reverse=True):
         payload = _load_json(path)
         binding = (payload.get("identity") or {}).get("binding") or {}
+        # A work model is an editable copy an architect asked for; it realizes
+        # no seat, so it is never reused as one or patched on top of.
+        if payload.get("export_path") == WORK_MODEL_EXPORT_PATH:
+            continue
         if payload.get("status") != "succeeded" or binding.get("stage_id") != stage_id:
             continue
         model = workspace / str(payload.get("artifact_relative_path") or "")

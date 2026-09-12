@@ -65,7 +65,7 @@ import json
 import math
 import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Sequence
 
 _SUPPORTED = {
     "planar_surface",
@@ -82,7 +82,8 @@ _SUPPORTED = {
     "curve",
 }
 
-_ROOT_LAYER = "archflow"
+ROOT_LAYER = "archflow"
+_ROOT_LAYER = ROOT_LAYER  # the historical private name, kept for existing readers
 
 # The ``archflow:*`` user-text keys the export itself writes: an object's
 # identity, its layer semantics and its inspection role. They are the one
@@ -101,6 +102,37 @@ _RESERVED_USER_TEXT: frozenset[str] = frozenset(
         "operation_ref",
         "producer_op",
     }
+)
+
+
+# Windows refuses an ordinary absolute path once it passes about 260
+# characters, and a run's export workspace - project, run id, stage, seat,
+# attempt - is often longer than that. The extended-length form names the same
+# file, and which call uses it was measured on a real Rhino 8 host rather than
+# generalized: the host's Python (whose interpreter does not honour this
+# machine's long-path setting) and Rhino's readers, File3dm.Read and
+# FileStp.Read, take it; RhinoDoc.WriteFile was seen to refuse it and keeps the
+# ordinary absolute name, and the File3dm archive write - which real exports
+# write through on the ordinary name - keeps it too, its acceptance of the
+# prefix never having been tested separately. Nothing persisted changes:
+# receipts keep the ordinary relative identities they always had.
+#
+# The prefix is spelled with ``chr(92)`` because this text is emitted into
+# another Python file, where a literal backslash would be escaped twice.
+LONG_PATH_HELPER_SOURCE: tuple[str, ...] = (
+    "import os as _os",
+    "def _long(_path):",
+    "    _text = _os.fspath(_path)",
+    "    if _os.name != 'nt':",
+    "        return Path(_text)",
+    "    _extended = chr(92) * 2 + '?' + chr(92)",
+    "    _text = _os.path.abspath(_text)",
+    "    if _text.startswith(_extended):",
+    "        return Path(_text)",
+    "    if _text.startswith(chr(92) * 2):",
+    "        return Path(_extended + 'UNC' + _text[1:])",
+    "    return Path(_extended + _text)",
+    "",
 )
 
 
@@ -401,49 +433,30 @@ def expected_object_semantics(
     }
 
 
-def translate_to_rhino_python(
+def _script_header(
     program,
+    semantics: Mapping[str, dict],
     *,
-    provenance: Mapping[str, str] | None = None,
-    material_by_component: Mapping[str, str] | None = None,
-    material_colors: Mapping[str, tuple[int, int, int]] | None = None,
-    operation_subset: Iterable[str] | None = None,
-    layer_by_component: Mapping[str, str] | None = None,
-) -> CadTranslation:
-    """Emit one deterministic, semantics-carrying rhinoscriptsyntax script.
+    provenance: Mapping[str, str] | None,
+    material_by_component: Mapping[str, str] | None,
+    material_colors: Mapping[str, tuple[int, int, int]] | None,
+) -> tuple[list[str], tuple[tuple[str, tuple[int, int, int]], ...]]:
+    """The opening every emitted script shares: layers, materials, provenance.
 
-    With ``operation_subset`` (P103 patch) only those operations are
-    emitted, in program order, and only their physical outputs are named
-    and measured; the rest of the document is the patch base's business.
-
-    With a material assignment, component layers take the material's display
-    color and objects carry both a native rendering material and the matching
-    ``archflow:material`` user text.
+    ``objects`` and ``counts`` are what the body fills in - one entry per
+    physical object - and the tail below reads them. Both the program script
+    and the STEP-import script are the same document apart from the body, so
+    a document written either way carries the same semantics and is verified
+    against the same denominator.
     """
 
-    proposal = program.proposal
-    operations = {op.op_id: op for op in proposal.operations}
-    order = list(program.operation_order)
-    physical = _physical_ids(proposal)
-    if operation_subset is not None:
-        subset = set(operation_subset)
-        unknown = sorted(subset - set(order))
-        if unknown:
-            raise ValueError(f"operation_subset names unknown operations: {unknown}")
-        order = [op_id for op_id in order if op_id in subset]
-        emitted = {out for op_id in order for out in operations[op_id].output_object_ids}
-        physical = tuple(object_id for object_id in physical if object_id in emitted)
-    semantics = expected_object_semantics(
-        program,
-        material_by_component=material_by_component,
-        layer_by_component=layer_by_component,
-    )
-    losses: list[dict] = []
     lines: list[str] = [
         "import json",
         "import math",
         "import Rhino",
         "import rhinoscriptsyntax as rs",
+        "from pathlib import Path",
+        *LONG_PATH_HELPER_SOURCE,
         "objects = {}",
         "counts = {}",
         "",
@@ -499,6 +512,301 @@ def translate_to_rhino_python(
             f"rs.SetDocumentUserText({f'archflow:{key}'!r}, {value!r})"
         )
     lines.append("")
+    return lines, layer_colors
+
+
+def _script_tail(
+    semantics: Mapping[str, dict], physical: Sequence[str], *, work_materials: bool = False
+) -> list[str]:
+    """The closing every emitted script shares: semantics, measures, report.
+
+    Whatever the body built or imported, every physical object is named,
+    put on its layer, given its user text and measured here, and the
+    document reports the same two lines the Python side reads back.
+
+    Order matters and is the point of this one loop. Assigning a material in
+    Rhino replaces an object's attributes - ``AddMaterialToObject`` modifies
+    the whole attribute set - so every material an object is going to wear is
+    applied first: the program's own, then, with ``work_materials``, the
+    material this delivery was exported with. Only then are the name, layer,
+    user text and visibility written, and they are what the readback counts.
+    An export that put a material on afterwards left two objects with no user
+    strings at all and failed on its semantic witnesses.
+    """
+
+    return [
+        "",
+        f"_physical = {list(physical)!r}",
+        "for _oid, _guids in objects.items():",
+        "    if _oid not in _physical:",
+        "        rs.DeleteObjects(_guids)",
+        "_semantic_table = json.loads("
+        + repr(json.dumps(semantics["objects"], sort_keys=True))
+        + ")",
+        "for _kept_name, _kept_guids in globals().get('_patch_kept_objects', {}).items():",
+        "    for _kept_guid in _kept_guids: _assign_native_material(_kept_guid, _semantic_table[_kept_name])",
+        "_semantics = {}",
+        "measures = {}",
+        "for _oid in _physical:",
+        "    _guids = objects.get(_oid) or []",
+        "    if not _guids:",
+        "        measures[_oid] = None",
+        "        _semantics[_oid] = None",
+        "        continue",
+        "    _meta = _semantic_table.get(_oid, {})",
+        "    for _g in _guids:",
+        "        _assign_native_material(_g, _meta)",
+        *((
+            "        _declared = _work_materials.get(_oid)",
+            "        if _declared is not None: _assign_work_material(_g, _declared)",
+        ) if work_materials else ()),
+        "        rs.ObjectName(_g, _oid)",
+        "        if _meta.get('layer'): rs.ObjectLayer(_g, _meta['layer'])",
+        "        for _k in sorted(_meta.get('user_text', {})):",
+        "            rs.SetUserText(_g, _k, _meta['user_text'][_k])",
+        "        if _meta.get('visible') is False: rs.HideObject(_g)",
+        "    _first = _guids[0]",
+        "    _keys = rs.GetUserText(_first) or []",
+        "    _semantics[_oid] = {",
+        "        'name': rs.ObjectName(_first),",
+        "        'layer': rs.ObjectLayer(_first),",
+        "        'user_text': {_k: rs.GetUserText(_first, _k) for _k in _keys},",
+        "    }",
+        "    _bb = rs.BoundingBox(_guids)",
+        "    _vol = 0.0",
+        "    for _g in _guids:",
+        "        try:",
+        "            _v = rs.SurfaceVolume(_g)",
+        "            if _v: _vol += _v[0]",
+        "        except Exception:",
+        "            pass",
+        "    measures[_oid] = {",
+        "        'bbox_min': [_bb[0].X, _bb[0].Z, _bb[0].Y],",
+        "        'bbox_max': [_bb[6].X, _bb[6].Z, _bb[6].Y],",
+        "        'volume': _vol,",
+        "        'brep_count': counts.get(_oid, len(_guids)),",
+        "    }",
+        "_blocks = {}",
+        "for _bn in (rs.BlockNames() or []):",
+        "    if _bn.startswith('archflow-family-'):",
+        "        _blocks[_bn] = rs.BlockInstanceCount(_bn)",
+        "print('CAD_MEASURES=' + json.dumps(measures))",
+        "print('SEMANTICS=' + json.dumps("
+        "{'objects': _semantics, 'blocks': _blocks}))",
+    ]
+
+
+def translate_step_import_to_rhino_python(
+    program,
+    *,
+    step_file_by_object: Mapping[str, str],
+    step_sha256_by_object: Mapping[str, str] | None = None,
+    object_materials: Mapping[str, Mapping[str, object]] | None = None,
+    provenance: Mapping[str, str] | None = None,
+    material_by_component: Mapping[str, str] | None = None,
+    material_colors: Mapping[str, tuple[int, int, int]] | None = None,
+    layer_by_component: Mapping[str, str] | None = None,
+) -> CadTranslation:
+    """Emit the script that imports one already exact STEP per physical object.
+
+    The geometry is not rebuilt: each file holds the one named shape the
+    program's own STEP export wrote, and the script reads it with Rhino's
+    STEP reader, then hands whatever objects that one read produced to
+    ``_register`` under the object id of the file it came from. A named
+    shape that arrives as several Breps stays one semantic object with
+    several objects under it; the shared tail measures and counts them, and
+    the ordinary readback compares that against the program's denominator.
+
+    Identity comes from which file was read, never from import order, a
+    bounding box or a name the reader may or may not set: Rhino's STEP
+    reader leaves ``Name`` empty, which is exactly why the files are read
+    one at a time.
+    """
+
+    semantics = expected_object_semantics(
+        program,
+        material_by_component=material_by_component,
+        layer_by_component=layer_by_component,
+    )
+    physical = _physical_ids(program.proposal)
+    missing = [object_id for object_id in physical if object_id not in step_file_by_object]
+    if missing:
+        raise CadTranslationError(
+            "the STEP export has no file for physical object(s): " + ", ".join(sorted(missing))
+        )
+    unknown = sorted(set(step_file_by_object) - set(physical))
+    if unknown:
+        raise CadTranslationError(
+            "these files name objects the program does not deliver: " + ", ".join(unknown)
+        )
+    lines, layer_colors = _script_header(
+        program,
+        semantics,
+        provenance=provenance,
+        material_by_component=material_by_component,
+        material_colors=material_colors,
+    )
+    digests = dict(step_sha256_by_object or {})
+    if object_materials:
+        unknown_materials = sorted(set(object_materials) - set(physical))
+        if unknown_materials:
+            raise CadTranslationError(
+                "materials name objects the program does not deliver: " + ", ".join(unknown_materials)
+            )
+        lines.extend([
+            # The material each object wears in this program's own delivery -
+            # the same names, colours and transparency the mesh preview of this
+            # model carries, so a work model does not arrive plain white or with
+            # its glass opaque. A material already in the document under that
+            # name is reused rather than added a second time.
+            "_work_materials = json.loads("
+            + repr(json.dumps({key: dict(value) for key, value in sorted(object_materials.items())}, sort_keys=True))
+            + ")",
+            # Two objects share a material only when the material they were
+            # delivered with is the same one: the same name with a different
+            # colour or transparency - a frame shaded per layer, say - is a
+            # different material and gets its own.
+            "_work_material_index = {}",
+            "def _assign_work_material(_g, _declared):",
+            "    _name = _declared['name']",
+            "    _key = json.dumps(_declared, sort_keys=True)",
+            "    _index = _work_material_index.get(_key)",
+            "    if _index is None:",
+            "        rs.ObjectMaterialIndex(_g, -1)",
+            "        _index = rs.AddMaterialToObject(_g)",
+            "        if _index is None or _index < 0: raise Exception('material failed: ' + _name)",
+            "        rs.MaterialName(_index, _name)",
+            "        _work_material_index[_key] = _index",
+            "    else:",
+            "        rs.ObjectMaterialIndex(_g, _index)",
+            "    rs.MaterialColor(_index, tuple(_declared['diffuse']))",
+            "    _material = Rhino.RhinoDoc.ActiveDoc.Materials[_index]",
+            "    _material.Transparency = _declared.get('transparency', 0.0)",
+            "    if _material.IsPhysicallyBased:",
+            "        _rgb = _declared['diffuse']",
+            "        _material.PhysicallyBased.BaseColor = Rhino.Display.Color4f(_rgb[0] / 255.0, _rgb[1] / 255.0, _rgb[2] / 255.0, 1.0)",
+            "        _material.PhysicallyBased.Opacity = 1.0 - _declared.get('transparency', 0.0)",
+            "    _material.CommitChanges()",
+            "    rs.ObjectMaterialSource(_g, 1)",
+            "",
+        ])
+    lines.extend([
+        "import hashlib",
+        "_import_options = Rhino.FileIO.FileStpReadOptions()",
+        "def _import_one(object_id, file_name, file_sha256):",
+        "    _document = Rhino.RhinoDoc.ActiveDoc",
+        "    _path = _long(_script_directory / file_name)",
+        "    if not _path.is_file(): raise Exception('import source missing: ' + file_name)",
+        # The bytes are checked here, in the host, right before they are read:
+        # the file the script imports is the one the plan measured, or nothing
+        # is imported from it.
+        "    _actual = hashlib.sha256(_path.read_bytes()).hexdigest()",
+        "    if file_sha256 and _actual != file_sha256:",
+        "        raise Exception('import source changed: ' + file_name + ' is ' + _actual)",
+        # Each file is read into a document of its own, and only the geometry
+        # it produced is brought over. A STEP read carries its own layer table
+        # with it - a stray empty layer literally named ``archflow::portico``
+        # beside the real child of that name - and the delivered document is
+        # the program's, so that table never enters it. The layer, name, user
+        # text and material every object ends up with are the ones the shared
+        # tail assigns from the program's own semantics.
+        "    _source = Rhino.RhinoDoc.CreateHeadless(None)",
+        "    try:",
+        # Units first, before anything is read: a headless document starts in
+        # millimetres, and reading a metre STEP into it would arrive a
+        # thousand times too large. ``False`` sets the unit without scaling,
+        # so the geometry keeps the one conversion this export already made.
+        "        _source.AdjustModelUnitSystem(_document.ModelUnitSystem, False)",
+        "        if not Rhino.FileIO.FileStp.Read(str(_path), _source, _import_options):",
+        "            raise Exception('STEP import failed: ' + file_name)",
+        "        _added = []",
+        "        for _object in list(_source.Objects):",
+        "            _geometry = _object.Geometry",
+        "            if _geometry is None: continue",
+        "            _attributes = Rhino.DocObjects.ObjectAttributes()",
+        "            if isinstance(_geometry, Rhino.Geometry.Brep):",
+        "                _guid = _document.Objects.AddBrep(_geometry, _attributes)",
+        "            elif isinstance(_geometry, Rhino.Geometry.Extrusion):",
+        "                _guid = _document.Objects.AddExtrusion(_geometry, _attributes)",
+        "            else:",
+        "                _guid = _document.Objects.Add(_geometry, _attributes)",
+        "            if str(_guid) == '00000000-0000-0000-0000-000000000000':",
+        "                raise Exception('imported geometry could not be added: ' + file_name)",
+        "            _added.append(str(_guid))",
+        "    finally:",
+        # The temporary document is this script's own; the architect's active
+        # document is never one of these.
+        "        _source.Dispose()",
+        # One named shape can arrive as several B-reps; they all belong to this
+        # one object, and the count is what actually came over.
+        "    if not _added: raise Exception('STEP import added no object: ' + file_name)",
+        "    _register(object_id, _added)",
+        "    counts[object_id] = len(_added)",
+        "",
+    ])
+    for object_id in physical:
+        lines.append(
+            f"_import_one({object_id!r}, {step_file_by_object[object_id]!r}, "
+            f"{digests.get(object_id, '')!r})"
+        )
+    # The tail applies this delivery's own material right after the program's,
+    # and before any metadata is written: the retained material still has the
+    # last word on what the object wears, and the name, layer and user text
+    # written after it survive.
+    lines.extend(_script_tail(semantics, physical, work_materials=bool(object_materials)))
+    return CadTranslation(
+        script="\n".join(lines),
+        physical_object_ids=tuple(physical),
+        losses=(),
+        layer_colors=layer_colors,
+    )
+
+
+def translate_to_rhino_python(
+    program,
+    *,
+    provenance: Mapping[str, str] | None = None,
+    material_by_component: Mapping[str, str] | None = None,
+    material_colors: Mapping[str, tuple[int, int, int]] | None = None,
+    operation_subset: Iterable[str] | None = None,
+    layer_by_component: Mapping[str, str] | None = None,
+) -> CadTranslation:
+    """Emit one deterministic, semantics-carrying rhinoscriptsyntax script.
+
+    With ``operation_subset`` (P103 patch) only those operations are
+    emitted, in program order, and only their physical outputs are named
+    and measured; the rest of the document is the patch base's business.
+
+    With a material assignment, component layers take the material's display
+    color and objects carry both a native rendering material and the matching
+    ``archflow:material`` user text.
+    """
+
+    proposal = program.proposal
+    operations = {op.op_id: op for op in proposal.operations}
+    order = list(program.operation_order)
+    physical = _physical_ids(proposal)
+    if operation_subset is not None:
+        subset = set(operation_subset)
+        unknown = sorted(subset - set(order))
+        if unknown:
+            raise ValueError(f"operation_subset names unknown operations: {unknown}")
+        order = [op_id for op_id in order if op_id in subset]
+        emitted = {out for op_id in order for out in operations[op_id].output_object_ids}
+        physical = tuple(object_id for object_id in physical if object_id in emitted)
+    semantics = expected_object_semantics(
+        program,
+        material_by_component=material_by_component,
+        layer_by_component=layer_by_component,
+    )
+    losses: list[dict] = []
+    lines, layer_colors = _script_header(
+        program,
+        semantics,
+        provenance=provenance,
+        material_by_component=material_by_component,
+        material_colors=material_colors,
+    )
     for op_id in order:
         operation = operations[op_id]
         kind = operation.kind.value
@@ -727,64 +1035,7 @@ def translate_to_rhino_python(
                 f"_register({out!r}, "
                 f"[rs.CopyObject(_g) for _g in objects[{ins[0]!r}]])"
             )
-    lines.extend(
-        [
-            "",
-            f"_physical = {list(physical)!r}",
-            "for _oid, _guids in objects.items():",
-            "    if _oid not in _physical:",
-            "        rs.DeleteObjects(_guids)",
-            "_semantic_table = json.loads("
-            + repr(json.dumps(semantics["objects"], sort_keys=True))
-            + ")",
-            "for _kept_name, _kept_guids in globals().get('_patch_kept_objects', {}).items():",
-            "    for _kept_guid in _kept_guids: _assign_native_material(_kept_guid, _semantic_table[_kept_name])",
-            "_semantics = {}",
-            "measures = {}",
-            "for _oid in _physical:",
-            "    _guids = objects.get(_oid) or []",
-            "    if not _guids:",
-            "        measures[_oid] = None",
-            "        _semantics[_oid] = None",
-            "        continue",
-            "    _meta = _semantic_table.get(_oid, {})",
-            "    for _g in _guids:",
-            "        _assign_native_material(_g, _meta)",
-            "        rs.ObjectName(_g, _oid)",
-            "        if _meta.get('layer'): rs.ObjectLayer(_g, _meta['layer'])",
-            "        for _k in sorted(_meta.get('user_text', {})):",
-            "            rs.SetUserText(_g, _k, _meta['user_text'][_k])",
-            "        if _meta.get('visible') is False: rs.HideObject(_g)",
-            "    _first = _guids[0]",
-            "    _keys = rs.GetUserText(_first) or []",
-            "    _semantics[_oid] = {",
-            "        'name': rs.ObjectName(_first),",
-            "        'layer': rs.ObjectLayer(_first),",
-            "        'user_text': {_k: rs.GetUserText(_first, _k) for _k in _keys},",
-            "    }",
-            "    _bb = rs.BoundingBox(_guids)",
-            "    _vol = 0.0",
-            "    for _g in _guids:",
-            "        try:",
-            "            _v = rs.SurfaceVolume(_g)",
-            "            if _v: _vol += _v[0]",
-            "        except Exception:",
-            "            pass",
-            "    measures[_oid] = {",
-            "        'bbox_min': [_bb[0].X, _bb[0].Z, _bb[0].Y],",
-            "        'bbox_max': [_bb[6].X, _bb[6].Z, _bb[6].Y],",
-            "        'volume': _vol,",
-            "        'brep_count': counts.get(_oid, len(_guids)),",
-            "    }",
-            "_blocks = {}",
-            "for _bn in (rs.BlockNames() or []):",
-            "    if _bn.startswith('archflow-family-'):",
-            "        _blocks[_bn] = rs.BlockInstanceCount(_bn)",
-            "print('CAD_MEASURES=' + json.dumps(measures))",
-            "print('SEMANTICS=' + json.dumps("
-            "{'objects': _semantics, 'blocks': _blocks}))",
-        ]
-    )
+    lines.extend(_script_tail(semantics, physical))
     return CadTranslation(
         script="\n".join(lines),
         physical_object_ids=physical,

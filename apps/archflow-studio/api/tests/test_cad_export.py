@@ -1248,5 +1248,130 @@ class WholeAssemblyCandidateTests(OcctCandidateTestCase):
             )
 
 
+# The real plan builder, kept from before ``no_rhino`` replaces it: an
+# ordinary candidate must never reach Rhino, and an explicitly requested work
+# model is the one caller that legitimately prepares a host export.
+_PREPARE_WORK_MODEL = cad_execution.prepare_rhino_three_dm_export
+
+
+class _CapturedHost:
+    """Stands in for this machine's Rhino and keeps the plan it was handed."""
+
+    def __init__(self) -> None:
+        self.plans: list[object] = []
+
+    def __call__(self, plan, **options):
+        self.plans.append(plan)
+        return _HostFailure(plan)
+
+
+class _HostFailure:
+    """What a host that did not finish answers with."""
+
+    def __init__(self, plan) -> None:
+        self.status = mock.Mock(value="failed")
+        self.failures = ({"code": "cad_execution.process_error", "detail": "no Rhino on this machine"},)
+        self._plan = plan
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": "RhinoCadExecutionReceipt@4",
+            "status": "failed",
+            "readback_verified": False,
+            "artifact_relative_path": self._plan.model_path.name,
+            "failures": [dict(item) for item in self.failures],
+        }
+
+
+@NEEDS_OCCT
+class RhinoWorkModelExportTests(OcctCandidateTestCase):
+    """The real path from an exported STEP to the host, with only the host stubbed.
+
+    Everything before the host runs for real: the run's own receipt, its
+    compiled program, the P036 binding that program is checked against, the
+    per-object STEP split and the prepared plan. Only the Rhino process itself
+    is stood in for, because this machine has none.
+    """
+
+    def open_host_client(self) -> tuple[TestClient, _CapturedHost]:
+        settings = StudioSettings(
+            project_dir=self.root / PROJECT_ID, powershell=Path(shutil.which("powershell") or "powershell.exe"),
+        )
+        return self.open_client(settings), _CapturedHost()
+
+    def test_the_host_is_handed_a_prepared_plan_and_a_failure_can_be_retried(self) -> None:
+        accepted, job = self.run_candidate(self.client, "set height to 4.35", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        run_id = accepted["candidateId"]
+        rows = [row for row in self.client.get("/api/artifacts").json()["artifacts"] if row["runId"] == run_id]
+        exact, preview = self.split(rows)
+        self.assertEqual(exact["format"], "step")
+
+        client, host = self.open_host_client()
+        with mock.patch.object(cad_execution, "prepare_rhino_three_dm_export", _PREPARE_WORK_MODEL), \
+             mock.patch.object(cad_execution, "execute_rhino_three_dm_export", host), \
+             mock.patch.object(cad_execution, "discover_rhino_executables", return_value=(Path("Rhino.exe"),)):
+            response = client.post(
+                f"/api/artifacts/{exact['sha256']}/rhino-export", json={"runId": run_id},
+            )
+
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json()["code"], "WORK_MODEL_EXPORT_FAILED")
+            self.assertIn("no Rhino on this machine", response.json()["detail"])
+            self.assertEqual(len(host.plans), 1, "the request must reach the host with a plan")
+
+            plan = host.plans[0]
+            self.assertTrue(plan.model_path.name.endswith(".work.3dm"), plan.model_path.name)
+            script = plan.script_path.read_text(encoding="utf-8")
+            self.assertIn("Rhino.FileIO.FileStp.Read", script)
+            # Every physical object of the run's own program is imported from a
+            # file that exists beside the plan, under its own digest.
+            self.assertEqual(sorted(plan.expected_semantics["objects"]), sorted(plan.physical_object_ids))
+            for object_id in plan.physical_object_ids:
+                self.assertIn(f"_import_one({object_id!r}, ", script)
+            sources = sorted(plan.workspace.glob("*.step"))
+            self.assertEqual(len(sources), len(plan.physical_object_ids), sources)
+            for source in sources:
+                self.assertIn(hashlib.sha256(source.read_bytes()).hexdigest(), script)
+            self.assertIn(f"'archflow:source_step_sha256', '{exact['sha256']}'", script)
+
+            # The failure is retained, the exact STEP is untouched, and the
+            # work model is not claimed to exist.
+            listing = client.get("/api/artifacts").json()["artifacts"]
+            still_there = [row for row in listing if row["sha256"] == exact["sha256"]]
+            self.assertEqual(len(still_there), 1, still_there)
+            self.assertIs(still_there[0]["available"], True)
+            self.assertEqual(
+                [row for row in listing if row["fileName"].endswith(".work.3dm") and row["available"]], [],
+            )
+
+            # Asking again is not blocked by the attempt that failed: it runs
+            # in its own directory and reaches the host a second time.
+            retry = client.post(
+                f"/api/artifacts/{exact['sha256']}/rhino-export", json={"runId": run_id},
+            )
+            self.assertEqual(retry.status_code, 409, retry.text)
+            self.assertEqual(len(host.plans), 2)
+            self.assertNotEqual(host.plans[0].workspace, host.plans[1].workspace)
+
+    def test_a_preview_of_the_same_run_is_not_an_export_source(self) -> None:
+        accepted, job = self.run_candidate(self.client, "set height to 4.35", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        run_id = accepted["candidateId"]
+        rows = [row for row in self.client.get("/api/artifacts").json()["artifacts"] if row["runId"] == run_id]
+        _, preview = self.split(rows)
+
+        client, host = self.open_host_client()
+        with mock.patch.object(cad_execution, "execute_rhino_three_dm_export", host), \
+             mock.patch.object(cad_execution, "discover_rhino_executables", return_value=(Path("Rhino.exe"),)):
+            response = client.post(
+                f"/api/artifacts/{preview['sha256']}/rhino-export", json={"runId": run_id},
+            )
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "WORK_MODEL_SOURCE_NOT_EXACT")
+        self.assertEqual(host.plans, [], "a mesh preview never reaches the host")
+
+
 if __name__ == "__main__":
     unittest.main()
