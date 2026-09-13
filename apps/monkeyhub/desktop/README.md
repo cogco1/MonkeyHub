@@ -109,7 +109,18 @@ occupied-port refusal, spawn failure, child crash, stdin/EOF shutdown, operation
 drain, independent-root isolation, reopen and bounded child-window origins.
 Tests use disposable source and runtime directories plus a small Python child;
 set `MONKEYARCH_TEST_PYTHON` when `python` is not on the test runner's PATH.
-The package's real Windows smoke tests separately exercise the native window
-and actual Hub. Full distribution and clean-machine acceptance, plus root
-restart/recovery, remain subsequent issue #21 phases. Local modeling drafts and
+The Windows workflow builds the complete ZIP through `package_monkeyapps.py
+--desktop`, checks its checksum and runs the existing installer in a private
+directory. Native lifecycle tests then run with the installed embedded Python
+and the EXE's default paths; their child environment has only Windows tools on
+PATH, with no developer Python/Node, virtual environment or Vite dependency.
+The existing P036 test fixture is created outside the application; it is test
+input, not an application import from the development checkout. Reinstallation
+between close and reopen must preserve its retained bytes and user settings.
+The package manifest identifies Node/ACP versions, Python dependency lock and
+frontend asset hashes alongside the bound desktop/source version.
+
+This is an isolated environment on the Windows runner, which already supplies
+WebView2; it is not a second clean user machine. Clean-machine acceptance and root
+restart/recovery remain subsequent issue #21 work. Local modeling drafts and
 undo belong to the modeling workspace; the shell does not recover unsynced edits.

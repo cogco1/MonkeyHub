@@ -343,6 +343,29 @@ def build_desktop(source: Path, bundle: Path, commit: str, cargo: Path,
     }
 
 
+def runtime_inventory(source: Path, bundle: Path) -> dict[str, object]:
+    """Describe actual shipped runtimes/assets in the existing build manifest."""
+    adapter = json.loads((bundle / "apps/monkeyhub/node_modules/@agentclientprotocol/codex-acp/package.json").read_text(encoding="utf-8"))
+    return {
+        "nodeVersion": run([str(bundle / "_runtime/node/node.exe"), "--version"], capture=True),
+        "pythonRequirements": {
+            "path": "_runtime/requirements-lock.txt",
+            "sha256": sha256(bundle / "_runtime/requirements-lock.txt"),
+        },
+        "acpAdapter": {
+            "name": adapter["name"], "version": adapter["version"],
+            "packageLockSha256": sha256(source / "apps/monkeyhub/package-lock.json"),
+        },
+        "frontends": {name: {
+            "packageLockSha256": sha256(source / f"apps/{name}/web/package-lock.json"),
+            "files": {path.relative_to(bundle).as_posix(): sha256(path)
+                      for path in sorted((bundle / f"apps/{name}/web/dist").rglob("*")) if path.is_file()},
+        } for name in ("monkeyhub", "archflow-studio")},
+        "externalDependencies": ["Microsoft Edge WebView2 (desktop)", "Codex or Claude CLI and provider credentials",
+                                 "Rhino/Blender when that backend is selected"],
+    }
+
+
 def package(source_root: Path, source_ref: str, staging: Path, output: Path,
             cache: Path, node: Path, npm_cli: Path,
             monkeyfab_source: Path | None = None, monkeyfab_ref: str | None = None,
@@ -403,6 +426,7 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
         **({"monkeyFabCommit": fab_commit} if fab_commit else {}),
         **({"desktop": desktop_info} if desktop_info else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
+        "runtimeInventory": runtime_inventory(source, bundle),
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     zip_path = build / f"{bundle.name}-candidate.zip"
     with zipfile.ZipFile(zip_path, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
