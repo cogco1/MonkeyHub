@@ -286,6 +286,17 @@
       "kind": "adapter_workspace",
       "owner": "adapters.cad_execution",
       "reason": "Exclusively writes the Blender transport plan into the explicit speculative workspace; a dedicated worker saves the .blend there and a fresh process reads it. Only the existing runner persists the native receipt through P036."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "function": "_runtime_lease",
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
+      "kind": "runtime_lock",
+      "owner": "hub.shell",
+      "reason": "Holds one OS file lock under the explicit nonproject Hub runtime root across CLI startup and managed worker drain; browser and desktop cannot concurrently rewrite the same Hub chats/config. The lock contains no project state and is released when the actual Hub exits."
     }
   ],
   "forbidden_layer_imports": [

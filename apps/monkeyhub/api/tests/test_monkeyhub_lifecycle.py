@@ -417,6 +417,20 @@ class HubApiLifecycleTests(LocalHubCase):
 
 
 class HubCliLifecycleTests(LocalHubCase):
+    def assert_runtime_in_use(self):
+        # Ordinary browser/dev CLI and the desktop-managed CLI both enter main.
+        # A second port cannot bypass the runtime directory's real lifetime.
+        other_port = free_ports(1)[0]
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "apps/monkeyhub/run.py"),
+             "--runtime-root", str(self.runtime), "--port", str(other_port), "--no-browser"],
+            cwd=self.root, input=b"", stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=15, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Another Hub is using runtime directory", result.stdout.decode("utf-8", errors="replace"))
+        self.assertFalse(port_open(other_port))
+
     def test_cli_stop_and_eof_wait_for_an_accepted_monitor_request(self):
         for stop_mode in ("stop", "eof"):
             with self.subTest(stop_mode=stop_mode):
@@ -441,6 +455,7 @@ class HubCliLifecycleTests(LocalHubCase):
                             except OSError:
                                 return None
                         health = wait_for(ready, "The isolated CLI Hub did not become ready")
+                        self.assert_runtime_in_use()
                         self.assertEqual(health["managedInstanceId"], instance_id)
                         self.assertIn(child.pid, (health["processId"], health["parentProcessId"]))
                         runtime_stream = build_opener(ProxyHandler({})).open(self.base_url + "/api/runtime/events", timeout=5)
@@ -472,6 +487,7 @@ class HubCliLifecycleTests(LocalHubCase):
                             child.stdin.close()
                         wait_for(lambda: not port_open(self.monitor_port), "Monitor kept accepting connections after Hub shutdown")
                         self.assertIsNone(child.poll(), "Hub exited before the accepted Monitor request finished")
+                        self.assert_runtime_in_use()
                         pending.sendall(body)
                         with HTTPResponse(pending) as response:
                             response.begin()

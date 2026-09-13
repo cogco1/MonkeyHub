@@ -5880,7 +5880,8 @@
         "Runtime records are in-process observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
         "An operation id cannot bind a different request; duplicate requests and worker recovery do not replay mutations. Hub cold startup reconstructs retained outcomes; pre-admission requests with no retained record are not durable jobs",
         "A Hub-assigned candidate run identity is bound to the managed Studio instance before submission; any existing retained run prevents executing that identity again",
-        "Desktop exposes no arbitrary WebView command bridge, never adopts a port occupant, and waits for its owned Hub to drain; installation assets and disposable WebView cache are separate from P036 project data"
+        "Desktop exposes no arbitrary WebView command bridge, never adopts a port occupant, and waits for its owned Hub to drain; installation assets and disposable WebView cache are separate from P036 project data",
+        "The actual Hub CLI holds runtime/hub.lock until server and owned workers finish draining; browser and desktop entrypoints cannot concurrently load/save the same Hub runtime directory"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",

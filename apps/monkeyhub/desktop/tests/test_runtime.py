@@ -3,8 +3,9 @@
 Build the production web clients and desktop EXE from this checkout, then set
 MONKEYARCH_DESKTOP_EXE to its absolute path and run this file with unittest or
 pytest. The Python interpreter running the tests supplies the Hub dependencies.
-These checks observe a native window, identity-verified HTTP and process exit;
-they do not claim WebView rendering or interactive modeling acceptance.
+These checks observe a native window, completed WebView navigation,
+identity-verified HTTP and process exit; they do not claim visual rendering or
+interactive modeling acceptance.
 """
 
 from contextlib import ExitStack
@@ -33,6 +34,7 @@ ROOT = Path(__file__).resolve().parents[4]
 EXE = os.environ.get("MONKEYARCH_DESKTOP_EXE")
 START = re.compile(r"event=start pid=(\d+) url=(\S+) instance=(\S+) source=([0-9a-f]{40})")
 STATE = re.compile(r"event=state state=(\w+) detail=(.*)")
+PAGE_LOADED = re.compile(r"event=page-loaded url=(\S+)")
 
 
 def wait_for(check, message, timeout=45):
@@ -249,7 +251,8 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.assertEqual(health["serverVersion"], "0.1.0")
         self.assertEqual(health["managedInstanceId"], self.instance)
         self.assertEqual(health["sourceRevision"], self.revision)
-        self.assertIn(self.root_pid, (health["processId"], health["parentProcessId"]))
+        self.assertEqual(health["processId"], self.root_pid)
+        self.assertEqual(health["parentProcessId"], self.shell.pid)
         self.hub_pid = health["processId"]
         self.pids = {self.root_pid, self.hub_pid}
         for pid in self.pids:
@@ -257,6 +260,8 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.ports = {urlsplit(self.url).port}
         wait_for(lambda: any(title == "MonkeyArch" for _, title in self.native.windows(self.shell.pid)),
                  "The ready EXE did not expose its native MonkeyArch window")
+        wait_for(lambda: self.url in PAGE_LOADED.findall(self.log_text()),
+                 lambda: f"The native WebView did not finish loading the verified Hub root page: {self.log_text()}")
         self.assertEqual(request(self.url, raw=True), (ROOT / "apps/monkeyhub/web/dist/index.html").read_bytes())
 
     def app_ready(self, app_id):
@@ -355,8 +360,17 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.wait_state("failed")
         self.assertNotIn("ready", self.states())
         self.assertIn(str(server.server_port), self.log_text())
-        wait_for(lambda: any("启动失败" in title for _, title in self.native.windows(self.shell.pid)),
+        # The root may fail its bind before the host reads the foreign health.
+        # Both routes must produce a concrete diagnostic without loading it.
+        failure_titles = {
+            "MonkeyArch · 启动失败", "MonkeyArch · 运行时身份验证失败", "MonkeyArch · 运行时已退出",
+        }
+        wait_for(lambda: any(title in failure_titles for _, title in self.native.windows(self.shell.pid)),
                  "Occupied-port failure did not appear in the native window title")
+        failure_details = "\n".join(match.group(2) for match in STATE.finditer(self.log_text())
+                                    if match.group(1) == "failed")
+        self.assertRegex(failure_details,
+                         r"Invalid Hub health JSON|Hub (?:health/protocol|instance) mismatch|本地运行时意外退出|Cannot start Hub")
         self.assertEqual(request(unrelated)["service"], "unrelated-test-service")
         self.native.close_window(self.shell.pid)
         self.shell.wait(timeout=40)

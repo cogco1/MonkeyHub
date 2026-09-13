@@ -31,7 +31,7 @@ jobs:
           key: windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}
       - name: Test host boundaries
         working-directory: apps/monkeyhub/desktop
-        run: cargo test --locked
+        run: cargo test --locked --release
       - name: Build native window
         working-directory: apps/monkeyhub/desktop
         run: cargo build --locked --release
@@ -41,6 +41,35 @@ jobs:
           name: MonkeyArch-desktop-${{ github.event.pull_request.head.sha || github.sha }}
           path: apps/monkeyhub/desktop/target/release/MonkeyArch.exe
           if-no-files-found: error
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Runtime dependencies
+        run: >-
+          python -m pip install -e ".[cad-occt]"
+          -r apps/archflow-studio/api/requirements.txt
+          -r apps/monkeyhub/api/requirements.txt
+          httpx2
+      - name: Build existing web surfaces
+        shell: pwsh
+        run: |
+          foreach ($web in @('apps/monkeyhub/web', 'apps/archflow-studio/web')) {
+            Push-Location $web
+            npm ci --no-audit --no-fund
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            npm run build
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            Pop-Location
+          }
+      - name: Native lifecycle and isolated project restart
+        shell: pwsh
+        run: |
+          $env:MONKEYARCH_DESKTOP_EXE = Join-Path $PWD 'apps/monkeyhub/desktop/target/release/MonkeyArch.exe'
+          $env:PYTHONUTF8 = '1'
+          python -m unittest discover -s apps/monkeyhub/desktop/tests -p test_runtime.py -v
       - uses: actions/cache/save@v4
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:

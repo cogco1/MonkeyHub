@@ -515,7 +515,9 @@
             "governance/module_registry.json",
             "governance/work_registry.json",
             "docs/SYSTEM_MAP.md",
-            "docs/mapping/planning/P115-capability-consolidation.md"
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py"
           ],
           "depends_on": []
         }
