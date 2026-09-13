@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'apps/monkeyhub/desktop/**'
+      - 'apps/monkeyhub/api/**'
       - 'tools/package_monkeyapps.py'
       - '.github/workflows/desktop.yml'
 
@@ -28,10 +29,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             apps/monkeyhub/desktop/target
-          key: windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}
-      - name: Test host boundaries
-        working-directory: apps/monkeyhub/desktop
-        run: cargo test --locked --release
+          key: windows-desktop-release-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            windows-desktop-release-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}-
+            windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}
       - name: Build native window
         working-directory: apps/monkeyhub/desktop
         run: cargo build --locked --release
@@ -41,6 +42,9 @@ jobs:
           name: MonkeyArch-desktop-${{ github.event.pull_request.head.sha || github.sha }}
           path: apps/monkeyhub/desktop/target/release/MonkeyArch.exe
           if-no-files-found: error
+      - name: Test host boundaries
+        working-directory: apps/monkeyhub/desktop
+        run: cargo test --locked --release
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -77,4 +81,4 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             apps/monkeyhub/desktop/target
-          key: windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}
+          key: windows-desktop-release-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}-${{ github.sha }}

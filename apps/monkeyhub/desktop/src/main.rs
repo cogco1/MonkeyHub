@@ -190,15 +190,18 @@ fn supervise(
                 if quitting {
                     log.state("stopped", "Owned Hub exited after shutdown");
                 } else if !failed {
+                    let output = match log.tail() {
+                        Ok(tail) if !tail.is_empty() => format!("\n\n运行时最后输出：\n{tail}"),
+                        Ok(_) => String::new(),
+                        Err(error) => format!("\n\n无法读取日志末尾：{error}"),
+                    };
                     show_status(
                         &window,
                         &shared,
                         &log,
                         "failed",
                         "运行时已退出",
-                        &format!(
-                            "本地运行时意外退出（{status}）。请查看诊断日志，关闭应用后重新打开。"
-                        ),
+                        &format!("本地运行时意外退出（{status}）。关闭应用后可重新打开。{output}"),
                     );
                 }
                 shared.finished.store(true, Ordering::SeqCst);

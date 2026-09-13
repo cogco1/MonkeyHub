@@ -6,7 +6,7 @@ use monkeyarch_desktop::{
 use std::{
     fs,
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
     thread,
@@ -87,6 +87,23 @@ fn wait_exit(runtime: &mut OwnedRuntime) -> std::process::ExitStatus {
         thread::sleep(Duration::from_millis(40));
     }
     panic!("isolated root did not exit after stdin shutdown");
+}
+
+fn read_request_headers(stream: &mut TcpStream) {
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let mut request = Vec::new();
+    while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+        let mut chunk = [0; 256];
+        let count = stream.read(&mut chunk).unwrap();
+        assert!(
+            count > 0,
+            "client closed before completing its request headers"
+        );
+        request.extend_from_slice(&chunk[..count]);
+        assert!(request.len() <= 2048, "oversized test request headers");
+    }
 }
 
 fn expected() -> ExpectedIdentity {
@@ -226,8 +243,17 @@ fn drop_closes_stdin_and_spawn_and_crash_errors_are_observable() {
         .join("operation-finished")
         .exists());
     let crash = Fixture::new(serde_json::json!({"crash": true}));
-    let mut runtime = crash.spawn();
+    let crash_instance = Uuid::new_v4();
+    let crash_log =
+        DiagnosticLog::open(&crash.config.runtime_root, &crash_instance.to_string()).unwrap();
+    let mut runtime =
+        OwnedRuntime::spawn(&crash.config, crash_instance, crash_log.clone()).unwrap();
     assert_eq!(wait_exit(&mut runtime).code(), Some(17));
+    let tail = crash_log.tail().unwrap();
+    assert!(tail.contains("RuntimeError: fixture runtime directory is already in use"));
+    assert!(!tail.contains("before-tail"));
+    assert!(tail.len() <= 8192);
+    assert!(tail.lines().count() <= 24);
     let mut config = fixture.config.clone();
     config.python = fixture.root.join("missing-python.exe");
     let instance = Uuid::new_v4();
@@ -248,8 +274,7 @@ fn occupied_port_is_not_adopted_or_stopped() {
     let server = thread::spawn(move || {
         for _ in 0..2 {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut request = [0; 2048];
-            stream.read(&mut request).unwrap();
+            read_request_headers(&mut stream);
             let body = serde_json::json!({"status":"ok", "service":"monkeyhub-api", "serverVersion":"0.1.0", "processId":999, "parentProcessId":998, "managedInstanceId":"foreign", "sourceRevision":"a".repeat(40)}).to_string();
             write!(
                 stream,
@@ -263,10 +288,11 @@ fn occupied_port_is_not_adopted_or_stopped() {
     let mut fixture = Fixture::new(serde_json::json!({}));
     fixture.config.port = port;
     let mut runtime = fixture.spawn();
-    assert!(matches!(
-        runtime.identity.check(),
-        Err(HealthError::Rejected(_))
-    ));
+    let result = runtime.identity.check();
+    assert!(
+        matches!(&result, Err(HealthError::Rejected(_))),
+        "expected a valid foreign identity to be rejected; got {result:?}"
+    );
     runtime.request_stop();
     assert!(!wait_exit(&mut runtime).success()); // Its own bind failed; no foreign-process termination.
     assert_eq!(fetch_health(port).unwrap().managed_instance_id, "foreign");
@@ -344,8 +370,7 @@ fn a_partial_health_response_cannot_hold_startup_forever() {
     let port = listener.local_addr().unwrap().port();
     let server = thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
-        let mut request = [0; 2048];
-        stream.read(&mut request).unwrap();
+        read_request_headers(&mut stream);
         let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{");
         for _ in 0..5 {
             thread::sleep(Duration::from_millis(250));

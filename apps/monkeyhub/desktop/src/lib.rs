@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::{
     env,
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
@@ -246,6 +246,18 @@ impl DiagnosticLog {
     }
     pub fn state(&self, state: &str, detail: &str) {
         self.write(&format!("event=state state={state} detail={detail}"));
+    }
+    pub fn tail(&self) -> std::io::Result<String> {
+        // A separate reader leaves the inherited child output handle untouched.
+        let mut file = File::open(&self.path)?;
+        let start = file.metadata()?.len().saturating_sub(8192);
+        file.seek(SeekFrom::Start(start))?;
+        let mut bytes = Vec::new();
+        file.take(8192).read_to_end(&mut bytes)?;
+        let text = String::from_utf8_lossy(&bytes);
+        let mut lines: Vec<_> = text.lines().rev().take(24).collect();
+        lines.reverse();
+        Ok(lines.join("\n"))
     }
     fn child_output(&self) -> Result<Stdio, String> {
         self.file

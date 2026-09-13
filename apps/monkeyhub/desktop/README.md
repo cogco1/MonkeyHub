@@ -25,6 +25,13 @@ builds resolve the actual Git HEAD. The EXE refuses a different runtime source
 revision. `MonkeyArch.exe --version` prints its version and source revision as
 JSON without opening a window.
 
+From the repository root, inspect the saved packaging locations with
+`python tools/package_monkeyapps.py --show-paths`, then build the optional
+desktop candidate with `python tools/package_monkeyapps.py --source-ref HEAD --desktop`.
+This uses the existing external staging/cache/output roots and adds the EXE to
+that same bundle; the browser entry remains included. Double-click the bundled
+`MonkeyArch.exe`. A checkout build still needs the explicit options below.
+
 For explicit source development (both frontend `dist` directories must exist):
 
 ```powershell
@@ -40,6 +47,8 @@ the existing nonproject runtime root. Hub holds `runtime/hub.lock` through its
 complete shutdown, including a drain after the desktop is force-closed. A second
 desktop or browser Hub using the same root refuses to start; use a separate
 explicit runtime root when running independent instances.
+An already-running older Hub that predates this lock must be stopped before
+using its runtime directory; this host does not stop or adopt that process.
 
 ## Lifecycle and diagnostics
 
@@ -50,7 +59,9 @@ It never attaches to an occupied port. `--port <number>` selects a diagnostic
 port, and `--startup-timeout-seconds <1..600>` adjusts the default 60-second wait.
 
 Startup, identity failures, loss of health and root crashes are visible in the
-window. `runtime/logs/desktop-<instance UUID>.log` includes the resolved endpoint,
+window. Unexpected exit also shows the last 24 lines from at most 8 KiB of its
+log, including dependency errors or a runtime directory already in use.
+`runtime/logs/desktop-<instance UUID>.log` includes the resolved endpoint,
 owned PID, source revision, lifecycle transitions and Hub stdout/stderr. A
 missing WebView2 or invalid launch configuration uses a native error dialog.
 WebView cache lives in `runtime/cache/desktop-webview`, outside application assets

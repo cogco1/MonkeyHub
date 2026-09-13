@@ -17,6 +17,10 @@ parser.add_argument("--no-browser", action="store_true")
 args = parser.parse_args()
 options = json.loads((Path.cwd() / "fixture.json").read_text())
 if options.get("crash"):
+    print("before-tail " + "x" * 9000, file=sys.stderr)
+    for line in range(40):
+        print(f"earlier startup output {line}", file=sys.stderr)
+    print("RuntimeError: fixture runtime directory is already in use", file=sys.stderr, flush=True)
     raise SystemExit(17)
 
 
