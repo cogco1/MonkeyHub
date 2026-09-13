@@ -1,4 +1,4 @@
-import { Color, Mesh, MeshStandardMaterial, SRGBColorSpace, Texture, type Material, type Object3D } from "three";
+import { Color, Line, Mesh, MeshStandardMaterial, SRGBColorSpace, Texture, type Material, type Object3D } from "three";
 
 export type ModelDisplayMode = "model" | "framework" | "massing";
 
@@ -146,18 +146,18 @@ export function isDisplayed(object: Object3D): boolean {
 
 export interface ModelAppearance {
   readonly visibility: WeakMap<Object3D, boolean>;
-  readonly materials: WeakMap<Mesh, Material | Material[]>;
+  readonly materials: WeakMap<Mesh | Line, Material | Material[]>;
   readonly layerVisibility: WeakMap<Object3D, ReadonlyArray<boolean | undefined>>;
 }
 
 /** Remember the loaded file's display state before any temporary projection touches it. */
 export function captureModelAppearance(root: Object3D): ModelAppearance {
   const visibility = new WeakMap<Object3D, boolean>();
-  const materials = new WeakMap<Mesh, Material | Material[]>();
+  const materials = new WeakMap<Mesh | Line, Material | Material[]>();
   const layerVisibility = new WeakMap<Object3D, ReadonlyArray<boolean | undefined>>();
   root.traverse((object) => {
     visibility.set(object, object.visible);
-    if (object instanceof Mesh) materials.set(object, object.material);
+    if (object instanceof Mesh || object instanceof Line) materials.set(object, object.material);
     const layers = object.userData.layers;
     if (Array.isArray(layers)) {
       layerVisibility.set(
@@ -229,7 +229,7 @@ export function restoreModelAppearance(root: Object3D, appearance: ModelAppearan
   root.traverse((object) => {
     const visible = appearance.visibility.get(object);
     if (visible !== undefined) object.visible = visible;
-    if (object instanceof Mesh) {
+    if (object instanceof Mesh || object instanceof Line) {
       const material = appearance.materials.get(object);
       if (material !== undefined) object.material = material;
     }

@@ -50,6 +50,16 @@ def program(*operations, bindings=()):
 
 
 class TranslateTest(unittest.TestCase):
+    def test_retained_open_curve_is_lifted_once_and_not_closed_or_thickened(self):
+        build = program(op("path", "curve", ("path-object",), basis="polyline", retain_for_inspection=True,
+                           points=[[1, 4, 2], [3, 2, 5]], base_level=3.5, base_offset=1.7))
+        translation = translate_to_rhino_python(build)
+        self.assertIn("rs.AddPolyline([(1.0,2.0,7.2), (3.0,5.0,5.2)])", translation.script)
+        self.assertEqual(translation.physical_object_ids, ("path-object",))
+        self.assertEqual(translation.losses, ())
+        self.assertEqual(expected_object_bounds(build)["path-object"],
+                         {"bbox_min": [1.0, 5.2, 2.0], "bbox_max": [3.0, 7.2, 5.0], "brep_count": 1})
+
     def test_planar_surface_uses_the_explicit_closed_boundary_at_its_datum(self):
         build = program(op("floor", "planar_surface", ("floor-object",),
                            profile=[[0, 0, 0], [2, 0, 0], [2, 0, 3], [0, 0, 0]], base_level=2.7, base_offset=-0.1))

@@ -65,7 +65,7 @@ class ElementProducerError(ValueError):
 def producer_signatures() -> dict[str, dict[str, Any]]:
     """The semantic authoring contracts the Studio can query and execute.
 
-    Walls with hosted apertures, prisms, lofts and bounded planar surfaces expose their
+    Walls with hosted apertures, prisms, lofts, curves and bounded planar surfaces expose their
     authored parameters here. Other existing producers remain executable;
     they are not advertised as semantic creation tools until their authored
     parameter contract is exposed here.
@@ -261,6 +261,24 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "The profile is one simple boundary with its first vertex explicitly repeated at the end; holes are unsupported.",
             "The surface elevation is its resolved base datum plus the reference offset plus parameters.elevation.",
             "Use an explicit @parameter binding for an elevation that subsequent changes must share.",
+        ],
+    }, "curve": {
+        "producer": "curve",
+        "label": "线与曲线",
+        "description": "One drawn polyline, including sampled freehand paths and arcs, without a face or thickness.",
+        "parameters": obj({
+            "profile": {"type": "array", "items": plan_point, "minItems": 2, "maxItems": 512,
+                        "description": "Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added."},
+            "elevation": scalar,
+            "work_plane": work_plane,
+        }),
+        "references": obj({"base": elevation}),
+        "requiredParameters": ["profile"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "At least two points are required; consecutive points must be distinct.",
+            "The curve follows its base datum, reference offset, elevation and explicit work_plane.",
+            "A curve creates no face, thickness, support relation or top datum.",
         ],
     }}
 
@@ -997,6 +1015,28 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
     return result
 
 
+def produce_curve(row: ElementRow, context: ProductionContext) -> ProducedElement:
+    """One retained polyline in its declared drawing frame, without automatic closure."""
+
+    unknown = set(row.params) - {"profile", "elevation", "work_plane"}
+    if unknown or set(row.references) != {"base"}:
+        raise ElementProducerError(f"{row.element_id}: curve requires only profile, optional elevation/work_plane and a base reference")
+    base_datum, base_offset = _base(row, context)
+    profile, _normal = _profile_on_work_plane(row)
+    if not 2 <= len(profile) <= 512 or any(math.dist(a, b) <= 1e-9 for a, b in zip(profile, profile[1:])):
+        raise ElementProducerError(f"{row.element_id}: curve requires 2 to 512 points with distinct consecutive points")
+    base_offset += _finite(row.params.get("elevation", 0.0), f"{row.element_id} elevation") + min(p[1] for p in profile)
+    parameters = [GeometryParameter.create(name="basis", kind=GeometryParameterKind.TEXT, value="polyline"),
+                  _points("points", profile),
+                  GeometryParameter.create(name="retain_for_inspection", kind=GeometryParameterKind.BOOLEAN, value=True)]
+    if base_offset:
+        parameters.append(GeometryParameter.create(name="base_offset", kind=GeometryParameterKind.NUMBER, value=base_offset, unit=_M))
+    operation = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.CURVE,
+                                  output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id,
+                                  parameters=tuple(sorted(parameters, key=lambda p: p.name)), semantic_binding_ids=(row.binding_id,))
+    return ProducedElement((operation,), (_bind(row.element_id, base_datum),))
+
+
 def produce_planar_surface(row: ElementRow, context: ProductionContext) -> ProducedElement:
     """The stated visible surface at a datum, with no inferred thickness or support."""
 
@@ -1409,7 +1449,7 @@ def produce_declined(row: ElementRow, context: ProductionContext) -> ProducedEle
 
 PRODUCERS: dict[str, Callable[[ElementRow, ProductionContext], ProducedElement]] = {
     "column-array": produce_column_array, "capitals": produce_capitals, "beam": produce_beam, "pediment": produce_pediment, "wall": produce_wall,
-    "prism": produce_prism, "planar-surface": produce_planar_surface, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
+    "prism": produce_prism, "planar-surface": produce_planar_surface, "curve": produce_curve, "ring": produce_ring, "loft": produce_loft, "dome-cap": produce_dome_cap,
     "stair": produce_stair, "wedge": produce_wedge, "shell": produce_shell, "declined": produce_declined,
 }
 

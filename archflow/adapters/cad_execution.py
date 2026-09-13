@@ -24,22 +24,26 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 
 from archflow.adapters.cad_patch import CadPatchError, build_patch_prelude, select_patch_operations
 from archflow.adapters.cad_program import (
     LONG_PATH_HELPER_SOURCE,
     CadTranslationError,
+    _params,
     _physical_ids,
     _resolved_layer_colors,
     expected_object_bounds,
     expected_object_semantics,
+    lift_to_base_level,
     translate_step_import_to_rhino_python,
     translate_to_rhino_python,
 )
 from archflow.adapters.occt_backend import (
     _observe_operation as _observe_occt_operation,
+    _polyline_geometry,
     CLOSED_SOLID,
+    CURVE,
     OPEN_SURFACE,
     OcctBackendError,
     OcctCapabilityError,
@@ -3180,8 +3184,8 @@ class OcctExecutionReceipt:
     """What crossed the file boundary and what the cold read found there.
 
     ``exact_artifact`` names the STEP file (exact B-rep, object names and
-    layers); ``preview_artifact`` names the mesh ``.3dm`` tessellated from
-    the same model (viewer semantics, not a B-rep delivery).  ``readback``
+    layers); ``preview_artifact`` names the render-mesh/curve ``.3dm`` from
+    the same model with viewer semantics. ``readback``
     is the per-object measurement of the STEP file re-read from disk.
     """
 
@@ -3336,10 +3340,10 @@ def execute_occt_export(
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     observation_parent_id: str | None = None,
 ) -> OcctExecutionReceipt:
-    """Realize the bound program in process, write STEP and a mesh preview, cold-read the STEP.
+    """Realize the bound program, write STEP and a mesh/curve preview, cold-read both.
 
     Writes ``<artifact_stem>.step`` (exact B-rep, one named shape per
-    physical object) and ``<artifact_stem>.preview.3dm`` (a render mesh of
+    physical object) and ``<artifact_stem>.preview.3dm`` (render meshes and native curves of
     the same model with the viewer's names, layers, colours and
     ``archflow:*`` user text) into the caller-supplied workspace; neither may
     exist beforehand.  The STEP file is then re-read by a fresh reader and
@@ -3348,7 +3352,8 @@ def execute_occt_export(
     ``readback_tolerance`` of the analytic predictor, on its semantic layer,
     and either exactly the expected number of closed solids (every
     solid operation) or an open surface - no solid, an
-    actual open boundary, no volume claimed.  The preview is read back
+    actual open boundary, no volume claimed) or a polyline with its original
+    vertices, endpoints and length. The preview is read back
     through ``inspect_three_dm`` and checked against the same denominator.
     No process is started.
 
@@ -3419,6 +3424,12 @@ def execute_occt_export(
     bounds = {object_id: _bounds_to_rhino(raw_bounds[object_id]) for object_id in physical}
     counts = {object_id: int(raw_bounds[object_id]["brep_count"]) for object_id in physical}
     deliveries = _declared_deliveries(program, physical)
+    curves = {
+        operation.output_object_ids[0]: [[x, z, y] for x, y, z in lift_to_base_level(
+            _params(operation)["points"], _params(operation), operation.op_id)]
+        for operation in program.proposal.operations
+        if operation.kind.value == "curve" and operation.output_object_ids[0] in physical
+    }
     layer_colors = dict(
         _resolved_layer_colors(
             {row["layer"] for row in semantics["objects"].values()},
@@ -3520,7 +3531,8 @@ def execute_occt_export(
         else:
             readback, failures = _verify_step_readback(
                 entries, physical=physical, semantics=semantics, expected_bounds=bounds,
-                expected_counts=counts, expected_deliveries=deliveries, layer_colors=layer_colors, tolerance=tolerance,
+                expected_counts=counts, expected_deliveries=deliveries, expected_curves=curves,
+                layer_colors=layer_colors, tolerance=tolerance,
             )
             if failures:
                 read_span["status"] = "failed"
@@ -3548,6 +3560,7 @@ def execute_occt_export(
                 user_text=semantics["objects"][object_id]["user_text"],
                 visible=semantics["objects"][object_id].get("visible", True) is not False,
                 material=preview_materials.get(object_id),
+                delivery=deliveries[object_id],
             )
             for object_id in physical
         )
@@ -3589,7 +3602,7 @@ def execute_occt_export(
                         inspection, physical=physical, semantics=semantics,
                         readback_bounds={object_id: row["bbox"] for object_id, row in readback.items() if "bbox" in row},
                         layer_colors=layer_colors, expected_document_user_text=document_user_text,
-                        expected_materials=preview_materials, length_unit=unit, tolerance=tolerance,
+                        expected_materials=preview_materials, expected_curves=curves, length_unit=unit, tolerance=tolerance,
                     )
                     failures.extend(preview_failures)
                     if preview_failures:
@@ -3683,9 +3696,12 @@ def _declared_deliveries(program: CompiledGeometryProgram, physical: tuple[str, 
 def _exact_artifact(path: Path, workspace: Path, deliveries: Mapping[str, str]) -> dict[str, object]:
     solids = sum(1 for delivery in deliveries.values() if delivery == CLOSED_SOLID)
     surfaces = sum(1 for delivery in deliveries.values() if delivery == OPEN_SURFACE)
+    curves = sum(1 for delivery in deliveries.values() if delivery == CURVE)
     geometry = f"exact B-rep in the CAD frame and the program unit: {solids} closed solid object(s)"
     if surfaces:
         geometry += f", {surfaces} open surface object(s) from planar faces or uncapped lofts"
+    if curves:
+        geometry += f", {curves} polyline curve object(s) without faces or thickness"
     return {
         "format": _STEP_FORMAT,
         "relative_path": path.relative_to(workspace).as_posix(),
@@ -3717,7 +3733,7 @@ def _preview_artifact(
         "tessellator": "BRepMesh_IncrementalMesh",
         "linear_deflection": linear_deflection,
         "angular_deflection": _PREVIEW_ANGULAR_DEFLECTION,
-        "mesh_counts": {key: dict(value) for key, value in sorted(mesh_counts.items())},
+        "mesh_counts": {key: dict(value) for key, value in sorted(mesh_counts.items()) if "mesh_face_count" in value},
         "carries": [
             "object names, nested layer paths and layer colours",
             "archflow:* object user text",
@@ -3725,6 +3741,11 @@ def _preview_artifact(
         ],
         "note": "not a NURBS/B-rep delivery; the STEP file is the exact geometry",
     }
+    curves = {key: dict(value) for key, value in sorted(mesh_counts.items()) if "curve_point_count" in value}
+    if curves:
+        artifact.update(format="3dm render-mesh and curve preview", curve_counts=curves,
+                        geometry="render meshes and native polylines from the same OCCT model as the STEP file",
+                        note="Surfaces are render meshes; polylines are native curves. STEP retains the exact model.")
     if materials:
         artifact["carries"].append("native object materials for assembly frame and glazing members")
         artifact["materials"] = {
@@ -3751,6 +3772,7 @@ def _verify_step_readback(
     layer_colors: Mapping[str, tuple[int, int, int]],
     tolerance: float,
     expected_deliveries: Mapping[str, str] | None = None,
+    expected_curves: Mapping[str, Sequence[Sequence[float]]] | None = None,
 ) -> tuple[dict[str, dict[str, object]], list[dict[str, str]]]:
     """Measure every named entry of the cold read against the denominator.
 
@@ -3759,15 +3781,15 @@ def _verify_step_readback(
     surface.  A closed solid must hold exactly ``expected_counts`` solids,
     all closed.  An open surface must hold no solid, at least one face and an
     actual open boundary (free edges); its volume is not a measurement and
-    is reported as ``None``.  A shape of the other closure fails by name in
-    either direction.
+    is reported as ``None``. Curves must contain only the declared path's edges,
+    checked against its full vertex sequence, endpoints and length.
     """
 
     failures: list[dict[str, str]] = []
     deliveries = dict(expected_deliveries or {})
     for object_id in physical:
         delivery = deliveries.setdefault(object_id, CLOSED_SOLID)
-        if delivery not in (CLOSED_SOLID, OPEN_SURFACE):
+        if delivery not in (CLOSED_SOLID, OPEN_SURFACE, CURVE):
             raise CadExecutionError(f"{object_id}: unknown declared delivery {delivery!r}")
     by_name: dict[str, list] = {}
     unnamed = 0
@@ -3812,7 +3834,16 @@ def _verify_step_readback(
         readback[object_id] = row
         if not measure.valid:
             failures.append(_failure("cad_execution.step_shape_invalid", f"{object_id} is not a valid shape"))
-        if deliveries[object_id] == OPEN_SURFACE:
+        if deliveries[object_id] == CURVE:
+            try:
+                if measure.solid_count or measure.face_count:
+                    raise OcctBackendError("curve contains a surface or solid")
+                row.update(_polyline_geometry(entry.shape))
+                if not _curve_matches(row, (expected_curves or {}).get(object_id, ()), tolerance):
+                    raise OcctBackendError("curve vertices, endpoints or length differ from the authored path")
+            except OcctBackendError as exc:
+                failures.append(_failure("cad_execution.step_curve_mismatch", f"{object_id}: {exc}"))
+        elif deliveries[object_id] == OPEN_SURFACE:
             if measure.solid_count or measure.closed or measure.free_edge_count == 0 or measure.face_count == 0:
                 failures.append(
                     _failure(
@@ -3857,6 +3888,18 @@ def _verify_step_readback(
     return readback, failures
 
 
+def _curve_matches(actual: Mapping[str, object], expected: Sequence[Sequence[float]], tolerance: float) -> bool:
+    points = actual.get("curve_points", ())
+    length = actual.get("curve_length")
+    if not expected or len(points) != len(expected) or not isinstance(length, (int, float)):
+        return False
+    expected_length = sum(math.dist(a, b) for a, b in zip(expected, expected[1:]))
+    return abs(length - expected_length) <= tolerance and any(
+        all(math.dist(a, b) <= tolerance for a, b in zip(points, ordered))
+        for ordered in (expected, tuple(reversed(expected)))
+    )
+
+
 def _verify_preview_readback(
     inspection: ThreeDmInspection,
     *,
@@ -3868,8 +3911,9 @@ def _verify_preview_readback(
     length_unit: str,
     tolerance: float,
     expected_materials: Mapping[str, PreviewMaterial] | None = None,
+    expected_curves: Mapping[str, Sequence[Sequence[float]]] | None = None,
 ) -> list[dict[str, str]]:
-    """The mesh preview must carry the viewer denominator and sit on the STEP geometry."""
+    """The preview carries the same identities and mesh/curve geometry as the STEP."""
 
     failures: list[dict[str, str]] = []
     if not inspection.read_only or inspection.rhino_process_started:
@@ -3912,7 +3956,12 @@ def _verify_preview_readback(
         row = named[object_id][0]
         if len(named[object_id]) != 1:
             continue
-        if row.get("type") != "Mesh":
+        curve = (expected_curves or {}).get(object_id)
+        if curve is not None:
+            analysis = [item for item in inspection.object_geometry_analysis if item["name"] == object_id]
+            if row.get("type") != "Curve" or len(analysis) != 1 or not _curve_matches(analysis[0], curve, tolerance):
+                failures.append(_failure("cad_execution.preview_curve_mismatch", f"object {object_id} curve vertices, endpoints or length differ"))
+        elif row.get("type") != "Mesh":
             failures.append(_failure("cad_execution.preview_not_mesh", f"object {object_id} is not a preview mesh"))
         expected = readback_bounds.get(object_id)
         if expected is None or not _bbox_close(row["bbox"], expected, tolerance):

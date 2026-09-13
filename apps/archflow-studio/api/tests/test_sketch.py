@@ -96,6 +96,27 @@ class SketchTestCase(unittest.TestCase):
         self.assertEqual(body["code"], "STALE_BASE")
         self.assertIn("/api/state", body["detail"])
 
+    def test_open_paths_keep_their_points_and_only_a_finished_candidate_writes(self) -> None:
+        head = self.repository.read_head().version
+        runs_before = sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir())
+        for points in ([[0, 0], [3, 4]], [[0, 0], [1, 1], [2, 0]], SQUARE):
+            with self.subTest(points=points):
+                status, proposal = self.draw(profile=points, closed=False, height=0)
+                self.assertEqual(status, 201, proposal)
+                [entity] = proposal["change"]["edits"]["entities"]
+                self.assertEqual(entity["fields"]["producer"], "curve")
+                self.assertEqual(entity["fields"]["params"], {"profile": points})
+                self.assertEqual(proposal["baseStateDigest"], self.state_digest)
+        self.assertEqual(self.repository.read_head().version, head)
+        self.assertEqual(sorted(path.name for path in (self.root / PROJECT_ID / "runs").iterdir()), runs_before)
+
+    def test_open_paths_refuse_height_and_degenerate_segments_before_running(self) -> None:
+        for invalid in ({"height": 1}, {"profile": [[0, 0]]},
+                        {"profile": [[0, 0], [0, 0]]}, {"profile": [[0, 0], [1, 0], [0, 0]]}):
+            with self.subTest(invalid=invalid):
+                status, _ = self.draw(**{"closed": False, "height": 0, **invalid})
+                self.assertEqual(status, 422)
+
     def test_a_profile_that_is_not_a_profile_is_refused_before_anything_runs(self) -> None:
         for invalid, why in (
             ({"profile": [[0.0, 0.0], [1.0, 0.0]]}, "two points are not a profile"),
@@ -456,6 +477,46 @@ class SketchDirectGeometryTestCase(unittest.TestCase):
                 found[str(row["name"])] = row["bbox"]
         self.assertIn(name, found, found)
         return tuple([round(c, 5) for c in found[name][key]] for key in ("min", "max"))
+
+    def test_model_curves_save_reopen_resolve_and_delete_on_the_same_source(self):
+        head = self.repository.read_head().version
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]}
+        profiles = {"model-line": [[0, 0], [3, 4]],
+                    "model-freehand": [[0, 0], [1, 1], [2, 0], [3, 2]],
+                    "model-arc": [[1 - math.cos(i * math.pi / 12), math.sin(i * math.pi / 12)] for i in range(13)]}
+        run = self.action("sketch", sketches=[{
+            "componentId": "portico", "elementId": name, "profile": points,
+            "height": 0, "closed": False, "plane": plane, "baseLevel": "level-ground",
+        } for name, points in profiles.items()])
+        self.assertEqual(self.bounds(run, "obj-model-line"), ([10, 20, 4], [13, 20, 8]))
+        self.assertEqual(self.bounds(run, "obj-model-arc"), ([10, 20, 4], [12, 20, 5]))
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(cad_export="occt", project_dir=self.project)))
+        self.addCleanup(self.client.close)
+        for name in profiles:
+            for path in (self.project / "runs" / run).rglob("*.3dm"):
+                inspection = inspect_three_dm(path)
+                rows = [row for row in inspection.object_user_strings if row["name"] == f"obj-{name}"]
+                if not rows:
+                    continue
+                response = self.client.post("/api/pick/resolve", json={
+                    "stateDigest": self.digest(run), "sourceRunId": run, "objectName": f"obj-{name}",
+                    "userStrings": {row["key"]: row["value"] for row in rows[0]["attributes"]},
+                    "documentUserStrings": {row["key"]: row["value"] for row in inspection.document_user_strings},
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["elementId"], name)
+                self.assertEqual(response.json()["status"], "resolved")
+                break
+            else:
+                self.fail(f"saved model curve is missing: {name}")
+        deleted = self.action("delete", run, elementId="model-arc")
+        state = self.client.get("/api/state", params={"run": deleted}).json()
+        ids = {row["elementId"] for row in state["elements"]}
+        self.assertNotIn("model-arc", ids)
+        self.assertTrue({"model-line", "model-freehand"}.issubset(ids))
+        self.assertEqual(self.bounds(run, "obj-model-arc"), ([10, 20, 4], [12, 20, 5]))
+        self.assertEqual(self.repository.read_head().version, head)
 
     def test_face_push_pull_move_rotate_scale_copy_are_in_the_saved_model_and_reopen(self):
         head = self.repository.read_head().version

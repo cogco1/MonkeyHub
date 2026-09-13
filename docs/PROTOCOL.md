@@ -212,14 +212,40 @@ and elevation. Reading this projection produces no geometry or project writes.
 Unsupported producers, cutouts, top references and unresolved host datums return
 `drawnShape: null` with `drawnShapeReason`; the precision modeling panel remains available.
 
-The P gesture uses that exact viewed shape only after semantic pick resolution.
-Pointer movement previews cap extrusion or convex-profile side offset locally, reusing
-the drawing preview layer; an exact distance overrides the pointer. Click or Enter
-sends one existing `POST /api/proposals/push-pull` request with `elementId`, `distance`,
-selected face `normal` and the existing source binding. Zero distance and Esc submit
-nothing. Tool, model, project or base changes discard the gesture and stale proposal
-responses cannot start a candidate. The producer still owns geometry validation and
-parameter-binding checks; this preview does not extend arbitrary imported 3DM editing.
+The P gesture uses the exact viewed shape or its current disposable local draft.
+Pointer movement previews cap extrusion or convex-profile side offset locally; an
+exact distance overrides the pointer. Click or Enter records one local action with
+its selected face normal. Zero distance and Esc record nothing. Tool or source
+changes discard only the unfinished gesture. The producer still owns geometry
+validation and parameter-binding checks; arbitrary imported 3DM editing is unsupported.
+
+Drawing, Push/Pull, numeric transforms, Delete and Undo/Redo update an in-memory draft
+without proposal or candidate requests. The exact loaded catalog and export identity
+can identify a local selection immediately; this is not a new server pick verdict.
+Manual Sync freezes the current action snapshot and sends the existing typed routes
+with `sourceProposalId`, followed by one final candidate request. Net-zero edits do
+not create a candidate. The original state/run/Stage binding remains fixed throughout
+the chain, and MonkeyHub's existing `Idempotency-Key` admission prevents duplicate
+candidate execution when the same submission is retried. Edits during Sync remain
+editable in the local layer. A completed batch with no later input adopts its candidate
+as the next editing base; its download and parse keep the old model interactive and
+any new input cancels adoption. With later edits, only the candidate list refreshes,
+without replacing the ongoing gesture or draft. Failed requests retain the draft. A rejected
+pre-candidate snapshot can be replaced by a corrected edit; uncertain candidate
+submissions retain the same request and final proposal. Drafts stay with their exact
+source while browsing versions in the mounted task, but are not saved across page
+reload. Sync does not accept a DesignStage or issue HEAD.
+
+`POST /api/proposals/sketch` accepts `closed: false` with `height: 0` and two or more
+ordered local-plane points to create one retained polyline model curve. Omitting `closed`
+keeps the existing face/prism action. Line, freehand and two-point arc gestures share
+this route; arcs are segmented polylines, without retained analytic radius controls.
+The curve retains its base reference and work plane through the existing Element/CURVE
+and OCCT paths. Saved STEP and native 3DM curve geometry are checked against the authored
+points and length. Model pick, delete and history use the same candidate source binding.
+Pointer movement and completed gestures stay local until manual Sync.
+Snapping copies coordinates and does not infer a lasting host
+or alignment dependency; closed line networks do not yet split existing faces.
 
 ### 5.1 The four outcomes of an intent
 

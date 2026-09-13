@@ -150,6 +150,7 @@ async function editingSessionHarness(t: TestContext) {
   const control = {
     projectId: "project-a", defaultRun: "default-a", storageBlocked: false, storageReadBlocked: false,
     stateReply: null as null | ((run: string) => Response | Promise<Response>),
+    designHistoryReply: null as null | (() => Response | Promise<Response>),
     workingCopies: [workingCopy],
     workingCopiesReply: null as null | (() => Response | Promise<Response>),
   };
@@ -190,6 +191,9 @@ async function editingSessionHarness(t: TestContext) {
     if (url.pathname === "/api/project") return Response.json({ projectId: control.projectId, published });
     if (url.pathname === "/api/working-copies") {
       return control.workingCopiesReply ? control.workingCopiesReply() : Response.json({ workingCopies: control.workingCopies });
+    }
+    if (url.pathname === "/api/design-history") {
+      return control.designHistoryReply ? control.designHistoryReply() : Response.json({ branchId: "main", branches: [], stages: [] });
     }
     assert.equal(url.pathname, "/api/state");
     const run = url.searchParams.get("run") ?? control.defaultRun;
@@ -239,6 +243,166 @@ test("fresh working-copy selections restore on reload and reopen while an explic
     assert.equal(session.getSnapshot().session.value.projection.referenceRun.runId, "chosen-a");
     assert.equal(h.storage.get(h.key), savedChoice, "reading a server selection must not rewrite the explicit base");
   }
+});
+
+test("background session reload keeps the ready base unlocked until the exact candidate arrives", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", [], false);
+  await controller.reload("chosen-a");
+  const previous = controller.getSnapshot().session;
+  let release!: (response: Response) => void;
+  let start!: () => void;
+  const response = new Promise<Response>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { start = resolve; });
+  h.control.stateReply = () => { start(); return response; };
+  const transitions: { status: string; changingBase: boolean }[] = [];
+  const unsubscribe = controller.subscribe(() => {
+    const value = controller.getSnapshot();
+    transitions.push({ status: value.session.status, changingBase: value.changingBase });
+  });
+  const pending = controller.reload("candidate-b", undefined, undefined, true);
+  assert.equal(controller.getSnapshot().session, previous);
+  assert.equal(controller.getSnapshot().changingBase, false);
+  await started;
+  assert.equal(controller.getSnapshot().session, previous);
+  assert.equal(h.editingDigestForView(previous, controller.getSnapshot().changingBase, "chosen-a", false, false), "a".repeat(64));
+  release(Response.json(h.projection("candidate-b")));
+  const next = await pending;
+  unsubscribe();
+  assert.equal(next.sourceRunId, "candidate-b");
+  assert.equal(next.projection.referenceRun.runId, "candidate-b");
+  assert.equal(next.projection.stateDigest, "b".repeat(64));
+  assert.equal(controller.getSnapshot().session.value, next);
+  assert.ok(transitions.every(value => value.status === "ready" && value.changingBase === false));
+});
+
+test("a later explicit base switch wins over a delayed background session reload", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController();
+  await controller.reload("chosen-a");
+  let release!: (response: Response) => void;
+  let start!: () => void;
+  const response = new Promise<Response>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { start = resolve; });
+  h.control.stateReply = run => run === "candidate-b" ? (start(), response) : Response.json(h.projection(run));
+  const background = controller.reload("candidate-b", undefined, undefined, true);
+  await started;
+  const explicit = controller.reload("chosen-c");
+  assert.equal(controller.getSnapshot().changingBase, true, "ordinary explicit switching still locks the editing base");
+  await explicit;
+  const chosen = controller.getSnapshot();
+  release(Response.json(h.projection("candidate-b")));
+  assert.equal(await background, null);
+  assert.equal(controller.getSnapshot(), chosen);
+  assert.equal(chosen.session.value.sourceRunId, "chosen-c");
+  assert.equal(h.editingBasePreferences.read("", "project-a"), "chosen-c");
+});
+
+test("background reload still refuses an unverified candidate and retains the previous explicit base", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController();
+  await controller.reload("chosen-a");
+  const previous = controller.getSnapshot().session;
+  h.control.stateReply = run => Response.json({ ...h.projection(run), matchesReferenceReceipt: false });
+  assert.equal(await controller.reload("candidate-b", undefined, undefined, true), null);
+  const after = controller.getSnapshot();
+  assert.equal(after.session, previous);
+  assert.equal(after.changingBase, false);
+  assert.equal(after.baseError.code, "EDITING_BASE_UNAVAILABLE");
+  assert.equal(h.editingBasePreferences.read("", "project-a"), "chosen-a");
+});
+
+test("quiet candidate reload reuses its one state read and preserves default selection policy", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["working-copies"], false);
+  await controller.reload("chosen-a");
+  const preference = h.storage.get(h.key);
+  h.requests.length = 0;
+  const projection = await h.studio.state("candidate-b");
+  const next = await controller.reload("candidate-b", undefined, undefined, true, projection);
+  assert.equal(next.projection, projection);
+  assert.deepEqual(h.requests, ["GET /api/state?run=candidate-b", "GET /api/project", "GET /api/working-copies"]);
+  assert.equal(h.storage.get(h.key), preference, "reusing a read must not enable a disabled preference writer");
+  for (const run of [undefined, null]) {
+    h.requests.length = 0;
+    const selected = await controller.reload(run, undefined, undefined, true, projection);
+    assert.equal(h.requests.filter(path => path.startsWith("GET /api/state")).length, 1,
+      "default and implicit refresh still read their own source");
+    assert.notEqual(selected.projection, projection);
+  }
+});
+
+test("a reused projection still rejects a foreign project, run, published base, receipt or Stage", async (t) => {
+  const h = await editingSessionHarness(t);
+  const valid = h.projection("candidate-b");
+  const cases = [
+    { ...valid, projectId: "another-project" },
+    { ...valid, referenceRun: { ...valid.referenceRun, runId: "another-run" } },
+    { ...valid, published: { ...valid.published, version: 99 } },
+    { ...valid, published: { ...valid.published, stateSha256: "wrong-published-sha" } },
+    { ...valid, stateDigest: null },
+    { ...valid, matchesReferenceReceipt: false },
+    { ...valid, referenceRun: { ...valid.referenceRun, baseVersion: 99 } },
+    { ...valid, referenceRun: { ...valid.referenceRun, baseSha256: "wrong-base-sha" } },
+  ];
+  for (const forged of cases) {
+    const controller = h.createSessionController();
+    await controller.reload("chosen-a");
+    assert.equal(await controller.reload("candidate-b", undefined, undefined, true, forged), null);
+    assert.ok(controller.getSnapshot().baseError);
+    assert.equal(h.editingBasePreferences.read("", "project-a"), "chosen-a");
+  }
+  const controller = h.createSessionController();
+  await controller.reload("chosen-a");
+  assert.equal(await controller.reload("candidate-b", "stage:requested", undefined, true,
+    { ...valid, sourceStageRef: "stage:other" }), null);
+  assert.equal(controller.getSnapshot().baseError.code, "EDITING_PROJECT_CHANGED");
+  const matching = { ...valid, sourceStageRef: "stage:requested" };
+  assert.equal((await controller.reload("candidate-b", "stage:requested", undefined, true, matching)).projection, matching);
+});
+
+test("session metadata reads start together after project identity is checked", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["design-history", "working-copies"], false);
+  await controller.reload("chosen-a");
+  let releaseHistory!: (response: Response) => void;
+  let releaseCopies!: (response: Response) => void;
+  let copiesStarted!: () => void;
+  const history = new Promise<Response>(resolve => { releaseHistory = resolve; });
+  const copies = new Promise<Response>(resolve => { releaseCopies = resolve; });
+  const started = new Promise<void>(resolve => { copiesStarted = resolve; });
+  h.control.designHistoryReply = () => history;
+  h.control.workingCopiesReply = () => { copiesStarted(); return copies; };
+  h.requests.length = 0;
+  const pending = controller.reload("candidate-b", undefined, undefined, true, h.projection("candidate-b"));
+  await started;
+  assert.deepEqual(h.requests, ["GET /api/project", "GET /api/design-history?branchId=main", "GET /api/working-copies"]);
+  assert.equal(controller.getSnapshot().session.value.sourceRunId, "chosen-a");
+  assert.equal(controller.getSnapshot().changingBase, false);
+  releaseHistory(Response.json({ branchId: "main", branches: [], stages: [] }));
+  releaseCopies(Response.json({ workingCopies: h.control.workingCopies }));
+  assert.equal((await pending).sourceRunId, "candidate-b");
+});
+
+test("a late reused projection cannot supersede a newer explicit run or its preference", async (t) => {
+  const h = await editingSessionHarness(t);
+  const controller = h.createSessionController("", ["working-copies"]);
+  await controller.reload("chosen-a");
+  let release!: (response: Response) => void;
+  let start!: () => void;
+  const response = new Promise<Response>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { start = resolve; });
+  h.control.workingCopiesReply = () => { start(); return response; };
+  const background = controller.reload("candidate-b", undefined, undefined, true, h.projection("candidate-b"));
+  await started;
+  h.control.workingCopiesReply = null;
+  await controller.reload("chosen-c");
+  const chosen = controller.getSnapshot();
+  release(Response.json({ workingCopies: h.control.workingCopies }));
+  assert.equal(await background, null);
+  assert.equal(controller.getSnapshot(), chosen);
+  assert.equal(h.editingBasePreferences.read("", "project-a"), "chosen-c");
+  assert.equal(h.requests.includes("GET /api/state?run=candidate-b"), false);
 });
 
 test("background version refresh changes only the list and never reloads or selects the editing base", async (t) => {

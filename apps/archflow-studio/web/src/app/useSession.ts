@@ -45,7 +45,8 @@ interface SessionSnapshot {
 }
 
 export interface SessionHandle extends SessionSnapshot {
-  reload(runId?: string | null, sourceStageRef?: string | null, branchId?: string): Promise<Session | null>;
+  reload(runId?: string | null, sourceStageRef?: string | null, branchId?: string, background?: boolean,
+    alreadyReadProjection?: StateProjectionDto): Promise<Session | null>;
   /** Refresh version choices without re-projecting or selecting an editing base. */
   refreshWorkingCopies(): Promise<readonly WorkingCopyDto[] | null>;
   /** Re-project when the error says the base moved. Answers whether it did. */
@@ -65,11 +66,12 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
     listeners.forEach((listener) => listener());
   };
 
-  const reload = async (requestedRunId?: string | null, sourceStageRef?: string | null, branchId?: string): Promise<Session | null> => {
+  const reload = async (requestedRunId?: string | null, sourceStageRef?: string | null, branchId?: string, background = false,
+    alreadyReadProjection?: StateProjectionDto): Promise<Session | null> => {
     const currentRequest = ++request;
     const previous = snapshot.session;
     let project: ProjectBindingDto | null = null;
-    publish({ ...snapshot, changingBase: true, baseError: null });
+    publish({ ...snapshot, changingBase: background ? snapshot.changingBase : true, baseError: null });
     try {
       // The server may now bind a different project. Never send the old run before
       // learning which project it would be read in.
@@ -85,30 +87,36 @@ export function createSessionController(serverBaseUrl = connection.baseUrl, capa
         throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
           "The server now binds another project. Retry to read that project's own editing choice." });
       }
-      const designHistory = capabilities.includes("design-history")
-        ? await studio.designHistory(branchId ?? (sameProject && previous.status === "ready" ? previous.value.designHistory?.branchId : undefined)) : null;
+      const [designHistory, copies] = await Promise.all([
+        capabilities.includes("design-history")
+          ? studio.designHistory(branchId ?? (sameProject && previous.status === "ready" ? previous.value.designHistory?.branchId : undefined)) : null,
+        capabilities.includes("working-copies") ? studio.workingCopies() : null,
+      ]);
+      if (currentRequest !== request) return null;
+      const workingCopies = copies?.workingCopies ?? [];
       const branch = designHistory?.branches.find((item) => item.branchId === designHistory.branchId);
       const defaultStage = designHistory?.stages.find((stage) => stage.stageRef === branch?.headStageRef);
       const useHead = designHistory !== null && (requestedRunId === null || (!sameProject && requestedRunId === undefined));
       const runId = useHead ? defaultStage?.modelSource.runId ?? null : requestedRunId !== undefined ? requestedRunId
         : sameProject && previous.status === "ready" ? previous.value.sourceRunId
           : persistEditingBase ? editingBasePreferences.read(serverBaseUrl, project.projectId) : null;
-      const workingCopies = capabilities.includes("working-copies")
-        ? (await studio.workingCopies()).workingCopies : [];
-      if (currentRequest !== request) return null;
       const stageRef = useHead ? defaultStage?.stageRef : sourceStageRef ??
         (requestedRunId === undefined && sameProject && previous.status === "ready" ? previous.value.projection.sourceStageRef : undefined);
       const stageModelSource = useHead ? defaultStage?.modelSource ?? null : sourceStageRef
         ? designHistory?.stages.find((stage) => stage.stageRef === sourceStageRef)?.modelSource ?? null
         : requestedRunId === undefined && sameProject && previous.status === "ready" ? previous.value.stageModelSource ?? null : null;
-      const projection = await studio.state(runId ?? undefined, stageRef);
+      // Quiet candidate display already read this exact run. Reuse that value,
+      // but still validate it against the fresh project binding below.
+      const projection = (typeof requestedRunId === "string" ? alreadyReadProjection : undefined)
+        ?? await studio.state(runId ?? undefined, stageRef);
       if (currentRequest !== request) return null;
       if (projection.projectId !== project.projectId ||
           projection.published.version !== project.published.version ||
           projection.published.stateSha256 !== project.published.stateSha256 ||
-          (runId !== null && projection.referenceRun.runId !== runId)) {
+          (runId !== null && projection.referenceRun.runId !== runId) ||
+          (stageRef != null && projection.sourceStageRef !== stageRef)) {
         throw new StudioApiError({ status: 0, code: "EDITING_PROJECT_CHANGED", detail:
-          "The state response does not match the requested project and run. Retry to read the current binding." });
+          "The state response does not match the requested project, run and Stage. Retry to read the current binding." });
       }
       if (runId !== null && (projection.stateDigest === null ||
           projection.matchesReferenceReceipt !== true ||

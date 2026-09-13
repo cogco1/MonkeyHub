@@ -229,7 +229,7 @@
         "supervising the blocking worker, collecting its output, and independently cleaning the Rhino host it started",
         "readback verification: the saved file's physical objects, semantics, bounds, counts, layer colours and document user text against the denominator",
         "the execution receipt and its status",
-        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
+        "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, retained polyline curve, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated mesh and native curve .3dm preview from one model",
         "native preview material assignment and readback for caller-declared component materials and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
         "the neutral CadBackend protocol, CadExecutionRequest, CadExecutionSource, CadArtifact and CadExecutionResult values, and the single CAD_BACKEND_REGISTRY; native evidence and retained receipt readers stay backend-specific",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
@@ -366,7 +366,8 @@
         "an imported document is verified against the same program denominator as a rebuilt one, stated in the representation it actually delivers: no block definitions, and each named object delivered as the number of B-reps its count states",
         "only one export drives this machine's Rhino at a time, and a caller that will not wait is told the host is busy rather than queued invisibly",
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
-        "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host"
+        "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
+        "retained polyline curves are verified from cold STEP and native 3DM readback against all authored points, endpoints and length; curve delivery claims no face or solid, and existing solid/surface receipt fields retain their meaning"
       ],
       "status": "canonical",
       "tests": [
@@ -576,7 +577,7 @@
         "document and object user strings: every key an object carries, attributes and geometry alike, read whole rather than by a known list",
         "world bounds: aggregate, per named object, and the visible-bounds witnesses that back each leaf bound",
         "native material and render-material tables and each object's material binding",
-        "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling)",
+        "per-object encoded-geometry digests and morphology analysis (planarity, curve sampling and exact native polyline vertices/length)",
         "the typed, fail-closed inspection error codes",
         "reading original 3dm container bytes, geometry encodings, user strings, block definitions/references and material tables without claiming geometric validity or bounds; invalid geometry object ids remain explicit"
       ],
@@ -787,7 +788,7 @@
       "owner_path": "monkeyarch/capabilities/element_producers.py",
       "purpose": "Turn a State Record's Element@1 rows into geometry operations, datum bindings, published datums and materialized relations, reading references rather than computing coordinates.",
       "owns": [
-        "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, planar-surface, ring, loft, dome-cap, stair, wedge, shell, declined",
+        "the producer dispatch table PRODUCERS: column-array, capitals, beam, pediment, wall, prism, planar-surface, curve, ring, loft, dome-cap, stair, wedge, shell, declined",
         "reading Element@1 entities off a StateRecord into ElementRow, in production order, using state.record's existing expression evaluator projection for explicit @parameter bindings",
         "topological production order: an element that names another (or its published `<id>-top`) is produced after it",
         "publishing `<id>-top` interface datums an element grants to what it supports",
@@ -802,7 +803,8 @@
         "prism semantic authoring: parameter-bound profile coordinates, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
         "loft semantic authoring: corresponding polyline sections with parameter-bound coordinates form one normal or straight loft, capped or open; unsupported section bases and inconsistent vertex counts refuse before execution",
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
-        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits"
+        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits",
+        "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -894,7 +896,8 @@
         "semantic coverage validation of a proposal against the state, commitments, seat scope and required component bindings",
         "the lineage / round / proposal / deferral / escalation records and their persistence through the repository",
         "reloading one exact compiled program from its retained record",
-        "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects"
+        "the planar_surface function contract: one explicit POINTS3 boundary, optional datum-relative base_offset and no input objects",
+        "the retained CURVE function contract accepts optional datum-relative base_offset beside points and basis; the existing polyline representation serves drawn curves"
       ],
       "does_not_own": [
         "compiling the proposal into objects and digests - compilers.geometry",
@@ -4220,7 +4223,8 @@
         "describing one capability against the bound projection: the exact base, the target's movable numbers as the catalog decided them, the refs a keep clause may name, and the next request with this project's base already in it",
         "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
         "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked",
-        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design"
+        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design",
+        "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4241,7 +4245,7 @@
         "optional StudioEventSink for successful API registration or option additions",
         "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes",
         "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities",
-        "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set"
+        "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set; closed defaults true for existing face/prism actions, while false with zero height saves a 2+ point model curve"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4422,7 +4426,8 @@
         "Before every provider attempt, the application text estimate must fit the configured context budget or return unsupported without a model invocation. This estimate excludes provider framing and image tokens and is not billed usage",
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
         "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters",
-        "Unexecuted proposal continuations fold checked operators onto their original run/Stage base in memory; a sketch batch stores only its complete proposal, failures leave previous proposals unchanged, and only final candidate execution creates a run or model file"
+        "Unexecuted proposal continuations fold checked operators onto their original run/Stage base in memory; a sketch batch stores only its complete proposal, failures leave previous proposals unchanged, and only final candidate execution creates a run or model file",
+        "Completed direct-model gestures update local previews without network writes; Sync never locks editing or replaces later local edits, retries retain candidate request identity through existing Hub admission, and local selection/preview is not acceptance or project authority"
       ],
       "status": "canonical",
       "tests": [
@@ -4448,7 +4453,10 @@
         "apps/archflow-studio/api/tests/test_capabilities.py",
         "apps/archflow-studio/api/tests/test_delete.py",
         "apps/archflow-studio/api/tests/test_sketch.py",
-        "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py"
+        "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py",
+        "apps/archflow-studio/web/test/modelDraft.test.ts",
+        "apps/archflow-studio/web/test/syncModelDraft.test.ts",
+        "apps/archflow-studio/web/test/modelSync.browser.mjs"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4474,7 +4482,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/capability.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/capabilities.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/capability.py",
-        "tools/benchmark_intent_context.py"
+        "tools/benchmark_intent_context.py",
+        "apps/archflow-studio/web/src/features/stage/modelDraft.ts",
+        "apps/archflow-studio/web/src/features/stage/syncModelDraft.ts",
+        "apps/archflow-studio/web/src/api/client.ts"
       ]
     },
     {
@@ -6075,7 +6086,9 @@
         "compose_review_sheet",
         "initialize_drawing_runtime"
       ],
-      "depends_on": ["adapters.cad_execution"],
+      "depends_on": [
+        "adapters.cad_execution"
+      ],
       "used_by": [
         "tests/test_drawing_standard.py",
         "tests/test_drawing_output.py",
