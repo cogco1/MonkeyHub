@@ -160,6 +160,15 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(self.manager.records(), [])
         self.assertFalse(self.manager.journal_path.exists())
 
+    def test_operation_journal_does_not_copy_response_details_or_request_content(self):
+        self.manager = self.durable_manager()
+        admission, _ = self.admission("/api/program", {"private": "private input text"})
+        self.manager.replied(admission, HttpResult(422,
+            b'{"detail":"Invalid private input text"}', {"content-type": "application/json"}))
+        self.assertIn("private input text", self.record(admission).reason)
+        self.assertNotIn("private input text", self.manager.journal_path.read_text(encoding="utf-8"))
+        self.assertEqual(self.durable_manager().records()[0].status, "failed")
+
     def test_cold_operation_binding_refuses_other_project_or_same_id_at_other_path(self):
         self.manager = self.durable_manager()
         self.admission("/api/program", {})

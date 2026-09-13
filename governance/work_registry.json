@@ -511,7 +511,7 @@
           "base_ref": "666865c250f17310373f2def6da6b5191f3e1cf7",
           "contributor": "Codex lifecycle task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "EXTEND existing OperationManager admission/restore at the coordinated nonproject runtime/operations location. Signatures and exact binding persist before dispatch; no request bodies, cached HTTP responses or canonical result copies. Cold restart refuses replay and reconciles outcomes from P036. 13 operation recovery tests, 7 real Hub/Studio lifecycle tests and archcheck passed locally, including truncated HTTP, same-key project isolation and Hub restart. #32 forward header allowlist unchanged. #42 is merged and its completed source lane removed. Await exact-head CI/coordinator review; broader CAD/provider coverage and #8 remain subsequent slices.",
+          "handoff": "EXTEND existing OperationManager admission/restore at the coordinated nonproject runtime/operations location. Signatures and exact binding persist before dispatch; no request bodies, cached HTTP responses or canonical result copies. Cold restart refuses replay and reconciles outcomes from P036. 14 operation recovery tests, 7 real Hub/Studio lifecycle tests and archcheck passed locally, including truncated HTTP, same-key project isolation and Hub restart. #32 forward header allowlist unchanged. #42 is merged and its completed source lane removed. Await exact-head CI/coordinator review; broader CAD/provider coverage and #8 remain subsequent slices.",
           "modules": [
             "hub.shell"
           ],

@@ -247,7 +247,7 @@ X 鼠标负向预览；参考无跳变、同帧浮点确认、撤销／重做、
 Hub runtime root 下的 `runtime/operations/<runtimeId>.json`。同一 key 的不同请求会拒绝；
 保存失败不转发。冷启动后恢复已接收身份并拒绝重放，无请求正文、HTTP 回复正文或 canonical
 结果副本。候选与 Stage 成功仍须从 P036 的实际保留结果和可达提交重新对账。
-13 项操作恢复检查与 7 项真实 Hub/Studio 检查通过，覆盖断开的真实 HTTP 回复、无保留 run
+14 项操作恢复检查与 7 项真实 Hub/Studio 检查通过，覆盖断开的真实 HTTP 回复、无保留 run
 的双项目 Hub 重开、提交后恢复、日志写入失败和错误绑定。ACP/worker 现有收尾继续保留；
 更多 CAD/provider 生命周期与 #8 热复用不在此 admission 切片内。
 

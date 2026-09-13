@@ -142,7 +142,7 @@ class OperationManager:
         # Only recovery metadata crosses this Hub-runtime boundary. Request
         # bodies and successful project results stay with their existing owners.
         saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
-            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision"}),
+            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason"}),
             "signature": row.signature, "expectedStage": row.expected_stage,
             "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
         } for row in self._operations.values()]}
