@@ -6,12 +6,12 @@ param(
     [switch]$OpenHub
 )
 
-# Copies one fixed candidate. Process lifecycle belongs to launch-hub.ps1.
+# Copies one fixed candidate. Its selected host owns process lifecycle.
 # ASCII source keeps this script readable by Windows PowerShell 5.1 without a BOM.
 $ErrorActionPreference = 'Stop'
 
 function Complete-Installation([string]$Directory) {
-    $entry = Join-Path $Directory 'OPEN_MONKEYHUB.cmd'
+    $entry = Join-Path $Directory $entryName
     $makeShortcut = $CreateDesktopShortcut.IsPresent
     $launch = $OpenHub.IsPresent
     if ($Interactive) {
@@ -26,17 +26,17 @@ function Complete-Installation([string]$Directory) {
             throw 'The desktop shortcut directory must be an existing absolute directory.'
         }
         # Same WScript.Shell shortcut mechanism as Studio's make-desktop-shortcut.ps1.
-        $link = Join-Path $desktop 'MonkeyHub.lnk'
+        $link = Join-Path $desktop $(if ($desktopBuild) { 'MonkeyArch.lnk' } else { 'MonkeyHub.lnk' })
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($link)
-        if ((Test-Path -LiteralPath $link) -and [IO.Path]::GetFileName($shortcut.TargetPath) -ne 'OPEN_MONKEYHUB.cmd') {
+        if ((Test-Path -LiteralPath $link) -and [IO.Path]::GetFileName($shortcut.TargetPath) -ne $entryName) {
             Write-Warning "The existing shortcut points to another application and was left alone: $link"
         } else {
             $shortcut.TargetPath = $entry
             $shortcut.WorkingDirectory = $Directory
             $shortcut.Description = 'Open MonkeyHub and its local applications'
             $shortcut.IconLocation = (Join-Path $Directory 'apps\archflow-studio\assets\monkeyarch.ico') + ',0'
-            $shortcut.WindowStyle = 7
+            $shortcut.WindowStyle = if ($desktopBuild) { 1 } else { 7 }
             $shortcut.Save()
             $written = $shell.CreateShortcut($link)
             if ($written.TargetPath -ne $entry -or $written.WorkingDirectory -ne $Directory) {
@@ -46,7 +46,8 @@ function Complete-Installation([string]$Directory) {
         }
     }
     if ($launch) {
-        Start-Process -FilePath $entry -WorkingDirectory $Directory -WindowStyle Hidden
+        $windowStyle = if ($desktopBuild) { 'Normal' } else { 'Hidden' }
+        Start-Process -FilePath $entry -WorkingDirectory $Directory -WindowStyle $windowStyle
     }
 }
 
@@ -60,10 +61,16 @@ try {
     if ($version -notmatch '^[0-9a-f]{40}$') { throw 'The package has no valid source commit.' }
     $buildInfo = Get-Content -LiteralPath (Join-Path $packageRoot 'build-info.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($buildInfo.sourceCommit -ne $version) { throw 'The package build metadata does not match its source commit.' }
+    $desktopBuild = $null -ne $buildInfo.desktop
+    $entryName = if ($desktopBuild) { 'MonkeyArch.exe' } else { 'OPEN_MONKEYHUB.cmd' }
+    if ($desktopBuild -and $buildInfo.desktop.sourceCommit -ne $version) {
+        throw 'The desktop host metadata does not match the bundled Hub source.'
+    }
     $fabVersion = [string]$buildInfo.monkeyFabCommit
     if ($fabVersion -and $fabVersion -notmatch '^[0-9a-f]{40}$') { throw 'The package has no valid MonkeyFab source commit.' }
     $versionName = $version.Substring(0, 12)
     if ($fabVersion) { $versionName += '-fab-' + $fabVersion.Substring(0, 12) }
+    if ($desktopBuild) { $versionName += '-desktop' }
     $required = @(
         'source-version.txt', 'build-info.json', 'OPEN_MONKEYHUB.cmd', '_runtime\python\python.exe',
         'apps\monkeyhub\run.py', 'apps\monkeyhub\launch-hub.ps1',
@@ -72,6 +79,7 @@ try {
     if ($fabVersion) {
         $required += @('apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml')
     }
+    if ($desktopBuild) { $required += @('MonkeyArch.exe', '_runtime\desktop-Cargo.lock') }
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {
             throw "The extracted package is incomplete: $relative"
@@ -104,12 +112,13 @@ try {
             if ($same) {
                 $installedBuild = Get-Content -LiteralPath (Join-Path $destination 'build-info.json') -Raw -Encoding UTF8 | ConvertFrom-Json
                 $same = $installedBuild.sourceCommit -eq $version -and [string]$installedBuild.monkeyFabCommit -eq $fabVersion
+                $same = $same -and (($null -ne $installedBuild.desktop) -eq $desktopBuild)
             }
             if (-not $same) {
                 throw "The destination already contains files. Choose a new directory: $destination"
             }
             Write-Host "This build is already installed: $destination"
-            Write-Host "Open: $(Join-Path $destination 'OPEN_MONKEYHUB.cmd')"
+            Write-Host "Open: $(Join-Path $destination $entryName)"
             Complete-Installation $destination
             exit 0
         }
@@ -148,7 +157,7 @@ try {
     Move-Item -LiteralPath $stagedDestination -Destination $destination -ErrorAction Stop
     Write-Host "Installed MonkeyHub source $version"
     if ($fabVersion) { Write-Host "Included MonkeyFab source $fabVersion" }
-    Write-Host "Open: $(Join-Path $destination 'OPEN_MONKEYHUB.cmd')"
+    Write-Host "Open: $(Join-Path $destination $entryName)"
     Write-Host 'No system Python, Node, PATH or project was changed.'
     Complete-Installation $destination
 } catch {
