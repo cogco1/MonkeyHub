@@ -115,7 +115,7 @@ class CadExecutionStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class RhinoCadProgramBinding:
+class CadProgramBinding:
     """Exact P036 record/branch/stage identity for one compiled program."""
 
     program_ref: ProjectRecordRef
@@ -125,6 +125,7 @@ class RhinoCadProgramBinding:
     design_state_digest: str
     predecessor_program_digest: str | None
 
+    # Retained receipts bind this serialization; the historical name stays on disk.
     SCHEMA = "RhinoCadProgramBinding@1"
 
     def __post_init__(self) -> None:
@@ -221,6 +222,10 @@ class RhinoCadProgramBinding:
             "design_state_digest": self.design_state_digest,
             "predecessor_program_digest": self.predecessor_program_digest,
         }
+
+
+# Compatibility for existing imports and retained receipt construction.
+RhinoCadProgramBinding = CadProgramBinding
 
 
 @dataclass(frozen=True, slots=True)
@@ -1731,6 +1736,146 @@ def _execute_rhino_three_dm_export(
     )
 
 
+def _rhino_semantic_failures(semantics, inspection, expected_counts) -> list[dict[str, str]]:
+    """Compare actual Rhino object/instance witnesses with the requested semantics."""
+    failures = []
+    expected_total = sum(expected_counts.values())
+    semantic_objects = semantics["objects"]
+    expected_by_op: dict[str, tuple[str, dict[str, str]]] = {}
+    for object_id, row in semantic_objects.items():
+        user_text = dict(row["user_text"])
+        producer = user_text["archflow:producer_op"]
+        if producer in expected_by_op:
+            failures.append(
+                _failure(
+                    "cad_execution.ambiguous_producer",
+                    f"producer {producer} names more than one physical object",
+                )
+            )
+        expected_by_op[producer] = (object_id, user_text)
+
+    definition_members = {
+        object_id
+        for definition in inspection.instance_definitions
+        for object_id in definition["object_ids"]
+    }
+    observed_by_op: dict[str, list[dict[str, object]]] = {}
+    tagged_top_level = 0
+    for row in inspection.object_user_strings:
+        if row["object_id"] in definition_members:
+            continue
+        attribute_pairs = tuple(
+            sorted(
+                (pair["key"], pair["value"])
+                for pair in row.get("attributes", ())
+                if pair["key"].startswith("archflow:")
+            )
+        )
+        attributes = dict(attribute_pairs)
+        producer = attributes.get("archflow:producer_op")
+        if producer is None:
+            continue
+        tagged_top_level += 1
+        geometry_archflow = tuple(
+            sorted(
+                (pair["key"], pair["value"])
+                for pair in row.get("geometry", ())
+                if pair["key"].startswith("archflow:")
+            )
+        )
+        observed_by_op.setdefault(producer, []).append(
+            {
+                "name": row.get("name"),
+                "layer_path": row.get("layer_path"),
+                "attribute_pairs": attribute_pairs,
+                "geometry_archflow": geometry_archflow,
+            }
+        )
+    if tagged_top_level != expected_total:
+        failures.append(
+            _failure(
+                "cad_execution.semantic_witness_count_mismatch",
+                "not every top-level object has one semantic witness",
+            )
+        )
+    if set(observed_by_op) != set(expected_by_op):
+        failures.append(
+            _failure(
+                "cad_execution.physical_identity_mismatch",
+                "producer operation set differs from physical denominator",
+            )
+        )
+    for producer, (object_id, expected_text) in expected_by_op.items():
+        rows = observed_by_op.get(producer, [])
+        expected_semantic = semantic_objects[object_id]
+        if len(rows) != expected_counts[object_id]:
+            failures.append(
+                _failure(
+                    "cad_execution.physical_multiplicity_mismatch",
+                    f"object {object_id} has wrong persisted multiplicity",
+                )
+            )
+        expected_pairs = tuple(sorted(expected_text.items()))
+        if any(
+            row["attribute_pairs"] != expected_pairs
+            or row["geometry_archflow"]
+            for row in rows
+        ):
+            failures.append(
+                _failure(
+                    "cad_execution.semantic_user_text_mismatch",
+                    f"object {object_id} semantic user text differs",
+                )
+            )
+        if any(row["name"] != expected_semantic["name"] for row in rows):
+            failures.append(
+                _failure(
+                    "cad_execution.object_name_mismatch",
+                    f"object {object_id} CAD name differs from physical id",
+                )
+            )
+        if any(row["layer_path"] != expected_semantic["layer"] for row in rows):
+            failures.append(
+                _failure(
+                    "cad_execution.object_layer_mismatch",
+                    f"object {object_id} layer differs from semantic contract",
+                )
+            )
+
+    expected_blocks = dict(semantics["blocks"])
+    actual_blocks = {
+        item["name"]: int(item["reference_count"])
+        for item in inspection.instance_definitions
+    }
+    if actual_blocks != expected_blocks:
+        failures.append(
+            _failure(
+                "cad_execution.block_mismatch",
+                "block definitions or reference counts differ",
+            )
+        )
+    expected_instance_total = sum(expected_blocks.values())
+    if len(inspection.instance_references) != expected_instance_total:
+        failures.append(
+            _failure(
+                "cad_execution.block_reference_mismatch",
+                "instance reference denominator differs",
+            )
+        )
+    if inspection.object_count != (
+        inspection.top_level_object_count
+        + inspection.instance_definition_member_count
+    ):
+        failures.append(
+            _failure(
+                "cad_execution.inspection_count_inconsistent",
+                "3dm object accounting is internally inconsistent",
+            )
+        )
+
+    return failures
+
+
 def verify_rhino_export_readback(
     plan: RhinoCadExportPlan,
     inspection: ThreeDmInspection,
@@ -1853,138 +1998,7 @@ def verify_rhino_export_readback(
                 "top-level object count differs from physical denominator",
             )
         )
-    semantic_objects = plan.expected_semantics["objects"]
-    expected_by_op: dict[str, tuple[str, dict[str, str]]] = {}
-    for object_id, row in semantic_objects.items():
-        user_text = dict(row["user_text"])
-        producer = user_text["archflow:producer_op"]
-        if producer in expected_by_op:
-            failures.append(
-                _failure(
-                    "cad_execution.ambiguous_producer",
-                    f"producer {producer} names more than one physical object",
-                )
-            )
-        expected_by_op[producer] = (object_id, user_text)
-
-    definition_members = {
-        object_id
-        for definition in inspection.instance_definitions
-        for object_id in definition["object_ids"]
-    }
-    observed_by_op: dict[str, list[dict[str, object]]] = {}
-    tagged_top_level = 0
-    for row in inspection.object_user_strings:
-        if row["object_id"] in definition_members:
-            continue
-        attribute_pairs = tuple(
-            sorted(
-                (pair["key"], pair["value"])
-                for pair in row.get("attributes", ())
-                if pair["key"].startswith("archflow:")
-            )
-        )
-        attributes = dict(attribute_pairs)
-        producer = attributes.get("archflow:producer_op")
-        if producer is None:
-            continue
-        tagged_top_level += 1
-        geometry_archflow = tuple(
-            sorted(
-                (pair["key"], pair["value"])
-                for pair in row.get("geometry", ())
-                if pair["key"].startswith("archflow:")
-            )
-        )
-        observed_by_op.setdefault(producer, []).append(
-            {
-                "name": row.get("name"),
-                "layer_path": row.get("layer_path"),
-                "attribute_pairs": attribute_pairs,
-                "geometry_archflow": geometry_archflow,
-            }
-        )
-    if tagged_top_level != expected_total:
-        failures.append(
-            _failure(
-                "cad_execution.semantic_witness_count_mismatch",
-                "not every top-level object has one semantic witness",
-            )
-        )
-    if set(observed_by_op) != set(expected_by_op):
-        failures.append(
-            _failure(
-                "cad_execution.physical_identity_mismatch",
-                "producer operation set differs from physical denominator",
-            )
-        )
-    for producer, (object_id, expected_text) in expected_by_op.items():
-        rows = observed_by_op.get(producer, [])
-        expected_semantic = semantic_objects[object_id]
-        if len(rows) != expected_counts[object_id]:
-            failures.append(
-                _failure(
-                    "cad_execution.physical_multiplicity_mismatch",
-                    f"object {object_id} has wrong persisted multiplicity",
-                )
-            )
-        expected_pairs = tuple(sorted(expected_text.items()))
-        if any(
-            row["attribute_pairs"] != expected_pairs
-            or row["geometry_archflow"]
-            for row in rows
-        ):
-            failures.append(
-                _failure(
-                    "cad_execution.semantic_user_text_mismatch",
-                    f"object {object_id} semantic user text differs",
-                )
-            )
-        if any(row["name"] != expected_semantic["name"] for row in rows):
-            failures.append(
-                _failure(
-                    "cad_execution.object_name_mismatch",
-                    f"object {object_id} CAD name differs from physical id",
-                )
-            )
-        if any(row["layer_path"] != expected_semantic["layer"] for row in rows):
-            failures.append(
-                _failure(
-                    "cad_execution.object_layer_mismatch",
-                    f"object {object_id} layer differs from semantic contract",
-                )
-            )
-
-    expected_blocks = dict(plan.expected_semantics["blocks"])
-    actual_blocks = {
-        item["name"]: int(item["reference_count"])
-        for item in inspection.instance_definitions
-    }
-    if actual_blocks != expected_blocks:
-        failures.append(
-            _failure(
-                "cad_execution.block_mismatch",
-                "block definitions or reference counts differ",
-            )
-        )
-    expected_instance_total = sum(expected_blocks.values())
-    if len(inspection.instance_references) != expected_instance_total:
-        failures.append(
-            _failure(
-                "cad_execution.block_reference_mismatch",
-                "instance reference denominator differs",
-            )
-        )
-    if inspection.object_count != (
-        inspection.top_level_object_count
-        + inspection.instance_definition_member_count
-    ):
-        failures.append(
-            _failure(
-                "cad_execution.inspection_count_inconsistent",
-                "3dm object accounting is internally inconsistent",
-            )
-        )
+    failures.extend(_rhino_semantic_failures(plan.expected_semantics, inspection, expected_counts))
 
     visible_witnesses = tuple(inspection.visible_bounds_witnesses)
     expected_leaf_witness_count = (
@@ -2034,13 +2048,14 @@ def verify_rhino_export_readback(
                 )
             )
 
+    expected_blocks = dict(plan.expected_semantics["blocks"])
     array_ops = {
         name.removeprefix("archflow-family-") for name in expected_blocks
     }
     direct_ids = {
         object_id
-        for producer, (object_id, _) in expected_by_op.items()
-        if producer not in array_ops
+        for object_id, row in plan.expected_semantics["objects"].items()
+        if row["user_text"]["archflow:producer_op"] not in array_ops
     }
     named_rows: dict[str, list[dict[str, object]]] = {}
     for row in inspection.named_object_bboxes:
@@ -3034,16 +3049,13 @@ def _json_copy(value: object):
 # ---------------------------------------------------------------- OCCT in-process executor (P107)
 #
 # A second executor of the same CompiledGeometryProgram behind this owner.
-# It shares the P036 binding (RhinoCadProgramBinding, aliased below as
-# CadProgramBinding), the analytic predictor (expected_object_bounds), the
+# It shares the neutral P036 CadProgramBinding (the historical Rhino name
+# remains a compatibility alias), the analytic predictor (expected_object_bounds), the
 # semantic denominator (expected_object_semantics) and the workspace rules;
 # it does not share the Rhino plan, its completion token, host witness or
 # cleanup receipt, because no host process exists.  Evidence tier is
 # ``self_measured_cold_read``: the STEP file is re-read from disk by a fresh
 # reader and measured; the Rhino gate remains the independent instrument.
-
-CadProgramBinding = RhinoCadProgramBinding
-"""The P036 program binding, named without the host it was first written for."""
 
 OCCT_ADAPTER_ID = "occt-in-process"
 OCCT_EVIDENCE_TIER = "self_measured_cold_read"
