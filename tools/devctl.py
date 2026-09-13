@@ -266,6 +266,54 @@ def is_ready(item: dict, live_ids: set[str]) -> bool:
     )
 
 
+def _work_lookup(data: dict, query: str | None) -> dict:
+    """Read the current claims; archcheck owns their validation and overlaps."""
+
+    from tools.archcheck import check_scopes, load_policy
+
+    rows = []
+    for item in data["items"]:
+        if "lanes" not in item:
+            candidates = [item]
+        else:
+            lanes = item["lanes"]
+            candidates = [
+                {**lane, "id": f"{item['id']}/{lane.get('id')}", "card": item["card"]}
+                for lane in lanes if isinstance(lane, dict)
+            ] if isinstance(lanes, list) else []
+        rows.extend(row for row in candidates if query is None or query in (item["id"], row["id"]))
+    policy = load_policy(ROOT / "governance" / "architecture_policy.json")
+    return {
+        "query": query,
+        "items": rows,
+        "findings": [finding.to_dict() for finding in check_scopes(ROOT, policy, data)],
+    }
+
+
+def _print_work_lookup(result: dict) -> None:
+    if not result["items"]:
+        print(f"No work matches {result['query']!r}.")
+    for row in result["items"]:
+        title = row.get("issue", row.get("goal", ""))
+        print(f"{row['id']} [{row.get('status')}] {title if result['query'] else str(title)[:100]}")
+        if "/" not in row["id"] and result["query"] is None:
+            continue
+        print(f"  {row.get('branch') or 'unassigned'} | base {row.get('base_ref') or 'unassigned'} | {row.get('contributor') or 'unassigned'}")
+        if result["query"] is None:
+            modules = row.get("modules")
+            scope = row.get("write_scope")
+            dependencies = row.get("depends_on")
+            print(f"  modules: {modules or 'see card'}; paths: {len(scope) if isinstance(scope, list) else 0}; depends on: {dependencies or 'none'}")
+            continue
+        for field in ("worktree", "reviewer", "handoff", "modules", "write_scope", "depends_on", "blocked_reason", "card"):
+            value = row.get(field)
+            if isinstance(value, list):
+                value = ", ".join(str(entry) for entry in value) or "none"
+            print(f"  {field}: {value if value is not None else 'unassigned'}")
+    for finding in result["findings"]:
+        print(f"{finding['code']}: {finding['message']}")
+
+
 def render(data: dict) -> tuple[str, str]:
     items = data["items"]
     live_ids = {item["id"] for item in items}
@@ -402,6 +450,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status")
     sub.add_parser("next")
     sub.add_parser("render-map")
+    work_parser = sub.add_parser("work", help="read current lanes, bases, handoffs and scope conflicts")
+    work_parser.add_argument("query", nargs="?", help="exact card or lane id, e.g. P115/team-lanes")
+    work_parser.add_argument("--json", action="store_true", help="emit registered work and scope findings")
     module_parser = sub.add_parser("module", help="find one module contract without reading the whole registry")
     module_parser.add_argument("query", help="exact module id or keywords, e.g. wall")
     module_parser.add_argument("--json", action="store_true", help="emit structured lookup output")
@@ -435,6 +486,13 @@ def main(argv: list[str] | None = None) -> int:
             _print_module_lookup(result)
         return 0 if result["match_count"] else 1
     data = load_registry()
+    if args.command == "work":
+        result = _work_lookup(data, args.query)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            _print_work_lookup(result)
+        return 1 if result["findings"] or (args.query is not None and not result["items"]) else 0
     if args.command == "status":
         for item in data["items"]:
             print(f"{item['id']:6s} {item['status']:8s} {item['goal'][:100]}")
