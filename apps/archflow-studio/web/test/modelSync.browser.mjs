@@ -19,9 +19,11 @@ const rhino = await rhino3dm();
 const root = await mkdtemp(path.join(tmpdir(), "monkeyarch-model-sync-"));
 const projectDir = path.join(root, "demo-project");
 const errors = [];
-// Both authored-only modes reuse the same real fixture/service/browser setup.
+// Authored-only modes reuse the same real fixture/service/browser setup.
 const authoredContinue = process.env.MONKEYARCH_AUTHORED_ONLY === "continue";
-const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredContinue;
+const authoredUndo = process.env.MONKEYARCH_AUTHORED_ONLY === "undo";
+const authoredInput = authoredContinue || authoredUndo;
+const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredInput;
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -331,23 +333,29 @@ if (authoredOnly) {
   console.log('  authored-only local selection/preselection/delete/undo passed; starting first Sync');
   let releaseFirst,firstReady,later;
   const releasedFirst=new Promise(resolve=>releaseFirst=resolve),firstHeld=new Promise(resolve=>firstReady=resolve);
-  if(authoredContinue)await page.route('**/api/proposals/sketch',async route=>{
+  if(authoredInput)await page.route('**/api/proposals/sketch',async route=>{
     const response=await route.fetch();assert.equal(response.status(),201);firstReady();await releasedFirst;await route.fulfill({response});
   },{times:1});
   const beforeSyncRequests=requests.length;
   const syncStart=Date.now();await button('Sync').click();
-  if(authoredContinue){
+  if(authoredInput){
     await within(firstHeld,15000,'first authored-only proposal was not held');const whileHeld=sent.length;
     assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
-    await deselect();const nextCorner=await page.evaluate(()=>window.__view.blank(6));assert.ok(nextCorner);
-    later=await rectangle(.8,.6,nextCorner);await pick(first,true);await page.keyboard.press('Delete');
-    await wait(s=>s.view.drafts.length===2&&!s.view.drafts.some(o=>o.id===first),'delete during first Sync');
+    if(authoredUndo){
+      await page.keyboard.press('Control+z');await page.keyboard.press('Control+z');
+      await wait(s=>s.index===0&&s.view.drafts.length===0,'undo both drawings during first Sync');
+      assert.equal(await page.locator('.stage-empty').count(),1,'undo to zero local objects restores the empty canvas');
+    }else{
+      await deselect();const nextCorner=await page.evaluate(()=>window.__view.blank(6));assert.ok(nextCorner);
+      later=await rectangle(.8,.6,nextCorner);await pick(first,true);await page.keyboard.press('Delete');
+      await wait(s=>s.view.drafts.length===2&&!s.view.drafts.some(o=>o.id===first),'delete during first Sync');
+    }
     assert.equal(sent.length,whileHeld,'continued local edits wrote while first Sync was held');
     assert.equal(candidateCalls().length,0);assert.deepEqual(await runIds(),[]);releaseFirst();
   }
   await wait(s=>{
     assert.ok(!s.error,`first authored-only Sync refused: ${s.error}`);
-    return !s.syncBusy&&s.candidates.length===1&&(authoredContinue ? s.dirty :
+    return !s.syncBusy&&s.candidates.length===1&&(authoredInput ? s.dirty :
       !s.dirty&&s.loaded===s.candidates[0]&&s.base===s.candidates[0]);
   },
     'first authored-only Sync did not produce and display its candidate',45000).catch(async error=>{await stages(syncStart,'authored-only failure');throw error;});
@@ -355,21 +363,27 @@ if (authoredOnly) {
   const proposals=sent.slice(writesBefore).filter(row=>row.path==='/api/proposals/sketch');
   assert.equal(proposals.length,2);for(const proposal of proposals){assert.equal(proposal.body.sourceRunId,null);assert.equal(proposal.body.stateDigest,initial.stateDigest);}
   const model=await exported(state.candidates[0]);assert.equal(model.get('obj-'+first)?.z,1.25);assert.equal(model.get('obj-'+second)?.z,.75);
-  if(authoredContinue){
+  if(authoredInput){
     // Let artifact discovery and any home-load effect settle after the job.
     await delay(500);state=await snap();
     assert.equal(state.loaded,undefined);assert.equal(state.sourceLabel,null);assert.equal(state.sourceRunId,null);
-    assert.equal(state.view.hasBaseModel,false);assert.equal(state.dirty,true);assert.equal(state.view.drafts.length,2);
-    assert.ok(state.view.drafts.some(o=>o.id===later));assert.ok(!state.view.drafts.some(o=>o.id===first));
-    assert.ok(!model.has('obj-'+later),'later drawing leaked into first Sync snapshot');await pick(later,true);
+    assert.equal(state.base,initial.base);assert.equal(state.view.hasBaseModel,false);assert.equal(state.dirty,true);
+    if(authoredUndo){
+      assert.equal(state.index,0);assert.equal(state.view.drafts.length,0);
+      assert.equal(await page.locator('.stage-empty').count(),1,'first export discovery must preserve the empty local view');
+    }else{
+      assert.equal(state.view.drafts.length,2);assert.ok(state.view.drafts.some(o=>o.id===later));assert.ok(!state.view.drafts.some(o=>o.id===first));
+      assert.ok(!model.has('obj-'+later),'later drawing leaked into first Sync snapshot');await pick(later,true);
+    }
     assert.ok(!requests.slice(beforeSyncRequests).some(row=>row.path.endsWith('/bytes')),'home loading must not replace continued local work when the first export appears');
   }else{
     assert.equal(state.view.hasBaseModel,true);assert.equal(state.view.drafts.length,0);await pick(first,true);
   }
   assert.ok(!requests.some(row=>row.method==='GET'&&new URL(row.path,'http://fixture').searchParams.get('run')?.startsWith('studio-projection')),
     'the authored projection placeholder must never be requested as a retained run');
-  await stages(syncStart,authoredContinue?'authored-only continued first Sync':'authored-only first Sync');
-  console.log(authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
+  await stages(syncStart,authoredUndo?'authored-only undo-to-empty first Sync':authoredContinue?'authored-only continued first Sync':'authored-only first Sync');
+  console.log(authoredUndo ? 'PASS authored-only undo to empty: first Sync saves its two captured drawings once; current index 0 / zero drafts stay empty and unsynced; no model download or synthetic-run request' :
+    authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
     'PASS authored-only: zero artifacts/runs → two local drawings with selection/preselection/delete/undo and zero writes → one explicit candidate, real OCCT export and visible saved model');
 } else {
 await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);

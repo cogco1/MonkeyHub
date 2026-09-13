@@ -679,7 +679,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const draftSnapshot = localModel ? currentDraft(localModel.history) : null;
   const hasLocalGeometry = !!localModel && !!draftSnapshot && [...draftSnapshot.objects.values()].some(object =>
     object.spec !== null && !object.deleted && object !== localModel.history.snapshots[0]!.objects.get(object.elementId));
-  localEditingRef.current = localModel !== null && localModel.history.index > 0;
+  // Undo can return to the initial picture while Sync still owns a later
+  // snapshot, or after that snapshot was saved. This empty picture is still
+  // local work; neither export discovery nor another preview may replace it.
+  localEditingRef.current = localModel !== null && (localModel.history.index > 0 ||
+    localModel.pending !== null || !snapshotsEquivalent(draftSnapshot!, localModel.synced));
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
   const ensureLocalModel = useCallback((): LocalModelSession => {
     if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));
