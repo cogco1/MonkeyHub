@@ -363,6 +363,8 @@
         "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
         "apps/archflow-studio/web/src/features/stage/ModelEditPanel.css",
         "docs/VILLA_DEMO_SCRIPT.md",
+        "docs/TEAM_MEETING_AGENDA.md",
+        "docs/TEAM_MEETING_DECK.pptx",
         "apps/archflow-studio/api/tests/test_health.py",
         "apps/archflow-studio/api/tests/test_artifacts.py",
         "apps/archflow-studio/api/tests/test_sse.py",
