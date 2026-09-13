@@ -1,5 +1,97 @@
 # P115 — 能力总索引与逐项整理
 
+## 2026-09-13：当前排期与第一批 Claude 工作
+
+GitHub issue 保留完整需求，顶部的执行安排限定下一片工作。#49 按重复项并入 #50，
+原研究仍可追溯；TripoSG-scribble、Step1X-3D、随机种子、峰值显存与原始失败样本的要求已保留。
+
+| 顺序 | Issue | 下一片与完成条件 |
+|---|---|---|
+| 先收尾 | #21、#23、#13、#14 | 已合并的实现不重新开发；分别补干净用户环境/真实旧数据、新用户 Board 盲测、新队友独立复现、代表性真实模型持续操作 |
+| 效率主线 | #32，关联 #8 | 收尾 ContextPack PR #52；以后按同任务实测瓶颈选择优化，不先铺设广泛缓存或完整事务运行时 |
+| 故障驱动 | #12 | PR #48 已解决冷 Hub 请求恢复；只对具体 CAD/provider 恢复失败继续修补 |
+| 新功能 1 | #53 | 先做 SKP 文件读写技术验证；通过后再导入、有限修改、导出，不先做 Live bridge |
+| 新功能 2 | #46 | 本轮只分析 Board/Diagram 入口与手绘图片到可编辑候选的最小路径，供用户讨论 |
+| 新功能 3 | #51 | 现有基线与 1–2 个实际可用推理 Agent，使用相同任务和建模工具比较 |
+| 后续 1 | #40 | 先做 Rhino 模型产物到 D5 更新的一条闭环；Blender LiveSync 后置 |
+| 后续 2 | #50 | 专用 3D 生成器先小样比较再接入，与 #51 的通用 Agent 工具调用区分 |
+| 后续 3 | #24 | #23 单用户使用验收后再推进 Project Room |
+| 后续 4 | #41 | 一个真实打印/PR 终态到手机通知，再决定是否扩展 |
+
+### #53：SKP Phase 0 的边界与下一步
+
+官方 C API 是本轮优先验证的离线文件路径；Ruby/Live bridge 留到后续。
+本机已有 SketchUp 2025 的 C API 运行库，可在独立 Python 子进程主线程调用。
+这只回答本机技术条件，尚未选定 MonkeyHub 的产品分发方案。
+技术依据见 [C API 总览](https://extensions.sketchup.com/developers/sketchup_c_api/sketchup/index.html)：
+直接读写 SKP、内部几何用英寸、C API 在主线程使用；Windows 发行依赖由 SDK 提供。
+
+临时验证限于自制小样及随装文件的只读读取，输出留在显式外部临时目录。
+SketchUp 桌面实开、目标版本兼容、纹理/UV、复杂几何、真实建筑模型、稳定跨文件身份恢复及
+MonkeyHub 导入后人工/Agent 修改尚未完成，不能将该试验称为产品支持 SKP 往返。
+显示单位必须联同 LengthFormat 解释：非 Decimal 格式会覆盖 LengthUnit；
+几何的英寸换算与显示设置是两件事。读取版本状态、末端实例路径身份也需要按正式 SDK 契约确认。
+参见 [单位选项](https://extensions.sketchup.com/developers/sketchup_c_api/sketchup/struct_s_u_options_provider_ref.html)
+和 [官方单位示例](https://developer.sketchup.com/article-handlingthemark)。
+
+下一步先完成桌面实开并确认 SDK 的实际取得/分发条款，再接一条小型导入链路。
+[Trimble Developer Terms](https://www.trimble.com/en/legal/developer-terms) 第 2.7 节对产品分发有条件，
+其中 SketchUp 内嵌扩展的豁免不包含向第三方应用集成文件能力；另行 SDK 协议是否适用尚未确认。
+不把本机随装 DLL 当作仓库可再分发资产。
+
+接线优先复用 `studio.artifacts` 的来源处理与 `project.repository` / P036 的产物留存。
+现有 document 通道只接受 PDF/PNG/JPEG，并有文档大小限制，不能只加一个扩展名就当成模型导入。
+原始 SKP、转换值及来源对应应在首个消费者中一起确定；读取器返回普通领域值，
+只有跨持久写入等真实边界才产生相应记录。导出沿已有 CAD/projection 所有者评估，
+不为了文件转换先增加完整 CAD backend，不把 SketchUp 对象模型写进 Canonical State。
+
+### #46：草图入口分析与推荐切片
+
+本节是对现有代码的产品与技术分析，不是 UI 或描图功能已经交付。
+
+**建议保留一个建模/图纸 App，把单页编辑作为 Board 可以打开并返回的视图。**
+Board 负责多稿并置、自由勾画和讨论；现有 DocumentCanvas 负责单页查看、批注和以后逐点纠正描图；
+MonkeyArch 继续承担可编辑 3D 候选。同一 Studio App 的 Stage 已挂载 documents 视图并保留切换状态，
+Hub 的 monkeyarch/monkeydiagram 入口却会分别加载两份 App。应合并重复入口，复用现有两种画布。
+依据：`apps/monkeyhub/api/monkeyhub_api/applications.py`、`apps/monkeyhub/web/src/ChatShell.tsx`、
+`apps/archflow-studio/web/src/features/stage/Stage.tsx`。
+
+Board 已有图片导入、精确图页来源与文档链接，但还没有双击编辑链路。
+其 scene 保存元素、标题与已发现图纸，缩放、滚动和选中状态目前留在前端。
+返回位置可以通过保持挂载或保存前端视图快照来保留，不需要为这次切换新增项目 revision。
+第一片优先保持 Board 挂载；同时不能直接套用当前 `openTool(id, view)`：它修改 iframe revision 并重载目标 App，
+会丢失目标页的临时状态。需沿现有 hostBridge 加入受 origin/window 校验的打开精确图页消息，
+由现有 App 更新 documents 视图；首次加载仍使用已有 URL 参数。出图、从模型打开图纸、来源绑定与独立浏览器入口保留。
+依据：`apps/shared-web/src/hostBridge.js`、`apps/archflow-studio/web/src/app/App.tsx`、
+`apps/archflow-studio/web/src/app/Connected.tsx`。
+
+**画板标记与图页批注目前不会双向自动同步。** Board 的 Excalidraw 元素只在提交设计意见时，
+经 `createBoardFeedback` 转换、`mergeBoardAnnotations` 合并和 CAS 保存成为图页批注；
+Diagram 墨迹也没有叠入 Board 当前的空批注缩略图。双击前应复用这段转换和保存，
+将它从需要已绑定模型的设计提交中分出，允许尚未起模的草图进入单页编辑。
+无法转换的曲线箭头等标记明确留在 Board；保存冲突保留草稿。返回后刷新对应页的批注显示，避免两处看见不同版本。
+依据：`apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedback.ts`、
+`boardFeedbackGeometry.ts`、`Board.tsx`。
+
+图片传给模型、line/arrow 端点拖拽、页坐标批注及 `/api/proposals/sketch` 已有实现，
+但它们尚未组成描图链路。现有模型回答契约不能直接返回可编辑描图；页批注缺少闭合轮廓与模型对象的对应；
+页归一化坐标到建筑平面的比例/方向换算也未实现。3D 草稿中的 elementId 不能自动代替图稿对象身份。
+图纸生成、原图字节、精确来源、页批注 revision 与已有候选机制均应继续复用。
+依据：`apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py`、`gestures.py`、
+`apps/archflow-studio/api/archflow_studio_api/transport/proposal.py`、
+`apps/archflow-studio/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx`。
+
+最小描图路径是：导入 PNG/JPG → Agent 给出可叠回原图的几何解释 → 局部拖点/纠正 →
+以识别或确认的尺度、方向和层高转换 → 沿现有 sketch/proposal 路径生成候选 → 继续修改。
+系统先解释普通笔画、尝试闭合和尺度识别，提供可撤销结果；建筑师只决定影响设计的真实歧义。
+无可靠尺度时可先显示比例草案，不能声称精确米制。图纸、闭合对象与 3D element 的稳定对应须在首个消费场景中解决，
+不先建通用描图协议或新存储。任意 group/笔画不自动认定为墙或房间，候选不自动接受或正式发布。
+
+实施顺序建议先完成“双击同一页、标记可见、返回状态保留”，再撤掉重复 Hub App 入口，最后实现描图。
+验收还包括：目标 App 的未同步建模草稿不因打开图纸而丢失；原稿字节不变；叠图缩放与拖点后保持对位；
+修正同一轮廓后仍对应同一候选对象；拖点不调用模型；缺尺度、识别失败或旧基底均不改已接受项目。
+归口沿用 `studio.board`、`studio.artifacts`、`studio.intent`、`studio.shell`、`hub.shell`；本轮没有修改这些软件接口。
+
 ### #32 Phase 0：整轮任务观测与 MonkeyMonitor
 
 `P115/agent-latency` 从 `293756cf` 开始，复用分配的 `597e` worktree，
