@@ -39,6 +39,7 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 
 - `archflow/` contains shared project, fact and technical contracts. `monkeyarch/`
   owns 3D modeling algorithms; `monkeydiagram/` owns drawing algorithms.
+  `apps/monkeyfab/` owns print preparation and upload-only CLI behavior, bundled from the same Hub commit.
   `monkeymonitor/` owns independent engineering usage, pricing and budget advice;
   its explicitly configured diagnostic logs are not project state. The Studio
   host composes peer workspaces. Core code imports neither workflow, and the

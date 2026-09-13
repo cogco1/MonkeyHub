@@ -394,7 +394,8 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
         "apps/archflow-studio/api/tests/test_boards.py",
         "tests/test_package_monkeyapps.py",
-        ".github/workflows/desktop.yml"
+        ".github/workflows/desktop.yml",
+        "apps/monkeyfab/"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -431,20 +432,35 @@
           "id": "desktop",
           "issue": "#21 desktop and browser version parity",
           "status": "active",
-          "branch": "codex/desktop-web-parity",
-          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-desktop-web-parity",
+          "branch": "codex/fab-in-hub",
+          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-fab-in-hub",
           "base_ref": "a035e07e9e4395ac7db9699d6219b8159e14d03a",
           "contributor": "Codex coordinator",
           "reviewer": "Repository owner",
-          "handoff": "Keep desktop and browser shortcuts on one installed bundle, build every main revision, and verify both entrypoints with the same locally integrated applications. No shared live-process attachment is requested.",
-          "modules": ["hub.shell"],
+          "handoff": "PR #62 provides desktop/browser version parity. Continue locally by moving existing Fab source into Hub and including it by default from one commit; verify real CLI, API and packaging. Publishing the formerly private Fab source to public Hub awaits explicit approval after local review.",
+          "modules": [
+            "hub.shell",
+            "monkeyfab",
+            "tools.package_monkeyapps"
+          ],
           "write_scope": [
             ".github/workflows/desktop.yml",
             "apps/monkeyhub/installer/install.ps1",
             "apps/monkeyhub/desktop/README.md",
             "tests/test_package_monkeyapps.py",
             "docs/mapping/planning/P115-capability-consolidation.md",
-            "governance/work_registry.json"
+            "governance/work_registry.json",
+            "apps/monkeyfab/",
+            "tools/package_monkeyapps.py",
+            "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
+            "apps/monkeyhub/api/monkeyhub_api/applications.py",
+            "apps/monkeyhub/api/tests/test_monkeyfab.py",
+            "apps/monkeyhub/README.md",
+            "apps/monkeyhub/installer/README.md",
+            ".github/workflows/verify.yml",
+            "docs/REPO_LAYOUT.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "AGENTS.md"
           ],
           "depends_on": []
         },

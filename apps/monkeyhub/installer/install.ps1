@@ -27,10 +27,11 @@ function Complete-Installation([string]$Directory) {
         }
         # Same WScript.Shell shortcut mechanism as Studio's make-desktop-shortcut.ps1.
         $shell = New-Object -ComObject WScript.Shell
-        # Both surfaces use this installation's frontend, Python and applications.
-        $entries = @(@{ Link = 'MonkeyHub.lnk'; Entry = 'OPEN_MONKEYHUB.cmd'; WindowStyle = 7 })
-        if ($desktopBuild) {
-            $entries += @{ Link = 'MonkeyArch.lnk'; Entry = 'MonkeyArch.exe'; WindowStyle = 1 }
+        # The native package has one app shortcut; its browser launcher remains in the bundle.
+        $entries = if ($desktopBuild) {
+            @(@{ Link = 'MonkeyArch.lnk'; Entry = 'MonkeyArch.exe'; WindowStyle = 1 })
+        } else {
+            @(@{ Link = 'MonkeyHub.lnk'; Entry = 'OPEN_MONKEYHUB.cmd'; WindowStyle = 7 })
         }
         foreach ($item in $entries) {
             $link = Join-Path $desktop $item.Link
@@ -41,6 +42,7 @@ function Complete-Installation([string]$Directory) {
             }
             $target = Join-Path $Directory $item.Entry
             $shortcut.TargetPath = $target
+            $shortcut.Arguments = ''
             $shortcut.WorkingDirectory = $Directory
             $shortcut.Description = 'Open MonkeyHub and its local applications'
             $shortcut.IconLocation = (Join-Path $Directory 'apps\archflow-studio\assets\monkeyarch.ico') + ',0'
@@ -51,6 +53,16 @@ function Complete-Installation([string]$Directory) {
                 throw "The desktop shortcut does not point to this installation: $link"
             }
             Write-Host "Desktop shortcut: $link"
+            if ($desktopBuild) {
+                $browserLink = Join-Path $desktop 'MonkeyHub.lnk'
+                if (Test-Path -LiteralPath $browserLink -PathType Leaf) {
+                    $browserTarget = $shell.CreateShortcut($browserLink).TargetPath
+                    if ([IO.Path]::GetFileName($browserTarget) -eq 'OPEN_MONKEYHUB.cmd' -and
+                        (Test-Path -LiteralPath (Join-Path ([IO.Path]::GetDirectoryName($browserTarget)) 'build-info.json') -PathType Leaf)) {
+                        Remove-Item -LiteralPath $browserLink
+                    }
+                }
+            }
         }
     }
     if ($launch) {
@@ -82,11 +94,9 @@ try {
     $required = @(
         'source-version.txt', 'build-info.json', 'OPEN_MONKEYHUB.cmd', '_runtime\python\python.exe',
         'apps\monkeyhub\run.py', 'apps\monkeyhub\launch-hub.ps1',
-        'apps\monkeyhub\web\dist\index.html', 'apps\archflow-studio\web\dist\index.html'
+        'apps\monkeyhub\web\dist\index.html', 'apps\archflow-studio\web\dist\index.html',
+        'apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml'
     )
-    if ($fabVersion) {
-        $required += @('apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml')
-    }
     if ($desktopBuild) { $required += @('MonkeyArch.exe', '_runtime\desktop-Cargo.lock') }
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {

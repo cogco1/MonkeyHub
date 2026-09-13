@@ -5966,7 +5966,8 @@
         "studio.candidate",
         "studio.intent",
         "monkeymonitor",
-        "contracts.canonical"
+        "contracts.canonical",
+        "monkeyfab"
       ]
     },
     {
@@ -6019,10 +6020,10 @@
       "module_id": "tools.package_monkeyapps",
       "owner_path": "tools/package_monkeyapps.py",
       "status": "canonical",
-      "purpose": "Build a Windows application distribution from exact ArchFlow and optional independent MonkeyFab Git commits in external directories, reusing the saved development root or explicit overrides. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
+      "purpose": "Build a complete Windows Hub distribution, including Fab, from one exact Hub Git commit in external directories. This CLI owns packaging; project and app lifecycle owners retain their existing authority.",
       "owns": [
-        "Exact-commit source collection for ArchFlow and optional MonkeyFab, frontend build, locked ACP adapter and embedded Python/Node runtimes in external staging/cache",
-        "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; integrated package identity binds both source commits",
+        "Exact-commit source collection for Hub and its included Fab module, frontend build, locked ACP adapter and embedded Python/Node runtimes in external staging/cache",
+        "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; all applications share the selected Hub source commit",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell",
         "Optional --desktop builds and verifies MonkeyArch.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json"
       ],
@@ -6032,7 +6033,7 @@
         "The shared application preference authority"
       ],
       "inputs": [
-        "Exact source Git commit or ref and optional explicit MonkeyFab checkout plus commit/ref",
+        "One exact Hub source Git commit or ref, including apps/monkeyfab",
         "Saved development root and optional task name, or explicit external staging, cache and output directories",
         "Builder Node/npm and Windows Python runtime inputs"
       ],
@@ -6046,11 +6047,12 @@
         "package"
       ],
       "depends_on": [
-        "tools.workspace"
+        "tools.workspace",
+        "monkeyfab"
       ],
       "invariants": [
         "Only the selected committed source is collected; local WIP and project/runtime folders are not selected inputs",
-        "package validates staging/output/cache against both selected source checkouts before passing paths to its write helpers",
+        "package validates staging/output/cache against the selected source checkout before passing paths to its write helpers",
         "The registered writer functions derive distribution outputs from those validated roots; this registration adds no project writer and is not a filesystem sandbox.",
         "Installation targets a fresh version directory and leaves unknown existing data intact",
         "The shared workspace setting supplies stable task staging/output and shared cache; explicit path overrides do not modify that setting",
@@ -6148,6 +6150,62 @@
         "tests/test_drawing_output.py"
       ],
       "notes": "CREATE justified in docs/DRAWING_STANDARD_V0.1.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."
+    },
+    {
+      "module_id": "monkeyfab",
+      "owner_path": "apps/monkeyfab/src/monkeyfab/cli.py",
+      "purpose": "Prepare closed print meshes and upload already sliced Bambu jobs through the Fab CLI hosted by Hub.",
+      "status": "canonical",
+      "owns": [
+        "Uniform unit/scale conversion and closed grid cuts within a selected printer envelope",
+        "Printer profiles, assembly offsets, STL and parts.json export to an explicit output directory",
+        "Local sliced-job inspection and optional LAN FTPS upload without starting a print"
+      ],
+      "does_not_own": [
+        "Hub UI, HTTP transport, application lifecycle or installation",
+        "Architectural design changes, project persistence, canonical HEAD or formal issue",
+        "Slicing, printer control, automatic printing or credential storage"
+      ],
+      "inputs": [
+        "Caller-selected closed STL/OBJ, unit, scale, printer profile and explicit new or empty output directory",
+        "Already sliced .gcode.3mf, explicit printer address and request-local access code, or local dry run"
+      ],
+      "outputs": [
+        "Closed millimetre STL parts and parts.json assembly/placement data",
+        "Profile JSON or upload/local-validation result with print_started false"
+      ],
+      "public_api": [
+        "main",
+        "prepare_mesh",
+        "get_profile",
+        "send_file"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
+        "tools/package_monkeyapps.py"
+      ],
+      "invariants": [
+        "Source geometry and existing outputs are preserved",
+        "Only the caller-selected fabrication output directory is written; no project state is created",
+        "Geometry remains in Fab; Hub invokes the same snapshot CLI using its interpreter",
+        "Send never starts printing, persists access codes or silently retries an uncertain upload"
+      ],
+      "files": [
+        "apps/monkeyfab/src/monkeyfab/__init__.py",
+        "apps/monkeyfab/src/monkeyfab/__main__.py",
+        "apps/monkeyfab/src/monkeyfab/cli.py",
+        "apps/monkeyfab/src/monkeyfab/geometry.py",
+        "apps/monkeyfab/src/monkeyfab/profiles.py",
+        "apps/monkeyfab/src/monkeyfab/send.py"
+      ],
+      "tests": [
+        "apps/monkeyfab/tests/test_cli.py",
+        "apps/monkeyfab/tests/test_geometry.py",
+        "apps/monkeyfab/tests/test_profiles.py",
+        "apps/monkeyfab/tests/test_send.py"
+      ],
+      "notes": "User-requested repository consolidation. Import the existing MonkeyFab implementation at 6128f99c8fbcc5db41539a225386a6495fa6c5ab; retain its CLI and algorithm ownership. No current core, modeling or drawing owner provides print preparation, so this registers the existing capability instead of adding another implementation."
     }
   ]
 }

@@ -99,7 +99,7 @@ class Applications:
         title, service = APPS[app_id]
         with self._lock:
             if service == "hub":
-                available = fabrication.available()
+                available = fabrication.available(self.source_root)
                 return AppStatus(
                     appId=app_id, title=title, serviceId="hub", available=available,
                     state="running" if available else "unavailable",

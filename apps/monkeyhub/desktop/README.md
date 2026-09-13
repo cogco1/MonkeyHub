@@ -32,19 +32,18 @@ This uses the existing external staging/cache/output roots and adds the EXE to
 that same bundle; the browser entry remains included. Double-click the bundled
 `MonkeyArch.exe`. A checkout build still needs the explicit options below.
 
-When shortcuts are selected, the installer updates both `MonkeyArch.lnk` (desktop)
-and `MonkeyHub.lnk` (browser) to the same desktop bundle. Both entries use the same
-frontend, Python and included applications. Its default version directory has a
-`-desktop` suffix; earlier installations remain available for rollback. Missing
-desktop files cause installation to fail. Installer tests use private temporary
-installation and shortcut directories.
+When shortcuts are selected, the desktop installer keeps one `MonkeyArch.lnk`
+pointing at this bundle's `MonkeyArch.exe` and removes a recognized older
+`MonkeyHub.lnk` browser launcher. The bundle still includes `OPEN_MONKEYHUB.cmd`
+for browser access; both surfaces use the same frontend, Python and applications.
+The default version directory has a `-desktop` suffix. Existing installation
+files and user data are retained; missing desktop or Fab files fail installation.
+Installer tests use private temporary installation and shortcut directories.
 
-MonkeyFab remains the package builder's optional independent input. To include
-it, combine `--desktop` with `--monkeyfab-source <checkout>` and
-`--monkeyfab-ref <commit>`; the same embedded interpreter then receives its
-preparation and `send` dependencies. In source mode the `--python` interpreter
-must already contain MonkeyFab. A host-only test interpreter can open Hub and
-Studio while the Fab card correctly reports that dependency as unavailable.
+Fab lives in this repository's `apps/monkeyfab/` and is included in every package,
+with preparation and `send` dependencies. No external Fab repository or version
+argument is needed. For source mode, install `apps/monkeyfab[send]` into the
+`--python` environment from the repository root.
 
 For explicit source development (both frontend `dist` directories must exist):
 
