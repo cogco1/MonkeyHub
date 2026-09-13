@@ -15,11 +15,12 @@
     {
       "interface_id": "compiled-cad-execution",
       "owner": "adapters.cad_execution",
-      "contract": "Execute an exact CompiledGeometryProgram bound to its P036 program record, branch and stage inside an existing caller-supplied speculative workspace; return an execution receipt with saved-file readback. The caller retains the receipt through P036 and explicitly selects the backend.",
+      "contract": "CadBackend.execute(CadExecutionRequest) returns CadExecutionResult for an exact CompiledGeometryProgram and public CadProgramBinding inside the caller-supplied speculative workspace. archflow.adapters.cad_backend.CAD_BACKEND_REGISTRY is the single execution registration point. Native receipt schemas/evidence remain intact; the runner retains them through P036.",
       "implementations": [
         {
           "backend": "occt",
           "entry_points": [
+            "archflow.adapters.cad_backend.OcctBackend.execute",
             "archflow.adapters.cad_execution.execute_occt_export"
           ],
           "implementation_file": "archflow/adapters/occt_backend.py",
@@ -28,6 +29,7 @@
         {
           "backend": "rhino",
           "entry_points": [
+            "archflow.adapters.cad_backend.RhinoBackend.execute",
             "archflow.adapters.cad_execution.prepare_rhino_three_dm_export",
             "archflow.adapters.cad_execution.execute_rhino_three_dm_export"
           ],
@@ -213,7 +215,7 @@
       "owner_path": "archflow/adapters/cad_execution.py",
       "purpose": "Execute an exact compiled program through the declared CAD execution interface: in-process OCCT exact STEP with mesh .3dm preview, or explicit supervised Rhino compatibility export; verify saved artifacts before reporting success. Extract named drawing edges and material sections from existing OCCT shapes.",
       "owns": [
-        "RhinoCadProgramBinding and RhinoCadExportIdentity: the P036 record/branch/stage identity an export is bound to",
+        "CadProgramBinding and backend export identities: the exact P036 record/branch/stage identity an export is bound to; RhinoCadProgramBinding remains a compatibility alias with unchanged serialization",
         "the immutable export plan: workspace layout, script, completion token, host witness and the full validation denominator digest",
         "the STA PowerShell/COM worker source and its shell-free encoded command",
         "supervising the blocking worker, collecting its output, and independently cleaning the Rhino host it started",
@@ -221,7 +223,7 @@
         "the execution receipt and its status",
         "the OCCT implementation of the compiled-cad-execution interface: supported solid, extrusion, bounded planar surface, capped or uncapped polyline loft, circular revolve, boolean and linear array operations; exact STEP write/readback and tessellated .3dm preview from one model",
         "native preview material assignment and readback for caller-declared component materials and existing FRAME/GLAZING role fallbacks, including actual glass transparency",
-        "CadProgramBinding (the retained RhinoCadProgramBinding alias), OcctCadExportIdentity, OcctExecutionReceipt and explicit CadCapabilityError for unsupported operations",
+        "the neutral CadBackend protocol, CadExecutionRequest, CadExecutionSource, CadArtifact and CadExecutionResult values, and the single CAD_BACKEND_REGISTRY; native evidence and retained receipt readers stay backend-specific",
         "orthographic visible/hidden polylines of named STEP shapes with their source object ids (project_occt_lines): one exact HLRBRep_Algo solve over every selected shape in a caller-stated right/up frame, an exact near/far depth slab, chord-deflection discretization in the STEP read unit",
         "plane-section extraction from the same selected shapes in the same frame (section_occt_lines, section_occt_regions): OcctDrawingPolyline values carry the section kind, and OcctDrawingRegion values carry each solid's closed material boundaries, including holes and disconnected cuts, to be filled even-odd",
         "measuring explicitly requested final named solid pairs from OCCT shapes: true distance in metres and common solid volume in cubic metres, preserving separated/contact/penetrating/unchecked and never reconstructing consumed boolean operands",
@@ -244,13 +246,14 @@
       ],
       "inputs": [
         "CompiledGeometryProgram",
-        "RhinoCadProgramBinding",
+        "CadProgramBinding (RhinoCadProgramBinding compatibility alias)",
         "speculative workspace Path",
         "RhinoPatchBase",
         "provenance",
         "material and layer maps",
         "Optional operation_observer and parent event id for actual OCCT reuse checks, geometry, STEP, tessellation and preview stages; no diagnostic write or project authority",
-        "named StepEntry shapes, explicit object selection, drawing origin/right/up and linear deflection in the shape's length unit"
+        "named StepEntry shapes, explicit object selection, drawing origin/right/up and linear deflection in the shape's length unit",
+        "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle"
       ],
       "outputs": [
         "RhinoCadExportPlan",
@@ -258,7 +261,8 @@
         "ThreeDmInspection (embedded)",
         "OcctExecutionReceipt: exact STEP and preview artifact identities, saved B-rep readback matched to declared solid or open-surface geometry, preview inspection, backend identity and measured timings",
         "OcctDrawingPolyline values with object_id, visible/hidden/section kind and 2D points; no writes or receipt",
-        "OcctDrawingRegion values with object_id and closed 2D loops for one solid's section, filled together using even-odd; separate solids remain separate values"
+        "OcctDrawingRegion values with object_id and closed 2D loops for one solid's section, filled together using even-odd; separate solids remain separate values",
+        "CadExecutionResult: backend id, exact binding, status, named verified artifacts, stable object/semantic coverage, failures and unchanged backend-specific receipt payload"
       ],
       "public_api": [
         "prepare_rhino_three_dm_export",
@@ -292,7 +296,17 @@
         "work_model_workspace",
         "verify_work_model_geometry",
         "discover_powershell",
-        "WORK_MODEL_EXPORT_PATH"
+        "WORK_MODEL_EXPORT_PATH",
+        "CadBackend",
+        "CadExecutionRequest",
+        "CadExecutionSource",
+        "CadArtifact",
+        "CadExecutionResult",
+        "get_cad_backend",
+        "cad_backend_ids",
+        "CAD_BACKEND_REGISTRY",
+        "OcctBackend",
+        "RhinoBackend"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -306,7 +320,8 @@
         "archflow.state.geometry_program",
         "contracts.canonical",
         "project.refs",
-        "state.geometry_program"
+        "state.geometry_program",
+        "archflow.adapters.cad_execution"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -315,7 +330,8 @@
         "tests/test_occt_execution.py",
         "monkeydiagram/drawing_elevation.py",
         "tests/test_drawing_elevation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "tests/test_cad_backend_contract.py"
       ],
       "invariants": [
         "a successful process exit is never sufficient - the saved file is read back independently and must match the denominator",
@@ -332,18 +348,21 @@
         "drawing origin/right/up are explicit in the CAD Z-up frame; right and up are orthonormal and right cross up faces the viewer; output coordinates and positive chord deflection share the source shape's unit; unknown, ambiguous or empty selected shapes and invalid frames fail explicitly",
         "an import-based export rebuilds nothing: every object comes from the exact STEP this program already exported, each single-object file is bound to its digest in the plan and checked again in the host before it is read, and a file that changed in between is refused",
         "an imported document is verified against the same program denominator as a rebuilt one, stated in the representation it actually delivers: no block definitions, and each named object delivered as the number of B-reps its count states",
-        "only one export drives this machine's Rhino at a time, and a caller that will not wait is told the host is busy rather than queued invisibly"
+        "only one export drives this machine's Rhino at a time, and a caller that will not wait is told the host is busy rather than queued invisibly",
+        "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_cad_execution.py",
         "tests/test_cad_patch.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_cad_backend_contract.py"
       ],
-      "notes": "EXTEND: cad_execution remains the sole CAD execution owner. The explicitly requested OCCT alternative is implemented in an adjacent kernel-facing file behind compiled-cad-execution; it introduces no new IR, compiler, project writer or viewer. Runner/Studio integration follows after the concurrent runtime repair releases those files.",
+      "notes": "EXTEND P115 #13 Phase 0: cad_backend exposes the existing OCCT/Rhino executors through one request, registration and result boundary. No compiler, State, P036 or Stage semantics change; production Blender waits for this contract to land on main.",
       "files": [
         "archflow/adapters/cad_execution.py",
-        "archflow/adapters/occt_backend.py"
+        "archflow/adapters/occt_backend.py",
+        "archflow/adapters/cad_backend.py"
       ]
     },
     {
@@ -2335,12 +2354,12 @@
       "owns": [
         "run_project: binding the record to the run, projecting the developed-design view, and the seat round loop",
         "StageExecutionGuard: the retained workflow, envelope, predecessor exit and predecessor closure required before any seat record is written",
-        "RunOptions: commitment, the declared live provider identity, branch, coverage strictness, export, CAD backend, workspace and explicit Rhino patch-oracle switches",
+        "RunOptions: commitment, provider, branch, coverage, export and backend options validated through the CAD owner; legacy powershell/patch_oracle fields remain compatible",
         "the recorded-proposal provider and its identity",
         "per-seat orchestration: scope, exclusions, production context, proposal authoring, program retention, handover compilation",
         "component coverage: what counts as covered, what is declined, what is undeclared and when that is fatal",
         "assembling what reaches the relation check across the existing seat order: the record's declared relations and producer-built support relations wait for their checker inputs; final unmeasurable relations remain retained unchecked",
-        "the export decision: default in-process OCCT export or explicit Rhino compatibility export; reuse an identical verified result, and retain Rhino patch/rebuild within that backend",
+        "backend-neutral dispatch through get_cad_backend().execute(request), retaining native receipts; exact verified result reuse, source reuse and declared patch/rebuild/oracle behavior",
         "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
         "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
         "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id",
@@ -2434,7 +2453,8 @@
         "state.spatial",
         "state.stage_workflow",
         "archflow.adapters.occt_backend",
-        "monkeyarch.capabilities"
+        "monkeyarch.capabilities",
+        "archflow.adapters.cad_backend"
       ],
       "used_by": [
         "tools/run_project.py",
@@ -2461,12 +2481,14 @@
         "the developed projection receives the actual envelope phase; the existing guard still rejects a different state or phase",
         "source ProducedElement values and STEP shapes are reused only after verifying row inputs, dependency context and retained source execution; current-run relation and solid checks still receive the complete model; missing legacy producer results fall back to full production",
         "Export observer failure never fails or repeats an export; the workflow imports no monitoring implementation",
-        "an explicitly requested work-model export realizes no seat: its retained receipt is skipped when looking for a prior export to reuse or patch"
+        "an explicitly requested work-model export realizes no seat: its retained receipt is skipped when looking for a prior export to reuse or patch",
+        "adding a registered CAD backend does not add runner dispatch branches; cached receipts and patch sources pass exact P036 binding and artifact integrity checks"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_project_runner.py",
-        "tests/test_state_record.py"
+        "tests/test_state_record.py",
+        "tests/test_cad_backend_contract.py"
       ],
       "notes": "archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
     },

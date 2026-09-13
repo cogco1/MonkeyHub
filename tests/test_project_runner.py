@@ -1455,17 +1455,12 @@ class OcctExportTests(unittest.TestCase):
         left untouched, and the complete receipt is what later runs reuse.
         """
 
-        from unittest.mock import patch
-        from archflow.adapters import cad_execution
+        from dataclasses import replace
 
-        real = cad_execution.execute_occt_export
-
-        def exact_only(program, *, binding, **kwargs):
-            return real(program, binding=binding, **{**kwargs, "preview": False})
-
-        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)))
-        with patch.object(cad_execution, "execute_occt_export", side_effect=exact_only):
-            first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        project = _ExportProject(self, _record(elements=("wall-south",), extra_entities=(_prism_row(),)),
+                                 cad_backend_options={"preview": False})
+        first = {s["seat_id"]: s["cad"] for s in project.run_once()["seat_results"]}
+        project.options = replace(project.options, cad_backend_options={})
         stem = first["seat-structure"]["exact_artifact"]["relative_path"].removesuffix(".step")
         for seat_id in first:
             with self.subTest(seat=seat_id, run="exact-only"):
@@ -2040,6 +2035,14 @@ class CadBackendSelectionTests(unittest.TestCase):
             _options(cad_backend="freecad")
         self.assertEqual(_options().cad_backend, "occt")
 
+    def test_backend_options_preserve_the_existing_positional_run_options(self) -> None:
+        options = RunOptions("commitment:test", None, "portfolio", "branch", 1, "decision:test", True, False,
+                             "rhino", Path("workspace"), Path("powershell.exe"), True, None)
+        self.assertEqual(options.powershell, Path("powershell.exe"))
+        self.assertTrue(options.patch_oracle)
+        self.assertIsNone(options.source_run_receipt_ref)
+        self.assertEqual(options.cad_backend_options, {})
+
     def test_the_patch_oracle_is_refused_by_name_under_occt_and_only_taken_with_rhino(self) -> None:
         """OCCT never patches: an oracle asked of it is refused naming the backend that has one, never ignored or run through Rhino unasked."""
 
@@ -2134,38 +2137,6 @@ class RunProjectCliTests(unittest.TestCase):
         self.assertTrue(all(o.export for o in seen))
         with self.assertRaises(SystemExit):
             cli.main(self._argv(root, workflow_ref, opened, "--cad-backend", "freecad"))
-
-
-class PriorExportTests(unittest.TestCase):
-    def test_latest_succeeded_export_of_the_stage_with_a_present_model_is_the_patch_base(self) -> None:
-        import json
-        import time
-        from monkeyarch.runtime.project_runner import _prior_export
-
-        with tempfile.TemporaryDirectory() as tmp:
-            records, workspace = Path(tmp) / "records", Path(tmp) / "cad-stage"
-            records.mkdir(); workspace.mkdir()
-
-            def receipt(name, *, stage, digest, artifact, status="succeeded", present=True):
-                payload = {"status": status, "artifact_relative_path": artifact, "identity": {"binding": {"stage_id": stage, "program_digest": digest, "program_ref": {"uri": f"project://demo/runs/run-1/branches/b/records/{stage}-geometry-program-{'0' * 64}.json"}}}}
-                (records / f"seat-rhino-execution-{name}.json").write_text(json.dumps(payload), encoding="utf-8")
-                if present:
-                    (workspace / artifact).write_bytes(b"3dm")
-                time.sleep(0.01)
-
-            receipt("a" * 64, stage="stage-x", digest="d1", artifact="stage-x@d1.3dm")
-            receipt("b" * 64, stage="stage-y", digest="d9", artifact="stage-y@d9.3dm")                       # another stage
-            receipt("c" * 64, stage="stage-x", digest="d2", artifact="stage-x@d2.3dm", status="failed")      # failed: skipped
-            receipt("d" * 64, stage="stage-x", digest="d3", artifact="stage-x@d3.3dm", present=False)         # model gone: skipped
-            found = _prior_export(records, workspace, "stage-x", "d4")
-            self.assertIsNotNone(found)
-            payload, model = found
-            self.assertEqual(payload["identity"]["binding"]["program_digest"], "d1")
-            self.assertEqual(model.name, "stage-x@d1.3dm")
-            self.assertNotIn("_reused_path", payload)
-            same = _prior_export(records, workspace, "stage-x", "d1")
-            self.assertIn("_reused_path", same[0])                                                        # identical program: reuse
-            self.assertIsNone(_prior_export(records, workspace, "stage-z", "d1"))
 
 
 def _without_declared_live(value):
