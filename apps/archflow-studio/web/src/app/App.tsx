@@ -1927,7 +1927,17 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
-        session.status !== "ready" || changingBase || artifacts.status !== "ready") return;
+        changingBase) return;
+    // The drawing can stay open even when its initial editing base is refused.
+    // Preserve the instruction now; a later manual recovery must not replay it.
+    if (session.status === "failed") {
+      documentIntentStarted.current = true;
+      setDocumentIntentStatus("done");
+      setDraft(initialDocumentIntent.utterance);
+      append({ kind: "refusal", error: session.error, what: "MonkeyBoard" });
+      return;
+    }
+    if (session.status !== "ready" || artifacts.status !== "ready") return;
     documentIntentStarted.current = true;
     setDocumentIntentStatus("switching");
     void (async () => {
@@ -1948,7 +1958,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       setDraft(initialDocumentIntent.utterance);
       append({ kind: "refusal", error: asStudioApiError(cause), what: "MonkeyBoard" });
     });
-  }, [append, artifacts.status, changeEditingBase, changingBase, documentIntentStatus, initialDocumentIntent, project?.projectId, session.status]);
+  }, [append, artifacts.status, changeEditingBase, changingBase, documentIntentStatus, initialDocumentIntent, project?.projectId, session]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStatus !== "ready" || documentIntentSubmitted.current || changingBase) return;

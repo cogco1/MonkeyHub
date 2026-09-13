@@ -83,14 +83,16 @@ try {
   const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
     "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
   browser = await chromium.launch({ headless: true, channel: "chrome" });
-  for (const scenario of ["compiled", "clarification", "changed-stage", "changed-model", "wrong-project"]) {
+  for (const scenario of ["compiled", "clarification", "changed-stage", "unavailable-base", "changed-model", "wrong-project"]) {
     currentCase = scenario;
+    history.branches[0].headStageRef = "current-stage";
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const request = structuredClone(handoff);
     if (scenario === "wrong-project") request.projectId = "other-project";
     await context.addInitScript((request) => { window.__boardRequest = request; }, request);
     page = await context.newPage(); page.setDefaultTimeout(15_000);
     const intents = [], stateReads = [], mutations = [], modelReads = [];
+    let recovered = false;
     page.on("pageerror", (error) => failures.push(`${scenario}: ${error.message}`));
     const png = await page.evaluate(() => {
       const canvas = document.createElement("canvas"); canvas.width = 32; canvas.height = 24;
@@ -107,7 +109,9 @@ try {
           if (url.pathname === "/api/design-history") return await json(history);
           if (url.pathname === "/api/state") {
             stateReads.push(Object.fromEntries(url.searchParams));
-            return await json({ ...state, ...(scenario === "changed-stage" ? { sourceStageRef: "different-stage" } : {}) });
+            if (scenario === "unavailable-base" && !recovered) return await json({
+              code: "EDITING_BASE_UNAVAILABLE", detail: "The drawing model is temporarily unavailable." }, 503);
+            return await json({ ...state, ...(scenario === "changed-stage" && !recovered ? { sourceStageRef: "different-stage" } : {}) });
           }
           if (url.pathname === "/api/artifacts") return await json({ projectId, artifacts: [artifact] });
           if (url.pathname === `/api/artifacts/${modelSource.assetSha256}/bytes`) {
@@ -150,12 +154,38 @@ try {
     assert.equal(new URL(page.url()).searchParams.get("documentSource"), documentSha);
     assert.equal(new URL(page.url()).searchParams.get("documentRevision"), revisionRef);
     assert.equal(await page.title(), "MonkeyArch");
-    if (["changed-stage", "changed-model", "wrong-project"].includes(scenario)) {
+    if (["changed-stage", "unavailable-base", "changed-model", "wrong-project"].includes(scenario)) {
       await page.locator(".card--refusal, .refusal__card").first().waitFor();
       assert.deepEqual(intents, []); assert.deepEqual(mutations, []);
       assert.ok((await page.locator("body").innerText()).includes(handoff.utterance) ||
         await page.locator(".composer input").inputValue().catch(() => "") === handoff.utterance,
       "A refused handoff must keep the unsent instruction visible or in the composer");
+      if (["changed-stage", "unavailable-base"].includes(scenario)) {
+        await page.locator(".document-header").waitFor();
+        await page.getByText(scenario === "changed-stage"
+          ? "This drawing no longer matches its saved model version. Your feedback was not sent; the original instruction is kept below."
+          : "This drawing's saved model could not be opened. Your feedback was not sent; the original instruction is kept below.", { exact: true }).waitFor();
+        assert.equal(await page.locator(".composer input").inputValue(), handoff.utterance);
+        assert.equal(await page.locator(".composer input").isVisible(), true);
+        // Correcting the source and explicitly reopening its model must not
+        // resume the refused one-time submission behind the user's back.
+        recovered = true;
+        history.branches[0].headStageRef = sourceStageRef;
+        await page.getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
+        await page.locator(".refusal__card").getByRole("button", { name: "Retry", exact: true }).click();
+        await page.locator(".refusal__card").waitFor({ state: "hidden" });
+        await page.getByRole("button", { name: "MonkeyDiagram · Drawings", exact: true }).click();
+        await page.locator(".document-header").waitFor();
+        await page.getByRole("button", { name: "Continue from this model", exact: true }).waitFor({ state: "hidden" });
+        assert.equal(await page.locator(".composer input").inputValue(), handoff.utterance);
+        assert.equal(await page.locator(".card--refusal").count(), 1, "Recovery must not duplicate the refusal");
+        assert.deepEqual(intents, []); assert.deepEqual(mutations, []);
+        await page.reload({ waitUntil: "domcontentloaded" });
+        await page.locator(".document-header").waitFor();
+        await page.locator(".card--refusal").waitFor();
+        assert.equal(await page.locator(".composer input").inputValue(), handoff.utterance);
+        assert.deepEqual(intents, []); assert.deepEqual(mutations, []);
+      }
     } else {
       await page.locator(scenario === "clarification" ? ".card--question" : ".card--proposal").waitFor();
       assert.equal(intents.length, 1, "The saved request is compiled exactly once");

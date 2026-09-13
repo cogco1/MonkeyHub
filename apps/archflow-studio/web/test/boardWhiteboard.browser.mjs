@@ -39,11 +39,12 @@ createRoot(document.getElementById("root")).render(React.createElement(UserPrefe
 try {
   // Same P036 project and retained native model source as the existing API tests.
   const fixture = spawnSync(python, ["-c", `
-import hashlib, json, sys
+import base64, hashlib, json, sys
 from pathlib import Path
 from unittest import mock
 import archflow
 from tests.support import make_project, retain_rhino_receipt, runner_state_digest, REFERENCE_RUN_ID
+from tests.test_documents import two_page_pdf
 assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve(), archflow.__file__
 repository, _ = make_project(Path(sys.argv[1]))
 digest = runner_state_digest(repository, REFERENCE_RUN_ID)
@@ -53,10 +54,10 @@ with mock.patch("tests.support.RHINO_DESIGN_STATE_DIGEST", digest):
         model = Path(f"tests/fixtures/model-source-{suffix}.3dm").read_bytes()
         retain_rhino_receipt(repository, repository.load_run(REFERENCE_RUN_ID), stage_id=f"document-source-{suffix}", file_name=f"source-{suffix}.3dm", payload_bytes=model)
         models.append({"runId": REFERENCE_RUN_ID, "stateDigest": digest, "assetSha256": hashlib.sha256(model).hexdigest()})
-print(json.dumps(models))
+print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).decode()}))
 `, root, repoRoot], { cwd: apiRoot, encoding: "utf8", env: pythonEnv });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
-  const [modelSource, alternateModelSource] = JSON.parse(fixture.stdout.trim());
+  const { models: [modelSource, alternateModelSource], pdf } = JSON.parse(fixture.stdout.trim());
   const apiPort = await new Promise((resolve) => {
     const probe = createHttpServer();
     probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
@@ -183,6 +184,18 @@ print(json.dumps(models))
   await screenshot("narrow-zh");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await open();
+
+  // A note on an otherwise empty board needs no source, model or feedback step.
+  await page.keyboard.press("t"); await page.mouse.click(700, 350);
+  await page.keyboard.insertText("Meeting starts at 10"); await page.keyboard.press("Escape");
+  await savedWhere((value) => active(value, "text").some((element) => element.text === "Meeting starts at 10"),
+    "An ordinary note on the empty board must save without a source");
+  await selectAll();
+  assert.equal(await page.locator(".monkeyboard-context").isVisible(), false);
+  assert.deepEqual((await call("GET", "/api/documents")).documents, []);
+  assert.equal(submissions.length, 0);
+  await page.keyboard.press("Delete");
+  await savedWhere((value) => active(value).length === 0, "Deleting the unrelated note must return to an empty board");
 
   // Browser File/DataTransfer dispatch exercises the same native file-drop handler.
   const png = await page.evaluate(() => {
@@ -348,6 +361,45 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.equal(inspect.status, 0, `Export must contain only the clean source pixels: ${inspect.stderr}`);
   await setMore(false);
 
+  // The selection entry replaces a real registered source, then undo and
+  // reopening retain that choice instead of rediscovering another revision.
+  await selectAll();
+  const beforeReplacement = await board();
+  const originalImage = active(beforeReplacement, "image")[0];
+  const replacementPng = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 300; canvas.height = 200;
+    const context = canvas.getContext("2d"); context.fillStyle = "#bbddaa"; context.fillRect(0, 0, 300, 200);
+    return canvas.toDataURL().split(",")[1];
+  });
+  await page.locator(".monkeyboard-context").getByRole("button", { name: "Update this page", exact: true }).click();
+  const replacementDialog = page.getByRole("dialog", { name: "Update this page", exact: true });
+  await replacementDialog.getByLabel("Updated PDF / image", { exact: true }).setInputFiles({
+    name: "原位更新.png", mimeType: "image/png", buffer: Buffer.from(replacementPng, "base64") });
+  await replacementDialog.getByRole("button", { name: "Update in place", exact: true }).click();
+  await replacementDialog.waitFor({ state: "hidden" });
+  const replaced = await board();
+  const updatedImage = active(replaced, "image")[0];
+  const replacementDocument = (await call("GET", "/api/documents")).documents.find((document) => document.fileName === "原位更新.png");
+  assert.ok(replacementDocument);
+  assert.deepEqual(updatedImage.customData.sourceDocument, { runId: replacementDocument.runId,
+    assetSha256: replacementDocument.assetSha256, revisionRef: replacementDocument.revisionRef, pageIndex: 0 });
+  const placement = ({ id, x, y, width, height, angle, scale, frameId, crop }) => ({ id, x, y, width, height, angle, scale, frameId, crop });
+  assert.deepEqual(placement(updatedImage), placement(originalImage), "Real replacement must preserve placement and scale");
+  assert.deepEqual(replaced.elements.filter((element) => element.id !== originalImage.id),
+    beforeReplacement.elements.filter((element) => element.id !== originalImage.id), "Replacement must preserve frames, marks and unrelated notes");
+  await page.locator(".excalidraw").focus(); await page.keyboard.press("Control+z");
+  const undone = await savedWhere((value) => active(value, "image")[0].customData.sourceDocument.assetSha256 === firstDocument.assetSha256,
+    "Undo must save the previous registered source");
+  assert.deepEqual(placement(active(undone, "image")[0]), placement(originalImage));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+  await Promise.all([
+    page.waitForResponse((response) => new URL(response.url()).pathname === "/api/documents"),
+    page.evaluate(() => window.dispatchEvent(new Event("focus"))),
+  ]);
+  await page.waitForTimeout(900);
+  assert.deepEqual((await board()).elements, undone.elements, "Reopening and discovery must preserve the undone replacement");
+
   const beforeReload = await board();
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
@@ -393,6 +445,33 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.ok(requests.some((request) => request.method === "POST" && request.path === "/api/documents"
     && request.body.fileName === pastedDocument.fileName && request.body.contentBase64 === pastedPng));
 
+  // A real two-page PDF goes through the same drop path. Add its rotated,
+  // cropped second page through the document rail and verify exact page ids.
+  const pdfTransfer = await page.evaluateHandle((base64) => {
+    const data = new DataTransfer();
+    data.items.add(new File([Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))], "两页图纸.pdf", { type: "application/pdf" }));
+    return data;
+  }, pdf);
+  await page.locator(".monkeyboard-canvas").dispatchEvent("drop", { dataTransfer: pdfTransfer }); await pdfTransfer.dispose();
+  await savedWhere((value) => active(value, "image").length === 5, "Dropped PDF did not register and place its first page");
+  const pdfDocument = (await call("GET", "/api/documents")).documents.find((document) => document.fileName === "两页图纸.pdf");
+  assert.ok(pdfDocument); assert.equal(pdfDocument.pageCount, 2); assert.equal(pdfDocument.modelSource, null);
+  await documentsToggle.click();
+  const pdfCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: "两页图纸.pdf", exact: true }) });
+  await pdfCard.getByRole("combobox").selectOption("1");
+  await pdfCard.getByRole("button", { name: "Add page", exact: true }).click();
+  const pdfScene = await savedWhere((value) => active(value, "image").length === 6, "Adding the second PDF page did not persist");
+  const pdfImages = active(pdfScene, "image").filter((element) => element.customData.sourceDocument.assetSha256 === pdfDocument.assetSha256);
+  assert.deepEqual(pdfImages.map((element) => element.customData.sourceDocument), [0, 1].map((pageIndex) => ({
+    runId: pdfDocument.runId, assetSha256: pdfDocument.assetSha256, revisionRef: pdfDocument.revisionRef, pageIndex })));
+  for (const element of pdfImages) {
+    const sourcePage = pdfDocument.pages[element.customData.sourceDocument.pageIndex];
+    assert.ok(Math.abs(element.width / element.height - sourcePage.width / sourcePage.height) < 0.002,
+      "PDF preview must apply its page crop and rotation exactly once");
+  }
+  await documentsToggle.click();
+  await screenshot("pdf-pages");
+
   // A second writer advances the actual CAS revision. This page keeps its draft.
   const latest = await board();
   const winner = await call("PUT", "/api/board", { projectId: latest.projectId, title: "Other saved version",
@@ -402,6 +481,15 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.equal(await page.getByRole("textbox", { name: "Board title", exact: true }).inputValue(), "My unsent board title");
   assert.deepEqual(await board(), winner, "A CAS conflict must never overwrite the winning saved revision");
   assert.ok(requests.some((request) => request.path === "/api/board" && request.status === 409));
+  const savedTabReady = context.waitForEvent("page");
+  await page.getByRole("link", { name: "Open saved board", exact: true }).click();
+  const savedTab = await savedTabReady;
+  await savedTab.getByRole("textbox", { name: "Board title", exact: true }).waitFor();
+  await savedTab.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+  assert.equal(await savedTab.getByRole("textbox", { name: "Board title", exact: true }).inputValue(), "Other saved version");
+  assert.equal(await page.getByRole("textbox", { name: "Board title", exact: true }).inputValue(), "My unsent board title");
+  assert.deepEqual(await board(), winner, "Opening the saved board must preserve both the winner and the original tab's draft");
+  await savedTab.close();
   await open("zh-CN");
   await page.getByRole("button", { name: "项目资料", exact: true }).waitFor();
   await page.getByText("更多画板操作", { exact: true }).click();
@@ -413,7 +501,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.deepEqual(requests.filter((request) => /\/api\/(intents|proposals|jobs|model-annotations|candidates)/.test(request.path)), [],
     "Ordinary board actions must never enter a model or agent path");
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: "real isolated Board drop/file-upload/file-clipboard-paste, native gestures and undo/redo, ordered selected/bound/outside text, editable feedback without duplication, source/model-change refusal, clean export, hidden-panel discovery, reload and CAS", requests: requests.length, submissions: submissions.length }));
+  console.log(JSON.stringify({ passed: "real isolated Board PNG/PDF drop, rotated PDF page intake, file-upload/file-clipboard-paste, native gestures and undo/redo, ordered selected/bound/outside text, editable feedback without duplication, source/model-change refusal, clean export, real source replacement and undone reopen, hidden-panel discovery, reload and CAS saved-tab comparison", requests: requests.length, submissions: submissions.length }));
 } catch (error) {
   if (page && !page.isClosed()) {
     if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT });

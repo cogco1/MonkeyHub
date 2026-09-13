@@ -58,7 +58,17 @@ export function ErrorPanel({
   what?: string;
 }) {
   const t = useT();
-  const { developerMode } = usePreferences();
+  const { developerMode, language } = usePreferences();
+  const boardSourceFailure = what !== "MonkeyBoard" ? null
+    : error.code === "EDITING_PROJECT_CHANGED"
+      ? language === "zh-CN"
+        ? "这张图纸与保存的模型版本已不一致。意见尚未发送，原文保留在下方输入框中。"
+        : "This drawing no longer matches its saved model version. Your feedback was not sent; the original instruction is kept below."
+      : error.code === "EDITING_BASE_UNAVAILABLE"
+        ? language === "zh-CN"
+          ? "这张图纸对应的模型暂时无法打开。意见尚未发送，原文保留在下方输入框中。"
+          : "This drawing's saved model could not be opened. Your feedback was not sent; the original instruction is kept below."
+        : null;
   if (error.code === "SEMANTIC_EDIT_INVALID") {
     return (
       <div className="error-panel" role="alert">
@@ -87,9 +97,9 @@ export function ErrorPanel({
       <p className="error-panel__detail">
         {developerMode
           ? <BilingualProse source={error.detail} />
-          : error.question
+          : boardSourceFailure ?? (error.question
             ? <BilingualProse source={error.question} />
-            : t("error.actionFailed")}
+            : t("error.actionFailed"))}
       </p>
       {developerMode && error.question && (
         <p className="error-panel__question">
