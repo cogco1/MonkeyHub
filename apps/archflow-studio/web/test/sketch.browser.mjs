@@ -87,6 +87,7 @@ Scene.prototype.add = function (...objects) {
 };
 const viewportRef = window.viewport = createRef();
 window.submitted = [];
+window.submissionCurrent = [];
 window.toolChanges = [];
 const noop = () => {};
 window.testRoot = createRoot(document.getElementById("root"));
@@ -101,7 +102,7 @@ window.testRoot.render(
     editingModelSource: null, viewedModelSource: null, artifactError: null, baseError: null,
     blend: null, captureState: "idle", onTool: noop, onInspection: (value) => { window.inspection = value; }, onStatus: noop,
     onRequestFile: noop, onOpenFile: noop, onSource: noop, onPick: (pick) => { window.picks.push(pick); },
-    onSketch: async (action) => { window.submitted.push(action); },
+    onSketch: async (action, stillCurrent) => { window.submitted.push(action); window.submissionCurrent.push(stillCurrent); },
     model: { onDelete: noop, canDelete: true, deleting: false, subject: "Fixture", onUndo: noop, canUndo: true,
       onRedo: noop, canRedo: true, onClearSelection: () => viewportRef.current.highlight(null), hasSelection: true,
       onTool: (tool) => { window.toolChanges.push(tool); } },
@@ -176,6 +177,11 @@ try {
   vite = await createServer({
     root: webRoot, configFile: false, cacheDir, publicDir: ".generated/public", logLevel: "silent",
     plugins: [{ name: "interaction-session-probe", enforce: "pre", transform(source, id) {
+      if (id.replaceAll("\\", "/").endsWith("/viewer/ThreeDmViewport.tsx")) {
+        const marker = "  const pickAt = useCallback(";
+        assert.equal(source.split(marker).length, 2);
+        return { code: source.replace(marker, "(window as any).draftRuntime = () => runtimeRef.current;\n" + marker), map: null };
+      }
       if (!id.replaceAll("\\", "/").endsWith("/features/stage/Stage.tsx")) return;
       const marker = "  const interaction = useRef(createInteractionSession());";
       assert.equal(source.split(marker).length, 2);
@@ -233,6 +239,120 @@ try {
   [1, 2, 1.2].forEach((expected, index) => assert.ok(Math.abs(bounds.min[index] - expected) < 1e-6));
   [4, 6, 3.6].forEach((expected, index) => assert.ok(Math.abs(bounds.max[index] - expected) < 1e-6));
   await page.evaluate(() => window.viewport.current.sketchPreview(null));
+  // Open paths use the real Stage events and reusable viewport geometry.
+  const project = (point) => page.evaluate((value) => window.projectPoint(value), point);
+  const start = await project([0, 0, 0]), lineEnd = await project([3, 0, 0]), bend = await project([3, 2, 0]);
+  const drawingInput = page.locator(".sketch-entry input");
+  await page.keyboard.press("l");
+  assert.equal(await page.getByRole("button", { name: "Line", exact: true }).getAttribute("aria-pressed"), "true");
+  await page.mouse.click(...start);
+  await page.mouse.move(...lineEnd);
+  await drawingInput.fill("3"); await drawingInput.press("Enter");
+  await page.mouse.move(...bend); await page.mouse.click(...bend);
+  await page.mouse.move(...await project([4, 3, 0]));
+  const linePerf = await page.evaluate(async (point) => {
+    await new Promise(requestAnimationFrame);
+    const identities = window.previewIdentity();
+    const commits = window.stageCommits, updates = window.previewUpdates;
+    for (let index = 0; index < 20; index++) {
+      window.moveBurst([point, [point[0] + 1, point[1]], [point[0] + 2, point[1]]]);
+      await new Promise(requestAnimationFrame);
+    }
+    return { commits: window.stageCommits - commits, updates: window.previewUpdates - updates,
+      reused: identities.every((item, index) => item === window.previewIdentity()[index]),
+      closed: window.previewSpec.closed, surface: window.previewGroup.children[1].visible,
+      edges: window.previewGroup.children[0].geometry.drawRange.count };
+  }, await project([4, 3, 0]));
+  assert.deepEqual(linePerf, { commits: 0, updates: 20, reused: true, closed: false, surface: false, edges: 6 });
+  await drawingInput.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 1);
+  const openLine = await page.evaluate(() => window.submitted[0]);
+  assert.equal(openLine.closed, false); assert.equal(openLine.height, 0);
+  assert.equal(openLine.profile.length, 3, "Enter keeps settled vertices and drops the moving tail");
+  assert.ok(Math.abs(openLine.profile[1][0] - 3) < 1e-6);
+  assert.equal(await page.evaluate(() => window.submissionCurrent[0]()), true);
+
+  await page.keyboard.press("a");
+  assert.equal(await page.evaluate(() => window.submissionCurrent[0]()), false, "switching tools invalidates a late proposal callback");
+  await page.mouse.click(...start); await page.mouse.move(...await project([4, 0, 0]));
+  await drawingInput.fill("4"); await drawingInput.press("Enter");
+  await page.mouse.move(...await project([1, 2, 0]));
+  await page.waitForFunction(() => window.previewSpec?.profile.length === 33);
+  const bulge = await page.evaluate(() => window.previewSpec.profile[16]);
+  assert.ok(Math.abs(bulge[0] - 2) < 0.02 && Math.abs(bulge[1] - 2) < 0.02,
+    "the pointer sets perpendicular distance, not an arbitrary third point");
+  await drawingInput.fill("-0.75");
+  const preciseArc = await page.evaluate(() => window.previewSpec.profile);
+  await page.mouse.move(...await project([3, 3, 0]));
+  assert.deepEqual(await page.evaluate(() => window.previewSpec.profile), preciseArc);
+  await drawingInput.fill("-"); await drawingInput.press("Enter");
+  assert.equal(await page.evaluate(() => window.submitted.length), 1, "an intermediate sign cannot submit the previous arc");
+  await drawingInput.fill("-0.75"); await drawingInput.press("Enter"); await page.keyboard.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 2);
+  const openArc = await page.evaluate(() => window.submitted[1]);
+  assert.equal(openArc.closed, false); assert.equal(openArc.height, 0); assert.equal(openArc.profile.length, 33);
+  assert.ok(Math.abs(openArc.profile[16][1] + 0.75) < 1e-6);
+  assert.notDeepEqual(openArc.profile[0], openArc.profile.at(-1));
+
+  await page.getByRole("button", { name: "Line tools", exact: true }).click();
+  await page.getByRole("button", { name: "Freehand", exact: true }).click();
+  await page.mouse.move(...start); await page.mouse.down();
+  await page.mouse.move(...await project([1, 0.5, 0]), { steps: 5 });
+  await page.mouse.move(...await project([2, -0.5, 0]), { steps: 5 });
+  assert.equal(await page.evaluate(() => window.submitted.length), 2, "dragging never completes a model action");
+  const strokePerf = await page.evaluate(async (end) => {
+    await new Promise(requestAnimationFrame);
+    const commits = window.stageCommits, group = window.previewGroup;
+    const overlay = document.querySelector(".stage-sketch");
+    for (let index = 0; index < 12; index++) overlay.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true, buttons: 1, pointerId: 1, clientX: end[0] + index * 2, clientY: end[1],
+    }));
+    await new Promise(requestAnimationFrame);
+    return { commits: window.stageCommits - commits, sameGroup: group === window.previewGroup,
+      closed: window.previewSpec.closed, surface: window.previewGroup.children[1].visible };
+  }, await project([2, -0.5, 0]));
+  assert.deepEqual(strokePerf, { commits: 0, sameGroup: true, closed: false, surface: false });
+  await page.mouse.move(...await project([3, 1, 0])); await page.mouse.up();
+  await page.waitForFunction(() => window.submitted.length === 3);
+  const freehand = await page.evaluate(() => window.submitted[2]);
+  assert.equal(freehand.closed, false); assert.equal(freehand.height, 0); assert.ok(freehand.profile.length > 8);
+  assert.ok(Math.abs(freehand.profile.at(-1)[0] - 3) < 0.02);
+  assert.equal(await page.locator(".stage-sketch").getAttribute("data-phase"), "idle");
+
+  // Ending at the start switches to the existing face/height gesture without
+  // repeating its first point or turning the release click into a submission.
+  await page.mouse.move(...start); await page.mouse.down();
+  for (const point of [[3, 0, 0], [2, 2, 0], [0, 0, 0]]) await page.mouse.move(...await project(point), { steps: 8 });
+  await page.mouse.up();
+  assert.equal(await page.locator(".stage-sketch").getAttribute("data-phase"), "height");
+  const closedStroke = await page.evaluate(() => window.interaction.sketch.profile);
+  assert.notDeepEqual(closedStroke[0], closedStroke.at(-1));
+  assert.equal(await page.evaluate(() => window.submitted.length), 3);
+  await page.mouse.move(...await project([0, 0, 1]));
+  await page.waitForFunction(() => Math.abs(window.previewSpec?.height - 1) < 0.03);
+  await page.keyboard.press("Escape");
+
+  // A capture cancellation and a tool switch also cancel queued path paints.
+  await page.mouse.move(...start); await page.mouse.down();
+  await page.mouse.move(...lineEnd); await page.keyboard.press("Escape"); await page.mouse.up();
+  assert.equal(await page.evaluate(() => window.submitted.length), 3);
+  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await page.mouse.click(...start); await page.mouse.move(...lineEnd);
+  await page.getByRole("button", { name: "2-point arc", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.previewGroup?.parent === null), true);
+  assert.equal(await page.evaluate(() => window.submitted.length), 3);
+  await page.mouse.click(...start); await page.mouse.click(...lineEnd);
+  const arcCrown = await project([1, 1, 0]);
+  await page.mouse.move(...arcCrown); await page.mouse.click(...arcCrown);
+  await page.waitForFunction(() => window.submitted.length === 4);
+  assert.equal(await page.evaluate(() => window.submitted[3].closed), false, "a third click finishes the open arc");
+  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await page.mouse.click(...start); await page.mouse.dblclick(...lineEnd);
+  await page.waitForFunction(() => window.submitted.length === 5);
+  assert.equal(await page.evaluate(() => window.submitted[4].profile.length), 2, "double-click ends one line without adding another start or duplicate point");
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.evaluate(() => { window.submitted = []; window.submissionCurrent = []; });
+  console.log("PASS open Line / signed 2-point arc / held Freehand: exact numbers, no implicit face, zero pointer React commits, one completion and cancellation");
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
   const anchor = await page.evaluate(() => window.projectPoint([0, 0, 0]));
   const corner = await page.evaluate(() => window.projectPoint([3, 2, 0]));
@@ -514,12 +634,18 @@ try {
   // Measure the real pointer -> snap -> RAF -> preview path on loaded meshes.
   await page.keyboard.press("Escape");
   await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
+  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await page.mouse.click(...await project([0, 0, 0]));
+  await page.mouse.move(...await project([2, 1, 0]));
   await page.evaluate(async () => {
     const bytes = await (await fetch("/fixture.3dm")).blob();
     await window.viewport.current.openFile(new File([bytes], "fixture.3dm"));
   });
   assert.deepEqual(await page.evaluate(() => ({ meshes: window.inspection.meshCount, triangles: window.inspection.triangleCount })),
     { meshes: 400, triangles: 4800 });
+  assert.deepEqual(await page.evaluate(() => ({ tool: window.interaction.sketch.tool, phase: window.interaction.sketch.phase,
+    anchor: window.interaction.sketch.anchor, press: window.interaction.press, preview: window.previewSpec })),
+    { tool: "line", phase: "idle", anchor: null, press: null, preview: null }, "source replacement invalidates the old path and its scheduled paint");
   await page.getByRole("button", { name: "Select", exact: true }).click();
   const hoverPoint = await page.evaluate(() => window.projectPoint([31, 29, 0]));
   await page.mouse.move(...hoverPoint);
@@ -647,6 +773,39 @@ try {
       staleMark: window.viewport.current.highlight({ object: oldHit.object }) };
   });
   assert.deepEqual(replaced, { hover: null, detached: true, disposals: 8, staleMark: 0 });
+  const draftLifecycle = await page.evaluate(async () => {
+    const viewport = window.viewport.current, runtime = window.draftRuntime();
+    const visible = runtime.model.getObjectByName("mass-0-0"), hidden = runtime.model.getObjectByName("mass-0-1");
+    hidden.visible = false;
+    const a = { elementId: "local-solid", spec: { profile: [[25,25],[27,25],[27,27],[25,27]], base: 10, height: 2 } };
+    const b = { elementId: "local-line", spec: { profile: [[25,28],[27,28]], base: 12, height: 0, closed: false } };
+    const draft = { objects: [a,b], hiddenObjectNames: [visible.name,hidden.name] };
+    viewport.draftPreview(draft);
+    const solid = runtime.draftObjects.get(a.elementId).object, line = runtime.draftObjects.get(b.elementId).object;
+    const ids = [solid,...solid.children.flatMap(o=>[o,o.geometry,o.geometry.getAttribute("position")])];
+    const materials = solid.children.map(o=>o.material);
+    const marked = viewport.highlight({ draftElementId: a.elementId });
+    viewport.highlight(null);
+    const restoredMaterials = solid.children.every((o,i)=>o.material===materials[i]);
+    viewport.draftPreview(structuredClone(draft));
+    const same = ids.every((value,i)=>value===[solid,...solid.children.flatMap(o=>[o,o.geometry,o.geometry.getAttribute("position")])][i]);
+    viewport.draftPreview({ ...draft, objects: [{...a,spec:{...a.spec,height:3}},b] });
+    const updated = ids.every((value,i)=>value===[solid,...solid.children.flatMap(o=>[o,o.geometry,o.geometry.getAttribute("position")])][i]);
+    let disposed = 0;
+    for(const object of [solid,line]) for(const child of object.children) {
+      child.geometry.addEventListener("dispose",()=>disposed++); child.material.addEventListener("dispose",()=>disposed++);
+    }
+    const hiddenDuring = [visible.visible,hidden.visible];
+    viewport.draftPreview(null);
+    const detached = !solid.parent && !line.parent;
+    const sourceRestored = [visible.visible,hidden.visible]; hidden.visible=true;
+    viewport.draftPreview(null);
+    return { marked,restoredMaterials,same,updated,hiddenDuring,sourceRestored,detached,disposed,
+      remaining:runtime.draftObjects.size, stale:viewport.highlight({object:solid}),
+      lineSurface:line.children[1].visible };
+  });
+  assert.deepEqual(draftLifecycle, { marked:1,restoredMaterials:true,same:true,updated:true,hiddenDuring:[false,false],
+    sourceRestored:[true,false],detached:true,disposed:12,remaining:0,stale:0,lineSurface:false });
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
   const buildingAnchor = await page.evaluate(() => window.projectPoint([27, 27, 0]));
   const buildingCorner = await page.evaluate(() => window.projectPoint([31, 29, 0]));

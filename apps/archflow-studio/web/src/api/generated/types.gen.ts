@@ -5287,6 +5287,73 @@ export type SemanticEditRequestDto = {
             name?: string | null;
             label?: string | null;
             note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'curve';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * A value in metres, or an explicit @parameter binding.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
         };
     } | {
         entity_id: string;
@@ -5736,6 +5803,71 @@ export type SemanticEditRequestDto = {
             name?: string | null;
             label?: string | null;
             note?: string | null;
+        } | {
+            producer?: 'curve';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * Ordered points in work_plane coordinates (XZ when omitted); no closing segment is added.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * A value in metres, or an explicit @parameter binding.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
         };
     }>;
     parameters?: Array<{
@@ -5948,16 +6080,22 @@ export type SketchActionDto = {
     /**
      * Profile
      *
-     * the closed plan profile as (x, z) pairs, in order, without repeating the first point
+     * Ordered local-plane point pairs. Closed profiles omit the repeated first point; open paths need at least two points.
      */
     profile: Array<[
         number,
         number
     ]>;
     /**
+     * Closed
+     *
+     * True keeps the existing face/prism action; false saves an open polyline model curve and requires zero height.
+     */
+    closed?: boolean;
+    /**
      * Height
      *
-     * Signed pull distance in project length units; zero creates a real planar face.
+     * Signed pull distance in project length units; zero creates a planar face when closed, or an unfilled curve when open.
      */
     height: number;
     /**
@@ -6097,16 +6235,22 @@ export type SketchPrismRequestDto = {
     /**
      * Profile
      *
-     * the closed plan profile as (x, z) pairs, in order, without repeating the first point
+     * Ordered local-plane point pairs. Closed profiles omit the repeated first point; open paths need at least two points.
      */
     profile: Array<[
         number,
         number
     ]>;
     /**
+     * Closed
+     *
+     * True keeps the existing face/prism action; false saves an open polyline model curve and requires zero height.
+     */
+    closed?: boolean;
+    /**
      * Height
      *
-     * Signed pull distance in project length units; zero creates a real planar face.
+     * Signed pull distance in project length units; zero creates a planar face when closed, or an unfilled curve when open.
      */
     height: number;
     /**

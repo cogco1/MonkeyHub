@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import test from "node:test";
 
-import { BoxGeometry, Color, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Texture } from "three";
+import { Box3, BufferGeometry, Float32BufferAttribute, Line, LineBasicMaterial, LineLoop, LineSegments, BoxGeometry, Color, Group, Matrix3, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, PerspectiveCamera, Raycaster, Sphere, Texture, Vector2, Vector3 } from "three";
 
 import {
   captureModelAppearance,
@@ -18,6 +18,7 @@ import {
   semanticObjectNames,
 } from "../src/workspaces/monkeyarch/viewer/modelDisplay.ts";
 import { indexLoadedObjects } from "../src/workspaces/monkeyarch/viewer/sceneInspection.ts";
+import { curveEdges, featureEdges } from "../src/workspaces/monkeyarch/viewer/featureEdges.ts";
 
 test("loaded identity groups only explicit file bindings and expires with its model", () => {
   const root = new Group();
@@ -347,6 +348,76 @@ function productionCallback(file: string, name: string, scope: Record<string, un
   return new Function(...Object.keys(scope), `return ${stripTypeScriptTypes(`(${callback})`)}`)(...Object.values(scope));
 }
 
+function curvePickingViewport(scale: number[], rotation: number[]) {
+  // Execute the real curve helper beside the real hitAt callback, with Three's
+  // actual mesh raycaster. The test changes instance transforms, not algorithms.
+  const source = readFileSync(new URL("../src/workspaces/monkeyarch/viewer/preselection.ts", import.meta.url), "utf8");
+  const helpers = source.slice(source.indexOf("function activePositions"), source.indexOf("/** One neutral outline"));
+  const scope = { Line, LineLoop, LineSegments, Vector3, curveEdges, featureEdges };
+  const raycastCurve = new Function(...Object.keys(scope),
+    `${stripTypeScriptTypes(helpers.replaceAll("export function", "function"))}; return raycastCurve;`)(...Object.values(scope));
+  const model = new Group(), parent = new Group();
+  parent.scale.fromArray(scale); parent.rotation.set(rotation[0], rotation[1], rotation[2]);
+  parent.position.set(1, -0.5, -2); model.add(parent); model.updateMatrixWorld(true);
+  const inverse = new Matrix4().copy(parent.matrixWorld).invert();
+  const line = new Line(new BufferGeometry().setFromPoints([
+    new Vector3(-2, 0, 0).applyMatrix4(inverse), new Vector3(2, 0, 0).applyMatrix4(inverse),
+  ]), new LineBasicMaterial());
+  line.name = "curve"; parent.add(line);
+  const mesh = new Mesh(new BoxGeometry(4, 4, 0.5), new MeshBasicMaterial());
+  mesh.name = "body"; mesh.position.z = -2; mesh.visible = false; model.add(mesh);
+  model.updateMatrixWorld(true);
+  const camera = new PerspectiveCamera(38, 1, 0.01, 1000);
+  camera.position.set(0, 0, 10); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+  const rect = { left: 0, top: 0, width: 800, height: 800 };
+  const runtime = { model, camera, modelIndex: indexLoadedObjects(model),
+    draftRoot: new Group(), draftObjects: new Map(), draftIds: new WeakMap(), draftBounds: null,
+    modelBounds: new Box3().setFromObject(model).getBoundingSphere(new Sphere()),
+    renderer: { domElement: { getBoundingClientRect: () => rect } } };
+  const rayAt = (x: number, y: number) => {
+    const raycaster = new Raycaster();
+    raycaster.setFromCamera(new Vector2(x / 400 - 1, 1 - y / 400), camera);
+    return raycaster;
+  };
+  const viewportSource = readFileSync(new URL("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", import.meta.url), "utf8");
+  const draftIdFor = new Function(stripTypeScriptTypes(viewportSource.slice(
+    viewportSource.indexOf("function draftIdFor"), viewportSource.indexOf("function clearDraftPreview"),
+  )) + "; return draftIdFor;")();
+  const hitAt = productionCallback("../src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx", "hitAt",
+    { runtimeRef: { current: runtime }, rayAt, raycastCurve, Line, Matrix3, isDisplayed, draftIdFor });
+  return { model, parent, line, mesh, rayAt, hitAt };
+}
+
+test("curve picking keeps its eight-pixel reach under scaled and rotated instance parents", () => {
+  for (const scale of [[1, 1, 1], [0.1, 0.1, 0.1], [0.01, 0.01, 0.01], [0.01, 0.2, 1.5], [-0.1, 0.3, 0.01]]) {
+    const h = curvePickingViewport(scale, [0.24, -0.35, 0.63]);
+    const hit = h.hitAt(400, 404);
+    assert.equal(hit?.mesh, h.line, `four pixels must hit parent scale ${scale}`);
+    assert.ok(Math.abs(hit.point.y) < 1e-5 && Math.abs(hit.point.z) < 1e-5, "pick point retains world coordinates");
+    assert.equal(hit.normal, null, "a curve does not pretend to be a face");
+    assert.equal(h.hitAt(400, 409), null, `nine pixels must miss parent scale ${scale}`);
+    h.parent.visible = false;
+    assert.equal(h.hitAt(400, 400), null, "hidden instance parents cannot supply picks");
+    h.line.geometry.dispose(); h.line.material.dispose(); h.mesh.geometry.dispose(); h.mesh.material.dispose();
+  }
+});
+
+test("curves share front-to-back occlusion with unchanged native mesh picking", () => {
+  const h = curvePickingViewport([0.01, 0.2, 1.5], [0.24, -0.35, 0.63]);
+  h.mesh.visible = true;
+  assert.equal(h.hitAt(400, 404)?.mesh, h.line, "a nearer curve is picked before the rear solid");
+  h.mesh.position.z = 2; h.model.updateMatrixWorld(true);
+  const hit = h.hitAt(400, 404);
+  const native = h.rayAt(400, 404).intersectObject(h.mesh, false)[0]!;
+  assert.equal(hit?.mesh, h.mesh, "a front solid occludes the curve");
+  assert.equal(hit.faceIndex, native.faceIndex);
+  assert.ok(hit.point.distanceTo(native.point) < 1e-12, "mesh point remains Three's native intersection");
+  assert.ok(hit.normal.distanceTo(native.face!.normal) < 1e-12, "mesh normal is preserved");
+  h.mesh.visible = false;
+  assert.equal(h.hitAt(400, 404)?.mesh, h.line, "hiding the solid reveals the curve again");
+  h.line.geometry.dispose(); h.line.material.dispose(); h.mesh.geometry.dispose(); h.mesh.material.dispose();
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
@@ -456,4 +527,18 @@ test("the last secondary request wins when its parse finishes before the earlier
   assert.equal(h.runtime.secondary?.name, "comparison-2");
   assert.equal(h.runtime.blendT, 0.5);
   assert.deepEqual(h.disposed, ["comparison-1"]);
+});
+
+
+test("saved model curves restore their original visibility and material after a temporary selection", () => {
+  const geometry = new BufferGeometry().setAttribute("position", new Float32BufferAttribute([0, 0, 0, 3, 4, 0], 3));
+  const material = new LineBasicMaterial({ color: "#777777" });
+  const line = new Line(geometry, material);
+  const root = new Group(); root.add(line);
+  const appearance = captureModelAppearance(root);
+  const selected = material.clone(); line.material = selected; line.visible = false;
+  restoreModelAppearance(root, appearance);
+  assert.equal(line.visible, true);
+  assert.equal(line.material, material);
+  selected.dispose(); material.dispose(); geometry.dispose();
 });

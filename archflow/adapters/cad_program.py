@@ -834,7 +834,7 @@ def translate_to_rhino_python(
                 lines.append(f"objects[{out!r}] = []  # reference curve omitted")
                 continue
             basis = params.get("basis", "polyline")
-            points = params["points"]
+            points = lift_to_base_level(params["points"], params, op_id)
             pts = ", ".join(
                 f"({p[0]},{p[2]},{p[1]})" for p in points
             )
@@ -1080,7 +1080,7 @@ def expected_object_bounds(program) -> dict[str, dict]:
         if kind == "curve":
             if not bool(params.get("retain_for_inspection", False)):
                 continue
-            points[out] = [tuple(point) for point in params["points"]]
+            points[out] = lift_to_base_level(params["points"], params, op_id)
             counts[out] = 1
         elif kind == "solid":
             o, s = params["origin"], params["size"]

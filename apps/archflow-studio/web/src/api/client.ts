@@ -61,6 +61,7 @@ import {
   readDocumentPageAnnotationsApiDocumentAnnotationsGet,
   readDocumentsApiDocumentsGet,
   readJobApiJobsJobIdGet,
+  readRuntimeApiRuntimeGet,
   readSavedModelAnnotationsApiModelAnnotationsGet,
   readWorkingCopiesApiWorkingCopiesGet,
   readProjectApiProjectGet,
@@ -106,6 +107,7 @@ import type {
   IntentDto,
   IntentRequestDto,
   JobDto,
+  RuntimeDto,
   MassingOptionDto,
   MassingOptionRequestDto,
   ModelAnnotationsDto,
@@ -513,14 +515,18 @@ export const studio = {
     );
   },
 
-  startCandidate(proposalId: string, trace?: OperationTrace): Promise<CandidateAcceptedDto> {
+  startCandidate(proposalId: string, trace?: OperationTrace, requestId?: string): Promise<CandidateAcceptedDto> {
     return call(
       `POST /api/proposals/${proposalId}/candidate`,
       startCandidateApiProposalsProposalIdCandidatePost({
         path: { proposal_id: proposalId },
-        headers: traceHeaders(trace),
+        headers: { ...traceHeaders(trace), ...(requestId ? { "Idempotency-Key": requestId } : {}) },
       }),
     );
+  },
+
+  runtime(candidateId: string): Promise<RuntimeDto> {
+    return call("GET /api/runtime", readRuntimeApiRuntimeGet({ query: { candidateId: [candidateId] } }));
   },
 
   job(jobId: string, trace?: OperationTrace): Promise<JobDto> {

@@ -25,7 +25,8 @@ Rhino ``.3dm`` share one frame and one set of expected bounds.
 
 Capability.  Only the operation kinds the initial consumers actually use are
 realized: ``solid`` (box), ``revolve`` (cylinder or conical frustum), ``extrusion``,
-``planar_surface`` (one bounded planar face without thickness), polyline ``loft`` (capped into a
+``planar_surface`` (one bounded planar face without thickness), retained polyline
+``curve`` wires, polyline ``loft`` (capped into a
 closed solid, or with ``cap_ends`` false the lofted surface itself, open at
 both end sections, for a source that gives a drum or a dome as a surface
 without thickness), the three booleans, and the linear ``array`` the
@@ -111,6 +112,7 @@ class OcctBuildError(OcctBackendError):
 SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
     {
         "solid",
+        "curve",
         "revolve",
         "extrusion",
         "planar_surface",
@@ -123,12 +125,12 @@ SUPPORTED_OPERATION_KINDS: frozenset[str] = frozenset(
 )
 
 #: What an operation declares it delivers: a closed solid, or (an uncapped
-#: loft or bounded planar face) an open surface without thickness.
+#: loft or bounded planar face) an open surface without thickness, or a curve.
 CLOSED_SOLID = "closed_solid"
 OPEN_SURFACE = "open_surface"
+CURVE = "curve"
 
 _UNSUPPORTED_REASONS: Mapping[str, str] = {
-    "curve": "curve objects are not B-rep deliveries; the OCCT executor writes solids and surfaces only",
     "transform": "transform has no exact realization (the Rhino translation only copies it)",
     "radial_array": "radial block instancing is not realized by the OCCT executor yet",
     "sweep": "sweep is not realized by the OCCT executor yet",
@@ -214,6 +216,7 @@ def _occt() -> SimpleNamespace:
                 "BRepTools",
                 "Bnd",
                 "GCPnts",
+                "GeomAbs",
                 "GProp",
                 "HLRAlgo",
                 "HLRBRep",
@@ -383,6 +386,10 @@ def build_program_shapes(
                 if reused:
                     input_ids.add(output)
                     shape = shapes[output]
+                    if kind == "curve":
+                        # STEP flattens a wire to an edge compound; retain its
+                        # edges under one wire so re-export keeps one named layer.
+                        shape, _ = _polyline_wire(shape)
                 else:
                     executed.append(op_id)
                     input_ids.update(operation.input_object_ids)
@@ -436,14 +443,16 @@ def build_program_shapes(
 
 
 def declared_delivery(operation) -> str:
-    """``CLOSED_SOLID`` or ``OPEN_SURFACE``: what the operation itself says it delivers.
+    """The operation's declared solid, surface or curve delivery.
 
     Read off the operation's own parameters, never off a built shape: a
     ``planar_surface`` and a ``loft`` whose ``cap_ends`` is false are open
-    surfaces; every other realized kind is a closed solid. The readback verification uses
+    surfaces; a retained curve is a wire; every other realized kind is a closed solid. Readback uses
     the same word to decide which checks a saved object must pass.
     """
 
+    if operation.kind.value == "curve":
+        return CURVE
     if operation.kind.value == "planar_surface" or (
         operation.kind.value == "loft" and _params(operation).get("cap_ends", True) is False
     ):
@@ -459,6 +468,21 @@ def _build_operation(
     shapes: Mapping[str, Any],
 ):
     op_id = operation.op_id
+    if kind == "curve":
+        if params.get("basis", "polyline") != "polyline" or not params.get("retain_for_inspection", False):
+            raise OcctCapabilityError(op_id, kind, "only retained polyline curves are realized")
+        points = lift_to_base_level(params["points"], params, op_id)
+        if len(points) < 2 or any(math.dist(a, b) <= 1e-9 for a, b in zip(points, points[1:])):
+            raise OcctBuildError(f"{op_id}: a curve needs distinct consecutive points")
+        maker = occ.BRepBuilderAPI.BRepBuilderAPI_MakePolygon()
+        for point in points:
+            maker.Add(_gp_point(occ, point))
+        if not maker.IsDone():
+            raise OcctBuildError(f"{op_id}: curve points do not form a wire")
+        wire = maker.Wire()
+        if _count(occ, wire, occ.TopAbs.TopAbs_EDGE) != len(points) - 1:
+            raise OcctBuildError(f"{op_id}: curve contains an edge below the kernel tolerance")
+        return wire
     if kind == "solid":
         origin, size = params["origin"], params["size"]
         if any(float(value) <= 0.0 for value in size):
@@ -665,12 +689,16 @@ def _shape_list(occ: SimpleNamespace, shapes):
 
 
 def _require_built_shape(occ: SimpleNamespace, shape, op_id: str, kind: str, *, delivery: str = CLOSED_SOLID) -> None:
-    """The built shape is what the operation declared: a solid, or a non-empty open surface."""
+    """The shape matches its declared solid, open surface or polyline delivery."""
 
     if shape is None or shape.IsNull():
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no shape")
     solids = _count(occ, shape, occ.TopAbs.TopAbs_SOLID)
-    if delivery == OPEN_SURFACE:
+    if delivery == CURVE:
+        if solids or _count(occ, shape, occ.TopAbs.TopAbs_FACE):
+            raise OcctBuildError(f"{op_id} ({kind}): a curve must not contain surfaces or solids")
+        _polyline_geometry(shape)
+    elif delivery == OPEN_SURFACE:
         if _count(occ, shape, occ.TopAbs.TopAbs_FACE) == 0:
             raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no surface")
         if solids or _free_edge_count(occ, shape) == 0:
@@ -679,6 +707,56 @@ def _require_built_shape(occ: SimpleNamespace, shape, op_id: str, kind: str, *, 
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced no solid")
     if not occ.BRepCheck.BRepCheck_Analyzer(shape).IsValid():
         raise OcctBuildError(f"{op_id} ({kind}): OCCT produced an invalid shape")
+
+
+def _polyline_wire(shape, tolerance: float = 1e-7):
+    """Recover the existing wire topology without replacing its edges.
+
+    STEP writes a wire as separate edges without shared vertices. Reconnect
+    only at its numerical tolerance; callers also compare every original point.
+    """
+
+    occ = _occt()
+    edges = occ.TopTools.TopTools_HSequenceOfShape()
+    for raw in _explore(occ, shape, occ.TopAbs.TopAbs_EDGE):
+        edge = occ.TopoDS.TopoDS.Edge_s(raw)
+        if occ.BRepAdaptor.BRepAdaptor_Curve(edge).GetType() != occ.GeomAbs.GeomAbs_Line:
+            raise OcctBuildError("polyline contains a non-linear edge")
+        edges.Append(edge)
+    if not edges.Length():
+        raise OcctBuildError("polyline contains no edges")
+    if shape.ShapeType() == occ.TopAbs.TopAbs_WIRE:
+        return occ.TopoDS.TopoDS.Wire_s(shape), edges.Length()
+    wires = occ.TopTools.TopTools_HSequenceOfShape()
+    occ.ShapeAnalysis.ShapeAnalysis_FreeBounds.ConnectEdgesToWires_s(edges, tolerance, False, wires)
+    if wires.Length() != 1:
+        raise OcctBuildError("polyline edges do not form one connected path")
+    return occ.TopoDS.TopoDS.Wire_s(wires.Value(1)), edges.Length()
+
+
+def _polyline_geometry(shape, tolerance: float = 1e-7) -> dict[str, object]:
+    """Measure one complete polyline from its real edges in CAD coordinates."""
+
+    occ = _occt()
+    wire, edge_count = _polyline_wire(shape, tolerance)
+    explorer = occ.BRepTools.BRepTools_WireExplorer(wire)
+    points = []
+    last = None
+    while explorer.More():
+        point = occ.BRep.BRep_Tool.Pnt_s(explorer.CurrentVertex())
+        points.append([float(point.X()), float(point.Y()), float(point.Z())])
+        last = occ.TopExp.TopExp.LastVertex_s(explorer.Current(), True)
+        explorer.Next()
+    if len(points) != edge_count or last is None:
+        raise OcctBuildError("polyline edge traversal is incomplete")
+    point = occ.BRep.BRep_Tool.Pnt_s(last)
+    points.append([float(point.X()), float(point.Y()), float(point.Z())])
+    properties = occ.GProp.GProp_GProps()
+    occ.BRepGProp.BRepGProp.LinearProperties_s(shape, properties)
+    length = float(properties.Mass())
+    if not math.isfinite(length) or length <= 0:
+        raise OcctBuildError("polyline length must be finite and positive")
+    return {"curve_points": points, "curve_start": points[0], "curve_end": points[-1], "curve_length": length}
 
 
 def _free_edge_count(occ: SimpleNamespace, shape) -> int:
@@ -1487,7 +1565,7 @@ class PreviewMaterial:
 
 @dataclass(frozen=True)
 class PreviewObject:
-    """One object of the mesh preview: the shape plus the semantics the viewer reads."""
+    """One preview object: the shape and delivery plus the semantics the viewer reads."""
 
     object_id: str
     shape: Any
@@ -1496,6 +1574,7 @@ class PreviewObject:
     visible: bool = True
     #: A native material of the object's own; None leaves the layer's display colour.
     material: PreviewMaterial | None = None
+    delivery: str = CLOSED_SOLID
 
 
 def write_preview_three_dm(
@@ -1510,15 +1589,15 @@ def write_preview_three_dm(
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
     observation_parent_id: str | None = None,
 ) -> dict[str, dict[str, int]]:
-    """Write a mesh-only ``.3dm`` through rhino3dm from the built shapes.
+    """Write tessellated surfaces and native polyline curves through rhino3dm.
 
-    Format identity: this is a tessellated render-mesh preview, not a
-    NURBS/B-rep delivery.  It carries the object names, nested layer paths
+    Surfaces are tessellated render meshes; curves retain their native polyline
+    geometry. It carries the object names, nested layer paths
     with their colours, the ``archflow:*`` object user text and the document
     user text, so the viewer treats it exactly like a Rhino-written file.
     An object with a ``PreviewMaterial`` is bound to a native material of
     the document's table (``MaterialSource`` = from object); equal materials
-    share one table entry.  Returns per-object mesh vertex and face counts.
+    share one table entry. Returns mesh vertex/face or curve point/segment counts.
 
     Observation separates accumulated tessellator-call time from File3dm.Write;
     mesh construction between calls is outside that accumulated duration.
@@ -1592,11 +1671,15 @@ def write_preview_three_dm(
             mesh_inputs.append(item.object_id)
             call_started = time.perf_counter()
             try:
-                vertices, triangles = tessellate_shape(
-                    item.shape,
-                    linear_deflection=linear_deflection,
-                    angular_deflection=angular_deflection,
-                )
+                if item.delivery == CURVE:
+                    vertices = _polyline_geometry(item.shape)["curve_points"]
+                    triangles = []
+                else:
+                    vertices, triangles = tessellate_shape(
+                        item.shape,
+                        linear_deflection=linear_deflection,
+                        angular_deflection=angular_deflection,
+                    )
             except Exception:
                 mesh_status = "failed"
                 raise
@@ -1604,15 +1687,18 @@ def write_preview_three_dm(
                 mesh_seconds += time.perf_counter() - call_started
                 mesh_ended_at = datetime.now(timezone.utc)
             mesh_outputs.append(item.object_id)
-            mesh = rhino3dm.Mesh()
-            for x, y, z in vertices:
-                mesh.Vertices.Add(x, y, z)
-            for a, b, c in triangles:
-                mesh.Faces.AddFace(a, b, c)
-            mesh.Normals.ComputeNormals()
-            mesh.Compact()
-            if not mesh.IsValid:
-                raise OcctBuildError(f"{item.object_id}: preview mesh is invalid")
+            if item.delivery == CURVE:
+                geometry = rhino3dm.PolylineCurve([rhino3dm.Point3d(*point) for point in vertices])
+            else:
+                geometry = rhino3dm.Mesh()
+                for x, y, z in vertices:
+                    geometry.Vertices.Add(x, y, z)
+                for a, b, c in triangles:
+                    geometry.Faces.AddFace(a, b, c)
+                geometry.Normals.ComputeNormals()
+                geometry.Compact()
+            if not geometry.IsValid:
+                raise OcctBuildError(f"{item.object_id}: preview geometry is invalid")
             attributes = rhino3dm.ObjectAttributes()
             attributes.Name = item.object_id
             attributes.LayerIndex = ensure_layer(item.layer)
@@ -1622,11 +1708,12 @@ def write_preview_three_dm(
                 attributes.MaterialIndex = ensure_material(item.material)
             for key in sorted(item.user_text):
                 attributes.SetUserString(key, item.user_text[key])
-            model.Objects.AddMesh(mesh, attributes)
-            counts[item.object_id] = {
-                "mesh_vertex_count": len(vertices),
-                "mesh_face_count": len(triangles),
-            }
+            if item.delivery == CURVE:
+                model.Objects.AddCurve(geometry, attributes)
+                counts[item.object_id] = {"curve_point_count": len(vertices), "curve_segment_count": len(vertices) - 1}
+            else:
+                model.Objects.AddMesh(geometry, attributes)
+                counts[item.object_id] = {"mesh_vertex_count": len(vertices), "mesh_face_count": len(triangles)}
     finally:
         if mesh_started_at is not None:
             _observe_operation(
@@ -1643,7 +1730,8 @@ def write_preview_three_dm(
                     "emitted_object_ids": list(mesh_outputs),
                     "execution_path": "occt_tessellation",
                     "scope": "aggregate_active_time",
-                    "executed_stages": ["tessellate_shape"],
+                    "executed_stages": (["tessellate_shape"] if any(item.delivery != CURVE for item in objects) else [])
+                                       + (["polyline_geometry"] if any(item.delivery == CURVE for item in objects) else []),
                     "cache_status": "unknown",
                     "cache_reason": "kernel_mesh_reuse_unobserved",
                 },

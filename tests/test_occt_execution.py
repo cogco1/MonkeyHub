@@ -625,6 +625,101 @@ def _assert_bbox(case: unittest.TestCase, measure: occt_backend.ShapeMeasure, lo
 
 
 @NEEDS_OCCT
+class CurveExecutionTests(unittest.TestCase):
+    def program(self, profile, plane=None):
+        element = {
+            "entity_id": "path", "schema": "Element@1", "parent_id": "primary-support",
+            "fields": {"component_id": "primary-support", "producer": "curve",
+                       "references": {"base": {"offset_from": {"level": "level-ground", "offset": 0.2}}},
+                       "params": {"profile": profile, "elevation": 0.5, **({"work_plane": plane} if plane else {})}},
+            "basis_refs": [EVIDENCE],
+        }
+        return _compile(_record_with(element))
+
+    def test_lines_polylines_and_segmented_arcs_save_as_curves_with_real_endpoints_and_length(self):
+        import rhino3dm
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, -0.6, 0.8], "normal": [0, 0.8, 0.6]}
+        arc = [[2 * math.cos(i * math.pi / 16), 2 * math.sin(i * math.pi / 16)] for i in range(9)]
+        for profile in ([[0, 0], [3, 4]], [[0, 0], [3, 0], [3, 4]], arc):
+            with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:
+                workspace = Path(tmp).resolve()
+                program = self.program(profile, plane)
+                binding = _persisted_binding(program, "stage-curve")
+                receipt, _ = _execute(program, binding, workspace, "path")
+                self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                self.assertEqual(receipt.exact_artifact["deliveries"], {"obj-path": "curve"})
+                row = receipt.readback["obj-path"]
+                self.assertEqual((row["solid_count"], row["face_count"], row["volume"]), (0, 0, None))
+                length = sum(math.dist(a, b) for a, b in zip(profile, profile[1:]))
+                self.assertAlmostEqual(row["curve_length"], length, places=7)
+                expected = [[10 + x, 20 + 0.8 * y, 4.7 - 0.6 * y] for x, y in profile]
+                self.assertTrue(cad_execution._curve_matches(row, expected, 1e-7))
+                model = rhino3dm.File3dm.Read(str(workspace / receipt.preview_artifact["relative_path"]))
+                self.assertEqual(len(model.Objects), 1)
+                saved = model.Objects[0]
+                self.assertIsInstance(saved.Geometry, rhino3dm.PolylineCurve)
+                self.assertFalse(saved.Geometry.IsClosed)
+                self.assertEqual(saved.Geometry.PointCount, len(profile))
+                self.assertEqual(saved.Attributes.GetUserString("archflow:object_ref"), "cad-object:obj-path")
+                self.assertEqual(saved.Attributes.GetUserString("archflow:producer_op"), "path")
+                self.assertEqual(saved.Attributes.GetUserString("archflow:component"),
+                                 receipt.expected_semantics["objects"]["obj-path"]["user_text"]["archflow:component"])
+                analysis = receipt.preview_inspection["object_geometry_analysis"][0]
+                self.assertTrue(cad_execution._curve_matches(analysis, expected, 1e-7))
+                self.assertEqual(receipt.preview_artifact["curve_counts"]["obj-path"]["curve_segment_count"], len(profile) - 1)
+                reused, _ = _execute(program, binding, workspace, "reused", prior_program=program,
+                                     prior_step=workspace / receipt.exact_artifact["relative_path"],
+                                     prior_step_sha256=receipt.exact_artifact["sha256"])
+                self.assertIs(reused.status, CadExecutionStatus.SUCCEEDED, reused.failures)
+                self.assertEqual(reused.reused_object_ids, ("obj-path",))
+
+    def test_saved_step_with_the_same_bounds_endpoints_and_length_but_another_path_is_refused(self):
+        program = self.program([[0, 0], [3, 0], [3, 4]])
+        wrong = self.program([[0, 0], [0, 4], [3, 4]])
+        shape = occt_backend.build_program_shapes(wrong).objects["obj-path"].shape
+
+        def altered_write(path, objects, **options):
+            occt_backend.write_step(path, [replace(item, shape=shape) for item in objects], **options)
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(cad_execution, "write_step", side_effect=altered_write):
+            receipt, _ = _execute(program, _persisted_binding(program, "stage-curve"), Path(tmp).resolve(), "changed")
+        self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+        self.assertIn("cad_execution.step_curve_mismatch", {row["code"] for row in receipt.failures})
+
+    def test_reference_only_and_bezier_curves_remain_explicitly_unsupported_before_writes(self):
+        source = self.program([[0, 0], [3, 0], [3, 4]]).proposal.operations[0]
+        for field, kind, value in (("retain_for_inspection", GeometryParameterKind.BOOLEAN, False),
+                                   ("basis", GeometryParameterKind.TEXT, "bezier")):
+            operation = replace(source, parameters=tuple(
+                GeometryParameter.create(name=field, kind=kind, value=value) if p.name == field else p
+                for p in source.parameters))
+            program = _single_operation_program(operation)
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as tmp:
+                workspace = Path(tmp).resolve()
+                with self.assertRaisesRegex(CadCapabilityError, "only retained polyline"):
+                    _execute(program, _synthetic_binding(program), workspace, "unsupported")
+                self.assertEqual(list(workspace.iterdir()), [])
+
+    def test_preview_requires_the_saved_curve_not_only_matching_mesh_bounds(self):
+        import rhino3dm
+        program = self.program([[0, 0], [3, 0], [3, 4]])
+        original_write = cad_execution.write_preview_three_dm
+
+        def altered_write(path, objects, **options):
+            counts = original_write(path, objects, **options)
+            model = rhino3dm.File3dm.Read(str(path))
+            saved = model.Objects[0]
+            saved.Geometry.SetPoint(1, rhino3dm.Point3d(0, 4, 0.7))
+            self.assertTrue(model.Write(str(path), 8))
+            return counts
+
+        with tempfile.TemporaryDirectory() as tmp, patch.object(cad_execution, "write_preview_three_dm", side_effect=altered_write):
+            receipt, _ = _execute(program, _persisted_binding(program, "stage-curve"), Path(tmp).resolve(), "changed")
+        self.assertIs(receipt.status, CadExecutionStatus.FAILED)
+        self.assertIn("cad_execution.preview_curve_mismatch", {row["code"] for row in receipt.failures})
+
+
+@NEEDS_OCCT
 class PlanarSurfaceExecutionTests(unittest.TestCase):
     def test_surface_retains_its_outline_and_level_without_solid_or_volume(self) -> None:
         # Concave outline, intentionally no construction thickness. Moving
@@ -2053,9 +2148,9 @@ class ImportBoundaryTests(unittest.TestCase):
     def test_the_backend_names_what_it_does_not_realize(self) -> None:
         self.assertEqual(
             occt_backend.SUPPORTED_OPERATION_KINDS,
-            {"solid", "revolve", "extrusion", "planar_surface", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
+            {"solid", "curve", "revolve", "extrusion", "planar_surface", "loft", "boolean_union", "boolean_difference", "boolean_intersection", "array"},
         )
-        for unsupported in ("radial_array", "transform", "sweep", "curve", "asset_instance"):
+        for unsupported in ("radial_array", "transform", "sweep", "asset_instance"):
             self.assertNotIn(unsupported, occt_backend.SUPPORTED_OPERATION_KINDS)
 
 

@@ -723,7 +723,7 @@ def _curve_analysis(geometry: Any) -> dict[str, object]:
         )
         for index in range(_GEOMETRY_ANALYSIS_CURVE_SAMPLE_COUNT)
     ]
-    return {
+    result = {
         "curve_start": list(_point(geometry.PointAtStart, "curve start")),
         "curve_end": list(_point(geometry.PointAtEnd, "curve end")),
         "curve_closed": bool(geometry.IsClosed),
@@ -734,6 +734,13 @@ def _curve_analysis(geometry: Any) -> dict[str, object]:
         ),
         "curve_samples": [list(item) for item in samples],
     }
+    polyline = geometry.TryGetPolyline()
+    # Drawn profiles contain at most 512 points. Larger imported paths retain
+    # the bounded samples above instead of enlarging every inspection payload.
+    if polyline is not None and len(polyline) <= 512:
+        points = [list(_point(point, "polyline vertex")) for point in polyline]
+        result.update(curve_points=points, curve_length=sum(math.dist(a, b) for a, b in zip(points, points[1:])))
+    return result
 
 
 def _object_geometry_analysis(

@@ -5,6 +5,10 @@ const paths = {
   rectangle: "M5 5h14v14H5Z",
   circle: "M20 12a8 8 0 1 1-16 0 8 8 0 1 1 16 0Z",
   polygon: "M5 5 17 4 21 13 13 20 4 15Z",
+  line: "M5 19 19 5M3 17h4v4H3ZM17 3h4v4h-4Z",
+  freehand: "M3 17c3-14 6-14 6-5s5 8 7-1 5-6 5-3",
+  arc: "M4 18a8 12 0 0 1 16 0M3 18h2m14 0h2",
+  chevron: "m8 14 4-4 4 4",
   pushPull: "M12 3v9m-3-6 3-3 3 3M4 14l8-4 8 4-8 4-8-4Zm0 0v4l8 4 8-4v-4M12 18v4",
   move: "M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3",
   rotate: "M20 9a8 8 0 1 0 0 6M20 3v6h-6",
@@ -22,6 +26,7 @@ const paths = {
   check: "m5 12 4 4L19 6",
   close: "m6 6 12 12M18 6 6 18",
   help: "M20 12a8 8 0 1 1-16 0 8 8 0 1 1 16 0ZM9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4M12 16h.01",
+  sync: "M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5",
 } as const;
 
 export type ModelToolIcon = keyof typeof paths;

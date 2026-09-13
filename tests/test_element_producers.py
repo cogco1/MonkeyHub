@@ -278,6 +278,49 @@ class PlanarSurfaceProducerTests(unittest.TestCase):
                 _produce((replace(row, params=params),))
 
 
+class CurveProducerTests(unittest.TestCase):
+    def test_line_polyline_and_sampled_arc_keep_their_authored_points_and_datum(self):
+        arc = [[math.cos(t * math.pi / 8), math.sin(t * math.pi / 8)] for t in range(5)]
+        for profile in ([[0, 0], [3, 4]], [[0, 0], [2, 0], [2, 3]], arc):
+            with self.subTest(profile=profile):
+                row = ElementRow("path", "envelope", "curve", {"base": {"level": PN}}, {"profile": profile}, BASIS)
+                produced, context = _produce((row,))
+                element = produced[0]
+                op = element.operations[0]
+                self.assertIs(op.kind, GeometryOperationKind.CURVE)
+                self.assertEqual(op.output_object_ids, ("obj-path",))
+                self.assertEqual(_op_params(op), {"basis": "polyline", "points": [[round(x, 9), 0, round(y, 9)] for x, y in profile], "retain_for_inspection": True})
+                self.assertEqual(element.bindings[0].datum_id, PN)
+                self.assertEqual((element.datums, element.relations, context.published), ((), (), {}))
+
+    def test_plane_origin_and_negative_coordinate_follow_the_bound_level_plus_offsets(self):
+        from archflow.adapters.cad_program import lift_to_base_level
+        plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, -1, 0], "normal": [0, 0, 1]}
+        row = ElementRow("path", "envelope", "curve", {"base": {"offset_from": {"level": PN, "offset": 0.2}}},
+                         {"profile": [[0, 0], [3, 2]], "work_plane": plane, "elevation": -0.5}, BASIS)
+        produced, _ = _produce((row,))
+        params = _op_params(produced[0].operations[0])
+        self.assertNotIn("base_level", params)
+        points = lift_to_base_level(params["points"], {**params, "base_level": 3.57}, "path")
+        self.assertEqual([(round(x, 6), round(y, 6), round(z, 6)) for x, y, z in points], [(10, 7.27, 20), (13, 5.27, 20)])
+
+    def test_semantic_curve_resolves_parameter_coordinates_and_refuses_thickness_or_bad_points(self):
+        from archflow.state.state_record import Parameter
+        record = authored_record()
+        original = next(e for e in record.entities if e.entity_id == "wall-south")
+        curve = replace(original, fields={"producer": "curve", "component_id": "envelope",
+                        "references": {"base": {"level": PN}}, "params": {"profile": [[0, 0], ["@path_x", 2]]}})
+        record = replace(record, entities=tuple(curve if e.entity_id == curve.entity_id else e for e in record.entities),
+                         parameters=record.parameters + (Parameter("path_x", 3, "m"),))
+        validate_element_contract(record, (curve.entity_id,))
+        row = next(row for row in element_rows_of(record) if row.element_id == curve.entity_id)
+        self.assertEqual(row.params["profile"], [[0, 0], [3, 2]])
+        for params in ({"profile": [[0, 0]]}, {"profile": [[0, 0], [0, 0]]},
+                       {"profile": [[0, 0], [float("nan"), 1]]}, {**row.params, "height": 1}):
+            with self.subTest(params=params), self.assertRaises(ElementProducerError):
+                _produce((replace(row, params=params),))
+
+
 class DrawingPlaneTests(unittest.TestCase):
     def row(self, **params):
         return ElementRow("drawn", "envelope", "prism", {"base": {"level": PN}},

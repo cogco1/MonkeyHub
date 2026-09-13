@@ -9,7 +9,7 @@
  */
 
 export type PlanPoint = readonly [number, number];
-export type SketchTool = "rectangle" | "circle" | "polygon";
+export type SketchTool = "rectangle" | "circle" | "polygon" | "line" | "freehand" | "arc";
 export type SketchVector = readonly [number, number, number];
 /** A local drawing frame in the viewer's CAD Z-up coordinates. */
 export interface SketchPlane {
@@ -91,6 +91,36 @@ export function circleOf(center: PlanPoint, radius: number, segments = 32): read
     const angle = index * 2 * Math.PI / segments;
     return [center[0] + radius * Math.cos(angle), center[1] + radius * Math.sin(angle)] as PlanPoint;
   });
+}
+
+/** Signed distance to the chord; moving along the chord does not change its bulge. */
+export function arcBulge(start: PlanPoint, end: PlanPoint, point: PlanPoint): number {
+  const dx = end[0] - start[0], dy = end[1] - start[1];
+  const length = Math.hypot(dx, dy);
+  return length > 1e-9 ? ((point[1] - start[1]) * dx - (point[0] - start[0]) * dy) / length : 0;
+}
+
+/** An open, segmented circular arc through two ends and a signed chord bulge. */
+export function arcOf(start: PlanPoint, end: PlanPoint, bulge: number): readonly PlanPoint[] {
+  const dx = end[0] - start[0], dy = end[1] - start[1];
+  const length = Math.hypot(dx, dy);
+  if (length <= 1e-6 || !Number.isFinite(bulge) || Math.abs(bulge) <= 1e-6) return [];
+  const offset = bulge / 2 - length * length / (8 * bulge);
+  const center: PlanPoint = [(start[0] + end[0]) / 2 - dy / length * offset,
+    (start[1] + end[1]) / 2 + dx / length * offset];
+  const radius = Math.hypot(start[0] - center[0], start[1] - center[1]);
+  if (!Number.isFinite(radius)) return [];
+  const angle = Math.atan2(start[1] - center[1], start[0] - center[0]);
+  const sweep = -4 * Math.atan2(2 * bulge, length);
+  return Array.from({ length: 33 }, (_, index): PlanPoint => index === 0 ? start : index === 32 ? end :
+    [center[0] + radius * Math.cos(angle + sweep * index / 32),
+      center[1] + radius * Math.sin(angle + sweep * index / 32)]);
+}
+
+export function sizedLine(start: PlanPoint, cursor: PlanPoint, length: number): PlanPoint {
+  const dx = cursor[0] - start[0], dy = cursor[1] - start[1];
+  const span = Math.hypot(dx, dy);
+  return span > 1e-6 ? [start[0] + dx * length / span, start[1] + dy * length / span] : [start[0] + length, start[1]];
 }
 
 export function lockedPoint(point: PlanPoint, anchor: PlanPoint, axis: SketchState["axisLock"]): PlanPoint {
@@ -190,9 +220,16 @@ export interface FinishedSketch {
   readonly height: number;
   readonly base: number;
   readonly plane?: SketchPlane;
+  /** Omitted for retained closed profiles; false is an open, unfilled path. */
+  readonly closed?: boolean;
 }
 
-export function finished(state: SketchState, allowFlat = false): FinishedSketch | null {
+export function finished(state: SketchState, allowFlat = false, closed = true): FinishedSketch | null {
+  if (!closed) {
+    if (state.phase !== "profile" || state.profile.length < 2 || state.profile.some((point) => !point.every(Number.isFinite)) ||
+        !state.profile.some((point) => Math.hypot(point[0] - state.profile[0]![0], point[1] - state.profile[0]![1]) > 1e-6)) return null;
+    return { profile: state.profile, height: 0, base: state.base, closed: false, ...(state.plane ? { plane: state.plane } : {}) };
+  }
   if (state.phase !== "height" || !enclosesArea(state.profile) || !Number.isFinite(state.height) || (!allowFlat && Math.abs(state.height) <= 1e-6)) return null;
   return { profile: state.profile, height: state.height, base: state.base, ...(state.plane ? { plane: state.plane } : {}) };
 }

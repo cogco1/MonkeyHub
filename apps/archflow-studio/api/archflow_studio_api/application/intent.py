@@ -248,6 +248,7 @@ def sketch_prism_proposal(
     profile: Sequence[tuple[float, float]],
     height: float,
     base: Mapping[str, str],
+    closed: bool = True,
     plane: Mapping[str, Any] | None = None,
     parent_component_id: str | None = None,
     semantic_kind: str | None = None,
@@ -257,8 +258,9 @@ def sketch_prism_proposal(
     """A profile and a height, drawn by hand, as the design edit they already are.
 
     A drawn outline is the same ``Element@1`` row an agent authors: the
-    ``prism`` producer extrudes a closed plan profile to a height and the
-    record keeps both as its own parameters. So this states the row and hands
+    ``prism`` producer extrudes a closed plan profile, ``planar-surface`` keeps
+    a flat face and ``curve`` keeps an open path. The record retains the points
+    and placement as parameters. This states the row and hands
     it to the one component-edit path, which types it, derives the successor,
     and checks it against the advertised producer signatures. No geometry is
     computed here and no second representation is created: sending the same
@@ -269,7 +271,7 @@ def sketch_prism_proposal(
     if height < 0:
         plane = dict(plane or {"origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0]})
         plane["normal"] = [-float(c) for c in plane["normal"]]
-    params = {"profile": points + [points[0]] if height == 0 else points,
+    params = {"profile": points + [points[0]] if closed and height == 0 else points,
               **({"height": abs(float(height))} if height != 0 else {}),
               **({"work_plane": dict(plane)} if plane is not None else {})}
     components = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
@@ -308,7 +310,7 @@ def sketch_prism_proposal(
         "parent_id": component_id,
         "fields": {
             "component_id": component_id,
-            "producer": "planar-surface" if height == 0 else "prism",
+            "producer": "curve" if not closed else "planar-surface" if height == 0 else "prism",
             "references": {"base": dict(base)},
             "params": params,
         },
@@ -316,7 +318,7 @@ def sketch_prism_proposal(
     existing = {entity.entity_id for entity in projection.record.entities}
     said = summary or (
         f"{'change' if element_id in existing else 'draw'} {element_id}: "
-        f"{len(points)}-point profile pulled to {height:g}"
+        + (f"{len(points)}-point open curve" if not closed else f"{len(points)}-point profile pulled to {height:g}")
     )
     return component_edit_proposal(
         projection,

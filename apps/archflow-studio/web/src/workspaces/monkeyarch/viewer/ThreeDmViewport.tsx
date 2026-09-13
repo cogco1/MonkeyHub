@@ -21,6 +21,7 @@ import {
   Float32BufferAttribute,
   GridHelper,
   Group,
+  Line,
   LineSegments,
   LineBasicMaterial,
   Material,
@@ -38,6 +39,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  type Intersection,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Rhino3dmLoader } from "three/examples/jsm/loaders/3DMLoader.js";
@@ -67,7 +69,6 @@ import { fitDistance } from "./fitCamera";
 import {
   candidatesOf,
   closestOnEdge,
-  featureEdges,
   nearestCandidate,
   type FeatureEdge,
   type Point3,
@@ -75,7 +76,7 @@ import {
 import { encodeViewportPng } from "./viewportScreenshot";
 import type { SketchPlane } from "../../../features/stage/sketch";
 import { cancelInteractionFrame, scheduleInteractionFrame, type InteractionSession } from "../interactionSession";
-import { Preselection, type LocalHit } from "./preselection";
+import { Preselection, outlineEdges, raycastCurve, type LocalHit } from "./preselection";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
@@ -90,6 +91,8 @@ export const LOCAL_SOURCE_LABEL = "LOCAL · UNBOUND";
  * `POST /api/pick/resolve` that gives it.
  */
 export interface ViewportPick {
+  /** Only the local draft layer supplies this id; loaded exports never do. */
+  draftElementId?: string;
   userStrings: UserStrings;
   documentUserStrings: UserStrings | null;
   objectName: string | null;
@@ -128,6 +131,7 @@ export interface GhostSpec {
 export type HighlightRequest =
   | SemanticHighlightTarget
   | { object: Object3D }
+  | { draftElementId: string }
   | null;
 
 export type Vec3 = [number, number, number];
@@ -142,6 +146,12 @@ export interface SketchPreview {
   readonly base: number;
   readonly height: number;
   readonly plane?: SketchPlane;
+  readonly closed?: boolean;
+}
+
+export interface DraftPreviewObject {
+  readonly elementId: string;
+  readonly spec: SketchPreview;
 }
 
 /** Where a pointer really is on the model, and what that place is. */
@@ -169,6 +179,8 @@ export interface CameraState {
 }
 
 export interface ViewportLoadOptions {
+  /** Parse a possible replacement while the current model remains interactive. */
+  readonly background?: boolean;
   /** Keep the current view when replacing a model; the first load still fits. */
   readonly preserveCamera?: boolean;
   /** The caller may leave this project or editing context while parsing is in flight. */
@@ -245,6 +257,7 @@ export interface ViewportController {
    * saved, and ``sketchPreview(null)`` leaves the scene exactly as it was.
    */
   sketchPreview(spec: SketchPreview | null): void;
+  draftPreview(spec: { objects: readonly DraftPreviewObject[]; hiddenObjectNames: readonly string[] } | null): void;
   fitView(): void;
   frontView(): void;
   standardView(view: "top" | "front" | "right" | "iso"): void;
@@ -285,6 +298,7 @@ interface ViewportRuntime {
   controls: OrbitControls;
   model: Object3D | null;
   modelIndex: ReturnType<typeof indexLoadedObjects> | null;
+  modelBounds: Sphere | null;
   preselection: Preselection | null;
   /** Visibility, layers and material references as the loaded file supplied them. */
   appearance: ModelAppearance | null;
@@ -295,19 +309,144 @@ interface ViewportRuntime {
   /** Where the cross-fade stands, so a highlight can be taken off without losing it. */
   blendT: number | null;
   /** The meshes wearing a highlight clone, in the order they were lit. */
-  highlighted: Mesh[];
+  highlighted: (Mesh | Line)[];
   /** What each of those meshes wore before; the clone is thrown away, this is not. */
-  original: WeakMap<Mesh, Material | Material[]>;
+  original: WeakMap<Mesh | Line, Material | Material[]>;
   /** The clones themselves, so they are disposed rather than leaked. */
   clones: Material[];
   /** True while the camera still stands where a fit put it, nobody having moved it. */
   fitted: boolean;
   /** The drawing in progress. It is shown and thrown away; nothing saves it. */
   sketch: Group | null;
+  draftRoot: Group;
+  draftObjects: Map<string, { object: Group; spec: SketchPreview }>;
+  draftIds: WeakMap<Object3D, string>;
+  draftHidden: Map<Object3D, boolean>;
+  draftBounds: Sphere | null;
   render: () => void;
 }
 
+function createPreviewGroup(name: string, temporary = true): Group {
+  const group = new Group();
+  group.name = name;
+  const lineColour = temporary ? accentColour() : getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim() || "#6f727a";
+  const base = new LineSegments(new BufferGeometry(), new LineBasicMaterial({
+    color: lineColour, depthTest: !temporary, transparent: temporary, opacity: temporary ? 0.95 : 1,
+  }));
+  const surface = new Mesh(new BufferGeometry(), new MeshStandardMaterial({
+    color: temporary ? accentColour() : "#b8b1a5", side: DoubleSide,
+    transparent: temporary, opacity: temporary ? 0.18 : 1, depthWrite: !temporary,
+  }));
+  const edges = new LineSegments(new BufferGeometry(), new LineBasicMaterial({
+    color: lineColour, depthTest: !temporary, transparent: temporary, opacity: temporary ? 0.75 : 1,
+  }));
+  base.renderOrder = edges.renderOrder = temporary ? 3 : 1;
+  group.add(base, surface, edges);
+  return group;
+}
+
+/** The same geometry builder serves the current gesture and completed local objects. */
+function updatePreviewGroup(group: Group, spec: SketchPreview): void {
+  group.visible = spec.profile.length >= 2;
+  if (!group.visible) return;
+  const [base, surface, edges] = group.children as [LineSegments, Mesh, LineSegments];
+  const closed = (spec.closed ?? true) && spec.profile.length > 2;
+  const outline: number[] = [];
+  const world = (x: number, y: number, height = 0): Vec3 => spec.plane
+    ? spec.plane.origin.map((value, index) => value + x * spec.plane!.xAxis[index]! + y * spec.plane!.yAxis[index]! + height * spec.plane!.normal[index]!) as unknown as Vec3
+    : [x, y, spec.base + height];
+  spec.profile.forEach(([planX, planY], index) => {
+    if (index + 1 === spec.profile.length && !closed) return;
+    const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
+    outline.push(...world(planX, planY), ...world(nextX, nextY));
+  });
+  const positions: number[] = [];
+  if (closed) {
+    const points = spec.profile.map(([x, y]) => new Vector2(x, y));
+    for (const triangle of ShapeUtils.triangulateShape(points, [])) {
+      const [a, b, c] = triangle.map((index) => spec.profile[index]!);
+      const normalOrder = (b![0] - a![0]) * (c![1] - a![1]) - (b![1] - a![1]) * (c![0] - a![0]) >= 0 ? triangle : [...triangle].reverse();
+      for (const index of spec.height > 0 ? [...normalOrder].reverse() : normalOrder) positions.push(...world(...spec.profile[index]!));
+      if (spec.height !== 0) for (const index of spec.height > 0 ? normalOrder : [...normalOrder].reverse()) positions.push(...world(...spec.profile[index]!, spec.height));
+    }
+    const winding = spec.profile.reduce((area, [x, y], index) => {
+      const [nx, ny] = spec.profile[(index + 1) % spec.profile.length]!;
+      return area + x * ny - nx * y;
+    }, 0);
+    if (spec.height !== 0) spec.profile.forEach(([x, y], index) => {
+      const [nx, ny] = spec.profile[(index + 1) % spec.profile.length]!;
+      const triangles = [[world(x, y), world(nx, ny), world(nx, ny, spec.height)],
+        [world(x, y), world(nx, ny, spec.height), world(x, y, spec.height)]];
+      for (const triangle of triangles) positions.push(...(winding * spec.height >= 0 ? triangle : triangle.reverse()).flat());
+    });
+  }
+  const raised: number[] = [];
+  if (spec.height !== 0 && closed) {
+    spec.profile.forEach(([planX, planY], index) => {
+      const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
+      raised.push(...world(planX, planY, spec.height), ...world(nextX, nextY, spec.height));
+      raised.push(...world(planX, planY), ...world(planX, planY, spec.height));
+    });
+  }
+  // Reserve both flat and extruded capacity. Only a larger polygon grows
+  // attributes; ordinary motion reuses the same GPU buffers and materials.
+  const capacity = Math.max(32, 2 ** Math.ceil(Math.log2(spec.profile.length)));
+  const first = world(...spec.profile[0]!);
+  const update = (object: LineSegments | Mesh, values: number[], vertices: number) => {
+    const geometry = object.geometry;
+    let attribute = geometry.getAttribute("position") as BufferAttribute | undefined;
+    if (!attribute || attribute.count < vertices) {
+      // Release old GPU buffers when capacity grows, keeping the geometry.
+      if (attribute) geometry.dispose();
+      attribute = new Float32BufferAttribute(vertices * 3, 3).setUsage(DynamicDrawUsage);
+      geometry.setAttribute("position", attribute);
+      if (object === surface) geometry.setAttribute("normal",
+        new Float32BufferAttribute(vertices * 3, 3).setUsage(DynamicDrawUsage));
+    }
+    (attribute.array as Float32Array).set(values);
+    // Padding is degenerate at the first vertex, so bounds never include
+    // stale coordinates when a polygon shrinks or a pull crosses zero.
+    for (let index = values.length / 3; index < attribute.count; index++) attribute.setXYZ(index, ...first);
+    attribute.needsUpdate = true;
+    geometry.setDrawRange(0, values.length / 3);
+    geometry.userData.previewVertexCount = values.length / 3;
+    delete geometry.userData.archflowEdges;
+    delete geometry.userData["archflowCurveEdges:segments"];
+    if (object === surface) geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    object.visible = values.length > 0;
+  };
+  update(base, outline, capacity * 2);
+  update(surface, positions, capacity * 12);
+  update(edges, raised, capacity * 4);
+}
+
 const MAX_FILE_SIZE = 512 * 1024 * 1024;
+
+function samePreview(a: SketchPreview, b: SketchPreview): boolean {
+  return a === b || (a.base === b.base && a.height === b.height && (a.closed ?? true) === (b.closed ?? true) &&
+    a.profile.length === b.profile.length && a.profile.every((point, index) => point[0] === b.profile[index]![0] && point[1] === b.profile[index]![1]) &&
+    JSON.stringify(a.plane ?? null) === JSON.stringify(b.plane ?? null));
+}
+
+function draftIdFor(runtime: ViewportRuntime, object: Object3D): string | undefined {
+  for (let current: Object3D | null = object; current && current !== runtime.draftRoot; current = current.parent) {
+    const id = runtime.draftIds.get(current);
+    if (id !== undefined) return id;
+  }
+  return undefined;
+}
+
+function clearDraftPreview(runtime: ViewportRuntime): void {
+  if (runtime.highlighted.some((object) => isUnder(object, runtime.draftRoot))) restoreHighlight(runtime);
+  for (const [object, visible] of runtime.draftHidden) object.visible = visible;
+  runtime.draftHidden.clear();
+  for (const { object } of runtime.draftObjects.values()) { object.removeFromParent(); disposeScene(object); }
+  runtime.draftObjects.clear();
+  runtime.draftRoot.removeFromParent();
+  runtime.draftBounds = null;
+}
 
 interface NurbsFallbackPatch {
   positions: Float32Array;
@@ -508,6 +647,7 @@ function highlightMaterial(material: Material, accent: Color, own?: MaterialOpac
     copy.emissive = new Color(accent);
     copy.emissiveIntensity = 0.22;
   }
+  if (copy instanceof LineBasicMaterial) copy.color.copy(accent);
   copy.opacity = Math.min(1, (own?.opacity ?? material.opacity) + 0.2);
   copy.transparent = copy.opacity < 1;
   copy.depthWrite = copy.opacity >= 1;
@@ -546,7 +686,7 @@ function applyHighlight(runtime: ViewportRuntime, objects: readonly Object3D[]):
   };
   for (const object of objects) {
     object.traverse((child) => {
-      if (!(child instanceof Mesh) || runtime.original.has(child)) return;
+      if (!(child instanceof Mesh || child instanceof Line) || runtime.original.has(child)) return;
       const original = child.material as Material | Material[];
       runtime.original.set(child, original);
       child.material = Array.isArray(original) ? original.map(clone) : clone(original);
@@ -555,19 +695,26 @@ function applyHighlight(runtime: ViewportRuntime, objects: readonly Object3D[]):
   }
 }
 
-/** A translucent copy of every mesh under these carriers, in world space. */
+/** A translucent copy of every surface and curve, in world space. */
 function ghostCopy(carriers: readonly Object3D[], material: MeshStandardMaterial): Group {
   const group = new Group();
+  let hasMesh = false;
   for (const carrier of carriers) {
     carrier.updateWorldMatrix(true, true);
     carrier.traverse((object) => {
-      if (!(object instanceof Mesh)) return;
-      const copy = new Mesh(object.geometry, material);
+      if (!(object instanceof Mesh || object instanceof Line)) return;
+      const lineMaterial = object instanceof Line ? new LineBasicMaterial({
+        color: material.color, transparent: true, opacity: material.opacity, depthWrite: false,
+      }) : null;
+      const copy = object instanceof LineSegments ? new LineSegments(object.geometry, lineMaterial!)
+        : object instanceof Line ? new Line(object.geometry, lineMaterial!) : new Mesh(object.geometry, material);
+      if (object instanceof Mesh) hasMesh = true;
       copy.matrixAutoUpdate = false;
       copy.matrix.copy(object.matrixWorld);
       group.add(copy);
     });
   }
+  if (!hasMesh) material.dispose();
   return group;
 }
 
@@ -575,7 +722,7 @@ function ghostCopy(carriers: readonly Object3D[], material: MeshStandardMaterial
 function materialsUnder(root: Object3D): Material[] {
   const seen = new Set<Material>();
   root.traverse((object) => {
-    if (!(object instanceof Mesh)) return;
+    if (!(object instanceof Mesh || object instanceof Line)) return;
     const material = object.material;
     for (const item of Array.isArray(material) ? material : [material]) seen.add(item);
   });
@@ -590,13 +737,13 @@ function materialsUnder(root: Object3D): Material[] {
 function tintSecondary(root: Object3D, accent: Color): void {
   const cloned = new Map<Material, Material>();
   root.traverse((object) => {
-    if (!(object instanceof Mesh)) return;
+    if (!(object instanceof Mesh || object instanceof Line)) return;
     const original = object.material as Material | Material[];
     const clone = (material: Material): Material => {
       const existing = cloned.get(material);
       if (existing) return existing;
       const copy = material.clone();
-      if (copy instanceof MeshStandardMaterial) copy.color.lerp(accent, 0.45);
+      if (copy instanceof MeshStandardMaterial || copy instanceof LineBasicMaterial) copy.color.lerp(accent, 0.45);
       cloned.set(material, copy);
       return copy;
     };
@@ -610,9 +757,9 @@ function disposeSecondary(root: Object3D): void {
 }
 
 function disposeGhost(ghost: Group): void {
-  const materials = new Set<MeshStandardMaterial>();
+  const materials = new Set<Material>();
   ghost.traverse((object) => {
-    if (object instanceof Mesh && object.material instanceof MeshStandardMaterial) {
+    if ((object instanceof Mesh || object instanceof Line) && !Array.isArray(object.material)) {
       materials.add(object.material);
     }
   });
@@ -653,8 +800,8 @@ function groupOf(models: readonly Object3D[]): Group {
 }
 
 function fitRuntime(runtime: ViewportRuntime): void {
-  if (!runtime.model) return;
-  const box = new Box3().setFromObject(runtime.model);
+  const box = runtime.model ? new Box3().setFromObject(runtime.model) : new Box3();
+  if (runtime.draftObjects.size) box.union(new Box3().setFromObject(runtime.draftRoot));
   if (box.isEmpty()) return;
   const center = box.getCenter(new Vector3());
   // The whole model, whichever way it is turned: the bounding sphere is the
@@ -790,6 +937,7 @@ export const ThreeDmViewport = forwardRef<
       // The mark on a picked object belongs to the picture; it comes off
       // first so the meshes are disposed wearing their own materials.
       restoreHighlight(runtime);
+      clearDraftPreview(runtime);
       runtime.blendT = null;
     }
     if (runtime?.ghost) {
@@ -811,6 +959,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.scene.remove(runtime.model);
     disposeScene(runtime.model);
     runtime.model = null;
+    runtime.modelBounds = null;
     runtime.appearance = null;
     runtime.render();
     callbacksRef.current.onInspection(null);
@@ -844,91 +993,57 @@ export const ThreeDmViewport = forwardRef<
         if (runtime.sketch) { runtime.sketch.visible = false; runtime.render(); }
         return;
       }
-      // One subtree for the whole gesture, including the profile/height switch.
-      const group = runtime.sketch ?? new Group();
-      group.visible = true;
-      if (!runtime.sketch) {
-        group.name = "archflow-sketch-preview";
-        const accent = new Color(accentColour());
-        const base = new LineSegments(new BufferGeometry(), new LineBasicMaterial({
-          color: accent, depthTest: false, transparent: true, opacity: 0.95,
-        }));
-        const surface = new Mesh(new BufferGeometry(), new MeshStandardMaterial({
-          color: accent, side: DoubleSide, transparent: true, opacity: 0.18, depthWrite: false,
-        }));
-        const edges = new LineSegments(new BufferGeometry(), new LineBasicMaterial({
-          color: accent, depthTest: false, transparent: true, opacity: 0.75,
-        }));
-        base.renderOrder = edges.renderOrder = 3;
-        group.add(base, surface, edges);
-      }
-      const [base, surface, edges] = group.children as [LineSegments, Mesh, LineSegments];
-      const closed = spec.profile.length > 2;
-      const outline: number[] = [];
-      const world = (x: number, y: number, height = 0): Vec3 => spec.plane
-        ? spec.plane.origin.map((value, index) => value + x * spec.plane!.xAxis[index]! + y * spec.plane!.yAxis[index]! + height * spec.plane!.normal[index]!) as unknown as Vec3
-        : [x, y, spec.base + height];
-      spec.profile.forEach(([planX, planY], index) => {
-        if (index + 1 === spec.profile.length && !closed) return;
-        const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
-        outline.push(...world(planX, planY), ...world(nextX, nextY));
-      });
-      const positions: number[] = [];
-      if (closed) {
-        const points = spec.profile.map(([x, y]) => new Vector2(x, y));
-        for (const triangle of ShapeUtils.triangulateShape(points, [])) {
-          for (const index of triangle) positions.push(...world(...spec.profile[index]!));
-          if (spec.height !== 0) for (const index of triangle) positions.push(...world(...spec.profile[index]!, spec.height));
-        }
-        if (spec.height !== 0) spec.profile.forEach(([x, y], index) => {
-          const [nx, ny] = spec.profile[(index + 1) % spec.profile.length]!;
-          positions.push(...world(x, y), ...world(nx, ny), ...world(nx, ny, spec.height),
-            ...world(x, y), ...world(nx, ny, spec.height), ...world(x, y, spec.height));
-        });
-      }
-      const raised: number[] = [];
-      if (spec.height !== 0 && closed) {
-        spec.profile.forEach(([planX, planY], index) => {
-          const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
-          raised.push(...world(planX, planY, spec.height), ...world(nextX, nextY, spec.height));
-          raised.push(...world(planX, planY), ...world(planX, planY, spec.height));
-        });
-      }
-      // Reserve both flat and extruded capacity. Only a larger polygon grows
-      // attributes; ordinary motion reuses the same GPU buffers and materials.
-      const capacity = Math.max(32, 2 ** Math.ceil(Math.log2(spec.profile.length)));
-      const first = world(...spec.profile[0]!);
-      const update = (object: LineSegments | Mesh, values: number[], vertices: number) => {
-        const geometry = object.geometry;
-        let attribute = geometry.getAttribute("position") as BufferAttribute | undefined;
-        if (!attribute || attribute.count < vertices) {
-          // Release old GPU buffers when capacity grows, keeping the geometry.
-          if (attribute) geometry.dispose();
-          attribute = new Float32BufferAttribute(vertices * 3, 3).setUsage(DynamicDrawUsage);
-          geometry.setAttribute("position", attribute);
-          if (object === surface) geometry.setAttribute("normal",
-            new Float32BufferAttribute(vertices * 3, 3).setUsage(DynamicDrawUsage));
-        }
-        (attribute.array as Float32Array).set(values);
-        // Padding is degenerate at the first vertex, so bounds never include
-        // stale coordinates when a polygon shrinks or a pull crosses zero.
-        for (let index = values.length / 3; index < attribute.count; index++) attribute.setXYZ(index, ...first);
-        attribute.needsUpdate = true;
-        geometry.setDrawRange(0, values.length / 3);
-        if (object === surface) geometry.computeVertexNormals();
-        geometry.computeBoundingBox();
-        geometry.computeBoundingSphere();
-        object.visible = values.length > 0;
-      };
-      update(base, outline, capacity * 2);
-      update(surface, positions, capacity * 12);
-      update(edges, raised, capacity * 4);
+      const group = runtime.sketch ?? createPreviewGroup("archflow-sketch-preview");
+      updatePreviewGroup(group, spec);
       if (!runtime.sketch) runtime.scene.add(group);
       runtime.sketch = group;
       runtime.render();
     },
     [removeSketch],
   );
+
+  const draftPreview = useCallback((spec: { objects: readonly DraftPreviewObject[]; hiddenObjectNames: readonly string[] } | null) => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    const wanted = new Map(spec?.objects.map((entry) => [entry.elementId, entry]) ?? []);
+    const hidden = new Set(spec?.hiddenObjectNames ?? []);
+    let changed = false;
+    const invalidate = () => { if (!changed) clearHover(false); changed = true; };
+    for (const [object, visible] of runtime.draftHidden) if (!hidden.has(object.name)) {
+      invalidate(); object.visible = visible; runtime.draftHidden.delete(object);
+    }
+    runtime.model?.traverse((object) => {
+      if (!hidden.has(object.name) || runtime.draftHidden.has(object)) return;
+      invalidate(); runtime.draftHidden.set(object, object.visible); object.visible = false;
+    });
+    for (const [id, entry] of runtime.draftObjects) if (!wanted.has(id)) {
+      invalidate();
+      if (runtime.highlighted.some((object) => isUnder(object, entry.object))) restoreHighlight(runtime);
+      if (pickedPlaneRef.current && isUnder(pickedPlaneRef.current.object, entry.object)) pickedPlaneRef.current = null;
+      entry.object.removeFromParent(); disposeScene(entry.object); runtime.draftObjects.delete(id);
+    }
+    for (const [id, entry] of wanted) {
+      const current = runtime.draftObjects.get(id);
+      if (current && samePreview(current.spec, entry.spec)) continue;
+      invalidate();
+      const object = current?.object ?? createPreviewGroup(`draft:${id}`, false);
+      updatePreviewGroup(object, entry.spec);
+      if (pickedPlaneRef.current && isUnder(pickedPlaneRef.current.object, object)) pickedPlaneRef.current = null;
+      if (!current) { runtime.draftRoot.add(object); runtime.draftIds.set(object, id); }
+      runtime.draftObjects.set(id, { object, spec: entry.spec });
+      if (!runtime.preselection) {
+        runtime.preselection = new Preselection(runtime.model ?? runtime.draftRoot, getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
+        runtime.scene.add(runtime.preselection.group);
+      }
+      runtime.preselection.prepare(object, true);
+    }
+    if (!changed) return;
+    if (runtime.draftObjects.size) {
+      if (!runtime.draftRoot.parent) runtime.scene.add(runtime.draftRoot);
+      runtime.draftBounds = new Box3().setFromObject(runtime.draftRoot).getBoundingSphere(new Sphere());
+    } else { runtime.draftRoot.removeFromParent(); runtime.draftBounds = null; }
+    runtime.render();
+  }, [clearHover]);
 
   const ghost = useCallback(
     (spec: GhostSpec | null) => {
@@ -1018,6 +1133,7 @@ export const ThreeDmViewport = forwardRef<
     removeGhost();
     clearSecondary();
     if (runtime.appearance) restoreModelAppearance(runtime.model, runtime.appearance);
+    for (const object of runtime.draftHidden.keys()) { runtime.draftHidden.set(object, object.visible); object.visible = false; }
     runtime.render();
   }, [clearHover, clearSecondary, removeGhost]);
 
@@ -1050,7 +1166,7 @@ export const ThreeDmViewport = forwardRef<
       const runtime = runtimeRef.current;
       if (!runtime) return 0;
       const model = runtime.model;
-      if (target === null || model === null) {
+      if (target === null) {
         clearHover(false);
         restoreHighlight(runtime);
         pickedPlaneRef.current = null;
@@ -1058,14 +1174,16 @@ export const ThreeDmViewport = forwardRef<
         return 0;
       }
       const objects =
-        "object" in target
-          ? isUnder(target.object, model)
+        "draftElementId" in target ? [runtime.draftObjects.get(target.draftElementId)?.object].filter((object): object is Group => object !== undefined)
+        : "object" in target
+          ? isUnder(target.object, runtime.draftRoot) ? [runtime.draftObjects.get(draftIdFor(runtime, target.object) ?? "")?.object].filter((object): object is Group => object !== undefined)
+          : model && isUnder(target.object, model)
             ? runtime.modelIndex?.siblings(target.object) ?? [target.object]
             : []
-          : carriersOf(model, target);
-      const meshes: Mesh[] = [];
-      for (const object of objects) object.traverse((child) => { if (child instanceof Mesh) meshes.push(child); });
-      if (meshes.length === runtime.highlighted.length && meshes.every((mesh) => runtime.original.has(mesh))) {
+          : model ? carriersOf(model, target) : [];
+      const primitives: (Mesh | Line)[] = [];
+      for (const object of objects) object.traverse((child) => { if (child instanceof Mesh || child instanceof Line) primitives.push(child); });
+      if (primitives.length === runtime.highlighted.length && primitives.every((primitive) => runtime.original.has(primitive))) {
         runtime.render();
         return objects.length;
       }
@@ -1168,6 +1286,7 @@ export const ThreeDmViewport = forwardRef<
       // load. Nothing was loaded and nothing failed — a file was declined
       // before it was read, and the refusal below says which.
       const decline = (message: string) => {
+        if (options?.background) throw new Error(message);
         callbacksRef.current.onInspection(null);
         reportStatus("error", message);
       };
@@ -1194,10 +1313,10 @@ export const ThreeDmViewport = forwardRef<
       loadGenerationRef.current = generation;
       const isCurrent = () => generation === loadGenerationRef.current && (options?.isCurrent?.() ?? true);
       const cancelled = () => {
-        if (generation === loadGenerationRef.current) reportStatus(runtime.model ? "ready" : "idle",
+        if (!options?.background && generation === loadGenerationRef.current) reportStatus(runtime.model ? "ready" : "idle",
           runtime.model ? "Kept the current model on screen" : "No model on screen");
       };
-      reportStatus(
+      if (!options?.background) reportStatus(
         "loading",
         files.length === 1
           ? `Parsing ${names} locally`
@@ -1260,6 +1379,7 @@ export const ThreeDmViewport = forwardRef<
         // Parsing is all-or-none. The current model, its source label and any
         // active comparison remain the picture on screen when the replacement
         // cannot be opened.
+        if (options?.background) throw new Error(errorMessage(failure.reason));
         reportStatus("error", errorMessage(failure.reason));
         return;
       }
@@ -1291,6 +1411,7 @@ export const ThreeDmViewport = forwardRef<
       // The mark on a picked object belongs to the picture going away.
       restoreHighlight(runtime);
       clearHover(false);
+      clearDraftPreview(runtime);
       interaction.current.press = null;
       runtime.preselection?.dispose(); runtime.preselection = null;
       if (runtime.model) {
@@ -1313,6 +1434,7 @@ export const ThreeDmViewport = forwardRef<
         runtime.blendT = null;
       }
       runtime.model = model;
+      runtime.modelBounds = new Box3().setFromObject(model).getBoundingSphere(new Sphere());
       runtime.modelIndex = indexLoadedObjects(model);
       runtime.appearance = captureModelAppearance(model);
       runtime.scene.add(model);
@@ -1378,19 +1500,41 @@ export const ThreeDmViewport = forwardRef<
   const hitAt = useCallback(
     (clientX: number, clientY: number): LocalHit | null => {
       const runtime = runtimeRef.current;
-      if (!runtime?.model) return null;
+      if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return null;
       const raycaster = rayAt(clientX, clientY);
       if (!raycaster) return null;
-      // The raycaster meets hidden meshes too; only what is on screen - its
-      // own flag and its ancestors' - can be picked.
-      const hit = raycaster
-        .intersectObject(runtime.model, true)
-        .find((intersection) => isDisplayed(intersection.object));
+      const rect = runtime.renderer.domElement.getBoundingClientRect();
+      // Broad phase at the farthest model depth; the final line hit must be
+      // within eight screen pixels so zoom never turns a wire into a wide band.
+      const farDepth = Math.max(1, ...[runtime.modelBounds, runtime.draftBounds].filter((bounds): bounds is Sphere => bounds !== null)
+        .map((bounds) => runtime.camera.position.distanceTo(bounds.center) + bounds.radius));
+      raycaster.params.Line.threshold = 2 * farDepth * Math.tan(runtime.camera.fov * Math.PI / 360) * 8 / rect.height;
+      const intersections: Intersection[] = [];
+      for (const root of [runtime.model, runtime.draftRoot]) root?.traverse((object) => {
+        if (!isDisplayed(object)) return;
+        // Three's Line.raycast only compensates for the line's own scale.
+        // Native mesh picking stays unchanged; curves use their full world matrix.
+        intersections.push(...(object instanceof Line ? raycastCurve(object, raycaster)
+          : raycaster.intersectObject(object, false)));
+      });
+      const hit = intersections.sort((a, b) => a.distance - b.distance).find((intersection) => {
+        if (!isDisplayed(intersection.object)) return false;
+        if (!(intersection.object instanceof Line)) return true;
+        const screen = intersection.point.clone().project(runtime.camera);
+        return screen.z >= -1 && screen.z <= 1 && Math.hypot(
+          (screen.x + 1) * rect.width / 2 + rect.left - clientX,
+          (1 - screen.y) * rect.height / 2 + rect.top - clientY,
+        ) <= 8;
+      });
       if (!hit) return null;
-      const identity = runtime.modelIndex?.identity(hit.object);
+      const draftElementId = draftIdFor(runtime, hit.object);
+      const identity = draftElementId !== undefined ? {
+        object: runtime.draftObjects.get(draftElementId)!.object, objectName: `draft:${draftElementId}`, userStrings: Object.freeze({}),
+      } : runtime.modelIndex?.identity(hit.object);
       if (!identity) return null;
       return {
         ...identity,
+        ...(draftElementId !== undefined ? { draftElementId } : {}),
         mesh: hit.object,
         faceIndex: hit.faceIndex ?? null,
         point: hit.point,
@@ -1403,7 +1547,7 @@ export const ThreeDmViewport = forwardRef<
   const pickAt = useCallback(
     (clientX: number, clientY: number) => {
       const runtime = runtimeRef.current;
-      if (!runtime?.model) return;
+      if (!runtime || (!runtime.model && !runtime.draftObjects.size)) return;
       const hit = hitAt(clientX, clientY);
       clearHover(false);
       if (!hit) {
@@ -1426,7 +1570,8 @@ export const ThreeDmViewport = forwardRef<
       highlight({ object: hit.object });
       callbacksRef.current.onPick({
         userStrings: hit.userStrings,
-        documentUserStrings: runtime.modelIndex?.documentUserStrings ?? null,
+        documentUserStrings: hit.draftElementId !== undefined ? null : runtime.modelIndex?.documentUserStrings ?? null,
+        ...(hit.draftElementId !== undefined ? { draftElementId: hit.draftElementId } : {}),
         objectName: hit.objectName,
         object: hit.object,
       });
@@ -1449,15 +1594,9 @@ export const ThreeDmViewport = forwardRef<
       // computed once per geometry and kept with it.
       const edges: FeatureEdge[] = [];
       hit.object.traverse((node) => {
-        const mesh = node as Mesh;
-        const geometry = mesh.geometry as BufferGeometry | undefined;
-        if (!mesh.isMesh || !geometry || !isDisplayed(mesh)) return;
-        const cached = geometry.userData.archflowEdges as FeatureEdge[] | undefined;
-        const own = cached ?? featureEdges({
-          positions: (geometry.getAttribute("position") as BufferAttribute).array as ArrayLike<number>,
-          index: geometry.getIndex()?.array as ArrayLike<number> | undefined ?? null,
-        });
-        geometry.userData.archflowEdges = own;
+        if (!(node instanceof Mesh || node instanceof Line) || !isDisplayed(node)) return;
+        const mesh = node;
+        const own = outlineEdges(mesh);
         mesh.updateWorldMatrix(true, false);
         for (const edge of own) {
           const a = new Vector3(...edge.a).applyMatrix4(mesh.matrixWorld);
@@ -1496,7 +1635,7 @@ export const ThreeDmViewport = forwardRef<
   const paintHover = useCallback(() => {
     const session = interaction.current;
     const runtime = runtimeRef.current;
-    if (!hoverEnabledRef.current || !runtime?.model || !runtime.preselection || runtime.secondary || runtime.ghost ||
+    if (!hoverEnabledRef.current || !runtime || (!runtime.model && !runtime.draftObjects.size) || !runtime.preselection || runtime.secondary || runtime.ghost ||
       !["inactive", "hovering"].includes(session.phase) || !session.pointer) { clearHover(); return; }
     const { x, y } = session.pointer;
     const hit = hitAt(x, y);
@@ -1606,11 +1745,12 @@ export const ThreeDmViewport = forwardRef<
       workPlaneFromSelection: () => {
         const picked = pickedPlaneRef.current;
         const runtime = runtimeRef.current;
-        return picked && runtime?.model && isUnder(picked.object, runtime.model) &&
+        return picked && runtime && ((runtime.model && isUnder(picked.object, runtime.model)) || isUnder(picked.object, runtime.draftRoot)) &&
           runtime.highlighted.some((mesh) => isUnder(mesh, picked.object))
           ? picked.plane : null;
       },
       sketchPreview,
+      draftPreview,
       camera: cameraState,
       unprojectOnPlane,
       loadSecondary,
@@ -1650,7 +1790,11 @@ export const ThreeDmViewport = forwardRef<
         clearHover(false);
         runtime.model.traverse((object) => {
           // A layer switched on shows its objects, not the ones the file hid.
-          if (layerIndexOf(object) === index) object.visible = visible && savedObjectVisible(object);
+          if (layerIndexOf(object) === index) {
+            const next = visible && savedObjectVisible(object);
+            if (runtime.draftHidden.has(object)) { runtime.draftHidden.set(object, next); object.visible = false; }
+            else object.visible = next;
+          }
         });
         const layers = runtime.model.userData.layers;
         if (Array.isArray(layers) && layers[index]) layers[index].visible = visible;
@@ -1662,6 +1806,7 @@ export const ThreeDmViewport = forwardRef<
       blend,
       cameraState,
       clear,
+      draftPreview,
       clearSecondary,
       ghost,
       highlight,
@@ -1671,6 +1816,7 @@ export const ThreeDmViewport = forwardRef<
       pointOnSketchPlane,
       pointAlongAxis,
       sampleAt,
+      sketchPreview,
       showOriginal,
       unprojectOnPlane,
     ],
@@ -1736,6 +1882,16 @@ export const ThreeDmViewport = forwardRef<
           (child.material as LineBasicMaterial | MeshStandardMaterial).color.set(accent);
         }
       }
+      const runtime = runtimeRef.current;
+      if (runtime) for (const { object } of runtime.draftObjects.values()) {
+        for (const child of object.children as (LineSegments | Mesh)[]) {
+          const material = runtime.original.get(child) ?? child.material;
+          for (const own of Array.isArray(material) ? material : [material]) {
+            (own as LineBasicMaterial | MeshStandardMaterial).color.set(child instanceof Line
+              ? getComputedStyle(document.documentElement).getPropertyValue("--ink-2").trim() || "#6f727a" : "#b8b1a5");
+          }
+        }
+      }
       runtimeRef.current?.preselection?.colour(getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
       render();
     };
@@ -1753,6 +1909,7 @@ export const ThreeDmViewport = forwardRef<
       controls,
       model: null,
       modelIndex: null,
+      modelBounds: null,
       preselection: null,
       appearance: null,
       ghost: null,
@@ -1764,6 +1921,11 @@ export const ThreeDmViewport = forwardRef<
       clones: [],
       fitted: false,
       sketch: null,
+      draftRoot: new Group(),
+      draftObjects: new Map(),
+      draftIds: new WeakMap(),
+      draftHidden: new Map(),
+      draftBounds: null,
       render,
     };
     runtimeRef.current = runtime;
@@ -1803,6 +1965,7 @@ export const ThreeDmViewport = forwardRef<
       // Give the highlighted meshes their own materials back, so what is
       // disposed below is the file's and the clones go with the mark.
       restoreHighlight(runtime);
+      clearDraftPreview(runtime);
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
       if (runtime.sketch) disposeScene(runtime.sketch);

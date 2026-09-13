@@ -152,11 +152,12 @@ class SketchActionDto(BaseModel):
         description="the Element@1 this action authors; an existing id edits that element",
     )
     profile: list[tuple[float, float]] = Field(
-        min_length=3,
+        min_length=2,
         max_length=512,
-        description="the closed plan profile as (x, z) pairs, in order, without repeating the first point",
+        description="Ordered local-plane point pairs. Closed profiles omit the repeated first point; open paths need at least two points.",
     )
-    height: float = Field(description="Signed pull distance in project length units; zero creates a real planar face.")
+    closed: bool = Field(default=True, description="True keeps the existing face/prism action; false saves an open polyline model curve and requires zero height.")
+    height: float = Field(description="Signed pull distance in project length units; zero creates a planar face when closed, or an unfilled curve when open.")
     plane: SketchPlaneDto | None = Field(default=None, description=
         "Optional drawing frame. origin is relative to the resolved base datum; profile pairs "
         "are distances along xAxis/yAxis and positive height follows normal. Omit for the retained XZ plane.")
@@ -190,6 +191,10 @@ class SketchActionDto(BaseModel):
         # element's top. Both, or neither, is a request nobody can execute.
         if (self.base_level is None) == (self.base_datum is None):
             raise ValueError("state exactly one of baseLevel or baseDatum")
+        if self.closed and len(self.profile) < 3:
+            raise ValueError("a closed profile needs at least three points")
+        if not self.closed and self.height != 0:
+            raise ValueError("an open curve has no pull height")
         return self
 
     def base_reference(self) -> dict[str, str]:

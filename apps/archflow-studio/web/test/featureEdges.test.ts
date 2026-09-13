@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  curveEdges,
   candidatesOf,
   closestOnEdge,
   distanceBetween,
@@ -211,4 +212,24 @@ test("the pointer takes the nearest candidate, preferring an end over a middle",
 test("measuring two model points gives the model's own distance", () => {
   assert.equal(distanceBetween([0, 0, 0], [6, 0, 0]), 6);
   assert.equal(Math.round(distanceBetween([0, 0, 0], [6, 3.2, 4]) * 1000) / 1000, 7.889);
+});
+
+
+test("open curve snapping keeps authored endpoints and segment middles without closing a face", () => {
+  const line = { positions: [0, 0, 2, 3, 0, 2, 3, 4, 2], index: null };
+  const edges = curveEdges(line);
+  assert.equal(edges.length, 2);
+  const candidates = edges.flatMap(candidatesOf);
+  assert.ok(candidates.some(row => row.kind === "midpoint" && row.point.join() === "3,2,2"));
+  assert.ok(candidates.some(row => row.kind === "endpoint" && row.point.join() === "3,4,2"));
+  assert.ok(!candidates.some(row => row.point.join() === "1.5,2,2"), "no synthetic closing-edge midpoint");
+  assert.equal(curveEdges(line, "loop").length, 3);
+});
+
+test("disconnected and indexed line geometry does not invent connecting edges", () => {
+  const positions = [0, 0, 0, 2, 0, 0, 4, 0, 0, 6, 0, 0];
+  assert.deepEqual(curveEdges({ positions, index: null }, "segments"), [
+    { a: [0, 0, 0], b: [2, 0, 0] }, { a: [4, 0, 0], b: [6, 0, 0] },
+  ]);
+  assert.deepEqual(curveEdges({ positions, index: [3, 1] }), [{ a: [6, 0, 0], b: [2, 0, 0] }]);
 });

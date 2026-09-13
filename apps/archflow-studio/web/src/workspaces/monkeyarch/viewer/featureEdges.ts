@@ -27,6 +27,16 @@ export interface TriangleSoup {
   readonly index: ArrayLike<number> | null;
 }
 
+/** Authored line segments retain their order; an open curve never gains a closing edge. */
+export function curveEdges({ positions, index }: TriangleSoup, kind: "line" | "segments" | "loop" = "line"): FeatureEdge[] {
+  const count = index?.length ?? Math.floor(positions.length / 3);
+  const point = (i: number): Point3 => at(positions, index?.[i] ?? i);
+  const edges: FeatureEdge[] = [];
+  for (let i = 0; i + 1 < count; i += kind === "segments" ? 2 : 1) edges.push({ a: point(i), b: point(i + 1) });
+  if (kind === "loop" && count > 2) edges.push({ a: point(count - 1), b: point(0) });
+  return edges;
+}
+
 const KEY = 1e6;
 
 function key(point: Point3): string {

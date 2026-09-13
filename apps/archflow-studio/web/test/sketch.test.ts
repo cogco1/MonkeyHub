@@ -6,6 +6,8 @@ import test from "node:test";
 import {
   IDLE,
   cancelled,
+  arcBulge,
+  arcOf,
   circleOf,
   enclosesArea,
   finished,
@@ -14,6 +16,7 @@ import {
   pointFromPlane,
   pointToPlane,
   sizedRectangle,
+  sizedLine,
   snapPoint,
   typedNumber,
   typedDimensions,
@@ -33,6 +36,39 @@ test("circles close into a usable extrusion profile with the requested radius", 
   assert.equal(enclosesArea(circle), true);
   for (const point of circle) assert.ok(Math.abs(Math.hypot(point[0] - 4, point[1] + 2) - 3) < 1e-9);
   assert.deepEqual(circleOf([0, 0], 0), []);
+});
+
+test("two-point arcs preserve endpoints, signed bulge and major-arc direction", () => {
+  for (const bulge of [0.25, 1, 3, -0.25, -1, -3]) {
+    const arc = arcOf([0, 0], [2, 0], bulge);
+    assert.equal(arc.length, 33);
+    assert.deepEqual(arc[0], [0, 0]);
+    assert.deepEqual(arc.at(-1), [2, 0]);
+    assert.ok(Math.abs(arc[16]![0] - 1) < 1e-9);
+    assert.ok(Math.abs(arc[16]![1] - bulge) < 1e-9);
+    const centerY = bulge / 2 - 1 / (2 * bulge);
+    const radius = Math.hypot(1, centerY);
+    for (const [x, y] of arc) assert.ok(Math.abs(Math.hypot(x - 1, y - centerY) - radius) < 1e-9);
+  }
+  assert.equal(arcBulge([0, 0], [4, 0], [1, -2]), -2);
+  assert.equal(arcBulge([0, 0], [4, 0], [100, -2]), -2, "bulge ignores travel parallel to the chord");
+  const turned = arcOf([5, 1], [5, 5], 2);
+  assert.ok(Math.abs(turned[16]![0] - 3) < 1e-9);
+  assert.ok(Math.abs(turned[16]![1] - 3) < 1e-9);
+  assert.deepEqual(arcOf([0, 0], [0, 0], 1), []);
+  assert.deepEqual(arcOf([0, 0], [2, 0], 0), []);
+  assert.deepEqual(arcOf([0, 0], [2, 0], Number.NaN), []);
+});
+
+test("open paths keep every settled point and never acquire a face or height", () => {
+  const profile = [[0, 0], [2, 0], [3, 1]] as const;
+  const state: SketchState = { ...IDLE, tool: "line", phase: "profile", profile, height: 5, plane: WORK_PLANES.xz };
+  assert.deepEqual(finished(state, true, false), { profile, base: 0, height: 0, plane: WORK_PLANES.xz, closed: false });
+  assert.equal(finished(state, true), null, "the same open gesture is not a finished face");
+  assert.equal(finished({ ...state, profile: [[1, 1], [1, 1]] }, true, false), null);
+  assert.equal(finished(cancelled(state), true, false), null);
+  assert.deepEqual(sizedLine([2, 3], [-1, -1], 10), [-4, -5]);
+  assert.deepEqual(sizedLine([2, 3], [2, 3], 4), [6, 3]);
 });
 
 test("typed rectangles support independent dimensions and deliberate local axis locks", () => {

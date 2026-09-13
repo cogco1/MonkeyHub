@@ -1,16 +1,24 @@
 import { BufferAttribute, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, LineBasicMaterial,
-  LineSegments, Mesh, MeshBasicMaterial, Object3D, Points, PointsMaterial, Vector3 } from "three";
-import { indexConnectedFaces, featureEdges, type FeatureEdge } from "./featureEdges";
+  Line, LineLoop, LineSegments, Mesh, MeshBasicMaterial, Object3D, Points, PointsMaterial, Vector3,
+  type Intersection, type Raycaster } from "three";
+import { indexConnectedFaces, featureEdges, curveEdges, type FeatureEdge } from "./featureEdges";
 import type { LoadedObjectIdentity } from "./sceneInspection";
 import type { ModelSnap } from "./ThreeDmViewport";
 import { isDisplayed } from "./modelDisplay";
 
 /** A hit in the current display, never a semantic resolution or edit grant. */
 export interface LocalHit extends LoadedObjectIdentity {
+  readonly draftElementId?: string;
   readonly mesh: Object3D;
   readonly faceIndex: number | null;
   readonly point: Vector3;
   readonly normal: Vector3 | null;
+}
+
+function activePositions(geometry: BufferGeometry) {
+  const positions = geometry.getAttribute("position").array;
+  const count = geometry.userData.previewVertexCount as number | undefined;
+  return count === undefined ? positions : positions.subarray(0, count * 3);
 }
 
 function positions(geometry: BufferGeometry, values: number[]): void {
@@ -25,12 +33,37 @@ function positions(geometry: BufferGeometry, values: number[]): void {
   geometry.setDrawRange(0, values.length / 3);
 }
 
-function edgesOf(mesh: Mesh): FeatureEdge[] {
-  const geometry = mesh.geometry;
+export function outlineEdges(object: Mesh | Line): FeatureEdge[] {
+  const geometry = object.geometry;
+  if (object instanceof Line) {
+    const kind = object instanceof LineSegments ? "segments" : object instanceof LineLoop ? "loop" : "line";
+    const key = `archflowCurveEdges:${kind}`;
+    return geometry.userData[key] ??= curveEdges({
+      positions: activePositions(geometry), index: geometry.index?.array ?? null,
+    }, kind);
+  }
   return geometry.userData.archflowEdges ??= featureEdges({
-    positions: geometry.getAttribute("position").array,
+    positions: activePositions(geometry),
     index: geometry.index?.array ?? null,
   });
+}
+
+/** Test authored curves in world space, including scaled and rotated instance parents. */
+export function raycastCurve(object: Line, raycaster: Raycaster): Intersection[] {
+  if (!object.layers.test(raycaster.layers)) return [];
+  object.updateWorldMatrix(true, false);
+  const a = new Vector3(), b = new Vector3(), onRay = new Vector3(), onCurve = new Vector3();
+  const thresholdSquared = raycaster.params.Line.threshold ** 2;
+  const hits: Intersection[] = [];
+  outlineEdges(object).forEach((edge, index) => {
+    a.fromArray(edge.a).applyMatrix4(object.matrixWorld);
+    b.fromArray(edge.b).applyMatrix4(object.matrixWorld);
+    if (raycaster.ray.distanceSqToSegment(a, b, onRay, onCurve) > thresholdSquared) return;
+    const distance = raycaster.ray.origin.distanceTo(onRay);
+    if (distance < raycaster.near || distance > raycaster.far) return;
+    hits.push({ distance, point: onCurve.clone(), object, index });
+  });
+  return hits;
 }
 
 /** One neutral outline/face layer, separate from the selected material lift. */
@@ -58,11 +91,16 @@ export class Preselection {
     this.clear();
     // Prepare immutable mesh topology with the model, outside pointer frames.
     // Instances sharing a geometry reuse one index for this loaded picture.
+    this.prepare(model);
+  }
+
+  /** Completed local geometry is indexed on edit, never during pointer motion. */
+  prepare(model: Object3D, changed = false): void {
     model.traverse((object) => {
-      if (!(object instanceof Mesh) || this.faces.has(object.geometry)) return;
+      if (!(object instanceof Mesh) || (!changed && this.faces.has(object.geometry)) || !object.geometry.hasAttribute("position")) return;
       const geometry = object.geometry;
       this.faces.set(geometry, { lookup: indexConnectedFaces({
-        positions: geometry.getAttribute("position").array, index: geometry.index?.array ?? null,
+        positions: activePositions(geometry), index: geometry.index?.array ?? null,
       }), cached: new Map() });
     });
   }
@@ -83,9 +121,9 @@ export class Preselection {
     if (this.object !== hit.object) {
       const outline: number[] = [];
       hit.object.traverse((object) => {
-        if (!(object instanceof Mesh) || !isDisplayed(object)) return;
+        if (!(object instanceof Mesh || object instanceof Line) || !isDisplayed(object)) return;
         object.updateWorldMatrix(true, false);
-        for (const edge of edgesOf(object)) for (const point of [edge.a, edge.b]) {
+        for (const edge of outlineEdges(object)) for (const point of [edge.a, edge.b]) {
           outline.push(...new Vector3(...point).applyMatrix4(object.matrixWorld).toArray());
         }
       });

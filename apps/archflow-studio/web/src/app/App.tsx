@@ -7,11 +7,11 @@
  * launched — and pass every question to the API. What it deliberately does
  * not do:
  *
- *  - it imports nothing from archflow and computes no geometry;
+ *  - it imports nothing from archflow; local geometry is only a draft preview;
  *  - it derives no impact, no relation counts and no review-readiness result;
- *  - it writes nothing to the project and issues nothing;
- *  - it keeps no version history: reloading the tab loses the view, not the
- *    work.
+ *  - it writes nothing to the project directly and issues nothing;
+ *  - its disposable modeling history lasts for the mounted task; Sync retains
+ *    a candidate through the existing server, while page reload loses unsynced edits.
  *
  * Every failed call ends in a card showing the server's code and detail. The
  * one error handled rather than merely displayed is `STALE_BASE`: the project
@@ -83,7 +83,24 @@ import { usePreferences } from "../features/settings/preferences";
 import { FrameEditor } from "../features/stage/FrameEditor";
 import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
 import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
-import type { FinishedSketch, SketchVector } from "../features/stage/sketch";
+import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
+  redoDraft, specFromDrawnShape, undoDraft, snapshotsEquivalent,
+  type DraftCommand, type DraftObject, type DraftSnapshot, type ModelDraftHistory,
+} from "../features/stage/modelDraft";
+import { createModelDraftSyncAttempt, syncModelDraft,
+  type ModelDraftSource, type ModelDraftSyncAttempt,
+} from "../features/stage/syncModelDraft";
+
+interface LocalModelSession {
+  history: ModelDraftHistory;
+  source: ModelDraftSource;
+  synced: DraftSnapshot;
+  pending: { snapshot: DraftSnapshot; attempt: ModelDraftSyncAttempt; interactionEpoch: number; viewRequest: number } | null;
+  busy: boolean;
+  error: string | null;
+}
+
+import type { FinishedSketch } from "../features/stage/sketch";
 import {
   ProgramPanel,
   edited,
@@ -124,9 +141,6 @@ import { finishEditTiming, startClientTiming, type ClientTimingSpan, type EditTi
 
 /** The three refusing outcomes of an intent, and the two that end an exchange. */
 const TERMINAL_OUTCOMES = [MISSING_EDITABLE_CONTROL, UNSUPPORTED_REQUEST];
-
-/** The viewer is CAD Z-up; the authored building record is Y-up. */
-const buildingVector = ([x, y, z]: SketchVector): [number, number, number] => [x, z, y];
 
 function sameModelSource(left: ModelSourceDto | null | undefined, right: ModelSourceDto | null | undefined): boolean {
   return left?.runId === right?.runId && left?.stateDigest === right?.stateDigest &&
@@ -317,6 +331,8 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const drawingTiming = useRef<ClientTimingSpan | null>(null);
   const [drawingDisplayTiming, setDrawingDisplayTiming] = useState<ClientTimingSpan | null>(null);
   const manualLoadRef = useRef(false);
+  const localEditingRef = useRef(false);
+  const modelInteractionEpoch = useRef(0);
   // The first seat on screen answers for the picture wherever one row is
   // wanted: the run it belongs to, the receipt a pick is resolved against,
   // the seat a cross-fade is loaded beside.
@@ -338,6 +354,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   const [proposalBusy, setProposalBusy] = useState(false);
   const [candidateBusy, setCandidateBusy] = useState(false);
+  const [modelSyncBusy, setModelSyncBusy] = useState(false);
   const [modelRunPending, setModelRunPending] = useState<string | null>(null);
   const [selectingWorkingCopy, setSelectingWorkingCopy] = useState(false);
   // The proposal drawn as a ghost over the loaded model, if any. The viewer
@@ -382,6 +399,13 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     onReadFailure: (id) => {
       finishEditTiming(candidateTimings.current.get(id), "failed");
       setModelRunPending((current) => current === id ? null : current);
+      for (const session of localModels.current.values()) {
+        if (session.pending?.attempt.accepted?.candidateId !== id) continue;
+        session.busy = false;
+        session.error = t("stage.sync.readFailed");
+      }
+      setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
+      refreshLocalModel();
     },
   });
   const candidates = useMemo(() => Object.fromEntries(Object.entries(candidateRuns.runs).flatMap(([id, run]) =>
@@ -500,8 +524,8 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     } }, pendingIntentRef.current);
   }, [task, project, projection, changingBase, draft, selection, sourceRunId, transcript.entries, initialTask]);
   useEffect(() => {
-    task?.setBusy(proposalBusy || candidateBusy || drawingBusy || historyBusy || optionsBusy || applyingProgram || selectingWorkingCopy || refiningEntryId !== null);
-  }, [task, proposalBusy, candidateBusy, drawingBusy, historyBusy, optionsBusy, applyingProgram, selectingWorkingCopy, refiningEntryId]);
+    task?.setBusy(modelSyncBusy || proposalBusy || candidateBusy || drawingBusy || historyBusy || optionsBusy || applyingProgram || selectingWorkingCopy || refiningEntryId !== null);
+  }, [task, modelSyncBusy, proposalBusy, candidateBusy, drawingBusy, historyBusy, optionsBusy, applyingProgram, selectingWorkingCopy, refiningEntryId]);
   const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
     const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
@@ -636,12 +660,63 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   }, [loadedArtifact?.runId, projection, viewerProjection]);
   const semanticCatalog = viewedProjection?.catalog ?? null;
 
+  // Disposable local drafts stay attached to the exact source, including when
+  // a user browses another version. Sync never swaps the viewport underneath them.
+  const localModels = useRef(new Map<string, LocalModelSession>());
+  const [localRevision, setLocalRevision] = useState(0);
+  const draftSource = viewedProjection?.stateDigest && project && sourceLabel !== LOCAL_SOURCE_LABEL
+    ? { projectId: project.projectId, stateDigest: viewedProjection.stateDigest,
+        sourceRunId: viewedProjection.referenceRun.runId,
+        sourceStageRef: viewedProjection.sourceStageRef ?? null } : null;
+  const draftKey = draftSource ? `${draftSource.projectId}:${draftSource.sourceRunId}:${draftSource.stateDigest}:${draftSource.sourceStageRef ?? ""}` : null;
+  const localModel = draftKey ? localModels.current.get(draftKey) ?? null : null;
+  const draftSnapshot = localModel ? currentDraft(localModel.history) : null;
+  localEditingRef.current = localModel !== null && localModel.history.index > 0;
+  const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
+  const ensureLocalModel = useCallback((): LocalModelSession => {
+    if (!draftKey || !draftSource || !viewedProjection) throw new Error(t("stage.sketch.noComponent"));
+    const retained = localModels.current.get(draftKey);
+    if (retained) return retained;
+    const objects: DraftObject[] = viewedProjection.elements.map(element => ({
+      elementId: element.elementId, componentId: element.componentId,
+      spec: element.drawnShape ? specFromDrawnShape(element.drawnShape) : null,
+      originalObjectNames: semanticCatalog?.elements.find(row => row.elementId === element.elementId)?.objectNames ?? [],
+      created: false, parameterBoundFields: element.drawnShape?.parameterBoundFields,
+    }));
+    const history = createModelDraft(objects);
+    const session: LocalModelSession = { history, source: draftSource, synced: currentDraft(history),
+      pending: null, busy: false, error: null };
+    localModels.current.set(draftKey, session);
+    return session;
+  }, [draftKey, draftSource?.stateDigest, viewedProjection, semanticCatalog, t]);
+  useEffect(() => {
+    if (!localModel || !draftSnapshot) { viewportRef.current?.draftPreview(null); return; }
+    const initial = localModel.history.snapshots[0]!.objects;
+    const changed = [...draftSnapshot.objects.values()].filter(object => object !== initial.get(object.elementId));
+    viewportRef.current?.draftPreview({
+      objects: changed.flatMap(object => object.spec && !object.deleted ? [{ elementId: object.elementId, spec: object.spec }] : []),
+      hiddenObjectNames: changed.flatMap(object => object.originalObjectNames),
+    });
+  }, [draftKey, draftSnapshot, localRevision, sourceLabel]);
+  const commitLocalCommand = useCallback((command: DraftCommand) => {
+    const session = ensureLocalModel();
+    session.history = applyDraftCommand(session.history, command);
+    modelInteractionEpoch.current += 1;
+    if (!session.busy && session.pending && !session.pending.attempt.finalProposalId) session.pending = null;
+    autoShowRef.current = null;
+    setModelRunPending(null);
+    session.error = null;
+    refreshLocalModel();
+  }, [ensureLocalModel, refreshLocalModel]);
+
+
   useEffect(() => {
     const runId = loadedArtifact?.runId;
     if (changingBase || selectingWorkingCopy || modelLoading || runId === undefined || projection?.catalog?.inspectionRun === runId) {
       setViewerProjection(null);
       return;
     }
+    if (viewerProjection?.catalog?.inspectionRun === runId) return;
     let current = true;
     const controller = new AbortController();
     setViewerProjection(null);
@@ -723,6 +798,8 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   useEffect(() => {
     if (selection === null || semanticCatalog === null) return;
+    if (selection.elementId && draftSnapshot?.objects.get(selection.elementId)?.spec &&
+        viewportRef.current?.highlight({ draftElementId: selection.elementId })) return;
     viewportRef.current?.highlight({
       objectNames: semanticObjectNames(
         semanticCatalog.objects,
@@ -731,7 +808,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         selection.elementId,
       ),
     });
-  }, [selection, semanticCatalog]);
+  }, [selection, semanticCatalog, draftSnapshot]);
 
   // The binding, said once per projection the tab reads.
   const announcedRef = useRef<string | null>(null);
@@ -1009,7 +1086,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
    * same route — same digest-addressed bytes, same viewer, different label.
    */
   const loadArtifactIntoViewer = useCallback(
-    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false, stillCurrent?: () => boolean, parentTiming?: ClientTimingSpan): Promise<boolean> => {
+    async (artifact: ProjectArtifactDto, label: string, preserveCamera = false, stillCurrent?: () => boolean, parentTiming?: ClientTimingSpan, background = false): Promise<boolean> => {
       if (!parentTiming) finishEditTiming(autoShowRef.current?.timing, "cancelled");
       const request = ++modelLoadRequest.current;
       modelDownloadAbort.current?.abort();
@@ -1044,8 +1121,10 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         );
         return false;
       }
-      setArtifactLoadingSha(artifact.sha256);
-      setArtifactLoadPhase("download");
+      if (!background) {
+        setArtifactLoadingSha(artifact.sha256);
+        setArtifactLoadPhase("download");
+      }
       const timing = monitorDiagnostics && projectId ? startClientTiming("model_load",
         { projectId, runId: artifact.runId, sourceRef: artifact.receiptRef }, parentTiming?.trace,
         { asset_sha256: artifact.sha256 }) : null;
@@ -1065,14 +1144,14 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         download?.finish(isCurrent() ? "succeeded" : "cancelled", { input_bytes: file.size });
         if (!isCurrent()) return false;
         pendingArtifacts.current = [artifact];
-        setArtifactLoadPhase("parse");
+        if (!background) setArtifactLoadPhase("parse");
         const previous = loadedArtifactsRef.current;
         const viewport = viewportRef.current;
         if (!viewport) throw new Error("The 3D viewport is not ready yet; try again in a moment.");
         parse = timing ? startClientTiming("model_parse", timing.binding, timing.trace,
           { asset_sha256: artifact.sha256, input_bytes: file.size }) : null;
         await viewport.openFile(file, label, {
-          isCurrent,
+          isCurrent, background,
           preserveCamera: preserveCamera && previous.length > 0 && artifact.lengthUnit !== null &&
             previous.every((row) => row.lengthUnit === artifact.lengthUnit),
         });
@@ -1353,6 +1432,25 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       // before the server has said what it is. A resolved pick widens the mark
       // to every object of the element below; an unresolved one leaves it here.
       viewportRef.current?.highlight({ object: pick.object });
+      // Local draft ids come only from our draft layer. Exported object names
+      // are matched to the already loaded exact-run catalog, without a round trip.
+      const binding = pick.draftElementId ? null : semanticCatalog?.objects.find(row => row.name === pick.objectName);
+      const documents = pick.documentUserStrings ?? receiptDocumentStrings(loadedArtifact);
+      const knownExport = binding?.status === "bound" &&
+        pick.userStrings["archflow:component"] === binding.componentId &&
+        pick.userStrings["archflow:object_ref"] === `cad-object:${binding.name}` &&
+        documents?.["archflow:design_state_digest"] === viewedProjection?.stateDigest &&
+        documents?.["archflow:run_id"] === viewedProjection?.referenceRun.runId;
+      const localId = pick.draftElementId ?? (knownExport ? binding.elementId : null);
+      const localObject = localId ? draftSnapshot?.objects.get(localId) : null;
+      const element = localId ? viewedProjection?.elements.find(row => row.elementId === localId) : null;
+      const componentId = localObject?.componentId ?? element?.componentId;
+      if (localId && componentId && draftKey && !localObject?.deleted) {
+        setPicked({ elementId: localId, componentId, status: "local", sourceState: viewedProjection!.stateDigest!,
+          fields: element ? Object.entries(element.numericFields) : [] });
+        setSelection({ componentId, elementId: localId });
+        return;
+      }
       // The state this click is resolved against is the one the picture came
       // from: the viewed source when the viewer is showing a retained run, and
       // the editing projection when it is showing that. A picture with neither
@@ -1445,7 +1543,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       }
     },
     [append, loadedArtifact, viewedProjection, recoverFromStaleBase, semanticCatalog, sourceLabel,
-     sourceRunId, stateDigest, viewedSource],
+     sourceRunId, stateDigest, viewedSource, draftSnapshot, draftKey],
   );
 
   // One proposal in flight at a time. The busy flag renders the button; this
@@ -2151,104 +2249,39 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
 
-  // One finished drawing action: the profile and height that were settled,
-  // through the proposal and candidate routes every other change uses. The
-  // pointer preview that produced them stayed in the viewport and never came
-  // near here, so this runs once per action rather than once per move.
-  const [sketchBusy, setSketchBusy] = useState(false);
-  // Where a drawing may snap to what is already there. The projection's
-  // element rows carry numeric fields, not the plan profile a prism was drawn
-  // from, so there is nothing here to offer yet: an action still locks to its
-  // own axes, and endpoint and midpoint snapping waits for the outline to be
-  // part of what /api/state answers with.
+  // Completed gestures update local geometry and history synchronously. Only
+  // the explicit Sync action below crosses the proposal/candidate boundary.
   const sketchSnapPoints = useMemo<readonly (readonly [number, number])[]>(() => [], []);
-  const runSketch = useCallback(
-    async (action: FinishedSketch) => {
-      if (project === null || sketchBusy || modelRunPending !== null || changingBase || modelLoading) return;
-      if (viewedSource === null && stateDigest === null) {
-        setArtifactError(asStudioApiError(new Error(t("stage.sketch.noComponent"))));
-        return;
-      }
-      setSketchBusy(true);
+  const runSketch = useCallback(async (action: FinishedSketch, gestureCurrent: () => boolean = () => true) => {
+    if (!gestureCurrent() || changingBase || modelLoading) return;
+    try {
+      const componentId = selection?.componentId ?? viewedProjection?.elements[0]?.componentId;
+      if (!componentId) throw new Error(t("stage.sketch.noComponent"));
+      const elementId = `drawn-${crypto.randomUUID()}`;
+      commitLocalCommand({ kind: "sketch", elementId, componentId, action });
+      setPicked({ elementId, componentId, status: "local", sourceState: draftSource?.stateDigest ?? "", fields: [] });
+      setSelection({ componentId, elementId });
       setArtifactError(null);
-      try {
-        const base = viewedSource?.runId ?? sourceRunId ?? undefined;
-        const [state, frame] = await Promise.all([studio.state(base), studio.frame(base)]);
-        const componentId = selection?.componentId ?? state.elements[0]?.componentId ?? null;
-        if (componentId === null) {
-          throw asStudioApiError(new Error(t("stage.sketch.noComponent")));
-        }
-        // Stand it on the level nearest the plane it was drawn on, which is
-        // the record's own answer to "what is the ground here".
-        const levels = [...frame.levels].sort(
-          (left, right) => Math.abs(left.elevation - (action.plane?.origin[2] ?? action.base)) - Math.abs(right.elevation - (action.plane?.origin[2] ?? action.base)),
-        );
-        const level = levels[0];
-        if (level === undefined) {
-          throw asStudioApiError(new Error(t("stage.sketch.noLevel")));
-        }
-        const elementId = `drawn-${crypto.randomUUID().slice(0, 8)}`;
-        if (state.stateDigest === null) {
-          throw asStudioApiError(new Error(t("stage.sketch.noComponent")));
-        }
-        const proposal = await studio.sketch({
-          stateDigest: state.stateDigest,
-          projectId: project.projectId,
-          componentId,
-          elementId,
-          profile: action.profile.map(([x, z]) => [x, z] as [number, number]),
-          height: action.height,
-          baseLevel: level.levelId,
-          sourceRunId: base ?? null,
-          sourceStageRef: base === projection?.referenceRun.runId ? projection?.sourceStageRef ?? null : null,
-          plane: action.plane ? {
-            origin: [action.plane.origin[0], action.plane.origin[2] - level.elevation, action.plane.origin[1]],
-            xAxis: buildingVector(action.plane.xAxis),
-            yAxis: buildingVector(action.plane.yAxis),
-            normal: buildingVector(action.plane.normal),
-          } : {
-            origin: [0, action.base - level.elevation, 0],
-            xAxis: [1, 0, 0], yAxis: [0, 0, 1], normal: [0, 1, 0],
-          },
-        });
-        await runCandidate(proposal.proposalId);
-      } catch (cause) {
-        const error = asStudioApiError(cause);
-        setArtifactError(error);
-        append({ kind: "system", ...systemText([
-          { kind: "prose", text: t("stage.sketch.failed") + " " },
-          { kind: "technical", text: error.detail },
-        ]) });
-      } finally {
-        setSketchBusy(false);
-      }
-    },
-    [append, changingBase, modelLoading, modelRunPending, project, projection, runCandidate, selection?.componentId, sketchBusy, sourceRunId, stateDigest, t, viewedSource],
-  );
+    } catch (cause) { setArtifactError(asStudioApiError(cause)); }
+  }, [changingBase, modelLoading, selection?.componentId, viewedProjection, commitLocalCommand, t, draftSource?.stateDigest]);
 
-
-  // ---- Delete, undo and redo: the model's own, distinct from the ink's.
-  //
-  // A keystroke is a design edit here, so it takes the same road a sentence
-  // does: one deterministic proposal, then the candidate route. Nothing is
-  // compiled by a model, nothing is accepted, and nothing is issued.
-  const [modelEditBusy, setModelEditBusy] = useState(false);
   const [directTool, setDirectTool] = useState<DirectModelTool | null>(null);
   const [directError, setDirectError] = useState<string | null>(null);
-  const directPendingRef = useRef(false);
   const directToolEpoch = useRef(0);
   const chooseDirectTool = useCallback((next: "select" | DirectModelTool) => {
     directToolEpoch.current += 1;
     setDirectTool(next === "select" ? null : next);
     setDirectError(null);
   }, []);
-  const pickedShape = picked?.status === "resolved" && picked.elementId
+  const pickedShape = (picked?.status === "resolved" || picked?.status === "local") && picked.elementId
     ? viewedProjection?.elements.find((row) => row.elementId === picked.elementId) : null;
-  const pushPullTarget = useMemo<PushPullTarget | null>(() => picked?.elementId && pickedShape?.drawnShape
-    ? { elementId: picked.elementId, shape: pickedShape.drawnShape } : null,
-  [picked, pickedShape, loadedModelSource, project?.projectId]);
-  const directContext = useRef({ projectId: project?.projectId, source: loadedModelSource, tool: directTool, target: pushPullTarget });
-  directContext.current = { projectId: project?.projectId, source: loadedModelSource, tool: directTool, target: pushPullTarget };
+  const localPickedObject = picked?.elementId ? draftSnapshot?.objects.get(picked.elementId) : null;
+  const pushPullTarget = useMemo<PushPullTarget | null>(() => {
+    if (!picked?.elementId) return null;
+    if (localPickedObject) return localPickedObject.spec && !localPickedObject.deleted && localPickedObject.spec.closed !== false
+      ? { elementId: picked.elementId, shape: drawnShapeFromSpec(localPickedObject.spec, localPickedObject.parameterBoundFields) } : null;
+    return pickedShape?.drawnShape ? { elementId: picked.elementId, shape: pickedShape.drawnShape } : null;
+  }, [picked, localPickedObject, pickedShape, loadedModelSource, project?.projectId]);
   // What this tab has moved through, in order, as run ids. It is navigation,
   // not a second copy of the design: which run is current is still the
   // session's projection, and every run named here stays in the project
@@ -2281,11 +2314,10 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     });
   }, [baseRunId]);
 
-  const modelNavigationBusy = changingBase || selectingWorkingCopy || candidateBusy ||
-    proposalBusy || sketchBusy || modelEditBusy || modelLoading || modelRunPending !== null;
-  const canUndoModel = modelHistory.index > 0 && !modelNavigationBusy;
-  const canRedoModel = modelHistory.index >= 0 &&
-    modelHistory.index < modelHistory.runs.length - 1 && !modelNavigationBusy;
+  const modelNavigationBusy = changingBase || selectingWorkingCopy || modelLoading;
+  const canUndoModel = (localModel ? localModel.history.index > 0 : modelHistory.index > 0) && !modelNavigationBusy;
+  const canRedoModel = (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length :
+    modelHistory.index >= 0 && modelHistory.index < modelHistory.runs.length - 1) && !modelNavigationBusy;
 
   /** Show one retained run as both the picture and the base edits continue from. */
   const showRunAsBase = useCallback(async (runId: string) => {
@@ -2307,6 +2339,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   const undoModel = useCallback(async () => {
     if (!canUndoModel) return;
+    if (localModel) {
+      localModel.history = undoDraft(localModel.history);
+      if (!localModel.busy && localModel.pending && !localModel.pending.attempt.finalProposalId) localModel.pending = null;
+      localModel.error = null; refreshLocalModel(); setPicked(null); setSelection(null); return;
+    }
     const runId = modelHistory.runs[modelHistory.index - 1];
     if (runId === undefined) return;
     append({ kind: "system", ...systemText([
@@ -2314,111 +2351,125 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       { kind: "prose", text: " · the run you left is still there" },
     ]) });
     await showRunAsBase(runId);
-  }, [append, canUndoModel, modelHistory, showRunAsBase]);
+  }, [append, canUndoModel, modelHistory, showRunAsBase, localModel, refreshLocalModel]);
 
   const redoModel = useCallback(async () => {
     if (!canRedoModel) return;
+    if (localModel) {
+      localModel.history = redoDraft(localModel.history);
+      if (!localModel.busy && localModel.pending && !localModel.pending.attempt.finalProposalId) localModel.pending = null;
+      localModel.error = null; refreshLocalModel(); setPicked(null); setSelection(null); return;
+    }
     const runId = modelHistory.runs[modelHistory.index + 1];
     if (runId === undefined) return;
     append({ kind: "system", ...systemText([
       { kind: "prose", text: "Redo · forward to " }, { kind: "technical", text: runId },
     ]) });
     await showRunAsBase(runId);
-  }, [append, canRedoModel, modelHistory, showRunAsBase]);
+  }, [append, canRedoModel, modelHistory, showRunAsBase, localModel, refreshLocalModel]);
 
-  /**
-   * Delete what the pick resolved to, and only that.
-   *
-   * The element comes from the server's own resolution of the click, so what
-   * goes is the object on screen rather than the component it belongs to. An
-   * element another one stands on is refused by the server, naming what stands
-   * on it; that refusal is shown as itself.
-   */
-  // Only a pick the server resolved on the picture now on screen. A selection
-  // carried over from another run names a real element, but it is not what the
-  // architect is pointing at, and Delete is a gesture at a thing on screen.
-  const deletableElementId = picked?.status === "resolved" ? picked.elementId : null;
-  // The base a delete is made against: the source on screen, which is the one
-  // the picked object belongs to. When the viewer is showing the editing
-  // projection those are the same thing and its Stage travels too.
-  const deleteBase = viewedSource !== null
-    ? {
-        stateDigest: viewedSource.stateDigest,
-        sourceRunId: viewedSource.runId,
-        sourceStageRef: viewedSource.runId === projection?.referenceRun.runId
-          ? projection?.sourceStageRef ?? null : null,
-      }
-    : stateDigest !== null
-      ? {
-          stateDigest,
-          sourceRunId: sourceRunId ?? projection?.referenceRun.runId ?? null,
-          sourceStageRef: projection?.sourceStageRef ?? null,
-        }
-      : null;
-  const canDeleteModel = deletableElementId !== null && deleteBase !== null &&
-    project !== null && !modelNavigationBusy;
-  const deleteSelected = useCallback(async () => {
-    if (!canDeleteModel || deletableElementId === null || deleteBase === null) return;
-    setModelEditBusy(true);
+  const deletableElementId = picked?.status === "resolved" || picked?.status === "local" ? picked.elementId : null;
+  const canDeleteModel = deletableElementId !== null && draftKey !== null && !modelNavigationBusy;
+  const deleteSelected = useCallback(() => {
+    if (!canDeleteModel || !deletableElementId) return;
     try {
-      const proposal = await studio.removeElement({
-        stateDigest: deleteBase.stateDigest,
-        elementId: deletableElementId,
-        sourceRunId: deleteBase.sourceRunId,
-        sourceStageRef: deleteBase.sourceStageRef,
-        projectId: project?.projectId ?? null,
-      });
-      await runCandidate(proposal.proposalId);
-    } catch (cause) {
-      const error = asStudioApiError(cause);
-      recoverFromStaleBase(error);
-      append({ kind: "refusal", error, what: "POST /api/proposals/delete" });
-    } finally {
-      setModelEditBusy(false);
-    }
-  }, [append, canDeleteModel, deletableElementId, deleteBase, project, recoverFromStaleBase,
-      runCandidate]);
+      commitLocalCommand({ kind: "delete", elementId: deletableElementId });
+      setPicked(null); setSelection(null); setDirectError(null);
+      viewportRef.current?.highlight(null);
+    } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
+  }, [canDeleteModel, deletableElementId, commitLocalCommand]);
 
-  const applyDirectModelAction = useCallback(async (action: DirectModelAction) => {
-    if (directPendingRef.current || !canDeleteModel || !deletableElementId || !deleteBase || !project) return;
-    const context = directContext.current;
-    if (action.kind === "pushPull" && action.target && action.target !== context.target) return;
-    const pickRequest = pickRequestRef.current;
-    const viewRequest = modelLoadRequest.current;
-    const toolEpoch = directToolEpoch.current;
-    const stillCurrent = () => pickRequest === pickRequestRef.current && toolEpoch === directToolEpoch.current &&
-      viewRequest === modelLoadRequest.current &&
-      context.projectId === directContext.current.projectId && context.source === directContext.current.source &&
-      context.tool === directContext.current.tool;
-    directPendingRef.current = true;
-    setModelEditBusy(true);
-    setDirectError(null);
-    setArtifactError(null);
+  const applyDirectModelAction = useCallback((action: DirectModelAction) => {
+    if (!canDeleteModel || !deletableElementId) return;
+    if (action.kind === "pushPull" && action.target && action.target !== pushPullTarget) return;
     try {
-      const base = { ...deleteBase, projectId: project.projectId, elementId: deletableElementId };
       const normal = action.kind === "pushPull" ? action.normal ?? viewportRef.current?.workPlaneFromSelection()?.normal : null;
       if (action.kind === "pushPull" && !normal) throw new Error("Select a face in the model before using Push/Pull.");
-      const proposal = action.kind === "pushPull"
-        ? await studio.pushPull({ ...base, distance: action.distance, normal: normal ? buildingVector(normal) : null })
-        : await studio.transform({ ...base, kind: action.kind,
-          ...(action.kind === "move" || action.kind === "copy" ? { translation: buildingVector(action.translation) } : {}),
-          // Swapping Y/Z reverses handedness, so the rotation angle reverses too.
-          ...(action.kind === "rotate" ? { angleDegrees: -action.angleDegrees, axis: buildingVector(action.axis) } : {}),
-          ...(action.kind === "scale" ? { scale: buildingVector(action.scale) } : {}),
-        });
-      if (!stillCurrent()) return;
-      await runCandidate(proposal.proposalId);
-    } catch (cause) {
-      if (!stillCurrent()) return;
-      const error = asStudioApiError(cause);
-      setDirectError(error.detail);
-      setArtifactError(error);
-      recoverFromStaleBase(error);
-    } finally {
-      directPendingRef.current = false;
-      setModelEditBusy(false);
+      // The action queue captures only values; target is a transient gesture guard.
+      const captured = action.kind === "pushPull" ? { kind: "pushPull" as const, distance: action.distance, normal: normal! } : action;
+      const copyElementId = action.kind === "copy" ? `drawn-${crypto.randomUUID()}` : undefined;
+      commitLocalCommand({ kind: "direct", elementId: deletableElementId, action: captured, copyElementId });
+      if (copyElementId && picked?.componentId) {
+        setPicked({ ...picked, elementId: copyElementId, status: "local" });
+        setSelection({ componentId: picked.componentId, elementId: copyElementId });
+      }
+      setDirectError(null); setArtifactError(null);
+    } catch (cause) { setDirectError(asStudioApiError(cause).detail); }
+  }, [canDeleteModel, deletableElementId, pushPullTarget, commitLocalCommand, picked]);
+
+  const syncLocalModel = useCallback(async () => {
+    if (!localModel || localModel.busy || modelSyncBusy) return;
+    const session = localModel;
+    const snapshot = currentDraft(session.history);
+    if (session.pending && !session.pending.attempt.finalProposalId &&
+        !snapshotsEquivalent(snapshot, session.pending.snapshot)) session.pending = null;
+    if (!session.pending && snapshotsEquivalent(snapshot, session.synced)) return;
+    session.pending ??= { snapshot, attempt: createModelDraftSyncAttempt(),
+      interactionEpoch: modelInteractionEpoch.current, viewRequest: modelLoadRequest.current };
+    const pending = session.pending;
+    session.busy = true; session.error = null;
+    setModelSyncBusy(true); refreshLocalModel();
+    if (pending.attempt.accepted) {
+      candidateRuns.refresh(pending.attempt.accepted.candidateId);
+      return;
     }
-  }, [canDeleteModel, deletableElementId, deleteBase, project, recoverFromStaleBase, runCandidate]);
+    try {
+      const frame = await studio.frame(session.source.sourceRunId ?? undefined);
+      const accepted = await syncModelDraft(pending.snapshot, session.source, frame, pending.attempt, studio);
+      if (accepted) append({ kind: "candidate", proposalId: pending.attempt.finalProposalId!,
+        candidateId: accepted.candidateId, jobId: accepted.jobId, status: accepted.status });
+      if (!accepted) { session.synced = pending.snapshot; session.pending = null; }
+    } catch (cause) {
+      session.error = asStudioApiError(cause).detail;
+    } finally {
+      if (!pending.attempt.accepted) { session.busy = false; setModelSyncBusy(false); }
+      refreshLocalModel();
+    }
+  }, [localModel, modelSyncBusy, append, refreshLocalModel, candidateRuns.refresh]);
+  useEffect(() => {
+    let changed = false;
+    for (const session of localModels.current.values()) {
+      const pending = session.pending;
+      const accepted = pending?.attempt.accepted;
+      if (!session.busy || !pending || !accepted) continue;
+      const run = candidateRuns.runs[accepted.candidateId];
+      if (run?.job.status !== "ready") continue;
+      const status = run.job.value.status;
+      if (status !== "succeeded" && status !== "failed" && status !== "cancelled") continue;
+      if (status === "succeeded") {
+        const candidate = candidates[accepted.candidateId];
+        if (!candidate) continue;
+        session.synced = pending.snapshot;
+        // A quiet, completed batch naturally becomes the next editing base.
+        // Bytes and parsing run behind the old interactive model. Any input
+        // since Sync cancels adoption, including an unfinished next gesture.
+        const stable = () => modelInteractionEpoch.current === pending.interactionEpoch &&
+          currentDraft(session.history) === pending.snapshot;
+        if (stable() && localModel === session && modelLoadRequest.current === pending.viewRequest) {
+          const model = viewableArtifacts(candidate.artifacts).find(row => row.representation === "composed") ??
+            viewableArtifacts(candidate.artifacts)[0];
+          if (model) void (async () => {
+            try {
+              const nextProjection = await studio.state(model.runId);
+              if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
+              const shown = await loadArtifactIntoViewer(model, candidateSourceLabel(accepted.candidateId), true,
+                stable, undefined, true);
+              if (!shown) return;
+              if (draftKey && localModels.current.get(draftKey) === session && stable()) localModels.current.delete(draftKey);
+              setViewerProjection(nextProjection);
+              refreshLocalModel();
+              await reload(model.runId, undefined, undefined, true, nextProjection);
+            } catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
+          })();
+        }
+      } else session.error = run.job.value.error ?? `Sync ${status}`;
+      session.pending = null; session.busy = false; changed = true;
+    }
+    if (changed) {
+      setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
+      refreshLocalModel();
+    }
+  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel]);
 
   // A different model on screen is a different set of objects. What was *picked*
   // belonged to the picture that went away, so it stops being picked, its mark
@@ -2602,6 +2653,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   useEffect(() => {
     const preview = autoShowRef.current;
     if (!preview?.candidateId || preview.started) return;
+    if (localEditingRef.current) {
+      autoShowRef.current = null;
+      setModelRunPending(null);
+      return;
+    }
     const candidateId = preview.candidateId;
     const candidate = candidates[candidateId];
     if (!candidate) return;
@@ -3127,12 +3183,12 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             embedded={embedded}
             hasModel={sourceLabel !== null}
             onSketch={runSketch}
-            sketchBusy={sketchBusy || candidateBusy || modelRunPending !== null}
+            sketchBusy={modelNavigationBusy}
             snapPoints={sketchSnapPoints}
             model={{
               onDelete: () => void deleteSelected(),
               canDelete: canDeleteModel,
-              deleting: modelEditBusy,
+              deleting: false,
               subject: deletableElementId,
               onUndo: () => void undoModel(),
               canUndo: canUndoModel,
@@ -3142,7 +3198,10 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
               hasSelection: selection !== null || picked !== null,
               onTool: chooseDirectTool,
               directTool, busy: modelNavigationBusy, error: directError,
-              interactionBlocked: changingBase || selectingWorkingCopy || modelLoading || modelRunPending !== null,
+              interactionBlocked: modelNavigationBusy,
+              onInteraction: () => { modelInteractionEpoch.current += 1; },
+              sync: { dirty: !!localModel && (!!localModel.pending || !snapshotsEquivalent(currentDraft(localModel.history), localModel.synced)),
+                busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
             }}
