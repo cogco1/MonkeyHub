@@ -48,7 +48,7 @@ Phase 1 已由 [PR #17](https://github.com/cogco1/ARCHFLOW_V4/pull/17) 合入 `m
 
 首片支持正尺寸 solid 和简单平面 profile 的直线 extrusion，含 datum 的 base_level/base_offset；其他操作在启动宿主和写文件前明确返回 unsupported。两个新进程分别保存 `.blend` 和独立读回几何、单位、ArchFlow 对象/语义身份与完整来源绑定。Blender 名称被截短时仍以 ArchFlow 身份读回。源码范围和实际责任在 `P115/blender`，复跑方法见 [adapter README](../../../archflow/adapters/README.md#blender-scene-execution)。
 
-指定本机 Blender 4.3.2 运行的 13 项测试无跳过通过，包含真实宿主保存/冷读；与公共 CAD、runner、record kinds 合并的 117 项检查通过。验证覆盖毫米与斜三角拉伸、大坐标绝对容差、凹形截面的面连接和等价索引重排、篡改拒绝、P036 回执保留、重开后精确复用和同对象改稿，项目 HEAD 不变。指定 source 时完整重建并保留原文件，未实现局部 patch；产物为 mesh，不承诺全量 CAD 等价或 `.blend` 字节重现。
+指定本机 Blender 4.3.2 运行的 15 项测试无跳过通过，包含真实宿主保存/冷读；公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。验证覆盖毫米与斜三角拉伸、大坐标绝对容差、容差内舍入与薄实体的顶点对应、凹形截面的面连接和等价索引重排、篡改拒绝、P036 回执保留、重开后精确复用和同对象改稿，项目 HEAD 不变。指定 source 时完整重建并保留原文件，未实现局部 patch；产物为 mesh，不承诺全量 CAD 等价或 `.blend` 字节重现。
 
 **剩余验收：** Phase 2 独立 PR 审查与 CI、新同事自己的独立复跑和跨 lane 交接；本卡与 #13 继续保留。用户现有服务和真实项目未参与本轮测试。
 

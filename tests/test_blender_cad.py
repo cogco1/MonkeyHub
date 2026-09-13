@@ -261,6 +261,71 @@ class BlenderHostTests(unittest.TestCase):
             self.backend.execute(self.request)
         self.assertEqual(before, {path.name: path.read_bytes() for path in self.workspace.iterdir() if path.is_file()})
 
+    def test_thin_solid_accepts_equivalent_reindexing_within_readback_tolerance(self):
+        program = _program_of(_box("thin-solid", [0, 0, 0], [2, 0.0005, 3]))
+        request = replace(
+            _request(self.workspace, program=program, backend_options=self.request.backend_options),
+            artifact_stem="thin-solid", readback_tolerance=0.001,
+        )
+        with _without_other_backends():
+            result = self.backend.execute(request)
+        self.assertEqual(result.status, "succeeded", result.failures)
+        result.validate(request, "blender")
+        payload = deepcopy(result.receipt_payload)
+        row = payload["readback"]["objects"][0]
+        self.assertTrue(row["closed"])
+        self.assertAlmostEqual(row["volume"], 0.003, places=8)
+        separation = max(abs(a - b) for a, b in zip(row["vertices"][0], row["vertices"][4]))
+        self.assertGreater(separation, 0)
+        self.assertLess(separation, request.readback_tolerance)
+        row["vertices"][0], row["vertices"][4] = row["vertices"][4], row["vertices"][0]
+        swapped = {0: 4, 4: 0}
+        row["faces"] = [[swapped.get(index, index) for index in face] for face in row["faces"]]
+        with _without_processes():
+            retained = self.backend.read_receipt(request, payload)
+            retained.validate(request, "blender")
+        self.assertEqual(retained.status, "succeeded")
+        self.assertTrue(retained.readback_verified)
+
+    def test_small_coordinate_rounding_preserves_vertex_correspondence_after_reindexing(self):
+        profile = [[100, 0, 4], [100.000001, 0, 0], [102, 0, 0], [102, 0, 4]]
+        extrusion = _extrusion(vector=(0, 1, 0))
+        program = _program_of(replace(extrusion, parameters=(
+            GeometryParameter.create(name="profile", kind=GeometryParameterKind.POINTS3,
+                                     value=profile, unit=LengthUnit.METER),
+            next(parameter for parameter in extrusion.parameters if parameter.name == "vector"),
+        )))
+        request = replace(
+            _request(self.workspace, program=program, backend_options=self.request.backend_options),
+            artifact_stem="near-equal-coordinates", readback_tolerance=0.001,
+        )
+        with _without_other_backends():
+            result = self.backend.execute(request)
+        row = result.receipt_payload["readback"]["objects"][0]
+        expected = [[x, z, y + height] for height in (0, 1) for x, y, z in profile]
+        error = max(
+            min(max(abs(a - b) for a, b in zip(actual, wanted)) for actual in row["vertices"])
+            for wanted in expected
+        )
+        self.assertAlmostEqual(error, 0.000001, places=8)
+        self.assertLess(error, request.readback_tolerance)
+        self.assertTrue(row["closed"])
+        self.assertAlmostEqual(row["volume"], 7.999998, places=5)
+        self.assertEqual(result.status, "succeeded", result.failures)
+        self.assertTrue(result.readback_verified)
+        result.validate(request, "blender")
+
+        payload = deepcopy(result.receipt_payload)
+        native = payload["readback"]["objects"][0]
+        permutation = [2, 5, 0, 7, 1, 6, 3, 4]
+        old_to_new = {old: new for new, old in enumerate(permutation)}
+        native["vertices"] = [native["vertices"][old] for old in permutation]
+        native["faces"] = [[old_to_new[index] for index in face] for face in native["faces"]]
+        with _without_processes():
+            retained = self.backend.read_receipt(request, payload)
+            retained.validate(request, "blender")
+        self.assertTrue(retained.readback_verified)
+
     def test_large_coordinate_rounding_cannot_relax_the_absolute_readback_tolerance(self):
         program = _program_of(_box("survey-box", [500000.01, 0, 0], [2, 3, 4]))
         request = replace(

@@ -257,7 +257,7 @@ python -m unittest tests.test_blender_cad tests.test_cad_backend_contract -v
 
 测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。
 
-本次指定 Blender 4.3.2 运行的 13 项测试无跳过通过，包含真实保存/冷读、重启复用和候选修改；与公共 CAD、runner、record kinds 合并的 117 项检查通过。**新同事独立复跑、接手验收及真实 Rhino 宿主验收仍待完成**。接手继续沿公共 CAD 契约，不改 Hub/App Server 实现；缺少共享契约时先提交上游 PR，再更新依赖分支。
+本次指定 Blender 4.3.2 运行的 15 项测试无跳过通过，包含真实保存/冷读、重启复用和候选修改；公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。**新同事独立复跑、接手验收及真实 Rhino 宿主验收仍待完成**。接手继续沿公共 CAD 契约，不改 Hub/App Server 实现；缺少共享契约时先提交上游 PR，再更新依赖分支。
 
 ## 6. 把这段发给她的 Agent
 

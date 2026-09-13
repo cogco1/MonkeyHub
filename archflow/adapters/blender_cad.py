@@ -104,6 +104,48 @@ def _near(actual, expected, tolerance):
     )
 
 
+def _vertex_map(actual, expected, tolerance):
+    """Find one-to-one matches within tolerance, including reordered vertices."""
+    if len(actual) != len(expected):
+        return None
+    if actual == expected:
+        return {index: index for index in range(len(actual))}
+    candidates = [
+        sorted(
+            (index for index, point in enumerate(expected) if _near(vertex, point, tolerance)),
+            key=lambda index: (sum(abs(a - b) for a, b in zip(vertex, expected[index])), index != source),
+        )
+        for source, vertex in enumerate(actual)
+    ]
+    matched, owners = {}, {}
+    for source in range(len(actual)):
+        pending, visited, via = [source], {source}, {}
+        free = None
+        while pending and free is None:
+            current = pending.pop()
+            for target in candidates[current]:
+                if target in via:
+                    continue
+                via[target] = current
+                if target not in owners:
+                    free = target
+                    break
+                owner = owners[target]
+                if owner not in visited:
+                    visited.add(owner)
+                    pending.append(owner)
+        if free is None:
+            return None
+        # Reassign an occupied match along the path when a greedy choice would
+        # otherwise leave a vertex unmatched despite a valid correspondence.
+        while free is not None:
+            current = via[free]
+            previous = matched.get(current)
+            matched[current], owners[free] = free, current
+            free = previous
+    return matched
+
+
 def _face_loops(faces, vertex_map):
     """Compare connectivity independently of index order and face winding."""
     if not isinstance(faces, list):
@@ -157,13 +199,10 @@ def _readback_failures(request, plan, readback, provenance):
             fail(f"{object_id}: saved object is not a closed mesh")
         vertices = row.get("vertices", [])
         tolerance = request.readback_tolerance
-        actual_order = sorted(range(len(vertices)), key=vertices.__getitem__)
-        expected_order = sorted(range(len(expected["vertices"])), key=expected["vertices"].__getitem__)
-        vertex_map = dict(zip(actual_order, expected_order))
-        if (len(vertices) != len(expected["vertices"]) or
-                any(not _near(vertices[a], expected["vertices"][b], tolerance) for a, b in vertex_map.items()) or
+        vertex_map = _vertex_map(vertices, expected["vertices"], tolerance)
+        if (vertex_map is None or
                 _face_loops(row.get("faces"), vertex_map) !=
-                _face_loops(expected["faces"], dict(enumerate(range(len(expected["vertices"])))))):
+                _face_loops(expected["faces"], {index: index for index in range(len(expected["vertices"]))})):
             fail(f"{object_id}: saved mesh geometry differs")
         for edge, key in (("min", "bbox_min"), ("max", "bbox_max")):
             point = bounds[object_id][key]
