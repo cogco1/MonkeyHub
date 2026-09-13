@@ -494,29 +494,23 @@
         },
         {
           "id": "board",
-          "issue": "#23 selected text feedback",
+          "issue": "#23 selected source update",
           "status": "review",
-          "branch": "codex/board-text",
+          "branch": "codex/board-source",
           "worktree": "C:/Users/asus/.codex/worktrees/c68e/ARCHFLOW_V4",
-          "base_ref": "df264b512491232ae534df3ee3d7e80d9fcac38b",
+          "base_ref": "e988f940a44953fb91930c30179d1e9f07ee1068",
           "contributor": "Codex Board task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR #26 merged; PR #27 carries selected text into the existing editable feedback utterance in y/x/id order, including native frame/bound labels once. Coordinator review found a first-save read race: read_board now reuses the existing Board lock; controlled real-manifest concurrency reproduced 404 before the fix and passes after it. Validation passed: 34 web and 11 Board API tests; full real browser with the coordinator Python runtime (63 requests, 2 explicit submissions); selected text, source/model rejection, unchanged geometric PNG/DTO, replacement/export/CAS/keyboard regressions, build and archcheck. Coordinator independently reviews the updated head and CI before merging. HTML/remote image paste and installed services remain separate.",
+          "handoff": "PR #26 and #27 merged. Final #23 slice adds selected-source Update through the existing ReplacementDialog, independently of feedback geometry/model eligibility; preserves the rail entry and restores focus on cancel. Validation passed: 36 Board tests, build and archcheck; replacement browser covers exact image/frame selection, ambiguity refusal, crop/placement/marks, undo/reopen and CAS (3 saves, 1 upload, 1 expected conflict); full real whiteboard browser (63 requests, 2 explicit handoffs). New-user usability remains unverified; no sticky preset, remote paste, multiplayer or live-service update. Coordinator independently reviews the PR and exact-head CI before merging.",
           "modules": [
             "studio.board"
           ],
           "write_scope": [
             "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
-            "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
-            "apps/archflow-studio/api/tests/test_boards.py",
-            "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedbackGeometry.ts",
-            "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
-            "apps/archflow-studio/web/test/boardFeedback.test.ts",
-            "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
-            "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/boardScene.ts",
+            "apps/archflow-studio/web/test/boardScene.test.ts",
+            "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
             "governance/work_registry.json",
-            "governance/module_registry.json",
-            "docs/SYSTEM_MAP.md",
             "docs/mapping/planning/P115-capability-consolidation.md"
           ],
           "depends_on": []
