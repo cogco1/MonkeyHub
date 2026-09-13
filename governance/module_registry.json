@@ -3856,7 +3856,8 @@
         "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
         "apps/archflow-studio/web/test/boardFeedback.test.ts",
         "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
-        "apps/archflow-studio/web/test/boardReplacement.browser.mjs"
+        "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
+        "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },

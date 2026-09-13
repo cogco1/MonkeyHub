@@ -115,6 +115,7 @@ try {
             return await route.fulfill({ status: 200, contentType: "application/octet-stream", body: bytes });
           }
           if (url.pathname === "/api/documents") return await json({ projectId, runId: pageSource.runId, documents: [sourceDocument] });
+          if (url.pathname === "/api/drawings/styles") return await json({ styles: [] });
           if (url.pathname === "/api/document-annotations") return await json(annotationPage);
           if (url.pathname === "/api/document-comments") return await json({ comments: [] });
           if (url.pathname === `/api/documents/${documentSha}/bytes`) return await route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from(png, "base64") });

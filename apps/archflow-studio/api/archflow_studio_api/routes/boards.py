@@ -8,6 +8,7 @@ from ..application import boards
 from ..application.binding import bound_project
 from ..transport.boards import BoardDto, BoardExportPageDto, BoardExportRequestDto, BoardRequestDto, board_dto
 from ..transport.errors import StudioError
+from .artifacts import _content_disposition
 
 router = APIRouter(tags=["board"])
 
@@ -40,5 +41,5 @@ def export_board(request: Request, payload: BoardExportRequestDto) -> Response:
     return Response(
         content=result.content,
         media_type=result.media_type,
-        headers={"Content-Disposition": f'attachment; filename="{result.file_name}"', "Cache-Control": "no-store"},
+        headers={"Content-Disposition": _content_disposition(result.file_name, payload.pages[0].asset_sha256), "Cache-Control": "no-store"},
     )
