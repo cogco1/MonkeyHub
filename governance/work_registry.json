@@ -437,7 +437,12 @@
           "contributor": "Codex task 01a09b53-017d-7fa3-99d3-10177536354e",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
           "handoff": "PR #47 contains the Phase 0 correlated trace and Monitor UI; #32 remains open. The review follow-up makes diagnostic journal locks nonblocking, skips optional observations on contention and preserves a writer-level missing-observation notice. Real cross-process Hub/Studio requests, recovery, rotation and concurrent event association are covered. Same-build real-provider baselines remain tied to bfbaca62. Current main #48 recovery is retained; the two diagnostic headers are frozen and their overlapping runtime source claims are released. ContextPack and design transactions remain separate work; no production project or active user service is changed.",
-          "modules": ["monkeymonitor", "hub.shell", "studio.shell", "studio.candidate"],
+          "modules": [
+            "monkeymonitor",
+            "hub.shell",
+            "studio.shell",
+            "studio.candidate"
+          ],
           "write_scope": [
             "monkeymonitor/",
             "tests/monkeymonitor/",
@@ -473,101 +478,65 @@
         {
           "id": "interaction",
           "issue": "#14 Phase 5 snap retention and continuous modeling",
-          "status": "review",
+          "status": "blocked",
           "branch": "codex/issue14-snap-retention",
           "worktree": "C:/Users/asus/.codex/worktrees/48ca/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex task 01a09b53-473e-7042-953b-9fd060e7744f",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR #45 merged at 3008d83b. Phase 5: 14px capture/21px release for feature targets, deliberate endpoint/midpoint switching, current-ray sliding along held edges, existing sketch-axis retention and display/tool invalidation. Ordinary hover remains consistent with current click hits. Baseline viewport fails the silhouette regression; the fix passes. Isolated browser/real OCCT continuous creation/P/Move/Copy/delete/Undo/Redo and frozen Sync pass, including exact snapped Move geometry and continued local edits during Sync. Web tests 199 passed/2 skipped, build/typecheck and archcheck pass; two independent review findings fixed. 400-mesh synthetic pointer-to-preview P95 17.9ms. Sustained-operation testing is in progress; representative large real model input is missing and architectural user acceptance remains open. Coordinator released the merged ThreeDmViewport.tsx source scope for agent-latency timing hooks; any new interaction defect requires a separately coordinated change. No backend/Monitor contract or active-service changes. Issue #14 remains open.",
+          "handoff": "PR #45 is merged. Snap retention, real OCCT continuous edits, Undo/Redo and synthetic pointer timing are verified. Only representative real-model and human workflow acceptance remains; source claims are released. Issue #14 stays open.",
           "modules": [
             "studio.shell",
             "studio.intent"
           ],
           "write_scope": [
-            "apps/archflow-studio/web/src/features/stage/Stage.tsx",
-            "apps/archflow-studio/web/src/features/stage/sketch.ts",
-            "apps/archflow-studio/web/src/workspaces/monkeyarch/interactionSession.ts",
-            "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/featureEdges.ts",
-            "apps/archflow-studio/web/test/featureEdges.test.ts",
-            "apps/archflow-studio/web/test/sketch.test.ts",
-            "apps/archflow-studio/web/test/sketch.browser.mjs",
-            "apps/archflow-studio/web/test/modelSync.browser.mjs",
             "docs/mapping/planning/P115-capability-consolidation.md",
             "governance/work_registry.json"
           ],
-          "depends_on": []
+          "depends_on": [],
+          "blocked_reason": "Awaiting a representative large real architecture model and sustained architectural-user acceptance; the merged #45 implementation is complete."
         },
         {
           "id": "blender",
           "issue": "#13 remaining host and contributor acceptance",
-          "status": "review",
+          "status": "blocked",
           "branch": "codex/issue-13-acceptance",
           "worktree": "C:/Users/asus/.codex/worktrees/7ae0/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex task 01a09b54-4676-7443-b60b-652f6d1e4a8d",
           "reviewer": "Coordinating task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PRs #15/#17/#18 are merged. Real Rhino 8.28 save/cold-read/material/retained-restart acceptance and simulated contributor checks pass. Coordinating task integrates this focused test/documentation PR; a new teammate must still reproduce and hand off from their own environment.",
+          "handoff": "PR #43 is merged. Real Rhino save/cold-read/material/restart checks passed; simulated contributor checks do not replace a new teammate. Implementation source claims are released; #13 remains open for that acceptance.",
           "modules": [
             "adapters.cad_execution",
             "runtime.project_runner"
           ],
           "write_scope": [
-            "archflow/adapters/README.md",
-            "tests/test_cad_backend_contract.py",
-            "governance/work_registry.json",
-            "docs/TEAM_ONBOARDING.md",
-            "docs/mapping/planning/P115-capability-consolidation.md"
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "governance/work_registry.json"
           ],
-          "depends_on": []
+          "depends_on": [],
+          "blocked_reason": "Awaiting a new human teammate reproducing the CAD workflow and handing off from their own environment."
         },
         {
           "id": "board",
           "issue": "#23 acceptance follow-up",
-          "status": "review",
+          "status": "blocked",
           "branch": "codex/board-acceptance",
           "worktree": "C:/Users/asus/.codex/worktrees/bb66/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex Board task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR #26, #27 and #30 are merged. Fix the reproduced initial Board model-binding refusal: consume the one-time handoff, retain the original draft, and show a Board-specific reason in ordinary mode; recovery and refresh never auto-submit it. The coordinator confirmed the App.tsx handoff effect and ErrorPanel scope; interaction released its old App.tsx claim, and runtime's separate viewer hunk remains for coordinator integration. Validation: 36 Board tests, 11 Board API tests, real Studio/P036 whiteboard browser (89 requests, 2 explicit handoffs), replacement browser, six handoff scenarios including changed/unavailable base recovery and refresh, build and archcheck. Exact source guards and all other errors remain unchanged. New-user blind usability remains unverified; see the existing P115 card for the short onsite task.",
+          "handoff": "PR #44 is merged. Source-binding refusal preserves the draft and recovery does not submit automatically. Functional checks passed; only real new-user usability remains for this slice. Source claims are released; #23 stays open.",
           "modules": [
             "studio.board",
             "studio.shell"
           ],
           "write_scope": [
-            "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
-            "apps/archflow-studio/web/src/app/ErrorPanel.tsx",
-            "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
-            "governance/work_registry.json",
-            "docs/mapping/planning/P115-capability-consolidation.md"
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "governance/work_registry.json"
           ],
-          "depends_on": []
-        },
-        {
-          "id": "runtime",
-          "issue": "#12 cold Hub admission and retained-result recovery",
-          "status": "review",
-          "branch": "codex/hub-cold-admission",
-          "worktree": "C:/Users/asus/.codex/worktrees/a6c0/ARCHFLOW_V4",
-          "base_ref": "666865c250f17310373f2def6da6b5191f3e1cf7",
-          "contributor": "Codex lifecycle task",
-          "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "EXTEND existing OperationManager admission/restore at the coordinated nonproject runtime/operations location. Signatures and exact binding persist before dispatch; no request bodies, cached HTTP responses or canonical result copies. Cold restart refuses replay and reconciles outcomes from P036. 14 operation recovery tests, 7 real Hub/Studio lifecycle tests and archcheck passed locally, including truncated HTTP, same-key project isolation and Hub restart. #32 forward header allowlist unchanged. #42 is merged and its completed source lane removed. Await exact-head CI/coordinator review; broader CAD/provider coverage and #8 remain subsequent slices.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_runtime_operations.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "governance/architecture_policy.json",
-            "governance/module_registry.json",
-            "governance/work_registry.json",
-            "docs/SYSTEM_MAP.md",
-            "docs/mapping/planning/P115-capability-consolidation.md"
-          ],
-          "depends_on": []
+          "depends_on": [],
+          "blocked_reason": "Awaiting a new-user blind walkthrough of the Board reference-to-model-feedback workflow."
         }
       ]
     },
