@@ -172,6 +172,7 @@
         "apps/archflow-studio/web/tools/openapi-ts/package.json",
         "archflow/adapters/README.md",
         "archflow/adapters/cad_execution.py",
+        "archflow/adapters/cad_backend.py",
         "archflow/adapters/drawing_svg.py",
         "archflow/adapters/occt_backend.py",
         "archflow/capabilities/README.md",

@@ -1,5 +1,19 @@
 # P115 — 能力总索引与逐项整理
 
+### #13 Phase 0：共同 CAD 后端契约（2026-09-12）
+
+- Issue：[#13](https://github.com/cogco1/ARCHFLOW_V4/issues/13)，先提交独立 Phase 0 PR。
+- 基线：远端 `main` / 已合并 PR #11，`f3b928399a092f2a0b51853a737377fd969aa96a`。
+- Lane：`codex/cad-contract`，本任务分配的 `8a9c/ARCHFLOW_V4` 独立 worktree；实施由本 Codex 任务负责，人工 reviewer/Blender 接手成员待指定。
+- Owner 与窄路径：EXTEND `adapters.cad_execution` 的 `cad_execution.py`、同 owner 的 `cad_backend.py` 及 README；`runtime.project_runner` 的 `project_runner.py`；共同 CAD/runner tests；仅相应 module 条目、P115 scope/本段与生成 SYSTEM_MAP。
+- 与 #12 的边界已协调：#12 使用独立 `codex/hub-runtime` / `efa8` worktree，负责 Hub/App Server/runtime/recovery；本 lane 不修改其应用或 UI 源码。双方共享治理文件按各自条目修改；后续出现共享契约需求时先上游落 main。
+
+共同入口现为 `get_cad_backend(id).execute(CadExecutionRequest)`。结果携带确切绑定、具名产物、读回与语义覆盖，并保留 OCCT/Rhino 原生 receipt；`CadProgramBinding` 成为真实公共类型，历史 Rhino import 与 schema 保持兼容。runner 共用注册、执行、P036 保存和已验证结果复用；Rhino patch/rebuild/oracle 与 OCCT STEP/preview/增量执行保留。
+
+本 lane 的本地契约验证包含真实 OCCT 写入与冷读回、受控 Rhino 宿主监督，以及测试后端注册后无需修改 runner 的执行/复用。受控 Rhino 验证不代表真实 Rhino 宿主几何验收。用户主工作区源码、现有项目及运行中的 Hub/GRAVE/ABC/Monitor 不用于测试。
+
+**依赖与剩余验收：** Phase 0 PR 需独立 review 并合入 main；之后才实施 Phase 1 的 `work_registry`/`devctl work` lane 与实际重叠提示，以及 Phase 2 Blender 的单场景保存/读回闭环。后续成员从该合入提交创建独立 lane，不复制私有接口。#13 的多成员演练（实际成员、重叠提示、上游契约合入、Blender 独立进展）尚未完成，本卡和 issue 继续保留。
+
 ### 空项目进入建模（2026-09-12）
 
 新建项目及连接旧空项目时，Hub 经同源入口调用 Studio 的 `POST /api/project/modeling`。
