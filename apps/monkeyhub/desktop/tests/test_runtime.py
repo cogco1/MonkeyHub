@@ -489,7 +489,9 @@ class DesktopRuntimeTests(unittest.TestCase):
         # The only interpolated text is a locally generated test draft.
         assignment = "" if value is None else """
 $draft = '""" + value.replace("'", "''") + """'
+[Console]::Error.WriteLine('UIA: focus input')
 $inputElement.SetFocus()
+[Console]::Error.WriteLine('UIA: set draft')
 $pattern.SetValue($draft)
 for ($attempt = 0; $attempt -lt 50 -and $pattern.Current.Value -ne $draft; $attempt++) {
     Start-Sleep -Milliseconds 100
@@ -499,26 +501,34 @@ for ($attempt = 0; $attempt -lt 50 -and $pattern.Current.Value -ne $draft; $atte
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 Add-Type -AssemblyName UIAutomationClient
+[Console]::Error.WriteLine('UIA: resolve owned window')
 $window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{windows[0][0]})
 if ($window.Current.ProcessId -ne {self.shell.pid}) {{ throw 'Unexpected native window owner' }}
 $condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'chat-input')
 $inputElement = $null
+[Console]::Error.WriteLine('UIA: find chat input')
 for ($attempt = 0; $attempt -lt 50 -and $null -eq $inputElement; $attempt++) {{
     $inputElement = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
     if ($null -eq $inputElement) {{ Start-Sleep -Milliseconds 100 }}
 }}
 if ($null -eq $inputElement) {{ throw 'The owned Hub chat input was not accessible' }}
 if (-not $inputElement.Current.IsEnabled) {{ throw 'The owned Hub chat input was disabled' }}
+[Console]::Error.WriteLine('UIA: get value pattern')
 $pattern = $inputElement.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
 {assignment}
+[Console]::Error.WriteLine('UIA: read draft')
 $pattern.Current.Value | ConvertTo-Json -Compress
 """
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-             base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        try:
+            # UI Automation runs in its own non-UI MTA, without an STA message pump.
+            result = subprocess.run(
+                ["powershell.exe", "-Mta", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                 base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except subprocess.TimeoutExpired as error:
+            self.fail(f"Owned chat UI Automation timed out: {error.stderr!r}")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout.strip())
 
