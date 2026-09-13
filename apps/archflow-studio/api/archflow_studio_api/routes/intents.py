@@ -229,14 +229,16 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
     exact base, the compiled read context for these words, and the record's own
     preflight — into one read.
 
-    It reads. No proposal is made, no candidate is queued, no compiler or model
-    is called, and nothing about the project changes. Every check the write
-    path makes about the base is made here first and in the same order, so a
-    pack is never composed against a state the project has left: the project,
-    the exact reference, the digest, and then the focus itself. An element this
-    record does not declare, or one whose component disagrees with the request,
-    is refused by name — a request that named the wrong thing is not quietly
-    answered about a similar one.
+    It reads. No proposal is made, no candidate is queued, no model provider is
+    called and nothing is written to the project. The deterministic context
+    compiler below is what reads these words, and it calls no model. The base
+    is the source the request names — an explicitly retained actionable run,
+    with its Stage when one is selected, as readily as the default projection —
+    and the checks the write path makes are made here first and in the same
+    order: the project, the exact reference, the digest, then the focus itself.
+    An element this record does not declare, or one whose component disagrees
+    with the request, is refused by name — a request that named the wrong thing
+    is not quietly answered about a similar one.
     """
 
     binding = bound_project(request.app.state)

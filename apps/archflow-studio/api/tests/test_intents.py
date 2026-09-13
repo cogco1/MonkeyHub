@@ -904,9 +904,9 @@ def benchmark_prompt(scenario: str) -> str:
 class ContextPackTests(IntentTestCase):
     """``POST /api/intents/context``: one named source and focus, read once.
 
-    Nothing here compiles anything. The compiler seat holds ``Failing``, which
-    raises the moment it is asked, so a pack that came back at all is a pack no
-    model was called for.
+    The deterministic context compiler does run; no model provider does. The
+    agent seat holds ``Failing``, which raises the moment it is asked, so a pack
+    that came back at all is a pack no model was called for.
     """
 
     def setUp(self) -> None:

@@ -104,6 +104,41 @@ export type ChatCreateRequest = {
 };
 
 /**
+ * ChatDesignContext
+ *
+ * The exact source and focus this one message is about.
+ *
+ * A caller that already knows which object it is talking about says so here,
+ * and the turn is prepared against that. Every field but the Stage is
+ * required: a partial selection would have to be completed by guessing, and a
+ * guess about which object a change lands on is the one thing this must not
+ * do. It selects nothing and authorises nothing — the project the turn is
+ * bound to is still the conversation's own.
+ */
+export type ChatDesignContext = {
+    /**
+     * Sourcerunid
+     */
+    sourceRunId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Targetcomponentid
+     */
+    targetComponentId: string;
+    /**
+     * Elementid
+     */
+    elementId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
  * ChatDetail
  */
 export type ChatDetail = {
@@ -259,6 +294,7 @@ export type ChatPostRequest = {
      * Projectid
      */
     projectId: string;
+    designContext?: ChatDesignContext | null;
 };
 
 /**
@@ -394,6 +430,22 @@ export type ChatSummary = {
      */
     updatedAt: string;
     error?: HubError | null;
+};
+
+/**
+ * ChatUsageSource
+ *
+ * Only the native conversation identity and its Hub project binding.
+ */
+export type ChatUsageSource = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sessionid
+     */
+    sessionId: string;
 };
 
 /**
@@ -1700,6 +1752,24 @@ export type CreateChatApiChatSessionsPostResponses = {
 };
 
 export type CreateChatApiChatSessionsPostResponse = CreateChatApiChatSessionsPostResponses[keyof CreateChatApiChatSessionsPostResponses];
+
+export type ChatUsageSourcesApiChatUsageSourcesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/chat/usage-sources';
+};
+
+export type ChatUsageSourcesApiChatUsageSourcesGetResponses = {
+    /**
+     * Response Chat Usage Sources Api Chat Usage Sources Get
+     *
+     * Successful Response
+     */
+    200: Array<ChatUsageSource>;
+};
+
+export type ChatUsageSourcesApiChatUsageSourcesGetResponse = ChatUsageSourcesApiChatUsageSourcesGetResponses[keyof ChatUsageSourcesApiChatUsageSourcesGetResponses];
 
 export type ReadChatApiChatSessionsSessionIdGetData = {
     body?: never;
