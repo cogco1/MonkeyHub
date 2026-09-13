@@ -225,16 +225,49 @@ class PackageAdapterTests(unittest.TestCase):
 
 
 class DesktopPackageTests(unittest.TestCase):
+    def test_inventory_identifies_shipped_dependencies_and_frontend_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, bundle = root / "source", root / "bundle"
+            for name in ("monkeyhub", "archflow-studio"):
+                lock = source / f"apps/{name}/web/package-lock.json"
+                lock.parent.mkdir(parents=True)
+                lock.write_bytes(b'{"lockfileVersion": 3}')
+                asset = bundle / f"apps/{name}/web/dist/index.html"
+                asset.parent.mkdir(parents=True)
+                asset.write_bytes(name.encode())
+            lock = source / "apps/monkeyhub/package-lock.json"
+            lock.write_bytes(b'{"lockfileVersion": 3}')
+            adapter = bundle / "apps/monkeyhub/node_modules/@agentclientprotocol/codex-acp/package.json"
+            adapter.parent.mkdir(parents=True)
+            adapter.write_text('{"name":"@agentclientprotocol/codex-acp","version":"1.11.0"}', encoding="utf-8")
+            requirements = bundle / "_runtime/requirements-lock.txt"
+            requirements.parent.mkdir()
+            requirements.write_bytes(b"cadquery-ocp==7.8.1.1.post1\n")
+            with patch.object(builder, "run", return_value="v24.14.0"):
+                inventory = builder.runtime_inventory(source, bundle)
+            self.assertEqual(inventory["nodeVersion"], "v24.14.0")
+            self.assertEqual(inventory["acpAdapter"]["version"], "1.11.0")
+            self.assertEqual(inventory["pythonRequirements"]["sha256"], builder.sha256(requirements))
+            for name in ("monkeyhub", "archflow-studio"):
+                asset = f"apps/{name}/web/dist/index.html"
+                self.assertEqual(inventory["frontends"][name]["files"], {asset: builder.sha256(bundle / asset)})
+
     @unittest.skipUnless(sys.platform == "win32", "Windows installer and shortcut behavior")
     def test_desktop_install_keeps_browser_version_and_selects_native_shortcut(self):
         with tempfile.TemporaryDirectory(prefix="Hub install space ") as temporary:
             root = Path(temporary)
             local, shortcuts = root / "local", root / "shortcuts"
             shortcuts.mkdir()
-            commit = "a" * 40
             environment = dict(os.environ, LOCALAPPDATA=str(local))
-            for desktop in (False, True):
-                bundle = root / ("desktop" if desktop else "browser")
+            retained = {}
+            for relative in ("project/HEAD", "local/MonkeyHub/config/applications.json", "local/MonkeyHub/chats/retained.json"):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"existing user data\n")
+                retained[path] = path.read_bytes()
+            for commit, desktop in (("a" * 40, False), ("a" * 40, True), ("b" * 40, True)):
+                bundle = root / (("desktop" if desktop else "browser") + commit[:1])
                 required = ["OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "apps/monkeyhub/run.py",
                             "apps/monkeyhub/launch-hub.ps1", "apps/monkeyhub/web/dist/index.html",
                             "apps/archflow-studio/web/dist/index.html"]
@@ -257,12 +290,16 @@ class DesktopPackageTests(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 name = commit[:12] + ("-desktop" if desktop else "")
                 self.assertTrue((local / "MonkeyHub/versions" / name / required[-1]).is_file())
+                for path, before in retained.items():
+                    self.assertEqual(path.read_bytes(), before, path)
+                installed_entry = local / "MonkeyHub/versions" / name / required[-1]
+                retained[installed_entry] = installed_entry.read_bytes()
                 if desktop:
                     (bundle / "MonkeyArch.exe").unlink()
                     missing = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
                     self.assertNotEqual(missing.returncode, 0)
                     self.assertIn("MonkeyArch.exe", missing.stdout + missing.stderr)
-            browser_entry = local / "MonkeyHub/versions" / commit[:12] / "OPEN_MONKEYHUB.cmd"
+            browser_entry = local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd"
             desktop_entry = local / "MonkeyHub/versions" / (commit[:12] + "-desktop") / "MonkeyArch.exe"
             self.assertTrue(browser_entry.is_file())
             self.assertTrue(desktop_entry.is_file())

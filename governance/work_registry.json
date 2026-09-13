@@ -511,14 +511,14 @@
         },
         {
           "id": "desktop",
-          "issue": "#21 Phase A Windows desktop host",
+          "issue": "#21 Phase C complete desktop package and isolated installation",
           "status": "active",
-          "branch": "codex/desktop-final",
-          "worktree": "C:/Users/asus/.codex/worktrees/12ee/ARCHFLOW_V4",
-          "base_ref": "4552d2e401260f212342e0324a89108055ee1af2",
-          "contributor": "Codex task 01a0993d-4a50-7212-99d3-7ef936aadd2a",
+          "branch": "codex/desktop-product-package",
+          "worktree": "C:/Users/asus/.codex/worktrees/a6c0/ARCHFLOW_V4",
+          "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
+          "contributor": "Codex lifecycle task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "Replacement for PR #25, preserving its published history while correcting the final commit scope declaration. Phase A thin Windows host, native installer entry and isolated lifecycle/project reopen checks. Temporary health loss retains the live page and unsent input; UI Automation uses its own MTA. Previous head c0a2b36b passed all five native tests locally and in Windows CI plus package tests; two earlier local close timeouts were not reproduced by the bounded follow-up diagnostics and remain an observation, not a claimed root-cause fix. This branch preserves main4552d2e4 modeling, Board and Monitor work. Await exact-head CI and coordinator review. Full distribution/clean-machine and root restart acceptance remain later phases; no desktop modeling draft persistence or unsynced recovery. Isolated runtimes only.",
+          "handoff": "PR #33 Phase A is merged. Extend the existing package builder and Windows workflow to build the complete desktop ZIP from its exact snapshot, install and reinstall it in isolated directories, and exercise native lifecycle using only bundled Python/Node/assets. Record shipped runtime and frontend identities in build-info.json. Retain existing project/user data and earlier installs. No active services or user installation changes. Native CI and clean-machine acceptance are distinct; full package CI pending. Coordinate #12/#8 Hub interfaces before their next slice.",
           "modules": [
             "hub.shell",
             "tools.package_monkeyapps"

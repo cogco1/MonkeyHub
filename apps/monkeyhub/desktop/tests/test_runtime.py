@@ -34,6 +34,8 @@ from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[4]
+INSTALLED = os.environ.get("MONKEYARCH_INSTALLED_ROOT")
+APPLICATION_ROOT = Path(INSTALLED) if INSTALLED else ROOT
 EXE = os.environ.get("MONKEYARCH_DESKTOP_EXE")
 START = re.compile(r"event=start pid=(\d+) url=(\S+) instance=(\S+) source=([0-9a-f]{40})")
 STATE = re.compile(r"event=state state=(\w+) detail=(.*)")
@@ -272,21 +274,21 @@ class DesktopRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(Path(EXE).is_absolute() and Path(EXE).is_file(), EXE)
         for client in ("monkeyhub", "archflow-studio"):
-            self.assertTrue((ROOT / f"apps/{client}/web/dist/index.html").is_file(), f"Build {client} web first")
-        for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
+            self.assertTrue((APPLICATION_ROOT / f"apps/{client}/web/dist/index.html").is_file(), f"Build {client} web first")
+        for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "apps/archflow-studio/api", APPLICATION_ROOT / "apps/monkeyhub/api"):
             if str(directory) not in sys.path:
                 sys.path.insert(0, str(directory))
         from archflow_studio_api.settings import save_application_settings
         from archflow_studio_api.transport.settings import ApplicationSettingsDto
         from monkeyhub_api.applications import source_revision
 
-        self.revision = source_revision(ROOT)
+        self.revision = source_revision(APPLICATION_ROOT)
         self.assertIsNotNone(self.revision)
         # Explicit cleanup below waits for this instance's asynchronous WebView exit.
         temporary = tempfile.TemporaryDirectory(prefix="MonkeyArch desktop 测试 ", delete=False)
         self.addCleanup(self.cleanup_temporary, temporary)
         self.root = Path(temporary.name)
-        self.runtime = self.root / "runtime"
+        self.runtime = self.root / "local/MonkeyHub" if INSTALLED else self.root / "runtime"
         self.native = WindowsProcesses()
         self.addCleanup(self.cleanup_processes)
         self.shells = []
@@ -303,10 +305,23 @@ class DesktopRuntimeTests(unittest.TestCase):
         })
         # Isolating APPDATA must not hide this interpreter's installed user site.
         user_site = site.getusersitepackages()
-        if site.ENABLE_USER_SITE and user_site in sys.path:
+        if not INSTALLED and site.ENABLE_USER_SITE and user_site in sys.path:
             self.environment["PYTHONPATH"] = os.pathsep.join(filter(None, (
                 self.environment.get("PYTHONPATH"), user_site,
             )))
+        if INSTALLED:
+            # Keep only OS tools. The EXE must resolve its own Python, Node and
+            # production assets without a checkout, venv, user site or Vite.
+            windows = Path(os.environ["SystemRoot"])
+            self.environment["PATH"] = os.pathsep.join(str(path) for path in (
+                windows / "System32", windows, windows / "System32/WindowsPowerShell/v1.0",
+            ))
+            for key in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "CONDA_PREFIX", "NODE_PATH"):
+                self.environment.pop(key, None)
+            self.assertTrue(Path(sys.executable).is_relative_to(APPLICATION_ROOT))
+            import archflow, archflow_studio_api, monkeyhub_api
+            for module in (archflow, archflow_studio_api, monkeyhub_api):
+                self.assertTrue(Path(module.__file__).is_relative_to(APPLICATION_ROOT), module.__file__)
         spec = importlib.util.spec_from_file_location("desktop_project_fixture", ROOT / "apps/archflow-studio/api/tests/support.py")
         self.fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.fixture)
@@ -319,6 +334,9 @@ class DesktopRuntimeTests(unittest.TestCase):
             cadExport="off", studioPort=self.studio_port, monitorPort=self.monitor_port,
         ))
         self.saved_settings = (self.runtime / "config/applications.json").read_bytes()
+        if INSTALLED:
+            self.user_file = self.runtime / "user-retained.txt"
+            self.user_file.write_bytes(b"User data must survive reinstall and reopen.\n")
 
     def project_bytes(self):
         return {str(path.relative_to(self.project)): path.read_bytes()
@@ -372,6 +390,8 @@ class DesktopRuntimeTests(unittest.TestCase):
         previous = set((self.runtime / "logs").glob("desktop-*.log"))
         command = [str(Path(EXE)), "--source-root", str(ROOT), "--python", sys.executable,
                    "--runtime-root", str(self.runtime), "--startup-timeout-seconds", "40"]
+        if INSTALLED:
+            command = [str(Path(EXE))]  # Exercise the installed double-click defaults.
         if port is not None:
             command.extend(("--port", str(port)))
         self.shell = subprocess.Popen(
@@ -424,7 +444,7 @@ class DesktopRuntimeTests(unittest.TestCase):
                  "The ready EXE did not expose its native MonkeyArch window")
         wait_for(lambda: self.url in PAGE_LOADED.findall(self.log_text()),
                  lambda: f"The native WebView did not finish loading the verified Hub root page: {self.log_text()}")
-        self.assertEqual(request(self.url, raw=True), (ROOT / "apps/monkeyhub/web/dist/index.html").read_bytes())
+        self.assertEqual(request(self.url, raw=True), (APPLICATION_ROOT / "apps/monkeyhub/web/dist/index.html").read_bytes())
         self.native.track_webviews(self.shell.pid)
 
     def app_ready(self, app_id):
@@ -465,7 +485,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         # modeling is ready; subsequent responses are under 0.1 s. Bound only
         # this cold asset read; health and ordinary API requests keep 5 s.
         self.assertEqual(request(studio["url"], raw=True, timeout=15),
-                         (ROOT / "apps/archflow-studio/web/dist/index.html").read_bytes())
+                         (APPLICATION_ROOT / "apps/archflow-studio/web/dist/index.html").read_bytes())
         current = self.project_bytes()
         self.assertEqual({path: current.get(path) for path in self.before}, self.before)
         if self.opened_bytes is None:
@@ -481,6 +501,8 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.assertFalse(port_open(port), f"Owned listener {port} survived shutdown")
         self.assertEqual(self.project_bytes(), self.opened_bytes or self.before)
         self.assertEqual((self.runtime / "config/applications.json").read_bytes(), self.saved_settings)
+        if INSTALLED:
+            self.assertEqual(self.user_file.read_bytes(), b"User data must survive reinstall and reopen.\n")
 
     def chat_draft(self, value=None):
         """Use Windows' public UI Automation provider, with no product test hook."""
@@ -586,6 +608,18 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         self.wait_state("stopped")
         self.assertEqual(self.states(), ["starting", "ready", "stopping", "stopped"])
         self.drained()
+
+        if INSTALLED:
+            # Run the actual package installer after project use and before
+            # reopening. Existing user settings and P036 bytes must survive.
+            installer = Path(os.environ["MONKEYARCH_PACKAGE_ROOT"]) / "apps/monkeyhub/installer/install.ps1"
+            result = subprocess.run([
+                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(installer),
+                "-InstallDirectory", str(APPLICATION_ROOT),
+            ], env=self.environment, capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("already installed", result.stdout)
+            self.drained()
 
         self.launch()
         self.ready()

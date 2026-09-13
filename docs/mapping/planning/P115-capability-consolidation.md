@@ -1,5 +1,16 @@
 # P115 — 能力总索引与逐项整理
 
+### #21 Phase C：完整包与隔离安装
+
+`P115/desktop` 在独立 `a6c0` worktree 从 `293756cf` 继续，分支为
+`codex/desktop-product-package`。PR #33 的原生宿主已经合入；本片沿既有
+`package_monkeyapps.py --desktop` 生成完整 ZIP，并让 Windows workflow 从该包安装，
+使用包内 Python 和 EXE 默认入口完成真实生命周期与项目重开检查。
+安装测试清除开发 Python/Node/虚拟环境路径，使用独立用户目录；重装前后比较项目和用户配置，
+版本升级测试保留旧安装和既有用户文件。`build-info.json` 记录实际 Node/ACP、Python 依赖清单
+以及前端资源身份。完整包 CI 尚待运行，第二台干净 Windows 机器仍未验收。
+本片不修改 Hub runtime 源码；#12/#8 的重叠接口在后续切片前协调。
+
 ### #21 Phase A：Windows 桌面窗口与 Hub 生命周期
 
 `P115/desktop` 从实际主线 `0ce0c111dbfeab2cb6373cf9050392e537caf20a` 开始，
