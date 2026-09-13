@@ -1,15 +1,17 @@
-# ArchFlow V4
+# MonkeyHub
+
+> **Public Research Preview**
+>
+> MonkeyHub is under active development. APIs, project formats, installation paths and behaviors may change without backward-compatibility guarantees. The current software is a research/development system, **not a construction-, engineering-, permit-, code-compliance-, or safety-certified product**. Independently verify geometry, quantities, analysis results, fabrication output and any decision that can affect people, property or built work. Do not place secrets, credentials, confidential project data or personal information in public issues, discussions, logs or example files.
 
 New teammate or agent? Start with the [团队与 Agent 接入清单](docs/TEAM_ONBOARDING.md):
 which repository to use, the first runnable task, setup commands, and the current release boundary.
 
 **Less work serving the tools. More room to develop architectural ideas.**
 
-ArchFlow explores infrastructure for people and AI to work on architectural
-design together. It starts with repeated explanation, manual transfer and repair
-that tools leave to architects, and asks how removing that work can make ideas
-easier to develop, inspect and revise. This is the direction, not a claim that
-the current application has already achieved it.
+**MonkeyHub** is the shared project environment. **ArchFlow** is the underlying state/runtime mechanism used to keep project identity, provenance, dependencies, revisions and tool projections coherent while people and AI work on the same evolving design.
+
+The project starts with repeated explanation, manual transfer and repair that tools leave to architects, and asks how removing that work can make ideas easier to develop, inspect and revise. This is the direction, not a claim that the current application has already achieved the full vision.
 
 ## The work behind a model
 
@@ -46,17 +48,14 @@ from developing an unresolved design.
 
 ## MonkeyArch: a place to test the interaction
 
-**MonkeyArch**, hosted in ArchFlow Studio, is the modeling environment used to test
+**MonkeyArch**, hosted in the shared Studio/Hub environment, is the modeling workspace used to test
 these methods. People should be able to work directly on a model, inspect what the
 machine understood, compare proposed changes, and take over when necessary.
 Continuing a candidate, endorsing a direction and formally issuing a project
 version are distinct actions. **Continue from this version** explicitly makes the
 displayed run the next edit's starting point. Browsing a model alone does not change it.
 
-Rhino/Grasshopper, Revit and Blender are potential foundations and comparison
-paths. An independent interface does not require an independent geometry engine.
-If an extension can meet the same research and practical needs, it is a valid
-outcome. A standalone environment must demonstrate what it adds.
+Rhino/Grasshopper, SketchUp, Revit, Blender and other professional tools are potential foundations, execution environments and projections. An independent interface does not require an independent geometry engine. If an extension can meet the same research and practical needs, it is a valid outcome. A standalone environment must demonstrate what it adds.
 
 ## Why an open-source direction
 
@@ -65,14 +64,15 @@ the tool, challenge their assumptions, and adapt them to different practices.
 This includes allowing others to develop different rules and implementations.
 Portable project data, inspectable and modifiable code, and replaceable tool
 interfaces each contribute to that aim; none substitutes for the others.
-Specific licensing and release scope are separate project decisions.
+
+The project is now released under **GNU AGPL v3.0 only (`AGPL-3.0-only`)**. See [License and contributions](#license-and-contributions) below for the practical boundary.
 
 The [vision](docs/VISION.md) develops this direction in Chinese, with a concise
 English statement and sources for the existing-tool comparison.
 
-## Where V4 stands
+## Where the current system stands
 
-V4 has three code owners, composed in the same Studio application:
+The current implementation has three established code owners composed in the same application:
 
 - **ArchFlow** holds shared project storage, architectural facts and technical contracts.
 - **MonkeyArch** owns 3D modeling, typed design edits, candidate execution and relation checks.
@@ -81,8 +81,7 @@ V4 has three code owners, composed in the same Studio application:
 Product names and design-history terms follow the
 [team naming conventions](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语),
 including MonkeyHub, MonkeyBoard, MonkeyMonitor, MonkeyFab and Stage / Branch /
-Candidate. ArchFlow Studio is the shared host for MonkeyArch, MonkeyDiagram and
-MonkeyBoard.
+Candidate. MonkeyHub is the top-level product/system; ArchFlow remains the underlying mechanism.
 
 Modeling produces geometry programs and CAD exports, with saved-file readback and
 retained run evidence. OCCT and explicitly selected Rhino execution use the same
@@ -123,13 +122,15 @@ The team shares two source repositories:
 | Repository | What the team changes there |
 | --- | --- |
 | [Shared toolbox](https://github.com/cogco1/huaguoshan-digital-infrastructure) | Research CLI, reusable Skills, experiment record tools and figure/report generators |
-| [ArchFlow](https://github.com/cogco1/ARCHFLOW_V4) | Shared project infrastructure, MonkeyArch modeling and MonkeyDiagram drawings |
+| [MonkeyHub](https://github.com/cogco1/MonkeyHub) | Shared project infrastructure, ArchFlow runtime, MonkeyArch modeling, MonkeyDiagram drawings and related applications |
 
 Take one scoped task in the relevant repository, work on a short branch, open a
 pull request, and have another member review the change and its Actions checks
 before integration. Each member has an independent clone and runtime. Shared
 code does not mean sharing one live project directory or another member's credentials.
 See the [team setup and review path](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md).
+
+New contributors must also read and agree to the [`CLA.md`](CLA.md) before a contribution is merged. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the working process.
 
 ## Run Studio
 
@@ -167,3 +168,13 @@ Both use the same project layout and persistence owner.
 Runtime files, private project models, and machine-specific configuration
 stay outside source commits. Each project's retained state and evidence
 remain under its explicitly assigned project root.
+
+## License and contributions
+
+Unless a file or third-party notice says otherwise, first-party MonkeyHub source code is licensed under **GNU Affero General Public License v3.0 only (`AGPL-3.0-only`)**. See [`LICENSE`](LICENSE) and [`LICENSING.md`](LICENSING.md).
+
+AGPL permits commercial use; organizations do not have to pay merely because they are companies. They do have to comply with the license. The copyright holders may separately offer commercial terms for proprietary redistribution, OEM use, or modified hosted deployments that do not want to operate under AGPL obligations.
+
+New contributions are accepted under the [`MonkeyHub Contributor License Agreement`](CLA.md). Contributors retain copyright while granting the project the rights required to keep the project open source and, where appropriate, offer separate commercial licenses.
+
+Third-party dependencies, SDKs, models, fonts and assets remain under their own licenses. Public source availability is not a representation that every optional third-party integration can be redistributed under AGPL on identical terms.
