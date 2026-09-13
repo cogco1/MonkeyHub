@@ -5828,7 +5828,7 @@
         "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
         "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
         "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio",
-        "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, in-process request deduplication, retained-result reconciliation, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
+        "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, durable request identity admission under the explicit nonproject runtime root, retained-result reconciliation, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
         "Project-scoped Studio API forwarding for embedded tools and chat, with request-scoped idempotency keys independent of diagnostic correlation; browser refresh reattaches to retained/runtime state and never restarts a crashed worker implicitly",
         "Thin Windows Tauri desktop window: starts one owned root Hub, checks compiled source/protocol/process/instance health, restricts WebView navigation and coordinates managed-stdin shutdown; existing Hub owns all workers",
         "Read-only project/native-session identity projection for Monitor, including archived chats, without exposing messages or project paths",
@@ -5853,7 +5853,8 @@
         "Owned process lifecycle and local diagnostic logs",
         "The independent Fab CLI result; geometry files stay in the caller-selected output directory",
         "Project-bound chat transcripts and continuation of the same native CLI session under the explicit Hub runtime root",
-        "Typed project/session metadata for the owned Monitor Codex source connection"
+        "Typed project/session metadata for the owned Monitor Codex source connection",
+        "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures and recovery observations only, with no request bodies or canonical results"
       ],
       "public_api": [
         "create_app",
@@ -5910,8 +5911,8 @@
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
-        "Runtime records are in-process observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
-        "An operation id cannot bind a different request; duplicate requests and worker recovery do not replay mutations. Hub cold startup reconstructs retained outcomes; pre-admission requests with no retained record are not durable jobs",
+        "Runtime records and the admission journal are observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
+        "An operation id cannot bind a different request; duplicate requests and worker recovery do not replay mutations. Hub cold startup restores admitted request signatures and reconstructs outcomes from P036; journal write failure prevents dispatch, and requests that never reached durable admission remain outside recovery",
         "A Hub-assigned candidate run identity is bound to the managed Studio instance before submission; any existing retained run prevents executing that identity again",
         "Desktop exposes no arbitrary WebView command bridge, never adopts a port occupant, and waits for its owned Hub to drain; installation assets and disposable WebView cache are separate from P036 project data",
         "The actual Hub CLI holds runtime/hub.lock until server and owned workers finish draining; browser and desktop entrypoints cannot concurrently load/save the same Hub runtime directory"

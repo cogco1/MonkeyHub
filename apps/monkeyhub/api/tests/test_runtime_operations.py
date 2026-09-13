@@ -114,6 +114,87 @@ class OperationRecoveryTests(unittest.TestCase):
     def record(self, admission):
         return next(row for row in self.manager.records() if row.operationId == admission.record.operationId)
 
+    def durable_manager(self, *, project_id=None, project_dir=None):
+        return OperationManager(project_id or self.fixture.PROJECT_ID,
+            project_dir=str(project_dir or self.settings.project_dir),
+            journal_path=self.root / "hub-runtime/runtime/operations/project.json")
+
+    def test_cold_start_refuses_unretained_dispatched_request_and_changed_key(self):
+        self.manager = self.durable_manager()
+        coordinator = ProjectRuntimeManager(None, None)
+        runtime = ProjectRuntime("journal-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+            self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
+        worker = SimpleNamespace(url="http://127.0.0.1:1", instance_id="test-worker")
+        operation_id = str(uuid4())
+        body = b'{"privateRequestBody":"must never be stored"}'
+        with patch.object(coordinator, "service", return_value=worker), \
+             patch("monkeyhub_api.runtime.request_http", side_effect=OSError("lost worker before retained output")) as forwarded:
+            with self.assertRaises(HubFailure) as failure:
+                coordinator.forward(runtime, "/api/program", "POST", body, {"idempotency-key": operation_id})
+            self.assertEqual(failure.exception.error.code, "OPERATION_INTERRUPTED")
+            self.assertEqual(forwarded.call_count, 1)
+        self.assertNotIn("privateRequestBody", self.manager.journal_path.read_text(encoding="utf-8"))
+        runtime.operations = self.durable_manager()  # No process-local state survives.
+        with patch("monkeyhub_api.runtime.request_http", side_effect=AssertionError("cold replay")) as forwarded:
+            for repeated_body, expected in ((body, "OPERATION_NEEDS_RECOVERY"), (b"{}", "OPERATION_ID_CONFLICT")):
+                with self.subTest(expected=expected), self.assertRaises(HubFailure) as failure:
+                    coordinator.forward(runtime, "/api/program", "POST", repeated_body, {"idempotency-key": operation_id})
+                self.assertEqual(failure.exception.error.code, expected)
+            forwarded.assert_not_called()
+        restored = runtime.operations.records()[0]
+        self.assertEqual(restored.status, "needs_recovery")
+        self.assertFalse(restored.committed)
+        self.assertEqual(bound_project(self.app.state).run_ids(), (self.fixture.REFERENCE_RUN_ID,))
+
+    def test_operation_log_failure_prevents_dispatch_and_does_not_admit_request(self):
+        self.manager = self.durable_manager()
+        coordinator = ProjectRuntimeManager(None, None)
+        runtime = ProjectRuntime("journal-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+            self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
+        with patch("monkeyhub_api.runtime.os.replace", side_effect=OSError("disk write failed")), \
+             patch("monkeyhub_api.runtime.request_http", side_effect=AssertionError("dispatch without durable identity")) as forwarded:
+            with self.assertRaises(HubFailure) as failure:
+                coordinator.forward(runtime, "/api/program", "POST", b"{}", {"idempotency-key": str(uuid4())})
+            self.assertEqual(failure.exception.error.code, "OPERATION_LOG_UNAVAILABLE")
+            forwarded.assert_not_called()
+        self.assertEqual(self.manager.records(), [])
+        self.assertFalse(self.manager.journal_path.exists())
+
+    def test_operation_journal_does_not_copy_response_details_or_request_content(self):
+        self.manager = self.durable_manager()
+        admission, _ = self.admission("/api/program", {"private": "private input text"})
+        self.manager.replied(admission, HttpResult(422,
+            b'{"detail":"Invalid private input text"}', {"content-type": "application/json"}))
+        self.assertIn("private input text", self.record(admission).reason)
+        self.assertNotIn("private input text", self.manager.journal_path.read_text(encoding="utf-8"))
+        self.assertEqual(self.durable_manager().records()[0].status, "failed")
+
+    def test_cold_operation_binding_refuses_other_project_or_same_id_at_other_path(self):
+        self.manager = self.durable_manager()
+        self.admission("/api/program", {})
+        for binding in ({"project_id": "another-project"}, {"project_dir": self.root / "another-copy"}):
+            with self.subTest(binding=binding), self.assertRaises(HubFailure) as failure:
+                self.durable_manager(**binding)
+            self.assertEqual(failure.exception.error.code, "OPERATION_LOG_INVALID")
+
+    def test_cold_start_after_commit_reconciles_from_p036_without_reexecution(self):
+        self.manager = self.durable_manager()
+        _, _, path, payload, admission = self.acceptance()
+        response = self.client.post(path, json=payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.manager.interrupted(admission, "lost committed response")
+        stages_before = self.snapshot()["stages"]
+        self.manager = self.durable_manager()
+        self.assertFalse(self.record(admission).committed)
+        self.assertIsNone(self.record(admission).resultDigest)
+        with patch("archflow_studio_api.application.candidate.execute_candidate", side_effect=AssertionError("cold replay")):
+            self.manager.reconcile(self.snapshot(), worker_alive=False)
+        record = self.record(admission)
+        self.assertEqual(record.status, "completed")
+        self.assertTrue(record.committed)
+        self.assertEqual(record.resultDigest, response.json()["recordDigest"])
+        self.assertEqual(self.snapshot()["stages"], stages_before)
+
     def test_lost_candidate_reply_recovers_exact_retained_result_without_resubmission(self):
         admission, accepted = self.candidate()
         before_runs = bound_project(self.app.state).run_ids()
@@ -151,6 +232,7 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(bound_project(self.app.state).run_ids(), (self.fixture.REFERENCE_RUN_ID,))
 
     def test_truncated_http_response_is_interrupted_and_duplicate_is_not_dispatched(self):
+        self.manager = self.durable_manager()
         received = []
 
         class TruncatedResponse(BaseHTTPRequestHandler):
@@ -176,6 +258,9 @@ class OperationRecoveryTests(unittest.TestCase):
         try:
             with patch.object(manager, "service", return_value=worker):
                 for expected in ("OPERATION_INTERRUPTED", "OPERATION_NEEDS_RECOVERY"):
+                    if expected == "OPERATION_NEEDS_RECOVERY":
+                        self.manager = self.durable_manager()
+                        runtime.operations = self.manager
                     with self.assertRaises(HubFailure) as failure:
                         manager.forward(runtime, "/api/program", "POST", b"{}", {"idempotency-key": operation_id})
                     self.assertEqual(failure.exception.error.code, expected)
