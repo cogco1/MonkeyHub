@@ -6,7 +6,7 @@
  * stage decides nothing.
  */
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
+import { createRef, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
@@ -39,6 +39,7 @@ import type { PushPullTarget } from "../../workspaces/monkeyarch/interactionSess
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
+import { previewDirectModel, specFromDrawnShape } from "./modelDraft";
 import {
   IDLE as SKETCH_IDLE,
   cancelled as cancelledSketch,
@@ -413,10 +414,79 @@ export function Stage({
     setPushPullActive(false);
     reportPushPullError(null);
   }, [reportPushPullError, viewportRef]);
+  const [moveInputs] = useState(() => [createRef<HTMLInputElement>(), createRef<HTMLInputElement>(), createRef<HTMLInputElement>()]);
+  const [movePhase, setMovePhase] = useState<"anchor" | "target" | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const stopMove = useCallback(() => {
+    cancelInteractionFrame(interaction.current, "move");
+    if (interaction.current.move) viewportRef.current?.sketchPreview(null);
+    interaction.current.move = null;
+    setMovePhase(null); setMoveError(null);
+  }, [viewportRef]);
   const closeDirectTool = useCallback(() => {
     stopPushPull();
+    stopMove();
     modelKeysRef.current?.onTool?.("select");
-  }, [stopPushPull]);
+  }, [stopPushPull, stopMove]);
+  const paintMove = useCallback(() => {
+    const current = interaction.current.move;
+    if (!current) return;
+    const translation = current.typed ? current.typed.map(Number) as Vec3 : current.translation;
+    if (!current.typed) moveInputs.forEach((input, i) => {
+      if (input.current) input.current.value = String(Number(translation[i]!.toFixed(4)));
+    });
+    try {
+      if (current.typed?.some(value => !value.trim()) || !translation.every(Number.isFinite)) throw new Error("Enter finite X, Y and Z distances.");
+      viewportRef.current?.sketchPreview(previewDirectModel({ spec: current.spec,
+        parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: current.tool, translation }));
+      setMoveError(null);
+    } catch (error) {
+      viewportRef.current?.sketchPreview(null);
+      setMoveError(error instanceof Error ? error.message : String(error));
+    }
+  }, [moveInputs, viewportRef]);
+  const commitMove = useCallback(() => {
+    const current = interaction.current.move, keys = modelKeysRef.current;
+    if (!current || !keys?.onApply || keys.busy || keys.directTool !== current.tool || keys.pushPullTarget !== current.target) return;
+    if (!current.anchor && current.typed === null) return;
+    const translation = current.typed ? current.typed.map(Number) as Vec3 : current.translation;
+    if (current.typed?.some(value => !value.trim()) || !translation.every(Number.isFinite) || (current.tool === "move" && Math.hypot(...translation) < 1e-9)) return;
+    try {
+      previewDirectModel({ spec: current.spec, parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: current.tool, translation });
+      stopMove();
+      keys.onApply({ kind: current.tool, translation, target: current.target });
+      keys.onTool?.("select");
+    } catch (error) { setMoveError(error instanceof Error ? error.message : String(error)); }
+  }, [stopMove]);
+  useEffect(() => {
+    stopMove();
+    if ((model?.directTool !== "move" && model?.directTool !== "copy") || documentOpen || model.interactionBlocked) return;
+    const target = model.pushPullTarget;
+    if (!target) { setMoveError("Select a drawn solid or face before moving or copying."); return; }
+    const spec = specFromDrawnShape(target.shape);
+    // The selected face supplies a predictable drawing plane; XYZ values can
+    // override it for a precise translation outside that plane.
+    const plane = viewportRef.current?.workPlaneFromSelection() ?? spec.plane!;
+    interaction.current.move = { target, tool: model.directTool, spec, plane, anchor: null, translation: [0, 0, 0], typed: null };
+    interaction.current.pointer = null;
+    moveInputs.forEach(input => { if (input.current) input.current.value = "0"; });
+    setMovePhase("anchor");
+    return stopMove;
+  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, moveInputs, stopMove, viewportRef]);
+  useEffect(() => {
+    if (model?.directTool !== "move" && model?.directTool !== "copy") return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || documentOpen) return;
+      if (event.key === "Escape") { event.preventDefault(); closeDirectTool(); return; }
+      if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest("input, textarea, select, [contenteditable]") ||
+          (target.closest("button, a") && !target.closest('button[data-model-tool="move"], button[data-model-tool="copy"]')))) return;
+      event.preventDefault(); commitMove();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [model?.directTool, documentOpen, closeDirectTool, commitMove]);
   const paintPushPull = useCallback(() => {
     const current = interaction.current.pushPull;
     if (!current) return;
@@ -525,11 +595,12 @@ export function Stage({
     sketchEpoch.current += 1;
     setLineToolsOpen(false);
     stopPushPull();
+    stopMove();
     setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull]);
+  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull, stopMove]);
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
@@ -611,7 +682,7 @@ export function Stage({
   const modelKeysAvailable = model !== undefined;
   // What is *in progress*, which is not the same as what is armed.
   const actionInProgressRef = useRef(false);
-  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive;
+  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive || movePhase !== null;
   actionInProgressRef.current = actionInProgress;
   const inkRef = useRef({
     undo: onUndoGesture, redo: onRedoGesture, canUndo: false, canRedo: false, busy: false,
@@ -860,7 +931,7 @@ export function Stage({
         <ThreeDmViewport
           ref={viewportRef}
           interaction={interaction}
-          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && tool === null && !documentOpen && !sketchBusy}
+          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && movePhase === null && tool === null && !documentOpen && !sketchBusy}
           onInspection={onInspection}
           onStatus={onStatus}
           onRequestFile={onRequestFile}
@@ -869,6 +940,7 @@ export function Stage({
             // A new picture invalidates anchors and face planes. Keep the
             // chosen tool armed so another shape can follow a completed one.
             stopPushPull();
+            stopMove();
             sketchEpoch.current += 1;
             showSketch({ ...SKETCH_IDLE, tool: interaction.current.sketch.tool }); setWorkPlaneName("xy");
             stopMeasuring(); setMeasuring(false);
@@ -906,6 +978,37 @@ export function Stage({
           )}
         />
       </ErrorBoundary>
+      {movePhase !== null && <div className="stage-sketch stage-move" data-phase={movePhase}
+        onPointerDown={(event) => {
+          if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
+        }}
+        onPointerMove={(event) => {
+          const current = interaction.current.move;
+          if (!current || current.typed !== null || event.buttons) return;
+          interaction.current.pointer = { x: event.clientX, y: event.clientY };
+          if (!current.anchor) return;
+          const snap = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
+          const point = snap && snap.kind !== "surface" ? snap.point : viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, current.plane);
+          if (!point) return;
+          current.translation = point.map((value, i) => value - current.anchor![i]!) as Vec3;
+          scheduleInteractionFrame(interaction.current, "move", paintMove);
+        }}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          const current = interaction.current.move;
+          if (!current) return;
+          if (current.typed === null && !current.anchor) {
+            const pointer = interaction.current.pointer ?? { x: event.clientX, y: event.clientY };
+            const snap = viewportRef.current?.snapOnModel(pointer.x, pointer.y);
+            const point = snap && snap.kind !== "surface" ? snap.point : viewportRef.current?.pointOnSketchPlane(pointer.x, pointer.y, current.plane);
+            if (!point) return;
+            current.anchor = [...point]; current.plane = { ...current.plane, origin: [...point] };
+            setMovePhase("target"); return;
+          }
+          // Click coordinates are integer-rounded in browsers. The session
+          // already holds the latest precise pointer result, even before RAF.
+          commitMove();
+        }} />}
       {pushPullActive && <div className="stage-sketch stage-pushpull" data-phase="pushPull"
         onPointerDown={(event) => {
           if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
@@ -1480,8 +1583,18 @@ export function Stage({
             </div>
           )}
           {model?.directTool && model.onApply && <ModelEditPanel key={model.directTool} tool={model.directTool}
-            subject={model.subject} busy={model.busy ?? false} error={pushPullError ?? model.error ?? null}
+            subject={model.subject} busy={model.busy ?? false} error={moveError ?? pushPullError ?? model.error ?? null}
             onApply={model.onApply} onClose={closeDirectTool}
+            move={{ inputs: moveInputs,
+              hint: zh ? "点基点，再沿所选面平面指向目标。X/Y/Z 可覆盖位移；单击或 Enter 完成，Esc 取消。"
+                : "Pick a base point, then a destination on the selected face plane. X/Y/Z override the translation; click or Enter to apply, Esc to cancel.",
+              onChange: (index, value) => {
+                const current = interaction.current.move;
+                if (!current) return;
+                current.typed ??= current.translation.map(String) as [string, string, string];
+                current.typed[index] = value;
+                cancelInteractionFrame(interaction.current, "move"); paintMove();
+              }, onCommit: commitMove }}
             pushPull={{ inputRef: pushPullInput, active: pushPullActive,
               hint: pushPullActive
                 ? (zh ? "移动鼠标推拉；输入精确距离覆盖。单击或 Enter 确认，Esc 取消。" : "Move to push/pull; type an exact distance to override. Click or Enter to apply, Esc to cancel.")

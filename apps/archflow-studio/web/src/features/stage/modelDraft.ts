@@ -92,7 +92,7 @@ function specFromSketch(action: FinishedSketch): SketchPreview {
 }
 
 /** Mirrors edit_drawn_element arithmetic in CAD coordinates; it is not a geometry validation result. */
-function transformSpec(object: DraftObject, action: DirectModelAction): SketchPreview {
+export function previewDirectModel(object: Pick<DraftObject, "spec" | "parameterBoundFields">, action: DirectModelAction): SketchPreview {
   const before = object.spec!;
   if (before.closed === false) throw new Error("Open model curves do not support direct face/prism edits.");
   const plane = planeOf(before), bound = object.parameterBoundFields ?? [];
@@ -177,7 +177,7 @@ export function applyDraftCommand(history: ModelDraftHistory, command: DraftComm
     if (stored.kind === "delete") objects.set(stored.elementId, { ...object, spec: null, deleted: true });
     else {
       if (!object.spec) throw new Error("This model object has no local face/prism projection for direct edits.");
-      const spec = transformSpec(object, stored.action);
+      const spec = previewDirectModel(object, stored.action);
       if (stored.action.kind === "copy") {
         if (!stored.copyElementId || objects.has(stored.copyElementId)) throw new Error("Copy needs an unused stable element id.");
         objects.set(stored.copyElementId, { ...object, elementId: stored.copyElementId, spec, created: true, originalObjectNames: [] });

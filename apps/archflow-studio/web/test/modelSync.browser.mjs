@@ -24,6 +24,7 @@ const authoredContinue = process.env.MONKEYARCH_AUTHORED_ONLY === "continue";
 const authoredUndo = process.env.MONKEYARCH_AUTHORED_ONLY === "undo";
 const authoredInput = authoredContinue || authoredUndo;
 const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredInput;
+const moveCopyOnly = process.env.MONKEYARCH_MOVE_COPY === "1";
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -161,8 +162,9 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
     let marker, insert;
     if (module.endsWith("/features/stage/Stage.tsx")) {
       marker = "  const interaction = useRef(createInteractionSession());";
-      insert = `(window as any).__gesture = () => ({ phase: interaction.current.sketch.phase,
-        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull });`;
+      insert = `useEffect(() => { (window as any).__stageCommits = ((window as any).__stageCommits ?? 0) + 1; });
+        (window as any).__gesture = () => ({ phase: interaction.current.sketch.phase,
+        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull, move: interaction.current.move });`;
     } else if (module.endsWith("/app/App.tsx")) {
       marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
       insert = `(window as any).__app = () => ({ loaded: loadedArtifact?.runId, base: projection?.referenceRun.runId,
@@ -183,6 +185,10 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
       source = source.replace(readyMarker, '__parseTiming.end = performance.timeOrigin + performance.now();\n' + readyMarker);
       marker = "  const pickAt = useCallback(";
       insert = `(window as any).__view = {
+        previewIdentity: () => {
+          const object=runtimeRef.current?.sketch;
+          return object ? [object,...object.children.flatMap((child:any)=>[child,child.geometry,child.material,child.geometry.getAttribute('position')])] : [];
+        },
         project: (point: number[]) => {
           const r = runtimeRef.current!, rect = r.renderer.domElement.getBoundingClientRect();
           const p = new Vector3(...point as [number,number,number]).project(r.camera);
@@ -385,6 +391,111 @@ if (authoredOnly) {
   console.log(authoredUndo ? 'PASS authored-only undo to empty: first Sync saves its two captured drawings once; current index 0 / zero drafts stay empty and unsynced; no model download or synthetic-run request' :
     authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
     'PASS authored-only: zero artifacts/runs → two local drawings with selection/preselection/delete/undo and zero writes → one explicit candidate, real OCCT export and visible saved model');
+} else if(moveCopyOnly) {
+  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Move/Copy seed model',120000);
+  const originalRuns=await runIds(),writeStart=sent.length;
+  const block=await rectangle(2,1.25);
+  const boxOf=(state,id)=>state.view.drafts.find(object=>object.id===id);
+  const translated=(box,delta)=>({min:box.min.map((v,i)=>v+delta[i]),max:box.max.map((v,i)=>v+delta[i])});
+  const sameBox=(actual,expected,label,tolerance=1e-4)=>{
+    assert.ok(actual,`${label}: object missing`);
+    for(const bound of ['min','max'])for(let i=0;i<3;i++)assert.ok(Math.abs(actual[bound][i]-expected[bound][i])<tolerance,
+      `${label}: ${bound}[${i}] ${actual[bound][i]} != ${expected[bound][i]}`);
+  };
+  const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  async function arm(id,tool,keyboard=false,top=true) {
+    await deselect();const face=await pick(id,top),before=await snap();
+    if(keyboard)await page.keyboard.press('m');else await button(tool==='copy'?'Copy':'Move').click();
+    await page.locator('.stage-move[data-phase="anchor"]').waitFor({state:'visible'});
+    await page.mouse.move(face.x+20,face.y+15);await frames();
+    let state=await snap();assert.equal(state.index,before.index);sameBox(boxOf(state,id),boxOf(before,id),'arming cannot move the object');
+    await page.mouse.click(face.x,face.y);await page.locator('.stage-move[data-phase="target"]').waitFor({state:'visible'});await frames();
+    state=await snap();assert.ok(state.gesture.move?.anchor,'first click must capture a base point');
+    assert.equal(state.index,before.index);sameBox(boxOf(state,id),boxOf(before,id),'selecting a base point cannot jump the object');
+    if(state.view.preview)sameBox(state.view.preview,boxOf(before,id),'zero translation preview');
+    return {before,anchor:state.gesture.move.anchor,box:boxOf(before,id)};
+  }
+  async function movePointer(anchor,delta) {
+    const point=await page.evaluate(point=>window.__view.project(point),anchor.map((v,i)=>v+delta[i]));
+    assert.equal(await page.evaluate(point=>document.elementFromPoint(point.x,point.y)?.classList.contains('stage-move'),point),true,
+      'pointer must meet the real Move/Copy overlay');
+    await page.mouse.move(point.x,point.y);await frames();return point;
+  }
+  console.log('M1 · select a base point, then preview and commit the latest same-frame Move without a request');
+  const first=await arm(block,'move',true),delta=[3,1.5,0];
+  await movePointer(first.anchor,delta);let state=await snap();
+  sameBox(state.view.preview,translated(first.box,delta),'pointer Move preview');sameBox(boxOf(state,block),first.box,'Move preview retains the source');
+  assert.equal(state.index,first.before.index);assert.equal(sent.length,writeStart);
+  const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});
+  await page.screenshot({path:path.join(qa,'move-copy-preview.png')});
+  const samples=await page.evaluate(anchor=>[.1,.2,.3,.4].map(d=>window.__view.project(anchor.map((v,i)=>v+[3+d,1.5,0][i]))),first.anchor);
+  const reuse=await page.evaluate(async points=>{
+    const identity=window.__view.previewIdentity(),commits=window.__stageCommits;
+    const overlay=document.querySelector('.stage-move');
+    for(const point of points){
+      for(let i=0;i<3;i++)overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:point.x,clientY:point.y,pointerId:1}));
+      await new Promise(requestAnimationFrame);
+    }
+    return {commits:window.__stageCommits-commits,reused:identity.every((item,i)=>item===window.__view.previewIdentity()[i])};
+  },samples);
+  assert.deepEqual(reuse,{commits:0,reused:true});
+  const finalPoint=await page.evaluate(point=>window.__view.project(point),first.anchor.map((v,i)=>v+delta[i]));
+  const clickCoordinates=await page.evaluate(point=>{
+    const overlay=document.querySelector('.stage-move');
+    for(let i=0;i<8;i++)overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:point.x+i,clientY:point.y,pointerId:1}));
+    const move=new PointerEvent('pointermove',{bubbles:true,clientX:point.x,clientY:point.y,pointerId:1});overlay.dispatchEvent(move);
+    const click=new PointerEvent('click',{bubbles:true,clientX:point.x,clientY:point.y,pointerId:1});
+    const translation=[...window.__gesture().move.translation];overlay.dispatchEvent(click);
+    return {pointer:[move.clientX,move.clientY],click:[click.clientX,click.clientY],translation};
+  },finalPoint);
+  console.log('  final pointer/click coordinates',JSON.stringify(clickCoordinates));
+  state=await wait(s=>s.index===first.before.index+1&&!s.gesture.move,'same-frame Move did not finish');
+  sameBox(boxOf(state,block),translated(first.box,delta),'committed pointer Move');assert.equal(state.view.preview,null);
+  await page.keyboard.press('Enter');assert.equal((await snap()).index,state.index,'a second Enter repeated the completed Move');
+  await page.keyboard.press('Control+z');await wait(s=>s.index===first.before.index,'Move undo');sameBox(boxOf(await snap(),block),first.box,'undone Move');
+  await page.keyboard.press('Control+y');await wait(s=>s.index===first.before.index+1,'Move redo');
+  sameBox(boxOf(await snap(),block),translated(first.box,delta),'redone Move');
+  console.log('M2 · Copy uses exact XYZ/Enter, preserves its source and keeps its element id through Undo/Redo');
+  const copy=await arm(block,'copy'),copyDelta=[4.5,-1.25,2],copyForm=page.getByRole('form',{name:'Copy',exact:true});
+  const fields=copyForm.locator('input');assert.equal(await fields.count(),3);
+  for(let i=0;i<3;i++)await fields.nth(i).fill(String(copyDelta[i]));
+  await frames();sameBox((await snap()).view.preview,translated(copy.box,copyDelta),'typed XYZ Copy preview');
+  await movePointer(copy.anchor,[6,3,0]);sameBox((await snap()).view.preview,translated(copy.box,copyDelta),'typed XYZ overrides later pointer motion');
+  await fields.last().press('Enter');state=await wait(s=>s.view.drafts.length===2&&!s.gesture.move,'Copy Enter did not finish');
+  const copied=state.view.drafts.find(object=>object.id!==block);assert.ok(copied);assert.notEqual(copied.id,block);
+  sameBox(boxOf(state,block),copy.box,'Copy source');sameBox(copied,translated(copy.box,copyDelta),'Copy result');
+  const copyIndex=state.index;await page.keyboard.press('Enter');assert.equal((await snap()).index,copyIndex);
+  await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.length===1,'Copy undo');
+  await page.keyboard.press('Control+y');state=await wait(s=>s.view.drafts.length===2,'Copy redo');
+  assert.equal(state.view.drafts.find(object=>object.id!==block).id,copied.id,'redo must restore the same local copy identity');
+  console.log('M3 · Esc discards a pointer preview and leaves local history and both objects unchanged');
+  // The raised copy occludes the original top; use its genuinely visible +X face.
+  const cancelled=await arm(block,'move',false,false);
+  assert.deepEqual((await snap()).gesture.move.plane.normal,[1,0,0]);
+  await movePointer(cancelled.anchor,[0,-1,1]);await page.keyboard.press('Escape');
+  state=await wait(s=>!s.gesture.move,'Esc did not cancel Move');assert.equal(state.index,cancelled.before.index);assert.equal(state.view.preview,null);
+  sameBox(boxOf(state,block),cancelled.box,'Esc source');sameBox(boxOf(state,copied.id),copied,'Esc copy');
+  assert.equal(sent.length,writeStart,'local Move/Copy/Undo/Redo/Esc wrote to the API');assert.deepEqual(await runIds(),originalRuns);
+  console.log('M4 · Sync freezes both objects; a later pointer Move survives while one real candidate is produced');
+  const frozen=await snap();let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
+  await page.route('**/api/proposals/sketch',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
+  await button('Sync').click();await within(held,15000,'Move/Copy Sync proposal was not held');
+  const heldWrites=sent.length;assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
+  const late=await arm(block,'move',false,false),lateDelta=[0,-2,1];const latePoint=await movePointer(late.anchor,lateDelta);await page.mouse.click(latePoint.x,latePoint.y);
+  state=await wait(s=>s.index===late.before.index+1&&!s.gesture.move,'Move during Sync did not finish');
+  sameBox(boxOf(state,block),translated(late.box,lateDelta),'local Move during Sync');assert.equal(sent.length,heldWrites);assert.equal(candidateCalls().length,0);
+  release();await wait(s=>!s.syncBusy&&s.candidates.length===1,'Move/Copy Sync did not finish',120000);
+  state=await snap();assert.equal(state.loaded,seedRun);assert.equal(state.base,seedRun);assert.equal(state.dirty,true);
+  sameBox(boxOf(state,block),translated(late.box,lateDelta),'late Move retained after Sync');assert.equal(candidateCalls().length,1);
+  const exportedModel=await exported(state.candidates[0]);
+  sameBox(exportedModel.get('obj-'+block),boxOf(frozen,block),'real OCCT saved source',.0011);
+  sameBox(exportedModel.get('obj-'+copied.id),boxOf(frozen,copied.id),'real OCCT saved copy',.0011);
+  const transforms=sent.slice(writeStart).filter(row=>row.path==='/api/proposals/transform');
+  assert.deepEqual(transforms.map(row=>row.body.kind),['move','copy']);
+  assert.equal(transforms[1].body.copyElementId,copied.id);assert.deepEqual(transforms[1].body.translation,[4.5,2,-1.25]);
+  for(const transform of transforms)assert.equal(transform.body.sourceRunId,seedRun);
+  console.log('PASS pointer Move/Copy: base-point capture without jump, reused preview/zero pointer commits, latest pointer Click, exact XYZ/Enter, stable copy identity, Esc/Undo/Redo, zero local writes and one frozen OCCT candidate');
 } else {
 await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
 await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'initial model',120000);
