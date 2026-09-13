@@ -9,7 +9,9 @@ import json
 from io import BytesIO
 from pathlib import Path
 import tempfile
+from threading import Event
 import unittest
+from unittest import mock
 from urllib.parse import quote
 from zipfile import ZipFile
 
@@ -17,8 +19,10 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 from archflow.adapters import occt_backend
+from archflow.project import repository as project_repository
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.application import boards
 from archflow_studio_api.application.boards import BOARD_RUN_ID, MAX_BOARD_BYTES
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -237,6 +241,55 @@ class BoardTests(unittest.TestCase):
         self.assertCountEqual([response.status_code for response in responses], [200, 409])
         winner = next(response.json() for response in responses if response.status_code == 200)
         self.assertEqual(self.new_client().get("/api/board").json(), winner)
+
+    def test_read_waits_for_first_save_while_run_manifest_is_not_yet_installed(self) -> None:
+        manifest = self.repository.layout.run(BOARD_RUN_ID).manifest
+        manifest_pending, finish_write = Event(), Event()
+        read_started, read_finished = Event(), Event()
+        link = project_repository.os.link
+        read_board = boards.read_board
+
+        def pause_manifest_install(source, destination, *args, **kwargs):
+            if Path(destination) == manifest:
+                # Pause the real P036 write after mkdir and temp-file fsync,
+                # but before run.json becomes visible to load_run.
+                manifest_pending.set()
+                if not finish_write.wait(15):
+                    raise TimeoutError("The test did not release the first Board save")
+            return link(source, destination, *args, **kwargs)
+
+        def observe_read(binding):
+            read_started.set()
+            try:
+                return read_board(binding)
+            finally:
+                read_finished.set()
+
+        writer_client, reader_client = self.new_client(), self.new_client()
+        scene = [{"id": "note", "type": "text", "text": "首个画板保存"}]
+        with mock.patch.object(project_repository.os, "link", side_effect=pause_manifest_install), \
+                mock.patch.object(boards, "read_board", side_effect=observe_read):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                try:
+                    writer = executor.submit(writer_client.put, "/api/board", json=body(scene))
+                    self.assertTrue(manifest_pending.wait(5), "First save did not reach manifest installation")
+                    self.assertTrue(manifest.parent.is_dir())
+                    self.assertFalse(manifest.exists())
+                    reader = executor.submit(reader_client.get, "/api/board")
+                    self.assertTrue(read_started.wait(5), "GET did not enter read_board")
+                    if read_finished.wait(0.5):
+                        premature = reader.result(timeout=5)
+                        self.fail(f"GET returned before the first save completed: {premature.status_code} {premature.text}")
+                finally:
+                    # Release the real write before the executor joins either
+                    # request, including assertion failures in the paused phase.
+                    finish_write.set()
+                saved, reopened = writer.result(timeout=5), reader.result(timeout=5)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(saved.json()["elements"], scene)
+        self.assertIsNotNone(saved.json()["revisionSha256"])
+        self.assertEqual(reopened.json(), saved.json())
 
     def test_unknown_document_wrong_page_revision_and_claimed_model_source_do_not_write(self) -> None:
         document = self.upload(two_page_pdf())

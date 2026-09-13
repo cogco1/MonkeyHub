@@ -3805,13 +3805,13 @@
       "inputs": [
         "ProjectBinding",
         "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
-        "one selected registered drawing or frame, selected board marks and an explicit design comment"
+        "one selected registered drawing or frame, selected board marks and text, and an explicitly reviewed design comment"
       ],
       "outputs": [
         "BoardDto",
         "retained single-operator board scene revision",
         "transient merged or per-page PDF, PNG, JPEG, or ZIP board export bytes",
-        "page-normalized annotations and a one-time BoardDesignRequest for the existing Studio conversation"
+        "page-normalized geometric annotations, selected text in deterministic Board reading order, and a one-time BoardDesignRequest for the existing Studio conversation"
       ],
       "public_api": [
         "GET /api/board",
@@ -3842,6 +3842,7 @@
         "image references do not infer a model or Stage; accepted design state and project HEAD remain unchanged",
         "seen-document identities keep an intentionally removed drawing from being imported again during automatic discovery",
         "feedback uses exactly one registered drawing page and its declared model source; board position, rotation and scale never change source identity",
+        "selected text includes native frame children and bound labels once per object, ordered by Board y, x and id; original text prefills the editable utterance without OCR, unselected nearby text or geometric text DTOs",
         "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
         "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version"
       ],

@@ -184,14 +184,48 @@ test("cropped images, unsupported selected content and unsupported line styles h
     element("line", "rough", { roughness: 1 }), element("line", "dashed", { strokeStyle: "dashed" }),
     element("ellipse", "filled", { backgroundColor: "#ffffff" }),
   ]) fails("BOARD_FEEDBACK_UNSUPPORTED", () => convert([image, mark]));
-  fails("BOARD_FEEDBACK_TEXT_UNSUPPORTED", () => convert([image, element("text", "text", { text: "Move this wall" })]));
 });
 
-test("a selected container cannot silently lose its bound text", () => {
+test("native frame, shape and explicit label selection includes each bound text object once", () => {
   const image = element("image", "sheet");
-  const box = element("rectangle", "box", { x: 100, y: 100, boundElements: [{ id: "label", type: "text" }] });
-  const label = element("text", "label", { x: 110, y: 110, text: "Move", containerId: "box" });
-  fails("BOARD_FEEDBACK_TEXT_UNSUPPORTED", () => geometry.createBoardFeedback([image, box, label], { sheet: true, box: true }, [document()]));
+  const box = element("rectangle", "box", { x: 100, y: 100, frameId: "frame", boundElements: [{ id: "label", type: "text" }] });
+  const label = element("text", "label", { x: 110, y: 110, text: "保持\n净宽", originalText: "保持净宽", containerId: "box" });
+  const arrow = element("arrow", "arrow", { x: 300, y: 300, frameId: "frame", boundElements: [{ id: "arrow-label", type: "text" }] });
+  const arrowLabel = element("text", "arrow-label", { x: 305, y: 305, text: "入口后退", containerId: "arrow" });
+  const unrelated = element("text", "unrelated", { x: 111, y: 111, text: "另一张图的待办" });
+  const frame = element("frame", "frame");
+  const elements = [{ ...image, frameId: "frame" }, box, arrow, label, arrowLabel, unrelated, frame];
+  const before = structuredClone(elements);
+  for (const selectedIds of [{ sheet: true, box: true, arrow: true }, { frame: true, box: true, label: true, arrow: true }]) {
+    const feedback = geometry.createBoardFeedback(elements, selectedIds, [document()]);
+    assert.equal(feedback.selectedText, "保持净宽\n\n入口后退");
+    assert.equal(feedback.annotationGroups.length, 2);
+    assert.deepEqual(feedback.annotations, convert([image, box, arrow, label, arrowLabel]).annotations);
+  }
+  assert.deepEqual(elements, before, "Reading feedback must not modify any Board objects");
+});
+
+test("selected text uses stable reading order, original line breaks and no nearby or deleted text", () => {
+  const image = element("image", "sheet"), arrow = element("arrow", "arrow", { x: 100, y: 100 });
+  const notes = [
+    element("text", "last", { x: 1500, y: 900, text: " 保留雨棚 " }),
+    element("text", "b", { x: 100, y: 300, text: "第二条同位文字" }),
+    element("text", "a", { x: 100, y: 300, text: "第一条同位文字" }),
+    element("text", "top-right", { x: 200, y: 200, text: "保持\n通道", originalText: "保持通道\n保留原有台阶" }),
+    element("text", "top-left", { x: 100, y: 200, text: "入口后退600mm" }),
+  ];
+  const unselected = element("text", "unselected", { x: 99, y: 200, text: "不要带入" });
+  const deleted = element("text", "deleted", { text: "已删除文字", isDeleted: true });
+  const blank = element("text", "blank", { text: " \n " });
+  const expected = "入口后退600mm\n\n保持通道\n保留原有台阶\n\n第一条同位文字\n\n第二条同位文字\n\n保留雨棚";
+  const elements = [image, arrow, ...notes, unselected, deleted, blank];
+  const ids = selected([image, arrow, ...notes, blank]);
+  const feedback = geometry.createBoardFeedback(elements, ids, [document()]);
+  assert.equal(feedback.selectedText, expected);
+  assert.deepEqual(feedback.annotations, convert([image, arrow]).annotations, "Text supplies utterance, never geometric ink");
+  assert.equal(geometry.createBoardFeedback([...elements].reverse(), Object.fromEntries(Object.entries(ids).reverse()), [document()]).selectedText, expected);
+  assert.equal(convert([image, blank]).selectedText, "");
+  fails("BOARD_FEEDBACK_SOURCE_REQUIRED", () => convert(notes));
 });
 
 test("annotation groups are stable and escape image/element id separators", () => {
