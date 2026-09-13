@@ -510,20 +510,6 @@
           "depends_on": []
         },
         {
-          "id": "meeting",
-          "issue": "User-requested research-voice revision of the team meeting deck",
-          "status": "review",
-          "branch": "codex/meeting-research-voice",
-          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-team-meeting-deck",
-          "base_ref": "bcd93cd7ce32f63232ec04beab6e58c8037321e8",
-          "contributor": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "reviewer": "Codex coordinator",
-          "handoff": "Revise slide copy and speaker notes in the established research voice, preserving the eight-slide structure and editable diagrams/table. Documentation only.",
-          "modules": ["hub.shell", "adapters.cad_execution"],
-          "write_scope": ["docs/TEAM_MEETING_DECK.pptx", "governance/work_registry.json"],
-          "depends_on": []
-        },
-        {
           "id": "desktop",
           "issue": "#21 Phase A Windows desktop host",
           "status": "active",
