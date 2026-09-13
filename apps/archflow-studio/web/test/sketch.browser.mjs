@@ -6,12 +6,29 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
+import rhino3dm from "rhino3dm";
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
 const cacheDir = await mkdtemp(path.join(tmpdir(), "studio-sketch-axes-"));
 const http = createHttpServer();
 const errors = [];
 let browser, vite, page;
+// A repeatable building-mass array exercises the real model loader, edge snap
+// scan and renderer: 400 separate meshes, 4,800 triangles, no project writes.
+const rhino = await rhino3dm();
+const model = new rhino.File3dm();
+for (let row = 0; row < 20; row++) for (let column = 0; column < 20; column++) {
+  const mesh = new rhino.Mesh();
+  const x = column * 3, y = row * 3, height = 2 + (row + column) % 5;
+  for (const point of [[x,y,0], [x+2,y,0], [x+2,y+2,0], [x,y+2,0],
+    [x,y,height], [x+2,y,height], [x+2,y+2,height], [x,y+2,height]]) mesh.vertices().add(...point);
+  for (const face of [[0,3,2,1], [4,5,6,7], [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7]]) mesh.faces().addQuadFace(...face);
+  mesh.normals().computeNormals();
+  model.objects().add(mesh, null);
+  mesh.delete();
+}
+const modelBytes = Buffer.from(model.toByteArray());
+model.delete();
 const html = `<!doctype html><html><head><style>
 #root, .stage { height: 100vh; }
 #root .viewport-state { display: none; }
@@ -23,11 +40,23 @@ import { Stage } from "/src/features/stage/Stage.tsx";
 import { UserPreferencesProvider } from "/src/features/settings/preferences.tsx";
 import "/src/styles.css";
 const add = Scene.prototype.add;
+window.previewGroups = [];
+window.previewUpdates = 0;
+window.previewRenders = 0;
+window.stageCommits = 0;
+window.previewTimes = [];
+window.pointerTimes = [];
 Scene.prototype.add = function (...objects) {
   for (const object of objects) {
     if (object.name !== "archflow-sketch-preview") continue;
-    const bounds = new Box3().setFromObject(object);
-    window.previewBounds = { min: bounds.min.toArray(), max: bounds.max.toArray() };
+    window.previewGroup = object;
+    window.previewGroups.push(object);
+    object.disposals = 0;
+    for (const child of object.children) {
+      child.geometry.addEventListener("dispose", () => object.disposals++);
+      child.material.addEventListener("dispose", () => object.disposals++);
+    }
+    this.onBeforeRender = () => { window.previewRenders++; };
   }
   return add.apply(this, objects);
 };
@@ -35,22 +64,38 @@ const viewportRef = window.viewport = createRef();
 window.submitted = [];
 window.toolChanges = [];
 const noop = () => {};
-createRoot(document.getElementById("root")).render(
-  React.createElement(UserPreferencesProvider, null, React.createElement(Stage, {
+window.testRoot = createRoot(document.getElementById("root"));
+window.testRoot.render(
+  React.createElement(UserPreferencesProvider, null, React.createElement(React.Profiler,
+    { id: "stage", onRender: () => window.stageCommits++ }, React.createElement(Stage, {
     viewportRef, embedded: true, status: "ready", message: "", picked: null,
     versions: [], workingCopies: [], loadedShas: [], loadingSha: null, designHistory: null,
     documentView: { open: false, mounted: false }, displayMode: "model", tool: null,
     gestures: [], home: null, hasModel: true, editingBaseRunId: null, loadedRunId: null,
     modelAnnotations: null, annotationsReady: false, documentModelSources: [],
     editingModelSource: null, viewedModelSource: null, artifactError: null, baseError: null,
-    blend: null, captureState: "idle", onTool: noop, onInspection: noop, onStatus: noop,
+    blend: null, captureState: "idle", onTool: noop, onInspection: (value) => { window.inspection = value; }, onStatus: noop,
     onRequestFile: noop, onOpenFile: noop, onSource: noop, onPick: noop,
     onSketch: async (action) => { window.submitted.push(action); },
     model: { onDelete: noop, canDelete: true, deleting: false, subject: "Fixture", onUndo: noop, canUndo: true,
       onRedo: noop, canRedo: true, onClearSelection: noop, hasSelection: true,
       onTool: (tool) => { window.toolChanges.push(tool); } },
-  })),
+  }))),
 );
+window.readPreviewBounds = () => {
+  if (!window.previewGroup?.parent) return;
+  const bounds = new Box3().setFromObject(window.previewGroup);
+  window.previewBounds = { min: bounds.min.toArray(), max: bounds.max.toArray() };
+};
+window.previewIdentity = () => [window.previewGroup, ...window.previewGroup.children.flatMap(
+  (child) => [child, child.geometry, child.material, child.geometry.attributes.position, child.geometry.attributes.normal],
+)];
+window.moveBurst = (points) => {
+  const overlay = document.querySelector(".stage-sketch");
+  for (const [clientX, clientY] of points) overlay.dispatchEvent(new PointerEvent("pointermove",
+    { bubbles: true, clientX, clientY, pointerId: 1 }));
+};
+document.addEventListener("pointermove", () => { window.pointerStart = performance.now(); }, true);
 window.projectPoint = (point) => {
   const state = viewportRef.current.camera();
   const bounds = document.querySelector("canvas").getBoundingClientRect();
@@ -74,6 +119,8 @@ try {
     if (request.url === "/sketch-test") {
       response.setHeader("Content-Type", "text/html");
       response.end(await vite.transformIndexHtml(request.url, html));
+    } else if (request.url === "/fixture.3dm") {
+      response.end(modelBytes);
     } else if (request.url.startsWith("/api/")) {
       errors.push(`Unexpected API call: ${request.url}`);
       response.writeHead(500).end();
@@ -95,7 +142,16 @@ try {
     const preview = window.viewport.current.sketchPreview;
     window.viewport.current.sketchPreview = (spec) => {
       window.previewSpec = spec;
-      return preview(spec);
+      window.previewUpdates++;
+      const start = performance.now();
+      const result = preview(spec);
+      window.previewTimes.push(performance.now() - start);
+      if (window.pointerStart !== undefined) {
+        window.pointerTimes.push(performance.now() - window.pointerStart);
+        delete window.pointerStart;
+      }
+      window.readPreviewBounds();
+      return result;
     };
   });
   const planePoint = await page.evaluate(() => {
@@ -120,7 +176,40 @@ try {
   assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isDisabled(), true);
   await page.mouse.move(...corner);
   await page.waitForFunction(() => window.previewBounds !== null);
-  await page.mouse.click(...corner);
+  const burstFrames = async (point, frames = 20) => page.evaluate(async ({ point, frames }) => {
+    // Let the current snap label settle before measuring React commits.
+    await new Promise(requestAnimationFrame);
+    const identity = window.previewIdentity();
+    const before = { updates: window.previewUpdates, renders: window.previewRenders,
+      commits: window.stageCommits, groups: window.previewGroups.length };
+    for (let frame = 0; frame < frames; frame++) {
+      window.moveBurst(Array.from({ length: 50 }, (_, index) =>
+        [point[0] + index / 500, point[1] + index / 500]));
+      await new Promise(requestAnimationFrame);
+    }
+    return { updates: window.previewUpdates - before.updates, renders: window.previewRenders - before.renders,
+      commits: window.stageCommits - before.commits, groups: window.previewGroups.length - before.groups,
+      reused: identity.every((item, index) => item === window.previewIdentity()[index]),
+      disposals: window.previewGroup.disposals };
+  }, { point, frames });
+  assert.deepEqual(await burstFrames(corner), { updates: 20, renders: 20, commits: 0, groups: 0, reused: true, disposals: 0 });
+  const themeChange = await page.evaluate(async () => {
+    const identity = window.previewIdentity();
+    document.documentElement.dataset.theme = "dark";
+    await new Promise(requestAnimationFrame);
+    const dark = window.previewGroup.children.map((child) => child.material.color.getHexString());
+    document.documentElement.dataset.theme = "light";
+    await new Promise(requestAnimationFrame);
+    return { changed: window.previewGroup.children.every((child, index) => child.material.color.getHexString() !== dark[index]),
+      reused: identity.every((item, index) => item === window.previewIdentity()[index]) };
+  });
+  assert.deepEqual(themeChange, { changed: true, reused: true });
+  await page.evaluate(() => { window.profileIdentity = window.previewIdentity(); });
+  // Settle before the scheduled frame: the click must use the latest session.
+  await page.evaluate(([clientX, clientY]) => {
+    window.moveBurst([[clientX, clientY]]);
+    document.querySelector(".stage-sketch").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX, clientY }));
+  }, corner);
   await page.waitForFunction(() => document.querySelector(".stage-sketch")?.dataset.phase === "height");
   // The pointer has not moved, so the height must still read nothing: the
   // plane the height is taken on stands through the corner just clicked, and
@@ -134,9 +223,17 @@ try {
   const top = await page.evaluate(() => window.projectPoint([3, 2, 2.4]));
   await page.mouse.move(...top);
   await page.waitForFunction(() => window.previewBounds?.max[2] > 0.1);
+  assert.deepEqual(await burstFrames(top), { updates: 20, renders: 20, commits: 0, groups: 0, reused: true, disposals: 0 });
+  assert.equal(await page.evaluate(() => window.profileIdentity.every((item, index) => item === window.previewIdentity()[index])), true,
+    "height uses the profile's objects, geometry, materials and attributes");
+  await page.mouse.move(...top);
   if (process.env.SKETCH_SCREENSHOT) await page.screenshot({ path: process.env.SKETCH_SCREENSHOT });
-  await page.mouse.click(...top);
+  await page.evaluate(([clientX, clientY]) => {
+    window.moveBurst([[clientX, clientY]]);
+    document.querySelector(".stage-sketch").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX, clientY }));
+  }, top);
   await page.waitForFunction(() => window.submitted.length === 1);
+  assert.equal(await page.evaluate(() => window.previewGroup.disposals), 6, "completion disposes three geometries/materials once");
   assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isDisabled(), false);
   assert.equal(await page.getByRole("button", { name: "Redo model", exact: true }).isDisabled(), false);
   const [action] = await page.evaluate(() => window.submitted);
@@ -252,8 +349,158 @@ try {
   }
   const cameraAfter = await page.evaluate(() => window.viewport.current.camera());
   assert.notDeepEqual(cameraAfter.position, cameraBefore.position, "the camera really moved while drawing");
+
+  // Cancel with a frame still queued: no late preview and no submission.
+  const cancel = await page.evaluate(async () => {
+    window.moveBurst([[600, 450]]);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    const calls = window.previewUpdates;
+    await new Promise(requestAnimationFrame);
+    return { lateCalls: window.previewUpdates - calls, parent: !!window.previewGroup.parent,
+      disposals: window.previewGroup.disposals, submissions: window.submitted.length };
+  });
+  assert.deepEqual(cancel, { lateCalls: 0, parent: false, disposals: 6, submissions: 5 });
+
+  await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
+  const startPoint = await page.evaluate(() => window.projectPoint([0, 0, 0]));
+  await page.mouse.click(...startPoint);
+  const negativeCorner = await page.evaluate(() => window.projectPoint([-3, -2, 0]));
+  await page.mouse.move(...negativeCorner);
+  // A typed input rerender must not overwrite the latest ref with an old UI
+  // profile; a negative pointer direction remains negative after exact sizing.
+  await sizeInput.fill("4,2");
+  await sizeInput.press("Enter");
+  await sizeInput.fill("-2");
+  await sizeInput.press("Enter");
+  await page.waitForFunction(() => window.submitted.length === 6);
+  const negative = await page.evaluate(() => window.submitted[5]);
+  [-4, -2].forEach((value, axis) => assert.ok(Math.abs(negative.profile[2][axis] - value) < 1e-6));
+  assert.equal(negative.height, -2);
+
+  // Axis controls read the moving session too. A UI-only change cannot restore
+  // an old cursor; both arrow and Shift constraints remain in plane coordinates.
+  await page.mouse.click(...startPoint);
+  await page.mouse.move(...negativeCorner);
+  await page.locator(".sketch-entry input").evaluate((input) => input.blur());
+  await page.keyboard.press("ArrowRight");
+  await page.mouse.move(negativeCorner[0] + 5, negativeCorner[1] + 5);
+  await page.waitForFunction(() => Math.abs(window.previewSpec?.profile[2]?.[1]) < 1e-6);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.down("Shift");
+  await page.mouse.move(...negativeCorner);
+  await page.waitForFunction(() => {
+    const point = window.previewSpec?.profile[2];
+    return point && (Math.abs(point[0]) < 1e-6 || Math.abs(point[1]) < 1e-6);
+  });
+  await page.keyboard.up("Shift");
+  // Tool and plane changes also cancel the pending frame before clearing.
+  for (const change of ["tool", "plane"]) {
+    await page.mouse.move(...negativeCorner);
+    const result = await page.evaluate(async (change) => {
+      window.moveBurst([[650, 400]]);
+      if (change === "tool") [...document.querySelectorAll("button")].find((button) => button.textContent === "Circle").click();
+      else {
+        const select = document.querySelector('select[aria-label="Drawing plane"]');
+        select.value = "yz";
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const updates = window.previewUpdates;
+      await new Promise(requestAnimationFrame);
+      return { late: window.previewUpdates - updates, parent: !!window.previewGroup.parent };
+    }, change);
+    assert.deepEqual(result, { late: 0, parent: false });
+    if (change === "tool") await page.mouse.click(...startPoint);
+  }
+  assert.equal(await page.evaluate(() => window.submitted.length), 6);
+
+  // Capacity changes are allowed for growing topology, never ordinary motion.
+  const topology = await page.evaluate(() => {
+    const viewport = window.viewport.current;
+    const circle = (n) => Array.from({ length: n }, (_, index) =>
+      [2 * Math.cos(index / n * 2 * Math.PI), 2 * Math.sin(index / n * 2 * Math.PI)]);
+    viewport.sketchPreview({ profile: circle(32), base: 1, height: 2 });
+    const group = window.previewGroup;
+    const objects = group.children.map((child) => [child, child.geometry, child.material]);
+    viewport.sketchPreview({ profile: [], base: 1, height: 0 });
+    const hiddenWithoutDisposal = !group.visible && group.disposals === 0;
+    viewport.sketchPreview({ profile: circle(40), base: 1, height: -2 });
+    const identity = window.previewIdentity();
+    const afterGrowth = group.disposals;
+    viewport.sketchPreview({ profile: circle(3), base: 1, height: 0 });
+    const result = { hiddenWithoutDisposal, sameObjects: objects.every((parts, index) =>
+      parts[0] === group.children[index] && parts[1] === group.children[index].geometry && parts[2] === group.children[index].material),
+      sameBuffersAfterShrink: identity.every((item, index) => item === window.previewIdentity()[index]),
+      afterGrowth, afterShrink: group.disposals, bounds: window.previewBounds,
+      drawCounts: group.children.map((child) => child.geometry.drawRange.count) };
+    viewport.sketchPreview(null);
+    return result;
+  });
+  assert.equal(topology.hiddenWithoutDisposal, true);
+  assert.equal(topology.sameObjects, true);
+  assert.equal(topology.sameBuffersAfterShrink, true);
+  assert.equal(topology.afterGrowth, 3);
+  assert.equal(topology.afterShrink, 3);
+  assert.deepEqual(topology.drawCounts, [6, 3, 0]);
+  assert.equal(topology.bounds.min[2], 1);
+  assert.equal(topology.bounds.max[2], 1);
+
+  // Measure the real pointer -> snap -> RAF -> preview path on loaded meshes.
+  await page.keyboard.press("Escape");
+  await page.getByRole("combobox", { name: "Drawing plane" }).selectOption("xy");
+  await page.evaluate(async () => {
+    const bytes = await (await fetch("/fixture.3dm")).blob();
+    await window.viewport.current.openFile(new File([bytes], "fixture.3dm"));
+  });
+  assert.deepEqual(await page.evaluate(() => ({ meshes: window.inspection.meshCount, triangles: window.inspection.triangleCount })),
+    { meshes: 400, triangles: 4800 });
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  const buildingAnchor = await page.evaluate(() => window.projectPoint([27, 27, 0]));
+  const buildingCorner = await page.evaluate(() => window.projectPoint([31, 29, 0]));
+  await page.mouse.click(...buildingAnchor);
+  await page.mouse.move(...buildingCorner);
+  await page.waitForFunction(() => window.previewGroup?.parent && window.previewGroup.visible);
+  const performanceResult = await page.evaluate(async (point) => {
+    const percentile = (values, fraction) => [...values].sort((a,b) => a-b)[Math.floor((values.length - 1) * fraction)];
+    const summary = (values) => ({ p50: percentile(values, 0.5), p95: percentile(values, 0.95), max: Math.max(...values) });
+    for (let warm = 0; warm < 10; warm++) {
+      window.moveBurst([point]); await new Promise(requestAnimationFrame);
+    }
+    window.previewTimes = []; window.pointerTimes = [];
+    const identity = window.previewIdentity();
+    const updates = window.previewUpdates, renders = window.previewRenders;
+    const frameIntervals = [], eventCosts = [];
+    let previous = await new Promise(requestAnimationFrame);
+    for (let frame = 0; frame < 120; frame++) {
+      for (let event = 0; event < 4; event++) {
+        const start = performance.now();
+        window.moveBurst([[point[0] + Math.sin(frame / 15), point[1] + Math.cos(frame / 15)]]);
+        eventCosts.push(performance.now() - start);
+      }
+      const now = await new Promise(requestAnimationFrame);
+      frameIntervals.push(now - previous); previous = now;
+    }
+    return { scene: { meshes: 400, triangles: 4800 }, pointerMoves: 480,
+      updates: window.previewUpdates - updates, renders: window.previewRenders - renders,
+      reused: identity.every((item, index) => item === window.previewIdentity()[index]),
+      frameIntervalMs: summary(frameIntervals), pointerToRenderReturnMs: summary(window.pointerTimes),
+      pointerHandlerMs: summary(eventCosts), previewUpdateAndRenderMs: summary(window.previewTimes) };
+  }, buildingCorner);
+  assert.equal(performanceResult.updates, 120);
+  assert.equal(performanceResult.renders, 120);
+  assert.equal(performanceResult.reused, true);
+  console.log("MEASURE headless Chrome / synthetic building array (render return is not GPU presentation):", JSON.stringify(performanceResult));
+
+  // Unmount while a frame is pending releases once and never paints afterward.
+  const unmounted = await page.evaluate(async () => {
+    window.moveBurst([[600, 450]]);
+    window.testRoot.unmount();
+    const updates = window.previewUpdates;
+    await new Promise(requestAnimationFrame);
+    return { late: window.previewUpdates - updates, disposals: window.previewGroup.disposals, submissions: window.submitted.length };
+  });
+  assert.deepEqual(unmounted, { late: 0, disposals: 6, submissions: 6 });
   assert.deepEqual(errors, []);
-  console.log("PASS drawing shortcuts, rectangle/circle/polygon, exact dimensions, explicit face and signed elevation-plane extrusion; no API calls");
+  console.log("PASS sketch object/buffer reuse, RAF coalescing, latest-ref completion, typed values, planes/axes, theme, cancellation/tool switch/unmount, rectangle/circle/polygon and 3D measurement; zero API calls");
 } catch (error) {
   if (page && !page.isClosed()) {
     if (process.env.SKETCH_SCREENSHOT) await page.screenshot({ path: process.env.SKETCH_SCREENSHOT });
