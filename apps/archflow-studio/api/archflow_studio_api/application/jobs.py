@@ -217,6 +217,12 @@ class JobRegistry:
             )
         return job
 
+    def list(self) -> tuple[Job, ...]:
+        """A coherent read of this worker's jobs, in admission order."""
+
+        with self._lock:
+            return tuple(self._jobs.values())
+
     def for_candidate(self, candidate_id: str) -> Job:
         """The job that ran one candidate, or a 404 naming the candidate."""
 

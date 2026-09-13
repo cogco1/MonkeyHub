@@ -607,6 +607,7 @@ class ChatStore:
         self._running: dict[str, _Running] = {}
         self._loaded = False
         self._closing = False
+        self.on_change = None
         # One in-memory answer per Hub run: what the installed CLIs said when
         # they were last asked. Nothing is written to disk and no check runs on
         # the transcript's polling path.
@@ -647,6 +648,8 @@ class ChatStore:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
+            if self.on_change is not None:
+                self.on_change(session)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -1343,6 +1346,21 @@ class ChatStore:
             thread.join(timeout=10)
         return self.get(session_id)
 
+    def close_project(self, project_dir: str) -> None:
+        """Detach only this project's agents and cancel their pending permissions."""
+        target = os.path.normcase(str(Path(project_dir).resolve()))
+        with self._lock:
+            self._load()
+            ids = [row.id for row in self._sessions.values()
+                   if os.path.normcase(str(Path(row.projectDir).resolve())) == target]
+        for session_id in ids:
+            self.stop(session_id)
+            with self._lock:
+                client = self._acp_sessions.pop(session_id, None)
+                self._clear_permissions(session_id)
+            if client is not None:
+                client.close()
+
     def shutdown(self) -> None:
         with self._lock:
             self._closing = True
@@ -1394,7 +1412,7 @@ def _url(value: str) -> str:
     return f"http://{url.netloc}"
 
 
-def _request_json(base: str, path: str, method: str = "GET", body=None, timeout: float = 180):
+def _request_json(base: str, path: str, method: str = "GET", body=None, timeout: float = 180, *, headers=None):
     """One call to a bound service, with the caller's own time limit on it.
 
     ``timeout`` is what makes a deadline real: a call that has run out of time
@@ -1407,7 +1425,7 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         # rather than made with a small amount of time granted to it here.
         raise TimeoutError(f"no time left to call {method} {path}")
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
-    request = Request(_url(base) + path, data=data, method=method, headers={"Content-Type": "application/json"})
+    request = Request(_url(base) + path, data=data, method=method, headers={"Content-Type": "application/json", **(headers or {})})
     try:
         with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
             return json.load(response)
@@ -1619,6 +1637,8 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
     if "producer" in arguments and name != "studio_schema":
         raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
+    if "operationId" in arguments and (name != "studio_request" or method == "GET"):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
         # would answer at once and look like the wait had happened.
@@ -1726,7 +1746,18 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if wait is not None and checkpoint:
         proposal = _request_json(base, parsed.path.removesuffix("/candidate"))
         comparison = {"sourceRunId": proposal.get("sourceRunId")}
-    started = _request_json(base, path, method, body)
+    if method in {"POST", "PUT"}:
+        from uuid import uuid5, NAMESPACE_URL
+        runtime_id = str(uuid5(NAMESPACE_URL, f"{session['projectId']}:{os.path.normcase(str(Path(session['projectDir']).resolve()))}"))
+        operation_id = arguments.get("operationId") or str(uuid4())
+        try:
+            operation_id = str(UUID(operation_id))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise HubFailure(422, "OPERATION_ID_INVALID", "operationId must be a UUID.") from exc
+        started = _request_json(hub, f"/api/runtime/projects/{runtime_id}/studio{path}", method, body,
+                                headers={"Idempotency-Key": operation_id, "X-Monkey-Chat": chat_id})
+    else:
+        started = _request_json(base, path, method, body)
     if wait is None:
         if method == "POST" and parsed.path in {
             "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
@@ -1773,6 +1804,7 @@ def _mcp(hub: str, chat_id: str) -> None:
     request_schema = {
         "type": "object", "properties": {
             **request_fields,
+            "operationId": {"type": "string", "format": "uuid", "description": "Optional stable identity for this mutation. Reusing it returns the same admission/result and never executes the request twice. Different requests must use different ids."},
             "awaitSeconds": {
                 "type": "integer", "minimum": 1, "maximum": _AWAIT_MAX_S,
                 "description": "This tool's own option, beside method/path/body and never inside the "

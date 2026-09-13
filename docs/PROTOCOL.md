@@ -630,3 +630,54 @@ available. Accept, upload and pull never issue a published version. `release` is
 grant and does not expose a new issue endpoint. Remote hosting, TLS, real member onboarding
 and multi-machine installation remain deployment work. The existing browser SSE bearer
 limitation remains; this HTTP collaboration path does not depend on an SSE connection.
+
+## MonkeyHub project runtime
+
+The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
+runtime view: exact project/path binding, published P036 version/digest, reachable design
+Stages, owned worker identity/health, chats and operation status. `POST /api/runtime/projects/open`
+takes `{projectId, projectDir}` and attaches without starting a worker. Project identity plus
+normalized path determines the runtime id; identical project ids in different folders never
+share a worker, operation admission or projection.
+
+Worker/session observation continues each second. Retained history is refreshed for active
+jobs/operations, mutation or attachment wakeups and worker changes; an idle runtime reuses
+its projection and checks for external project changes every 30 seconds. These reads verify
+existing receipt/source facts without rebuilding candidate previews or recalculating viability.
+
+`GET /api/runtime/events` is SSE with event name `runtime`. Each event has `serverId`,
+`sequence`, `kind`, optional `runtimeId`, and optional `snapshot`; its event id combines the
+server instance and sequence. Every attachment starts with a current full snapshot rather
+than relying on a cursor from a previous Hub process. Subsequent events invalidate live views;
+they never replace retained project evidence. Browsers can reconnect and read the snapshot
+without submitting work again.
+
+Embedded tools and chat submit existing Studio API requests through
+`/api/runtime/projects/{runtime_id}/studio/api/...`. Mutation requests accept a UUID
+`Idempotency-Key`. It binds the method, full path and exact request bytes within that project
+runtime. A duplicate waits for or returns the existing reply; a changed payload/path/method
+returns `409 OPERATION_ID_CONFLICT`. Lost responses return an explicit recovery state, not an
+automatic retry. `X-Monkey-Operation` remains diagnostic correlation and is not an idempotency key.
+Hub forwards no caller-selected host and checks project ids in query/body and chat attachment.
+Only currently verified owned Studio origins may use this forwarding boundary from an embedded page.
+
+For candidate-producing requests Hub supplies `X-Monkey-Candidate` and `X-Monkey-Worker`.
+Studio accepts that preallocated `hub-cand-<uuid hex>` only for its actual managed instance,
+retains all existing proposal/exact-base checks, and refuses any already existing run. Ordinary
+standalone requests keep server-generated ids. The read-only Studio `GET /api/runtime` uses
+the existing candidate/branch readers, accepts bounded `limit` and repeated `candidateId`, and
+separates process jobs from retained candidate outcomes. `baseStateDigest` in that retained
+candidate view is the operator's exact StateRecord binding digest; `resultStateDigest` is the
+runner's developed-design digest. Neither is silently substituted for a third identity.
+
+`POST /api/runtime/projects/{runtime_id}/recover` with `{projectId}` inspects retained outcomes
+before replacing one crashed owned Studio on the same port. It rebuilds the state projection
+through the existing read endpoint and never calls a mutation route. A Stage acceptance is
+committed only when branch ancestry contains the matching candidate and exact expected parent;
+candidate completion and formal project issue remain separate. `close` at the same runtime path
+cancels only its attached agents/permissions and drains its owned Studio. Normal Hub shutdown
+preserves the existing accepted-work drain.
+
+The runtime admission/reply map is in-process. Hub cold startup reconstructs retained results
+and saved conversations, not pre-admission requests or lost proposal/job registries. No additional
+project store, canonical writer, dependency graph or persistent queue is introduced.

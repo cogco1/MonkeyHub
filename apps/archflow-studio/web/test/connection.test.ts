@@ -6,6 +6,57 @@ import { createServer } from "vite";
 
 import type { WorkingCopyDto } from "../src/api/generated/index.ts";
 
+test("embedded API routing accepts only the actual loopback Hub parent", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
+    logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { embeddedHubBaseUrl } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const path = "/api/runtime/projects/12345678-1234-1234-1234-123456789abc/studio";
+  const base = `http://127.0.0.1:18180${path}`;
+  const page = (url: string, embedded = "tool") => `http://127.0.0.1:18181/?${new URLSearchParams({ embedded, hubApi: url })}`;
+  assert.equal(embeddedHubBaseUrl(page(base), "http://127.0.0.1:18180/"), base);
+  assert.equal(embeddedHubBaseUrl(page(base), "http://127.0.0.1:18180/?view=chat"), base);
+  for (const [url, parent, embedded] of [
+    [base, "", "tool"], [base, "http://127.0.0.1:19180/", "tool"], [base, "http://127.0.0.1:18180/", "false"],
+    [`https://127.0.0.1:18180${path}`, "https://127.0.0.1:18180/", "tool"],
+    [`http://example.test${path}`, "http://example.test/", "tool"],
+    [`http://user@127.0.0.1:18180${path}`, "http://127.0.0.1:18180/", "tool"],
+    [`${base}?token=x`, "http://127.0.0.1:18180/", "tool"], [`${base}#extra`, "http://127.0.0.1:18180/", "tool"],
+    [base.replace("/studio", "/other"), "http://127.0.0.1:18180/", "tool"],
+    [base.replace("12345678-1234-1234-1234-123456789abc", "other-project"), "http://127.0.0.1:18180/", "tool"],
+  ]) assert.equal(embeddedHubBaseUrl(page(url!, embedded), parent), null, `${url} with ${parent}`);
+});
+
+test("only Hub forwarding adds idempotency keys while retries preserve supplied keys", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
+    logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { ServerConnection } = await vite.ssrLoadModule("/src/api/connection.ts");
+  const { client } = await vite.ssrLoadModule("/src/api/generated/client.gen.ts");
+  const base = "http://127.0.0.1:18180/api/runtime/projects/12345678-1234-1234-1234-123456789abc/studio";
+  new ServerConnection(base).configure();
+  const requests: Request[] = [];
+  t.mock.method(globalThis, "fetch", async (request: Request) => { requests.push(request); return Response.json({}); });
+  await client.get({ url: "/api/state" });
+  await client.post({ url: "/api/proposals", headers: { "X-Monkey-Operation": "parent-trace" } });
+  await client.post({ url: "/api/proposals", headers: { "X-Monkey-Operation": "parent-trace" } });
+  await client.post({ url: "/api/proposals", headers: { "Idempotency-Key": "same-retry", "X-Monkey-Operation": "parent-trace" } });
+  assert.equal(requests[0]!.headers.get("Idempotency-Key"), null);
+  assert.equal(requests[0]!.url, `${base}/api/state`);
+  assert.match(requests[1]!.headers.get("Idempotency-Key")!, /^[0-9a-f-]{36}$/);
+  assert.notEqual(requests[1]!.headers.get("Idempotency-Key"), requests[2]!.headers.get("Idempotency-Key"));
+  assert.equal(requests[1]!.headers.get("X-Monkey-Operation"), "parent-trace");
+  assert.equal(requests[3]!.headers.get("Idempotency-Key"), "same-retry");
+  for (const baseUrl of ["https://remote-studio.test", "http://127.0.0.1:18181"]) {
+    new ServerConnection(baseUrl, "fixture-token").configure();
+    await client.post({ url: "/api/proposals", body: { utterance: "set height to 4" } });
+    const request = requests.at(-1)!;
+    assert.equal(request.headers.get("Idempotency-Key"), null, "direct Studio keeps its existing CORS request headers");
+    assert.equal(request.headers.get("Authorization"), "Bearer fixture-token");
+    assert.equal(request.url, `${baseUrl}/api/proposals`);
+  }
+});
+
 test("candidate requests carry their explicit source without changing default requests", async (t) => {
   const vite = await createServer({
     root: fileURLToPath(new URL("..", import.meta.url)),

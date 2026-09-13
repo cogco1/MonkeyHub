@@ -122,7 +122,8 @@ def apply_program(
         require_model_source(binding, model_source, projection)
     operator = operator_for(sheet, projection)
     registry: JobRegistry = state.jobs
-    run_id = candidate_run_id()
+    from .candidates import admitted_candidate_id
+    run_id = admitted_candidate_id(request, candidate_run_id())
 
     def work() -> object:
         return run_operator(
