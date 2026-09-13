@@ -2397,14 +2397,15 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
 
   const applyDirectModelAction = useCallback((action: DirectModelAction) => {
     if (!canDeleteModel || !deletableElementId) return;
-    if ((action.kind === "pushPull" || action.kind === "move" || action.kind === "copy" || action.kind === "rotate") && action.target && action.target !== pushPullTarget) return;
+    if (action.target && action.target !== pushPullTarget) return;
     try {
       const normal = action.kind === "pushPull" ? action.normal ?? viewportRef.current?.workPlaneFromSelection()?.normal : null;
       if (action.kind === "pushPull" && !normal) throw new Error("Select a face in the model before using Push/Pull.");
       // The action queue captures only values; target is a transient gesture guard.
       const captured = action.kind === "pushPull" ? { kind: "pushPull" as const, distance: action.distance, normal: normal! }
-        : action.kind === "move" || action.kind === "copy" ? { kind: action.kind, translation: action.translation }
-        : action.kind === "rotate" ? { kind: action.kind, angleDegrees: action.angleDegrees, axis: action.axis } : action;
+        : action.kind === "rotate" ? { kind: action.kind, angleDegrees: action.angleDegrees, axis: action.axis }
+        : action.kind === "scale" ? { kind: action.kind, scale: action.scale }
+        : { kind: action.kind, translation: action.translation };
       const copyElementId = action.kind === "copy" ? `drawn-${crypto.randomUUID()}` : undefined;
       commitLocalCommand({ kind: "direct", elementId: deletableElementId, action: captured, copyElementId });
       if (copyElementId && picked?.componentId) {

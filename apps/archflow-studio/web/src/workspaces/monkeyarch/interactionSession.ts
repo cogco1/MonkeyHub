@@ -38,23 +38,37 @@ export interface RotateGesture {
   typed: string | null;
 }
 
+export type ScaleMode = "uniform" | "x" | "y" | "z";
+export interface ScaleGesture {
+  readonly target: PushPullTarget;
+  readonly spec: SketchPreview;
+  mode: ScaleMode;
+  plane: SketchPlane;
+  reference: [number, number, number] | null;
+  centerTolerance: number;
+  scale: [number, number, number] | null;
+  typed: [string, string, string] | null;
+}
+
 /** One disposable hand interaction, shared by Stage and its viewport. */
 export interface InteractionSession {
   sketch: SketchState;
   pushPull: PushPullGesture | null;
   move: MoveGesture | null;
   rotate: RotateGesture | null;
+  scale: ScaleGesture | null;
   hover: LocalHit | null;
   pointer: { x: number; y: number } | null;
   press: { x: number; y: number; dragging: boolean } | null;
-  frame: { id: number; kind: "sketch" | "hover" | "pushPull" | "move" | "rotate"; paint: () => void } | null;
+  frame: { id: number; kind: "sketch" | "hover" | "pushPull" | "move" | "rotate" | "scale"; paint: () => void } | null;
   readonly phase: "inactive" | "hovering" | "armed" | "anchored" | "dragging" | "value-override";
 }
 
 export function createInteractionSession(): InteractionSession {
   return {
-    sketch: IDLE, pushPull: null, move: null, rotate: null, hover: null, pointer: null, press: null, frame: null,
+    sketch: IDLE, pushPull: null, move: null, rotate: null, scale: null, hover: null, pointer: null, press: null, frame: null,
     get phase() {
+      if (this.scale) return this.scale.typed !== null ? "value-override" : this.scale.reference ? "dragging" : "armed";
       if (this.rotate) return this.rotate.typed !== null ? "value-override" : this.rotate.reference ? "dragging" : "armed";
       if (this.move) return this.move.typed !== null ? "value-override" : this.move.anchor ? "dragging" : "armed";
       if (this.pushPull) return this.pushPull.typed !== null ? "value-override" : this.pushPull.distance === 0 ? "anchored" : "dragging";
@@ -69,14 +83,14 @@ export function createInteractionSession(): InteractionSession {
   };
 }
 
-export function cancelInteractionFrame(session: InteractionSession, kind?: "sketch" | "hover" | "pushPull" | "move" | "rotate"): void {
+export function cancelInteractionFrame(session: InteractionSession, kind?: "sketch" | "hover" | "pushPull" | "move" | "rotate" | "scale"): void {
   if (!session.frame || (kind && session.frame.kind !== kind)) return;
   cancelAnimationFrame(session.frame.id);
   session.frame = null;
 }
 
 /** Both consumers read their latest session at paint time, never a queued snapshot. */
-export function scheduleInteractionFrame(session: InteractionSession, kind: "sketch" | "hover" | "pushPull" | "move" | "rotate", paint: () => void): void {
+export function scheduleInteractionFrame(session: InteractionSession, kind: "sketch" | "hover" | "pushPull" | "move" | "rotate" | "scale", paint: () => void): void {
   if (session.frame?.kind === kind) { session.frame.paint = paint; return; }
   cancelInteractionFrame(session);
   const frame = { id: 0, kind, paint };

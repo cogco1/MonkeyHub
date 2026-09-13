@@ -26,6 +26,7 @@ const authoredInput = authoredContinue || authoredUndo;
 const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredInput;
 const moveCopyOnly = process.env.MONKEYARCH_MOVE_COPY === "1";
 const rotateOnly = process.env.MONKEYARCH_ROTATE === "1";
+const scaleOnly = process.env.MONKEYARCH_SCALE === "1";
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -148,7 +149,7 @@ let seedRun = null;
 if (!authoredOnly) {
 const seedProposal = await call("POST", "/api/proposals/sketch", {
   stateDigest: home.stateDigest, componentId: "portico", elementId: "seed-block",
-  profile: rotateOnly ? [[10, 0], [13, 0], [10.5, 2]] : [[10, 0], [12, 0], [12, 2], [10, 2]], height: 1.5, baseLevel: "level-ground",
+  profile: rotateOnly || scaleOnly ? [[10, 0], [13, 0], [10.5, 2]] : [[10, 0], [12, 0], [12, 2], [10, 2]], height: 1.5, baseLevel: "level-ground",
 });
 seedRun = (await finished((await call("POST", `/api/proposals/${seedProposal.proposalId}/candidate`)).jobId)).candidateId;
 assert.ok((await exported(seedRun)).has("obj-seed-block"), "the seed candidate exported nothing");
@@ -165,7 +166,7 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
       marker = "  const interaction = useRef(createInteractionSession());";
       insert = `useEffect(() => { (window as any).__stageCommits = ((window as any).__stageCommits ?? 0) + 1; });
         (window as any).__gesture = () => ({ phase: interaction.current.sketch.phase,
-        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull, move: interaction.current.move, rotate: interaction.current.rotate });`;
+        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull, move: interaction.current.move, rotate: interaction.current.rotate, scale: interaction.current.scale });`;
     } else if (module.endsWith("/app/App.tsx")) {
       marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
       insert = `(window as any).__app = () => ({ loaded: loadedArtifact?.runId, base: projection?.referenceRun.runId,
@@ -407,6 +408,99 @@ if (authoredOnly) {
   console.log(authoredUndo ? 'PASS authored-only undo to empty: first Sync saves its two captured drawings once; current index 0 / zero drafts stay empty and unsynced; no model download or synthetic-run request' :
     authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
     'PASS authored-only: zero artifacts/runs → two local drawings with selection/preselection/delete/undo and zero writes → one explicit candidate, real OCCT export and visible saved model');
+} else if(scaleOnly) {
+  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Scale seed model',120000);
+  const originalRuns=await runIds(),writeStart=sent.length,id='seed-block';
+  const initialVertices=[0,1.5].flatMap(z=>[[10,0,z],[13,0,z],[10.5,2,z]]);
+  const bounds=points=>({min:[0,1,2].map(i=>Math.min(...points.map(p=>p[i]))),max:[0,1,2].map(i=>Math.max(...points.map(p=>p[i])))});
+  const center=points=>{const b=bounds(points);return b.min.map((v,i)=>(v+b.max[i])/2);};
+  const sameVector=(actual,expected,label,tolerance=1e-4)=>{
+    assert.ok(actual,`${label}: missing vector`);
+    assert.ok(actual.every((v,i)=>Math.abs(v-expected[i])<tolerance),`${label}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`);
+  };
+  const sameVertices=async(target,expected,label)=>{
+    const actual=await page.evaluate(id=>window.__view.vertices(id),target);
+    assert.equal(actual.length,expected.length,`${label}: corner count ${JSON.stringify(actual)}`);
+    for(const point of expected)assert.ok(actual.some(p=>p.every((v,i)=>Math.abs(v-point[i])<1e-4)),`${label}: missing ${JSON.stringify(point)} in ${JSON.stringify(actual)}`);
+  };
+  const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const scaled=(points,pivot,factors)=>points.map(point=>point.map((v,i)=>pivot[i]+(v-pivot[i])*factors[i]));
+  async function aim(world) {
+    const p=await page.evaluate(point=>window.__view.project(point),world);
+    assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.classList.contains('stage-scale'),p),true,'Scale pointer must meet its real overlay');
+    await page.mouse.move(p.x,p.y);await frames();return p;
+  }
+  async function arm(expected,mode='uniform',keyboard=false) {
+    await deselect();await pick(id);const before=await snap();
+    if(keyboard)await page.keyboard.press('s');else await button('Scale').click();
+    await page.locator('.stage-scale[data-phase="reference"]').waitFor({state:'visible'});
+    if(mode!=='uniform')await page.getByLabel('Scale axes',{exact:true}).selectOption(mode);
+    const g=(await snap()).gesture.scale,pivot=center(expected);
+    sameVector(g.plane.origin,pivot,'Scale world AABB pivot');assert.equal(g.mode,mode);
+    const direction=mode==='uniform'?g.plane.xAxis:mode==='x'?[1,0,0]:mode==='y'?[0,1,0]:[0,0,1];
+    const point=await aim(pivot.map((v,i)=>v+2.5*direction[i]));await sameVertices(id,expected,'reference pointer preserves source');
+    await page.mouse.click(point.x,point.y);await page.locator('.stage-scale[data-phase="factor"]').waitFor({state:'visible'});await frames();
+    const captured=await snap();assert.ok(captured.gesture.scale.reference);assert.equal(captured.index,before.index);
+    sameVector(captured.gesture.scale.scale,[1,1,1],'reference captures unit scale');
+    await sameVertices(id,expected,'reference does not jump');if(captured.view.preview)await sameVertices('preview',expected,'unit-scale preview');
+    return {before,pivot:captured.gesture.scale.plane.origin,reference:captured.gesture.scale.reference};
+  }
+  const target=(g,factor)=>g.pivot.map((v,i)=>v+g.reference[i]*factor);
+  console.log('S1 · uniform 1.4× six vertices, reference without jump, same-frame Click and zero pointer React commits');
+  const first=await arm(initialVertices,'uniform',true),firstFactors=[1.4,1.4,1.4],firstResult=scaled(initialVertices,first.pivot,firstFactors);
+  const firstPoint=await aim(target(first,1.4));await sameVertices('preview',firstResult,'uniform positive preview');
+  await sameVertices(id,initialVertices,'uniform preview preserves source');assert.equal(sent.length,writeStart);
+  const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});await page.screenshot({path:path.join(qa,'scale-preview.png')});
+  const points=await page.evaluate(points=>points.map(p=>window.__view.project(p)),[1.45,1.5,1.55,1.6].map(f=>target(first,f)));
+  const reuse=await page.evaluate(async points=>{
+    const refs=window.__view.previewIdentity(),commits=window.__stageCommits,overlay=document.querySelector('.stage-scale');
+    for(const p of points){for(let i=0;i<3;i++)overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:p.x,clientY:p.y,pointerId:1}));await new Promise(requestAnimationFrame);}
+    return {commits:window.__stageCommits-commits,reused:refs.length>0&&refs.every((item,i)=>item===window.__view.previewIdentity()[i])};
+  },points);assert.deepEqual(reuse,{commits:0,reused:true});
+  await page.evaluate(p=>{const overlay=document.querySelector('.stage-scale');
+    for(let i=8;i>=0;i--)overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:p.x+i,clientY:p.y,pointerId:1}));
+    overlay.dispatchEvent(new PointerEvent('click',{bubbles:true,clientX:p.x,clientY:p.y,pointerId:1}));},firstPoint);
+  let state=await wait(s=>!s.gesture.scale&&s.index===(first.before.index??0)+1,'uniform Scale commit');
+  await sameVertices(id,firstResult,'uniform committed vertices');assert.equal(state.view.preview,null);
+  const firstIndex=state.index;await page.keyboard.press('Enter');assert.equal((await snap()).index,firstIndex);
+  await page.keyboard.press('Control+z');await wait(s=>s.index===(first.before.index??0),'Scale undo');await sameVertices(id,initialVertices,'undone original vertices');
+  await page.keyboard.press('Control+y');await wait(s=>s.index===firstIndex,'Scale redo');await sameVertices(id,firstResult,'redone vertices');
+  console.log('S2 · negative X pointer mirrors the asymmetric triangle; unequal signed XYZ numeric values override pointer and Enter commits');
+  const numeric=await arm(firstResult,'x');await aim(target(numeric,-.75));
+  sameVector((await snap()).gesture.scale.scale,[-.75,1,1],'only pointer X changes');
+  await sameVertices('preview',scaled(firstResult,numeric.pivot,[-.75,1,1]),'negative X pointer vertices');
+  const factors=[-.8,1.3,.6],secondResult=scaled(firstResult,numeric.pivot,factors),fields=page.getByRole('form',{name:'Scale S',exact:true}).locator('input');
+  assert.equal(await fields.count(),3);await fields.first().fill('');await fields.first().pressSequentially(String(factors[0]));
+  for(let i=1;i<3;i++)await fields.nth(i).fill(String(factors[i]));
+  await frames();await sameVertices('preview',secondResult,'unequal signed XYZ numeric preview');
+  await aim(target(numeric,2));await sameVertices('preview',secondResult,'numeric XYZ overrides pointer');
+  await fields.last().press('Enter');await wait(s=>!s.gesture.scale&&s.index===numeric.before.index+1,'XYZ Scale Enter');await sameVertices(id,secondResult,'numeric committed vertices');
+  console.log('S3 · zero pointer factor is null and cannot commit a stale preview; Esc preserves geometry/history');
+  const cancelled=await arm(secondResult,'z');await aim(target(cancelled,1.8));
+  await sameVertices('preview',scaled(secondResult,cancelled.pivot,[1,1,1.8]),'Z pointer preview');
+  const centerPoint=await aim(cancelled.pivot);assert.equal((await snap()).gesture.scale.scale,null,'center has zero factor');
+  await page.mouse.click(centerPoint.x,centerPoint.y);assert.equal((await snap()).index,cancelled.before.index);assert.ok((await snap()).gesture.scale);
+  const zeroInput=page.getByRole('form',{name:'Scale S',exact:true}).locator('input').first();
+  await zeroInput.fill('0');await zeroInput.press('Enter');await frames();
+  state=await snap();assert.equal(state.index,cancelled.before.index);assert.equal(state.view.preview,null);assert.ok(state.gesture.scale);
+  await page.keyboard.press('Escape');state=await wait(s=>!s.gesture.scale,'Scale Esc');assert.equal(state.index,cancelled.before.index);assert.equal(state.view.preview,null);
+  await sameVertices(id,secondResult,'Esc preserves vertices');assert.equal(sent.length,writeStart);assert.deepEqual(await runIds(),originalRuns);
+  console.log('S4 · frozen Sync saves the first two scales while later local Y scaling survives');
+  let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
+  await page.route('**/api/proposals/transform',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
+  await button('Sync').click();await within(held,15000,'Scale Sync transform held');const heldWrites=sent.length;
+  assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
+  const late=await arm(secondResult,'y'),lateResult=scaled(secondResult,late.pivot,[1,1.2,1]);
+  const latePoint=await aim(target(late,1.2));await page.mouse.click(latePoint.x,latePoint.y);
+  await wait(s=>!s.gesture.scale&&s.index===late.before.index+1,'Scale during Sync');await sameVertices(id,lateResult,'late Y scaling');
+  assert.equal(sent.length,heldWrites);assert.equal(candidateCalls().length,0);release();await wait(s=>!s.syncBusy&&s.candidates.length===1,'Scale candidate',120000);
+  state=await snap();assert.equal(state.loaded,seedRun);assert.equal(state.base,seedRun);assert.equal(state.dirty,true);assert.equal(candidateCalls().length,1);
+  await sameVertices(id,lateResult,'late Scale survives Sync');const saved=(await exported(state.candidates[0])).get('obj-'+id),expectedBox=bounds(secondResult);
+  sameVector(saved?.min,expectedBox.min,'real OCCT frozen scaled triangle min',.0011);sameVector(saved?.max,expectedBox.max,'real OCCT frozen scaled triangle max',.0011);
+  const transforms=sent.slice(writeStart).filter(row=>row.path==='/api/proposals/transform');assert.equal(transforms.length,2);
+  for(const transform of transforms){assert.equal(transform.body.kind,'scale');assert.equal(transform.body.sourceRunId,seedRun);}
+  console.log('PASS Scale: asymmetric six vertices, uniform and signed XYZ factors, reference/latest-pointer/numeric Enter, reused preview/zero pointer commits, zero/Esc/Undo/Redo and one frozen real OCCT candidate');
 } else if(rotateOnly) {
   await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
   await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Rotate seed model',120000);
