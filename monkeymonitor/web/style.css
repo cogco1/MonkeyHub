@@ -57,6 +57,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .trace-panel-heading{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:12px;flex-wrap:wrap}
 .trace-panel>.field-help{margin:8px 0 12px}
 .trace-legend{font-size:12px;color:var(--muted)}
+.trace-transport-control{display:flex;align-items:center;gap:8px;min-height:32px;color:var(--muted);font-size:12px;cursor:pointer}
+.trace-transport-control input{width:16px;min-height:16px;height:16px;margin:0;accent-color:var(--accent);cursor:pointer}
 .trace-axis,.trace-lane{display:grid;grid-template-columns:76px minmax(0,1fr)}
 .trace-axis{margin-top:22px}
 .trace-ticks{display:flex;justify-content:space-between;font:11px var(--font-mono);color:var(--muted);padding-bottom:9px}

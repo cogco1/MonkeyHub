@@ -150,7 +150,7 @@ def main():
             print(json.dumps({"report": str(args.output / "trace.json"), "status": trace["status"],
                               "summary": trace["summary"], "usage": trace["usage"], "candidate": candidate}), flush=True)
             if detail["status"] != "idle" or not candidate:
-                raise RuntimeError("Provider turn did not return a verified candidate; inspect the exported trace")
+                raise RuntimeError("Provider turn did not return a candidate; inspect the exported trace")
             if preview_code not in (None, 0):
                 raise RuntimeError("Headless preview did not complete; provider/runtime trace was still exported")
         finally:

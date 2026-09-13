@@ -51,6 +51,28 @@ try {
   assert.equal(await page.locator('#trace-waterfall [data-span-id="preview"]').evaluate(bar => bar.classList.contains('is-background')), true);
   assert.equal(await page.locator('#trace-waterfall .trace-critical-segment').count() > 0, true);
   assert.equal(await page.locator('#trace-tree li[data-span-id="geometry"]').getAttribute('data-parent-id'), 'candidate');
+  assert.equal(await page.locator('#trace-tree li[data-span-id="candidate"]').getAttribute('data-parent-id'), 'turn-root');
+  assert.match(await page.locator('#trace-waterfall button[data-span-id="geometry"]').getAttribute('aria-label'), /OCCT geometry export/);
+  for (const id of ['transport-root', 'transport-inner']) {
+    assert.equal(await page.locator(`#trace-waterfall button[data-span-id="${id}"]`).count(), 0);
+    assert.equal(await page.locator(`#trace-tree li[data-span-id="${id}"]`).count(), 0);
+  }
+  const measuredSummary = await page.locator('#trace-summary').textContent();
+  const measuredPath = await page.locator('.trace-critical').innerHTML();
+  await page.locator('#trace-show-transport').check();
+  assert.equal(await page.locator('#trace-tree li[data-span-id="geometry"]').getAttribute('data-parent-id'), 'transport-inner');
+  for (const id of ['transport-root', 'transport-inner']) {
+    assert.equal(await page.locator(`#trace-waterfall button[data-span-id="${id}"]`).count(), 1);
+    assert.equal(await page.locator(`#trace-tree li[data-span-id="${id}"]`).count(), 1);
+    await page.locator(`#trace-waterfall button[data-span-id="${id}"]`).click();
+    assert.equal(await page.locator('#trace-evidence h3').textContent(), 'Transport request');
+    await page.locator('#trace-evidence .trace-raw > summary').click();
+    assert.match(await page.locator('#trace-evidence pre').textContent(), /api_request/);
+  }
+  await page.locator('#trace-show-transport').uncheck();
+  assert.equal(await page.locator('#trace-summary').textContent(), measuredSummary);
+  assert.equal(await page.locator('.trace-critical').innerHTML(), measuredPath);
+  assert.equal(await page.locator('#trace-evidence .trace-raw').count(), 0);
   assert.equal(await page.locator('#trace-diagnostics [data-code="schema_read"]').count(), 1);
   assert.match(await page.locator('#trace-attribution').textContent(), /Attributed blocking time/);
   await page.locator('.trace-warnings > summary').click();
@@ -68,6 +90,7 @@ try {
   const download = await downloadPromise;
   const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
   assert.equal(exported.trace_id, 'turn-root'); assert.equal(exported.spans.some(span => span.event_id === 'geometry'), true);
+  assert.equal(exported.spans.filter(span => span.phase === 'api_request').length, 2);
   await appendFile(process.env.MONITOR_TEST_LOG, process.env.MONITOR_TEST_UPDATE + '\n', 'utf8');
   await page.waitForFunction(() => document.querySelector('#trace-summary [data-metric="总历时"] dd').textContent === '14 s', { timeout: 15000 });
   assert.equal(await page.locator('#trace-select').inputValue(), 'turn-root');
@@ -92,6 +115,7 @@ try {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.evaluate(() => document.documentElement.style.setProperty('--font-scale', '1.3'));
   assert.match(await page.locator('#trace-summary').textContent(), /总历时.*14 s/);
+  assert.match(await page.locator('#trace-waterfall button[data-span-id="geometry"]').getAttribute('aria-label'), /OCCT 几何导出/);
   assert.equal(await page.locator('#trace-waterfall .trace-lane[data-lane]').evaluateAll(lanes => new Set(lanes.map(lane => getComputedStyle(lane.querySelector('.trace-bar')).borderTopColor)).size), 5);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (output) await page.screenshot({ path: join(output, 'monitor-turn-mobile-dark.png'), fullPage: true });
@@ -132,8 +156,10 @@ class MonitorTraceWebTests(unittest.TestCase):
                        span("provider-activity", "provider_round", 1000, 3000), model,
                        replace(span("schema-one", "tool_call", 4000, 500), details={"blocking": True, "tool_name": "schema", "request_kind": "schema_read", "input_identity": {"context_digest": "a" * 64}}),
                        replace(span("schema-two", "tool_call", 4500, 500), details={"blocking": True, "tool_name": "schema", "request_kind": "schema_read", "input_identity": {"context_digest": "a" * 64}}),
-                       span("candidate", "candidate", 5000, 5000, source="studio"),
-                       span("geometry", "geometry_build", 6000, 3000, parent="candidate", source="studio"),
+                       span("transport-root", "api_request", 5000, 5000, source="studio"),
+                       span("candidate", "candidate", 5000, 5000, parent="transport-root", source="studio"),
+                       span("transport-inner", "api_request", 6000, 3000, parent="candidate", source="studio"),
+                       span("geometry", "geometry_export.occt.occt", 6000, 3000, parent="transport-inner", source="studio"),
                        span("verified", "verified", 9000, 1000, parent="candidate", source="studio"),
                        span("preview", "model_install", 10000, 1000, source="studio", blocking=False),
                        span("visible", "first_visible", 11000, 0, source="studio", blocking=False),

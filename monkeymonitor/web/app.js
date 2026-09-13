@@ -368,6 +368,7 @@ Object.assign(english, {
   "记录显示重复查询；状态是否改变、查询是否必要仍需核对。": "Repeated reads were recorded. Whether state changed or each read was needed requires checking.",
   "工具名和请求参数散列相同；状态是否改变、查询是否必要仍需核对。": "The tool name and request argument hash match. Whether state changed or each read was needed requires checking.",
   "已归因的阻塞时间": "Attributed blocking time",
+  "显示传输明细": "Show transport details", "传输请求": "Transport request", "OCCT 几何导出": "OCCT geometry export",
   "Agent 续行": "Agent resumes", "首段回复到达": "First response received", "Agent 活动区间": "Agent activity intervals",
   "工具或权限等待后恢复的活动段。": "Activity resumes after tools or permission waits.", "仅统计明确的模型请求边界": "Counted only from explicit model request boundaries",
   "首段回复到达记录的是服务端收文时点；首次可见来自客户端显示记录。": "First response is the server receipt time. First visible comes from client display records.",
@@ -400,7 +401,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
   const usageFields = ["input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens", "cache_write_1h_input_tokens", "reasoning_output_tokens"];
   const rateFields = ["input", "cached_input", "cache_write_input", "cache_write_1h_input", "output"];
   const state = { events: [], source: "all", project: "", group: "operation", visibleGroups: 10, openGroups: new Set(), sourcesLoaded: false, sourceBusy: false, sort: "uncached_input", loaded: false, loading: false, rates: [], ratesLoaded: false, selectedRate: null, quoteEvent: null, warnings: [], excluded: 0, visibleEvents: 10, quoteVersion: 0 };
-  const traces = { items: [], warnings: [], project: "", selected: "", activeSpan: "", loaded: false, loading: false, signature: "", open: new Set(), closed: new Set() };
+  const traces = { items: [], warnings: [], project: "", selected: "", activeSpan: "", showTransport: false, loaded: false, loading: false, signature: "", open: new Set(), closed: new Set() };
   const traceLanes = ["agent", "hub", "studio", "cad", "client"];
   const traceLaneLabels = { agent: "Agent", hub: "Hub", studio: "Studio", cad: "CAD", client: "Client" };
   const controllers = new Set();
@@ -413,6 +414,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
   const scopeLabels = { interaction: "交互历时", model_call: "模型请求往返", service: "服务阶段", client_wait: "客户端等待", agent_turn: "代理整轮", unknown: "耗时范围未知" };
   const phaseLabels = { design_edit: "设计修改", intent_compile: "意图处理", model_request: "模型请求往返", model_usage: "模型用量（请求时段未记录）", intent_wait: "意图请求等待", candidate_wait: "候选请求等待", candidate_queue: "候选排队", drawing_wait: "图纸请求等待", drawing_generate: "图纸生成", "drawing.load": "图纸模型读取", "drawing.hlr": "图纸线条计算", "drawing.svg": "SVG 输出", "drawing.png": "PNG 输出", "drawing.persist": "图纸写入", "drawing.register": "图纸登记", candidate: "候选生成（含几何导出）", geometry_export: "几何导出", model_load: "模型读取与解析", stage_save: "Stage 保存", intent: "意图理解", agent: "代理调用", agent_turn: "代理整轮" };
   Object.assign(phaseLabels, { element_production: "构件生成", export_cache_lookup: "导出缓存检查", source_export_lookup: "来源导出检查", occt_initialization: "几何内核初始化", occt_reuse_check: "几何复用检查", geometry_build: "几何构建", step_write: "STEP 写入", step_readback: "STEP 读回校验", tessellation: "曲面网格化", preview_write: "预览模型写入", preview_readback: "预览模型读回校验", model_download: "模型下载", model_parse: "模型解析", document_load: "图纸下载", document_render: "图纸显示", stage_wait: "Stage 请求等待", api_wait: "API 请求等待", produce_rows: "构件逐项生成", build_program_shapes: "几何构建", write_step: "STEP 写入", read_step: "STEP 读取", verify_step: "STEP 校验", tessellate_shape: "曲面网格化", write_preview_three_dm: "预览模型写入", inspect_three_dm: "预览模型检查", verify_preview: "预览模型校验" });
+  Object.assign(phaseLabels, { api_request: "传输请求", "geometry_export.occt.occt": "OCCT 几何导出" });
   const cacheLabels = { hit: "已复用", miss: "未命中", partial: "部分复用", refused: "未采用复用", not_applicable: "不适用缓存", unknown: "缓存情况未知" };
   const duplicateLabels = { repeated_execution: "已知重复执行；是否可避免仍待判断。", same_input_request: "已记录的请求输入相同；是否可避免待定。", same_asset_request: "再次请求同一资产", reused_result: "复用已保留结果", first_observed_input: "首次观察到这些输入", insufficient_input_identity: "缺少可比较的输入记录", none: "未标记重复执行", unknown: "重复情况未知" };
   const checkLabels = { same: "相同", changed: "已变化", missing: "缺失", unknown: "未知", verified: "已校验", unreadable: "不可读" };
@@ -860,7 +862,12 @@ for (const attribute of ["aria-label", "placeholder"]) {
   }
 
   function traceDuration(value) { return typeof value === "number" && Number.isFinite(value) && value >= 0 ? duration(Math.round(value)) : "—"; }
-  function traceLabel(span) { const parts = (span.label === span.phase ? phaseLabel(span) : label(span.label, phaseLabel(span) || "未记录")).split(" · "); return parts.map((part) => t(part)).join(" · "); }
+  function traceLabel(span) {
+    const semanticPhase = !["agent", "agent_turn"].includes(span.phase) && (Object.hasOwn(phaseLabels, span.phase) || span.phase?.startsWith("geometry_export."));
+    const parts = (semanticPhase || span.label === span.phase ? phaseLabel(span) : label(span.label, phaseLabel(span) || "未记录")).split(" · ");
+    return parts.map((part) => t(part)).join(" · ");
+  }
+  function visibleTraceSpans(trace) { return (trace.spans || []).filter((span) => traces.showTransport || span.phase !== "api_request"); }
   function selectedTrace() { return traces.items.find((item) => item.trace_id === traces.selected); }
   function traceStatus(status) { return t(statusLabels[status] || (status === "interrupted" ? "待补充" : "未记录")); }
   function traceStat(title, value, note = "") {
@@ -916,7 +923,8 @@ for (const attribute of ["aria-label", "placeholder"]) {
   }
   function renderTraceWaterfall(trace) {
     const spans = trace.spans || [];
-    const timed = spans.filter((span) => Number.isFinite(span.offset_ms) && span.offset_ms >= 0 && Number.isFinite(span.duration_ms) && span.duration_ms >= 0);
+    const visible = visibleTraceSpans(trace);
+    const timed = visible.filter((span) => Number.isFinite(span.offset_ms) && span.offset_ms >= 0 && Number.isFinite(span.duration_ms) && span.duration_ms >= 0);
     const extent = Math.max(1, trace.summary?.timeline_ms || trace.summary?.elapsed_ms || 0, ...timed.map((span) => span.offset_ms + span.duration_ms));
     const critical = new Set((trace.critical_path?.segments || []).map((segment) => segment.event_id));
     const fragment = document.createDocumentFragment();
@@ -953,17 +961,22 @@ for (const attribute of ["aria-label", "placeholder"]) {
       }
       row.append(track); fragment.append(row);
     }
-    if (timed.length < spans.length) fragment.append(node("p", "field-help", t("未记录完整时间范围的阶段仍列在活动树中。")));
+    if (timed.length < visible.length) fragment.append(node("p", "field-help", t("未记录完整时间范围的阶段仍列在活动树中。")));
     $("trace-waterfall").replaceChildren(fragment);
     const pathNote = path?.note ? path.note.split(/(?<=。)/).filter(Boolean).map((sentence) => t(sentence)).join(locale === "en" ? " " : "") : t("关键路径需要完整的阻塞时段记录。");
     $("trace-critical-note").textContent = [pathNote, `${t("未归因时间")} ${traceDuration(path?.unattributed_ms ?? trace.summary?.unattributed_ms)}`].join(" · ");
   }
   function renderTraceTree(trace) {
-    const spans = trace.spans || []; const byId = new Map(spans.map((span) => [span.event_id, span])); const children = new Map(); const visited = new Set();
-    for (const span of spans) { const parent = byId.has(span.parent_event_id) ? span.parent_event_id : ""; if (!children.has(parent)) children.set(parent, []); children.get(parent).push(span); }
+    const spans = visibleTraceSpans(trace); const byId = new Map((trace.spans || []).map((span) => [span.event_id, span])); const visibleIds = new Set(spans.map((span) => span.event_id)); const children = new Map(); const visited = new Set();
+    function visibleParent(span) {
+      let parent = span.parent_event_id; const seen = new Set([span.event_id]);
+      while (parent && byId.has(parent) && !visibleIds.has(parent) && !seen.has(parent)) { seen.add(parent); parent = byId.get(parent).parent_event_id; }
+      return visibleIds.has(parent) && !seen.has(parent) ? parent : "";
+    }
+    for (const span of spans) { const parent = visibleParent(span); if (!children.has(parent)) children.set(parent, []); children.get(parent).push(span); }
     function branch(span) {
       if (visited.has(span.event_id)) return null; visited.add(span.event_id);
-      const item = node("li", "trace-activity"); item.dataset.spanId = span.event_id; item.dataset.parentId = span.parent_event_id || "";
+      const item = node("li", "trace-activity"); item.dataset.spanId = span.event_id; item.dataset.parentId = visibleParent(span);
       const descendants = children.get(span.event_id) || [];
       const heading = node("div", "trace-activity-heading"); const button = node("button", "trace-activity-button", traceLabel(span));
       button.type = "button"; button.dataset.spanId = span.event_id; button.setAttribute("aria-pressed", String(traces.activeSpan === span.event_id));
@@ -971,7 +984,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
       const meta = node("span", "trace-activity-meta", `${traceStatus(span.status)} · ${traceDuration(span.duration_ms)}${span.blocking === false ? ` · ${t("后台")}` : ""}`);
       heading.append(button, meta);
       if (descendants.length) {
-        const details = node("details"); details.open = !traces.closed.has(span.event_id) && (traces.open.has(span.event_id) || !span.parent_event_id);
+        const details = node("details"); details.open = !traces.closed.has(span.event_id) && (traces.open.has(span.event_id) || !visibleParent(span));
         const summary = node("summary", "trace-activity-branch", `${traceLabel(span)} · ${traceStatus(span.status)} · ${traceDuration(span.duration_ms)}`);
         summary.dataset.branchId = span.event_id;
         details.append(summary, heading); details.addEventListener("toggle", () => { if (!details.isConnected) return; if (details.open) { traces.open.add(span.event_id); traces.closed.delete(span.event_id); } else { traces.open.delete(span.event_id); traces.closed.add(span.event_id); } });
@@ -1034,7 +1047,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
     text("trace-status", traceStatus(trace.status)); $("trace-status").dataset.status = trace.status;
     text("trace-price-note", "按记录费率计算；订阅模型显示 API 等值，不代表实际扣款。");
     renderTraceWaterfall(trace); renderTraceTree(trace); renderTraceDiagnostics(trace); renderTraceCoverage(trace);
-    const span = trace.spans.find((span) => span.event_id === traces.activeSpan);
+    const span = visibleTraceSpans(trace).find((span) => span.event_id === traces.activeSpan);
     if (span) showTraceEvidence(span); else { traces.activeSpan = ""; $("trace-evidence").replaceChildren(node("p", "field-help", t("选择一个阶段查看模型、状态与关联记录。"))); }
     if (focusedSpan) { const container = focusedTree ? $("trace-tree") : $("trace-waterfall"); [...container.querySelectorAll("button[data-span-id]")].find((button) => button.dataset.spanId === focusedSpan)?.focus({ preventScroll: true }); }
     if (focusedBranch) [...$("trace-tree").querySelectorAll("summary[data-branch-id]")].find((summary) => summary.dataset.branchId === focusedBranch)?.focus({ preventScroll: true });
@@ -1210,6 +1223,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
   $("refresh").addEventListener("click", () => { refresh(); refreshTraces(); });
   $("trace-select").addEventListener("change", () => { traces.selected = $("trace-select").value; traces.activeSpan = ""; renderTrace(true); });
   $("trace-project").addEventListener("change", () => { traces.project = $("trace-project").value; renderTrace(true); });
+  $("trace-show-transport").addEventListener("change", () => { traces.showTransport = $("trace-show-transport").checked; renderTrace(true); });
   $("trace-download").addEventListener("click", downloadTrace);
   $("more-events").addEventListener("click", () => { state.visibleEvents += 10; renderOverview(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { refresh(); refreshTraces(); } else text("trace-live", "已暂停更新"); });
