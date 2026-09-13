@@ -481,7 +481,7 @@
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex task 01a09b53-473e-7042-953b-9fd060e7744f",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "Phase 5: 14px capture/21px release for feature targets, deliberate endpoint/midpoint switching, current-ray sliding along held edges, existing sketch-axis retention and display/tool invalidation. Ordinary hover remains consistent with current click hits. Baseline viewport fails the silhouette regression; the fix passes. Isolated browser/real OCCT continuous creation/P/Move/Copy/delete/Undo/Redo and frozen Sync pass, including exact snapped Move geometry and continued local edits during Sync. Web tests 199 passed/2 skipped, build/typecheck and archcheck pass; two independent review findings fixed. 400-mesh synthetic pointer-to-preview P95 17.9ms; genuine large-scene indexing and architectural user acceptance remain open. No backend/Monitor contract or active-service changes. Await coordinator integration; do not close #14.",
+          "handoff": "PR #45 merged at 3008d83b. Phase 5: 14px capture/21px release for feature targets, deliberate endpoint/midpoint switching, current-ray sliding along held edges, existing sketch-axis retention and display/tool invalidation. Ordinary hover remains consistent with current click hits. Baseline viewport fails the silhouette regression; the fix passes. Isolated browser/real OCCT continuous creation/P/Move/Copy/delete/Undo/Redo and frozen Sync pass, including exact snapped Move geometry and continued local edits during Sync. Web tests 199 passed/2 skipped, build/typecheck and archcheck pass; two independent review findings fixed. 400-mesh synthetic pointer-to-preview P95 17.9ms. Sustained-operation testing is in progress; representative large real model input is missing and architectural user acceptance remains open. Coordinator released the merged ThreeDmViewport.tsx source scope for agent-latency timing hooks; any new interaction defect requires a separately coordinated change. No backend/Monitor contract or active-service changes. Issue #14 remains open.",
           "modules": [
             "studio.shell",
             "studio.intent"
@@ -490,7 +490,6 @@
             "apps/archflow-studio/web/src/features/stage/Stage.tsx",
             "apps/archflow-studio/web/src/features/stage/sketch.ts",
             "apps/archflow-studio/web/src/workspaces/monkeyarch/interactionSession.ts",
-            "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
             "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/featureEdges.ts",
             "apps/archflow-studio/web/test/featureEdges.test.ts",
             "apps/archflow-studio/web/test/sketch.test.ts",

@@ -10,7 +10,7 @@
     },
     {
       "id": "incremental-edit",
-      "prompt": "This is an isolated design benchmark, not source development. Only use the connected monkeyhub tools. Modify existing portico/portico-base height from 0.6 m to 2.2 m, keeping its footprint and the other existing objects. Exact initial stateDigest: {state_digest}; sourceRunId: run-001. Use the existing numeric modification capability and its bounded submit/wait/readback flow with awaitSeconds:60. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
+      "prompt": "This is an isolated design benchmark, not source development. Only use the connected monkeyhub tools. Modify only existing portico/portico-cornice height from 0.3 m to 0.5 m. Preserve its footprint and support datum, keep portico-base unchanged at height 0.6 m with its existing footprint, and preserve all other authored fields. Use keep:[\"entity:portico-base\"]. Exact initial stateDigest: {state_digest}; sourceRunId: run-001. Use the existing numeric modification capability and its bounded submit/wait/readback flow with awaitSeconds:60. Read back the candidate; the cornice should span Z=0.6 to 1.1 m and the base Z=0 to 0.6 m. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
     }
   ]
 }

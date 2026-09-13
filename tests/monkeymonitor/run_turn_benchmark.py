@@ -40,6 +40,26 @@ def request(base, path, body=None):
         return json.load(response)
 
 
+def expected_geometry(readback, scenario):
+    if not readback or not readback.get("objects"):
+        return False
+    bounds = {"portico-base": ([0, 0, 0], [4, 2, 0.6]),
+              "portico-cornice": ([0, 0, 0.6], [4, 2, 1.1 if scenario == "incremental-edit" else 0.9])}
+    if scenario == "simple-create":
+        bounds["monitor-benchmark-block"] = ([12, 0, 0], [16, 3, 2.5])
+    objects = {row.get("producerOp"): row for row in readback["objects"]}
+    if set(objects) != set(bounds):
+        return False
+    for name, (minimum, maximum) in bounds.items():
+        row = objects[name]
+        if row.get("lengthUnit") != "meter" or row.get("upAxis") != "Z-up" or not row.get("bbox"):
+            return False
+        for actual, expected in zip(row["bbox"]["min"] + row["bbox"]["max"], minimum + maximum, strict=True):
+            if abs(actual - expected) > 0.001:
+                return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", choices=("simple-create", "incremental-edit"), required=True)
@@ -132,6 +152,10 @@ def main():
                 request(base, f"/api/chat/sessions/{session['id']}/stop", {})
                 raise TimeoutError("The benchmark provider did not finish within its configured timeout")
             candidate = next((row.get("candidateId") for row in reversed(detail["messages"]) if row.get("candidateId")), None)
+            readback = request(studio["url"].rstrip("/"), f"/api/candidates/{candidate}") if candidate else None
+            readback_ok = bool(readback and readback["status"] == "succeeded" and readback["seatExecutionComplete"]
+                               and readback.get("objects") and not readback.get("objectReadbackError"))
+            geometry_ok = expected_geometry(readback, scenario["id"])
             preview_url = studio["url"].rstrip("/") + "/?workspace=monkeyarch&candidate=" + (candidate or "")
             connection = {"monitor_url": monitor, "preview_url": preview_url, "turn_id": turn_id, "candidate_id": candidate}
             (args.output / "connection.json").write_text(json.dumps(connection, indent=2), encoding="utf-8")
@@ -143,14 +167,17 @@ def main():
             trace = next(row for row in snapshot["traces"] if row["turn_id"] == turn_id)
             report = {"benchmark": {**{key: config[key] for key in ("fixture", "fixture_revision", "provider", "model")},
                                     "scenario": scenario["id"], "build_revision": revision, "fixture_last_change": fixture_revision},
-                      "observed_live": observed_live, "candidate_id": candidate,
+                      "observed_live": observed_live, "candidate_id": candidate, "candidate_readback_ok": readback_ok,
+                      "expected_geometry_ok": geometry_ok,
                       "preview_status": "not_requested" if preview is None else "succeeded" if preview_code == 0 else "failed",
                       "canonical_head_unchanged": repository.layout.head.read_bytes() == head_before, "trace": trace}
             (args.output / "trace.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             print(json.dumps({"report": str(args.output / "trace.json"), "status": trace["status"],
                               "summary": trace["summary"], "usage": trace["usage"], "candidate": candidate}), flush=True)
-            if detail["status"] != "idle" or not candidate:
-                raise RuntimeError("Provider turn did not return a candidate; inspect the exported trace")
+            if detail["status"] != "idle" or not readback_ok:
+                raise RuntimeError("Provider turn did not return a successful candidate with retained object readback; inspect the exported trace")
+            if not geometry_ok:
+                raise RuntimeError("Candidate geometry did not match the fixed benchmark scene; inspect the exported trace")
             if preview_code not in (None, 0):
                 raise RuntimeError("Headless preview did not complete; provider/runtime trace was still exported")
         finally:
