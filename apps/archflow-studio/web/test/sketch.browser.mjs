@@ -42,7 +42,8 @@ const html = `<!doctype html><html><head><style>
 </style></head><body><div id="root"></div><script type="module">
 import React, { createRef } from "react";
 import { createRoot } from "react-dom/client";
-import { Box3, BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, Vector3 } from "three";
+import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, SphereGeometry, Vector3 } from "three";
+import { Preselection } from "/src/workspaces/monkeyarch/viewer/preselection.ts";
 import { Stage } from "/src/features/stage/Stage.tsx";
 import { UserPreferencesProvider } from "/src/features/settings/preferences.tsx";
 import "/src/styles.css";
@@ -118,6 +119,35 @@ window.hiddenNearHit = () => {
   hidden.position.copy(hit.object.worldToLocal(hit.point.clone()));
   hidden.visible = false; hit.object.add(hidden);
   return hidden;
+};
+window.curvedFaceBenchmark = () => {
+  const geometry = new SphereGeometry(5, 320, 160);
+  const mesh = new Mesh(geometry, new MeshBasicMaterial());
+  const model = new Group(); model.add(mesh, new Mesh(geometry, mesh.material));
+  const getAttribute = geometry.getAttribute;
+  let positionReads = 0;
+  geometry.getAttribute = function (name) {
+    if (name === "position") positionReads++;
+    return getAttribute.call(this, name);
+  };
+  const start = performance.now();
+  const layer = new Preselection(model, "#60616c");
+  const preparationMs = performance.now() - start;
+  geometry.getAttribute = getAttribute;
+  const measurements = [];
+  const hit = { object: mesh, mesh, objectName: null, userStrings: {}, point: new Vector3(), normal: null };
+  // Warm the existing outline extraction separately: this measures new face
+  // misses, not the pre-existing feature-edge or raycast path.
+  layer.update({ ...hit, faceIndex: 798 }, null);
+  const buffer = layer.group.children[1].geometry.attributes.position;
+  for (const seed of [800,802,804,806,808,810,812,814]) {
+    const start = performance.now();
+    layer.update({ ...hit, faceIndex: seed }, null);
+    measurements.push({ seed, ms: performance.now() - start, triangles: layer.group.children[1].geometry.drawRange.count / 3 });
+  }
+  const reused = layer.group.children[1].geometry.attributes.position === buffer;
+  layer.dispose(); geometry.dispose(); mesh.material.dispose();
+  return { triangles: geometry.index.count / 3, preparationMs, positionReads, measurements, reused };
 };
 window.previewIdentity = () => [window.previewGroup, ...window.previewGroup.children.flatMap(
   (child) => [child, child.geometry, child.material, child.geometry.attributes.position, child.geometry.attributes.normal],
@@ -533,6 +563,12 @@ try {
   assert.equal(hoverPerformance.originalMaterial, true, "hover never recolours the real model");
   assert.equal(hoverPerformance.sameClaims, true, "loaded identity is indexed once");
   console.log("MEASURE local hover / headless Chrome / 400 meshes:", JSON.stringify(hoverPerformance));
+  const curvedFaces = await page.evaluate(() => window.curvedFaceBenchmark());
+  assert.equal(curvedFaces.triangles, 101760);
+  assert.equal(curvedFaces.positionReads, 1, "two instances sharing a geometry build one face index");
+  assert.equal(curvedFaces.reused, true, "crossing new sphere faces reuses the display buffer");
+  assert.ok(curvedFaces.measurements.every((row) => row.triangles === 2));
+  console.log("MEASURE curved face lookup + buffer update (excludes raycast/snap/render):", JSON.stringify(curvedFaces));
   const hiddenSnap = await page.evaluate((point) => {
     const before = window.viewport.current.snapOnModel(...point);
     const hidden = window.hiddenNearHit();

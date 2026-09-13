@@ -10,9 +10,9 @@ import test from "node:test";
 import {
   candidatesOf,
   closestOnEdge,
-  connectedFace,
   distanceBetween,
   featureEdges,
+  indexConnectedFaces,
   nearestCandidate,
   type FeatureEdge,
   type Point3,
@@ -72,12 +72,13 @@ test("a box offers its twelve real edges and nothing across a face", () => {
 });
 
 test("face preselection crosses a flat diagonal and stops at each box fold", () => {
-  assert.deepEqual(connectedFace(FLAT, 0), [0, 1]);
-  assert.deepEqual(connectedFace(FLAT, 1), [0, 1], "duplicated corners weld across the diagonal");
-  const mesh = box(6, 3.2, 4);
+  const flatFace = indexConnectedFaces(FLAT);
+  assert.deepEqual(flatFace(0), [0, 1]);
+  assert.deepEqual(flatFace(1), [0, 1], "duplicated corners weld across the diagonal");
+  const boxFace = indexConnectedFaces(box(6, 3.2, 4));
   for (let triangle = 0; triangle < 12; triangle += 1) {
     const first = Math.floor(triangle / 2) * 2;
-    assert.deepEqual(connectedFace(mesh, triangle), [first, first + 1]);
+    assert.deepEqual(boxFace(triangle), [first, first + 1]);
   }
 });
 
@@ -90,9 +91,10 @@ test("indexed face preselection accepts reversed winding but requires a full sha
     ],
     index: [0, 1, 2, 0, 3, 2, 4, 5, 6, 0, 7, 8],
   };
-  assert.deepEqual(connectedFace(mesh, 1), [0, 1]);
-  assert.deepEqual(connectedFace(mesh, 2), [2], "a disconnected coplanar region stays separate");
-  assert.deepEqual(connectedFace(mesh, 3), [3], "one shared corner does not connect faces");
+  const face = indexConnectedFaces(mesh);
+  assert.deepEqual(face(1), [0, 1]);
+  assert.deepEqual(face(2), [2], "a disconnected coplanar region stays separate");
+  assert.deepEqual(face(3), [3], "one shared corner does not connect faces");
 });
 
 test("translated, sloped Float32 planes stay connected after coordinate rounding", () => {
@@ -103,18 +105,19 @@ test("translated, sloped Float32 planes stay connected after coordinate rounding
     123.1817101263, 346.8386519654, 461.571168997,
   ];
   const index = [0, 1, 2, 0, 2, 3];
-  assert.deepEqual(connectedFace({ positions, index }, 0), [0, 1]);
+  assert.deepEqual(indexConnectedFaces({ positions, index })(0), [0, 1]);
   for (const translation of [0, 10000]) {
     const stored = new Float32Array(positions.map((coordinate) => coordinate + translation));
+    const storedFace = indexConnectedFaces({ positions: stored, index });
     for (const triangle of [0, 1]) {
-      assert.deepEqual(connectedFace({ positions: stored, index }, triangle), [0, 1]);
+      assert.deepEqual(storedFace(triangle), [0, 1]);
     }
     const unindexed = new Float32Array(index.flatMap((corner) => Array.from(stored.slice(corner * 3, corner * 3 + 3))));
-    assert.deepEqual(connectedFace({ positions: unindexed, index: null }, 0), [0, 1]);
+    assert.deepEqual(indexConnectedFaces({ positions: unindexed, index: null })(0), [0, 1]);
     const folded = new Float32Array([...stored, stored[0]!, stored[1]! + 2, stored[2]!]);
-    const withFold = { positions: folded, index: [...index, 0, 1, 4] };
-    assert.deepEqual(connectedFace(withFold, 0), [0, 1], "storage tolerance still stops at a sharp fold");
-    assert.deepEqual(connectedFace(withFold, 2), [2]);
+    const withFold = indexConnectedFaces({ positions: folded, index: [...index, 0, 1, 4] });
+    assert.deepEqual(withFold(0), [0, 1], "storage tolerance still stops at a sharp fold");
+    assert.deepEqual(withFold(2), [2]);
   }
 });
 
@@ -128,8 +131,9 @@ test("thin translated Float32 triangles cannot use large uncertainty to cross re
     0, -1, 10000 + Math.tan(0.1 * Math.PI / 180),
   ]);
   for (const positions of [ninetyDegrees, shallowFold]) {
-    assert.deepEqual(connectedFace({ positions, index }, 0), [0]);
-    assert.deepEqual(connectedFace({ positions, index }, 1), [1]);
+    const face = indexConnectedFaces({ positions, index });
+    assert.deepEqual(face(0), [0]);
+    assert.deepEqual(face(1), [1]);
   }
 });
 
@@ -144,12 +148,43 @@ test("preselection rejects offset planes, folded and degenerate triangles", () =
     index: null,
   };
   for (const positions of [mesh.positions, new Float32Array(mesh.positions)]) {
-    assert.deepEqual(connectedFace({ positions, index: null }, 0), [0, 1]);
-    assert.deepEqual(connectedFace({ positions, index: null }, 2), [2]);
-    assert.deepEqual(connectedFace({ positions, index: null }, 3), []);
-    assert.deepEqual(connectedFace({ positions, index: null }, 4), [4]);
+    const face = indexConnectedFaces({ positions, index: null });
+    assert.deepEqual(face(0), [0, 1]);
+    assert.deepEqual(face(2), [2]);
+    assert.deepEqual(face(3), []);
+    assert.deepEqual(face(4), [4]);
+    for (const invalid of [-1, 5, 0.5, NaN]) assert.deepEqual(face(invalid), []);
   }
-  for (const invalid of [-1, 5, 0.5, NaN]) assert.deepEqual(connectedFace(mesh, invalid), []);
+});
+
+test("one topology build reads source arrays once and reuses them for many new seeds", () => {
+  const coordinates = Array.from({ length: 64 }, (_, offset) => (
+    box(6, 3.2, 4).positions.map((value, coordinate) => value + (coordinate % 3 === 0 ? offset * 10 : 0))
+  )).flat();
+  const corners = Array.from({ length: coordinates.length / 3 }, (_, corner) => corner);
+  let positionReads = 0;
+  let indexReads = 0;
+  const positions = new Proxy(coordinates, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) positionReads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const index = new Proxy(corners, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) indexReads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const face = indexConnectedFaces({ positions, index });
+  assert.equal(positionReads, coordinates.length);
+  assert.equal(indexReads, corners.length);
+  for (const triangle of [0, 2, 13, 63, 77, 300, 600, 767, 0]) {
+    const first = Math.floor(triangle / 2) * 2;
+    assert.deepEqual(face(triangle), [first, first + 1]);
+  }
+  assert.equal(positionReads, coordinates.length, "queries do not reread mesh positions");
+  assert.equal(indexReads, corners.length, "queries do not rebuild mesh adjacency");
 });
 
 test("an edge offers its ends and its middle, in model coordinates", () => {

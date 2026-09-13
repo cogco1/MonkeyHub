@@ -1316,6 +1316,8 @@ export const ThreeDmViewport = forwardRef<
       runtime.modelIndex = indexLoadedObjects(model);
       runtime.appearance = captureModelAppearance(model);
       runtime.scene.add(model);
+      runtime.preselection = new Preselection(model, getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
+      runtime.scene.add(runtime.preselection.group);
       const inspection = inspectScene(
         model,
         { name: names, size: totalSize },
@@ -1494,16 +1496,12 @@ export const ThreeDmViewport = forwardRef<
   const paintHover = useCallback(() => {
     const session = interaction.current;
     const runtime = runtimeRef.current;
-    if (!hoverEnabledRef.current || !runtime?.model || runtime.secondary || runtime.ghost ||
+    if (!hoverEnabledRef.current || !runtime?.model || !runtime.preselection || runtime.secondary || runtime.ghost ||
       !["inactive", "hovering"].includes(session.phase) || !session.pointer) { clearHover(); return; }
     const { x, y } = session.pointer;
     const hit = hitAt(x, y);
     if (!hit) { clearHover(); return; }
     session.hover = hit;
-    if (!runtime.preselection) {
-      runtime.preselection = new Preselection(getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
-      runtime.scene.add(runtime.preselection.group);
-    }
     runtime.preselection.update(hit, snapAtHit(hit, x, y));
     runtime.renderer.domElement.style.cursor = "pointer";
     runtime.render();

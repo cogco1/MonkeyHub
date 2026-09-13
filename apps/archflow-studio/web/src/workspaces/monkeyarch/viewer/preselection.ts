@@ -1,6 +1,6 @@
 import { BufferAttribute, BufferGeometry, DoubleSide, Float32BufferAttribute, Group, LineBasicMaterial,
   LineSegments, Mesh, MeshBasicMaterial, Object3D, Points, PointsMaterial, Vector3 } from "three";
-import { connectedFace, featureEdges, type FeatureEdge } from "./featureEdges";
+import { indexConnectedFaces, featureEdges, type FeatureEdge } from "./featureEdges";
 import type { LoadedObjectIdentity } from "./sceneInspection";
 import type { ModelSnap } from "./ThreeDmViewport";
 import { isDisplayed } from "./modelDisplay";
@@ -46,14 +46,25 @@ export class Preselection {
   private object: Object3D | null = null;
   private mesh: Object3D | null = null;
   private faceTriangles: readonly number[] | null = null;
-  private readonly faces = new WeakMap<BufferGeometry, Map<number, number[]>>();
+  private readonly faces = new WeakMap<BufferGeometry, {
+    lookup: ReturnType<typeof indexConnectedFaces>; cached: Map<number, number[]>;
+  }>();
 
-  constructor(colour: string) {
+  constructor(model: Object3D, colour: string) {
     this.group.name = "archflow-preselection";
     this.group.add(this.outline, this.face, this.edge, this.point);
     for (const object of this.group.children) { object.frustumCulled = false; object.renderOrder = 4; }
     this.colour(colour);
     this.clear();
+    // Prepare immutable mesh topology with the model, outside pointer frames.
+    // Instances sharing a geometry reuse one index for this loaded picture.
+    model.traverse((object) => {
+      if (!(object instanceof Mesh) || this.faces.has(object.geometry)) return;
+      const geometry = object.geometry;
+      this.faces.set(geometry, { lookup: indexConnectedFaces({
+        positions: geometry.getAttribute("position").array, index: geometry.index?.array ?? null,
+      }), cached: new Map() });
+    });
   }
 
   colour(value: string): void {
@@ -84,11 +95,8 @@ export class Preselection {
     let triangles: number[] | null = null;
     if (hit.mesh instanceof Mesh && hit.faceIndex !== null) {
       const geometry = hit.mesh.geometry;
-      const cached = this.faces.get(geometry) ?? new Map<number, number[]>();
-      this.faces.set(geometry, cached);
-      triangles = cached.get(hit.faceIndex) ?? connectedFace({
-        positions: geometry.getAttribute("position").array, index: geometry.index?.array ?? null,
-      }, hit.faceIndex);
+      const { lookup, cached } = this.faces.get(geometry)!;
+      triangles = cached.get(hit.faceIndex) ?? lookup(hit.faceIndex);
       for (const index of triangles) cached.set(index, triangles);
       if (this.mesh !== hit.mesh || this.faceTriangles !== triangles) {
         const values: number[] = [];
