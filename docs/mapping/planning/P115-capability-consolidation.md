@@ -240,6 +240,17 @@ X 鼠标负向预览；参考无跳变、同帧浮点确认、撤销／重做、
 
 ### Hub 项目运行时（issue #12）
 
+`P115/runtime` 继续 #12 的冷启动 admission 边界，复用 `a6c0` worktree 和
+`codex/hub-cold-admission` 分支。#21 完整包切片 PR #42 已合入，本次移除已完成的
+`desktop` 源码 lane；其干净用户机等后续验收仍保留在上方条目。
+既有 OperationManager 在转发前原子保存最小请求签名和精确项目绑定，位置为调用方指定
+Hub runtime root 下的 `runtime/operations/<runtimeId>.json`。同一 key 的不同请求会拒绝；
+保存失败不转发。冷启动后恢复已接收身份并拒绝重放，无请求正文、HTTP 回复正文或 canonical
+结果副本。候选与 Stage 成功仍须从 P036 的实际保留结果和可达提交重新对账。
+14 项操作恢复检查与 7 项真实 Hub/Studio 检查通过，覆盖断开的真实 HTTP 回复、无保留 run
+的双项目 Hub 重开、提交后恢复、日志写入失败和错误绑定。ACP/worker 现有收尾继续保留；
+更多 CAD/provider 生命周期与 #8 热复用不在此 admission 切片内。
+
 首期源码已由 [PR #16](https://github.com/cogco1/ARCHFLOW_V4/pull/16) 合入 main，
 6 项实现与 11 项验收完成。协调任务确认没有继续写入后，本次移除已完成的 `hub-runtime` live lane。
 现有服务尚未升级；全入口覆盖与更多 worker 的后续验证仍保留，issue #12 的后续工作独立推进。
@@ -258,8 +269,8 @@ Hub 现按项目标识和精确目录维护运行时，统一读取 worker、聊
 原端口新实例恢复、错误项目及过期基底拒绝。保留态检查区分完整候选、真实 branch 可达提交和仅准备的 Stage 文件。
 ACP 关闭测试确认只取消目标项目的 turn 和待决权限，并保留另一项目会话及两个项目的原始文件；完整检查结果以本 lane 的 PR 为准。
 
-运行时 admission 与 HTTP 回复属于当前 Hub 进程；Hub 冷启动重建已有候选、提交链和对话，
-不恢复尚未保留的请求或丢失的 proposal/job registry。原有 warm provider/geometry 路径继续由 Studio/ACP 管理，
+HTTP 回复与 proposal/job registry 仍属于当前 Hub 进程；冷启动恢复已保存的 admission 身份，
+重建已有候选、提交链和对话，不把尚未到达持久 admission 的请求变成可恢复任务。原有 warm provider/geometry 路径继续由 Studio/ACP 管理，
 本 lane 不替外部 Rhino bridge 创建新的生命周期或自动重启机制。源代码验收不代表安装包或当前服务已经更新。
 
 ### #13 Phase 0：共同 CAD 后端契约（2026-09-12）
