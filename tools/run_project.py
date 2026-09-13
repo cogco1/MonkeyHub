@@ -2,11 +2,11 @@
 
     python tools/run_project.py --project <project root> --run <run id> \
       --workflow-ref project://... --stage-envelope-ref project://... \
-      [--export [--cad-backend occt|rhino]] [--workspace <dir>]
+      [--export [--cad-backend occt|rhino|blender]] [--workspace <dir>]
 
-``--export`` goes through OCCT unless ``--cad-backend rhino`` is named: an
+``--export`` defaults to OCCT unless another ``--cad-backend`` is named: an
 exact STEP file and a mesh ``.3dm`` preview per seat, in process, retained as
-``seat-occt-execution``. Rhino is never started by the default.
+``seat-occt-execution``. Rhino and Blender require explicit selection.
 
 The design and the seats come from the project's own work-in-progress files —
 ``input/runner/state-record.json`` (``StateRecord@1``: components and massing,
@@ -123,7 +123,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--export", action="store_true", help="export every seat's compiled program through --cad-backend")
     parser.add_argument("--cad-backend", choices=CAD_BACKENDS, default=CAD_BACKEND_OCCT,
                         help="which executor an --export goes to: occt (default; in process, exact STEP plus a mesh .3dm preview) "
-                             "or rhino (the supervised host export; never started unless named here)")
+                             "or rhino (the supervised host export), or blender (closed meshes saved to .blend and cold-read; "
+                             "solid/straight-extrusion only; executable on PATH)")
     parser.add_argument("--workspace")
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", help="used by --cad-backend rhino only")
     parser.add_argument("--relaxed-coverage", action="store_true")

@@ -367,7 +367,8 @@
         ".github/pull_request_template.md",
         "archflow/adapters/blender_cad.py",
         "archflow/adapters/blender_worker.py",
-        "tests/test_blender_cad.py"
+        "tests/test_blender_cad.py",
+        "tests/test_verify_state_record.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -471,7 +472,9 @@
           "handoff": "Independent Phase 2 PR integration after real Blender save/cold-read and retained runner checks. New teammate reproduction and handoff remain pending.",
           "modules": [
             "adapters.cad_execution",
-            "project.record_kinds"
+            "project.record_kinds",
+            "tools.run_project",
+            "tools.verify_state_record"
           ],
           "write_scope": [
             "archflow/adapters/blender_cad.py",
@@ -485,7 +488,10 @@
             "governance/work_registry.json",
             "docs/SYSTEM_MAP.md",
             "docs/TEAM_ONBOARDING.md",
-            "docs/mapping/planning/P115-capability-consolidation.md"
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "tools/run_project.py",
+            "tools/verify_state_record.py",
+            "tests/test_verify_state_record.py"
           ],
           "depends_on": []
         }
