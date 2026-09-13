@@ -1,23 +1,35 @@
 # P115 — 能力总索引与逐项整理
 
-### #23：白板手势与选区反馈入口
+### #23：白板手势、选区反馈与文字意图
 
-在 `codex/board-ux` 的 c68e worktree 中 EXTEND `studio.board`。首片收起并可重新打开项目资料栏，
-将 Crit、清除、导出和立即保存放入次级入口，空板直接提示拖图、圈画、箭头和文字。
-选区入口复用 `createBoardFeedback`，提交仍经 `prepareBoardDesignRequest` 校验确切图页与模型。
-只含普通笔迹或文字的选区不显示模型操作；图纸与文字同选时说明文字尚需复制到反馈框。
-后续验收仍包括：仅选中文字按确定顺序进入反馈意图、无需重输，几何沿现有 DTO 单独传输。
-文件型剪贴板已有登记上传实现，已在隔离项目中核验文件事件、登记身份与实际保存；
-这不覆盖 HTML 或远程图片粘贴。中文文件干净导出时的响应头编码错误已复现并修复。
-首片已通过 32 项 Board 前端测试、10 项 Board API 测试、真实浏览器上传／粘贴／手势／选区反馈／
-干净导出／自动到达／重开／CAS、替换与 Crit 撤销回归、5 种反馈交接场景、构建和架构检查。
-中英文、深浅色、620px 资料栏与键盘入口已核验；首片等待协调审查合并，不据此关闭 #23。
+首片的可收起资料栏、次级操作入口、手势提示、严格选区反馈与中文干净导出修复，
+已由协调任务独立审查并合并为 PR #26，四项 CI 全绿。
+第二片复用 c68e worktree，分支 `codex/board-text`，基线为该合并
+`df264b512491232ae534df3ee3d7e80d9fcac38b`，继续 EXTEND `studio.board`。
 
-源码限定在 `web/src/workspaces/monkeyboard/Board.tsx`、`board.css`、`boardFeedbackGeometry.ts`
-及相关 Board 测试；`web/` 均指 `apps/archflow-studio/web/`。导出修复另限现有
-`apps/archflow-studio/api/archflow_studio_api/routes/boards.py` 与 `apps/archflow-studio/api/tests/test_boards.py`。
-共享登记与本文保留其他 lanes，
-不吸收 #14 的 App／Stage／DTO 或 #21 桌面实现。完成首片后由协调任务独立审查 PR 与准确 head 的 CI。
+`BoardFeedbackSelection.selectedText`
+承接明确选中的文字，包括原生图框子对象与绑定标签，同一对象只纳入一次；按画板 y、x、id 排序，
+保留作者原始换行，不从附近对象或 OCR 猜测内容。文字直接填入原反馈框，用户可发送或补充保留条件，
+现有 `prepareBoardDesignRequest` 只发送最终编辑后的意图一次。文字不写入几何 DTO 或图页批注，
+因此明确选中的页外文字也可以表达意图，几何仍必须位于图页范围。普通文字编辑仍留在 Excalidraw。
+输入框承接的是现有无 8000 字限制的 `utterance`，移除旧输入控件的该上限，以免长文字无法补充条件。
+本片已通过 34 项 Board 前端行为测试、真实私有 Studio／临时项目浏览器的中文文字免重输、
+绑定标签／页外明确选择／排序／无关文字排除／追加条件不重复，以及上传、文件型粘贴、干净导出、
+自动收图、撤销、重开、CAS 与键盘回归。来源／模型变化以只读响应注入验证拒绝提交并保留正文。
+几何 DTO 不含文字、仅改变文字时批注 PNG 不变；5 种既有反馈交接场景、替换与 Crit 撤销回归、
+构建和架构检查通过。文件型粘贴验收不覆盖 HTML 或远程图片粘贴，不自动宣告 #23 全部完成。
+
+协调侧独立浏览器复验发现首建 Board 的读取竞态：保存已建立 `studio-board` 目录、尚未安装
+`run.json` 时，未持有 Board 保存锁的读取会枚举到该目录并返回 `RUN_NOT_FOUND`。
+修复限定为让 `read_board` 复用既有 `_board_lock`，读取同一 Studio 保存前或保存后的完整快照。
+暂停实际 manifest 安装的并发回归在旧实现稳定复现 404，修复后确认 GET 等待并返回与 PUT 相同的版本；
+11 项 Board API 测试全通过。使用协调复验的 Python 环境重跑完整真实浏览器也通过：
+63 次 API 请求、2 次显式提交。没有增加 404 重试或修改 P036 持久化。
+
+本片生产源码限定在 `apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx`
+与 `boardFeedbackGeometry.ts`，以及 `apps/archflow-studio/api/archflow_studio_api/application/boards.py`，
+并更新相关既有 Board 测试及原有登记。共享文件保留其他 lanes。
+不吸收 #14 的 App／Stage／DTO 或 #21 桌面实现；下一独立 PR 由协调任务审查准确 head 与 CI 后合并。
 
 ### #14 Phases 2/3：本地会话与预选
 

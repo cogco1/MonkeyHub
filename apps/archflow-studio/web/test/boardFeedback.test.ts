@@ -18,6 +18,7 @@ const mark = (id: string): DocumentGestureDto => ({ id, kind: "line", points: [[
 const selection = (): BoardFeedbackSelection => ({
   image: {} as BoardFeedbackSelection["image"], document: structuredClone(document), page: { ...page }, source: { ...source },
   annotations: [mark("board:image:arrow:shaft")], annotationGroups: ["board:image:arrow"],
+  selectedText: "把入口向右移\n\n保留现有雨棚",
 });
 
 async function harness(t: TestContext) {
@@ -80,6 +81,20 @@ test("a second send does not accumulate copies or overwrite an unrelated Diagram
   assert.equal(h.current().annotations.length, 2);
   assert.equal(h.current().comment, "Existing unfinished Diagram comment");
   assert.equal((h.calls.filter((call) => call.method === "write")[1].args[0] as Record<string, unknown>).baseRevisionSha256, "saved-exact");
+});
+
+test("the reviewed selected-text message reaches intent once, with keeps and user edits preserved", async (t) => {
+  const h = await harness(t), chosen = selection();
+  const initial = await h.prepareBoardDesignRequest(chosen, "project-a", chosen.selectedText);
+  assert.equal(initial.utterance, chosen.selectedText, "Send without retyping uses the prefilled text once");
+  const edited = "把入口向左移\n\n保留现有雨棚\n通道净宽不变";
+  const request = await h.prepareBoardDesignRequest(chosen, "project-a", edited);
+  assert.equal(request.utterance, edited, "Do not prepend the original notes to the reviewed message");
+  assert.deepEqual(request.documentVisuals[0].annotatedPngBase64, initial.documentVisuals[0].annotatedPngBase64);
+  assert.equal(h.current().comment, "Existing unfinished Diagram comment");
+  const writes = h.calls.filter((call) => call.method === "write").length;
+  await assert.rejects(h.prepareBoardDesignRequest(chosen, "project-a", "  "), (cause) => cause.code === "EMPTY_COMMENT");
+  assert.equal(h.calls.filter((call) => call.method === "write").length, writes, "Deleting prefilled text must not fall back to the original note");
 });
 
 test("missing, rebound, mismatched or resized drawing sources fail before annotation writes", async (t) => {

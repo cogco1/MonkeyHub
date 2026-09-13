@@ -47,13 +47,16 @@ from tests.support import make_project, retain_rhino_receipt, runner_state_diges
 assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve(), archflow.__file__
 repository, _ = make_project(Path(sys.argv[1]))
 digest = runner_state_digest(repository, REFERENCE_RUN_ID)
-model = Path("tests/fixtures/model-source-a.3dm").read_bytes()
+models = []
 with mock.patch("tests.support.RHINO_DESIGN_STATE_DIGEST", digest):
-    retain_rhino_receipt(repository, repository.load_run(REFERENCE_RUN_ID), stage_id="document-source", file_name="source.3dm", payload_bytes=model)
-print(json.dumps({"runId": REFERENCE_RUN_ID, "stateDigest": digest, "assetSha256": hashlib.sha256(model).hexdigest()}))
+    for suffix in ("a", "b"):
+        model = Path(f"tests/fixtures/model-source-{suffix}.3dm").read_bytes()
+        retain_rhino_receipt(repository, repository.load_run(REFERENCE_RUN_ID), stage_id=f"document-source-{suffix}", file_name=f"source-{suffix}.3dm", payload_bytes=model)
+        models.append({"runId": REFERENCE_RUN_ID, "stateDigest": digest, "assetSha256": hashlib.sha256(model).hexdigest()})
+print(json.dumps(models))
 `, root, repoRoot], { cwd: apiRoot, encoding: "utf8", env: pythonEnv });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
-  const modelSource = JSON.parse(fixture.stdout.trim());
+  const [modelSource, alternateModelSource] = JSON.parse(fixture.stdout.trim());
   const apiPort = await new Promise((resolve) => {
     const probe = createHttpServer();
     probe.listen(0, "127.0.0.1", () => { const { port } = probe.address(); probe.close(() => resolve(port)); });
@@ -234,14 +237,24 @@ print(json.dumps({"runId": REFERENCE_RUN_ID, "stateDigest": digest, "assetSha256
   assert.deepEqual((await board()).elements, marksScene.elements, "Pan must not modify the saved drawing or ink geometry");
   await fit();
 
-  // Native text stays editable; this slice must visibly refuse to drop it from feedback.
+  // The selected native text is already the instruction: send it without retyping.
   await page.locator(".excalidraw").focus(); await page.keyboard.press("Escape"); await page.keyboard.press("t");
   await page.mouse.click(650, 545); await page.keyboard.insertText("入口保持净宽"); await page.keyboard.press("Escape");
   const textScene = await savedWhere((value) => active(value, "text").some((element) => element.text === "入口保持净宽"), "Native Chinese text did not persist");
   await selectAll();
-  assert.equal(await feedback().isDisabled(), true);
-  assert.match(await page.locator(".monkeyboard-context").innerText(), /text.*(feedback|message)|文字/i);
+  assert.equal(await feedback().isEnabled(), true);
   await screenshot("text-selection");
+  await feedback().click();
+  const dialog = page.getByRole("dialog", { name: "Discuss this drawing", exact: true });
+  const comment = () => dialog.getByLabel("What would you like to change?", { exact: true });
+  assert.equal(await comment().inputValue(), "入口保持净宽");
+  assert.equal(submissions.length, 0, "Selecting and opening existing text must not submit an intent");
+  await screenshot("text-prefilled");
+  await dialog.getByRole("button", { name: "Send to design", exact: true }).click();
+  for (let attempt = 0; submissions.length < 1 && attempt < 100; attempt++) await delay(100);
+  assert.equal(submissions.length, 1);
+  assert.equal(submissions[0].utterance, "入口保持净宽", "Selected Chinese text must be sent exactly once without retyping");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   // A real text selection/delete remains reversible through the native keys.
   await page.keyboard.press("Escape"); await page.mouse.click(665, 555); await page.keyboard.press("Delete");
   await savedWhere((value) => active(value, "text").length === 0, "Delete did not remove selected text");
@@ -249,24 +262,73 @@ print(json.dumps({"runId": REFERENCE_RUN_ID, "stateDigest": digest, "assetSha256
   await savedWhere((value) => active(value, "text").length === active(textScene, "text").length, "Undo did not restore editable text");
   await page.keyboard.press("Control+Shift+z");
   await savedWhere((value) => active(value, "text").length === 0, "Redo did not remove text");
+  await page.keyboard.press("Control+z");
+  await savedWhere((value) => active(value, "text").length === 1, "Undo must return the editable Board note");
+  const addText = async (point, text) => {
+    await page.locator(".excalidraw").focus(); await page.keyboard.press("Escape"); await page.keyboard.press("t");
+    await page.mouse.click(...point); await page.keyboard.insertText(text); await page.keyboard.press("Escape");
+    return savedWhere((value) => active(value, "text").some((element) => element.text === text), `Native note did not persist: ${text}`);
+  };
+  // Creation order differs from reading order. The far note is intentionally unselected.
+  await addText([1150, 805], "另一张图的待办");
+  await addText([650, 770], "保留现有雨棚");
+  await page.keyboard.press("v"); await page.mouse.dblclick(700, 450);
+  await page.keyboard.insertText("把入口向右移"); await page.keyboard.press("Escape");
+  const labelled = await savedWhere((value) => active(value, "text").some((element) => element.text === "把入口向右移"),
+    "Double-clicking the arrow did not create its native label");
+  assert.equal(active(labelled, "text").find((element) => element.text === "把入口向右移").containerId, active(labelled, "arrow")[0].id,
+    "The fixture must exercise native bound text, not a nearby loose label");
   await draw("v", [350, 235], [1100, 810]);
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true, "Native marquee must select the explicit source with its marks");
   await screenshot("selection");
   await feedback().click();
-  const dialog = page.getByRole("dialog", { name: "Discuss this drawing", exact: true });
-  await dialog.getByLabel("What would you like to change?", { exact: true }).fill("Move the marked entrance; retain its clear width.");
-  assert.equal(submissions.length, 0, "Opening and writing feedback must not call the agent");
+  const selectedText = "把入口向右移\n\n入口保持净宽\n\n保留现有雨棚";
+  assert.equal(await comment().inputValue(), selectedText, "Read top-to-bottom, include bound/outside selected text once, exclude the unselected note");
+  const editedComment = `${selectedText}\n保留窗洞位置。`;
+  await comment().press("End"); await comment().press("Control+End"); await comment().press("Enter");
+  await page.keyboard.insertText("保留窗洞位置。");
+  assert.equal(await comment().inputValue(), editedComment);
+  assert.equal(submissions.length, 1, "Opening and extending feedback must not call the agent");
+  await screenshot("text-with-conditions");
   await dialog.getByRole("button", { name: "Send to design", exact: true }).click();
-  for (let attempt = 0; submissions.length === 0 && attempt < 100; attempt++) await delay(100);
-  assert.equal(submissions.length, 1);
-  const submitted = submissions[0];
+  for (let attempt = 0; submissions.length < 2 && attempt < 100; attempt++) await delay(100);
+  assert.equal(submissions.length, 2);
+  const submitted = submissions[1];
   assert.deepEqual(submitted.modelSource, modelSource);
   assert.deepEqual(submitted.source, active(imported, "image")[0].customData.sourceDocument);
-  assert.equal(submitted.utterance, "Move the marked entrance; retain its clear width.");
+  assert.equal(submitted.utterance, editedComment, "The final edited message must not prepend or duplicate selected text");
   assert.equal(submitted.documentAnnotations.length, 1);
   assert.ok(submitted.documentVisuals[0].annotatedPngBase64);
-  assert.ok(requests.some((request) => request.method === "PUT" && request.path === "/api/document-annotations"));
+  const annotationWrites = () => requests.filter((request) => request.method === "PUT" && request.path === "/api/document-annotations");
+  assert.equal(annotationWrites().length, 2);
+  assert.ok(annotationWrites().every((request) => request.body.annotations.every((mark) => mark.kind !== "text" && !mark.label)),
+    "Board text travels as the editable message, never as geometry annotations");
+  assert.equal(submitted.documentVisuals[0].annotatedPngBase64, submissions[0].documentVisuals[0].annotatedPngBase64,
+    "Adding only Board text, including a native arrow label, must not redraw text into the geometry PNG");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+
+  // Persisted source bindings are immutable. Exercise stale reads by changing only
+  // the documents response after the modal opens, preserving all real project data.
+  const documentsUrl = `${origin}/api/documents`;
+  for (const change of ["model", "source"]) {
+    await feedback().click();
+    assert.equal(await comment().inputValue(), selectedText);
+    await page.route(documentsUrl, async (route) => {
+      const response = await route.fetch(); const value = await response.json();
+      const documents = change === "source" ? [] : value.documents.map((document) =>
+        document.assetSha256 === firstDocument.assetSha256 ? { ...document, modelSource: alternateModelSource } : document);
+      await route.fulfill({ response, json: { ...value, documents } });
+    });
+    try {
+      await dialog.getByRole("button", { name: "Send to design", exact: true }).click();
+      await dialog.getByRole("alert").waitFor();
+      assert.match(await dialog.getByRole("alert").innerText(), change === "model" ? /linked model changed|cannot be opened/i : /source changed/i);
+      assert.equal(await comment().inputValue(), selectedText);
+      assert.equal(submissions.length, 2); assert.equal(annotationWrites().length, 2);
+      await screenshot(`${change}-changed`);
+    } finally { await page.unroute(documentsUrl); }
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
 
   // Export is the registered clean original even after real Board/page ink was saved.
   await setMore(true);
@@ -351,7 +413,7 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
   assert.deepEqual(requests.filter((request) => /\/api\/(intents|proposals|jobs|model-annotations|candidates)/.test(request.path)), [],
     "Ordinary board actions must never enter a model or agent path");
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: "real isolated Board drop/file-upload/file-clipboard-paste, arrow/circle/pen/text/marquee/pan, native undo/redo, source-bound feedback, explicit text limitation, clean export, hidden-panel discovery, reload and CAS", requests: requests.length, submissions: submissions.length }));
+  console.log(JSON.stringify({ passed: "real isolated Board drop/file-upload/file-clipboard-paste, native gestures and undo/redo, ordered selected/bound/outside text, editable feedback without duplication, source/model-change refusal, clean export, hidden-panel discovery, reload and CAS", requests: requests.length, submissions: submissions.length }));
 } catch (error) {
   if (page && !page.isClosed()) {
     if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT });
