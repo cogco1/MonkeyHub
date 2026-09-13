@@ -35,7 +35,7 @@ import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useMode
 import { hostOrigin, requestStartModeling } from "../../../../../shared-web/src/hostBridge.js";
 import { distanceBetween } from "../../workspaces/monkeyarch/viewer/featureEdges";
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
-import type { PushPullTarget } from "../../workspaces/monkeyarch/interactionSession";
+import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
@@ -433,12 +433,100 @@ export function Stage({
     interaction.current.rotate = null;
     setRotatePhase(null); setRotateError(null);
   }, [viewportRef]);
+  const [scaleInputs] = useState(() => [createRef<HTMLInputElement>(), createRef<HTMLInputElement>(), createRef<HTMLInputElement>()]);
+  const [scaleMode, setScaleMode] = useState<ScaleMode>("uniform");
+  const [scalePhase, setScalePhase] = useState<"reference" | "factor" | null>(null);
+  const [scaleError, setScaleError] = useState<string | null>(null);
+  const stopScale = useCallback(() => {
+    cancelInteractionFrame(interaction.current, "scale");
+    if (interaction.current.scale) viewportRef.current?.sketchPreview(null);
+    interaction.current.scale = null;
+    setScalePhase(null); setScaleError(null);
+  }, [viewportRef]);
   const closeDirectTool = useCallback(() => {
     stopPushPull();
     stopMove();
     stopRotate();
+    stopScale();
     modelKeysRef.current?.onTool?.("select");
-  }, [stopPushPull, stopMove, stopRotate]);
+  }, [stopPushPull, stopMove, stopRotate, stopScale]);
+  const paintScale = useCallback(() => {
+    const current = interaction.current.scale;
+    if (!current) return;
+    const factors = current.typed === null ? current.scale : current.typed.map(Number) as Vec3;
+    scaleInputs.forEach((input, i) => {
+      const value = current.typed?.[i] ?? (factors === null ? "" : String(Number(factors[i]!.toFixed(4))));
+      // Preserve the browser's partial numeric entry (for example a leading -).
+      if (input.current && input.current.value !== value) input.current.value = value;
+    });
+    if (factors === null) { viewportRef.current?.sketchPreview(null); return; }
+    try {
+      if (current.typed?.some(value => !value.trim())) throw new Error("Enter finite, nonzero scale factors.");
+      viewportRef.current?.sketchPreview(previewDirectModel({ spec: current.spec,
+        parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: "scale", scale: factors }));
+      setScaleError(null);
+    } catch (error) {
+      viewportRef.current?.sketchPreview(null);
+      setScaleError(error instanceof Error ? error.message : String(error));
+    }
+  }, [scaleInputs, viewportRef]);
+  const commitScale = useCallback(() => {
+    const current = interaction.current.scale, keys = modelKeysRef.current;
+    if (!current || !keys?.onApply || keys.busy || keys.directTool !== "scale" || keys.pushPullTarget !== current.target) return;
+    if (!current.reference && current.typed === null) return;
+    const factors = current.typed === null ? current.scale : current.typed.map(Number) as Vec3;
+    if (!factors || factors.some(value => !Number.isFinite(value) || Math.abs(value) < 1e-9) ||
+        factors.every(value => Math.abs(value - 1) < 1e-9) || current.typed?.some(value => !value.trim())) return;
+    try {
+      previewDirectModel({ spec: current.spec, parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: "scale", scale: factors });
+      stopScale();
+      keys.onApply({ kind: "scale", scale: factors, target: current.target });
+      keys.onTool?.("select");
+    } catch (error) { setScaleError(error instanceof Error ? error.message : String(error)); }
+  }, [stopScale]);
+  const changeScaleMode = useCallback((mode: ScaleMode) => {
+    const current = interaction.current.scale;
+    setScaleMode(mode);
+    if (!current) return;
+    cancelInteractionFrame(interaction.current, "scale");
+    const basis = mode === "uniform" ? viewportRef.current?.workPlaneFromSelection() ?? current.spec.plane!
+      : mode === "z" ? WORK_PLANES.yz : WORK_PLANES.xy;
+    current.mode = mode; current.plane = { ...basis, origin: draftTransformCenter(current.spec) };
+    current.reference = null; current.scale = [1, 1, 1];
+    if (mode === "uniform" && current.typed) current.typed = [current.typed[0], current.typed[0], current.typed[0]];
+    interaction.current.pointer = null;
+    setScalePhase("reference"); setScaleError(null);
+    if (current.typed !== null) paintScale();
+    else { viewportRef.current?.sketchPreview(null); scaleInputs.forEach(input => { if (input.current) input.current.value = "1"; }); }
+  }, [paintScale, scaleInputs, viewportRef]);
+  useEffect(() => {
+    stopScale(); setScaleMode("uniform");
+    if (model?.directTool !== "scale" || documentOpen || model.interactionBlocked) return;
+    const target = model.pushPullTarget;
+    if (!target) { setScaleError("Select a drawn solid or face before scaling."); return; }
+    const spec = specFromDrawnShape(target.shape);
+    const basis = viewportRef.current?.workPlaneFromSelection() ?? spec.plane!;
+    interaction.current.scale = { target, spec, mode: "uniform", plane: { ...basis, origin: draftTransformCenter(spec) },
+      reference: null, centerTolerance: 1e-9, scale: [1, 1, 1], typed: null };
+    interaction.current.pointer = null;
+    scaleInputs.forEach(input => { if (input.current) input.current.value = "1"; });
+    setScalePhase("reference");
+    return stopScale;
+  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, scaleInputs, stopScale, viewportRef]);
+  useEffect(() => {
+    if (model?.directTool !== "scale") return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || documentOpen) return;
+      if (event.key === "Escape") { event.preventDefault(); closeDirectTool(); return; }
+      if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest("input, textarea, select, [contenteditable]") ||
+          (target.closest("button, a") && !target.closest('button[data-model-tool="scale"]')))) return;
+      event.preventDefault(); commitScale();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [model?.directTool, documentOpen, closeDirectTool, commitScale]);
   const paintRotate = useCallback(() => {
     const current = interaction.current.rotate;
     if (!current) return;
@@ -680,11 +768,12 @@ export function Stage({
     stopPushPull();
     stopMove();
     stopRotate();
+    stopScale();
     setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate]);
+  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate, stopScale]);
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
@@ -766,7 +855,7 @@ export function Stage({
   const modelKeysAvailable = model !== undefined;
   // What is *in progress*, which is not the same as what is armed.
   const actionInProgressRef = useRef(false);
-  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive || movePhase !== null || rotatePhase !== null;
+  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive || movePhase !== null || rotatePhase !== null || scalePhase !== null;
   actionInProgressRef.current = actionInProgress;
   const inkRef = useRef({
     undo: onUndoGesture, redo: onRedoGesture, canUndo: false, canRedo: false, busy: false,
@@ -1015,7 +1104,7 @@ export function Stage({
         <ThreeDmViewport
           ref={viewportRef}
           interaction={interaction}
-          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && movePhase === null && rotatePhase === null && tool === null && !documentOpen && !sketchBusy}
+          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && movePhase === null && rotatePhase === null && scalePhase === null && tool === null && !documentOpen && !sketchBusy}
           onInspection={onInspection}
           onStatus={onStatus}
           onRequestFile={onRequestFile}
@@ -1026,6 +1115,7 @@ export function Stage({
             stopPushPull();
             stopMove();
             stopRotate();
+            stopScale();
             sketchEpoch.current += 1;
             showSketch({ ...SKETCH_IDLE, tool: interaction.current.sketch.tool }); setWorkPlaneName("xy");
             stopMeasuring(); setMeasuring(false);
@@ -1063,6 +1153,50 @@ export function Stage({
           )}
         />
       </ErrorBoundary>
+      {scalePhase !== null && <div className="stage-sketch stage-scale" data-phase={scalePhase}
+        onPointerDown={(event) => {
+          if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
+        }}
+        onPointerMove={(event) => {
+          const current = interaction.current.scale;
+          if (!current || current.typed !== null || event.buttons) return;
+          interaction.current.pointer = { x: event.clientX, y: event.clientY };
+          if (!current.reference) return;
+          const world = viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, current.plane);
+          const delta = world?.map((value, i) => value - current.plane.origin[i]!) as Vec3 | undefined;
+          const axis = current.mode === "uniform" ? null : { x: 0, y: 1, z: 2 }[current.mode];
+          const referenceLength = axis === null ? Math.hypot(...current.reference) : current.reference[axis]!;
+          const distance = !delta ? null : axis === null
+            ? delta.reduce((sum, value, i) => sum + value * current.reference![i]!, 0) / referenceLength : delta[axis]!;
+          if (distance === null || Math.abs(distance) <= current.centerTolerance) current.scale = null;
+          else {
+            const factor = distance / referenceLength;
+            current.scale = axis === null ? [factor, factor, factor] : [1, 1, 1];
+            if (axis !== null) current.scale[axis] = factor;
+          }
+          scheduleInteractionFrame(interaction.current, "scale", paintScale);
+        }}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          const current = interaction.current.scale;
+          if (!current) return;
+          if (current.typed === null && !current.reference) {
+            const pointer = interaction.current.pointer ?? { x: event.clientX, y: event.clientY };
+            const world = viewportRef.current?.pointOnSketchPlane(pointer.x, pointer.y, current.plane);
+            if (!world) return;
+            const reference = world.map((value, i) => value - current.plane.origin[i]!) as Vec3;
+            const neighbours = [[pointer.x + 1, pointer.y], [pointer.x, pointer.y + 1]]
+              .map(([x, y]) => viewportRef.current?.pointOnSketchPlane(x!, y!, current.plane));
+            current.centerTolerance = Math.max(1e-9, ...neighbours.map(neighbour => neighbour
+              ? Math.hypot(...neighbour.map((value, i) => value - world[i]!)) : 0));
+            const referenceLength = current.mode === "uniform" ? Math.hypot(...reference) : Math.abs(reference[{ x: 0, y: 1, z: 2 }[current.mode]]!);
+            if (referenceLength <= current.centerTolerance) return;
+            current.reference = reference;
+            setScalePhase("factor"); return;
+          }
+          // Use the latest precise pointer factor, including before RAF.
+          commitScale();
+        }} />}
       {rotatePhase !== null && <div className="stage-sketch stage-rotate" data-phase={rotatePhase}
         onPointerDown={(event) => {
           if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
@@ -1707,8 +1841,20 @@ export function Stage({
             </div>
           )}
           {model?.directTool && model.onApply && <ModelEditPanel key={model.directTool} tool={model.directTool}
-            subject={model.subject} busy={model.busy ?? false} error={rotateError ?? moveError ?? pushPullError ?? model.error ?? null}
+            subject={model.subject} busy={model.busy ?? false} error={scaleError ?? rotateError ?? moveError ?? pushPullError ?? model.error ?? null}
             onApply={model.onApply} onClose={closeDirectTool}
+            scale={{ inputs: scaleInputs, mode: scaleMode, onMode: changeScaleMode,
+              values: interaction.current.scale?.typed ?? interaction.current.scale?.scale?.map(String) ?? ["1", "1", "1"],
+              hint: zh ? "绕对象中心缩放。XYZ 等比，X/Y/Z 沿轴；点参考位置，再沿参考方向移动。倍率可覆盖，负值镜像；单击或 Enter 完成，Esc 取消。"
+                : "Scale around the object centre. XYZ is uniform; X/Y/Z scale one axis. Pick a reference, then move along its direction. Values override; negative factors mirror. Click or Enter to apply, Esc to cancel.",
+              onChange: (index, value) => {
+                const current = interaction.current.scale;
+                if (!current) return;
+                current.typed ??= (current.scale ?? [1, 1, 1]).map(String) as [string, string, string];
+                if (current.mode === "uniform") current.typed = [value, value, value];
+                else current.typed[index] = value;
+                cancelInteractionFrame(interaction.current, "scale"); paintScale();
+              }, onCommit: commitScale }}
             rotate={{ inputRef: rotateInput, axis: rotateAxis, onAxis: changeRotateAxis,
               hint: zh ? "绕对象中心旋转。先点参考方向，再移动鼠标；输入角度可覆盖。单击或 Enter 完成，Esc 取消。"
                 : "Rotate around the object centre. Pick a reference direction, then move the pointer; type an angle to override. Click or Enter to apply, Esc to cancel.",

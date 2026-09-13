@@ -1,6 +1,6 @@
 import { useRef, useState, type RefObject } from "react";
 import { usePreferences } from "../settings/preferences";
-import type { PushPullTarget } from "../../workspaces/monkeyarch/interactionSession";
+import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import type { SketchVector } from "./sketch";
 import { ModelToolButton } from "./ModelToolButton";
 import "./ModelEditPanel.css";
@@ -10,10 +10,10 @@ export type DirectModelAction =
   | { kind: "pushPull"; distance: number; normal?: SketchVector; target?: PushPullTarget }
   | { kind: "move" | "copy"; translation: [number, number, number]; target?: PushPullTarget }
   | { kind: "rotate"; angleDegrees: number; axis: [number, number, number]; target?: PushPullTarget }
-  | { kind: "scale"; scale: [number, number, number] };
+  | { kind: "scale"; scale: [number, number, number]; target?: PushPullTarget };
 
 /** Typed model actions; the server owns their geometry and exact-base checks. */
-export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, pushPull, move, rotate }: {
+export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, pushPull, move, rotate, scale }: {
   tool: DirectModelTool;
   subject: string | null;
   busy: boolean;
@@ -41,20 +41,48 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     onChange(value: string): void;
     onCommit(): void;
   };
+  scale: {
+    inputs: readonly RefObject<HTMLInputElement | null>[];
+    values: readonly string[];
+    mode: ScaleMode;
+    hint: string;
+    onMode(mode: ScaleMode): void;
+    onChange(index: number, value: string): void;
+    onCommit(): void;
+  };
 }) {
   const { language } = usePreferences();
   const zh = language === "zh-CN";
-  const [values, setValues] = useState<[string, string, string]>(tool === "scale" ? ["1", "1", "1"] : ["1", "0", "0"]);
-  const [uniform, setUniform] = useState(true);
+  const [values, setValues] = useState<[string, string, string]>(["1", "0", "0"]);
   const fallbackInput = useRef<HTMLInputElement>(null);
   const titles = zh
     ? { pushPull: "推拉 P", move: "移动 M", rotate: "旋转 Q", scale: "缩放 S", copy: "复制" }
     : { pushPull: "Push/Pull P", move: "Move M", rotate: "Rotate Q", scale: "Scale S", copy: "Copy" };
-  const vector = tool === "move" || tool === "copy" || (tool === "scale" && !uniform);
+  const vector = tool === "move" || tool === "copy";
   const count = vector ? 3 : 1;
   const valid = values.slice(0, count).every((value) => value.trim() !== "" && Number.isFinite(Number(value))) &&
-    (tool !== "scale" || values.slice(0, count).every((value) => Math.abs(Number(value)) > 1e-9)) &&
     (tool !== "pushPull" || Number(values[0]) !== 0);
+  if (tool === "scale") return <form className="model-edit-panel model-edit-panel--pushpull model-edit-panel--move" aria-label={titles[tool]}
+    onKeyDown={(event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+    }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) scale.onCommit(); }}>
+    <div className="model-edit-panel__distance">
+      <ModelToolButton icon="help" label={scale.hint} />
+      <select aria-label="Scale axes" value={scale.mode} disabled={busy} onChange={(event) => scale.onMode(event.target.value as ScaleMode)}>
+        <option value="uniform">XYZ</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+      </select>
+      {scale.inputs.slice(0, scale.mode === "uniform" ? 1 : 3).map((input, index) => <label key={index}>
+        {scale.mode !== "uniform" && <span className="quiet">{["X", "Y", "Z"][index]}</span>}
+        <input ref={input} aria-label={scale.mode === "uniform" ? (zh ? "等比倍率" : "Uniform factor") : `${["X", "Y", "Z"][index]} factor`}
+          type="number" step="any" defaultValue={scale.values[index] ?? "1"} disabled={busy}
+          onFocus={(event) => event.currentTarget.select()} onChange={(event) => scale.onChange(index, event.target.value)} />
+      </label>)}
+      <span className="quiet" aria-hidden="true">×</span>
+      <ModelToolButton icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
+      <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+    </div>
+    {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
+  </form>;
   if (tool === "rotate") return <form className="model-edit-panel model-edit-panel--pushpull" aria-label={titles[tool]}
     onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
@@ -123,21 +151,16 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     event.preventDefault();
     if (busy || !subject || !valid) return;
     const nums = values.map(Number) as [number, number, number];
-    if (tool === "scale") onApply({ kind: tool, scale: uniform ? [nums[0], nums[0], nums[0]] : nums });
-    else onApply({ kind: tool, translation: nums });
+    onApply({ kind: tool, translation: nums });
   }}>
     <div className="model-edit-panel__heading"><strong>{titles[tool]}</strong><ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} /></div>
     <p className="model-edit-panel__subject">{subject ?? (zh ? "先在模型中点击选择对象或面" : "Select an object or face in the model")}</p>
     <div className="model-edit-panel__fields">
       {Array.from({ length: count }, (_, index) => <label key={index}>
-        {vector ? ["X", "Y", "Z"][index] : tool === "scale" ? (zh ? "倍率" : "Factor") : (zh ? "距离 m" : "Distance m")}
+        {vector ? ["X", "Y", "Z"][index] : (zh ? "距离 m" : "Distance m")}
         <input type="number" step="any" autoFocus={index === 0} value={values[index]} disabled={busy} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setValues((current) => current.map((value, i) => i === index ? event.target.value : value) as [string, string, string])} />
       </label>)}
     </div>
-    {tool === "scale" && <label className="model-edit-panel__uniform"><input type="checkbox" checked={uniform} disabled={busy} onChange={(event) => {
-      if (!event.target.checked) setValues(([factor]) => [factor, factor, factor]);
-      setUniform(event.target.checked);
-    }} />{zh ? "等比缩放（取消后可沿轴缩放/镜像）" : "Uniform scale (uncheck for axis scale / mirror)"}</label>}
     <small>{zh ? "用于绘制体和平面，Z 向上。旋转、缩放以对象中心为基点。" : "For drawn solids and faces. Z is up; rotate/scale around the object centre."}</small>
     {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
     <button className="model-edit-panel__apply" type="submit" disabled={busy || !subject || !valid}>{busy ? (zh ? "正在生成模型…" : "Building model…") : (zh ? "应用" : "Apply")}</button>

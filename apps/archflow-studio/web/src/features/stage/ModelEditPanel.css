@@ -5,7 +5,6 @@
 .model-edit-panel__fields label { min-width: 0; flex: 1; display: grid; gap: 4px; }
 .model-edit-panel__fields input, .model-edit-panel__fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: inherit; font: inherit; }
 .model-edit-panel small { display: block; line-height: 1.5; opacity: .75; }
-.model-edit-panel__uniform { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .model-edit-panel__error { overflow-wrap: anywhere; color: var(--violated); }
 .model-edit-panel__apply { width: 100%; min-height: 34px; margin-top: 12px; }
 .model-edit-panel--pushpull { left: 50%; transform: translateX(-50%); width: max-content; max-width: 100%; padding: 4px; overflow: visible; }
