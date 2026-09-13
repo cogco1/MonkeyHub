@@ -530,6 +530,7 @@ class HubUsageBindingTests(unittest.TestCase):
         store = UsageLog(self.data_dir)
         original = replace(next(iter_codex_events([path])), project_id="project-a")
         store.append(original)
+        original = store.read()[0][0]
         data = self.data([path])
         self.assertEqual(data.snapshot()["events"], [original.to_dict()])
         self.status = 503

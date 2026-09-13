@@ -43,8 +43,9 @@ class StudioMonitor:
         return dict(self._context.get())
 
     @contextmanager
-    def scope(self, *, operation_id: str | None = None, parent_event_id: str | None = None):
-        token = self._context.set({"operation_id": operation_id, "event_id": parent_event_id})
+    def scope(self, *, operation_id: str | None = None, parent_event_id: str | None = None,
+              turn_id: str | None = None):
+        token = self._context.set({"operation_id": operation_id, "event_id": parent_event_id, "turn_id": turn_id})
         try:
             yield
         finally:
@@ -56,7 +57,8 @@ class StudioMonitor:
         current = self.current()
         association = dict(project_id=project_id or current.get("project_id"), run_id=run_id or current.get("run_id"),
                            source_ref=source_ref or current.get("source_ref"),
-                           operation_id=current.get("operation_id"), parent_event_id=parent_event_id or current.get("event_id"))
+                           operation_id=current.get("operation_id"), turn_id=current.get("turn_id"),
+                           parent_event_id=parent_event_id or current.get("event_id"))
 
         def observed(row):
             try:
@@ -92,7 +94,7 @@ class StudioMonitor:
                 project_id=project_id or current.get("project_id"), run_id=run_id or current.get("run_id"),
                 source_ref=source_ref or current.get("source_ref"),
                 related_event_id=related_event_id, session_id=session_id,
-                parent_session_id=parent_session_id, turn_id=turn_id,
+                parent_session_id=parent_session_id, turn_id=turn_id or current.get("turn_id"),
                 billing_mode=billing_mode,
                 operation_id=operation_id or current.get("operation_id"), parent_event_id=parent_event_id,
                 details={} if details is None else details,
@@ -108,7 +110,8 @@ class StudioMonitor:
         self, phase: str, *, project_id: str | None = None,
         run_id: str | None = None, source_ref: str | None = None,
         related_event_id: str | None = None, event_id: str | None = None,
-        operation_id: str | None = None, parent_event_id: str | None = None, details=None,
+        operation_id: str | None = None, parent_event_id: str | None = None,
+        turn_id: str | None = None, details=None,
         timing_scope: str = "service",
     ):
         """Measure only the service call; a nested export is detail of this interval.
@@ -124,6 +127,7 @@ class StudioMonitor:
             "run_id": run_id or current.get("run_id"), "source_ref": source_ref or current.get("source_ref"),
             "related_event_id": related_event_id,
             "operation_id": operation_id or current.get("operation_id") or event_id,
+            "turn_id": turn_id or current.get("turn_id"),
             "parent_event_id": parent_event_id or current.get("event_id"),
             "details": {} if details is None else dict(details), "timing_scope": timing_scope,
         }

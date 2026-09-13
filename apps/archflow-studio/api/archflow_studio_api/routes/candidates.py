@@ -173,6 +173,15 @@ def read_job(request: Request, job_id: str) -> JobDto:
 def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     """One finished candidate, read back out of the records its run retained."""
 
+    project_id = bound_project(request.app.state).project_id
+    with request.app.state.monitor.measure("candidate_readback", project_id=project_id, run_id=candidate_id,
+        related_event_id=f"studio:candidate:{project_id}:{candidate_id}", details={"blocking": True}) as interval:
+        result = _read_candidate(request, candidate_id)
+        interval["details"]["success"] = result.status == SUCCEEDED and result.object_readback_error is None
+        return result
+
+
+def _read_candidate(request: Request, candidate_id: str) -> CandidateDto:
     state = request.app.state
     binding = bound_project(state)
     try:

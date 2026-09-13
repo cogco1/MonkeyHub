@@ -1,5 +1,28 @@
 # P115 — 能力总索引与逐项整理
 
+### #32 Phase 0：整轮任务观测与 MonkeyMonitor
+
+`P115/agent-latency` 从 `293756cf` 开始，复用分配的 `597e` worktree，
+EXTEND `monkeymonitor`、`hub.shell`、`studio.shell` 与 `studio.candidate`。
+Hub 用户消息、Agent 活动、工具、Studio 请求、候选队列、CAD、读回、验证与浏览器预览
+归入同一 turn。原 `UsageEvent` / `UsageLog` 是唯一诊断日志，P036 保持原有设计保存权。
+
+Monitor 首页提供真实记录驱动的摘要、五泳道水平耗时图、嵌套活动树、阻塞区间与重复请求诊断。
+模型调用次数只来自真实用量元数据；Agent 等待区间不冒充纯推理，首文本到达也不冒充浏览器首帧。
+进程内时长取单调时钟，跨进程位置保留毫秒墙钟口径；并行时间不相加，关键分支证据不足时保留未归因。
+计价按精确 provider/model/billing plan 与有来源、生效日期的费率；未知身份显示不可用。
+原调用表和假设计算器保留在高级工具。JSON 下载与页面使用同一归一化记录。
+
+固定 simple-create / incremental-edit 基准与可丢弃 Hub/Studio/OCCT 运行入口位于
+`tests/monkeymonitor/`。真实 provider 测试只使用合成项目和隔离端口；不更新安装包或活动服务。
+已核实真实 Codex 回合能产生并读回候选，实际浏览器加载与原生 token 记录出现在同一 trace。
+源码检查包括监控/聊天/队列/候选/验证、实际 3DM 模型载入浏览器、OpenAPI、构建与 archcheck。
+完整旧浏览器套件另有绘图工具按钮被 footer 遮挡的问题；聚焦模型计时场景均通过。
+
+后续切片以这些真实记录为基线：先加入同任务比较与精确 focus/base 的 ContextPack，
+再沿现有 proposal/candidate 完成一次声明式设计事务。尚未在本片改变 Agent 权限、
+生命周期、缓存所有权或设计语义；不据此关闭 #32。
+
 ### #21 Phase A：Windows 桌面窗口与 Hub 生命周期
 
 `P115/desktop` 从实际主线 `0ce0c111dbfeab2cb6373cf9050392e537caf20a` 开始，

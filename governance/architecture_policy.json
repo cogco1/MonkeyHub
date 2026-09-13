@@ -181,12 +181,20 @@
       "path": "monkeymonitor/store.py",
       "function": "append",
       "operations": [
-        "mkdir",
-        "open_write"
+        "open_write",
+        "unlink"
       ],
       "kind": "diagnostics",
       "owner": "monkeymonitor",
-      "reason": "Metadata-only usage.jsonl is appended under an explicitly supplied noncanonical diagnostics directory; it does not write any project document."
+      "reason": "Append and rotate bounded metadata-only usage journals under the explicit noncanonical diagnostics directory; project documents are never written."
+    },
+    {
+      "path": "monkeymonitor/store.py",
+      "function": "_locked",
+      "operations": ["mkdir"],
+      "kind": "diagnostics",
+      "owner": "monkeymonitor",
+      "reason": "Create the caller-selected diagnostics directory for the shared Hub/Studio journal lock; no project authority."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",

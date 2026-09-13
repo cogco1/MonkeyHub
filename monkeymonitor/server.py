@@ -9,12 +9,13 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .codex import bound_codex_sources, iter_codex_events
-from .pricing import RateCard, quote
+from .pricing import RateCard, load_rates, quote
 from .store import UsageLog
+from .trace import build_traces
 from .usage import TokenUsage
 
 WEB = Path(__file__).parent / "web"
@@ -115,6 +116,10 @@ class MonitorData:
         unique = {}
         for event in events:
             previous = unique.get(event.event_id)
+            if previous is not None and previous.rate_match_status is not None:
+                # A live Codex backfill enriches availability, not historical
+                # pricing identity captured by the writer of this exact event.
+                event = replace(event, rate_snapshot=previous.rate_snapshot, rate_match_status=previous.rate_match_status)
             if previous is not None and previous.project_id is not None:
                 if event.project_id is not None and event.project_id != previous.project_id:
                     warning = "同一用量记录的项目归属存在冲突；已保留原诊断归属。"
@@ -126,6 +131,17 @@ class MonitorData:
         if any(event.status in {"counter_discontinuity", "partial_history", "counter_reset_unknown", "last_only"} for event in rows):
             warnings.append("Codex 累计计数存在断点，已保留可识别的单次用量；此汇总不是完整账单。")
         return {"events": _diagnose_operations([event.to_dict() for event in rows]), "warnings": warnings}
+
+    def traces(self) -> dict:
+        snapshot = self.snapshot()
+        try:
+            rates = load_rates()
+        except (OSError, ValueError, TypeError, KeyError):
+            rates = ()
+            snapshot["warnings"].append("费率目录不可读；没有历史费率快照的费用保持未知。")
+        result = build_traces(snapshot["events"], rates=rates)
+        result["warnings"] = snapshot["warnings"] + result["warnings"]
+        return result
 
 
 def _diagnose_operations(rows: list[dict]) -> list[dict]:
@@ -192,13 +208,15 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-    def _send(self, value, status=200, content_type="application/json; charset=utf-8"):
+    def _send(self, value, status=200, content_type="application/json; charset=utf-8", *, download=False):
         body = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if download:
+            self.send_header("Content-Disposition", 'attachment; filename="monkeymonitor-trace.json"')
         self.end_headers()
         self.wfile.write(body)
 
@@ -222,6 +240,16 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send(self.health)
         elif path == "/api/events":
             self._send(self.data.snapshot())
+        elif path == "/api/traces":
+            self._send(self.data.traces())
+        elif path == "/api/traces/export":
+            query = parse_qs(urlsplit(self.path).query)
+            if set(query) != {"trace_id"} or len(query["trace_id"]) != 1:
+                self._send({"error": "Expected one trace_id"}, 400)
+                return
+            result = self.data.traces()
+            trace = next((row for row in result["traces"] if row["trace_id"] == query["trace_id"][0]), None)
+            self._send(trace if trace else {"error": "Trace not found"}, 200 if trace else 404, download=trace is not None)
         elif path == "/api/sources/codex":
             self._send(self.data.codex_sources())
         elif path == "/api/rates":

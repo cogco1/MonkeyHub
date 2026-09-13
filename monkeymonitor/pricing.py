@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
+from datetime import date
+import json
+from pathlib import Path
 from typing import Mapping
+from urllib.parse import urlsplit
 
 from .usage import TokenUsage
 
@@ -33,6 +37,7 @@ class RateCard:
     source_url: str | None = None
     effective_date: str | None = None
     label: str | None = None
+    billing_plan: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("provider", "model"):
@@ -43,6 +48,8 @@ class RateCard:
             value = getattr(self, name)
             if value is not None:
                 _decimal(value, name)
+        if self.billing_plan is not None and (not isinstance(self.billing_plan, str) or not self.billing_plan.strip()):
+            raise ValueError("billing_plan must be an exact non-empty identifier")
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -50,6 +57,36 @@ class RateCard:
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> RateCard:
         return cls(**dict(value))
+
+
+def load_rates() -> tuple[RateCard, ...]:
+    """The existing catalog is evidence, not a default for an unknown model/plan."""
+    rows = json.loads((Path(__file__).parent / "rates.json").read_text(encoding="utf-8"))
+    return tuple(RateCard.from_dict(row) for row in rows["rates"])
+
+
+def match_rate(provider: str, model: str, billing_plan: str | None, started_at: str,
+               rates: tuple[RateCard, ...]) -> tuple[RateCard | None, str]:
+    """Match the exact billing identity and dated source; never resolve aliases."""
+    if not billing_plan or provider in {"unknown", "none"} or model in {"unknown", "none"}:
+        return None, "missing_identity"
+    eligible = []
+    for rate in rates:
+        if (rate.provider, rate.model, rate.billing_plan) != (provider, model, billing_plan):
+            continue
+        try:
+            effective = date.fromisoformat(rate.effective_date or "")
+            observed = date.fromisoformat(started_at[:10])
+            source = urlsplit(rate.source_url or "")
+        except (ValueError, TypeError):
+            continue
+        if effective <= observed and source.scheme in {"http", "https"} and source.hostname and not source.username and not source.password:
+            eligible.append(rate)
+    if not eligible:
+        return None, "not_found"
+    latest = max(rate.effective_date for rate in eligible)
+    matches = [rate for rate in eligible if rate.effective_date == latest]
+    return (matches[0], "matched") if len(matches) == 1 else (None, "ambiguous")
 
 
 def quote(usage: TokenUsage, rate: RateCard | None) -> dict[str, object]:

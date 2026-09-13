@@ -341,7 +341,9 @@ def _run_successor(
             # The runner also exposes nested operations. Backend/path are its
             # export compatibility fields; the observation already names phase.
             observed({"related_event_id": candidate_event_id(binding.project_id, run_id),
-                      **{key: value for key, value in timing.items() if key not in {"backend", "path"}}})
+                      **{key: value for key, value in timing.items() if key not in {"backend", "path"}},
+                      # run_project does not return until these observed stages finish.
+                      "details": {"blocking": True, **timing.get("details", {})}})
         observations["operation_observer"] = observe_export
     return run_project(
         repository,

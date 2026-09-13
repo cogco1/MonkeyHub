@@ -23,6 +23,7 @@ _DETAIL_KEYS = {
     "retry_attempt", "retry_reason", "wait_reason", "http_status", "duplicate_status", "comparison_event_id",
     "duplicate_reason", "opportunity_refs", "stable_input_parts",
     "context_budget", "task_type", "success", "validator_pass", "validator_scope", "escalation",
+    "tool_name", "blocking", "first_token_ms", "provider_timing_basis", "billing_plan", "native_turn_id",
 }
 _IDENTITY_KEYS = {
     "context_digest", "prompt_sha256", "provider_fingerprint", "program_digest", "source_program_digest",
@@ -35,7 +36,7 @@ _LIST_DETAILS = {
     "output_refs", "executed_stages", "opportunity_refs", "stable_input_parts",
 }
 _COUNT_DETAILS = {"model_inference_ms", "active_wait_ms", "between_actions_ms", "unattributed_ms", "input_bytes",
-                  "output_bytes", "retry_attempt", "http_status"}
+                  "output_bytes", "retry_attempt", "http_status", "first_token_ms"}
 _CONTEXT_SECTIONS = {"intent", "system", "schema", "state", "preferences", "dependencies", "overhead"}
 _CONTEXT_CONTRIBUTORS = _CONTEXT_SECTIONS | {
     "all_components", "type_registry", "relations", "parameters", "component_definitions",
@@ -101,7 +102,7 @@ def diagnostic_details(value: Mapping[str, object]) -> dict[str, object]:
             _count(detail, name)
         elif name == "context_budget":
             _context_budget(detail)
-        elif name in {"success", "validator_pass", "escalation"}:
+        elif name in {"success", "validator_pass", "escalation", "blocking"}:
             if detail is not None and type(detail) is not bool:
                 raise ValueError(f"{name} must be bool or None")
         elif name == "task_type":
@@ -205,14 +206,16 @@ class UsageEvent:
     operation_id: str | None = None
     parent_event_id: str | None = None
     details: Mapping[str, object] = field(default_factory=dict)
+    rate_snapshot: Mapping[str, object] | None = None
+    rate_match_status: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("event_id", "provider", "model", "phase", "status", "started_at"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} must be non-empty text")
-        if self.source not in {"studio", "codex"}:
-            raise ValueError("source must be studio or codex")
+        if self.source not in {"studio", "codex", "hub"}:
+            raise ValueError("source must be studio, codex or hub")
         if self.billing_mode not in {"api_estimate", "subscription_equivalent", "unknown"}:
             raise ValueError("unsupported billing_mode")
         started = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
@@ -239,6 +242,20 @@ class UsageEvent:
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} must be non-empty text or None")
         object.__setattr__(self, "details", diagnostic_details(self.details))
+        if self.rate_match_status not in {None, "matched", "missing_identity", "not_found", "ambiguous"}:
+            raise ValueError("unsupported rate match status")
+        if self.rate_snapshot is not None:
+            from .pricing import RateCard, match_rate
+            rate = RateCard.from_dict(self.rate_snapshot)
+            if (rate.provider, rate.model, rate.billing_plan) != (self.provider, self.model, self.details.get("billing_plan")):
+                raise ValueError("rate snapshot must match the exact event billing identity")
+            if self.rate_match_status != "matched":
+                raise ValueError("a rate snapshot requires a matched status")
+            if match_rate(self.provider, self.model, self.details.get("billing_plan"), self.started_at, (rate,))[1] != "matched":
+                raise ValueError("a rate snapshot requires a dated public source for this billing identity")
+            object.__setattr__(self, "rate_snapshot", rate.to_dict())
+        elif self.rate_match_status == "matched":
+            raise ValueError("a matched rate requires a snapshot")
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

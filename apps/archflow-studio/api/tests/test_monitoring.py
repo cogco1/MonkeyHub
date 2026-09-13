@@ -5,9 +5,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import os
+import sys
 import time
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
 from archflow_studio_api.application.intent_agent import DeterministicCompiler, Selection
 from archflow_studio_api.application.jobs import JobRegistry
@@ -158,7 +160,8 @@ class MonitoringTests(unittest.TestCase):
             first, second = Gate(), Gate()
             try:
                 for run_id, gate in (("first", first), ("second", second)):
-                    with registry._monitor.scope(operation_id=f"operation:{run_id}", parent_event_id=f"request:{run_id}"):
+                    with registry._monitor.scope(operation_id=f"operation:{run_id}", parent_event_id=f"request:{run_id}",
+                                                 turn_id=f"turn:{run_id}"):
                         registry.submit(candidate_id=run_id, proposal_id=f"proposal-{run_id}", work=gate,
                                         project_id="example", source_ref="retained-input",
                                         related_event_id="studio:model:model-receipt")
@@ -181,6 +184,7 @@ class MonitoringTests(unittest.TestCase):
                 self.assertGreaterEqual(queues[1].duration_ms, queues[0].duration_ms)
                 for event in (event for event in events if event.phase == "candidate"):
                     self.assertEqual(event.operation_id, f"operation:{event.run_id}")
+                    self.assertEqual(event.turn_id, f"turn:{event.run_id}")
                     self.assertEqual(event.parent_event_id, f"request:{event.run_id}")
                     self.assertEqual(event.event_id, candidate_event_id("example", event.run_id))
                     self.assertEqual(event.related_event_id, "studio:model:model-receipt")
@@ -275,6 +279,75 @@ class MonitoringOcctTests(OcctCandidateTestCase):
         return self.client.post(f"/api/candidates/{run_id}/accept", json={
             "projectId": PROJECT_ID, "branchId": "main", "expectedHeadStageRef": stage["stageRef"],
         })
+
+    def test_hub_turn_reaches_real_cad_readback_validation_and_preview(self):
+        # The CLI message below is an explicit provider fixture; CAD and the
+        # Studio/Monitor boundaries execute for real in this disposable project.
+        with patch.object(sys, "path", [str(Path(__file__).resolve().parents[3] / "monkeyhub/api"), *sys.path]):
+            from monkeyhub_api.chat_trace import HubTurnObserver
+        from monkeymonitor.server import MonitorData
+
+        turn_id = str(uuid4())
+        hub = HubTurnObserver(self.store, turn_id, PROJECT_ID, "claude", "fixture-model")
+        hub.bind("fixture-session")
+        hub.ready()
+        hub.claude_usage({"id": "fixture-message", "model": "fixture-model", "usage": {
+            "input_tokens": 100, "cache_read_input_tokens": 50, "cache_creation_input_tokens": 0, "output_tokens": 20,
+        }})
+        hub.tool("candidate", "studio_request", {"method": "POST", "path": "/api/proposals"}, running=True)
+        self.client.headers.update({"x-monkey-turn-id": turn_id, "x-monkey-parent-span-id": f"hub:turn:{turn_id}"})
+        with no_process():
+            accepted, job = self.run_candidate(self.client, "set height to 2.1", elementId="portico-base")
+            self.assertEqual(job["status"], "succeeded", job)
+            run_id = accepted["candidateId"]
+            candidate = self.candidate(self.client, run_id)
+            self.assertIsNone(candidate["objectReadbackError"])
+            validation = self.client.get(f"/api/candidates/{run_id}/validation")
+            self.assertEqual(validation.status_code, 200, validation.text)
+            _, preview = self.split(candidate["artifacts"])
+            self.assertTrue(self.bytes_of(self.client, preview))
+        hub.tool("candidate", "studio_request", {}, running=False, candidate_id=run_id)
+        hub.first_response()
+        events, warnings = self.store.read()
+        self.assertFalse(warnings)
+        candidate_event = next(row for row in events if row.event_id == candidate_event_id(PROJECT_ID, run_id))
+        phases = {row.phase for row in events if row.run_id == run_id}
+        self.assertTrue({"candidate_queue", "candidate", "step_readback", "preview_readback", "candidate_readback", "validation"} <= phases, phases)
+        self.assertTrue(all(row.turn_id == turn_id for row in events))
+        event_ids = {row.event_id for row in events}
+        for row in events:
+            if row.parent_event_id is not None:
+                self.assertIn(row.parent_event_id, event_ids | {f"hub:turn:{turn_id}"})
+        self.assertEqual(candidate_event.project_id, PROJECT_ID)
+        self.assertTrue(candidate_event.details["blocking"])
+        self.assertTrue(all(row.details.get("blocking") for row in events if row.phase in {"step_readback", "preview_readback"}))
+        verified = next(row for row in events if row.phase == "validation")
+        self.assertEqual(verified.details["validator_pass"], validation.json()["receipt"]["passed"])
+        # The browser's independent observation has an exact candidate link,
+        # even after the originating HTTP request and worker have completed.
+        self.client.headers.clear()
+        load_id = str(uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        response = self.client.post("/api/events/timing", json={
+            "eventId": load_id, "operationId": load_id, "projectId": PROJECT_ID,
+            "runId": run_id, "sourceRef": preview["receiptRef"], "phase": "model_projection",
+            "startedAt": now, "endedAt": now,
+            "durationMs": 0, "status": "succeeded", "details": {"blocking": True},
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        rows, warnings = self.store.read()
+        self.assertFalse(warnings)
+        self.assertEqual(rows[-1].related_event_id, candidate_event.event_id)
+        hub.finish("succeeded")
+        report = MonitorData(self.settings.monitor_dir).traces()
+        self.assertEqual(len(report["traces"]), 1, report["warnings"])
+        trace = report["traces"][0]
+        self.assertEqual(trace["turn_id"], turn_id)
+        self.assertEqual(trace["status"], "succeeded")
+        self.assertIsNotNone(trace["summary"]["verified_ms"])
+        self.assertEqual(trace["summary"]["tool_rounds"], 1)
+        observed = {row["phase"] for row in trace["spans"]}
+        self.assertTrue({"hub_turn", "model_usage", "provider_round", "tool_call", "step_readback", "model_projection"} <= observed)
 
     def test_real_occt_candidate_and_save_have_links_and_failed_log_cannot_break_next_save(self):
         with no_process():

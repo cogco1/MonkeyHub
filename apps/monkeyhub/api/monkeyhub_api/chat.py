@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import Future, InvalidStateError
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
@@ -48,6 +49,10 @@ from .models import (
     ChatPermission, ChatPermissionOption, ChatPermissionRequest,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
+from .chat_trace import HubTurnObserver
+from monkeymonitor.store import UsageLog
+
+_trace_headers = ContextVar("hub_tool_trace_headers", default={})
 
 
 def _now() -> str:
@@ -411,6 +416,7 @@ class _Running:
     process: subprocess.Popen | None = None
     thread: threading.Thread | None = None
     last_save: float = 0.0
+    trace: HubTurnObserver | None = None
 
 
 # How long a connection check stays good before it is asked again, and how long
@@ -593,6 +599,7 @@ class ChatStore:
     def __init__(self, runtime_root: Path, hub_url: str, *, applications=None, commands=None, acp_command=None, timeout_s: float = 900):
         self.root = runtime_root / "chats"
         self.runtime_root = runtime_root
+        self.usage_log = UsageLog(runtime_root / "diagnostics" / "monkeymonitor")
         self.hub_url = hub_url
         self.applications = applications
         self.commands = commands
@@ -910,7 +917,9 @@ class ChatStore:
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session)
             self._sessions[session_id] = session
-            running = _Running()
+            running = _Running(trace=HubTurnObserver(
+                self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
+            ))
             self._running[session_id] = running
             running.thread = threading.Thread(target=self._run, args=(session_id, content, running), daemon=True, name=f"hub-chat-{session_id[:8]}")
             running.thread.start()
@@ -1012,6 +1021,8 @@ class ChatStore:
                 createdAt=_now(), status="streaming", permission=permission,
             ))
             self._permissions[(session_id, permission.id)] = future
+            if running.trace:
+                running.trace.permission(permission.id)
             self._save(session)
         return future
 
@@ -1035,6 +1046,9 @@ class ChatStore:
                 self._save(session)
                 raise HubFailure(409, "CHAT_PERMISSION_EXPIRED", "This permission request is no longer waiting for a decision.") from None
             message.content += " · " + (option.name if option else "Cancelled")
+            active = self._running[session_id]
+            if active.trace:
+                active.trace.permission(permission_id, completed=True)
             message.permission, message.status = None, "complete"
             self._save(session)
             self._permissions.pop((session_id, permission_id))
@@ -1059,6 +1073,8 @@ class ChatStore:
             update = event["update"]
             kind = update.get("sessionUpdate")
             if kind == "agent_message_chunk" and update.get("content", {}).get("type") == "text":
+                if running.trace and update["content"].get("text"):
+                    running.trace.first_response()
                 identifier = f"{_turn_id(session)}:acp-answer"
                 message = next((row for row in session.messages if row.id == identifier), None)
                 if message is None:
@@ -1126,6 +1142,8 @@ class ChatStore:
                 with self._lock:
                     session.acpSessionId = identifier
                     session.acpDefaultModel = client.default_model
+                    if running.trace:
+                        running.trace.bind(identifier, session.model or client.default_model)
                     self._save(session)
 
             client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s)
@@ -1184,9 +1202,14 @@ class ChatStore:
                     + content
                 )
             if session.transport == "acp":
+                if running.trace:
+                    running.trace.ready()
                 error = self._run_acp(session_id, prompt, running)
                 return
             command, environment = self._command(session)
+            if running.trace:
+                running.trace.bind(session.nativeSessionId, session.model)
+                running.trace.ready()
             if running.stop.is_set():
                 return
             kwargs = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
@@ -1263,6 +1286,9 @@ class ChatStore:
                     if message.status == "streaming":
                         message.status = "interrupted" if running.stop.is_set() else "failed" if error else "complete"
                 session.updatedAt = _now()
+                if running.trace:
+                    running.trace.bind(session.acpSessionId if session.transport == "acp" else session.nativeSessionId)
+                    running.trace.finish("cancelled" if running.stop.is_set() else "failed" if error else "succeeded")
                 try:
                     self._save(session)
                 finally:
@@ -1273,7 +1299,7 @@ class ChatStore:
         content, candidate, failed = _tool_activity(item, environment)
         message_id = f"{_turn_id(session)}:{item.get('id') or 'tool'}"
         message = next((row for row in session.messages if row.id == message_id), None)
-        running = kind == "item.started" and str(item.get("status") or "") not in {"completed", "failed"}
+        running = kind in {"item.started", "item.updated"} and str(item.get("status") or "") not in {"completed", "failed", "cancelled", "interrupted"}
         outcome = "streaming" if running else "failed" if failed else "complete"
         if message is None:
             message = ChatMessage(id=message_id, role="tool", content=content, createdAt=_now(), status=outcome)
@@ -1283,6 +1309,10 @@ class ChatStore:
             message.content, message.status = content, outcome
         if candidate:
             message.candidateId = candidate
+        active = self._running.get(session.id)
+        if active and active.trace:
+            active.trace.tool(str(item.get("id") or "tool"), item.get("tool"), item.get("arguments"),
+                              running=running, failed=failed, result=item.get("result"), candidate_id=candidate)
         session.updatedAt = _now()
 
     def _event(self, session: _SavedChat, event: dict, environment) -> tuple[HubError | None, bool]:
@@ -1290,6 +1320,12 @@ class ChatStore:
         native = event.get("thread_id") if kind == "thread.started" else event.get("session_id")
         if isinstance(native, str):
             session.nativeSessionId = _identifier(native)
+        active = self._running.get(session.id)
+        trace = active.trace if active else None
+        if trace and isinstance(native, str):
+            trace.bind(session.nativeSessionId)
+        if trace and kind == "assistant":
+            trace.claude_usage(event.get("message"))
         if kind in {"error", "turn.failed"} or (kind == "result" and event.get("is_error")):
             detail = event.get("message") or event.get("error") or event.get("result") or "The provider reported a failed turn."
             if isinstance(detail, Mapping):
@@ -1329,6 +1365,8 @@ class ChatStore:
         elif kind == "result" and isinstance(event.get("result"), str):
             text, message_id = event["result"], "claude-answer"
         if text:
+            if trace:
+                trace.first_response()
             # Prefix provider ids with the current user message, since CLI item
             # ids may repeat in a resumed turn.
             output_id = f"{_turn_id(session)}:{message_id}"
@@ -1438,7 +1476,9 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         # rather than made with a small amount of time granted to it here.
         raise TimeoutError(f"no time left to call {method} {path}")
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
-    request = Request(_url(base) + path, data=data, method=method, headers={"Content-Type": "application/json", **(headers or {})})
+    request = Request(_url(base) + path, data=data, method=method, headers={
+        "Content-Type": "application/json", **_trace_headers.get(), **(headers or {}),
+    })
     try:
         with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
             return json.load(response)
@@ -1466,7 +1506,7 @@ def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
     ends = time.monotonic() + timeout
     pool = ThreadPoolExecutor(max_workers=max(1, len(calls)))
     try:
-        pending = {name: pool.submit(_request_json, *call, timeout=timeout) for name, call in calls.items()}
+        pending = {name: pool.submit(copy_context().run, _request_json, *call, timeout=timeout) for name, call in calls.items()}
         answers = {}
         for name, future in pending.items():
             try:
@@ -1497,6 +1537,9 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
         session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}", timeout=timeout)
         if session.get("status") != "running":
             raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+        turn = next((row.get("id") for row in reversed(session.get("messages", [])) if row.get("role") == "user"), None)
+        if turn:
+            _trace_headers.set({"X-Monkey-Turn-Id": turn, "X-Monkey-Parent-Span-Id": f"hub:turn:{turn}"})
     if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
     first = _together({
@@ -1645,6 +1688,14 @@ def _reason(cause: BaseException) -> str:
 
 
 def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
+    token = _trace_headers.set({})
+    try:
+        return _call_tool(hub, chat_id, name, arguments)
+    finally:
+        _trace_headers.reset(token)
+
+
+def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}

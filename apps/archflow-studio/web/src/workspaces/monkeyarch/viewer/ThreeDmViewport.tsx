@@ -186,6 +186,8 @@ export interface ViewportLoadOptions {
   readonly preserveCamera?: boolean;
   /** The caller may leave this project or editing context while parsing is in flight. */
   readonly isCurrent?: () => boolean;
+  /** Optional diagnostics around installation and the first projected render. */
+  readonly onLoadPhase?: (phase: "install" | "projection") => void;
 }
 
 export interface ViewportController {
@@ -1413,6 +1415,10 @@ export const ThreeDmViewport = forwardRef<
 
       // The file's own display state, whether one export or a whole run of
       // them, before the appearance below is remembered as the original.
+      const observePhase = (phase: "install" | "projection") => {
+        try { options?.onLoadPhase?.(phase); } catch { /* Diagnostics never change a model load. */ }
+      };
+      observePhase("install");
       const model = prepareLoadedModel(models.length === 1 ? models[0] : groupOf(models));
       const preserveCamera = options?.preserveCamera === true && runtime.model !== null;
       // The mark on a picked object belongs to the picture going away.
@@ -1455,6 +1461,7 @@ export const ThreeDmViewport = forwardRef<
       );
       callbacksRef.current.onInspection(inspection);
       callbacksRef.current.onSource(sourceLabel);
+      observePhase("projection");
       // Keep the live camera rather than restoring an earlier snapshot: the
       // architect may have orbited while the replacement was being parsed.
       if (preserveCamera) runtime.render();

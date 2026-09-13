@@ -186,17 +186,22 @@ async def _diagnostic_request(request: Request,
     from uuid import UUID
 
     monitor = request.app.state.monitor
-    if monitor.store is None or x_monkey_operation is None or request.url.path.startswith("/api/events"):
+    turn_header = request.headers.get("x-monkey-turn-id")
+    if monitor.store is None or (x_monkey_operation is None and turn_header is None) or request.url.path.startswith("/api/events"):
         yield
         return
     try:
-        operation_id = f"studio:client:{UUID(x_monkey_operation)}"
-        parent_id = f"studio:client:{UUID(x_monkey_parent)}" if x_monkey_parent else operation_id
+        turn_id = str(UUID(turn_header)) if turn_header else None
+        operation_id = f"studio:client:{UUID(x_monkey_operation)}" if x_monkey_operation else None
+        parent_id = f"studio:client:{UUID(x_monkey_parent)}" if x_monkey_parent else operation_id or f"hub:turn:{turn_id}"
+        hub_parent = request.headers.get("x-monkey-parent-span-id")
+        if turn_id and hub_parent and len(hub_parent) <= 256 and all(char.isalnum() or char in ":._-" for char in hub_parent):
+            parent_id = hub_parent
     except ValueError:
         # A malformed optional diagnostic header does not refuse project work.
         yield
         return
-    with monitor.scope(operation_id=operation_id, parent_event_id=parent_id):
+    with monitor.scope(operation_id=operation_id, parent_event_id=parent_id, turn_id=turn_id):
         route = request.scope.get("route")
         with monitor.measure("api_request", details={"request_kind": f"{request.method} {getattr(route, 'path', request.url.path)}"}) as interval:
             try:

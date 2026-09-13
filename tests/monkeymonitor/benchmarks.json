@@ -1,0 +1,16 @@
+{
+  "fixture": "apps/archflow-studio/api/tests/support.py",
+  "fixture_revision": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
+  "provider": "codex",
+  "model": null,
+  "scenarios": [
+    {
+      "id": "simple-create",
+      "prompt": "This is an isolated design benchmark, not source development. Only use the connected monkeyhub tools. Add one independent rectangular prism named monitor-benchmark-block in component portico, plan [[12,0],[16,0],[16,3],[12,3]], height 2.5 m, base level level-ground. Keep all existing objects. The exact initial stateDigest is {state_digest}; sourceRunId is run-001. Submit the sketch proposal and execute its candidate with awaitSeconds:60. Read back the candidate. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
+    },
+    {
+      "id": "incremental-edit",
+      "prompt": "This is an isolated design benchmark, not source development. Only use the connected monkeyhub tools. Modify existing portico/portico-base height from 0.6 m to 2.2 m, keeping its footprint and the other existing objects. Exact initial stateDigest: {state_digest}; sourceRunId: run-001. Use the existing numeric modification capability and its bounded submit/wait/readback flow with awaitSeconds:60. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
+    }
+  ]
+}

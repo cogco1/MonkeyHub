@@ -515,7 +515,8 @@ class ProjectRuntimeManager:
         try:
             worker = self.service(runtime)
             forwarded = {key: value for key, value in headers.items()
-                         if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match"}}
+                         if key in {"content-type", "x-monkey-operation", "x-monkey-parent", "if-none-match",
+                                    "x-monkey-turn-id", "x-monkey-parent-span-id"}}
             if admission and method == "POST" and _CANDIDATE_REQUEST.fullmatch(parsed.path):
                 candidate_id = admission.record.candidateId
                 # A Hub restart can reconstruct this deterministic run identity.

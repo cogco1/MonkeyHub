@@ -1085,6 +1085,10 @@ export type ClientTimingDetailsDto = {
      */
     retry_attempt?: number | null;
     /**
+     * Blocking
+     */
+    blocking?: boolean | null;
+    /**
      * Request Kind
      */
     request_kind?: 'candidate_poll' | 'candidate_read' | 'artifact_bytes' | 'document_bytes' | null;
@@ -1111,7 +1115,7 @@ export type ClientTimingDto = {
     /**
      * Phase
      */
-    phase: 'design_edit' | 'intent_wait' | 'candidate_wait' | 'model_load' | 'model_download' | 'model_parse' | 'drawing_wait' | 'document_load' | 'document_render' | 'stage_wait' | 'api_wait';
+    phase: 'design_edit' | 'intent_wait' | 'candidate_wait' | 'model_load' | 'model_download' | 'model_parse' | 'model_install' | 'model_projection' | 'drawing_wait' | 'document_load' | 'document_render' | 'stage_wait' | 'api_wait';
     /**
      * Projectid
      */

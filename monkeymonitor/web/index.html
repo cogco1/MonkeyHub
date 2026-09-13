@@ -9,10 +9,26 @@
   <script src="/app.js" type="module"></script>
 </head>
 <body>
-  <a class="skip-link" href="#overview" data-i18n="跳到调用列表">跳到调用列表</a>
-  <header class="masthead"><strong class="wordmark">MonkeyMonitor</strong><div class="toolbar-actions"><span id="health" class="health" data-i18n="正在连接">正在连接</span><button id="refresh" class="button" type="button" data-i18n="刷新">刷新</button><button id="open-calculator" class="button" type="button" data-i18n="费用估算">费用估算</button></div></header>
+  <a class="skip-link" href="#overview" data-i18n="跳到任务观测">跳到任务观测</a>
+  <header class="masthead"><strong class="wordmark">MonkeyMonitor</strong><div class="toolbar-actions"><span id="health" class="health" data-i18n="正在连接">正在连接</span><button id="refresh" class="button" type="button" data-i18n="刷新">刷新</button></div></header>
   <main id="overview" class="shell">
-    <div class="page-heading"><h1 data-i18n="调用用量">调用用量</h1><div class="source-filter" role="group" aria-label="用量来源" data-i18n-aria-label="用量来源"><button type="button" data-source="all" aria-pressed="true" data-i18n="全部">全部</button><button type="button" data-source="studio" aria-pressed="false">Studio</button><button type="button" data-source="codex" aria-pressed="false">Codex</button></div></div>
+    <section id="observatory" aria-labelledby="observatory-title">
+      <div class="page-heading"><div><p class="eyebrow">Turn Observatory</p><h1 id="observatory-title" data-i18n="一轮任务，完整看清">一轮任务，完整看清</h1></div><span id="trace-live" class="trace-live" role="status" data-i18n="等待首次读取">等待首次读取</span></div>
+      <p id="trace-notice" class="notice" role="status" hidden></p>
+      <div class="trace-controls"><label for="trace-project" data-i18n="项目">项目<select id="trace-project"><option value="" data-i18n="全部项目">全部项目</option></select></label><label class="trace-turn-control" for="trace-select" data-i18n="任务轮次">任务轮次<select id="trace-select" disabled><option data-i18n="暂无任务记录">暂无任务记录</option></select></label><button id="trace-download" class="button" type="button" disabled data-i18n="下载 Trace JSON">下载 Trace JSON</button></div>
+      <div id="trace-empty" class="empty-state"><p data-i18n="暂无任务记录">暂无任务记录</p><span data-i18n="从 MonkeyHub 发起任务后，已关联的模型、工具与候选阶段会自动显示。">从 MonkeyHub 发起任务后，已关联的模型、工具与候选阶段会自动显示。</span></div>
+      <div id="trace-content" hidden>
+        <div class="trace-heading"><p id="trace-identity"></p><span id="trace-status" class="trace-status"></span></div>
+        <dl id="trace-summary" class="trace-summary"></dl>
+        <p id="trace-price-note" class="field-help"></p>
+        <section class="trace-panel" aria-labelledby="waterfall-title"><div class="trace-panel-heading"><h2 id="waterfall-title" data-i18n="任务耗时">任务耗时</h2><span class="trace-legend" data-i18n="实线：阻塞 · 虚线：后台 · 加粗：观测关键路径">实线：阻塞 · 虚线：后台 · 加粗：观测关键路径</span></div><p class="field-help" data-i18n="所有阶段共用时间轴。重叠与嵌套阶段不累加；点选色条可查看记录。">所有阶段共用时间轴。重叠与嵌套阶段不累加；点选色条可查看记录。</p><div id="trace-waterfall"></div><p id="trace-critical-note" class="field-help"></p></section>
+        <section class="trace-panel" aria-labelledby="why-slow-title"><div class="trace-panel-heading"><h2 id="why-slow-title" data-i18n="为什么慢">为什么慢</h2><span class="field-help" data-i18n="由执行记录直接计算">由执行记录直接计算</span></div><p id="trace-attribution" class="field-help"></p><div id="trace-diagnostics"></div></section>
+        <div class="trace-detail-grid"><section class="trace-panel" aria-labelledby="activity-title"><div class="trace-panel-heading"><h2 id="activity-title" data-i18n="活动树">活动树</h2></div><div id="trace-tree"></div></section><section id="trace-evidence-panel" class="trace-panel" aria-labelledby="trace-evidence-title"><div class="trace-panel-heading"><h2 id="trace-evidence-title" data-i18n="活动详情">活动详情</h2></div><div id="trace-evidence"><p class="field-help" data-i18n="选择一个阶段查看模型、状态与关联记录。">选择一个阶段查看模型、状态与关联记录。</p></div></section></div>
+        <details class="trace-warnings"><summary data-i18n="记录与价格依据">记录与价格依据</summary><div id="trace-coverage"></div></details>
+      </div>
+    </section>
+    <details id="raw-details" class="raw-details"><summary data-i18n="高级详情 · 原始调用与手动估算">高级详情 · 原始调用与手动估算</summary>
+    <div class="page-heading"><h2 data-i18n="调用用量">调用用量</h2><button id="open-calculator" class="button" type="button" data-i18n="费用估算">费用估算</button><div class="source-filter" role="group" aria-label="用量来源" data-i18n-aria-label="用量来源"><button type="button" data-source="all" aria-pressed="true" data-i18n="全部">全部</button><button type="button" data-source="studio" aria-pressed="false">Studio</button><button type="button" data-source="codex" aria-pressed="false">Codex</button></div></div>
     <p id="load-notice" class="notice" role="status" hidden></p>
     <div class="project-filter"><label for="project-filter" data-i18n="项目">项目</label><select id="project-filter"><option value="" data-i18n="全部项目">全部项目</option></select></div>
     <div class="stats" aria-live="polite"><div class="stat"><span data-i18n="缓存输入">缓存输入</span><strong id="stat-cached">—</strong><small id="stat-cached-coverage" hidden></small></div><div class="stat"><span data-i18n="未缓存输入">未缓存输入</span><strong id="stat-input">—</strong><small id="stat-input-coverage" hidden></small></div><div class="stat"><span data-i18n="输出">输出</span><strong id="stat-output">—</strong><small id="stat-output-coverage" hidden></small></div><div id="duration-stat" class="stat"><span data-i18n="等待时间 · 请求往返 P50">等待时间 · 请求往返 P50</span><strong id="stat-duration">—</strong><small id="stat-duration-coverage" hidden></small></div></div>
@@ -33,7 +49,8 @@
     </section>
     <details id="model-summary" class="model-summary" hidden><summary data-i18n="按模型汇总">按模型汇总 <span id="group-count"></span></summary><div class="table-wrap" tabindex="0" role="region" aria-label="模型用量汇总" data-i18n-aria-label="模型用量汇总"><table><thead><tr><th data-i18n="模型">模型</th><th class="number" data-i18n="次数">次数</th><th class="number" data-i18n="缓存输入">缓存输入</th><th class="number" data-i18n="未缓存输入">未缓存输入</th><th class="number" data-i18n="输出">输出</th><th class="number" data-i18n="等待时间 · 请求往返 P50">等待时间 · 请求往返 P50</th></tr></thead><tbody id="breakdown-body"></tbody></table></div></details>
     <details id="codex-sources" class="source-settings"><summary data-i18n="Codex 来源">Codex 来源</summary><form id="source-form"><label for="source-paths" data-i18n="会话 JSONL 文件">会话 JSONL 文件</label><p id="source-help" class="field-help" data-i18n="每行一个本地绝对路径；只读取明确列出的文件。留空并应用可清除来源，选择仅用于当前服务。">每行一个本地绝对路径；只读取明确列出的文件。留空并应用可清除来源，选择仅用于当前服务。</p><textarea id="source-paths" rows="3" spellcheck="false" aria-describedby="source-help" disabled></textarea><div class="source-actions"><button id="apply-sources" class="button" type="submit" disabled data-i18n="应用来源">应用来源</button><button id="reload-sources" class="text-button" type="button" data-i18n="读取当前来源">读取当前来源</button></div><p id="source-status" role="status"></p></form></details>
-    <footer><span id="sync-time" role="status" data-i18n="等待首次读取">等待首次读取</span><span data-i18n="页面可见时每 30 秒刷新">页面可见时每 30 秒刷新</span></footer>
+    </details>
+    <footer><span id="sync-time" role="status" data-i18n="等待首次读取">等待首次读取</span><span data-i18n="任务每 3 秒刷新；原始用量每 30 秒刷新">任务每 3 秒刷新；原始用量每 30 秒刷新</span></footer>
   </main>
   <dialog id="calculator" aria-labelledby="calculator-title">
     <div class="dialog-heading"><h2 id="calculator-title" data-i18n="费用估算">费用估算</h2><button id="close-calculator" class="button" type="button" aria-label="关闭费用估算" data-i18n-aria-label="关闭费用估算" data-i18n="关闭">关闭</button></div>

@@ -56,6 +56,7 @@ class ClientTimingDetailsDto(BaseModel):
     input_bytes: int | None = Field(default=None, ge=0)
     asset_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     retry_attempt: int | None = Field(default=None, ge=0)
+    blocking: bool | None = None
     request_kind: Literal["candidate_poll", "candidate_read", "artifact_bytes", "document_bytes"] | None = None
 
 
@@ -67,7 +68,7 @@ class ClientTimingDto(BaseModel):
     event_id: UUID = Field(alias="eventId")
     operation_id: UUID = Field(alias="operationId")
     parent_event_id: UUID | None = Field(alias="parentEventId", default=None)
-    phase: Literal["design_edit", "intent_wait", "candidate_wait", "model_load", "model_download", "model_parse", "drawing_wait", "document_load", "document_render", "stage_wait", "api_wait"]
+    phase: Literal["design_edit", "intent_wait", "candidate_wait", "model_load", "model_download", "model_parse", "model_install", "model_projection", "drawing_wait", "document_load", "document_render", "stage_wait", "api_wait"]
     project_id: str = Field(alias="projectId", min_length=1)
     run_id: str | None = Field(alias="runId", default=None, min_length=1)
     source_ref: str | None = Field(alias="sourceRef", default=None)

@@ -111,6 +111,7 @@ def record_client_timing(request: Request, payload: ClientTimingDto) -> MonitorW
         status=payload.status, started_at=payload.started_at.isoformat(),
         ended_at=payload.ended_at.isoformat() if payload.ended_at else None, duration_ms=payload.duration_ms,
         project_id=binding.project_id, run_id=payload.run_id, source_ref=payload.source_ref, details=details,
+        related_event_id=f"studio:candidate:{binding.project_id}:{payload.run_id}" if payload.run_id else None,
     )
     return MonitorWriteDto(recorded=event_id is not None)
 
