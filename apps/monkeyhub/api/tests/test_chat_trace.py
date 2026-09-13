@@ -3,16 +3,67 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+
 import test_chat
+from test_chat import wait_for
 from monkeyhub_api import chat
 from monkeyhub_api.chat_trace import HubTurnObserver
-from monkeymonitor.store import UsageLog
+from monkeyhub_api.main import HubSettings, create_app
+from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.trace import build_traces
+
+HOLD_JOURNAL = r'''
+import os, sys
+from pathlib import Path
+directory = Path(sys.argv[1])
+directory.mkdir(parents=True, exist_ok=True)
+stream = (directory / "usage.lock").open("a+b")
+if os.name == "nt":
+    import msvcrt
+    stream.seek(0)
+    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.readline()
+'''
+
+
+def bounded(case, action, *, seconds=30, on_timeout=None):
+    """Run something that must not block, on a worker, with a bounded wait.
+
+    A blocking journal lock waits forever on POSIX, where an elapsed assertion
+    after the call would never be reached. This fails instead of hanging.
+    """
+
+    outcome = {}
+
+    def run():
+        try:
+            outcome["value"] = action()
+        except BaseException as exc:
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        if on_timeout is not None:
+            on_timeout()  # free the holder before any cleanup waits on it
+        case.fail(f"the turn blocked on diagnostics for more than {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value")
 
 
 class HubTraceTests(unittest.TestCase):
@@ -158,6 +209,65 @@ class CliTraceTests(unittest.TestCase):
     create = test_chat.ChatTests.create
     post = test_chat.ChatTests.post
     finished = test_chat.ChatTests.finished
+    calls = test_chat.ChatTests.calls
+
+    def kill_journal_holder(self):
+        if self.holder.poll() is None:
+            self.holder.kill()
+            self.holder.wait(30)
+
+    def hold_journal(self):
+        """Own the real usage journal from another process, as a peer Hub would."""
+
+        directory = self.store.usage_log.path.parent
+        self.holder = subprocess.Popen([sys.executable, "-c", HOLD_JOURNAL, str(directory)],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(self.holder.wait, 30)
+        self.addCleanup(self.holder.stdin.close)
+        self.addCleanup(self.holder.stdout.close)
+        self.addCleanup(self.kill_journal_holder)
+        line = bounded(self, self.holder.stdout.readline, on_timeout=self.kill_journal_holder)
+        self.assertEqual(line.strip(), "held")
+        return self.holder
+
+    def test_held_journal_neither_delays_nor_repeats_a_real_hub_turn(self):
+        holder = self.hold_journal()
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            created = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})
+            self.assertEqual(created.status_code, 201, created.text)
+            session = created.json()["id"]
+            clock = time.perf_counter()
+            posted = bounded(self, lambda: client.post(f"/api/chat/sessions/{session}/messages",
+                                                       json={"projectId": "chat-project", "content": "hello"}),
+                             on_timeout=self.kill_journal_holder)
+            elapsed = time.perf_counter() - clock
+            self.assertEqual(posted.status_code, 202, posted.text)
+            self.assertLess(elapsed, 1.0, "a skipped observation must not delay the turn")
+            self.assertIsNone(holder.poll(), "measured while the lock was still held")
+            finished = wait_for(lambda: client.get(f"/api/chat/sessions/{session}").json(),
+                                lambda row: row["status"] != "running")
+            self.assertEqual(finished["status"], "idle", finished.get("error"))
+            self.assertEqual(len(self.calls()), 1, "the CLI turn ran exactly once")
+            self.assertFalse(self.store.usage_log.path.exists(), "no unlocked fallback write")
+            self.assertEqual(self.store.usage_log.read(), ([], [BUSY_NOTICE]))
+            holder.stdin.write("\n")
+            holder.stdin.flush()
+            self.assertEqual(holder.wait(30), 0)
+            second = client.post(f"/api/chat/sessions/{session}/messages",
+                                 json={"projectId": "chat-project", "content": "hello again"})
+            self.assertEqual(second.status_code, 202, second.text)
+            self.assertEqual(wait_for(lambda: client.get(f"/api/chat/sessions/{session}").json(),
+                                      lambda row: row["status"] != "running")["status"], "idle")
+        self.assertEqual(len(self.calls()), 2, "the dropped observations replayed no turn")
+        rows, warnings = self.store.usage_log.read()
+        self.assertFalse(warnings)
+        roots = [row for row in rows if row.phase == "hub_turn"]
+        self.assertEqual([row.status for row in roots], ["succeeded"], "only the second turn is recorded")
+        self.assertTrue(any(row.details.get("missing_observations") for row in rows))
+        notice = build_traces([row.to_dict() for row in rows])["traces"][0]["warnings"]
+        self.assertTrue(any("跳过" in warning for warning in notice), notice)
 
     def test_cli_progress_update_keeps_tool_open_until_completion(self):
         session = self.create()

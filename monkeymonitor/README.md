@@ -62,6 +62,8 @@ python -m monkeymonitor serve --data-dir $env:MONKEYMONITOR_DATA_DIR
 
 目录必须由运行者明确提供，位于项目文档之外；`usage.jsonl` 属于 MonkeyMonitor 的非正式诊断数据。
 Hub 与 Studio 通过跨进程锁共用该目录，Monitor 读取同一日志。创建应用时不触碰文件；首次记录才创建目录。
+日志占用时，写入跳过本次观测，读取返回繁忙提示，业务继续执行。后续成功记录会提示曾有观测缺失；
+受影响的具体回合、数量和耗时保持未知。如果没有后续成功写入，缺失提示无法保存。
 不设置变量则保持原启动行为。已运行的 Studio 需要下次启动才会采用设置，历史缺失的 token 无法补算。
 
 ## 整轮任务观测

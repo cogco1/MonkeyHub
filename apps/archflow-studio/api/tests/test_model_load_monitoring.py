@@ -2,6 +2,7 @@
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Lock
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -16,6 +17,15 @@ from monkeymonitor.store import UsageLog
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
 from .test_intents import scripted
+
+
+def latest(events):
+    """Merge revisions by event id, exactly as reading the journal does."""
+
+    merged = {}
+    for event in events:
+        merged[event.event_id] = event
+    return list(merged.values())
 
 
 class ModelLoadMonitoringTests(unittest.TestCase):
@@ -109,11 +119,32 @@ class ModelLoadMonitoringTests(unittest.TestCase):
                         dict(root, status="failed", endedAt=None), dict(root, operationId="not-an-id")):
             self.assertEqual(self.client.post("/api/events/timing", json=invalid).status_code, 422)
 
+    def emissions(self):
+        """Every event the host emits, taken at the append boundary.
+
+        Simultaneous requests still write the real journal, which may skip an
+        observation while it is busy; association is a property of what was
+        emitted, so it is asserted here rather than on what survived.
+        """
+
+        captured, guard = [], Lock()
+        store = self.app.state.monitor.store
+        original = store.append
+
+        def capture(event):
+            with guard:
+                captured.append(event)
+            original(event)
+
+        self.enterContext(patch.object(store, "append", capture))
+        return captured
+
     def test_concurrent_request_context_reaches_sync_compiler_without_cross_linking(self):
         operations = [str(uuid4()), str(uuid4())]
         digest = runner_state_digest(self.repository, REFERENCE_RUN_ID)
         self.app.state.intent_compiler = MonitoredCompiler(
             scripted(utterance="set height to 2.2", component_id="portico", element_id="portico-base"), self.app.state.monitor)
+        emitted = self.emissions()
         def submit(operation):
             return self.client.post("/api/intents", headers={"X-Monkey-Operation": operation, "X-Monkey-Parent": operation},
                 json={"projectId": PROJECT_ID, "stateDigest": digest, "utterance": "make the portico base taller", "targetComponentId": "portico", "elementId": "portico-base"})
@@ -121,8 +152,8 @@ class ModelLoadMonitoringTests(unittest.TestCase):
             responses = list(pool.map(submit, operations))
         for response in responses:
             self.assertEqual(response.status_code, 201, response.text)
-        rows, warnings = self.app.state.monitor.store.read()
-        self.assertFalse(warnings)
+        self.assertFalse(self.app.state.monitor.store.read()[1])
+        rows = latest(emitted)
         self.assertEqual({row.operation_id for row in rows}, {f"studio:client:{value}" for value in operations})
         for operation in operations:
             group = [row for row in rows if row.operation_id == f"studio:client:{operation}"]
@@ -140,6 +171,7 @@ class ModelLoadMonitoringTests(unittest.TestCase):
         digest = runner_state_digest(self.repository, REFERENCE_RUN_ID)
         self.app.state.intent_compiler = MonitoredCompiler(
             scripted(utterance="set height to 2.2", component_id="portico", element_id="portico-base"), self.app.state.monitor)
+        emitted = self.emissions()
         def submit(turn):
             return self.client.post("/api/intents", headers={
                 "x-monkey-turn-id": turn, "x-monkey-parent-span-id": f"hub:turn:{turn}"},
@@ -149,8 +181,8 @@ class ModelLoadMonitoringTests(unittest.TestCase):
             responses = list(pool.map(submit, turns))
         for response in responses:
             self.assertEqual(response.status_code, 201, response.text)
-        rows, warnings = self.app.state.monitor.store.read()
-        self.assertFalse(warnings)
+        self.assertFalse(self.app.state.monitor.store.read()[1])
+        rows = latest(emitted)
         self.assertEqual({row.turn_id for row in rows}, set(turns))
         for turn in turns:
             group = [row for row in rows if row.turn_id == turn]

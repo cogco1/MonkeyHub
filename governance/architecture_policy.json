@@ -204,10 +204,10 @@
     {
       "path": "monkeymonitor/store.py",
       "function": "_locked",
-      "operations": ["mkdir"],
+      "operations": ["mkdir", "open_write"],
       "kind": "diagnostics",
       "owner": "monkeymonitor",
-      "reason": "Create the caller-selected diagnostics directory for the shared Hub/Studio journal lock; no project authority."
+      "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",

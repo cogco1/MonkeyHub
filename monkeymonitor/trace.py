@@ -371,6 +371,8 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
                        "spans": spans, "attribution": attribution, "critical_path": critical, "usage": usage,
                        "price": _prices(measured, rates), "diagnostics": _diagnostics(group),
                        "warnings": ([] if root else ["缺少请求根区间；阶段记录仍可查看，总耗时保持未知。"])
+                       + (["该记录的写入方此前在日志繁忙时跳过过诊断观测；受影响的回合、数量与时长都未知，此处不代表本回合缺失。"]
+                          if any(row["details"].get("missing_observations") for row in group) else [])
                        + (["已关联的客户端活动超出聊天根区间；时间轴保留完整尾部，根耗时没有叠加这些阶段。"] if elapsed is not None and timeline > elapsed else [])
                        + (["部分墙钟跨度与单调时钟耗时不一致；阶段时长采用生产者测量值，跨进程位置仍按记录时间。"]
                           if any(row.get("duration_ms") is not None and _time(row.get("ended_at")) is not None and _time(row["started_at"]) is not None

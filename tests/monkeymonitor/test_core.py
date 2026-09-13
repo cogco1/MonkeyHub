@@ -2,16 +2,119 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from monkeymonitor.algorithms import (
     Action, Budget, Decision, FirstAvailablePolicy, SelectionContext, choose_action,
 )
 from monkeymonitor.codex import bound_codex_sources, iter_codex_events
 from monkeymonitor.pricing import RateCard, quote
+from monkeymonitor.store import BUSY_NOTICE, UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
+
+# Hold the real journal lock in another process, the way Hub and Studio meet it.
+HOLD_JOURNAL = r'''
+import os, sys
+from pathlib import Path
+directory = Path(sys.argv[1])
+directory.mkdir(parents=True, exist_ok=True)
+stream = (directory / "usage.lock").open("a+b")
+if os.name == "nt":
+    import msvcrt
+    stream.seek(0)
+    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.readline()
+if os.name == "nt":
+    stream.seek(0)
+    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+stream.close()
+print("released", flush=True)
+'''
+
+
+def bounded(case: unittest.TestCase, action, *, seconds: float = 30, on_timeout=None):
+    """Run something that must not block, on a worker, with a bounded wait.
+
+    A blocking lock waits forever on POSIX, where an elapsed assertion after
+    the call would never be reached. This turns that regression into a failure.
+    """
+
+    outcome = {}
+
+    def run():
+        try:
+            outcome["value"] = action()
+        except BaseException as exc:
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        if on_timeout is not None:
+            on_timeout()  # free the holder before any cleanup joins on it
+        case.fail(f"the diagnostic journal blocked for more than {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value")
+
+
+class JournalHolder:
+    """Pipe-coordinated lock holder: bounded handshakes, never a timing guess."""
+
+    def __init__(self, case: unittest.TestCase, directory: Path):
+        self.case = case
+        self.process = subprocess.Popen(
+            [sys.executable, "-c", HOLD_JOURNAL, str(directory)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        case.addCleanup(self.stop)
+        self.expect("held")
+
+    def expect(self, token: str) -> None:
+        line = bounded(self.case, self.process.stdout.readline, on_timeout=self.kill)
+        self.case.assertEqual(line.strip(), token)
+
+    def holding(self) -> bool:
+        return self.process.poll() is None
+
+    def release(self) -> None:
+        self.process.stdin.write("\n")
+        self.process.stdin.flush()
+        self.expect("released")
+        self.case.assertEqual(self.process.wait(30), 0)
+
+    def kill(self) -> None:
+        if self.process.poll() is None:
+            self.process.kill()
+            self.process.wait(30)
+
+    def stop(self) -> None:
+        self.kill()
+        self.process.stdin.close()
+        self.process.stdout.close()
+        self.process.wait(30)
+
+
+STAMP = datetime.now(timezone.utc).isoformat()
+
+
+def stored(name: str, phase: str = "tool_call", status: str = "completed", **extra) -> UsageEvent:
+    return UsageEvent(name, "hub", "none", "none", phase, status, STAMP,
+                      TokenUsage(), model_call=False, **extra)
 
 
 class UsagePricingTests(unittest.TestCase):
@@ -546,6 +649,179 @@ class BoundCodexSourceTests(unittest.TestCase):
                      [{"projectId": "a", "sessionId": "first", "messages": ["private"]}]):
             with self.assertRaises(ValueError):
                 bound_codex_sources(body, self.home, [])
+
+
+class JournalContentionTests(unittest.TestCase):
+    """A held journal costs an observation; it never costs the user any wait."""
+
+    def setUp(self):
+        self.directory = Path(self.enterContext(TemporaryDirectory()))
+        self.store = UsageLog(self.directory)
+
+    def test_cross_process_hold_skips_the_observation_without_waiting_or_writing(self):
+        self.store.append(stored("before"))
+        size = self.store.path.stat().st_size
+        holder = JournalHolder(self, self.directory)
+        clock = time.perf_counter()
+        bounded(self, lambda: self.store.append(stored("dropped")), on_timeout=holder.kill)
+        rows, warnings = bounded(self, self.store.read, on_timeout=holder.kill)
+        elapsed = time.perf_counter() - clock
+        # The reproduced failure waited 2.016s for a 1.3s holder.
+        self.assertLess(elapsed, 1.0, "a diagnostic must not wait for the journal")
+        self.assertTrue(holder.holding(), "measured while the lock was still held")
+        self.assertEqual((rows, warnings), ([], [BUSY_NOTICE]))
+        self.assertEqual(self.store.path.stat().st_size, size, "no unlocked fallback write")
+        holder.release()
+        self.store.append(stored("after"))
+        rows, warnings = self.store.read()
+        self.assertEqual([row.event_id for row in rows], ["before", "after"])
+        self.assertFalse(warnings)
+        self.assertEqual(rows[0].details, {})
+        self.assertIs(rows[1].details["missing_observations"], True)
+        self.store.append(stored("later"))
+        self.assertEqual(self.store.read()[0][2].details, {}, "the notice is sticky, not permanent")
+
+    def test_a_later_revision_and_rotation_both_keep_an_observed_gap_notice(self):
+        store = UsageLog(self.directory, max_bytes=1600, backups=2)
+        holder = JournalHolder(self, self.directory)
+        bounded(self, lambda: store.append(stored("dropped")), on_timeout=holder.kill)
+        holder.release()
+        store.append(stored("root", "hub_turn", "running"))
+        self.assertIs(next(row for row in store.read()[0] if row.event_id == "root")
+                      .details["missing_observations"], True)
+        for index in range(6):
+            store.append(stored(f"filler-{index}"))
+        self.assertTrue((self.directory / "usage.1.jsonl").exists(), "the carrier line was rotated out")
+        rotated = next(row for row in store.read()[0] if row.event_id == "root")
+        self.assertIs(rotated.details["missing_observations"], True, "rotation retention kept the notice")
+        store.append(stored("root", "hub_turn", "succeeded", ended_at=STAMP, duration_ms=10))
+        final = next(row for row in store.read()[0] if row.event_id == "root")
+        self.assertEqual((final.status, final.duration_ms), ("succeeded", 10))
+        self.assertIs(final.details["missing_observations"], True,
+                      "a completed update supersedes measurements, never the gap notice")
+
+    def test_a_drop_during_the_carrying_write_is_not_erased(self):
+        holder = JournalHolder(self, self.directory)
+        bounded(self, lambda: self.store.append(stored("dropped")), on_timeout=holder.kill)
+        holder.release()
+        injected = threading.Event()
+
+        class InjectOnWrite:
+            """The journal path, used only to time a concurrent drop exactly."""
+
+            def __init__(self, path, hook):
+                self._path, self._hook = path, hook
+
+            def __getattr__(self, name):
+                return getattr(self._path, name)
+
+            def open(self, *args, **kwargs):
+                self._hook()
+                return self._path.open(*args, **kwargs)
+
+        def concurrent():
+            if injected.is_set():
+                return
+            injected.set()
+            # This append meets the in-process lock the carrier holds right now.
+            worker = threading.Thread(target=lambda: self.store.append(stored("concurrent")), daemon=True)
+            worker.start()
+            worker.join(30)
+            self.assertFalse(worker.is_alive(), "the concurrent append did not return")
+
+        real = self.store.path
+        self.store.path = InjectOnWrite(real, concurrent)
+        try:
+            self.store.append(stored("carrier"))
+        finally:
+            self.store.path = real
+        self.assertTrue(injected.is_set())
+        rows, warnings = self.store.read()
+        self.assertFalse(warnings)
+        self.assertEqual([row.event_id for row in rows], ["carrier"])
+        self.assertIs(rows[0].details["missing_observations"], True)
+        self.store.append(stored("next"))
+        self.assertIs(next(row for row in self.store.read()[0] if row.event_id == "next")
+                      .details["missing_observations"], True,
+                      "the drop during the carrying write was not erased by its clear")
+
+    def test_a_writer_that_cannot_open_its_lock_never_writes_unlocked(self):
+        self.store.append(stored("before"))
+        size = self.store.path.stat().st_size
+        original = Path.open
+
+        def vanished(target, *args, **kwargs):
+            if target.name == "usage.lock":
+                raise FileNotFoundError(2, "the diagnostics directory was removed", str(target))
+            return original(target, *args, **kwargs)
+
+        with patch.object(Path, "open", vanished):
+            with self.assertRaises(FileNotFoundError):
+                self.store.append(stored("unwritable"))
+            # A retained segment with no lock file is still readable.
+            self.assertEqual([row.event_id for row in self.store.read()[0]], ["before"])
+        self.assertEqual(self.store.path.stat().st_size, size)
+
+    def test_in_process_thread_contention_also_returns_promptly(self):
+        entered, release = threading.Event(), threading.Event()
+
+        def hold():
+            with self.store._locked(write=True):
+                entered.set()
+                release.wait(30)
+
+        worker = threading.Thread(target=hold, daemon=True)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(30))
+            clock = time.perf_counter()
+            bounded(self, lambda: self.store.append(stored("dropped")), on_timeout=release.set)
+            elapsed = time.perf_counter() - clock
+            self.assertLess(elapsed, 1.0)
+            self.assertFalse(release.is_set(), "measured while the in-process lock was held")
+        finally:
+            release.set()
+            worker.join(30)
+        self.store.append(stored("after"))
+        rows, warnings = self.store.read()
+        self.assertEqual([row.event_id for row in rows], ["after"])
+        self.assertFalse(warnings)
+        self.assertIs(rows[0].details["missing_observations"], True)
+
+    def test_release_restores_append_and_concurrent_rotation_stays_readable(self):
+        store = UsageLog(self.directory, max_bytes=4000, backups=2)
+        holder = JournalHolder(self, self.directory)
+        for index in range(5):
+            bounded(self, lambda: store.append(stored(f"dropped-{index}")), on_timeout=holder.kill)
+        self.assertFalse(store.path.exists())
+        holder.release()
+        store.append(stored("carrier"))
+        rows, warnings = store.read()
+        self.assertEqual([row.event_id for row in rows], ["carrier"])
+        self.assertFalse(warnings)
+        self.assertIs(rows[0].details["missing_observations"], True)
+        writer = subprocess.Popen(
+            [sys.executable, "-c", """import sys
+from pathlib import Path
+from monkeymonitor.store import UsageLog
+from monkeymonitor.usage import UsageEvent, TokenUsage
+store = UsageLog(Path(sys.argv[1]), max_bytes=4000, backups=2)
+for index in range(40):
+    store.append(UsageEvent('child-' + str(index), 'hub', 'none', 'none', 'tool_call', 'completed',
+                            '2026-09-13T00:00:00+00:00', TokenUsage(), model_call=False))
+""", str(self.directory)],
+            cwd=Path(__file__).resolve().parents[2], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        for index in range(40):
+            store.append(stored(f"parent-{index}"))
+        _, error = writer.communicate(timeout=120)
+        self.assertEqual(writer.returncode, 0, error.decode())
+        rows, warnings = store.read()
+        self.assertTrue(rows)
+        self.assertEqual(len(rows), len({row.event_id for row in rows}))
+        self.assertTrue(any("轮转" in warning for warning in warnings))
+        self.assertFalse([warning for warning in warnings if "未能读取" in warning],
+                         "concurrent rotation left no torn line")
+        self.assertLessEqual(len(list(self.directory.glob("usage*.jsonl"))), 3)
 
 
 if __name__ == "__main__":
