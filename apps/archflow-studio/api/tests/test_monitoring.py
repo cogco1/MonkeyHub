@@ -224,7 +224,7 @@ class MonitoringTests(unittest.TestCase):
                     observations.append(value)
                     raise OSError("diagnostic unavailable")
 
-                executor = patch.object(project_runner, "_export_occt",
+                executor = patch.object(project_runner, "_execute_cad",
                                         **({"side_effect": outcome} if isinstance(outcome, BaseException) else {"return_value": outcome}))
                 with executor as export:
                     arguments = (None, None, None, None, SimpleNamespace(program_digest="a" * 64), "stage", SimpleNamespace(cad_backend="occt"), {"state_record_ref": "retained-state"})
