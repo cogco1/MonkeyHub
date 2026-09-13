@@ -17,6 +17,25 @@ App Server 故障恢复、独立安装环境和更新/重装验收继续由 #21 
 后续与 #14 手动 Sync 集成时，只按明确提交的批次验证避免重放；桌面不保存建模草稿，
 也不宣称能够恢复未同步工作。
 
+### #23：白板手势与选区反馈入口
+
+在 `codex/board-ux` 的 c68e worktree 中 EXTEND `studio.board`。首片收起并可重新打开项目资料栏，
+将 Crit、清除、导出和立即保存放入次级入口，空板直接提示拖图、圈画、箭头和文字。
+选区入口复用 `createBoardFeedback`，提交仍经 `prepareBoardDesignRequest` 校验确切图页与模型。
+只含普通笔迹或文字的选区不显示模型操作；图纸与文字同选时说明文字尚需复制到反馈框。
+后续验收仍包括：仅选中文字按确定顺序进入反馈意图、无需重输，几何沿现有 DTO 单独传输。
+文件型剪贴板已有登记上传实现，已在隔离项目中核验文件事件、登记身份与实际保存；
+这不覆盖 HTML 或远程图片粘贴。中文文件干净导出时的响应头编码错误已复现并修复。
+首片已通过 32 项 Board 前端测试、10 项 Board API 测试、真实浏览器上传／粘贴／手势／选区反馈／
+干净导出／自动到达／重开／CAS、替换与 Crit 撤销回归、5 种反馈交接场景、构建和架构检查。
+中英文、深浅色、620px 资料栏与键盘入口已核验；首片等待协调审查合并，不据此关闭 #23。
+
+源码限定在 `web/src/workspaces/monkeyboard/Board.tsx`、`board.css`、`boardFeedbackGeometry.ts`
+及相关 Board 测试；`web/` 均指 `apps/archflow-studio/web/`。导出修复另限现有
+`apps/archflow-studio/api/archflow_studio_api/routes/boards.py` 与 `apps/archflow-studio/api/tests/test_boards.py`。
+共享登记与本文保留其他 lanes，
+不吸收 #14 的 App／Stage／DTO 或 #21 桌面实现。完成首片后由协调任务独立审查 PR 与准确 head 的 CI。
+
 ### #14 Phases 2/3：本地会话与预选
 
 `P115/interaction` 在 PR #19 合入后的 `62c90302` 上继续，复用 `685e` worktree，分支为
