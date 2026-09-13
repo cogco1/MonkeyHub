@@ -20,7 +20,17 @@
 
 本地协作工具与历史范围测试 66 项通过；独立 review 后补核旧卡斜杠标题、Windows 同一检出和 lane 关闭行为，4 项聚焦检查通过。archcheck、文档链接与生成地图一致性通过。真实 Blender 运行和成员接手仍属于下一阶段。
 
-**剩余验收：** Phase 1 单独 review/PR；Phase 2 在已落地的公共契约上完成 Blender 单场景保存/读回，再核实同事独立复跑与跨 lane 交接。测试中的三成员与故意路径冲突是临时仓库演练，不替代真实 Blender 宿主或团队接入。本卡和 #13 继续保留。
+Phase 1 已由 [PR #17](https://github.com/cogco1/ARCHFLOW_V4/pull/17) 合入 `main`，合入提交 `681fc9f101bbe7f0a2bec1ef63fec7ebbd76c3c4`；独立审查和四项 CI 通过。测试中的三成员与故意路径冲突是临时仓库演练，真实成员的独立接入继续保留验收。
+
+### #13 Phase 2：Blender 首个保存与冷读闭环
+
+`codex/blender-backend` 从 Phase 1 的实际合入提交开始，由本 Codex 任务负责。EXTEND `adapters.cad_execution`，新增 Blender mesh 后端与独立宿主 worker，并在原 `CAD_BACKEND_REGISTRY` 登记。`project.record_kinds` 只增加 runner 实际保留的 `seat-blender-execution`；runner 调度、Hub/App Server、Canonical State 与 Stage 规则保持既有实现。
+
+首片支持正尺寸 solid 和简单平面 profile 的直线 extrusion，含 datum 的 base_level/base_offset；其他操作在启动宿主和写文件前明确返回 unsupported。两个新进程分别保存 `.blend` 和独立读回几何、单位、ArchFlow 对象/语义身份与完整来源绑定。Blender 名称被截短时仍以 ArchFlow 身份读回。源码范围和实际责任在 `P115/blender`，复跑方法见 [adapter README](../../../archflow/adapters/README.md#blender-scene-execution)。
+
+指定本机 Blender 4.3.2 运行的 13 项测试无跳过通过，包含真实宿主保存/冷读；与公共 CAD、runner、record kinds 合并的 117 项检查通过。验证覆盖毫米与斜三角拉伸、大坐标绝对容差、凹形截面的面连接和等价索引重排、篡改拒绝、P036 回执保留、重开后精确复用和同对象改稿，项目 HEAD 不变。指定 source 时完整重建并保留原文件，未实现局部 patch；产物为 mesh，不承诺全量 CAD 等价或 `.blend` 字节重现。
+
+**剩余验收：** Phase 2 独立 PR 审查与 CI、新同事自己的独立复跑和跨 lane 交接；本卡与 #13 继续保留。用户现有服务和真实项目未参与本轮测试。
 
 ### 空项目进入建模（2026-09-12）
 

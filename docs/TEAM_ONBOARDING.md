@@ -242,13 +242,22 @@ npm.cmd run build
 
 新增 Skill 优先扩展真实已有条目，不复制两仓实现。研究问题和结论由成员提出；真实项目改动由项目任务确定。本清单不会自动派发新的模型算法、Skill 包或存储机制。
 
-### Blender 同事的首个 lane
+### Blender 同事的首次复跑与接手
 
-先读 [Issue #13](https://github.com/cogco1/ARCHFLOW_V4/issues/13) 和[公共 CAD 执行契约](../archflow/adapters/README.md#compiled-cad-execution)，用 `devctl module compiled-cad-execution` 查现有 owner。生产接入从包含 [PR #15](https://github.com/cogco1/ARCHFLOW_V4/pull/15) 的 `main` 提交开始；该 PR 合入提交为 `1e77a32a8b5ad939a86e45c0fd14f22a7c77268d`，开工时仍记录实际基线。
+当前源码已实现 Blender 的首个场景保存与冷读回闭环。先读 [Issue #13](https://github.com/cogco1/ARCHFLOW_V4/issues/13) 和[Blender 执行指南](../archflow/adapters/README.md#blender-scene-execution)，用 `python tools/devctl.py module compiled-cad-execution` 查现有 owner。开发基线来自已包含 Phase 0 公共契约与 Phase 1 协作工具的 `main`（本次为 `681fc9f101bbe7f0a2bec1ef63fec7ebbd76c3c4`）；复跑时取包含 Blender 实现的约定提交，记录实际 SHA、lane 和独立 worktree。
 
-第一个 PR 只完成一个场景闭环：接收公共请求与 exact program/project/run/base binding，在显式 speculative workspace 创建或更新场景，保存一个选定工件并读回对象及来源绑定，再返回公共结果与 Blender 自身证据。Blender 对象保留 ArchFlow 对象/语义身份；名称和自定义属性只是执行映射。验证项目 `HEAD` 不变、已有 OCCT/Rhino 行为保持，并把不支持项明确返回；不要求立即全量功能等价。
+支持正尺寸 box `SOLID`、简单平面多边形的直线 `EXTRUSION`，包含 `base_level` / `base_offset` 和不落在截面平面内的拉伸向量。其他操作在启动 Blender 前明确返回不支持。输出是保留 ArchFlow 对象/语义身份的 mesh `.blend`；原生读回证据经现有项目接口保存，项目 `HEAD` 不因候选执行改变。它尚不提供全量功能等价或 Hub 模型显示。
 
-这一 lane 不修改 Hub/App Server 实现。若确实缺少公共契约，记录具体缺项并先提交上游契约 PR。Phase 0 已完成真实 OCCT 执行与冷读回、受控 Rhino 契约测试；**真实 Rhino 宿主验收尚未完成**。Blender 宿主、同事独立复跑和跨 lane 交接只按实际完成情况报告。
+在自己的源码环境执行；未加入 `PATH` 时，将第一行改为自己的 `blender.exe` 绝对路径：
+
+```powershell
+$env:ARCHFLOW_BLENDER_EXECUTABLE = (Get-Command blender -CommandType Application).Source
+python -m unittest tests.test_blender_cad tests.test_cad_backend_contract -v
+```
+
+测试使用临时 workspace/project，通过两个独立后台进程先保存、再打开检查。未设置该变量时，真实宿主用例会 skip，不能将其写成通过。已有精确输出可由 runner 复用；有 source 时保留来源文件并按当前程序完整重建，不承诺增量 patch 或 `.blend` 字节重现。
+
+本次指定 Blender 4.3.2 运行的 13 项测试无跳过通过，包含真实保存/冷读、重启复用和候选修改；与公共 CAD、runner、record kinds 合并的 117 项检查通过。**新同事独立复跑、接手验收及真实 Rhino 宿主验收仍待完成**。接手继续沿公共 CAD 契约，不改 Hub/App Server 实现；缺少共享契约时先提交上游 PR，再更新依赖分支。
 
 ## 6. 把这段发给她的 Agent
 

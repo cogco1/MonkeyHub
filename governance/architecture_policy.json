@@ -276,6 +276,16 @@
       "kind": "distribution_build",
       "owner": "tools.package_monkeyapps",
       "reason": "Retains the locked ACP dependency release notices only under the external candidate bundle third-party directory."
+    },
+    {
+      "path": "archflow/adapters/blender_cad.py",
+      "function": "execute",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "adapters.cad_execution",
+      "reason": "Exclusively writes the Blender transport plan into the explicit speculative workspace; a dedicated worker saves the .blend there and a fresh process reads it. Only the existing runner persists the native receipt through P036."
     }
   ],
   "forbidden_layer_imports": [
