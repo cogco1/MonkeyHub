@@ -430,13 +430,13 @@
         {
           "id": "agent-latency",
           "issue": "#32 Phase 0 turn trace and MonkeyMonitor",
-          "status": "active",
+          "status": "review",
           "branch": "codex/p115-agent-latency-phase0",
           "worktree": "C:/Users/asus/.codex/worktrees/597e/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex task 01a09b53-017d-7fa3-99d3-10177536354e",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "EXTEND existing UsageEvent/UsageLog and StudioMonitor into correlated Hub/agent/tool/Studio/CAD/client traces and a live Monitor waterfall/activity tree. Isolated disposable runtimes only. Runtime change is limited to forwarding two diagnostic headers; no lifecycle, cache or pointer interaction semantics change. Phase 0 precedes ContextPack/transaction optimization.",
+          "handoff": "Phase 0 implementation and isolated real-provider validation are ready for review: correlated Hub/agent/tool/Studio/CAD/client traces, semantic Monitor waterfall/tree, deterministic diagnostics, exact rate qualification and JSON export all extend UsageEvent/UsageLog. At bfbaca62, simple-create completed in 43.533 s with first frame 29.282 s; incremental cornice edit completed in 55.583 s with first frame 49.377 s. Both retained readbacks match the expected geometry and preserve HEAD. Each has 3 observed tool calls and 5 native usage events; model request counts remain unknown without request boundaries. Earlier conflicting keep conditions correctly refused a candidate and are retained as a failed sample. Monitor 94 tests, Hub chat/trace checks, Studio API/OCCT checks, relevant browser tests, build, generated client and archcheck pass; the existing full browser suite has an unrelated drawing toolbar/footer obstruction. Isolated disposable runtimes only. Runtime changes only forward two diagnostic headers. ContextPack/comparison and transactions follow in separate slices; issue #32 remains open.",
           "modules": ["monkeymonitor", "hub.shell", "studio.shell", "studio.candidate"],
           "write_scope": [
             "monkeymonitor/",
