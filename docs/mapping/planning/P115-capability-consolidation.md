@@ -224,7 +224,17 @@ Phase 1 已由 [PR #17](https://github.com/cogco1/ARCHFLOW_V4/pull/17) 合入 `m
 
 指定本机 Blender 4.3.2 运行的 15 项测试无跳过通过，包含真实宿主保存/冷读；公共 CAD、runner、record kinds 与 CLI 的另外 112 项检查通过。验证覆盖毫米与斜三角拉伸、大坐标绝对容差、容差内舍入与薄实体的顶点对应、凹形截面的面连接和等价索引重排、篡改拒绝、P036 回执保留、重开后精确复用和同对象改稿，项目 HEAD 不变。指定 source 时完整重建并保留原文件，未实现局部 patch；产物为 mesh，不承诺全量 CAD 等价或 `.blend` 字节重现。
 
-**剩余验收：** Phase 2 独立 PR 审查与 CI、新同事自己的独立复跑和跨 lane 交接；本卡与 #13 继续保留。用户现有服务和真实项目未参与本轮测试。
+Phase 2 已由 [PR #18](https://github.com/cogco1/MonkeyHub/pull/18) 合入 `main`，合入提交 `6158a5bff373d203a1c6f4200d1272cfd3487329`。新同事自己的独立复跑和跨 lane 交接继续保留验收；本卡与 #13 不关闭。
+
+### #13 剩余宿主与团队验收（2026-09-13）
+
+复用 `P115/blender`，从远端 `main` 的 `293756cf6b10a49bff303c3d37f60dac0e9c2754` 开始，在分配的 `7ae0/ARCHFLOW_V4` worktree 使用 `codex/issue-13-acceptance`。#15、#17、#18 均为该基线的祖先；#12 的 #16 已在独立 `codex/hub-runtime` 合入，#18 的实际文件不含 Hub/App Server 实现。沿既有 `adapters.cad_execution` 和 `runtime.project_runner` 验收，没有暴露需要修改生产实现的问题。
+
+显式启用 `ARCHFLOW_RHINO_ACCEPTANCE=1` 后，`tests/test_cad_backend_contract.py` 的 3 项真实宿主测试在 Rhino `8.28.26041.11001` 全部通过。每次导出使用新的隐藏 COM 宿主和临时 workspace，契约与 runner 用例另建可丢弃 P036 项目；保存后独立清理宿主，再冷读原生 3DM。共同检查覆盖精确 project/run/base/program、对象身份、单位、具名产物和文件篡改拒绝；另外核对原生材料名称、对象材料绑定与颜色、变更图层/材料映射拒绝，以及 P036 项目重开后沿原回执复用原模型而不启动宿主，项目 `HEAD` 不变。测试结束未留下 Rhino 进程。复跑命令见 [adapter README](../../../archflow/adapters/README.md#rhino-host-acceptance)。
+
+默认 CAD/patch/OCCT/共同契约/runner 检查共 211 项：207 通过，3 项真实 Rhino 需显式启用，1 项 Studio loader 因本 worktree 没有前端依赖跳过；上述真实 Rhino 3 项已另行无跳过通过。协作工具与范围检查 56 项通过，包含三条独立模拟 lane、故意路径重叠、依赖阻塞与有序交接。四份生成地图保持一致，相关文档链接已核对。上手说明改用更名后的 MonkeyHub 仓库，并明确新成员不能从尚无 Blender 实现的旧 Phase 1 基线开始验收。
+
+**剩余验收：** 新成员在自己的环境，从约定 main/issue/简短文档完成一次独立复跑和真实任务交接，并反馈给约定 reviewer。自动化模拟和本机 Rhino 宿主通过不代替这一项。当前 PR 交主协调任务集成；现用服务、安装包与真实设计项目没有参与测试。
 
 ### 空项目进入建模（2026-09-12）
 

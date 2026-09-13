@@ -453,36 +453,24 @@
         },
         {
           "id": "blender",
-          "issue": "#13 Phase 2",
+          "issue": "#13 remaining host and contributor acceptance",
           "status": "review",
-          "branch": "codex/blender-backend",
-          "worktree": "C:/Users/asus/.codex/worktrees/8a9c/ARCHFLOW_V4",
-          "base_ref": "681fc9f101bbe7f0a2bec1ef63fec7ebbd76c3c4",
-          "contributor": "Codex task 01a09862-d9e5-7df1-a859-217ae5d9ad54",
-          "reviewer": "Independent Codex agents cad_conformance_review and review_contract",
-          "handoff": "Independent Phase 2 PR integration after real Blender save/cold-read and retained runner checks. New teammate reproduction and handoff remain pending.",
+          "branch": "codex/issue-13-acceptance",
+          "worktree": "C:/Users/asus/.codex/worktrees/7ae0/ARCHFLOW_V4",
+          "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
+          "contributor": "Codex task 01a09b54-4676-7443-b60b-652f6d1e4a8d",
+          "reviewer": "Coordinating task 01a07a9b-1a50-7081-9e08-1b86961d799e",
+          "handoff": "PRs #15/#17/#18 are merged. Real Rhino 8.28 save/cold-read/material/retained-restart acceptance and simulated contributor checks pass. Coordinating task integrates this focused test/documentation PR; a new teammate must still reproduce and hand off from their own environment.",
           "modules": [
             "adapters.cad_execution",
-            "project.record_kinds",
-            "tools.run_project",
-            "tools.verify_state_record"
+            "runtime.project_runner"
           ],
           "write_scope": [
-            "archflow/adapters/blender_cad.py",
-            "archflow/adapters/blender_worker.py",
-            "archflow/adapters/cad_backend.py",
             "archflow/adapters/README.md",
-            "archflow/project/record_kinds.py",
-            "tests/test_blender_cad.py",
-            "governance/architecture_policy.json",
-            "governance/module_registry.json",
+            "tests/test_cad_backend_contract.py",
             "governance/work_registry.json",
-            "docs/SYSTEM_MAP.md",
             "docs/TEAM_ONBOARDING.md",
-            "docs/mapping/planning/P115-capability-consolidation.md",
-            "tools/run_project.py",
-            "tools/verify_state_record.py",
-            "tests/test_verify_state_record.py"
+            "docs/mapping/planning/P115-capability-consolidation.md"
           ],
           "depends_on": []
         },

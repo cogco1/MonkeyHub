@@ -1,16 +1,18 @@
-"""Common CAD execution contract: real OCCT and a controlled Rhino host.
+"""Common CAD execution contract: OCCT, controlled Rhino and opt-in real Rhino.
 
 The Rhino fixture exercises the actual plan, supervisor and receipt checks,
 but supplies host witnesses and an inspection. It is not a real Rhino geometry
 acceptance. OCCT writes and cold-reads its actual STEP and preview files.
+Set ARCHFLOW_RHINO_ACCEPTANCE=1 to also run isolated Rhino 8 COM hosts.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
@@ -38,6 +40,17 @@ from tests.test_project_runner import _ExportProject, _options, _prism_row, _rec
 
 
 NEEDS_OCCT = unittest.skipUnless(occt_backend.occt_available(), "cadquery-ocp is not installed")
+NEEDS_RHINO = unittest.skipUnless(
+    os.environ.get("ARCHFLOW_RHINO_ACCEPTANCE") == "1",
+    "set ARCHFLOW_RHINO_ACCEPTANCE=1 to run isolated real Rhino acceptance",
+)
+
+
+def _real_rhino_options():
+    powershell = cad_execution.discover_powershell()
+    if powershell is None:
+        raise RuntimeError("real Rhino acceptance requires Windows PowerShell and Rhino 8 COM")
+    return {"powershell_executable": powershell, "timeout_seconds": 120}
 
 
 def _request(workspace, *, program=None, binding=None, **options):
@@ -184,7 +197,7 @@ class CadRequestContractTests(unittest.TestCase):
 
 
 class CadBackendConformanceTests(unittest.TestCase):
-    def _successful_run(self, backend_id):
+    def _successful_run(self, backend_id, *, host_options=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             repository = FilesystemProjectRepository.initialize(root / "project", project_id="generic-building", initial_state={"schema": "TestState@1"})
@@ -196,7 +209,8 @@ class CadBackendConformanceTests(unittest.TestCase):
                 workspace = root / run_id
                 workspace.mkdir()
                 if backend_id == "rhino":
-                    with _controlled_rhino(root) as backend_options:
+                    host = _controlled_rhino(root) if host_options is None else nullcontext(host_options)
+                    with host as backend_options:
                         request = _request(workspace, program=program, binding=binding, backend_options=backend_options)
                         result = cad_backend.get_cad_backend(backend_id).execute(request)
                 else:
@@ -204,7 +218,7 @@ class CadBackendConformanceTests(unittest.TestCase):
                     with _no_process():
                         result = cad_backend.get_cad_backend(backend_id).execute(request)
                 result.validate(request, backend_id)
-                self.assertEqual((result.backend_id, result.status, result.readback_verified), (backend_id, "succeeded", True))
+                self.assertEqual((result.backend_id, result.status, result.readback_verified), (backend_id, "succeeded", True), result.failures)
                 self.assertEqual(result.binding, binding)
                 self.assertEqual(result.physical_object_ids, ("body-object",))
                 self.assertFalse(result.failures)
@@ -238,6 +252,10 @@ class CadBackendConformanceTests(unittest.TestCase):
                     self.assertEqual(receipt["cleanup_status"], "confirmed")
                     self.assertTrue(receipt["host_witness_sha256"])
                     self.assertTrue(receipt["cleanup_witness_sha256"])
+                    if host_options is not None:
+                        saved = workspace / result.artifacts[0].relative_path
+                        cold = cad_execution.inspect_three_dm(saved)
+                        self.assertEqual(cold.to_dict(), result.inspection)
 
                 with self.assertRaises(CadExecutionError):
                     replace(result, binding=replace(binding, program_digest="a" * 64)).validate(request, backend_id)
@@ -262,7 +280,11 @@ class CadBackendConformanceTests(unittest.TestCase):
     def test_rhino_conforms_with_controlled_host_evidence_and_unchanged_head(self):
         self._successful_run("rhino")
 
-    def _reject_changed_maps(self, backend_id):
+    @NEEDS_RHINO
+    def test_real_rhino_conforms_with_saved_geometry_and_unchanged_head(self):
+        self._successful_run("rhino", host_options=_real_rhino_options())
+
+    def _reject_changed_maps(self, backend_id, *, host_options=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             workspace = root / "workspace"
@@ -274,7 +296,8 @@ class CadBackendConformanceTests(unittest.TestCase):
             }
             backend = cad_backend.get_cad_backend(backend_id)
             if backend_id == "rhino":
-                with _controlled_rhino(root) as options:
+                host = _controlled_rhino(root) if host_options is None else nullcontext(host_options)
+                with host as options:
                     request = _request(workspace, backend_options=options, **maps)
                     result = backend.execute(request)
             else:
@@ -282,6 +305,14 @@ class CadBackendConformanceTests(unittest.TestCase):
                 with _no_process():
                     result = backend.execute(request)
             self.assertEqual(result.status, "succeeded", result.failures)
+            if host_options is not None:
+                cold = cad_execution.inspect_three_dm(workspace / result.artifacts[0].relative_path)
+                self.assertEqual(cold.to_dict(), result.inspection)
+                self.assertEqual(len(cold.object_material_bindings), 1)
+                material = cold.object_material_bindings[0]
+                self.assertEqual(material["material_name"], "stucco")
+                self.assertEqual(material["material_source"], "MaterialFromObject")
+                self.assertEqual(tuple(material["material_diffuse_color_rgba"]), (210, 205, 190, 255))
             payload = deepcopy(result.receipt_payload)
             original_files = {artifact.relative_path: (workspace / artifact.relative_path).read_bytes() for artifact in result.artifacts}
             for name, value in (
@@ -305,6 +336,10 @@ class CadBackendConformanceTests(unittest.TestCase):
 
     def test_rhino_retained_readback_rejects_changed_layer_and_material_maps(self):
         self._reject_changed_maps("rhino")
+
+    @NEEDS_RHINO
+    def test_real_rhino_preserves_native_material_and_rejects_changed_maps(self):
+        self._reject_changed_maps("rhino", host_options=_real_rhino_options())
 
     @NEEDS_OCCT
     def test_occt_does_not_turn_a_failed_cold_read_into_a_verified_result(self):
@@ -532,6 +567,42 @@ class ControlledRhinoRunnerTests(unittest.TestCase):
                     self.assertEqual(second["seat-envelope"]["path"], "reused")
                     self.assertTrue(any(event["phase"] == "export_cache_lookup" and event["details"]["cache_status"] == "miss" for event in spans))
                     self.assertEqual(project.repository.read_head(), head)
+
+
+@NEEDS_RHINO
+class RealRhinoRunnerTests(unittest.TestCase):
+    def test_real_runner_retains_and_reuses_exact_native_receipts_after_restart(self):
+        record = _record(elements=(), extra_entities=(
+            _prism_row(), _prism_row("exterior-walls", "envelope-plinth"),
+        ))
+        project = _ExportProject(self, record, cad_backend="rhino", cad_backend_options=_real_rhino_options())
+        head = project.repository.read_head()
+        first = _cad_seats(project.run_once())
+        self.assertEqual(set(first), {"seat-structure", "seat-envelope"})
+        original = {}
+        for seat_id, result in first.items():
+            self.assertEqual((result["status"], result["backend"]), ("succeeded", "rhino"), result)
+            reference = record_ref_from_uri(result["execution_ref"], "demo")
+            self.assertEqual(reference.record_kind, "seat-rhino-execution")
+            payload = project.repository.load_json(reference)
+            self.assertEqual(payload["schema"], "RhinoCadExecutionReceipt@4")
+            self.assertTrue(payload["readback_verified"])
+            self.assertEqual(payload["cleanup_status"], "confirmed")
+            original[seat_id] = (reference, payload, Path(result["model"]).read_bytes())
+        self.assertEqual(project.repository.read_head(), head)
+
+        project.repository = FilesystemProjectRepository.open(project.repository.layout.root)
+        project.run = project.repository.load_run(project.run.run_id)
+        with _no_process(), patch.object(cad_backend.RhinoBackend, "execute", side_effect=AssertionError("exact reuse started Rhino")):
+            restarted = _cad_seats(project.run_once())
+        self.assertEqual(set(restarted), set(first))
+        for seat_id, result in restarted.items():
+            self.assertEqual(result["path"], "reused")
+            self.assertEqual(result["execution_ref"], first[seat_id]["execution_ref"])
+            reference, payload, model = original[seat_id]
+            self.assertEqual(project.repository.load_json(reference), payload)
+            self.assertEqual(Path(result["model"]).read_bytes(), model)
+        self.assertEqual(project.repository.read_head(), head)
 
 
 if __name__ == "__main__":
