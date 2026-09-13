@@ -86,8 +86,10 @@ visible while Hub drains accepted operations and stops its own workers. There
 is no forced shutdown deadline or worker-specific shell cleanup. If the host is
 terminated, the OS closes the stdin pipe and Hub follows the same EOF shutdown.
 A temporary health outage waits for the same instance; there is no automatic
-root respawn or operation replay. An exited root requires closing and reopening
-the desktop application.
+root respawn or operation replay. After Hub has loaded, a temporary outage only
+updates the native title: the current WebView document, open tool frames and
+unsubmitted inputs stay in place. Recovery restores the title without reloading.
+An exited root requires closing and reopening the desktop application.
 
 The main window's navigation is restricted to the verified Hub origin and the
 embedded status page. Existing Stage comparisons and Board source links can open

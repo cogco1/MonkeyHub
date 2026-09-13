@@ -165,6 +165,7 @@ fn supervise(
     let mut ready = false;
     let mut failed = false;
     let mut stopping = false;
+    let mut recovering = false;
     let mut outage: Option<Instant> = None;
     let mut last_health = Instant::now() - Duration::from_secs(1);
     loop {
@@ -224,7 +225,7 @@ fn supervise(
             last_health = Instant::now();
             match runtime.identity.check() {
                 Ok(()) => {
-                    if !ready || shared.identity.lock().unwrap().is_none() {
+                    if !ready {
                         if shared.shutdown.load(Ordering::SeqCst) {
                             continue;
                         }
@@ -245,6 +246,14 @@ fn supervise(
                             let _ = window.set_title("MonkeyArch");
                             ready = true;
                         }
+                    } else if recovering {
+                        // The same root recovered; retain the loaded document and its drafts.
+                        log.state(
+                            "ready",
+                            "Owned Hub health recovered without reloading the page",
+                        );
+                        let _ = window.set_title("MonkeyArch");
+                        recovering = false;
                     }
                     outage = None;
                 }
@@ -267,10 +276,10 @@ fn supervise(
                         runtime.request_stop();
                     } else if ready {
                         let since = outage.get_or_insert_with(Instant::now);
-                        if since.elapsed() >= Duration::from_secs(3)
-                            && shared.identity.lock().unwrap().is_some()
-                        {
-                            show_status(&window, &shared, &log, "recovering", "正在等待运行时响应", "运行时进程仍在运行，暂时无法确认健康状态。正在等待同一实例恢复响应；已提交的操作不会重新发送。");
+                        if since.elapsed() >= Duration::from_secs(3) && !recovering {
+                            recovering = true;
+                            log.state("recovering", "Owned Hub is alive but health is unavailable; preserving the current page");
+                            let _ = window.set_title("MonkeyArch · 正在等待运行时响应");
                         }
                     }
                 }

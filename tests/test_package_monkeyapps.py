@@ -275,7 +275,8 @@ class DesktopPackageTests(unittest.TestCase):
             result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(inspect), str(shortcuts)],
                                     capture_output=True, text=True, timeout=15, check=True)
             links = json.loads(result.stdout)
-            self.assertEqual([Path(link["Target"]) for link in links], [browser_entry, desktop_entry])
+            for link, expected in zip(links, (browser_entry, desktop_entry), strict=True):
+                self.assertTrue(Path(link["Target"]).samefile(expected), link)
             self.assertEqual([link["WindowStyle"] for link in links], [7, 1])
 
     def test_desktop_is_built_from_snapshot_with_bound_revision_and_external_target(self):

@@ -3,12 +3,13 @@
 Build the production web clients and desktop EXE from this checkout, then set
 MONKEYARCH_DESKTOP_EXE to its absolute path and run this file with unittest or
 pytest. The Python interpreter running the tests supplies the Hub dependencies.
-These checks observe a native window, completed WebView navigation,
-identity-verified HTTP and process exit; they do not claim visual rendering or
-interactive modeling acceptance.
+These checks observe a native window, completed WebView navigation, an unsent
+chat draft through Windows UI Automation, identity-verified HTTP and process
+exit; they do not claim visual rendering or interactive modeling acceptance.
 """
 
-from contextlib import ExitStack
+from contextlib import contextmanager, ExitStack
+import base64
 import ctypes
 from ctypes import wintypes
 from http.client import HTTPResponse
@@ -29,6 +30,7 @@ import time
 import unittest
 from urllib.parse import urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
+from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -150,6 +152,72 @@ class WindowsProcesses:
     def kill(self, pid):
         if not self.exited(pid) and not self.kernel.TerminateProcess(self.handles[pid], 97):
             raise ctypes.WinError(ctypes.get_last_error())
+
+    @contextmanager
+    def suspend(self, pid):
+        """Temporarily stall only the retained, identity-verified Hub process."""
+        if pid not in self.handles or self.exited(pid):
+            raise AssertionError("The owned Hub must be alive before its health is stalled")
+
+        class ThreadEntry(ctypes.Structure):
+            _fields_ = [("size", wintypes.DWORD), ("usage", wintypes.DWORD),
+                        ("tid", wintypes.DWORD), ("pid", wintypes.DWORD),
+                        ("base_priority", wintypes.LONG), ("delta_priority", wintypes.LONG),
+                        ("flags", wintypes.DWORD)]
+        signatures = (
+            (self.kernel.CreateToolhelp32Snapshot, [wintypes.DWORD, wintypes.DWORD], wintypes.HANDLE),
+            (self.kernel.OpenThread, [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+            (self.kernel.GetProcessIdOfThread, [wintypes.HANDLE], wintypes.DWORD),
+            (self.kernel.SuspendThread, [wintypes.HANDLE], wintypes.DWORD),
+            (self.kernel.ResumeThread, [wintypes.HANDLE], wintypes.DWORD),
+            (self.kernel.Thread32First, [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)], wintypes.BOOL),
+            (self.kernel.Thread32Next, [wintypes.HANDLE, ctypes.POINTER(ThreadEntry)], wintypes.BOOL),
+        )
+        for function, arguments, result in signatures:
+            function.argtypes, function.restype = arguments, result
+        suspended = {}
+        try:
+            for _ in range(5):
+                snapshot = self.kernel.CreateToolhelp32Snapshot(0x00000004, 0)
+                if snapshot == wintypes.HANDLE(-1).value:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                added = False
+                try:
+                    entry = ThreadEntry(size=ctypes.sizeof(ThreadEntry))
+                    more = self.kernel.Thread32First(snapshot, ctypes.byref(entry))
+                    while more:
+                        if entry.pid == pid and entry.tid not in suspended:
+                            handle = self.kernel.OpenThread(0x0002 | 0x0040, False, entry.tid)
+                            if handle:
+                                if self.kernel.GetProcessIdOfThread(handle) != pid:
+                                    self.kernel.CloseHandle(handle)
+                                    raise AssertionError("The thread's process identity changed")
+                                if self.kernel.SuspendThread(handle) == 0xFFFFFFFF:
+                                    error = ctypes.WinError(ctypes.get_last_error())
+                                    self.kernel.CloseHandle(handle)
+                                    raise error
+                                suspended[entry.tid] = handle
+                                added = True
+                            elif ctypes.get_last_error() != 87:  # The thread may have just exited.
+                                raise ctypes.WinError(ctypes.get_last_error())
+                        more = self.kernel.Thread32Next(snapshot, ctypes.byref(entry))
+                finally:
+                    self.kernel.CloseHandle(snapshot)
+                if not added:
+                    break
+            else:
+                raise AssertionError("Owned Hub threads did not settle while suspending")
+            if not suspended:
+                raise AssertionError("No owned Hub threads were suspended")
+            yield
+        finally:
+            errors = []
+            for handle in reversed(tuple(suspended.values())):
+                if self.kernel.ResumeThread(handle) == 0xFFFFFFFF:
+                    errors.append(ctypes.WinError(ctypes.get_last_error()))
+                self.kernel.CloseHandle(handle)
+            if errors:
+                raise errors[0]
 
     def windows(self, pid):
         found = []
@@ -413,6 +481,74 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.assertFalse(port_open(port), f"Owned listener {port} survived shutdown")
         self.assertEqual(self.project_bytes(), self.opened_bytes or self.before)
         self.assertEqual((self.runtime / "config/applications.json").read_bytes(), self.saved_settings)
+
+    def chat_draft(self, value=None):
+        """Use Windows' public UI Automation provider, with no product test hook."""
+        windows = self.native.windows(self.shell.pid)
+        self.assertEqual(len(windows), 1, windows)
+        # The only interpolated text is a locally generated test draft.
+        assignment = "" if value is None else """
+$draft = '""" + value.replace("'", "''") + """'
+$inputElement.SetFocus()
+$pattern.SetValue($draft)
+for ($attempt = 0; $attempt -lt 50 -and $pattern.Current.Value -ne $draft; $attempt++) {
+    Start-Sleep -Milliseconds 100
+}
+"""
+        script = f"""
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+Add-Type -AssemblyName UIAutomationClient
+$window = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{windows[0][0]})
+if ($window.Current.ProcessId -ne {self.shell.pid}) {{ throw 'Unexpected native window owner' }}
+$condition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'chat-input')
+$inputElement = $null
+for ($attempt = 0; $attempt -lt 50 -and $null -eq $inputElement; $attempt++) {{
+    $inputElement = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
+    if ($null -eq $inputElement) {{ Start-Sleep -Milliseconds 100 }}
+}}
+if ($null -eq $inputElement) {{ throw 'The owned Hub chat input was not accessible' }}
+if (-not $inputElement.Current.IsEnabled) {{ throw 'The owned Hub chat input was disabled' }}
+$pattern = $inputElement.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+{assignment}
+$pattern.Current.Value | ConvertTo-Json -Compress
+"""
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+             base64.b64encode(script.encode("utf-16-le")).decode("ascii")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout.strip())
+
+    def test_temporary_health_loss_preserves_unsubmitted_draft_without_navigation(self):
+        self.launch()
+        self.ready()
+        self.open_project()
+        self.app_ready("monkeymonitor")
+        draft = "desktop-unsent-" + str(uuid4())
+        self.assertEqual(self.chat_draft(draft), draft)
+        sessions = request(self.url + "api/chat/sessions")
+        runtime = request(self.url + "api/runtime")
+        operations = {row["runtimeId"]: row["operations"] for row in runtime["projects"]}
+        loaded_pages = PAGE_LOADED.findall(self.log_text())
+        started = time.monotonic()
+        with self.native.suspend(self.hub_pid):
+            self.wait_state("recovering")
+            self.assertGreaterEqual(time.monotonic() - started, 3)
+            self.assertFalse(self.native.exited(self.hub_pid))
+        wait_for(lambda: self.states()[-1] == "ready", lambda: self.log_text())
+        recovered_draft = self.chat_draft()
+        self.assertEqual((PAGE_LOADED.findall(self.log_text()), recovered_draft), (loaded_pages, draft),
+                         "Transient health loss navigated away from the live page or lost the unsent draft")
+        self.assertEqual(request(self.url + "api/chat/sessions"), sessions)
+        recovered = request(self.url + "api/runtime")
+        self.assertEqual({row["runtimeId"]: row["operations"] for row in recovered["projects"]}, operations)
+        self.assertEqual(len(START.findall(self.log_text())), 1)
+        self.native.close_window(self.shell.pid)
+        self.assertEqual(self.shell.wait(timeout=40), 0)
+        self.drained()
 
     def test_native_close_drains_accepted_work_and_reopen_preserves_project(self):
         self.launch()
