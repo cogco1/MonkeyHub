@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
 import os
 from pathlib import Path
 from threading import Lock
@@ -114,20 +113,11 @@ class UsageLog:
                 raise ValueError("diagnostic event exceeds the configured journal segment size")
             with self._locked(write=True):
                 if self.path.exists() and self.path.stat().st_size + line_bytes > self.max_bytes:
-                    current, _ = self._read()
-                    cutoff = datetime.now(timezone.utc).timestamp() - 24 * 3600
-                    active, remaining = [], self.max_bytes - line_bytes
-                    unfinished = sorted((row for row in current if row.status == "running" and row.event_id != event.event_id),
-                                        key=lambda row: (row.phase == "hub_turn", row.started_at), reverse=True)
-                    for row in unfinished:
-                        started = datetime.fromisoformat(row.started_at.replace("Z", "+00:00"))
-                        if started.tzinfo is None or started.timestamp() < cutoff:
-                            continue
-                        retained = json.dumps(row.to_dict(), ensure_ascii=False, allow_nan=False) + "\n"
-                        size = len(retained.encode("utf-8"))
-                        if len(active) < 256 and size <= remaining:
-                            active.append(retained)
-                            remaining -= size
+                    # Rotation renames metadata only. It never decodes retained
+                    # history: reading a nearly full journal cost the observed
+                    # operation most of a second, and an unfinished root is
+                    # worth no more than the segment window every other
+                    # observation already lives in.
                     oldest = self.path.with_name(f"usage.{self.backups}.jsonl")
                     oldest.unlink(missing_ok=True)
                     for index in range(self.backups - 1, 0, -1):
@@ -135,10 +125,6 @@ class UsageLog:
                         if previous.exists():
                             previous.replace(self.path.with_name(f"usage.{index + 1}.jsonl"))
                     self.path.replace(self.path.with_name("usage.1.jsonl"))
-                    # Preserve recent unfinished roots first, with both count and
-                    # byte limits so a crashed writer cannot grow retention forever.
-                    with self.path.open("w", encoding="utf-8", newline="\n") as stream:
-                        stream.writelines(active)
                 with self.path.open("a", encoding="utf-8", newline="\n") as stream:
                     stream.write(line)
         except _Contended:
@@ -164,7 +150,7 @@ class UsageLog:
         warnings = []
         paths = [self.path.with_name(f"usage.{index}.jsonl") for index in range(self.backups, 0, -1)] + [self.path]
         if any(path.exists() for path in paths[:-1]):
-            warnings.append(f"诊断日志仅保留最近 {self.backups + 1} 段；轮转保活最多 24 小时、256 个未完成阶段，且受每段字节上限约束。更早记录可能已移除。")
+            warnings.append(f"诊断日志仅保留最近 {self.backups + 1} 段；轮转不保活未完成阶段。更早记录可能已移除，其中的根阶段与耗时保持未知。")
         for path in paths:
             if not path.exists():
                 continue

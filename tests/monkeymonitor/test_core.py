@@ -689,11 +689,11 @@ class JournalContentionTests(unittest.TestCase):
         store.append(stored("root", "hub_turn", "running"))
         self.assertIs(next(row for row in store.read()[0] if row.event_id == "root")
                       .details["missing_observations"], True)
-        for index in range(6):
+        for index in range(2):
             store.append(stored(f"filler-{index}"))
         self.assertTrue((self.directory / "usage.1.jsonl").exists(), "the carrier line was rotated out")
         rotated = next(row for row in store.read()[0] if row.event_id == "root")
-        self.assertIs(rotated.details["missing_observations"], True, "rotation retention kept the notice")
+        self.assertIs(rotated.details["missing_observations"], True, "the retained segment kept the notice")
         store.append(stored("root", "hub_turn", "succeeded", ended_at=STAMP, duration_ms=10))
         final = next(row for row in store.read()[0] if row.event_id == "root")
         self.assertEqual((final.status, final.duration_ms), ("succeeded", 10))
@@ -822,6 +822,83 @@ for index in range(40):
         self.assertFalse([warning for warning in warnings if "未能读取" in warning],
                          "concurrent rotation left no torn line")
         self.assertLessEqual(len(list(self.directory.glob("usage*.jsonl"))), 3)
+
+
+class JournalRotationTests(unittest.TestCase):
+    """A full journal costs its oldest segment, never the observed operation."""
+
+    def fill(self, path: Path, prefix: str, limit: int, first: UsageEvent | None = None) -> None:
+        """Write legal event lines up to a byte limit, oldest row first."""
+
+        written, index = 0, 0
+        with path.open("w", encoding="utf-8", newline="\n") as stream:
+            if first is not None:
+                line = json.dumps(first.to_dict(), ensure_ascii=False) + "\n"
+                stream.write(line)
+                written += len(line.encode("utf-8"))
+            while True:
+                line = json.dumps(stored(f"{prefix}-{index}").to_dict(), ensure_ascii=False) + "\n"
+                size = len(line.encode("utf-8"))
+                if written + size > limit:
+                    return
+                stream.write(line)
+                written, index = written + size, index + 1
+
+    def test_a_nearly_full_journal_rotates_without_decoding_its_history(self):
+        """The reproduced append held the lock for 0.756s decoding 32 MiB.
+
+        It read every retained line only to copy unfinished roots into the new
+        segment. Rotation now renames metadata, so an unfinished root lives in
+        the same retained window as every other observation and can be evicted.
+        """
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = UsageLog(root)
+            self.assertEqual((store.max_bytes, store.backups), (8 * 1024 * 1024, 3))
+            live = stored("live-root", "hub_turn", "running")
+            self.fill(root / "usage.3.jsonl", "oldest", store.max_bytes, first=live)
+            for index in (2, 1):
+                self.fill(root / f"usage.{index}.jsonl", f"older-{index}", store.max_bytes)
+            self.fill(store.path, "current", store.max_bytes)
+            segments = sorted(root.glob("usage*.jsonl"))
+            filled = sum(path.stat().st_size for path in segments)
+            self.assertEqual(len(segments), store.backups + 1)
+            self.assertGreater(filled, 31 * 1024 * 1024, "the window was not filled near capacity")
+
+            before, warnings = store.read()
+            self.assertEqual(next(row for row in before if row.event_id == "live-root").status, "running")
+            self.assertTrue(any("轮转" in warning for warning in warnings))
+            rotator = stored("rotating-hub-turn", "hub_turn", "running")
+            line_bytes = len((json.dumps(rotator.to_dict(), ensure_ascii=False) + "\n").encode("utf-8"))
+            self.assertGreater(store.path.stat().st_size + line_bytes, store.max_bytes,
+                               "the fixture left room, so this append would not rotate")
+            with patch.object(UsageLog, "_read", side_effect=AssertionError("append decoded retained history")):
+                clock = time.perf_counter()
+                store.append(rotator)
+                appending = time.perf_counter() - clock
+            clock = time.perf_counter()
+            after, warnings = store.read()
+            reading = time.perf_counter() - clock
+
+            self.assertTrue(any("轮转" in warning for warning in warnings))
+            self.assertFalse([warning for warning in warnings if "未能读取" in warning])
+            kept = sorted(root.glob("usage*.jsonl"))
+            self.assertEqual([path.name for path in kept],
+                             ["usage.1.jsonl", "usage.2.jsonl", "usage.3.jsonl", "usage.jsonl"])
+            self.assertLessEqual(max(path.stat().st_size for path in kept), store.max_bytes)
+            self.assertLessEqual(sum(path.stat().st_size for path in kept),
+                                 (store.backups + 1) * store.max_bytes)
+            self.assertEqual([row.event_id for row in after if row.event_id == "rotating-hub-turn"], ["rotating-hub-turn"])
+            self.assertFalse([row for row in after if row.event_id == "live-root"],
+                             "the evicted segment took its unfinished root with it")
+            store.append(stored("after-rotation"))
+            final = {row.event_id for row in store.read()[0]}
+            self.assertTrue({"rotating-hub-turn", "after-rotation"} <= final)
+            # Recorded, not gated on an absolute duration: a rotation that
+            # decoded this history could not beat reading it.
+            self.assertLess(appending, reading / 2,
+                            f"rotating append {appending:.3f}s against a {reading:.3f}s full read")
 
 
 if __name__ == "__main__":
