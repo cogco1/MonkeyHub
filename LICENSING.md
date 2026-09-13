@@ -18,8 +18,12 @@ The copyright holders may also offer separate commercial terms for organizations
 
 Dependencies, SDKs, models, fonts, example assets and other third-party materials retain their own licenses. Their inclusion or use does not relicense them under AGPL. Check the relevant package, vendor or file-level notices before redistribution.
 
-## Contributions and future dual licensing
+## Contributions and dual licensing
 
-Contributors retain copyright in their contributions unless a separate written agreement says otherwise. If MonkeyHub adopts a formal dual-licensing business model, the project should put a contributor-license or relicensing agreement in place before accepting contributions whose copyrights would otherwise prevent the maintainers from offering consistent commercial terms.
+New contributions are accepted under the [`CLA.md`](CLA.md) Contributor License Agreement. Contributors keep copyright in their contributions while granting the MonkeyHub project the rights needed to continue distributing the combined project under AGPL and, where appropriate, under separate commercial terms.
 
-This document is a project licensing summary, not legal advice. The `LICENSE` file controls the AGPL grant.
+The CLA is prospective. Contributions accepted before the CLA was adopted are not automatically relicensed by it; the project must confirm the necessary rights before relying on any such third-party contribution for separate proprietary/commercial licensing.
+
+The pull-request template asks contributors to confirm the CLA. Project maintainers should not merge a new external contribution without that confirmation or another explicit written grant covering the same rights.
+
+This document is a project licensing summary, not legal advice. The `LICENSE` file controls the AGPL grant, and `CLA.md` controls the contributor grant.
