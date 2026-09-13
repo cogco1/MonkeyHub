@@ -559,20 +559,6 @@
           "depends_on": []
         },
         {
-          "id": "meeting",
-          "issue": "User-requested eight-slide team meeting deck from TEAM_MEETING_AGENDA.md",
-          "status": "review",
-          "branch": "codex/team-meeting-deck",
-          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-team-meeting-deck",
-          "base_ref": "15c8c262b5dd1564f6070f5ec19c12ec234986de",
-          "contributor": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "reviewer": "Codex coordinator",
-          "handoff": "Eight Chinese slides, editable diagrams/table and source-linked speaker notes; every slide rendered and reviewed. Documentation only; no application behavior changes.",
-          "modules": ["hub.shell", "adapters.cad_execution"],
-          "write_scope": ["docs/TEAM_MEETING_AGENDA.md", "docs/TEAM_MEETING_DECK.pptx", "governance/work_registry.json"],
-          "depends_on": []
-        },
-        {
           "id": "desktop",
           "issue": "#21 Phase A Windows desktop host",
           "status": "active",
