@@ -2,11 +2,11 @@
 
     python tools/verify_state_record.py --project <project root> \\
         --reference-run runner-002 --run equivalence-001 [--rename old=new ...] \\
-        [--export [--cad-backend occt|rhino]]
+        [--export [--cad-backend occt|rhino|blender]]
 
-``--export`` goes through OCCT unless ``--cad-backend rhino`` is named, exactly
+``--export`` defaults to OCCT unless another ``--cad-backend`` is named, exactly
 as ``tools/run_project.py`` does; ``--patch-oracle`` is Rhino's patch check and
-is refused under OCCT rather than ignored.
+is refused under the other backends rather than ignored.
 
 The record and the seats are the project's own work in progress, read by
 ``archflow.project.inputs`` at ``input/runner/`` under ``--project``; there is
@@ -140,9 +140,10 @@ def main() -> int:
     parser.add_argument("--cad-backend", choices=CAD_BACKENDS, default=CAD_BACKEND_OCCT,
                         help="which executor an --export goes to: occt (default; in process, exact STEP plus a mesh .3dm preview, reused when an "
                              "intact retained export of the same binding exists) or rhino (the supervised host export: full rebuild, or a patch "
-                             "when a prior export exists; never started unless named here)")
+                             "when a prior export exists), or blender (closed meshes saved to .blend and cold-read; "
+                             "solid/straight-extrusion only; executable on PATH)")
     parser.add_argument("--patch-oracle", action="store_true",
-                        help="with --export --cad-backend rhino: rebuild in full beside every patch and compare; refused under occt, which never patches")
+                        help="with --export --cad-backend rhino: rebuild in full beside every patch and compare; refused under the other backends")
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", help="used by --cad-backend rhino only")
     args = parser.parse_args()
     if args.patch_oracle and args.cad_backend != CAD_BACKEND_RHINO:

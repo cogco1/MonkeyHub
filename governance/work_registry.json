@@ -368,7 +368,11 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py",
         "apps/archflow-studio/web/src/api/connection.ts",
         "apps/archflow-studio/web/test/connection.test.ts",
-        ".github/pull_request_template.md"
+        ".github/pull_request_template.md",
+        "archflow/adapters/blender_cad.py",
+        "archflow/adapters/blender_worker.py",
+        "tests/test_blender_cad.py",
+        "tests/test_verify_state_record.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -407,7 +411,7 @@
           "status": "review",
           "branch": "codex/i14-hover",
           "worktree": "C:/Users/asus/.codex/worktrees/685e/ARCHFLOW_V4",
-          "base_ref": "62c90302ad1b3ad31b60eb1f15384ebf2e9bd232",
+          "base_ref": "6158a5bff373d203a1c6f4200d1272cfd3487329",
           "contributor": "Codex task 01a098b4-553a-7ff0-baa5-0e1360333293",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
           "handoff": "PR #19 is merged. Extend the disposable interaction session with local object/face/edge preselection, preserving async semantic verification. Coordinator independently reviews and integrates this next slice before direct-drag work. Isolated fixtures and ports only.",
@@ -425,36 +429,6 @@
             "apps/archflow-studio/web/test/modelDisplay.test.ts",
             "docs/mapping/planning/P115-capability-consolidation.md",
             "governance/work_registry.json"
-          ],
-          "depends_on": []
-        },
-        {
-          "id": "team-lanes",
-          "issue": "#13 Phase 1",
-          "status": "review",
-          "branch": "codex/team-lanes",
-          "worktree": "C:/Users/asus/.codex/worktrees/8a9c/ARCHFLOW_V4",
-          "base_ref": "1e77a32a8b5ad939a86e45c0fd14f22a7c77268d",
-          "contributor": "Codex task 01a09862-d9e5-7df1-a859-217ae5d9ad54",
-          "reviewer": "Independent Codex agent phase1_docs",
-          "handoff": "Independent review, then integrate this Phase 1 PR on main. Blender starts from the landed backend contract; teammate assignment remains open.",
-          "modules": [
-            "tools.devctl",
-            "tools.archcheck"
-          ],
-          "write_scope": [
-            "tools/devctl.py",
-            "tools/archcheck.py",
-            "tests/test_devctl_work.py",
-            "tests/test_archcheck_scopes.py",
-            "CONTRIBUTING.md",
-            "docs/TEAM_ONBOARDING.md",
-            ".github/pull_request_template.md",
-            "governance/architecture_policy.json",
-            "governance/module_registry.json",
-            "governance/work_registry.json",
-            "docs/SYSTEM_MAP.md",
-            "docs/mapping/planning/P115-capability-consolidation.md"
           ],
           "depends_on": []
         },
@@ -520,22 +494,35 @@
         {
           "id": "blender",
           "issue": "#13 Phase 2",
-          "status": "planned",
-          "branch": null,
-          "worktree": null,
-          "base_ref": "1e77a32a8b5ad939a86e45c0fd14f22a7c77268d",
-          "contributor": null,
-          "reviewer": null,
-          "handoff": "Assign the Blender contributor and independent worktree from main containing PR #15; first prove one scene save/readback through compiled-cad-execution.",
+          "status": "review",
+          "branch": "codex/blender-backend",
+          "worktree": "C:/Users/asus/.codex/worktrees/8a9c/ARCHFLOW_V4",
+          "base_ref": "681fc9f101bbe7f0a2bec1ef63fec7ebbd76c3c4",
+          "contributor": "Codex task 01a09862-d9e5-7df1-a859-217ae5d9ad54",
+          "reviewer": "Independent Codex agents cad_conformance_review and review_contract",
+          "handoff": "Independent Phase 2 PR integration after real Blender save/cold-read and retained runner checks. New teammate reproduction and handoff remain pending.",
           "modules": [
-            "adapters.cad_execution"
+            "adapters.cad_execution",
+            "project.record_kinds",
+            "tools.run_project",
+            "tools.verify_state_record"
           ],
           "write_scope": [
-            "archflow/adapters/cad_backend.py",
             "archflow/adapters/blender_cad.py",
+            "archflow/adapters/blender_worker.py",
+            "archflow/adapters/cad_backend.py",
             "archflow/adapters/README.md",
+            "archflow/project/record_kinds.py",
             "tests/test_blender_cad.py",
-            "tests/test_cad_backend_contract.py"
+            "governance/architecture_policy.json",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "docs/TEAM_ONBOARDING.md",
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "tools/run_project.py",
+            "tools/verify_state_record.py",
+            "tests/test_verify_state_record.py"
           ],
           "depends_on": []
         }
