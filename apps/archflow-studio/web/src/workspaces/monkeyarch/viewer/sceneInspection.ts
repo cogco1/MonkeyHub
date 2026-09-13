@@ -119,6 +119,42 @@ export function userStringCarrier(object: Object3D): Object3D | null {
   return null;
 }
 
+export interface LoadedObjectIdentity {
+  readonly object: Object3D;
+  readonly objectName: string | null;
+  readonly userStrings: UserStrings;
+}
+
+/** File claims for immediate display only. This index never resolves an edit. */
+export function indexLoadedObjects(root: Object3D) {
+  const byObject = new WeakMap<Object3D, LoadedObjectIdentity>();
+  const byRef = new Map<string, Object3D[]>();
+  const siblings = new WeakMap<Object3D, readonly Object3D[]>();
+  root.traverse((node) => {
+    const object = userStringCarrier(node) ?? node;
+    let identity = byObject.get(object);
+    if (!identity) {
+      const attributes = object.userData.attributes as { userStrings?: unknown } | undefined;
+      identity = { object, objectName: object.name || null,
+        userStrings: Object.freeze(toUserStrings(attributes?.userStrings)) };
+      byObject.set(object, identity);
+      const component = identity.userStrings["archflow:component"];
+      const objectRef = identity.userStrings["archflow:object_ref"];
+      if (component && objectRef?.startsWith("cad-object:")) {
+        const key = JSON.stringify([component, objectRef]);
+        const group = byRef.get(key) ?? [];
+        group.push(object); byRef.set(key, group); siblings.set(object, group);
+      }
+    }
+    byObject.set(node, identity);
+  });
+  return {
+    identity: (object: Object3D) => byObject.get(object),
+    siblings: (object: Object3D) => siblings.get(object) ?? [object],
+    documentUserStrings: documentUserStrings(root),
+  };
+}
+
 /**
  * The document's own user strings, when the loader exposes them.
  *
@@ -280,4 +316,3 @@ export function disposeScene(root: Object3D): void {
     else if (material) disposeMaterial(material);
   });
 }
-

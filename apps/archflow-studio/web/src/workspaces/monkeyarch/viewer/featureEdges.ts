@@ -102,6 +102,105 @@ export function featureEdges(soup: TriangleSoup, thresholdDegrees = 20): Feature
   return edges;
 }
 
+/**
+ * Index one geometry's topology, then find each hit's connected, flat face by
+ * visiting its neighbours. Repeated vertices use the visible-edge coordinate
+ * keys; touching at a corner alone does not connect faces. The caller retains
+ * this lookup for the geometry and rebuilds it when that geometry changes.
+ */
+export function indexConnectedFaces(soup: TriangleSoup): (triangleIndex: number) => number[] {
+  const count = Math.floor((soup.index?.length ?? soup.positions.length / 3) / 3);
+  // Float32 storage can tilt triangles from the same translated plane. Bound
+  // coordinate rounding along the normal, then divide by triangle altitude
+  // for angular error; an axis-aligned offset is not lost to unrelated axes.
+  const precision = soup.positions instanceof Float32Array ? 2 ** -24 : Number.EPSILON;
+  const rounding = (point: Point3, face: Point3) => precision * (
+    Math.abs(point[0] * face[0]) + Math.abs(point[1] * face[1]) + Math.abs(point[2] * face[2])
+  );
+  const angularError = (points: [Point3, Point3, Point3], face: Point3) => {
+    const ab = subtract(points[1], points[0]);
+    const ac = subtract(points[2], points[0]);
+    const longest = Math.max(length(ab), length(ac), length(subtract(points[2], points[1])));
+    const altitude = length(cross(ab, ac)) / longest;
+    return 4 * Math.max(...points.map((point) => rounding(point, face))) / altitude;
+  };
+  // Cap rounding at 0.01 degrees (under 0.175 mm per metre): this admits the
+  // translated Float32 plane regression, but ill-conditioned thin triangles
+  // must not turn an error estimate into permission to cross a real fold.
+  const maxAngularError = Math.sin(0.01 * Math.PI / 180);
+
+  type Triangle = {
+    points: [Point3, Point3, Point3];
+    direction: Point3;
+    angularError: number;
+    neighbours: number[];
+  };
+  const triangles: (Triangle | null)[] = new Array(count).fill(null);
+  {
+    const points = Array.from({ length: Math.floor(soup.positions.length / 3) }, (_, corner) => at(soup.positions, corner));
+    const keys = points.map(key);
+    const shared = new Map<string, number[]>();
+    for (let triangle = 0; triangle < count; triangle += 1) {
+      const corners = [0, 1, 2].map((side) => {
+        const corner = triangle * 3 + side;
+        return soup.index ? soup.index[corner]! : corner;
+      });
+      const facePoints = corners.map((corner) => points[corner]!) as [Point3, Point3, Point3];
+      const direction = normal(...facePoints);
+      if (direction === null) continue;
+      const entry: Triangle = {
+        points: facePoints, direction,
+        angularError: Math.min(maxAngularError, angularError(facePoints, direction)),
+        neighbours: [],
+      };
+      triangles[triangle] = entry;
+      for (let side = 0; side < 3; side += 1) {
+        const a = keys[corners[side]!]!;
+        const b = keys[corners[(side + 1) % 3]!]!;
+        if (a === b) continue;
+        const edge = a < b ? `${a}|${b}` : `${b}|${a}`;
+        const neighbours = shared.get(edge);
+        if (neighbours) {
+          for (const neighbour of neighbours) {
+            entry.neighbours.push(neighbour);
+            triangles[neighbour]!.neighbours.push(triangle);
+          }
+          neighbours.push(triangle);
+        } else shared.set(edge, [triangle]);
+      }
+    }
+  }
+
+  return (triangleIndex) => {
+    if (!Number.isInteger(triangleIndex) || triangleIndex < 0 || triangleIndex >= count) return [];
+    const seed = triangles[triangleIndex];
+    if (!seed) return [];
+    const { direction } = seed;
+    const seedRounding = rounding(seed.points[0], direction);
+    const visited = new Set([triangleIndex]);
+    const connected = [triangleIndex];
+    for (let cursor = 0; cursor < connected.length; cursor += 1) {
+      for (const neighbour of triangles[connected[cursor]!]!.neighbours) {
+        if (visited.has(neighbour)) continue;
+        visited.add(neighbour);
+        const face = triangles[neighbour]!;
+        const allowedAngle = Math.min(maxAngularError, Math.max(1e-10, seed.angularError + face.angularError));
+        if (length(cross(direction, face.direction)) > allowedAngle) continue;
+        // Compare to the original hit plane, so almost-flat neighbours cannot
+        // drift around a curve or onto a parallel surface.
+        if (face.points.some((point) => {
+          const delta = subtract(point, seed.points[0]);
+          const tolerance = Math.max(1e-8,
+            2 * (rounding(point, direction) + seedRounding) + seed.angularError * length(delta));
+          return Math.abs(delta[0] * direction[0] + delta[1] * direction[1] + delta[2] * direction[2]) > tolerance;
+        })) continue;
+        connected.push(neighbour);
+      }
+    }
+    return connected.sort((a, b) => a - b);
+  };
+}
+
 export type SnapKind = "endpoint" | "midpoint" | "edge";
 
 export interface SnapCandidate {

@@ -12,6 +12,7 @@ import {
   closestOnEdge,
   distanceBetween,
   featureEdges,
+  indexConnectedFaces,
   nearestCandidate,
   type FeatureEdge,
   type Point3,
@@ -68,6 +69,122 @@ test("a box offers its twelve real edges and nothing across a face", () => {
     [4, 4, 4],
     "four edges of each dimension",
   );
+});
+
+test("face preselection crosses a flat diagonal and stops at each box fold", () => {
+  const flatFace = indexConnectedFaces(FLAT);
+  assert.deepEqual(flatFace(0), [0, 1]);
+  assert.deepEqual(flatFace(1), [0, 1], "duplicated corners weld across the diagonal");
+  const boxFace = indexConnectedFaces(box(6, 3.2, 4));
+  for (let triangle = 0; triangle < 12; triangle += 1) {
+    const first = Math.floor(triangle / 2) * 2;
+    assert.deepEqual(boxFace(triangle), [first, first + 1]);
+  }
+});
+
+test("indexed face preselection accepts reversed winding but requires a full shared edge", () => {
+  const mesh = {
+    positions: [
+      0, 0, 0, 6, 0, 0, 6, 0, 4, 0, 0, 4,
+      10, 0, 0, 12, 0, 0, 12, 0, 4,
+      -2, 0, 0, 0, 0, -2,
+    ],
+    index: [0, 1, 2, 0, 3, 2, 4, 5, 6, 0, 7, 8],
+  };
+  const face = indexConnectedFaces(mesh);
+  assert.deepEqual(face(1), [0, 1]);
+  assert.deepEqual(face(2), [2], "a disconnected coplanar region stays separate");
+  assert.deepEqual(face(3), [3], "one shared corner does not connect faces");
+});
+
+test("translated, sloped Float32 planes stay connected after coordinate rounding", () => {
+  const positions = [
+    123.603, 345.799, 457.007,
+    129.3491502826, 348.1274666478, 457.007,
+    128.9278604089, 349.1671186132, 461.571168997,
+    123.1817101263, 346.8386519654, 461.571168997,
+  ];
+  const index = [0, 1, 2, 0, 2, 3];
+  assert.deepEqual(indexConnectedFaces({ positions, index })(0), [0, 1]);
+  for (const translation of [0, 10000]) {
+    const stored = new Float32Array(positions.map((coordinate) => coordinate + translation));
+    const storedFace = indexConnectedFaces({ positions: stored, index });
+    for (const triangle of [0, 1]) {
+      assert.deepEqual(storedFace(triangle), [0, 1]);
+    }
+    const unindexed = new Float32Array(index.flatMap((corner) => Array.from(stored.slice(corner * 3, corner * 3 + 3))));
+    assert.deepEqual(indexConnectedFaces({ positions: unindexed, index: null })(0), [0, 1]);
+    const folded = new Float32Array([...stored, stored[0]!, stored[1]! + 2, stored[2]!]);
+    const withFold = indexConnectedFaces({ positions: folded, index: [...index, 0, 1, 4] });
+    assert.deepEqual(withFold(0), [0, 1], "storage tolerance still stops at a sharp fold");
+    assert.deepEqual(withFold(2), [2]);
+  }
+});
+
+test("thin translated Float32 triangles cannot use large uncertainty to cross real folds", () => {
+  const index = [0, 1, 2, 0, 3, 1];
+  const ninetyDegrees = new Float32Array([
+    0, 0, 10000, 1, 0, 10000, 0, .001, 10000, 0, 0, 10001,
+  ]);
+  const shallowFold = new Float32Array([
+    0, 0, 10000, 1, 0, 10000, 0, .001, 10000,
+    0, -1, 10000 + Math.tan(0.1 * Math.PI / 180),
+  ]);
+  for (const positions of [ninetyDegrees, shallowFold]) {
+    const face = indexConnectedFaces({ positions, index });
+    assert.deepEqual(face(0), [0]);
+    assert.deepEqual(face(1), [1]);
+  }
+});
+
+test("preselection rejects offset planes, folded and degenerate triangles", () => {
+  const mesh = {
+    positions: [
+      ...FLAT.positions,
+      0, 0, 0, 6, 0, 0, 3, 2, 0, // a fold along a flat face boundary
+      0, 0, 0, 6, 0, 0, 3, 0, 0, // a collinear triangle along that boundary
+      0, 2e-7, 0, 6, 2e-7, 0, 6, 2e-7, 4, // same weld keys, different plane
+    ],
+    index: null,
+  };
+  for (const positions of [mesh.positions, new Float32Array(mesh.positions)]) {
+    const face = indexConnectedFaces({ positions, index: null });
+    assert.deepEqual(face(0), [0, 1]);
+    assert.deepEqual(face(2), [2]);
+    assert.deepEqual(face(3), []);
+    assert.deepEqual(face(4), [4]);
+    for (const invalid of [-1, 5, 0.5, NaN]) assert.deepEqual(face(invalid), []);
+  }
+});
+
+test("one topology build reads source arrays once and reuses them for many new seeds", () => {
+  const coordinates = Array.from({ length: 64 }, (_, offset) => (
+    box(6, 3.2, 4).positions.map((value, coordinate) => value + (coordinate % 3 === 0 ? offset * 10 : 0))
+  )).flat();
+  const corners = Array.from({ length: coordinates.length / 3 }, (_, corner) => corner);
+  let positionReads = 0;
+  let indexReads = 0;
+  const positions = new Proxy(coordinates, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) positionReads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const index = new Proxy(corners, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) indexReads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const face = indexConnectedFaces({ positions, index });
+  assert.equal(positionReads, coordinates.length);
+  assert.equal(indexReads, corners.length);
+  for (const triangle of [0, 2, 13, 63, 77, 300, 600, 767, 0]) {
+    const first = Math.floor(triangle / 2) * 2;
+    assert.deepEqual(face(triangle), [first, first + 1]);
+  }
+  assert.equal(positionReads, coordinates.length, "queries do not reread mesh positions");
+  assert.equal(indexReads, corners.length, "queries do not rebuild mesh adjacency");
 });
 
 test("an edge offers its ends and its middle, in model coordinates", () => {

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   ACESFilmicToneMapping,
@@ -43,11 +44,9 @@ import { Rhino3dmLoader } from "three/examples/jsm/loaders/3DMLoader.js";
 
 import {
   disposeScene,
-  documentUserStrings,
   inspectScene,
+  indexLoadedObjects,
   layerIndexOf,
-  toUserStrings,
-  userStringCarrier,
   type SceneInspection,
   type UserStrings,
 } from "./sceneInspection";
@@ -75,6 +74,8 @@ import {
 } from "./featureEdges";
 import { encodeViewportPng } from "./viewportScreenshot";
 import type { SketchPlane } from "../../../features/stage/sketch";
+import { cancelInteractionFrame, scheduleInteractionFrame, type InteractionSession } from "../interactionSession";
+import { Preselection, type LocalHit } from "./preselection";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
@@ -149,6 +150,7 @@ export interface ModelSnap {
   readonly kind: "endpoint" | "midpoint" | "edge" | "surface";
   /** The object it belongs to, as the export named it. */
   readonly objectName: string | null;
+  readonly edge?: FeatureEdge;
 }
 
 /** One object under a point of a stroke, read the way a click is read. */
@@ -258,6 +260,8 @@ export interface ViewportController {
 const CLICK_SLOP_PX = 5;
 
 interface ThreeDmViewportProps {
+  interaction: RefObject<InteractionSession>;
+  hoverEnabled: boolean;
   onInspection(inspection: SceneInspection | null): void;
   onStatus(status: ViewportStatus, message: string): void;
   onRequestFile(): void;
@@ -280,6 +284,8 @@ interface ViewportRuntime {
   renderer: WebGLRenderer;
   controls: OrbitControls;
   model: Object3D | null;
+  modelIndex: ReturnType<typeof indexLoadedObjects> | null;
+  preselection: Preselection | null;
   /** Visibility, layers and material references as the loaded file supplied them. */
   appearance: ModelAppearance | null;
   ghost: Group | null;
@@ -738,14 +744,15 @@ export const ThreeDmViewport = forwardRef<
   ViewportController,
   ThreeDmViewportProps
 >(function ThreeDmViewport(
-  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick, idle },
+  { onInspection, onStatus, onRequestFile, onOpenFile, onSource, onPick, idle, interaction, hoverEnabled },
   forwardedRef,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<ViewportRuntime | null>(null);
   const loadGenerationRef = useRef(0);
   const secondaryLoadRequest = useRef(0);
-  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const hoverEnabledRef = useRef(hoverEnabled);
+  hoverEnabledRef.current = hoverEnabled;
   const pickedPlaneRef = useRef<{ object: Object3D; plane: SketchPlane } | null>(null);
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
@@ -753,6 +760,18 @@ export const ThreeDmViewport = forwardRef<
   const [visualMessage, setVisualMessage] = useState("No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
 
   callbacksRef.current = { onInspection, onStatus, onSource, onPick };
+
+  const clearHover = useCallback((render = true) => {
+    cancelInteractionFrame(interaction.current, "hover");
+    interaction.current.hover = null;
+    interaction.current.pointer = null;
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    runtime.renderer.domElement.style.cursor = "";
+    if (runtime.preselection?.clear() && render) runtime.render();
+  }, [interaction]);
+
+  useEffect(() => { if (!hoverEnabled) clearHover(); }, [clearHover, hoverEnabled]);
 
   const reportStatus = useCallback((status: ViewportStatus, message: string) => {
     setVisualStatus(status);
@@ -763,6 +782,9 @@ export const ThreeDmViewport = forwardRef<
   const clear = useCallback(() => {
     const runtime = runtimeRef.current;
     loadGenerationRef.current += 1;
+    clearHover(false);
+    interaction.current.press = null;
+    if (runtime) { runtime.preselection?.dispose(); runtime.preselection = null; runtime.modelIndex = null; }
     callbacksRef.current.onSource(null);
     if (runtime) {
       // The mark on a picked object belongs to the picture; it comes off
@@ -793,7 +815,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.render();
     callbacksRef.current.onInspection(null);
     reportStatus("idle", "No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
-  }, [reportStatus]);
+  }, [clearHover, interaction, reportStatus]);
 
   const removeGhost = useCallback(() => {
     const runtime = runtimeRef.current;
@@ -960,11 +982,12 @@ export const ThreeDmViewport = forwardRef<
         group.add(ghostCopy(carriersOf(runtime.model, affected), cloudMaterial));
       }
       runtime.ghost = group;
+      clearHover(false);
       runtime.scene.add(group);
       runtime.render();
       return copied;
     },
-    [removeGhost],
+    [clearHover, removeGhost],
   );
 
   const clearSecondary = useCallback(() => {
@@ -990,16 +1013,18 @@ export const ThreeDmViewport = forwardRef<
   const showOriginal = useCallback(() => {
     const runtime = runtimeRef.current;
     if (!runtime?.model) return;
+    clearHover(false);
     restoreHighlight(runtime);
     removeGhost();
     clearSecondary();
     if (runtime.appearance) restoreModelAppearance(runtime.model, runtime.appearance);
     runtime.render();
-  }, [clearSecondary, removeGhost]);
+  }, [clearHover, clearSecondary, removeGhost]);
 
   const blend = useCallback((t: number) => {
     const runtime = runtimeRef.current;
     if (!runtime?.model || !runtime.secondary) return;
+    clearHover(false);
     const mix = Math.min(1, Math.max(0, t));
     runtime.blendT = mix;
     // Each material keeps its own opacity, scaled by its side's weight: the
@@ -1009,7 +1034,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.model.visible = mix < 1;
     runtime.secondary.visible = mix > 0;
     runtime.render();
-  }, []);
+  }, [clearHover]);
 
   /**
    * Mark what was picked, so the click has an answer on the model and not only
@@ -1024,9 +1049,10 @@ export const ThreeDmViewport = forwardRef<
     (target: HighlightRequest): number => {
       const runtime = runtimeRef.current;
       if (!runtime) return 0;
-      restoreHighlight(runtime);
       const model = runtime.model;
       if (target === null || model === null) {
+        clearHover(false);
+        restoreHighlight(runtime);
         pickedPlaneRef.current = null;
         runtime.render();
         return 0;
@@ -1034,9 +1060,16 @@ export const ThreeDmViewport = forwardRef<
       const objects =
         "object" in target
           ? isUnder(target.object, model)
-            ? [target.object]
+            ? runtime.modelIndex?.siblings(target.object) ?? [target.object]
             : []
           : carriersOf(model, target);
+      const meshes: Mesh[] = [];
+      for (const object of objects) object.traverse((child) => { if (child instanceof Mesh) meshes.push(child); });
+      if (meshes.length === runtime.highlighted.length && meshes.every((mesh) => runtime.original.has(mesh))) {
+        runtime.render();
+        return objects.length;
+      }
+      restoreHighlight(runtime);
       applyHighlight(runtime, objects);
       // A cross-fade set the opacities; the clones start from what they were
       // before it, so the fade is applied again over the mark.
@@ -1044,7 +1077,7 @@ export const ThreeDmViewport = forwardRef<
       else runtime.render();
       return objects.length;
     },
-    [blend],
+    [blend, clearHover],
   );
 
   const loadSecondary = useCallback(
@@ -1257,6 +1290,9 @@ export const ThreeDmViewport = forwardRef<
       const preserveCamera = options?.preserveCamera === true && runtime.model !== null;
       // The mark on a picked object belongs to the picture going away.
       restoreHighlight(runtime);
+      clearHover(false);
+      interaction.current.press = null;
+      runtime.preselection?.dispose(); runtime.preselection = null;
       if (runtime.model) {
         runtime.scene.remove(runtime.model);
         disposeScene(runtime.model);
@@ -1277,8 +1313,11 @@ export const ThreeDmViewport = forwardRef<
         runtime.blendT = null;
       }
       runtime.model = model;
+      runtime.modelIndex = indexLoadedObjects(model);
       runtime.appearance = captureModelAppearance(model);
       runtime.scene.add(model);
+      runtime.preselection = new Preselection(model, getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
+      runtime.scene.add(runtime.preselection.group);
       const inspection = inspectScene(
         model,
         { name: names, size: totalSize },
@@ -1302,7 +1341,7 @@ export const ThreeDmViewport = forwardRef<
           : `${names} opened, but it holds no displayable mesh`,
       );
     },
-    [reportStatus],
+    [clearHover, interaction, reportStatus],
   );
 
   /** One file is one export: the same road, with a list of one. */
@@ -1337,7 +1376,7 @@ export const ThreeDmViewport = forwardRef<
   }, []);
 
   const hitAt = useCallback(
-    (clientX: number, clientY: number) => {
+    (clientX: number, clientY: number): LocalHit | null => {
       const runtime = runtimeRef.current;
       if (!runtime?.model) return null;
       const raycaster = rayAt(clientX, clientY);
@@ -1348,16 +1387,14 @@ export const ThreeDmViewport = forwardRef<
         .intersectObject(runtime.model, true)
         .find((intersection) => isDisplayed(intersection.object));
       if (!hit) return null;
-      const carrier = userStringCarrier(hit.object) ?? hit.object;
-      const attributes = carrier.userData.attributes as
-        | { userStrings?: unknown }
-        | undefined;
+      const identity = runtime.modelIndex?.identity(hit.object);
+      if (!identity) return null;
       return {
-        objectName: carrier.name || null,
-        userStrings: toUserStrings(attributes?.userStrings),
+        ...identity,
+        mesh: hit.object,
+        faceIndex: hit.faceIndex ?? null,
         point: hit.point,
         normal: hit.face?.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(hit.object.matrixWorld)).normalize() ?? null,
-        object: carrier,
       };
     },
     [rayAt],
@@ -1368,7 +1405,9 @@ export const ThreeDmViewport = forwardRef<
       const runtime = runtimeRef.current;
       if (!runtime?.model) return;
       const hit = hitAt(clientX, clientY);
+      clearHover(false);
       if (!hit) {
+        highlight(null);
         callbacksRef.current.onPick(null);
         return;
       }
@@ -1384,20 +1423,20 @@ export const ThreeDmViewport = forwardRef<
           normal: normal.toArray() as Vec3,
         } };
       } else pickedPlaneRef.current = null;
+      highlight({ object: hit.object });
       callbacksRef.current.onPick({
         userStrings: hit.userStrings,
-        documentUserStrings: documentUserStrings(runtime.model),
+        documentUserStrings: runtime.modelIndex?.documentUserStrings ?? null,
         objectName: hit.objectName,
         object: hit.object,
       });
     },
-    [hitAt],
+    [clearHover, highlight, hitAt],
   );
 
-  const snapOnModel = useCallback(
-    (clientX: number, clientY: number, radiusPx = 14): ModelSnap | null => {
+  const snapAtHit = useCallback(
+    (hit: LocalHit | null, clientX: number, clientY: number, radiusPx = 14): ModelSnap | null => {
       const runtime = runtimeRef.current;
-      const hit = hitAt(clientX, clientY);
       if (!runtime || !hit) return null;
       const rect = runtime.renderer.domElement.getBoundingClientRect();
       const pointer = [clientX - rect.left, clientY - rect.top] as const;
@@ -1412,7 +1451,7 @@ export const ThreeDmViewport = forwardRef<
       hit.object.traverse((node) => {
         const mesh = node as Mesh;
         const geometry = mesh.geometry as BufferGeometry | undefined;
-        if (!mesh.isMesh || !geometry) return;
+        if (!mesh.isMesh || !geometry || !isDisplayed(mesh)) return;
         const cached = geometry.userData.archflowEdges as FeatureEdge[] | undefined;
         const own = cached ?? featureEdges({
           positions: (geometry.getAttribute("position") as BufferAttribute).array as ArrayLike<number>,
@@ -1429,24 +1468,44 @@ export const ThreeDmViewport = forwardRef<
       const candidates = edges.flatMap(candidatesOf);
       const chosen = nearestCandidate(candidates, project, pointer, radiusPx);
       if (chosen) {
-        return { point: [chosen.point[0], chosen.point[1], chosen.point[2]], kind: chosen.kind, objectName: hit.objectName };
+        const edge = edges.find((edge) => {
+          const point = closestOnEdge(edge, chosen.point);
+          return Math.hypot(...point.map((value, index) => value - chosen.point[index]!)) < 1e-6;
+        });
+        return { point: [chosen.point[0], chosen.point[1], chosen.point[2]], kind: chosen.kind, objectName: hit.objectName, edge };
       }
       // Not on a corner or a middle: the nearest visible edge, if the pointer
       // is over one, else the surface itself.
       const where: Point3 = [hit.point.x, hit.point.y, hit.point.z];
-      let onEdge: { point: Point3; distance: number } | null = null;
+      let onEdge: { point: Point3; distance: number; edge: FeatureEdge } | null = null;
       for (const edge of edges) {
         const point = closestOnEdge(edge, where);
         const screen = project(point);
         if (screen === null) continue;
         const distance = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
-        if (distance <= radiusPx && (onEdge === null || distance < onEdge.distance)) onEdge = { point, distance };
+        if (distance <= radiusPx && (onEdge === null || distance < onEdge.distance)) onEdge = { point, distance, edge };
       }
-      if (onEdge) return { point: [onEdge.point[0], onEdge.point[1], onEdge.point[2]], kind: "edge", objectName: hit.objectName };
+      if (onEdge) return { point: [onEdge.point[0], onEdge.point[1], onEdge.point[2]], kind: "edge", objectName: hit.objectName, edge: onEdge.edge };
       return { point: [where[0], where[1], where[2]], kind: "surface", objectName: hit.objectName };
     },
-    [hitAt],
+    [],
   );
+
+  const snapOnModel = useCallback((x: number, y: number, radiusPx = 14) => snapAtHit(hitAt(x, y), x, y, radiusPx), [hitAt, snapAtHit]);
+
+  const paintHover = useCallback(() => {
+    const session = interaction.current;
+    const runtime = runtimeRef.current;
+    if (!hoverEnabledRef.current || !runtime?.model || !runtime.preselection || runtime.secondary || runtime.ghost ||
+      !["inactive", "hovering"].includes(session.phase) || !session.pointer) { clearHover(); return; }
+    const { x, y } = session.pointer;
+    const hit = hitAt(x, y);
+    if (!hit) { clearHover(); return; }
+    session.hover = hit;
+    runtime.preselection.update(hit, snapAtHit(hit, x, y));
+    runtime.renderer.domElement.style.cursor = "pointer";
+    runtime.render();
+  }, [clearHover, hitAt, interaction, snapAtHit]);
 
   const sampleAt = useCallback(
     (clientX: number, clientY: number): SampleHit | null => {
@@ -1588,6 +1647,7 @@ export const ThreeDmViewport = forwardRef<
       setLayerVisibility: (index, visible) => {
         const runtime = runtimeRef.current;
         if (!runtime?.model) return;
+        clearHover(false);
         runtime.model.traverse((object) => {
           // A layer switched on shows its objects, not the ones the file hid.
           if (layerIndexOf(object) === index) object.visible = visible && savedObjectVisible(object);
@@ -1676,6 +1736,7 @@ export const ThreeDmViewport = forwardRef<
           (child.material as LineBasicMaterial | MeshStandardMaterial).color.set(accent);
         }
       }
+      runtimeRef.current?.preselection?.colour(getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
       render();
     };
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1691,6 +1752,8 @@ export const ThreeDmViewport = forwardRef<
       renderer,
       controls,
       model: null,
+      modelIndex: null,
+      preselection: null,
       appearance: null,
       ghost: null,
       secondary: null,
@@ -1704,13 +1767,15 @@ export const ThreeDmViewport = forwardRef<
       render,
     };
     runtimeRef.current = runtime;
-    controls.addEventListener("change", render);
+    const changedCamera = () => { clearHover(false); render(); };
+    controls.addEventListener("change", changedCamera);
     // Orbiting, panning or zooming is a chosen view; from then on a resize
     // reframes nothing. OrbitControls raises this for real input only.
-    const userTookTheCamera = () => { runtime.fitted = false; };
+    const userTookTheCamera = () => { runtime.fitted = false; clearHover(); };
     controls.addEventListener("start", userTookTheCamera);
 
     const resize = () => {
+      clearHover(false);
       const width = Math.max(host.clientWidth, 1);
       const height = Math.max(host.clientHeight, 1);
       renderer.setSize(width, height, false);
@@ -1729,7 +1794,10 @@ export const ThreeDmViewport = forwardRef<
     return () => {
       loadGenerationRef.current += 1;
       observer.disconnect();
-      controls.removeEventListener("change", render);
+      clearHover(false);
+      interaction.current.press = null;
+      runtime.preselection?.dispose();
+      controls.removeEventListener("change", changedCamera);
       controls.removeEventListener("start", userTookTheCamera);
       controls.dispose();
       // Give the highlighted meshes their own materials back, so what is
@@ -1771,19 +1839,28 @@ export const ThreeDmViewport = forwardRef<
         if (file) { if (onOpenFile) onOpenFile(file); else void openFile(file, LOCAL_SOURCE_LABEL); }
       }}
       onPointerDown={(event) => {
-        pointerDownRef.current = event.button === 0 && event.target === runtimeRef.current?.renderer.domElement
-          ? { x: event.clientX, y: event.clientY }
+        clearHover();
+        interaction.current.press = event.button === 0 && event.target === runtimeRef.current?.renderer.domElement
+          ? { x: event.clientX, y: event.clientY, dragging: false }
           : null;
       }}
       onPointerUp={(event) => {
-        const down = pointerDownRef.current;
-        pointerDownRef.current = null;
+        const down = interaction.current.press;
+        interaction.current.press = null;
         if (!down) return;
         const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
         if (moved > CLICK_SLOP_PX) return;
         pickAt(event.clientX, event.clientY);
       }}
-      onPointerCancel={() => { pointerDownRef.current = null; }}
+      onPointerMove={(event) => {
+        const session = interaction.current;
+        if (session.press) session.press.dragging ||= Math.hypot(event.clientX - session.press.x, event.clientY - session.press.y) > CLICK_SLOP_PX;
+        if (!hoverEnabled || event.buttons !== 0 || event.target !== runtimeRef.current?.renderer.domElement) { clearHover(); return; }
+        session.pointer = { x: event.clientX, y: event.clientY };
+        scheduleInteractionFrame(session, "hover", paintHover);
+      }}
+      onPointerLeave={() => { clearHover(); }}
+      onPointerCancel={() => { interaction.current.press = null; clearHover(); }}
     >
       {visualStatus !== "ready" && (
         <div className={`viewport-state viewport-state--${visualStatus}`}>
