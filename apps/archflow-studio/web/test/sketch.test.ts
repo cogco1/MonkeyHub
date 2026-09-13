@@ -150,3 +150,16 @@ test("only a finished action has anything to submit, and Esc leaves nothing", ()
   assert.deepEqual(cancelled(pulled), { ...IDLE, tool: "rectangle" });
   assert.equal(finished(cancelled(pulled)), null);
 });
+
+test("axis continuation holds small noise, slides, releases, and yields to real points", () => {
+  const anchor = [2,0] as const;
+  const options = { anchor, radius: 0.2 };
+  const first = snapPoint([2.1,5], options);
+  const held = snapPoint([2.25,6], { ...options, previous: first.snapped });
+  assert.deepEqual(held.point, [2,6], "retain the line, not the old point on it");
+  assert.equal(snapPoint([2.31,6], { ...options, previous: held.snapped }).snapped, null);
+  assert.equal(snapPoint([2.25,6], options).snapped, null, "a released inference needs the acquisition radius again");
+  assert.equal(snapPoint([2.25,6], { ...options, anchor: [3,0], previous: held.snapped }).snapped, null);
+  const endpoint = snapPoint([2.25,6], { ...options, endpoints: [[2.25,6]], previous: held.snapped });
+  assert.equal(endpoint.snapped?.kind, "endpoint");
+});

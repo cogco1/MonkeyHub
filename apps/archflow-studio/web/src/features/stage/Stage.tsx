@@ -421,6 +421,8 @@ export function Stage({
     cancelInteractionFrame(interaction.current, "move");
     if (interaction.current.move) viewportRef.current?.sketchPreview(null);
     interaction.current.move = null;
+    interaction.current.modelSnap = null;
+    interaction.current.planeSnap = null;
     setMovePhase(null); setMoveError(null);
   }, [viewportRef]);
   const rotateInput = useRef<HTMLInputElement>(null);
@@ -740,6 +742,10 @@ export function Stage({
   const showSketch = useCallback((next: SketchState, pointerMove = false) => {
     // Geometry lives in this one disposable session. React only sees controls,
     // and must never copy an older UI snapshot back over the latest pointer.
+    if (!pointerMove) {
+      interaction.current.modelSnap = null;
+      interaction.current.planeSnap = null;
+    }
     interaction.current.sketch = next;
     if (next.phase === "idle") interaction.current.press = null;
     if (pointerMove) {
@@ -1342,7 +1348,8 @@ export function Stage({
               // point, still locked to the action's own axes.
               const moved = onModel && onModel.kind !== "surface"
                 ? { point: pointToPlane(world, sketch.plane), snapped: { kind: onModel.kind } }
-                : snapPoint(pointToPlane(world, sketch.plane), { endpoints: sketch.plane ? sketch.vertices : [...snapPoints, ...sketch.vertices], anchor: sketch.vertices.at(-1) ?? sketch.anchor, radius: snapRadius() });
+                : snapPoint(pointToPlane(world, sketch.plane), { endpoints: sketch.plane ? sketch.vertices : [...snapPoints, ...sketch.vertices], anchor: sketch.vertices.at(-1) ?? sketch.anchor, radius: snapRadius(), previous: interaction.current.planeSnap });
+              interaction.current.planeSnap = moved.snapped?.kind === "axis" ? moved.snapped : null;
               const anchor = sketch.vertices.at(-1) ?? sketch.anchor;
               const shiftAxis = event.shiftKey ? Math.abs(moved.point[0] - anchor[0]) >= Math.abs(moved.point[1] - anchor[1]) ? "x" : "y" : null;
               const point = lockedPoint(moved.point, anchor, sketch.axisLock ?? shiftAxis);

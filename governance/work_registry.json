@@ -428,23 +428,27 @@
       "lanes": [
         {
           "id": "interaction",
-          "issue": "#14 pointer-first Scale",
+          "issue": "#14 Phase 5 snap retention and continuous modeling",
           "status": "review",
-          "branch": "codex/i14-scale",
-          "worktree": "C:/Users/asus/.codex/worktrees/685e/ARCHFLOW_V4",
-          "base_ref": "1a238398a892c99a9964363d2bcb97836b9fa1bc",
-          "contributor": "Codex task 01a098b4-553a-7ff0-baa5-0e1360333293",
+          "branch": "codex/issue14-snap-retention",
+          "worktree": "C:/Users/asus/.codex/worktrees/48ca/ARCHFLOW_V4",
+          "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
+          "contributor": "Codex task 01a09b53-473e-7042-953b-9fd060e7744f",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "Pointer Rotate is integrated at 1a238398. Scale now reuses the existing world AABB centre, uniform/XYZ and negative-factor math, interaction session and transient preview: reference-to-pointer signed scaling, numeric override, Click/Enter/Escape and exact target guards. Four focused real Studio/OCCT groups passed: asymmetric six-vertex checks, uniform and signed axis factors, actual typed negative values, same-frame pointer confirmation, zero React pointer commits with reused resources, pointer-centre and typed-zero refusal, Esc/Undo/Redo and continued local scaling during one frozen Sync with exact export readback. Existing 42 tests, build and archcheck passed. Old Scale numeric form retired; no changed transform mathematics, arbitrary pivot, mirror/backend contract, generic transform framework or other issue expansion. Nonuniform transforms that make a prism extrusion oblique remain refused by the existing calculation. Await coordinator exact-head review and CI; installed Hub unchanged. This is the final authorized slice; do not start other work afterwards.",
+          "handoff": "Phase 5: 14px capture/21px release for feature targets, deliberate endpoint/midpoint switching, current-ray sliding along held edges, existing sketch-axis retention and display/tool invalidation. Ordinary hover remains consistent with current click hits. Baseline viewport fails the silhouette regression; the fix passes. Isolated browser/real OCCT continuous creation/P/Move/Copy/delete/Undo/Redo and frozen Sync pass, including exact snapped Move geometry and continued local edits during Sync. Web tests 199 passed/2 skipped, build/typecheck and archcheck pass; two independent review findings fixed. 400-mesh synthetic pointer-to-preview P95 17.9ms; genuine large-scene indexing and architectural user acceptance remain open. No backend/Monitor contract or active-service changes. Await coordinator integration; do not close #14.",
           "modules": [
             "studio.shell",
             "studio.intent"
           ],
           "write_scope": [
             "apps/archflow-studio/web/src/features/stage/Stage.tsx",
-            "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
-            "apps/archflow-studio/web/src/features/stage/ModelEditPanel.css",
+            "apps/archflow-studio/web/src/features/stage/sketch.ts",
             "apps/archflow-studio/web/src/workspaces/monkeyarch/interactionSession.ts",
+            "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+            "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/featureEdges.ts",
+            "apps/archflow-studio/web/test/featureEdges.test.ts",
+            "apps/archflow-studio/web/test/sketch.test.ts",
+            "apps/archflow-studio/web/test/sketch.browser.mjs",
             "apps/archflow-studio/web/test/modelSync.browser.mjs",
             "docs/mapping/planning/P115-capability-consolidation.md",
             "governance/work_registry.json"

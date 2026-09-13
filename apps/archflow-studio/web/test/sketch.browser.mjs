@@ -567,6 +567,19 @@ try {
   // Axis controls read the moving session too. A UI-only change cannot restore
   // an old cursor; both arrow and Shift constraints remain in plane coordinates.
   await page.mouse.click(...startPoint);
+  const axisContinuation = await page.evaluate(() => {
+    const samples=[];
+    for(const y of [.1,.9,.7,.9,1.3,.9]) {
+      window.moveBurst([window.projectPoint([-4,y,0])]);
+      samples.push({point:window.interaction.sketch.cursor,kind:window.interaction.planeSnap?.kind??null});
+    }
+    return samples;
+  });
+  for(const held of axisContinuation.slice(0,4)) {
+    assert.equal(held.kind,"axis");assert.ok(Math.abs(held.point[1])<1e-6);
+  }
+  assert.equal(axisContinuation[4].kind,null,"the existing axis inference releases outside its hold radius");
+  assert.equal(axisContinuation[5].kind,null,"returning outside acquisition cannot silently re-lock an axis");
   await page.mouse.move(...negativeCorner);
   await page.locator(".sketch-entry input").evaluate((input) => input.blur());
   await page.keyboard.press("ArrowRight");
@@ -842,6 +855,63 @@ try {
   assert.equal(performanceResult.renders, 120);
   assert.equal(performanceResult.reused, true);
   console.log("MEASURE headless Chrome / synthetic building array (render return is not GPU presentation):", JSON.stringify(performanceResult));
+
+  // Hold the same visible corner across a hit/miss silhouette boundary.
+  // A single isolated draft keeps this geometry assertion independent of the
+  // density of the loaded building array and exercises the production snap API.
+  const heldCorner = await page.evaluate(() => {
+    const v = window.viewport.current;
+    v.draftPreview({ objects: [{ elementId: "snap-corner", spec: {
+      profile: [[-20,-20],[-4,-20],[-4,-4],[-20,-4]], base: 0, height: 2,
+    } }], hiddenObjectNames: [] });
+    v.standardView("top");
+    const corner = window.projectPoint([-20,-20,2]);
+    const sample = (dx,dy) => v.snapOnModel(corner[0]+dx,corner[1]+dy);
+    const captured = sample(0.05,-0.05);
+    const held = [-1,1,-2,2,-16].map(dx=>sample(dx,-0.05));
+    const released = sample(-23,-2);
+    const reacquired = sample(-16,-0.05);
+    v.draftPreview(null);
+    const removed = sample(2,-2);
+    return { captured, held, released, reacquired, removed };
+  });
+  assert.equal(heldCorner.captured?.kind, "endpoint", JSON.stringify(heldCorner));
+  assert.ok(heldCorner.held.every(s=>s?.kind==="endpoint" && s.point.join()===heldCorner.captured.point.join()),
+    "corner must survive tiny moves across the mesh silhouette");
+  assert.equal(heldCorner.released, null, "leaving the 21px release radius frees the cursor");
+  assert.equal(heldCorner.reacquired, null, "a released target cannot reacquire off the model");
+  assert.equal(heldCorner.removed, null, "removed drafts cannot retain a snap");
+  const heldEdge = await page.evaluate(() => {
+    const v = window.viewport.current;
+    const draft = { objects: [{ elementId: "snap-edge", spec: {
+      profile: [[-20,-20],[-4,-20]], base: 0, height: 0, closed: false,
+    } }], hiddenObjectNames: [] };
+    v.draftPreview(draft);
+    const a = window.projectPoint([-20,-20,0]), b = window.projectPoint([-4,-20,0]);
+    const sample = (t,dy=1) => v.snapOnModel(a[0]+(b[0]-a[0])*t,a[1]+dy);
+    const start = sample(.25), slide = sample(.30,16), release = sample(.30,23);
+    const noReacquire = sample(.30,16);
+    const recaptured = sample(.30), midpoint = sample(.50,0), endpoint = sample(1,0);
+    v.standardView("top");
+    const cameraCleared = window.interaction.modelSnap;
+    sample(.25);
+    const feature = window.interaction.modelSnap.feature;
+    feature.visible = false;
+    const hidden = sample(.25);
+    v.draftPreview(null);
+    return { start,slide,release,noReacquire,recaptured,midpoint,endpoint,cameraCleared,hidden };
+  });
+  assert.equal(heldEdge.start?.kind, "edge", JSON.stringify(heldEdge));
+  assert.equal(heldEdge.slide?.kind, "edge");
+  assert.ok(heldEdge.slide.point[0] > heldEdge.start.point[0], "a retained edge must slide along the segment");
+  assert.ok(Math.abs(heldEdge.slide.point[1]+20)<1e-6);
+  assert.equal(heldEdge.release,null);
+  assert.equal(heldEdge.noReacquire,null);
+  assert.equal(heldEdge.midpoint?.kind,"midpoint");
+  assert.equal(heldEdge.endpoint?.kind,"endpoint");
+  assert.equal(heldEdge.cameraCleared,null);
+  assert.equal(heldEdge.hidden,null);
+  console.log("PASS corner/edge retention, release, sliding, midpoint/endpoint approach and camera/hidden/draft invalidation");
 
   // Unmount while a frame is pending releases once and never paints afterward.
   const unmounted = await page.evaluate(async () => {
