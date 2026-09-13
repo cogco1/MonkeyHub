@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import unittest
+from urllib.parse import quote
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
@@ -203,13 +204,15 @@ class BoardTests(unittest.TestCase):
             self.assertEqual(bundle.namelist(), ["001-图纸.pdf", "002-图纸.pdf"])
             self.assertTrue(all(len(PdfReader(BytesIO(bundle.read(name))).pages) == 1 for name in bundle.namelist()))
         self.assertEqual(self.files(), before)
-        image = self.upload(image_bytes(), "plan.png", "image/png")
+        image = self.upload(image_bytes(), "讨论图纸.png", "image/png")
         after_upload = self.files()
         raster = self.client.post("/api/board/export", json={"projectId": PROJECT_ID, "pages": [{
             "runId": image["runId"], "assetSha256": image["assetSha256"], "revisionRef": image["revisionRef"], "pageIndex": 0,
         }], "format": "jpeg", "zip": False})
         self.assertEqual(raster.status_code, 200, raster.text)
         self.assertEqual(raster.headers["content-type"], "image/jpeg")
+        self.assertIn("filename*=UTF-8''" + quote("001-讨论图纸.jpeg"), raster.headers["content-disposition"])
+        self.assertTrue(raster.headers["content-disposition"].isascii())
         self.assertTrue(raster.content.startswith(b"\xff\xd8"))
         self.assertEqual(self.files(), after_upload)
 

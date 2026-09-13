@@ -187,7 +187,7 @@ try {
     } catch (error) { failures.push(error.stack ?? String(error)); await route.abort("blockedbyclient"); }
   });
   await page.goto(`${origin}/?view=board&lang=en`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("button", { name: "Fit board", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Project documents", exact: true }).waitFor();
   await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
   const original = await readScene();
   assert.equal(byId(original, "kept-image").frameId, "kept-frame");
@@ -285,6 +285,7 @@ try {
 
   // Exercise the actual upload dialog as well: old first page -> new second
   // page, using file bytes in memory and the user-facing one-based page input.
+  await page.getByRole("button", { name: "Project documents", exact: true }).click();
   const originalCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: oldDocument.fileName, exact: true }) });
   await originalCard.getByRole("combobox").selectOption("0");
   await originalCard.getByRole("button", { name: "Update this page", exact: true }).click();
@@ -304,6 +305,7 @@ try {
 
   // Clear marks through both real buttons, with a single keyboard undo/redo.
   // Include a real Crit pen stroke and arrow/text bindings to a retained page.
+  await page.locator(".monkeyboard-actions summary").click();
   await page.getByRole("button", { name: "Crit mode", exact: true }).click();
   await page.mouse.move(800, 450); await page.mouse.down();
   await page.mouse.move(840, 470, { steps: 6 }); await page.mouse.move(890, 450, { steps: 6 }); await page.mouse.up();
@@ -332,8 +334,9 @@ try {
   const clear = page.getByRole("button", { name: "Clear annotations", exact: true });
   const waitCleared = () => page.waitForFunction((ids) => ids.every((id) => !window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
   const waitRestored = () => page.waitForFunction((ids) => ids.every((id) => window.__boardApi.getSceneElements().some((element) => element.id === id)), markIds);
+  await page.locator(".monkeyboard-actions summary").click();
   await clear.click(); await waitCleared();
-  assert.equal(await clear.isEnabled(), false);
+  assert.equal(await page.getByRole("button", { name: "Clear annotations", exact: true, includeHidden: true }).isEnabled(), false);
   const cleared = await readScene();
   for (const id of preservedIds) {
     assert.deepEqual(geometry(byId(cleared, id)), geometry(byId(beforeClear, id)), `Clear preserves page/frame geometry: ${id}`);
@@ -347,6 +350,7 @@ try {
   assert.deepEqual(byId(await readScene(), "kept-image").boundElements, byId(beforeClear, "kept-image").boundElements);
   await page.keyboard.press("Control+Shift+z"); await waitCleared();
   await page.keyboard.press("Control+z"); await waitRestored();
+  await page.locator(".monkeyboard-actions summary").click();
   await page.getByRole("button", { name: "Crit mode", exact: true }).click();
   await clear.click(); await waitCleared();
   await page.keyboard.press("Control+z"); await waitRestored();
@@ -357,7 +361,7 @@ try {
   await page.goto(`${origin}/?view=board&lang=zh-CN`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => window.__boardApi && !document.querySelector(".monkeyboard-initializing"));
   await waitCleared();
-  assert.equal(await page.getByRole("button", { name: "清除批注", exact: true }).isEnabled(), false);
+  assert.equal(await page.getByRole("button", { name: "清除批注", exact: true, includeHidden: true }).isEnabled(), false);
   assert.deepEqual(activeIds(await readScene(), "image"), activeIds(beforeClear, "image"));
   assert.deepEqual(activeIds(await readScene(), "frame"), activeIds(beforeClear, "frame"));
   assert.deepEqual(saved.seenDocuments, seenBeforeReopen);

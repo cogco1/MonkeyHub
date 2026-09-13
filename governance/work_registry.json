@@ -375,7 +375,13 @@
         "archflow/adapters/blender_cad.py",
         "archflow/adapters/blender_worker.py",
         "tests/test_blender_cad.py",
-        "tests/test_verify_state_record.py"
+        "tests/test_verify_state_record.py",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/board.css",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedbackGeometry.ts",
+        "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+        "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+        "apps/archflow-studio/api/tests/test_boards.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -483,6 +489,36 @@
             "tools/run_project.py",
             "tools/verify_state_record.py",
             "tests/test_verify_state_record.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "board",
+          "issue": "#23 first whiteboard UX slice",
+          "status": "review",
+          "branch": "codex/board-ux",
+          "worktree": "C:/Users/asus/.codex/worktrees/c68e/ARCHFLOW_V4",
+          "base_ref": "0ce0c111dbfeab2cb6373cf9050392e537caf20a",
+          "contributor": "Codex Board task",
+          "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
+          "handoff": "First whiteboard UX slice verified locally: collapsible documents, secondary chrome, gesture guidance, strict contextual feedback and keyboard return focus. Real isolated upload/file-paste, native gestures, source feedback, clean export, automatic arrival, reload and CAS passed alongside Board API/Web, replacement and intent regressions. Chinese export header reuses the existing filename encoder. Selected text transfer and HTML/remote image paste remain later acceptance. Coordinator independently reviews exact-head CI and merges this slice before continuation; installed services and other lanes remain unchanged.",
+          "modules": [
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+            "apps/archflow-studio/api/tests/test_boards.py",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/board.css",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedbackGeometry.ts",
+            "apps/archflow-studio/web/test/boardFeedbackGeometry.test.ts",
+            "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
+            "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
+            "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+            "governance/work_registry.json",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/P115-capability-consolidation.md"
           ],
           "depends_on": []
         }
