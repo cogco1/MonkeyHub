@@ -13,6 +13,10 @@ P___ 或 P000-governance — <本次解决的问题和修改后的行为>
      P000-governance 仅适用于 checker 已列定的规则维护路径和 README.md，不是通用越界许可。
      工作卡和模块 canonical 标签都不代表项目 HEAD 或软件版本已经发布。 -->
 
+## 贡献许可
+
+- [ ] 我已阅读并同意 [`CLA.md`](../CLA.md)，并确认我有权按该协议提交本次贡献；第三方材料及其许可已明确标注。
+
 ## 写入范围
 
 - [ ] 改动落在本次工作卡的 `write_scope` 与 policy 的 `shared_write_scope`，或 `P000-governance` 的有限范围内。
