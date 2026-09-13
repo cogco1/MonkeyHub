@@ -205,6 +205,22 @@ One chain, and each arrow is a route.
    reaches. Nothing has run. `POST /api/intents` ends in exactly one of four outcomes (§5.1),
    and only the first is a proposal.
 
+For drawn faces and prisms, state element rows also expose optional `drawnShape`:
+`profile`, `height`, `workPlane` in building-world Y-up metres, and
+`parameterBoundFields`. Placement includes the recorded base level, reference offset
+and elevation. Reading this projection produces no geometry or project writes.
+Unsupported producers, cutouts, top references and unresolved host datums return
+`drawnShape: null` with `drawnShapeReason`; the precision modeling panel remains available.
+
+The P gesture uses that exact viewed shape only after semantic pick resolution.
+Pointer movement previews cap extrusion or convex-profile side offset locally, reusing
+the drawing preview layer; an exact distance overrides the pointer. Click or Enter
+sends one existing `POST /api/proposals/push-pull` request with `elementId`, `distance`,
+selected face `normal` and the existing source binding. Zero distance and Esc submit
+nothing. Tool, model, project or base changes discard the gesture and stale proposal
+responses cannot start a candidate. The producer still owns geometry validation and
+parameter-binding checks; this preview does not extend arbitrary imported 3DM editing.
+
 ### 5.1 The four outcomes of an intent
 
 An `authoredControlDraft` is diagnostic context on a `MISSING_EDITABLE_CONTROL` answer,
