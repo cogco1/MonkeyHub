@@ -43,27 +43,27 @@ const modelA=${JSON.stringify(modelA)},modelB=${JSON.stringify(modelB)};
 const file=new File([Uint8Array.from(atob(${JSON.stringify(pdf())}),v=>v.charCodeAt(0))],'sheet.pdf',{type:'application/pdf'});
 const meta=(sha,modelSource)=>({projectId:'drawing-project',runId:modelA.runId,assetSha256:sha,fileName:sha===${JSON.stringify(originalSha)}?'original.pdf':'unlinked.pdf',mimeType:'application/pdf',sizeBytes:file.size,pageCount:1,pages:[{pageIndex:0,width:297,height:210,rotation:0}],modelSource,revisionRef:null});
 const documents=[{...meta(${JSON.stringify(originalSha)},modelA),viewRecipe:{kind:'review-sheet',hiddenObjectIds:['flower'],outlineObjectIds:['vase'],notes:['Keep the stone inscription.']}},meta(${JSON.stringify(unboundSha)},null)];
-const metrics=window.drawingFixture={lists:[],opens:[],saves:[],documents};
+const metrics=window.drawingFixture={lists:[],opens:[],saves:[],bytes:[],continues:[],documents};
 const actualSheet=studio.drawingSheet;
 Object.assign(studio,{
  drawingSheet:async body=>{const result=await actualSheet(body);documents.push(result);return result},
  documents:async runId=>{metrics.lists.push(runId);return {projectId:metrics.projectId,runId,documents:documents.filter(d=>d.projectId===metrics.projectId&&(runId===null||d.runId===runId))}},
- documentFile:async()=>file,
+ documentFile:async(runId,sha)=>{metrics.bytes.push({runId,sha});return file},
  documentAnnotations:async(runId,sha,pageIndex)=>({projectId:metrics.projectId,runId,assetSha256:sha,pageIndex,revisionSha256:null,annotations:[],comment:''}),
  saveDocumentAnnotations:async body=>{metrics.saves.push(body);return {...body,revisionSha256:'1'.repeat(64)}},
  documentComments:async()=>({comments:[]})
 });
 function App(){
- const [view,setView]=useState({runId:modelA.runId,sourceSha:${JSON.stringify(originalSha)}}),[viewed,setViewed]=useState(modelB),
+ const [view,setView]=useState({runId:modelA.runId,sourceSha:${JSON.stringify(originalSha)}}),[viewed,setViewed]=useState(modelB),[editing,setEditing]=useState(modelB),
   [projectId,setProject]=useState('drawing-project'),[active,setActive]=useState(true),[controller]=useState(createDocumentAnnotationsController);
  const preferences=usePreferences();
- Object.assign(metrics,{projectId,setViewed:value=>flushSync(()=>setViewed(value)),setProject:value=>flushSync(()=>setProject(value)),
+ Object.assign(metrics,{projectId,editing,setEditing:value=>flushSync(()=>setEditing(value)),setViewed:value=>flushSync(()=>setViewed(value)),setProject:value=>flushSync(()=>setProject(value)),
   setView:value=>flushSync(()=>setView(value)),setActive:value=>flushSync(()=>setActive(value)),
   setLanguage:preferences.setLanguage,setTheme:preferences.setTheme});
  return <DocumentCanvas key={projectId+':'+view.runId+':'+view.sourceSha} projectId={projectId} runId={view.runId} initialSourceSha={view.sourceSha}
   controller={controller} busy={false} active={active} modelSources={[{label:'Model A',modelSource:modelA},{label:'Model B',modelSource:modelB}]}
-  editingModelSource={modelB} viewedModelSource={viewed} documentVisualInputAvailable={true}
-  onContinueModelSource={async()=>{}} onSubmit={async()=>{}}
+  editingModelSource={editing} viewedModelSource={viewed} documentVisualInputAvailable={true}
+  onContinueModelSource={async value=>{metrics.continues.push(value);setEditing(value)}} onSubmit={async()=>{}}
   onOpenGeneratedDocument={result=>{metrics.opens.push(result);setView({runId:result.runId,sourceSha:result.assetSha256})}}/>;
 }
 createRoot(document.getElementById('root')).render(<UserPreferencesProvider><App/></UserPreferencesProvider>);
@@ -171,13 +171,54 @@ try {
       const retained = fixture.documents.find(item => item.runId === runId);
       fixture.documents.push({ ...retained, assetSha256: "8".repeat(64), fileName: "older-elevation.pdf",
         revisionRef: "drawings/older-revision", generatedAt: "2026-09-11T00:00:00Z" });
+      fixture.documents.push({ ...fixture.documents.find(item => item.generatedAt && item.runId !== runId),
+        assetSha256: "9".repeat(64), fileName: "newest-other-model.pdf", generatedAt: "2026-09-13T00:00:00Z" });
       fixture.setView({ runId, sourceSha: null });
       return retained.assetSha256;
     }, modelB.runId);
     await ready();
-    assert.equal(await source().inputValue(), newest);
+    assert.equal(await source().inputValue(), JSON.stringify([modelB.runId, newest, null]));
     assert.match(await source().locator("option:checked").textContent(), /arch400-white-2\.pdf/);
     assert.equal(await opened(), 2, "initial discovery does not need another generation callback");
+  });
+  await step("first entry falls back to latest project drawing without changing the editing model", async () => {
+    const rootSource = { ...modelB, runId: "original-root", stateDigest: "0".repeat(64) };
+    await page.evaluate(value => {
+      window.drawingFixture.setEditing(value);
+      window.drawingFixture.setView({ runId: value.runId, sourceSha: null });
+    }, rootSource);
+    await ready();
+    assert.match(await source().locator("option:checked").textContent(), /newest-other-model\.pdf/);
+    assert.equal(await page.evaluate(() => window.drawingFixture.lists.at(-1)), null);
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.bytes.at(-1)), { runId: modelA.runId, sha: "9".repeat(64) });
+    assert.equal(await page.locator(".document-model-source strong").textContent(), "Model A");
+    assert.equal(await page.locator(".document-model-source").getAttribute("data-model-source-status"), "mismatch");
+    await page.getByLabel("对此页的意见", { exact: true }).fill("Review the latest drawing without changing my starting model.");
+    assert.equal(await page.getByRole("button", { name: "提交本页意见", exact: true }).isDisabled(), true);
+    assert.equal(await page.getByRole("button", { name: "从此模型继续", exact: true }).isEnabled(), true);
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.editing), rootSource);
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.continues), []);
+    assert.equal(await opened(), 2);
+  });
+  await step("an existing selection survives refreshed defaults and keeps its actual source", async () => {
+    await source().selectOption(JSON.stringify([modelA.runId, originalSha, null]));
+    await ready();
+    const listCount = await page.evaluate(() => window.drawingFixture.lists.length);
+    await page.evaluate(value => window.drawingFixture.setEditing(value), modelB);
+    await until(() => page.evaluate(() => window.drawingFixture.lists.length), count => count > listCount, "list refreshed");
+    await ready();
+    assert.equal(await source().inputValue(), JSON.stringify([modelA.runId, originalSha, null]));
+    assert.equal(await page.locator(".document-model-source strong").textContent(), "Model A");
+    assert.deepEqual(await page.evaluate(() => window.drawingFixture.editing), modelB);
+  });
+  await step("an explicitly requested missing drawing never falls back to another PDF", async () => {
+    const bytes = await page.evaluate(() => window.drawingFixture.bytes.length);
+    const missingSha = "7".repeat(64);
+    await page.evaluate(({ runId, sourceSha }) => window.drawingFixture.setView({ runId, sourceSha }), { runId: modelA.runId, sourceSha: missingSha });
+    await page.locator(".document-empty [role='alert']").waitFor();
+    assert.equal(await source().inputValue(), missingSha);
+    assert.equal(await page.locator(".document-viewport").count(), 0);
+    assert.equal(await page.evaluate(() => window.drawingFixture.bytes.length), bytes);
   });
   await step("missing source is explained and cannot generate from editing base", async () => {
     await page.evaluate(({ runId, sourceSha }) => { window.drawingFixture.setViewed(null); window.drawingFixture.setView({ runId, sourceSha }); }, { runId: modelA.runId, sourceSha: unboundSha });

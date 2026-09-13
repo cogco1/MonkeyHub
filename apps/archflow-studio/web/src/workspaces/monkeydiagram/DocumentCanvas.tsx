@@ -470,7 +470,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const [stylesError, setStylesError] = useState<StudioApiError | null>(null);
   const [sheetBusy, setSheetBusy] = useState(false);
   const [sheetError, setSheetError] = useState<StudioApiError | null>(null);
-  const listRun = review?.ref.runId ?? runId;
+  const listRun = review?.ref.runId ?? (initialSourceSha === null ? null : runId);
   const selectionRun = listRun ?? selectedRun;
   const document = documents.find((item) => item.assetSha256 === selectedSha &&
     (selectionRun === null || item.runId === selectionRun) && (selectedRevision === null || item.revisionRef === selectedRevision)) ?? null;
@@ -493,7 +493,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     const scale = recipe.scaleDenominator;
     if (typeof scale === "number" && Number.isInteger(scale) && scale >= 1 && scale <= 10000) setScaleDenominator(scale);
   }, [document, drawingStyles, projectId]);
-  const optionKey = (item: SourceDocumentDto) => runId === null
+  const optionKey = (item: SourceDocumentDto) => listRun === null
     ? JSON.stringify([item.runId, item.assetSha256, item.revisionRef ?? null]) : item.revisionRef ?? item.assetSha256;
   const page = document?.pages.find((item) => item.pageIndex === pageIndex) ?? null;
   const documentModelSource = document?.modelSource ?? null;
@@ -560,9 +560,11 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       if (stopped || request !== listRequest.current) return;
       const available = result.documents;
       const linked = available.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
-      const generated = linked.filter((item) => item.generatedAt && Number.isFinite(Date.parse(item.generatedAt)));
-      const latestTime = Math.max(...generated.map((item) => Date.parse(item.generatedAt!)));
-      const newest = generated.filter((item) => Date.parse(item.generatedAt!) === latestTime);
+      const generated = available.filter((item) => item.generatedAt && Number.isFinite(Date.parse(item.generatedAt)));
+      const linkedGenerated = generated.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
+      const reviewChoices = linkedGenerated.length > 0 ? linkedGenerated : generated;
+      const latestTime = Math.max(...reviewChoices.map((item) => Date.parse(item.generatedAt!)));
+      const newest = reviewChoices.filter((item) => Date.parse(item.generatedAt!) === latestTime);
       const preferred = newest.length === 1 ? newest[0] : linked.length === 1 ? linked[0] : null;
       const selected = selectedDocumentRef.current;
       const keepSelection = selected.assetSha256 !== null && (selected.assetSha256 === initialSourceSha || available.some((item) =>
@@ -612,7 +614,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       setSelectedSha(result.assetSha256); setSelectedRevision(result.revisionRef ?? null); setSelectedRun(result.runId); setPageIndex(0);
       // Refresh after the upload so an invalidated initial request cannot also
       // hide previously uploaded sources from the selector.
-      const refreshed = await studio.documents(runId);
+      const refreshed = await studio.documents(listRun);
       if (request === listRequest.current) {
         setDocuments([...refreshed.documents.filter((item) => optionKey(item) !== optionKey(result)), result]);
         setError(null);

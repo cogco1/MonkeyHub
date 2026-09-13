@@ -5731,14 +5731,14 @@
       "status": "canonical",
       "purpose": "Host project-bound conversations through installed coding CLIs and open the existing local architecture tools beside the chat; domain state and settings retain their existing owners.",
       "owns": [
-        "Hub FastAPI, project/chat navigation, persistent CLI conversation transcripts with recoverable archive/restore and embedded local tool pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing page",
+        "Hub FastAPI, project/chat navigation including existing projects in the configured workspace, persistent CLI conversation transcripts with recoverable archive/restore and embedded local tool pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing page",
         "One owned Studio process per project, shared by that project's MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring",
         "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
         "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
-        "same-origin forwarding of initial modeling preparation to the exact bound Studio after project connection; independent Fab and Monitor launch/status without rebinding Studio"
+        "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",

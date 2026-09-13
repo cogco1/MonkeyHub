@@ -17,6 +17,7 @@ type Props = {
   apps: readonly AppStatus[] | null;
 };
 type ToolTab = { id: AppId; url: string; revision: number };
+type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
@@ -221,7 +222,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const observedSessions = useRef(new Map<string, ChatSummary["status"]>());
   const completedChats = useRef(new Set<string>());
   const openedCandidates = useRef(new Set<string>());
-  const selection = useRef({ chatId, projectDir, archivedView }); selection.current = { chatId, projectDir, archivedView };
+  const projectPreparations = useRef(new Map<string, ProjectPreparation>());
+  const selection = useRef({ chatId, projectDir, archivedView, projects }); selection.current = { chatId, projectDir, archivedView, projects };
   const project = projects.find((item) => item.projectDir === projectDir);
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
@@ -249,6 +251,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     readLock.current = true;
     const selectedId = selection.current.chatId;
     const selectedProject = selection.current.projectDir;
+    const prepared = projectPreparations.current.get(selectedProject ?? "");
+    const preparedStudio = prepared?.apps?.find((item) => item.appId === "monkeyarch");
     const selectedArchived = selection.current.archivedView;
     try {
       const [nextProjects, nextSessions, nextProviders, detail, nextApps] = await Promise.all([
@@ -263,11 +267,24 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         if (observedSessions.current.get(session.id) === "running" && session.status !== "running") completedChats.current.add(session.id);
         observedSessions.current.set(session.id, session.status);
       }
-      setProjects(nextProjects); setProviders(nextProviders);
+      // A project created after this request began cannot be present in its
+      // old response. Keep the new selection until the next discovery read.
+      const selectedSinceRead = selectedProject !== selection.current.projectDir
+        ? selection.current.projects.find((item) => item.projectDir === selection.current.projectDir) : undefined;
+      const knownProjects = selectedSinceRead && !nextProjects.some((item) => item.projectDir === selectedSinceRead.projectDir)
+        ? [...nextProjects, selectedSinceRead] : nextProjects;
+      setProjects(knownProjects); setProviders(nextProviders);
       if (selection.current.archivedView === selectedArchived) setSessions(nextSessions);
-      if (selection.current.projectDir === selectedProject) setProjectApps({ projectDir: selectedProject, apps: nextApps });
+      if (selection.current.projectDir === selectedProject) {
+        setProjectApps({ projectDir: selectedProject, apps: nextApps });
+        const studio = nextApps.find((item) => item.appId === "monkeyarch");
+        if (selectedProject && preparedStudio && projectPreparations.current.get(selectedProject) === prepared &&
+          (studio?.state !== "running" || studio.processId !== preparedStudio.processId || studio.url !== preparedStudio.url)) {
+          projectPreparations.current.delete(selectedProject);
+        }
+      }
       if (selection.current.chatId === selectedId) setChat(detail);
-      if (!nextProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(nextProjects.find((item) => item.projectDir === configuredProject)?.projectDir ?? nextProjects[0]?.projectDir ?? null);
+      if (!knownProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(knownProjects.find((item) => item.projectDir === configuredProject)?.projectDir ?? knownProjects[0]?.projectDir ?? null);
       setLoading(false);
     } catch (cause) { setError(asFailure(cause)); setLoading(false); }
     finally { readLock.current = false; }
@@ -319,12 +336,40 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     return status.url;
   };
 
-  /** Keep the CLI and embedded pages on the actual project held by the managed Studio. */
-  const ensureProject = async (target: string, projectId: string, appId: AppId = "monkeyarch") => {
-    const url = await startTool(appId, target);
-    await request(`/api/project/modeling?${new URLSearchParams({ projectDir: target })}`, { projectId });
-    return url;
-  };
+  /** One preparation per managed Studio, shared by navigation, send and all three workspaces. */
+  const ensureProject = useCallback(async (target: string, projectId: string, appId: AppId = "monkeyarch") => {
+    let preparation = projectPreparations.current.get(target);
+    if (!preparation) {
+      const query = new URLSearchParams({ projectDir: target });
+      const entry: ProjectPreparation = { apps: null, promise: (async () => {
+        await request(`/api/project/modeling?${query}`, { projectId });
+        const statuses = await request<AppStatus[]>(`/api/apps?${query}`);
+        if (!statuses.some((item) => item.appId === "monkeyarch" && item.state === "running" && item.url)) throw new Error("The project service did not become ready.");
+        return statuses;
+      })() };
+      preparation = entry;
+      projectPreparations.current.set(target, entry);
+    }
+    try {
+      const statuses = await preparation.promise;
+      preparation.apps = statuses;
+      if (selection.current.projectDir === target) setProjectApps({ projectDir: target, apps: statuses });
+      const url = statuses.find((item) => item.appId === appId && item.state === "running")?.url;
+      if (!url) throw new Error("The project workspace is unavailable.");
+      return url;
+    } catch (cause) {
+      if (projectPreparations.current.get(target) === preparation) projectPreparations.current.delete(target);
+      throw cause;
+    }
+  }, []);
+  useEffect(() => {
+    if (!project) return;
+    let cancelled = false;
+    void ensureProject(project.projectDir, project.projectId).catch((cause: unknown) => {
+      if (!cancelled && selection.current.projectDir === project.projectDir) setError(asFailure(cause));
+    });
+    return () => { cancelled = true; };
+  }, [project?.projectDir, project?.projectId, ensureProject]);
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -394,10 +439,12 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     actionLock.current = true; setBusy(true); setDialogError(null);
     try {
       const project = await request<ChatProject>("/api/chat/projects", { name: projectName.trim() });
+      setProjects((items) => [...items.filter((item) => item.projectDir !== project.projectDir), project]);
+      setArchivedView(false); selectProject(project);
+      newDialog.current?.close(); setProjectName("");
       const body: ChatCreateRequest = { projectDir: project.projectDir, provider: defaults.provider, model: defaults.model };
       const created = await request<ChatDetail>("/api/chat/sessions", body);
-      selectChat(created); setChat(created); newDialog.current?.close(); setProjectName(""); await refresh();
-      await ensureProject(project.projectDir, project.projectId);
+      selectChat(created); setChat(created); await refresh();
       input.current?.focus();
     } catch (cause) {
       if (newDialog.current?.open) setDialogError(asFailure(cause));
@@ -436,10 +483,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     const target = projectDir, targetChat = chatId;
     actionLock.current = true; setToolBusy(id); setError(null);
     try {
-      const studioAlreadyOpen = needsProject && tabs.some((item) => item.id === "monkeyarch" || item.id === "monkeydiagram" || item.id === "monkeyboard");
-      const runningUrl = (view?.candidate || studioAlreadyOpen) && projectApps?.projectDir === target
-        ? projectApps.apps.find((item) => item.appId === id && item.state === "running")?.url : null;
-      const location = runningUrl ?? (needsProject ? await ensureProject(target!, project!.projectId, id) : await startTool(id));
+      const location = needsProject ? await ensureProject(target!, project!.projectId, id)
+        : apps?.find((item) => item.appId === id && item.state === "running")?.url ?? await startTool(id);
       const url = new URL(applicationUrl(location, preferences)); url.searchParams.set("embedded", "tool");
       // The page is told who embedded it, so it can ask this window - and only
       // this window - for the conversation it cannot open itself.

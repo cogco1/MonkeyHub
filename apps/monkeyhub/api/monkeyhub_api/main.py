@@ -4,10 +4,12 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import logging
 import os
 from pathlib import Path
 import sys
 import threading
+import time
 from urllib.parse import urlsplit
 from uuid import UUID
 import webbrowser
@@ -72,6 +74,12 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @asynccontextmanager
     async def lifespan(app):
+        try:
+            await asyncio.to_thread(applications.start, "monkeymonitor")
+        except (HubFailure, OSError, SettingsError, ValidationError, UnicodeError) as exc:
+            # A launch failure must leave the Hub available for configuration
+            # and an explicit retry through the existing application route.
+            logging.getLogger(__name__).warning("MonkeyMonitor could not be prepared: %s", exc)
         yield
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
@@ -181,7 +189,22 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.post("/api/project/modeling", response_model=ModelingInitializeDto, response_model_by_alias=True)
     def prepare_project_modeling(body: ModelingInitializeRequestDto, projectDir: str | None = None) -> dict:
-        base, binding = chat_tools._bound_studio(chats.hub_url, None, project_id=body.project_id, project_dir=projectDir)
+        target = projectDir if projectDir is not None else read_application_settings(settings.runtime_root).project_dir
+        if not target:
+            raise HubFailure(409, "PROJECT_REQUIRED", "Choose a project before preparing its modeling workspace.")
+        project_id, project_dir = chat_tools._project(target)
+        if project_id != body.project_id:
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The selected project changed before its workspace was prepared.")
+        status = start_app("monkeyarch", projectDir=project_dir)
+        deadline = time.monotonic() + 35
+        while status.state == "starting" and time.monotonic() < deadline:
+            time.sleep(0.1)
+            status = applications.status("monkeyarch", project_dir=project_dir)
+        if status.state != "running":
+            if status.error is not None:
+                raise HubFailure(503, status.error.code, status.error.detail)
+            raise HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "The project workspace is not ready. Retry preparing this project.")
+        base, binding = chat_tools._bound_studio(chats.hub_url, None, project_id=project_id, project_dir=project_dir)
         return chat_tools._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
 
     @app.get("/api/chat/providers", response_model=list[ChatProvider])

@@ -753,10 +753,20 @@ class ChatStore:
                     projects[key] = ChatProject(projectId=key[0], projectDir=key[1], name=key[0],
                                                 chatCount=0, version=version, stage=stage)
                 projects[key].chatCount += 1
-            current = read_application_settings(self.runtime_root).project_dir
-            if current:
+            workspace = self.workspace()
+            workspace_root = Path(workspace.workspaceDir).resolve()
+            discovered = []
+            for name in workspace.projects:
                 try:
-                    project_id, project_dir = _project(current)
+                    candidate = (workspace_root / name).resolve()
+                    if candidate.is_relative_to(workspace_root):
+                        discovered.append(str(candidate))
+                except OSError:
+                    continue
+            current = read_application_settings(self.runtime_root).project_dir
+            for path in dict.fromkeys([*discovered, *([current] if current else [])]):
+                try:
+                    project_id, project_dir = _project(path)
                 except HubFailure:
                     pass
                 else:

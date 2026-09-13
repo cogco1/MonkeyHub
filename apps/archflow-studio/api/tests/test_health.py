@@ -27,6 +27,10 @@ from archflow_studio_api.settings import StudioSettings
 from .support import PROJECT_ID, make_project
 
 
+_API_ROOT = Path(__file__).resolve().parents[1]
+_SOURCE_PYTHONPATH = os.pathsep.join((str(_API_ROOT.parents[2]), str(_API_ROOT)))
+
+
 class HealthRouteTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = TestClient(
@@ -74,6 +78,7 @@ class ManagedStudioTests(unittest.TestCase):
             environment = {key: value for key, value in os.environ.items()
                            if not key.startswith("ARCHFLOW_STUDIO_") and key != "MONKEYMONITOR_DATA_DIR"}
             environment["ARCHFLOW_STUDIO_CAD_EXPORT"] = "off"
+            environment["PYTHONPATH"] = _SOURCE_PYTHONPATH
             log_path = root / "studio.log"
             with log_path.open("wb") as log:
                 child = subprocess.Popen(
@@ -142,6 +147,7 @@ asyncio.run(check())
 """
         result = subprocess.run(
             [sys.executable, "-c", program], capture_output=True, text=True,
+            env={**os.environ, "PYTHONPATH": _SOURCE_PYTHONPATH},
             timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

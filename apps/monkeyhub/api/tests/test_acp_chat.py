@@ -134,7 +134,7 @@ class AcpChatTests(unittest.TestCase):
     def test_http_permission_requires_current_project_option_and_single_decision(self):
         with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
-        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             session = self.create()
             self.post(session, "permission")
             permission = self.permission(session)

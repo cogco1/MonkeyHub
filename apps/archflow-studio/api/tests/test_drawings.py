@@ -65,6 +65,7 @@ class DrawingTests(CandidateTestCase):
         from pypdf import PdfReader
         from archflow.adapters.cad_execution import project_occt_lines
 
+        self.enable_monitor()
         styles = self.client.get("/api/drawings/styles")
         self.assertEqual(styles.status_code, 200, styles.text)
         catalog = {style["id"]: style for style in styles.json()["styles"]}
@@ -88,6 +89,15 @@ class DrawingTests(CandidateTestCase):
                 self.assertEqual(document["viewRecipe"]["style"]["id"], style_id)
                 self.assertEqual(document["viewRecipe"]["style"]["version"], "1")
                 self.assertEqual(document["viewRecipe"]["scaleDenominator"], scale)
+                events = self.drawing_events()
+                parent = next(event for event in events if event.phase == "drawing_generate"
+                              and event.status == "succeeded"
+                              and event.details["input_identity"]["view_recipe"]["style_id"] == style_id)
+                self.assertEqual(parent.details["cache_status"], "miss")
+                projections = [event for event in events if event.parent_event_id == parent.event_id
+                               and event.phase == "drawing.hlr" and event.status == "succeeded"]
+                self.assertEqual({event.details["input_identity"]["view_recipe"]["view"] for event in projections},
+                                 {"front", "right", "top"})
                 data = self.client.get(f"/api/documents/{document['assetSha256']}/bytes", params={"runId": document["runId"]})
                 self.assertEqual(data.status_code, 200, data.text[:100] if data.status_code != 200 else "")
                 pdf = PdfReader(BytesIO(data.content))

@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
-from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, HubFailure
+from monkeyhub_api.models import AppStatus, ChatCreateRequest, ChatPostRequest, HubFailure
 
 
 FAKE_CLI = r'''
@@ -332,7 +332,7 @@ class ChatTests(unittest.TestCase):
         saved = json.loads(saved_path.read_text(encoding="utf-8"))
         with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
-        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             path = f"/api/chat/sessions/{session.id}"
             response = client.put(path + "/archive", json={"archived": True})
             self.assertEqual(response.status_code, 200, response.text)
@@ -356,7 +356,7 @@ class ChatTests(unittest.TestCase):
         self.assertEqual([row.id for row in self.store.list(archived=True)], [session.id])
         with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
-        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             restored = client.put(path + "/archive", json={"archived": False})
             self.assertEqual(restored.status_code, 200, restored.text)
             self.assertFalse(restored.json()["archived"])
@@ -506,7 +506,7 @@ class ChatTests(unittest.TestCase):
     def test_http_roundtrip_invalid_project_and_old_settings(self):
         with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
             app = create_app(HubSettings(runtime_root=self.runtime))
-        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
             response = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})
             self.assertEqual(response.status_code, 201, response.text)
             session = response.json()
@@ -1238,15 +1238,16 @@ class ChatTests(unittest.TestCase):
             return {"projectId": "chat-project", "initialized": True}
 
         app = create_app(HubSettings(self.runtime))
-        with TestClient(app, base_url="http://127.0.0.1:8790") as client, patch.object(chat, "_request_json", side_effect=request):
-            prepared = client.post("/api/project/modeling", json={"projectId": "chat-project"})
+        ready = AppStatus(appId="monkeyarch", title="MonkeyArch", serviceId="studio", state="running", url="http://127.0.0.1:8791/", processId=123)
+        with patch.object(app.state.applications, "start", return_value=ready), TestClient(app, base_url="http://127.0.0.1:8790") as client, patch.object(chat, "_request_json", side_effect=request):
+            prepared = client.post("/api/project/modeling", params={"projectDir": str(self.project)}, json={"projectId": "chat-project"})
             self.assertEqual(prepared.status_code, 200, prepared.text)
             self.assertEqual(prepared.json(), {"projectId": "chat-project", "initialized": True})
-            wrong = client.post("/api/project/modeling", json={"projectId": "other-project"})
+            wrong = client.post("/api/project/modeling", params={"projectDir": str(self.project)}, json={"projectId": "other-project"})
             self.assertEqual(wrong.status_code, 409)
             self.assertEqual(wrong.json()["code"], "CHAT_PROJECT_MISMATCH")
             studio_pid = 999
-            replaced = client.post("/api/project/modeling", json={"projectId": "chat-project"})
+            replaced = client.post("/api/project/modeling", params={"projectDir": str(self.project)}, json={"projectId": "chat-project"})
             self.assertEqual(replaced.status_code, 409)
             self.assertEqual(replaced.json()["code"], "CHAT_SERVICE_CHANGED")
         self.assertEqual(sent, [{"projectId": "chat-project"}])
@@ -1534,6 +1535,32 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(taken.exception.error.code, "PROJECT_EXISTS")
         self.assertEqual((occupied / "notes.txt").read_text(encoding="utf-8"), "mine")
         self.assertFalse((occupied / "project.json").exists())
+
+    def test_created_project_remains_listed_after_chat_refusal_and_hub_restart(self):
+        from monkeyhub_api.models import ChatProvider
+
+        unavailable = ChatProvider(id="codex", label="Codex", installed=False, available=False, detail="Unavailable fixture")
+        app = create_app(HubSettings(self.runtime))
+        with patch.object(app.state.applications, "start"), patch.object(app.state.chats, "providers", return_value=[unavailable]), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            created = client.post("/api/chat/projects", json={"name": "waiting-project"})
+            self.assertEqual(created.status_code, 201, created.text)
+            project = created.json()
+            refused = client.post("/api/chat/sessions", json={"projectDir": project["projectDir"], "provider": "codex"})
+            self.assertEqual(refused.status_code, 503, refused.text)
+            self.assertEqual(refused.json()["code"], "CHAT_PROVIDER_UNAVAILABLE")
+            self.assertEqual(client.get("/api/chat/projects").json(), [project])
+        root = Path(project["projectDir"])
+        before = {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()}
+        # Broken immediate children are ignored; existing projects outside the
+        # configured workspace are not discovered merely by being nearby.
+        broken = root.parent / "broken-project"
+        broken.mkdir()
+        (broken / "project.json").write_text("invalid", encoding="utf-8")
+        reopened = create_app(HubSettings(self.runtime))
+        with patch.object(reopened.state.applications, "start"), TestClient(reopened, base_url="http://127.0.0.1:8790") as client:
+            self.assertEqual(client.get("/api/chat/projects").json(), [project])
+            self.assertEqual(client.get("/api/chat/sessions").json(), [])
+        self.assertEqual(before, {str(path): path.read_bytes() for path in root.rglob("*") if path.is_file()})
 
     def test_stdio_bridge_boots_without_installing_another_service(self):
         requests = [

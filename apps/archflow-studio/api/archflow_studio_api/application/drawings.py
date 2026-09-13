@@ -298,7 +298,8 @@ def generate_sheet(
     monitor = monitor if monitor is not None else StudioMonitor(None)
     with monitor.measure("drawing_generate", project_id=binding.project_id, run_id=model_source.run_id,
                          source_ref=recipe["source"]["sourceStageRef"] or recipe["source"]["cadReceiptRef"],
-                         details={"scope": "global_visibility", "style_id": style_id,
+                         details={"scope": "global_visibility", "input_identity": {"view_recipe": {
+                                      "style_id": style_id, "scale_denominator": scale_denominator}},
                                   "input_object_ids": list(selected), "cache_status": "unknown"}) as operation:
         with _document_source_lock:
             for document in list_documents(binding, model_source.run_id):
@@ -316,7 +317,8 @@ def generate_sheet(
             views = {}
             for name, frame in frames.items():
                 with monitor.measure("drawing.hlr", project_id=binding.project_id, run_id=model_source.run_id,
-                                     details={"view": name, "input_object_ids": list(selected)}) as projection:
+                                     details={"input_identity": {"view_recipe": {"view": name}},
+                                              "input_object_ids": list(selected)}) as projection:
                     views[name] = project_occt_lines(
                         verified.entries, object_ids=selected, origin=frame.origin,
                         right=frame.right, up=frame.up, linear_deflection=frame.linear_deflection,

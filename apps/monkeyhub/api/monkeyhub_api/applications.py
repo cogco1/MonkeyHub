@@ -250,7 +250,10 @@ class Applications:
                                 child.service_pid = health["processId"]
                                 child.state = "running"
                             else:
-                                child.error = HubError(code="SERVICE_IDENTITY_MISMATCH", detail="The responding service does not match this launch, source version or selected project.")
+                                detail = "The responding service does not match this launch, source version or selected project."
+                                if health.get("sourceRevision") != self.source_revision:
+                                    detail += " Its source version differs from the running Hub. Restart MonkeyHub after changing the source version before opening its tools."
+                                child.error = HubError(code="SERVICE_IDENTITY_MISMATCH", detail=detail)
                                 child.state = "error"
                                 self._send_stop(child)
                 except (OSError, URLError, HTTPError, ValueError):
