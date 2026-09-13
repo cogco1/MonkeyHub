@@ -2,11 +2,13 @@
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import redirect_stderr
 from io import StringIO
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 from queue import Queue
 import socket
+import sqlite3
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -24,6 +26,7 @@ from monkeymonitor.__main__ import main
 from monkeymonitor.server import MonitorData, make_server
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
+from .test_core import counts, session_rows, token_row
 
 
 class MonitorServerTests(unittest.TestCase):
@@ -435,6 +438,177 @@ class MonitorSourceRevisionTests(unittest.TestCase):
                 with patch.object(monitor_server.subprocess, "run") as git:
                     self.assertIsNone(monitor_server._source_revision())
                     git.assert_not_called()
+
+
+class HubUsageBindingTests(unittest.TestCase):
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name) / "codex"
+        self.home.mkdir()
+        self.database = sqlite3.connect(self.home / "state_5.sqlite")
+        self.addCleanup(self.database.close)
+        self.database.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)")
+        self.database.commit()
+        self.bindings = []
+        self.status = 200
+        self.requests = []
+        case = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                case.requests.append(self.path)
+                self.send_response(case.status)
+                if case.status == 302:
+                    self.send_header("Location", "/must-not-follow")
+                self.end_headers()
+                self.wfile.write(json.dumps(case.bindings).encode())
+
+        self.hub = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = Thread(target=self.hub.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self.close_hub)
+        self.url = f"http://127.0.0.1:{self.hub.server_port}/api/chat/usage-sources"
+        self.data_dir = Path(temporary.name) / "diagnostics"
+
+    def close_hub(self):
+        self.hub.shutdown()
+        self.hub.server_close()
+        self.thread.join()
+
+    def source(self, session, project, *, archived=False):
+        parent = self.home / ("archived_sessions" if archived else "sessions")
+        parent.mkdir(exist_ok=True)
+        path = parent / f"{session}.jsonl"
+        rows = session_rows(session) + [
+            {"type": "response_item", "payload": {"content": "PRIVATE BODY NEVER EXPORTED"}},
+            token_row(counts(10, 2), counts(10, 2)),
+        ]
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        self.database.execute("INSERT INTO threads VALUES (?, ?)", (session, str(path)))
+        self.database.commit()
+        self.bindings.append({"projectId": project, "sessionId": session})
+        return path
+
+    def data(self, manual=()):
+        return MonitorData(self.data_dir, tuple(manual), codex_bindings_url=self.url, codex_home=self.home)
+
+    def test_multiple_projects_archived_sources_manual_overlap_and_restart_keep_exact_usage(self):
+        first = self.source("cli", "project-a")
+        self.source("acp", "project-b", archived=True)
+        self.bindings.append(self.bindings[0])
+        data = self.data([first])
+        snapshot = data.snapshot()
+        self.assertFalse(snapshot["warnings"])
+        self.assertEqual({row["session_id"]: row["project_id"] for row in snapshot["events"]},
+                         {"cli": "project-a", "acp": "project-b"})
+        self.assertEqual(sum(row["tokens"]["input_tokens"] for row in snapshot["events"]), 20)
+        self.assertEqual(self.data([first]).snapshot(), snapshot)
+        self.assertEqual(data.codex_sources(), {"paths": [first.as_posix()]}, "Automatic paths are not exposed by the manual-source endpoint")
+        self.assertNotIn("PRIVATE BODY", json.dumps(snapshot))
+        self.assertNotIn(str(self.home), json.dumps(snapshot))
+        self.assertFalse(self.data_dir.exists())
+
+    def test_log_append_and_new_hub_session_are_read_without_restart(self):
+        path = self.source("cli", "project-a")
+        data = self.data()
+        self.assertEqual(len(data.snapshot()["events"]), 1)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(token_row(counts(15, 3), counts(5, 1), "2026-09-09T12:00:01Z")) + "\n")
+        self.source("later", "project-b")
+        events = data.snapshot()["events"]
+        self.assertEqual(len(events), 3)
+        self.assertEqual(sum(row["tokens"]["input_tokens"] for row in events), 25)
+        self.assertTrue(all(row["duration_ms"] is None and row["model_call"] for row in events))
+
+    def test_backfilled_diagnostics_are_not_doubled_or_unbound_on_hub_failure(self):
+        from monkeymonitor.codex import iter_codex_events
+        path = self.source("cli", "project-a")
+        store = UsageLog(self.data_dir)
+        original = replace(next(iter_codex_events([path])), project_id="project-a")
+        store.append(original)
+        data = self.data([path])
+        self.assertEqual(data.snapshot()["events"], [original.to_dict()])
+        self.status = 503
+        failed = data.snapshot()
+        self.assertEqual(failed["events"], [original.to_dict()])
+        self.assertEqual(len(failed["warnings"]), 1)
+        self.status = 200
+        self.assertEqual(data.snapshot()["events"], [original.to_dict()])
+        self.bindings = [{"projectId": "different-project", "sessionId": "cli"}]
+        conflict = data.snapshot()
+        self.assertEqual(conflict["events"], [original.to_dict()])
+        self.assertIn("归属存在冲突", "".join(conflict["warnings"]))
+
+    def test_conflicts_missing_index_and_wrong_native_identity_leave_manual_sources_available(self):
+        path = self.source("cli", "project-a")
+        manual = self.home / "manual.jsonl"
+        manual.write_text("".join(json.dumps(row) + "\n" for row in session_rows("manual")
+                                 + [token_row(counts(4, 1), counts(4, 1))]), encoding="utf-8")
+        self.bindings.append({"projectId": "other-project", "sessionId": "cli"})
+        data = self.data([manual])
+        self.assertEqual([row["session_id"] for row in data.snapshot()["events"]], ["manual"])
+        self.bindings = [{"projectId": "a", "sessionId": "missing"}]
+        self.assertEqual([row["session_id"] for row in data.snapshot()["events"]], ["manual"])
+        self.bindings = [{"projectId": "a", "sessionId": "cli"}]
+        path.write_text("".join(json.dumps(row) + "\n" for row in session_rows("wrong")
+                               + [token_row(counts(10, 2), counts(10, 2))]), encoding="utf-8")
+        snapshot = data.snapshot()
+        self.assertEqual([row["session_id"] for row in snapshot["events"]], ["manual"])
+        self.assertIn("身份不符", "".join(snapshot["warnings"]))
+
+    def test_loopback_fetch_ignores_proxy_and_never_follows_redirects(self):
+        self.source("cli", "project-a")
+        with patch.dict(os.environ, {"HTTP_PROXY": "http://127.0.0.1:1", "http_proxy": "http://127.0.0.1:1",
+                                     "NO_PROXY": "", "no_proxy": ""}):
+            self.assertEqual(len(self.data().snapshot()["events"]), 1)
+        self.requests.clear()
+        self.status = 302
+        self.assertEqual(self.data().snapshot()["events"], [])
+        self.assertEqual(self.requests, ["/api/chat/usage-sources"])
+        for url in ("https://127.0.0.1/api/chat/usage-sources", "http://example.com/api/chat/usage-sources",
+                    "http://user@127.0.0.1/api/chat/usage-sources", self.url + "?other=1", self.url + "/other"):
+            with self.assertRaises(ValueError):
+                MonitorData(codex_bindings_url=url)
+
+    def test_wrong_automatic_identity_on_manual_path_keeps_manual_usage_without_project(self):
+        path = self.source("bound-a", "project-a")
+        path.write_text("".join(json.dumps(row) + "\n" for row in session_rows("manual-b")
+                               + [token_row(counts(4, 1), counts(4, 1))]), encoding="utf-8")
+        original = MonitorData(codex_sessions=(path,)).snapshot()["events"]
+        self.assertEqual(len(original), 1)
+        snapshot = self.data([path]).snapshot()
+        self.assertEqual(snapshot["events"], original)
+        self.assertIsNone(snapshot["events"][0]["project_id"])
+        self.assertIn("身份不符", "".join(snapshot["warnings"]))
+        self.assertEqual(self.data().snapshot()["events"], [], "Invalid automatic identity alone is rejected")
+
+    def test_invalid_automatic_counts_keep_manual_prefix_but_do_not_grant_project_binding(self):
+        path = self.source("bound-a", "project-a")
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(token_row(counts(-1, 2), counts(-1, 2))) + "\n")
+        original = MonitorData(codex_sessions=(path,)).snapshot()["events"]
+        self.assertEqual(len(original), 1)
+        snapshot = self.data([path]).snapshot()
+        self.assertEqual(snapshot["events"], original)
+        self.assertIsNone(snapshot["events"][0]["project_id"])
+        self.assertTrue(snapshot["warnings"])
+        self.assertEqual(self.data().snapshot()["events"], [])
+
+    def test_cli_report_uses_explicit_hub_url_and_environment_home_without_writes(self):
+        self.source("cli", "project-a")
+        before = {str(path.relative_to(self.home)): path.read_bytes() for path in self.home.rglob("*") if path.is_file()}
+        output = StringIO()
+        from contextlib import redirect_stdout
+        with patch.dict(os.environ, {"CODEX_HOME": str(self.home)}), redirect_stdout(output):
+            self.assertEqual(main(["report", "--codex-bindings-url", self.url]), 0)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["events"][0]["project_id"], "project-a")
+        self.assertEqual(before, {str(path.relative_to(self.home)): path.read_bytes() for path in self.home.rglob("*") if path.is_file()})
+        self.assertFalse(self.data_dir.exists())
 
 
 if __name__ == "__main__":

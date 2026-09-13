@@ -381,7 +381,12 @@
         "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedbackGeometry.ts",
         "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
-        "apps/archflow-studio/api/tests/test_boards.py"
+        "apps/archflow-studio/api/tests/test_boards.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/applications.py",
+        "apps/monkeyhub/api/tests/test_chat.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -518,6 +523,39 @@
             "governance/module_registry.json",
             "docs/SYSTEM_MAP.md",
             "docs/mapping/planning/P115-capability-consolidation.md"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "monitor-usage",
+          "issue": "Hub-bound Codex usage missing from Monitor",
+          "status": "active",
+          "branch": "codex/monitor-usage-fix",
+          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-monitor-hub-usage",
+          "base_ref": "df264b512491232ae534df3ee3d7e80d9fcac38b",
+          "contributor": "Codex coordinator",
+          "reviewer": "Independent Codex source and behavior review",
+          "handoff": "Restore project-bound Codex usage through existing Monitor normalization and live Hub identity projection. GRAVE retained numeric events restored in the existing diagnostic log; source changes do not restart live services. main.py adds only the read-only usage-sources route, coordinated separately from desktop CLI lifecycle changes. Preserve concurrent Board and modeling lanes.",
+          "modules": [
+            "monkeymonitor",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "monkeymonitor/codex.py",
+            "monkeymonitor/server.py",
+            "monkeymonitor/__main__.py",
+            "tests/monkeymonitor/test_core.py",
+            "tests/monkeymonitor/test_server.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/monkeyhub_api/applications.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "governance/work_registry.json",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "monkeymonitor/README.md"
           ],
           "depends_on": []
         }
