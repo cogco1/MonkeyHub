@@ -1,38 +1,45 @@
-"""Deepening experiment: one semantic edit leaves locally editable producers.
+"""One direct semantic proposal leaves locally editable, linked producers.
 
-The single compiled edit below authors ordinary ``prism`` producers plus an
+The single submitted edit below authors ordinary ``prism`` producers plus an
 explicit StateRecord parameter relation. Candidate execution, acceptance,
 restart and later scalar edits all use the production Studio/P036 path. No
 second model pass reconstructs dependencies: the retained StateRecord is the
 source.
 
-This deliberately binds only producer inputs the public prism signature owns
-today. Profile coordinates remain numeric literals; a separate contract gap is
-that nested ``@parameter`` bindings in ``profile`` are resolved by StateRecord
-but rejected by the advertised prism profile schema. That gap blocks the W2
-width/inset benchmark sequence and must not be hidden by this test.
+Profile coordinates bind the same retained parameters as height and elevation.
+The current Agent submits its design data directly; Studio performs no second
+model call to translate or reconstruct those dependencies.
 """
 
 from __future__ import annotations
+
+from unittest.mock import Mock
 
 from archflow_studio_api.settings import StudioSettings
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_cad_export import NEEDS_OCCT, OcctCandidateTestCase, no_process
-from .test_intents import scripted
 
 
 def parameterized_prism_edit() -> dict:
-    """Four ordinary prisms with a retained elevation/height dependency."""
+    """Four ordinary prisms linked by width, inset and elevation controls."""
 
     parameters = [
         {"key": "main_height", "value": 3.3, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
         {"key": "canopy_elevation", "value": 2.8, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
         {"key": "canopy_thickness", "value": 0.18, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
+        {"key": "canopy_width", "value": 3.0, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
+        {"key": "support_inset", "value": 0.2, "unit": "m", "epistemic_status": "declared", "source_ref": "studio:intent"},
+        {"key": "canopy_left", "value": 2.5, "unit": "m", "expr": "4 - canopy_width / 2", "inputs": ["canopy_width"]},
+        {"key": "canopy_right", "value": 5.5, "unit": "m", "expr": "4 + canopy_width / 2", "inputs": ["canopy_width"]},
+        {"key": "left_support_min", "value": 2.7, "unit": "m", "expr": "canopy_left + support_inset", "inputs": ["canopy_left", "support_inset"]},
+        {"key": "left_support_max", "value": 3.0, "unit": "m", "expr": "left_support_min + 0.3", "inputs": ["left_support_min"]},
+        {"key": "right_support_max", "value": 5.3, "unit": "m", "expr": "canopy_right - support_inset", "inputs": ["canopy_right", "support_inset"]},
+        {"key": "right_support_min", "value": 5.0, "unit": "m", "expr": "right_support_max - 0.3", "inputs": ["right_support_max"]},
         {"key": "support_height", "value": 2.8, "unit": "m", "expr": "canopy_elevation", "inputs": ["canopy_elevation"], "source_ref": "studio:intent"},
     ]
 
-    def prism(entity_id: str, profile: list[list[float]], height: object, *, elevation: object | None = None) -> dict:
+    def prism(entity_id: str, profile: list[list[object]], height: object, *, elevation: object | None = None) -> dict:
         params: dict[str, object] = {"profile": profile, "height": height}
         if elevation is not None:
             params["elevation"] = elevation
@@ -51,12 +58,12 @@ def parameterized_prism_edit() -> dict:
 
     entities = [
         prism("deep-main", [[0, 0], [8, 0], [8, 6], [0, 6]], "@main_height"),
-        prism("deep-canopy", [[2.5, -1.8], [5.5, -1.8], [5.5, 0], [2.5, 0]], "@canopy_thickness", elevation="@canopy_elevation"),
-        prism("deep-support-left", [[2.7, -1.6], [3.0, -1.6], [3.0, -1.3], [2.7, -1.3]], "@support_height"),
-        prism("deep-support-right", [[5.0, -1.6], [5.3, -1.6], [5.3, -1.3], [5.0, -1.3]], "@support_height"),
+        prism("deep-canopy", [["@canopy_left", -1.8], ["@canopy_right", -1.8], ["@canopy_right", 0], ["@canopy_left", 0]], "@canopy_thickness", elevation="@canopy_elevation"),
+        prism("deep-support-left", [["@left_support_min", -1.6], ["@left_support_max", -1.6], ["@left_support_max", -1.3], ["@left_support_min", -1.3]], "@support_height"),
+        prism("deep-support-right", [["@right_support_min", -1.6], ["@right_support_max", -1.6], ["@right_support_max", -1.3], ["@right_support_min", -1.3]], "@support_height"),
     ]
     return {
-        "summary": "Add one editable mass and porch whose support height follows the canopy elevation.",
+        "summary": "Add one editable mass and porch with linked canopy width, support inset and elevation.",
         "entities": entities,
         "parameters": parameters,
         "relations": [],
@@ -71,20 +78,22 @@ def parameterized_prism_edit() -> dict:
 @NEEDS_OCCT
 class RetainedParameterizedPrismTests(OcctCandidateTestCase):
     def _compile_once(self) -> tuple[str, str]:
-        self.client.app.state.intent_compiler = scripted(
-            semantic_edit=parameterized_prism_edit(), component_id="portico"
-        )
+        compiler = Mock()
+        compiler.compile.side_effect = AssertionError("a direct semantic proposal must not call a model")
+        self.client.app.state.intent_compiler = compiler
+        before_runs = set((self.root / PROJECT_ID / "runs").iterdir())
         response = self.client.post(
-            "/api/intents",
+            "/api/proposals",
             json={
                 "stateDigest": self.state_digest,
                 "sourceRunId": REFERENCE_RUN_ID,
-                "targetComponentId": "portico",
-                "utterance": "Create the mass and porch as one editable design proposal.",
+                "semanticEdit": parameterized_prism_edit(),
             },
         )
         self.assertEqual(response.status_code, 201, response.text)
-        proposal_id = response.json()["proposal"]["proposalId"]
+        compiler.compile.assert_not_called()
+        self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()), before_runs)
+        proposal_id = response.json()["proposalId"]
         started = self.client.post(f"/api/proposals/{proposal_id}/candidate")
         self.assertEqual(started.status_code, 202, started.text)
         accepted = started.json()
@@ -92,32 +101,41 @@ class RetainedParameterizedPrismTests(OcctCandidateTestCase):
         self.assertEqual(job["status"], "succeeded", job)
         return proposal_id, accepted["candidateId"]
 
-    def _assert_shape(self, shapes, entity_id: str, *, x: float, y: float, z: float, z0: float = 0.0) -> None:
+    def _assert_shape(self, shapes, entity_id: str, *, x: float, y: float, z: float, z0: float = 0.0, x0: float | None = None) -> None:
         shape = next(value for name, value in shapes.items() if entity_id in name)
         self.assertTrue(shape.valid and shape.closed and shape.solid_count == 1)
         self.assertAlmostEqual(shape.bbox_max[0] - shape.bbox_min[0], x, places=6)
         self.assertAlmostEqual(shape.bbox_max[1] - shape.bbox_min[1], y, places=6)
         self.assertAlmostEqual(shape.bbox_max[2] - shape.bbox_min[2], z, places=6)
         self.assertAlmostEqual(shape.bbox_min[2], z0, places=6)
+        if x0 is not None:
+            self.assertAlmostEqual(shape.bbox_min[0], x0, places=6)
 
-    def _run_scalar(self, client, source_run: str, state_digest: str, utterance: str) -> str:
-        response = client.post(
-            "/api/proposals",
-            json={
+    def _run_scalars(self, client, source_run: str, state_digest: str, *utterances: str) -> str:
+        before_runs = set((self.root / PROJECT_ID / "runs").iterdir())
+        previous = None
+        for utterance in utterances:
+            response = client.post("/api/proposals", json={
                 "stateDigest": state_digest,
                 "sourceRunId": source_run,
                 "targetComponentId": "portico",
                 "utterance": utterance,
-            },
-        )
-        self.assertEqual(response.status_code, 201, response.text)
-        started = client.post(f"/api/proposals/{response.json()['proposalId']}/candidate")
+                **({"sourceProposalId": previous["proposalId"]} if previous is not None else {}),
+            })
+            self.assertEqual(response.status_code, 201, response.text)
+            previous = response.json()
+            self.assertEqual(previous["sourceRunId"], source_run)
+            self.assertEqual(previous["baseStateDigest"], state_digest)
+        self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()), before_runs)
+        started = client.post(f"/api/proposals/{previous['proposalId']}/candidate")
         self.assertEqual(started.status_code, 202, started.text)
         accepted = started.json()
         self.assertEqual(self.finished(client, accepted["jobId"])["status"], "succeeded")
+        self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()) - before_runs,
+                         {self.root / PROJECT_ID / "runs" / accepted["candidateId"]})
         return accepted["candidateId"]
 
-    def test_one_compiled_edit_survives_acceptance_restart_and_two_local_parameter_edits(self) -> None:
+    def test_direct_creation_width_inset_elevation_chain_and_restart_keep_live_bindings(self) -> None:
         with no_process():
             proposal_id, first = self._compile_once()
         candidate = self.candidate(self.client, first)
@@ -147,37 +165,42 @@ class RetainedParameterizedPrismTests(OcctCandidateTestCase):
         self.assertEqual(state_a.status_code, 200, state_a.text)
         self.assertTrue(state_a.json()["matchesReferenceReceipt"])
 
-        # No compiler/model is installed in the restarted process. This typed
-        # parameter edit locally re-evaluates support_height and rebuilds all
-        # bound producers from the retained record.
+        # Three linked edits share the retained base and make one checkpoint.
         with no_process():
-            second = self._run_scalar(
+            second = self._run_scalars(
                 restarted, first, state_a.json()["stateDigest"],
+                "set canopy_width to 4.2 m",
+                "set support_inset to 0.4 m",
                 "set canopy_elevation to 3.1 m",
             )
         candidate_b = self.candidate(restarted, second)
         exact_b, _ = self.split(candidate_b["artifacts"])
         shapes_b = self.step_shapes(self.bytes_of(restarted, exact_b))
-        self._assert_shape(shapes_b, "deep-canopy", x=3.0, y=1.8, z=0.18, z0=3.1)
-        self._assert_shape(shapes_b, "deep-support-left", x=0.3, y=0.3, z=3.1)
-        self._assert_shape(shapes_b, "deep-support-right", x=0.3, y=0.3, z=3.1)
+        self._assert_shape(shapes_b, "deep-canopy", x=4.2, y=1.8, z=0.18, z0=3.1, x0=1.9)
+        self._assert_shape(shapes_b, "deep-support-left", x=0.3, y=0.3, z=3.1, x0=2.3)
+        self._assert_shape(shapes_b, "deep-support-right", x=0.3, y=0.3, z=3.1, x0=5.4)
         self._assert_shape(shapes_b, "deep-main", x=8.0, y=6.0, z=3.3)
         record_b = self.load_kind(second, "state-record")
         values_b = {row["key"]: (row["value"], row["expr"]) for row in record_b["parameters"]}
         self.assertEqual(values_b["canopy_elevation"], (3.1, None))
         self.assertEqual(values_b["support_height"], (3.1, "canopy_elevation"))
+        self.assertEqual(values_b["canopy_width"], (4.2, None))
+        self.assertEqual(values_b["support_inset"], (0.4, None))
+        self.assertEqual(values_b["canopy_left"], (1.9, "4 - canopy_width / 2"))
 
         restarted_again = self.open_client(StudioSettings(project_dir=self.root / PROJECT_ID))
         state_b = restarted_again.get("/api/state", params={"run": second})
         self.assertEqual(state_b.status_code, 200, state_b.text)
         with no_process():
-            third = self._run_scalar(
+            third = self._run_scalars(
                 restarted_again, second, state_b.json()["stateDigest"],
+                "set canopy_width to 5.2 m",
                 "set main_height to 4.5 m",
             )
         candidate_c = self.candidate(restarted_again, third)
         exact_c, _ = self.split(candidate_c["artifacts"])
         shapes_c = self.step_shapes(self.bytes_of(restarted_again, exact_c))
         self._assert_shape(shapes_c, "deep-main", x=8.0, y=6.0, z=4.5)
-        self._assert_shape(shapes_c, "deep-canopy", x=3.0, y=1.8, z=0.18, z0=3.1)
-        self._assert_shape(shapes_c, "deep-support-left", x=0.3, y=0.3, z=3.1)
+        self._assert_shape(shapes_c, "deep-canopy", x=5.2, y=1.8, z=0.18, z0=3.1, x0=1.4)
+        self._assert_shape(shapes_c, "deep-support-left", x=0.3, y=0.3, z=3.1, x0=1.8)
+        self._assert_shape(shapes_c, "deep-support-right", x=0.3, y=0.3, z=3.1, x0=5.9)

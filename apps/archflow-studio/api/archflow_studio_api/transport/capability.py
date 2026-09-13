@@ -1,7 +1,7 @@
 """The wire shapes of the capability index, its description and its run.
 
-The run request carries the same fields ``ProposalRequestDto`` does, with one
-addition: ``keep`` as a list of refs rather than a clause inside the sentence.
+The run request uses ``ProposalRequestDto``'s scalar form, with ``keep`` as a
+list of refs rather than a clause inside the sentence.
 It is not a second parameter schema — the route merges the list into the
 utterance through the grammar's own ``merge_keep`` and hands the result to the
 existing proposal route, which validates it exactly as it validates a typed
@@ -152,15 +152,12 @@ class CapabilityDetailDto(BaseModel):
 
 
 class CapabilityRunRequestDto(ProposalRequestDto):
-    """A proposal request, plus the keep list written as a list.
+    """The existing numeric capability retains the shared proposal fields."""
 
-    Every other field *is* ``ProposalRequestDto``'s — inherited, not copied, so
-    there is one definition of ``stateDigest``, ``targetComponentId``,
-    ``elementId``, ``utterance``, ``projectId``, ``sourceRunId`` and
-    ``sourceStageRef`` and no second schema to keep in step. ``keep`` is the
-    one addition: the same protected refs the grammar takes as a ``keep``
-    clause, as a list a client can build without writing a sentence.
-    """
+    semantic_edit: None = Field(
+        alias="semanticEdit", default=None,
+        description="This capability runs existing numeric controls; typed component edits use POST /api/proposals.",
+    )
 
     keep: list[str] = Field(
         default_factory=list,

@@ -34,6 +34,8 @@ from fastapi import APIRouter
 from starlette.datastructures import State
 from starlette.requests import Request
 
+from archflow.state.state_record import apply_state_record_operator
+
 from ..application import episodes
 from ..application.binding import ProjectBinding, bound_project
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
@@ -41,6 +43,7 @@ from ..application.intent import (
     DeterministicIntentProvider,
     buildable_components,
     component_edit_proposal,
+    merge_keep,
     direct_element_proposal,
     delete_element_proposal,
     sketch_prism_proposal,
@@ -50,9 +53,10 @@ from ..application.jobs import SUCCEEDED, Job
 from ..application.projection import (
     StateProjection,
     project_state,
+    project_proposed_record,
     require_actionable,
 )
-from ..application.proposals import Proposal, proposal_from
+from ..application.proposals import Proposal, continue_proposal, operator_of, proposal_from
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from ..transport.proposal import (
     EpisodeDto,
@@ -61,6 +65,8 @@ from ..transport.proposal import (
     ProposalRequestDto,
     DeleteElementRequestDto,
     SketchPrismRequestDto,
+    SketchActionDto,
+    SketchBatchRequestDto,
     TransformElementRequestDto,
     PushPullRequestDto,
     episode_dto,
@@ -68,6 +74,43 @@ from ..transport.proposal import (
 )
 
 router = APIRouter(tags=["proposals"])
+
+
+def _proposal_source(request: Request, body):
+    """Resolve a retained base once and, optionally, its unexecuted proposal."""
+
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    previous = (
+        None if body.source_proposal_id is None
+        else request.app.state.proposals.get(body.source_proposal_id)
+    )
+    if previous is not None:
+        if previous.status == "conflict":
+            raise StudioError(409, "PROPOSAL_NOT_RUNNABLE", "Resolve the source proposal's keep conflict before continuing it.")
+        stage_ref = None if previous.source_stage_ref is None else previous.source_stage_ref.uri
+        if ((body.source_run_id is not None and body.source_run_id != previous.source_run_id)
+                or (body.source_stage_ref is not None and body.source_stage_ref != stage_ref)):
+            raise StudioError(409, "PROPOSAL_SOURCE_MISMATCH", "A proposal chain must keep its original run and Stage base.")
+        body = body.model_copy(update={
+            "source_run_id": previous.source_run_id, "source_stage_ref": stage_ref,
+        })
+    base = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    require_actionable(base)
+    if previous is None:
+        return binding, base, base, previous, body
+    if (body.state_digest != base.state_digest or previous.base_state_digest != base.state_digest
+            or previous.record_digest != base.record_digest):
+        raise StudioError(409, "STALE_BASE", "The proposal chain no longer matches its original exact project state.")
+    record = apply_state_record_operator(base.record, operator_of(previous, base.record))
+    projection = project_proposed_record(base, record)
+    return binding, base, projection, previous, body.model_copy(update={"state_digest": projection.state_digest})
+
+
+def _remember_proposal(request: Request, proposal: Proposal, base: StateProjection, previous: Proposal | None) -> ProposalDto:
+    if previous is not None:
+        proposal = continue_proposal(base, previous, proposal)
+    return to_dto(request.app.state.proposals.put(proposal))
 
 
 @router.post(
@@ -81,23 +124,27 @@ def create_proposal(
 ) -> ProposalDto:
     """Propose one change against the exact state the client was given."""
 
-    binding = bound_project(request.app.state)
-    _require_bound_project(binding, body.project_id)
-    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
-    require_actionable(projection)
-    proposal = proposal_from(
-        DeterministicIntentProvider(projection).propose(
+    binding, base, projection, previous, body = _proposal_source(request, body)
+    if body.semantic_edit is not None:
+        if body.state_digest != projection.state_digest:
+            raise StudioError(409, "STALE_BASE", f"the semantic edit names state {body.state_digest}, but the selected source is {projection.state_digest}.")
+        proposal = proposal_from(component_edit_proposal(
+            projection, body.semantic_edit.model_dump(by_alias=True),
+            utterance=body.semantic_edit.summary, component_id=body.target_component_id,
+            keep_refs=tuple(body.keep),
+        ))
+    else:
+        proposal = proposal_from(DeterministicIntentProvider(projection).propose(
             # Round 1 has no session identity: the project the request is bound
             # to is what answers for it, and nothing about who asked changes
             # what the record says.
             session_ref=f"project:{binding.project_id}",
-            message=body.utterance,
+            message=merge_keep(body.utterance, body.keep),
             context_refs=body.context_refs(),
-        )
-    )
+        ))
     proposal = replace(proposal, source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
                        source_stage_ref=projection.source_stage_ref)
-    return to_dto(request.app.state.proposals.put(proposal))
+    return _remember_proposal(request, proposal, base, previous)
 
 
 @router.post(
@@ -107,7 +154,7 @@ def create_proposal(
     status_code=201,
 )
 def create_sketch_proposal(
-    request: Request, body: SketchPrismRequestDto
+    request: Request, body: SketchPrismRequestDto | SketchBatchRequestDto
 ) -> ProposalDto:
     """A finished drawing action becomes the same proposal a sentence would.
 
@@ -117,10 +164,7 @@ def create_sketch_proposal(
     candidate route that already exists and nothing new executes anything.
     """
 
-    binding = bound_project(request.app.state)
-    _require_bound_project(binding, body.project_id)
-    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
-    require_actionable(projection)
+    binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
         # Drawn against one exact state, like every other proposal here.
         raise StudioError(
@@ -130,6 +174,30 @@ def create_sketch_proposal(
             f"{projection.project_id} is at {projection.state_digest}. Read "
             "/api/state again and send the action against the state that answers now.",
         )
+    actions = body.sketches if isinstance(body, SketchBatchRequestDto) else [body]
+    proposal = previous
+    for action in actions:
+        step = _sketch_proposal(binding, projection, action, tuple(body.keep))
+        step = replace(
+            step, source_run_id=body.source_run_id or (base.run.run_id if base.reference_state_exact else None),
+            source_stage_ref=base.source_stage_ref,
+        )
+        proposal = step if proposal is None else continue_proposal(base, proposal, step)
+        if proposal.status == "conflict":
+            # A refused batch never leaves an executable prefix in the store.
+            if isinstance(body, SketchBatchRequestDto):
+                raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", "The sketch batch reaches protected refs: " + ", ".join(proposal.impact.conflicts))
+            break
+        projection = project_proposed_record(base, apply_state_record_operator(base.record, operator_of(proposal, base.record)))
+    assert proposal is not None
+    if isinstance(body, SketchBatchRequestDto) and body.summary is not None:
+        proposal = replace(proposal, utterance=body.summary,
+                           semantic_edit={**proposal.semantic_edit, "summary": body.summary})
+    return to_dto(request.app.state.proposals.put(proposal))
+
+
+def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
+                     body: SketchActionDto, keep: tuple[str, ...]) -> Proposal:
     # Which components a seat will actually build. A drawing under any other
     # one would be carried by the record and built by nobody, so it is refused
     # here — with the list — rather than queued into a run that reports success
@@ -159,23 +227,15 @@ def create_sketch_proposal(
             parent_component_id=body.parent_component_id,
             semantic_kind=body.semantic_kind,
             summary=body.summary,
-            keep_refs=tuple(body.keep),
+            keep_refs=keep,
         )
     )
-    proposal = replace(
-        proposal,
-        source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
-        source_stage_ref=projection.source_stage_ref,
-    )
-    return to_dto(request.app.state.proposals.put(proposal))
+    return proposal
 
 
 def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPullRequestDto,
                      kind: str, **action) -> ProposalDto:
-    binding = bound_project(request.app.state)
-    _require_bound_project(binding, body.project_id)
-    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
-    require_actionable(projection)
+    binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
         raise StudioError(409, "STALE_BASE", f"the modeling action names state {body.state_digest}, "
                           f"but the selected source is {projection.state_digest}. Read /api/state again.")
@@ -184,7 +244,7 @@ def _direct_proposal(request: Request, body: TransformElementRequestDto | PushPu
     proposal = replace(proposal,
                        source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
                        source_stage_ref=projection.source_stage_ref)
-    return to_dto(request.app.state.proposals.put(proposal))
+    return _remember_proposal(request, proposal, base, previous)
 
 
 @router.post("/proposals/transform", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
@@ -220,10 +280,7 @@ def create_delete_proposal(
     would be a different thing from what the architect pressed.
     """
 
-    binding = bound_project(request.app.state)
-    _require_bound_project(binding, body.project_id)
-    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
-    require_actionable(projection)
+    binding, base, projection, previous, body = _proposal_source(request, body)
     if body.state_digest != projection.state_digest:
         raise StudioError(
             409,
@@ -245,7 +302,7 @@ def create_delete_proposal(
         source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
         source_stage_ref=projection.source_stage_ref,
     )
-    return to_dto(request.app.state.proposals.put(proposal))
+    return _remember_proposal(request, proposal, base, previous)
 
 
 @router.get(

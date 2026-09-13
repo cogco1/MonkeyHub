@@ -105,6 +105,25 @@ class ProjectionValueTests(unittest.TestCase):
         self.assertEqual(svg_objects(self.project(_view(hidden_lines=True)).svg), ("far", "rear", "skin", "wall"),
                          "the occluded box appears dashed; the box outside the crop still does not")
 
+    def test_top_projection_uses_plan_width_and_depth_without_a_section_cut(self) -> None:
+        top = _view(name="elevation-top", look=(0.0, 0.0, -1.0), right=(1.0, 0.0, 0.0),
+                    up=(0.0, 1.0, 0.0), crop_uv=(-3.0, 1.0, 8.0, 22.0), near_depth=-6.0, far_depth=1.0)
+        result = self.project(top)
+        self.assertEqual(result, self.project(top))
+        # Distinct XY rectangles at three elevations all remain visible from above.
+        for object_id, expected in (("wall", (0.0, 2.0, 4.0, 3.0)),
+                                    ("rear", (1.0, 5.0, 2.0, 6.0)),
+                                    ("far", (1.0, 20.0, 2.0, 21.0))):
+            with self.subTest(object_id=object_id):
+                points = [point for line in result.lines if line.object_id == object_id and line.kind == "visible"
+                          for point in line.points]
+                actual = (min(p[0] for p in points), min(p[1] for p in points),
+                          max(p[0] for p in points), max(p[1] for p in points))
+                for measured, stated in zip(actual, expected):
+                    self.assertAlmostEqual(measured, stated, places=6)
+                self.assertIn(object_id, svg_objects(result.svg))
+        self.assertTrue(result.png.startswith(b"\x89PNG"))
+
     def test_an_inconsistent_or_degenerate_frame_is_refused(self) -> None:
         for overrides in (
             dict(look=(0.0, -1.0, 0.0)), dict(right=(2.0, 0.0, 0.0)), dict(up=(1.0, 0.0, 0.0)),

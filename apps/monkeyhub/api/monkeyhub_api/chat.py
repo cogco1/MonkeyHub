@@ -26,7 +26,7 @@ import threading
 import time
 from typing import Literal, Mapping
 from urllib.error import HTTPError
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
 
@@ -792,12 +792,12 @@ class ChatStore:
             return ChatProject(projectId=project_id, projectDir=project_dir, name=project_id,
                                chatCount=0, version=version, stage=stage)
 
-    def list(self, project_id: str | None = None) -> list[ChatSummary]:
+    def list(self, project_id: str | None = None, *, archived: bool = False) -> list[ChatSummary]:
         with self._lock:
             self._load()
             return [ChatSummary.model_validate(row.model_dump()) for row in
                     sorted(self._sessions.values(), key=lambda item: item.updatedAt, reverse=True)
-                    if project_id is None or row.projectId == project_id]
+                    if row.archived == archived and (project_id is None or row.projectId == project_id)]
 
     def _session(self, session_id: str) -> _SavedChat:
         self._load()
@@ -809,6 +809,19 @@ class ChatStore:
     def get(self, session_id: str) -> ChatDetail:
         with self._lock:
             return ChatDetail.model_validate(self._session(session_id).model_dump())
+
+    def set_archived(self, session_id: str, archived: bool) -> ChatDetail:
+        """Hide or restore a conversation without changing its native session."""
+        with self._lock:
+            session = self._session(session_id)
+            if session_id in self._running or session.status == "running":
+                raise HubFailure(409, "CHAT_RUNNING", "Wait for this reply to finish or stop it before archiving the chat.")
+            if session.archived == archived:
+                return self.get(session_id)
+            updated = session.model_copy(update={"archived": archived, "updatedAt": _now()}, deep=True)
+            self._save(updated)
+            self._sessions[session_id] = updated
+            return self.get(session_id)
 
     def create(self, request: ChatCreateRequest) -> ChatDetail:
         with self._lock:
@@ -838,15 +851,13 @@ class ChatStore:
             yield
 
     @contextmanager
-    def application_lifecycle(self, app_id: str, *, stopping: bool = False):
+    def application_lifecycle(self, app_id: str, *, stopping: bool = False, project_dir: str | None = None):
         with self._lock:
-            if app_id in {"monkeyarch", "monkeydiagram", "monkeyboard"} and self._running:
-                if stopping:
-                    raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
-                configured = read_application_settings(self.runtime_root).project_dir
+            if app_id in {"monkeyarch", "monkeydiagram", "monkeyboard"} and stopping:
+                configured = project_dir if project_dir is not None else read_application_settings(self.runtime_root).project_dir
                 target = str(Path(configured).resolve()) if configured else None
-                if any(self._sessions[key].projectDir != target for key in self._running):
-                    raise HubFailure(409, "CHAT_PROJECT_BUSY", "The design tools must use the running chat's project.")
+                if any(target is not None and os.path.normcase(self._sessions[key].projectDir) == os.path.normcase(target) for key in self._running):
+                    raise HubFailure(409, "CHAT_RUNNING", "Stop the running chat before closing its design tools.")
             yield
 
     def post(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
@@ -854,16 +865,12 @@ class ChatStore:
             session = self._session(session_id).model_copy(deep=True)
             if self._closing:
                 raise HubFailure(409, "CHAT_CLOSING", "Hub is closing.")
+            if session.archived:
+                raise HubFailure(409, "CHAT_ARCHIVED", "Restore this archived chat before sending another message.")
             if request.projectId != session.projectId or _project(session.projectDir) != (session.projectId, session.projectDir):
                 raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "This message belongs to a different project.")
             if session_id in self._running:
                 raise HubFailure(409, "CHAT_RUNNING", "This chat is already responding.")
-            if any(self._sessions[key].projectDir != session.projectDir for key in self._running):
-                raise HubFailure(409, "CHAT_PROJECT_BUSY", "Another project has a running chat. Stop it before switching projects.")
-            if self.applications is not None and self.applications.status("monkeyarch").state in {"starting", "running", "stopping"}:
-                configured = read_application_settings(self.runtime_root).project_dir
-                if not configured or str(Path(configured).resolve()) != session.projectDir:
-                    raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The running Studio belongs to another project.")
             provider = next(row for row in self.providers() if row.id == session.provider)
             legacy_codex = session.provider == "codex" and session.transport == "cli" and provider.installed
             if not provider.available and not legacy_codex:
@@ -1120,7 +1127,13 @@ class ChatStore:
                     "Project files are read-only: never edit project.json, HEAD, input, runs or records directly. "
                     "The studio_request description already states the usual actions, their fields and their units: "
                     "follow it and call them. Read a schema only for something it does not cover. "
+                    "Compose the whole requested modeling chain as in-memory proposals using sourceProposalId, "
+                    "then execute the final proposal once as a Stage checkpoint candidate. Do not export a candidate after every form. "
+                    "Ordinary design actions use these connected contracts; source and environment searches are only for "
+                    "a requested code investigation or an actual tool failure that needs diagnosis. "
                     "For an existing numeric control, use its documented modification flow instead of drawing it again. "
+                    "Author shared dimensions and dependencies through semanticEdit when the design needs linked changes; "
+                    "later change the retained parameters together rather than recalculate and redraw every dependent object. "
                     "Read only what you do not already know from this conversation; do not re-read to confirm "
                     "what you have just been told. "
                     "Choose reasonable, reversible defaults for sizes nobody stated rather than stopping to ask, "
@@ -1354,9 +1367,9 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
-_POST = re.compile(r"^/api/(state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/sketch|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/elevations)$")
-_WRITE = re.compile(r"^/api/board$")
+_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|drawings/styles|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
+_POST = re.compile(r"^/api/(project/modeling|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
+_WRITE = re.compile(r"^/api/(board|document-annotations)$")
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -1429,30 +1442,26 @@ def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
     return answers
 
 
-def _bound_studio(hub: str, chat_id: str, timeout: float = 180) -> tuple[str, dict]:
-    """The checks that say this tool may speak to this project's service at all.
-
-    The checks themselves are unchanged and all of them still have to pass
-    before anything is sent. What has changed is only the waiting: the four
-    that ask different services about different things are asked at once, and
-    the two that need the Studio's address are asked at once after it is known.
-    Nothing here runs while its own precondition is still unanswered.
-    """
-
-    first = _together({
-        "session": (hub, f"/api/chat/sessions/{_identifier(chat_id)}"),
-        "configured": (hub, "/api/settings/apps"),
-        "apps": (hub, "/api/apps"),
-        "hub_health": (hub, "/api/health"),
-    }, timeout)
-    session = first["session"]
-    if session.get("status") != "running":
-        raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, project_id: str | None = None, project_dir: str | None = None) -> tuple[str, dict]:
+    """Resolve the chat's own Studio, then verify its process and project before use."""
+    if chat_id is None:
+        configured_path = project_dir if project_dir is not None else _request_json(hub, "/api/settings/apps", timeout=timeout).get("projectDir")
+        if not configured_path:
+            raise HubFailure(409, "PROJECT_REQUIRED", "Choose a project before preparing its modeling workspace.")
+        actual_id, actual_path = _project(configured_path)
+        if project_id != actual_id:
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The selected project changed before its workspace was prepared.")
+        session = {"projectId": actual_id, "projectDir": actual_path}
+    else:
+        session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}", timeout=timeout)
+        if session.get("status") != "running":
+            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
     if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
         raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
-    configured = first["configured"]
-    if not configured.get("projectDir") or str(Path(configured["projectDir"]).resolve()) != session["projectDir"]:
-        raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "Open the tools for this conversation's project first.")
+    first = _together({
+        "apps": (hub, "/api/apps?" + urlencode({"projectDir": session["projectDir"]})),
+        "hub_health": (hub, "/api/health"),
+    }, timeout)
     studio = next((row for row in first["apps"] if row.get("appId") == "monkeyarch"), {})
     if studio.get("state") != "running" or not studio.get("url") or not studio.get("processId"):
         raise HubFailure(409, "CHAT_STUDIO_UNAVAILABLE", "Open MonkeyArch for this project before using a design tool.")
@@ -1474,6 +1483,7 @@ def _bound_studio(hub: str, chat_id: str, timeout: float = 180) -> tuple[str, di
 # bounds it is held to. It is the capability route that already exists; nothing
 # else is orchestrated, and nothing new executes anything.
 _FINISHABLE = "/api/capabilities/candidate.modify_existing/run"
+_CHECKPOINT = re.compile(r"^/api/proposals/[A-Za-z0-9_-]+/candidate$")
 _AWAIT_MAX_S = 180
 _POLL_S = 0.4
 
@@ -1531,8 +1541,9 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
     # The two reads that describe a finished run do not depend on each other,
     # so they are asked at once. This is the only overlap here: the job had to
     # finish before either could be asked at all.
-    reads = {"candidate": (base, f"/api/candidates/{candidate_id}"),
-             "compare": (base, f"/api/candidates/{candidate_id}/compare?against={against}")}
+    reads = {"candidate": (base, f"/api/candidates/{candidate_id}")}
+    if against:
+        reads["compare"] = (base, f"/api/candidates/{candidate_id}/compare?against={against}")
     try:
         answers = _together(reads, left())
     except (HubFailure, OSError, TimeoutError) as cause:
@@ -1541,7 +1552,7 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         return {**started, "status": "succeeded", "readback": "failed",
                 "detail": f"the run finished and could not be read back: {_reason(cause)}",
                 "next": follow}
-    candidate, comparison = answers["candidate"], answers["compare"]
+    candidate, comparison = answers["candidate"], answers.get("compare")
     return {
         **started,
         "status": "succeeded",
@@ -1560,6 +1571,8 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
              if key in row}
             for row in candidate.get("artifacts", ())
         ],
+        "objects": candidate.get("objects"),
+        "objectReadbackError": candidate.get("objectReadbackError"),
         # The comparison's own objects, not a count of them: which object
         # changed, from which box to which box, and which ones did not move.
         # Whether that satisfies what was kept is the reader's judgement, made
@@ -1574,7 +1587,7 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
                  ("name", "componentId", "producerOp", "status", "before", "after") if key in row}
                 for row in comparison.get("objects", ())
             ],
-        },
+        } if comparison is not None else None,
         # Nothing is left to do: the job finished and both readings of it are
         # above. Listing the reads that produced them would invite a second
         # round of the calls this one already made.
@@ -1591,10 +1604,11 @@ def _reason(cause: BaseException) -> str:
 
 
 def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
-    base, session = _bound_studio(hub, chat_id)
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
+    if "producer" in arguments and name != "studio_schema":
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
         # would answer at once and look like the wait had happened.
@@ -1602,6 +1616,11 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                          f"{name} has nothing to wait for; awaitSeconds is studio_request's option for "
                          f"POST {_FINISHABLE}.")
     if name == "fab_request":
+        session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
+        if session.get("status") != "running":
+            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+        if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
         if method == "GET" and path == "/api/fab/profiles":
             return _request_json(hub, path)
         if method == "POST" and path == "/api/fab/send":
@@ -1610,6 +1629,7 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             body.pop("accessCode", None)
             return _request_json(hub, path, "POST", body)
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The chat can list Fab profiles and validate a prepared job; uploads remain explicit in MonkeyFab.")
+    base, session = _bound_studio(hub, chat_id)
     # Asking what a documented action takes is not calling it. The path is
     # checked against the same allow-list either way, with a schema question's
     # `{id}` segments standing for the id they name, so the templates this
@@ -1626,6 +1646,31 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         operation = document["paths"].get(template, {}).get(method.lower())
         if operation is None:
             raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The running Studio has no matching action.")
+        producer = arguments.get("producer")
+        if producer is not None:
+            if method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str):
+                raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects the input schema of POST /api/proposals.")
+            entity = document.get("components", {}).get("schemas", {}).get("SemanticEditRequestDto", {}).get("properties", {}).get("entities", {}).get("items", {})
+            available = set()
+            matched = False
+            for variant in entity.get("anyOf", []):
+                fields = variant.get("properties", {}).get("fields", {})
+                alternatives = fields.get("anyOf")
+                if alternatives is None:
+                    continue
+                for item in alternatives:
+                    available.update(item.get("properties", {}).get("producer", {}).get("enum", []))
+                selected = [item for item in alternatives
+                            if producer in item.get("properties", {}).get("producer", {}).get("enum", [])]
+                if selected:
+                    matched = True
+                    fields["anyOf"] = selected
+            if not matched:
+                raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", f"No authoring schema for {producer!r}; available producers: {sorted(available)}")
+            # This query asks for one author's inputs. The response, including
+            # the same edit payload again, is available through the ordinary
+            # unfiltered schema query and need not accompany this request.
+            operation = {key: value for key, value in operation.items() if key != "responses"}
         schemas, pending = {}, [operation]
         while pending:
             value = pending.pop()
@@ -1638,20 +1683,21 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
                 pending.extend(value.values())
             elif isinstance(value, list):
                 pending.extend(value)
-        return {"path": template, "method": method, "operation": operation, "components": {"schemas": schemas}}
+        return {"path": template, "method": method, "operation": operation, "components": {"schemas": schemas},
+                **({"producer": producer, "scope": "request inputs for this producer"} if producer is not None else {})}
     if name != "studio_request":
         raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "Unknown chat tool.")
     wait = arguments.get("awaitSeconds")
+    checkpoint = method == "POST" and _CHECKPOINT.fullmatch(parsed.path) is not None
     if wait is not None:
         if not isinstance(wait, int) or isinstance(wait, bool) or not 1 <= wait <= _AWAIT_MAX_S:
             raise HubFailure(422, "CHAT_TOOL_INVALID",
                              f"awaitSeconds is a whole number of seconds from 1 to {_AWAIT_MAX_S}.")
-        if not (method == "POST" and parsed.path == _FINISHABLE):
+        if not (method == "POST" and (parsed.path == _FINISHABLE or checkpoint)):
             raise HubFailure(422, "CHAT_TOOL_INVALID",
-                             f"awaitSeconds is this tool's own option for POST {_FINISHABLE}, which is "
-                             "the one action it can see through to its result. It is not a field of the "
+                             f"awaitSeconds supports POST {_FINISHABLE} or the final POST /api/proposals/{{id}}/candidate. It is not a field of the "
                              "request body, and every other action answers as it is, without waiting.")
-        if not isinstance(arguments.get("body"), dict) or not arguments["body"].get("sourceRunId"):
+        if not checkpoint and (not isinstance(arguments.get("body"), dict) or not arguments["body"].get("sourceRunId")):
             raise HubFailure(422, "CHAT_TOOL_INVALID",
                              "waiting for this action means answering with the comparison against the run "
                              "it was made from, so the body must name sourceRunId — the run the description "
@@ -1666,11 +1712,35 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
         if parsed.path == "/api/proposals":
             body["projectId"] = session["projectId"]
+    comparison = body or {}
+    if wait is not None and checkpoint:
+        proposal = _request_json(base, parsed.path.removesuffix("/candidate"))
+        comparison = {"sourceRunId": proposal.get("sourceRunId")}
     started = _request_json(base, path, method, body)
     if wait is None:
+        if method == "POST" and parsed.path in {
+            "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
+            "/api/proposals/push-pull", "/api/proposals/delete",
+        } and isinstance(started, dict) and "proposalId" in started:
+            # The client just authored these edits. Echoing both the edits and
+            # their full operator makes each model continuation read them twice.
+            # Keep the checked change, source, impact and conflicts; the ordinary
+            # GET still exposes the complete proposal when inspection needs it.
+            started = {key: value for key, value in started.items() if key != "decisionOperator"}
+            if isinstance(started.get("change"), dict):
+                started["change"] = {key: value for key, value in started["change"].items() if key != "edits"}
+            # A parameterized form can have thousands of coordinate changes.
+            # Bound only these repeated lists; keep every conflict, lock, keep
+            # condition and coverage limitation in the immediate response.
+            for section, field in (("change", "changes"), ("impact", "direct")):
+                values = started.get(section, {}).get(field)
+                if isinstance(values, list) and len(values) > 100:
+                    started[section] = {**started[section], field: values[:100],
+                                        f"{field}Count": len(values), f"{field}Omitted": len(values) - 100}
+                    started["detailsPath"] = f"/api/proposals/{started['proposalId']}"
         return started
     # One POST has happened. From here on this call only reads.
-    return _finish(base, started, body or {}, time.monotonic() + wait)
+    return _finish(base, started, comparison, time.monotonic() + wait)
 
 
 def _mcp(hub: str, chat_id: str) -> None:
@@ -1686,6 +1756,10 @@ def _mcp(hub: str, chat_id: str) -> None:
     # that happened.
     input_schema = {"type": "object", "properties": dict(request_fields),
                     "required": ["method", "path"], "additionalProperties": False}
+    schema_input = {**input_schema, "properties": {
+        **input_schema["properties"],
+        "producer": {"type": "string", "description": "For POST /api/proposals semantic authoring, select prism, loft, wall or planar-surface to read only that producer's request contract, excluding unrelated geometry and response schemas."},
+    }}
     request_schema = {
         "type": "object", "properties": {
             **request_fields,
@@ -1695,8 +1769,8 @@ def _mcp(hub: str, chat_id: str) -> None:
                                "body; 60 suits an ordinary change. It is not an execution wrapper's "
                                "yield_time_ms: through functions.exec, omit yield_time_ms so it keeps its "
                                "30000 ms default, never set 1000, and never loop short functions.wait "
-                               "calls. Only for POST " + _FINISHABLE + ", whose body must name "
-                               "sourceRunId: wait this many seconds, counted from when that action is "
+                               "calls. For the final POST /api/proposals/{id}/candidate (no body; the proposal supplies its source), "
+                               "or POST " + _FINISHABLE + ", whose body must name sourceRunId: wait this many seconds, counted from when that action is "
                                "accepted, then answer with the job, the candidate and the comparison "
                                "against the run it was made from. Running out of time answers with the job "
                                "and candidate to read; the request is never sent twice. Any other path is "
@@ -1711,20 +1785,69 @@ def _mcp(hub: str, chat_id: str) -> None:
         "Call the bound project's existing Studio API. Lengths are metres, plan points are [x, z] pairs,",
         "and a height rises from the base the request names.",
         "",
-        "MAKE A MASSING OR ANY SOLID FORM (the usual first move; no schema lookup needed):",
+        "MAKE FORMS (simple independent shapes use sketch; linked dimensions use semanticEdit below):",
         "1. GET /api/state -> stateDigest, components[].componentId, elements[].",
+        "   If this project has no modeling component yet, POST /api/project/modeling with {projectId}",
+        "   prepares its empty modeling base through the project API; then read the state again.",
+        "   This creates no geometry or candidate and never replaces existing design inputs.",
         "2. GET /api/state/frame -> levels[].levelId, for the base to stand on.",
-        "3. POST /api/proposals/sketch with {stateDigest, componentId, elementId, profile: [[x,z], ...], height, baseLevel}.",
+        "3. Plan the requested forms together. Prefer ONE POST /api/proposals/sketch with",
+        "   {stateDigest, sketches: [{componentId, elementId, profile: [[x,z], ...], height, baseLevel}, ...]}.",
+        "   The items run in order in memory, so a later item may stack on an earlier item with baseDatum.",
+        "   sourceRunId/sourceStageRef/sourceProposalId and keep belong at the top level. A failed batch saves nothing.",
+        "   For just one form the existing {stateDigest, componentId, elementId, profile, height, baseLevel} body also works.",
         "   Use baseDatum: '<elementId>-top' instead of baseLevel to stack on something already there.",
         "   elementId is yours to choose; sending the same elementId again changes that outline or height",
         "   instead of adding another form. Optional: summary, keep (refs this must not change), sourceRunId.",
-        "4. POST /api/proposals/{id}/candidate -> {jobId, candidateId}. Poll GET /api/jobs/{id} until succeeded,",
-        "   then GET /api/candidates/{id}. That candidate is the visible result: reversible, and published by nobody.",
-        "Repeat 3-4 for each further form, stacking with baseDatum, passing the candidate run as sourceRunId to keep building on it.",
+        "4. Continue the WHOLE requested modeling chain in memory: pass the last proposalId as sourceProposalId",
+        "   on each further sketch/transform/push-pull/delete/numeric proposal. Keep stateDigest equal to the first",
+        "   proposal's baseStateDigest; sourceRunId and sourceStageRef are inherited. GET /api/proposals/{id}",
+        "   reads the accumulated changes. Stacking with baseDatum can refer to forms created earlier in this chain.",
+        "5. Only after every requested change is composed, POST /api/proposals/{id}/candidate ONCE using the last proposalId,",
+        "   with awaitSeconds: 60 beside method/path and no body. This saves one final Stage checkpoint candidate.",
+        "   It remains reversible and unaccepted; do not accept or issue a Stage. Never generate an intermediate",
+        "   candidate just to continue the next step. If the wait runs out, follow its job/candidate reads; never send the request again.",
+        "   A completed result includes objects with actual retained bbox.min/max, lengthUnit and upAxis; use those to report sizes.",
+        "   A first candidate has compare: null because there is no prior run. objectReadbackError states missing inspection.",
+        "   GET /api/candidates/{id} also returns these objects. No separate inspection/schema search is needed.",
         "A new component needs parentComponentId (an existing component a seat builds) and semanticKind (what it is);",
         "drawing under a component no seat builds is refused with the list of the ones that are built.",
         "",
-        "CHANGE SOMETHING THAT IS ALREADY THERE — two calls when you know what to change, three when you do not:",
+        "REUSABLE DIMENSIONS AND DEPENDENCIES (same proposal and final checkpoint; no second model):",
+        "POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
+        "Use semanticEdit OR utterance, never both. sourceRunId/sourceStageRef/sourceProposalId and keep stay at the top level.",
+        "For a new Component@1, fields.semantic_kind takes a registered alias: 'building' for the whole, 'cover' for a roof,",
+        "or 'support' for a load-bearing column. Choose a fitting alias from GET /api/semantics; do not invent one.",
+        "The returned role.* and condition.* IDs are not aliases for semantic_kind. Describe the specific object in fields.intent.",
+        "An authored parameter is {key: 'width', value: 3, unit: 'm', epistemic_status: 'declared'}.",
+        "A derived parameter adds expr and inputs, for example {key: 'left', value: -1.5, unit: 'm',",
+        "expr: '-width / 2', inputs: ['width']}. Use ordinary arithmetic with parameter names; value must match the expression.",
+        "For a centered width, similarly derive 'right' as 'width / 2' with value 1.5 and inputs ['width'].",
+        "A prism entity is {entity_id: 'canopy', schema: 'Element@1', parent_id: '<existing componentId>',",
+        "fields: {component_id: '<same componentId>', producer: 'prism', references: {base: {level: '<levelId>'}},",
+        "params: {profile: [['@left',0],['@right',0],['@right',1.8],['@left',1.8]], height: 0.18, elevation: 2.8}}}.",
+        "Bind each dimension that must move together with '@key', including profile coordinates, height and elevation.",
+        "Expressions belong in parameters[].expr; an '@key' in geometry references a parameter, not an inline expression.",
+        "Later, read GET /api/state?run=<candidateId> once: parameters include retained values, expr and inputs.",
+        "Change several independent controls in ONE semanticEdit: {summary: '...', parameters: [{key: 'width', value: 4.2}, ...]}.",
+        "Existing omitted fields and dependencies are preserved. Change upstream controls; do not overwrite derived formulas",
+        "or rebuild every dependent form. Submit the final proposal once with awaitSeconds: 60 as above.",
+        "If a semantic field is unclear, read studio_schema POST /api/proposals with producer: 'prism' (or the producer needed).",
+        "That selects its request contract; avoid repeatedly reading the full schema with unrelated producers and response payloads.",
+        "For a tapered or rounded form, use ONE entity with producer: 'loft' instead of stacked independent prisms.",
+        "Its params are {profiles: [[[x,y,z],...], ...], profile_size: <vertices per section>, loft_type: 'normal',",
+        "profile_basis: 'polyline', cap_ends: true}; references.base names the level or datum. Y is height here.",
+        "Use at least two closed sections with equal vertex counts and no repeated closing point; coordinates may use '@key'.",
+        "loft_type may be 'normal' or 'straight'. The loft publishes no top datum; its shape follows the actual sections.",
+        "Proposal creation returns the checked change and impact without echoing the submitted edits and operator twice;",
+        "Large changes/direct lists show their total and omitted counts; detailsPath reads the full proposal.",
+        "Conflicts, locks, keep conditions and coverage limitations stay complete. GET /api/proposals/{id} retains all details.",
+        "",
+        "CHANGE SOMETHING THAT IS ALREADY THERE:",
+        "For a chain of changes, use POST /api/proposals (numeric edits), /api/proposals/transform,",
+        "/api/proposals/push-pull or /api/proposals/delete with sourceProposalId; read that action's schema when needed.",
+        "Compose all steps before the one final checkpoint above. The immediate capability run below is only",
+        "for a SINGLE requested change that is already the complete task, never for an intermediate chain step.",
         "A. READ ONCE. If the target and the run are already known from this conversation:",
         "   GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>",
         "   &run=<the candidate being worked on> -> the numbers on that element that can move with their",
@@ -1755,18 +1878,27 @@ def _mcp(hub: str, chat_id: str) -> None:
         "what matched, and the actions below remain available.",
         "",
         "READ: GET /api/capabilities, /api/state, /api/state/frame, /api/state/volumes, /api/semantics, /api/program, /api/options, /api/board,",
-        "/api/artifacts, /api/proposals/{id}, /api/jobs/{id}, /api/candidates/{id}.",
+        "/api/artifacts, /api/documents, /api/document-annotations, /api/proposals/{id}, /api/jobs/{id}, /api/candidates/{id}.",
         "GET /api/candidates/{id}/compare?against=<runId> — the run to compare with is required, and it is the",
         "sourceRunId the candidate was made from (the run before it); without it the request is refused.",
         "OTHER EXISTING ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select,",
-        "/api/candidates/combine, /api/drawings/elevations; PUT /api/board.",
-        "No freeform intent/model call, direct semantic-operator route, issue, approvals or filesystem writes.",
+        "/api/candidates/combine, /api/drawings/elevations; PUT /api/board, /api/document-annotations.",
+        "POST /api/drawings/elevations generates and registers the drawing in MonkeyDiagram's documents list automatically.",
+        "Views include front/back/left/right and top (an orthographic top projection, not a cut plan).",
+        "For a composed sheet, GET /api/drawings/styles then POST /api/drawings/sheets with the exact modelSource,",
+        "styleId and explicit scaleDenominator. It composes front/right/top in the selected style and returns a registered PDF.",
+        "Choose hiddenObjectIds or outlineObjectIds only for requested display simplification; no model object is changed.",
+        "Read GET /api/documents?runId=<the drawing's runId> to inspect its retained document entries.",
+        "For page text or dimensions, read studio_schema for PUT /api/document-annotations and GET the existing page first.",
+        "Preserve existing annotations, use its current baseRevisionSha256, and bind the exact run/asset/page/drawingRevisionRef.",
+        "Do not use PUT /api/board to save a generated drawing. Board layout is a separate action, only when the user asks for it.",
+        "Typed semanticEdit uses the same checked proposal path. No freeform intent/model call, issue, approvals or filesystem writes.",
     ])
     tools = [
         {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action. "
          "The usual actions are already described in studio_request with their fields and units: use this only for an action "
          "that description does not cover, or a field it does not state. A path may be written with its template segments, "
-         "such as /api/proposals/{id}/candidate.", "inputSchema": input_schema},
+         "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select that producer's request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},
     ]

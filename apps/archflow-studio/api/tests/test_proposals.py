@@ -16,6 +16,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
@@ -651,6 +652,120 @@ class ProposalOnlyTests(ProposalTestCase):
         self.assertEqual(self._project_files(), before)
         # Not vacuously true: the fixture project really has files to disturb.
         self.assertGreater(len(before), 0)
+
+
+class DirectSemanticProposalTests(ProposalTestCase):
+    def submit(self, edit: dict, **body) -> dict:
+        response = self.client.post("/api/proposals", json={
+            "stateDigest": self.state_digest, "semanticEdit": edit, **body,
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_existing_entity_metadata_upserts_preserve_omitted_fields(self):
+        from archflow.state.state_record import apply_state_record_operator
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.projection import project_state
+
+        base = project_state(bound_project(self.client.app.state)).record
+        for edit in (
+            {"entity_id": "portico-base", "basis_refs": ["input:review-evidence"]},
+            {"entity_id": "portico", "parent_id": None},
+        ):
+            with self.subTest(edit=edit):
+                payload = self.submit({"summary": "Revise the declared entity context.", "entities": [edit]})
+                proposal = self.client.app.state.proposals.get(payload["proposalId"])
+                after = apply_state_record_operator(base, proposal.state_record_operator)
+                entity = next(row for row in after.entities if row.entity_id == edit["entity_id"])
+                original = next(row for row in base.entities if row.entity_id == edit["entity_id"])
+                self.assertEqual(entity.fields, original.fields)
+                for field, value in edit.items():
+                    self.assertEqual(entity.to_dict()[field], value)
+                self.assertEqual(payload["change"]["edits"]["entities"][0]["fields"], {})
+
+    def test_semantic_upserts_removals_and_scalar_continuations_share_one_unexecuted_base(self):
+        compiler = Mock()
+        compiler.compile.side_effect = AssertionError("direct edits must not invoke the compiler")
+        self.client.app.state.intent_compiler = compiler
+        before_runs = set((self.root / PROJECT_ID / "runs").iterdir())
+        first = self.submit({
+            "summary": "Adjust the module, retaining the portico base.",
+            "parameters": [{"key": "module", "value": 1.5}, {"key": "temporary-control", "value": 2, "unit": "m"}],
+            "protected": ["entity:portico-base"], "kept": ["The portico base remains unchanged."],
+        }, sourceRunId=REFERENCE_RUN_ID)
+        original = self.client.get(f"/api/proposals/{first['proposalId']}").json()
+        second = self.submit({
+            "summary": "Revise the same module and remove the unused control.",
+            "parameters": [{"key": "module", "value": 1.8}],
+            "removeParameterKeys": ["temporary-control"],
+        }, sourceProposalId=first["proposalId"])
+        third = self.accepted("set module to 2 m", sourceProposalId=second["proposalId"])
+        edits = third["change"]["edits"]
+        self.assertEqual({row["key"]: row["value"] for row in edits["parameters"]}, {"module": 2, "bay": 4, "span": 8})
+        self.assertEqual(edits["removeParameterKeys"], [])
+        self.assertEqual(third["sourceRunId"], REFERENCE_RUN_ID)
+        self.assertEqual(third["baseStateDigest"], self.state_digest)
+        self.assertIn("entity:portico-base", third["protected"])
+        self.assertEqual(third["change"]["kept"], ["The portico base remains unchanged."])
+        self.assertEqual(self.client.get(f"/api/proposals/{first['proposalId']}").json(), original)
+        self.assertEqual(set((self.root / PROJECT_ID / "runs").iterdir()), before_runs)
+        compiler.compile.assert_not_called()
+
+    def test_semantic_input_refuses_stale_base_mixed_modes_and_undeclared_fields_without_writes(self):
+        edit = {"summary": "Adjust the module.", "parameters": [{"key": "module", "value": 1.5}]}
+        before = self.client.app.state.proposals.for_state(self.state_digest)
+        for additions, expected, code in (
+            ({"stateDigest": OTHER_DIGEST}, 409, "STALE_BASE"),
+            ({"projectId": "wrong-project"}, 403, "PROJECT_MISMATCH"),
+            ({"targetComponentId": "portico", "utterance": "set module to 1.5"}, 422, "REQUEST_INVALID"),
+            ({"semanticEdit": {**edit, "geometryProgram": {}}}, 422, "REQUEST_INVALID"),
+            ({"semanticEdit": {"summary": "Invalid parameter.", "parameters": [{"key": "new-control", "value": 2}]}}, 422, "SEMANTIC_EDIT_INVALID"),
+        ):
+            with self.subTest(code=code, additions=additions):
+                response = self.client.post("/api/proposals", json={
+                    "stateDigest": self.state_digest, "semanticEdit": edit, **additions,
+                })
+                self.assertEqual(response.status_code, expected, response.text)
+                self.assertEqual(response.json()["code"], code, response.text)
+        self.assertEqual(self.client.app.state.proposals.for_state(self.state_digest), before)
+
+    def test_direct_semantic_keep_and_original_stage_survive_continuation(self):
+        from .test_working_copies import register_model
+
+        model = register_model(self.client, REFERENCE_RUN_ID, self.state_digest,
+                               (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes())["modelSource"]
+        initialized = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID, "modelSource": model})
+        self.assertEqual(initialized.status_code, 201, initialized.text)
+        stage_ref = initialized.json()["stageRef"]
+        first = self.submit({"summary": "Adjust module.", "parameters": [{"key": "module", "value": 1.5}]},
+                            sourceStageRef=stage_ref, keep=["entity:portico-base"])
+        second = self.submit({"summary": "Adjust module again.", "parameters": [{"key": "module", "value": 1.8}]},
+                             sourceProposalId=first["proposalId"])
+        self.assertEqual(second["sourceStageRef"], stage_ref)
+        self.assertEqual(second["sourceRunId"], first["sourceRunId"])
+        status, refused = self.propose("set height to 2.2", elementId="portico-base", sourceProposalId=second["proposalId"])
+        self.assertEqual(status, 409, refused)
+        self.assertEqual(refused["code"], "PROPOSAL_CHAIN_CONFLICT")
+
+    def test_openapi_accepts_minimal_upserts_and_exposes_bound_profile_coordinates(self):
+        from jsonschema import Draft202012Validator
+
+        openapi = self.client.app.openapi()
+        schema = openapi["components"]["schemas"]["ProposalRequestDto"]
+        validator = Draft202012Validator({**schema, "components": openapi["components"]})
+        payload = {"stateDigest": self.state_digest, "semanticEdit": {
+            "summary": "Adjust the existing module.", "parameters": [{"key": "module", "value": 1.5}],
+        }}
+        validator.validate(payload)
+        self.submit(payload["semanticEdit"])
+        self.assertFalse(validator.is_valid({**payload, "utterance": "set module to 1.5", "targetComponentId": "portico"}))
+        edit = openapi["components"]["schemas"]["SemanticEditRequestDto"]
+        entities = edit["properties"]["entities"]["items"]["anyOf"]
+        element = next(item for item in entities if item["properties"]["schema"]["enum"] == ["Element@1"])
+        prism = next(item for item in element["properties"]["fields"]["anyOf"]
+                     if item["properties"]["producer"]["enum"] == ["prism"])
+        profile = prism["properties"]["params"]["properties"]["profile"]
+        Draft202012Validator(profile).validate([[0, 0], ["@canopy_width", 0], ["@canopy_width", 2], [0, 2]])
 
 
 class RequestShapeTests(ProposalTestCase):

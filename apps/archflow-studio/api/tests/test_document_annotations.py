@@ -218,6 +218,68 @@ class DocumentAnnotationTests(unittest.TestCase):
                 self.assertEqual(original_ink.json()["annotations"], submitted_ink)
         self.assertEqual(self.repository.read_head(), before_head)
 
+    def test_proposal_continuation_retains_source_compilation_and_request_after_restart(self) -> None:
+        from archflow.ports.model import ModelInvocationReceipt
+        from archflow.project.repository import FilesystemProjectRepository
+        from archflow_studio_api.application.gestures import require_document_comment_source
+        from .test_candidate import _compilation_receipt, _load_kind
+
+        saved = self.save(self.png, [stroke()], comment="Raise this base and retain the source page.")
+        reference = page_ref(saved)
+        receipt = ModelInvocationReceipt.from_dict(_compilation_receipt(self.state_digest))
+        self.app.state.intent_compiler = scripted(
+            utterance="set height to 2.2", component_id="portico", element_id="portico-base", receipt=receipt,
+        )
+        response = self.intent([reference], utterance="Raise the base to 2.2 metres.")
+        self.assertEqual(response.status_code, 201, response.text)
+        first = self.app.state.proposals.get(response.json()["proposal"]["proposalId"])
+        self.assertIsNotNone(first.pending)
+        self.assertTrue(first.pending.request_id)
+        self.assertTrue(first.pending.known_slots)
+        self.assertEqual(first.compilation_receipt, receipt.to_dict())
+        original_comment = self.repository.load_json(first.document_comment_ref)
+        before_runs = set(self.repository.layout.runs.iterdir())
+        continued = self.client.post("/api/proposals", json={
+            "stateDigest": self.state_digest, "sourceProposalId": first.proposal_id,
+            "targetComponentId": "portico", "utterance": "set module to 1.5",
+        })
+        self.assertEqual(continued.status_code, 201, continued.text)
+        final_id = continued.json()["proposalId"]
+        final = self.app.state.proposals.get(final_id)
+        self.assertEqual(final.document_comment_ref, first.document_comment_ref)
+        self.assertEqual(set(self.repository.layout.runs.iterdir()), before_runs)
+        with mock.patch("archflow_studio_api.application.gestures.require_document_comment_source",
+                        wraps=require_document_comment_source) as verify_source:
+            started = self.client.post(f"/api/proposals/{final_id}/candidate")
+            self.assertEqual(started.status_code, 202, started.text)
+            job = started.json()
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                result = self.client.get(f"/api/jobs/{job['jobId']}").json()
+                if result["status"] in ("succeeded", "failed"):
+                    break
+                time.sleep(0.02)
+            self.assertEqual(result["status"], "succeeded", result)
+            verify_source.assert_called_once()
+            self.assertEqual(verify_source.call_args.args[1], original_comment)
+        decided = self.client.post(f"/api/proposals/{final_id}/decision", json={
+            "decision": "accepted", "candidateId": job["candidateId"], "reason": "Retain this fixture option.",
+        })
+        self.assertEqual(decided.status_code, 201, decided.text)
+        repository = FilesystemProjectRepository.open(self.root / PROJECT_ID)
+        retained = _load_kind(repository, job["candidateId"], "intent-compilation")
+        self.assertEqual(retained["receipt"], receipt.to_dict())
+        self.assertEqual(_load_kind(repository, job["candidateId"], "studio-document-comment"), original_comment)
+        episode = _load_kind(repository, job["candidateId"], "deliberation-episode")
+        self.assertEqual(episode["intent"]["requestId"], first.pending.request_id)
+        self.assertEqual(episode["intent"]["knownSlots"], dict(first.pending.known_slots))
+        self.assertEqual(episode["intent"]["utterance"], first.pending.original_utterance)
+        with TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="off"))) as reopened:
+            comments = reopened.get("/api/document-comments", params={"runId": job["candidateId"]}).json()["comments"]
+            self.assertEqual(comments[0]["documentAnnotations"], [reference])
+            self.assertEqual(reopened.get("/api/document-annotations", params=reference).json()["annotations"], [stroke()])
+        self.assertEqual(len(set(self.repository.layout.runs.iterdir()) - before_runs), 1)
+
     def test_document_keep_is_context_and_never_a_model_selection_or_keep_clause(self) -> None:
         saved = self.save(self.png, [stroke(kind="keep")], comment="图片中蓝色范围保持")
         compiler = Scripted("set height to 0.8", "portico-base")

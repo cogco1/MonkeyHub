@@ -68,8 +68,19 @@ class Applications:
         self._lock = threading.RLock()
         self._closing = False
 
-    def statuses(self) -> list[AppStatus]:
-        return [self.status(app_id) for app_id in APPS]
+    def statuses(self, *, project_dir: str | None = None) -> list[AppStatus]:
+        return [self.status(app_id, project_dir=project_dir) for app_id in APPS]
+
+    @staticmethod
+    def _project_key(project_dir: str | None) -> str:
+        return os.path.normcase(str(Path(project_dir).resolve())) if project_dir is not None else ""
+
+    def _child_key(self, service: str, project_dir: str | None) -> str:
+        if service != "studio":
+            return service
+        if project_dir is None:
+            project_dir = read_application_settings(self.runtime_root).project_dir
+        return f"studio:{self._project_key(project_dir)}"
 
     def configure(self, settings: ApplicationSettingsDto) -> ApplicationSettingsDto:
         with self._lock:
@@ -79,13 +90,13 @@ class Applications:
                 changed_services.add("studio")
             if settings.monitor_port != previous.monitor_port:
                 changed_services.add("monitor")
-            if self._closing or any(service in changed_services and child.process.poll() is None for service, child in self._children.items()):
+            if self._closing or any(key.split(":", 1)[0] in changed_services and child.process.poll() is None for key, child in self._children.items()):
                 raise HubFailure(409, "APPS_RUNNING", "Stop the applications before changing their launch configuration.")
             if settings.studio_port == settings.monitor_port or self.hub_port in {settings.studio_port, settings.monitor_port}:
                 raise HubFailure(409, "PORT_CONFLICT", "Hub, Studio and Monitor must use different ports.")
             return save_application_settings(self.runtime_root, settings)
 
-    def status(self, app_id: AppId) -> AppStatus:
+    def status(self, app_id: AppId, *, project_dir: str | None = None) -> AppStatus:
         title, service = APPS[app_id]
         with self._lock:
             if service == "hub":
@@ -100,7 +111,7 @@ class Applications:
                         detail="MonkeyFab is not included in this Python environment. Use the integrated application package.",
                     ),
                 )
-            child = self._children.get(service)
+            child = self._children.get(self._child_key(service, project_dir))
             if child is None:
                 return AppStatus(appId=app_id, title=title, serviceId=service, state="stopped")
             state = child.state
@@ -117,22 +128,38 @@ class Applications:
                 error=child.error,
             )
 
-    def start(self, app_id: AppId) -> AppStatus:
+    def start(self, app_id: AppId, *, project_dir: str | None = None) -> AppStatus:
         _, service = APPS[app_id]
         with self._lock:
             if self._closing:
                 raise HubFailure(409, "HUB_STOPPING", "The Hub is waiting for its applications to finish.")
             if service == "hub":
-                return self.status(app_id)
-            existing = self._children.get(service)
+                return self.status(app_id, project_dir=project_dir)
+            key = self._child_key(service, project_dir)
+            existing = self._children.get(key)
             if existing is not None and existing.process.poll() is None:
-                return self.status(app_id)
+                return self.status(app_id, project_dir=project_dir)
             if self.source_revision is None:
                 raise HubFailure(503, "SOURCE_VERSION_UNKNOWN", "This source folder has no verifiable version. Use a complete version package or checkout.")
             settings = read_application_settings(self.runtime_root)
             port = settings.studio_port if service == "studio" else settings.monitor_port
             if port == self.hub_port or settings.studio_port == settings.monitor_port:
                 raise HubFailure(409, "PORT_CONFLICT", "Hub, Studio and Monitor must use different ports.")
+            if service == "studio" and project_dir is not None:
+                same_project = self._project_key(project_dir) == self._project_key(settings.project_dir)
+                settings = settings.model_copy(update={
+                    "project_dir": str(Path(project_dir).resolve()),
+                    "reference_run": settings.reference_run if same_project else None,
+                })
+                if not same_project:
+                    reserved = {self.hub_port, settings.studio_port, settings.monitor_port}
+                    reserved.update(child.port for child in self._children.values() if child.process.poll() is None)
+                    while True:
+                        with socket.socket() as probe:
+                            probe.bind(("127.0.0.1", 0))
+                            port = probe.getsockname()[1]
+                        if port not in reserved:
+                            break
             args, environ = self._command(service, settings)
             with socket.socket() as probe:
                 try:
@@ -158,9 +185,9 @@ class Applications:
             except OSError as exc:
                 raise HubFailure(503, "START_FAILED", f"The application could not start. See {log_path}.") from exc
             child = _Child(process, instance_id, port, log_path)
-            self._children[service] = child
+            self._children[key] = child
             threading.Thread(target=self._watch, args=(service, child), daemon=True).start()
-            return self.status(app_id)
+            return self.status(app_id, project_dir=project_dir)
 
     def _command(self, service: str, settings: ApplicationSettingsDto) -> tuple[list[str], dict[str, str]]:
         args = [sys.executable, str(self.source_root / "apps/monkeyhub/run.py"), "--service", service]
@@ -256,23 +283,26 @@ class Applications:
                 except (BrokenPipeError, OSError):
                     pass
 
-    def stop(self, app_id: AppId) -> AppStatus:
+    def stop(self, app_id: AppId, *, project_dir: str | None = None) -> AppStatus:
         _, service = APPS[app_id]
         with self._lock:
             if service == "hub":
                 raise HubFailure(409, "APP_HOSTED_BY_HUB", "MonkeyFab is an operation page in this Hub and has no separate process to stop.")
-            child = self._children.get(service)
+            child = self._children.get(self._child_key(service, project_dir))
             if child is not None and child.process.poll() is None:
                 if child.state != "error":
                     child.state = "stopping"
                 self._send_stop(child)
-            return self.status(app_id)
+            return self.status(app_id, project_dir=project_dir)
 
     def begin_shutdown(self) -> None:
         with self._lock:
             self._closing = True
-            for app_id in ("monkeyarch", "monkeymonitor"):
-                self.stop(app_id)
+            for child in self._children.values():
+                if child.process.poll() is None:
+                    if child.state != "error":
+                        child.state = "stopping"
+                    self._send_stop(child)
 
     def shutdown(self) -> None:
         self.begin_shutdown()

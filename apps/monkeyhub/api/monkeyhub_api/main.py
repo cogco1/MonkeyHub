@@ -28,7 +28,9 @@ from archflow_studio_api.settings import (
 )
 from archflow_studio_api.transport.errors import StudioError
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
+from . import chat as chat_tools
 from .applications import Applications
 from .chat import ChatStore
 from .fabrication import Fabrication
@@ -36,7 +38,7 @@ from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
-    ChatModelRequest, ChatPostRequest, ChatWorkspace, ChatPermissionRequest,
+    ChatModelRequest, ChatPostRequest, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -139,20 +141,20 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return HubHealth(processId=os.getpid(), parentProcessId=os.getppid(), managedInstanceId=settings.managed_instance_id, sourceRevision=applications.source_revision)
 
     @app.get("/api/apps", response_model=list[AppStatus])
-    def list_apps() -> list[AppStatus]:
-        return applications.statuses()
+    def list_apps(projectDir: str | None = None) -> list[AppStatus]:
+        return applications.statuses(project_dir=projectDir)
 
     error_responses = {409: {"model": HubError}, 503: {"model": HubError}}
 
     @app.post("/api/apps/{app_id}/start", response_model=AppStatus, status_code=202, responses=error_responses)
-    def start_app(app_id: AppId) -> AppStatus:
-        with chats.application_lifecycle(app_id):
-            return applications.start(app_id)
+    def start_app(app_id: AppId, projectDir: str | None = None) -> AppStatus:
+        with chats.application_lifecycle(app_id, project_dir=projectDir):
+            return applications.start(app_id, project_dir=projectDir)
 
     @app.post("/api/apps/{app_id}/stop", response_model=AppStatus, status_code=202, responses=error_responses)
-    def stop_app(app_id: AppId) -> AppStatus:
-        with chats.application_lifecycle(app_id, stopping=True):
-            return applications.stop(app_id)
+    def stop_app(app_id: AppId, projectDir: str | None = None) -> AppStatus:
+        with chats.application_lifecycle(app_id, stopping=True, project_dir=projectDir):
+            return applications.stop(app_id, project_dir=projectDir)
 
     fab_errors = {422: {"model": HubError}, 502: {"model": HubError}, 503: {"model": HubError}}
 
@@ -177,6 +179,11 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         with chats.project_configuration(body.project_dir):
             return applications.configure(body)
 
+    @app.post("/api/project/modeling", response_model=ModelingInitializeDto, response_model_by_alias=True)
+    def prepare_project_modeling(body: ModelingInitializeRequestDto, projectDir: str | None = None) -> dict:
+        base, binding = chat_tools._bound_studio(chats.hub_url, None, project_id=body.project_id, project_dir=projectDir)
+        return chat_tools._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
+
     @app.get("/api/chat/providers", response_model=list[ChatProvider])
     def chat_providers(refresh: bool = False):
         return chats.providers(refresh)
@@ -194,8 +201,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return chats.create_project(body)
 
     @app.get("/api/chat/sessions", response_model=list[ChatSummary])
-    def chat_sessions(projectId: str | None = None):
-        return chats.list(projectId)
+    def chat_sessions(projectId: str | None = None, archived: bool = False):
+        return chats.list(projectId, archived=archived)
 
     @app.post("/api/chat/sessions", response_model=ChatDetail, status_code=201)
     def create_chat(body: ChatCreateRequest):
@@ -212,6 +219,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.put("/api/chat/sessions/{session_id}/model", response_model=ChatDetail)
     def set_chat_model(session_id: str, body: ChatModelRequest):
         return chats.set_model(session_id, body.model)
+
+    @app.put("/api/chat/sessions/{session_id}/archive", response_model=ChatDetail)
+    def set_chat_archived(session_id: str, body: ChatArchiveRequest):
+        return chats.set_archived(session_id, body.archived)
 
     @app.post("/api/chat/sessions/{session_id}/stop", response_model=ChatDetail)
     def stop_chat(session_id: str):

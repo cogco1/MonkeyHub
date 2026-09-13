@@ -61,6 +61,8 @@ class CodexAcpSession:
         self._permissions: set[Future] = set()
         self._cleanup_lock = asyncio.Lock()
         self._turn_task = None
+        self._activity_timeout: asyncio.Timeout | None = None
+        self._activity_timeout_s = 0.0
         self._cancel_requested = threading.Event()
         self._prompt_lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
@@ -99,7 +101,7 @@ class CodexAcpSession:
         timeout_s: float,
     ) -> None:
         if timeout_s <= 0:
-            raise ValueError("ACP turn timeout must be positive.")
+            raise ValueError("ACP inactivity timeout must be positive.")
         if not self._prompt_lock.acquire(blocking=False):
             raise AcpSessionError("An ACP turn is already running in this chat.")
         try:
@@ -149,10 +151,19 @@ class CodexAcpSession:
         if self._cancel_requested.is_set():
             raise AcpCancelled("The ACP turn was cancelled.")
 
+    def _touch_activity(self, session_id: str) -> None:
+        timeout = self._activity_timeout
+        if (timeout is not None and not timeout.expired() and session_id == self._session_id
+                and not self._replaying and not self._cancel_requested.is_set()):
+            timeout.reschedule(self._loop.time() + self._activity_timeout_s)
+
     async def _prompt(self, text, session_id, model, on_session, timeout_s) -> None:
         self._turn_task = asyncio.current_task()
         try:
-            async with asyncio.timeout(timeout_s):
+            # Setup is bounded too. Only activity for this negotiated session
+            # renews the deadline; transport keepalives never reach this hook.
+            async with asyncio.timeout(timeout_s) as timeout:
+                self._activity_timeout, self._activity_timeout_s = timeout, timeout_s
                 self._check_cancelled()
                 await self._start()
                 self._check_cancelled()
@@ -194,10 +205,12 @@ class CodexAcpSession:
         except AcpCancelled:
             raise
         except TimeoutError as exc:
+            self._activity_timeout = None
             await self._send_cancel()
             await self._stop_process()
-            raise AcpSessionError("The ACP turn timed out and was cancelled; it was not resent.") from exc
+            raise AcpSessionError("The ACP turn timed out after no session activity and was cancelled; it was not resent.") from exc
         except Exception as exc:
+            self._activity_timeout = None
             await self._stop_process()
             if self._cancel_requested.is_set():
                 raise AcpCancelled("The ACP turn was cancelled.") from exc
@@ -211,6 +224,7 @@ class CodexAcpSession:
             detail = "".join(self._stderr).strip()[-2000:]
             raise AcpSessionError(f"ACP turn failed: {message}" + (f"\n{detail}" if detail else "")) from exc
         finally:
+            self._activity_timeout = None
             self._turn_task = None
             self._cancel_permissions()
 
@@ -240,6 +254,7 @@ class CodexAcpSession:
             self._set_config_options(result.config_options)
 
     async def session_update(self, session_id: str, update: Any, **kwargs: Any) -> None:
+        self._touch_activity(session_id)
         if update.session_update == "config_option_update":
             self._set_config_options(update.config_options)
         if not self._replaying:
@@ -249,6 +264,7 @@ class CodexAcpSession:
     async def request_permission(self, session_id: str, tool_call: Any, options: list, **kwargs: Any):
         if self._cancel_requested.is_set() or self._replaying:
             return RequestPermissionResponse(outcome={"outcome": "cancelled"})
+        self._touch_activity(session_id)
         future = self._on_permission({
             "sessionId": session_id,
             "toolCall": tool_call.model_dump(by_alias=True, exclude_none=True),
@@ -259,6 +275,7 @@ class CodexAcpSession:
             selected = await asyncio.wrap_future(future)
         finally:
             self._permissions.discard(future)
+        self._touch_activity(session_id)
         if selected is None or selected not in {option.option_id for option in options}:
             return RequestPermissionResponse(outcome={"outcome": "cancelled"})
         return RequestPermissionResponse(outcome={"outcome": "selected", "optionId": selected})

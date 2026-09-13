@@ -509,6 +509,42 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
             self.assertAlmostEqual((body.bbox_min[2] + body.bbox_max[2]) / 2.0, self.DATUM + center, places=8)
             self.assertEqual(occt_backend.classify_program_point(entries["obj-drum-east"].shape, (0.0, self.DATUM + center, 0.0)), "inside")
 
+    def test_a_parameterized_multi_section_loft_remains_one_solid_after_a_height_edit(self) -> None:
+        from archflow.state.state_record import Parameter, StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+        from monkeyarch.capabilities.element_producers import _check_signature_value, producer_signatures, validate_element_contract
+
+        for loft_type in ("straight", "normal"):
+            record = self._record([_ring(1.0, 0.0), _ring(0.6, 1.5), _ring(0.8, 3.0)])
+            element = next(entity for entity in record.entities if entity.entity_id == "drum-east")
+            profiles = [_ring(1.0, 0.0), _ring(0.6, "@loft_middle"), _ring(0.8, "@loft_height")]
+            params = {**element.fields["params"], "profiles": profiles, "loft_type": loft_type}
+            element = replace(element, fields={**element.fields, "params": params})
+            record = replace(record, entities=tuple(element if e.entity_id == element.entity_id else e for e in record.entities),
+                             parameters=record.parameters + (Parameter("loft_height", 3.0, "m"),
+                                                             Parameter("loft_middle", 1.5, "m", expr="loft_height / 2"))).bound_to(shared_bound_state()[1])
+            _check_signature_value(params, producer_signatures()["loft"]["parameters"], "params")
+            changed = apply_state_record_operator(record, StateRecordOperator(
+                kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                target_ref="parameter:loft_height", key="loft_height", value=4.5,
+            ))
+            for current, height in ((record, 3.0), (changed, 4.5)):
+                with self.subTest(loft_type=loft_type, height=height), tempfile.TemporaryDirectory() as tmp:
+                    validate_element_contract(current, (element.entity_id,))
+                    program = _compile(current)
+                    self.assertEqual(len(program.proposal.operations), 1)
+                    workspace = Path(tmp).resolve()
+                    receipt, _ = _execute(program, _persisted_binding(program, "stage-semantic-loft"), workspace, "semantic-loft@occt")
+                    self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                    entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+                    self.assertEqual(list(entries), ["obj-drum-east"])
+                    shape = entries["obj-drum-east"].shape
+                    body = occt_backend.measure_shape(shape)
+                    self.assertEqual((body.valid, body.closed, body.solid_count), (True, True, 1))
+                    _assert_bbox(self, body, (-1.0, -1.0, self.DATUM), (1.0, 1.0, self.DATUM + height), places=6)
+                    self.assertEqual(occt_backend.classify_program_point(shape, (0.0, self.DATUM + height / 2, 0.0)), "inside")
+                    self.assertEqual(inspect_three_dm(workspace / receipt.preview_artifact["relative_path"]).top_level_object_count, 1)
+                    self.assertEqual(next(e for e in current.entities if e.entity_id == element.entity_id).fields["params"], params)
+
 
 WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,
                "frame_projection": 0.1, "glazing_thickness": 0.025, "glazing_offset": 0.01}

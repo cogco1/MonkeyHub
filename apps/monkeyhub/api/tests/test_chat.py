@@ -12,6 +12,7 @@ import tomllib
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[4]
 for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhub/api"):
@@ -322,6 +323,86 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(args[args.index("--tools") + 1], "default")
         self.assertIn("--strict-mcp-config", args)
 
+    def test_archive_keeps_transcript_and_native_session_after_restart(self):
+        session = self.create()
+        other = self.create(self.other)
+        self.post(session, "tool-test")
+        finished = self.finished(session)
+        saved_path = self.runtime / "chats" / f"{session.id}.json"
+        saved = json.loads(saved_path.read_text(encoding="utf-8"))
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            path = f"/api/chat/sessions/{session.id}"
+            response = client.put(path + "/archive", json={"archived": True})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertTrue(response.json()["archived"])
+            self.assertEqual(response.json()["messages"], finished.model_dump()["messages"])
+            self.assertEqual([row["id"] for row in client.get("/api/chat/sessions").json()], [other.id])
+            self.assertEqual([row["id"] for row in client.get("/api/chat/sessions?archived=true&projectId=chat-project").json()], [session.id])
+            self.assertEqual(client.get("/api/chat/sessions?archived=true&projectId=other-project").json(), [])
+            self.assertEqual(client.get(path).json(), response.json())
+            self.assertEqual(client.put(path + "/archive", json={"archived": True}).json(), response.json())
+            self.assertEqual(client.put(path + "/archive", json={"archived": "false"}).status_code, 422)
+            blocked = client.post(path + "/messages", json={"projectId": session.projectId, "content": "must restore first"})
+            self.assertEqual(blocked.status_code, 409)
+            self.assertEqual(blocked.json()["code"], "CHAT_ARCHIVED")
+            self.assertEqual(len(self.calls()), 1, "archiving and reading never invoke the CLI")
+        retained = json.loads(saved_path.read_text(encoding="utf-8"))
+        self.assertEqual({k: v for k, v in retained.items() if k not in {"archived", "updatedAt"}},
+                         {k: v for k, v in saved.items() if k not in {"archived", "updatedAt"}})
+        self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+        self.assertTrue(self.store.get(session.id).archived)
+        self.assertEqual([row.id for row in self.store.list(archived=True)], [session.id])
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            restored = client.put(path + "/archive", json={"archived": False})
+            self.assertEqual(restored.status_code, 200, restored.text)
+            self.assertFalse(restored.json()["archived"])
+            self.assertEqual(restored.json()["messages"], finished.model_dump()["messages"])
+            self.assertEqual(client.get("/api/chat/sessions?archived=true").json(), [])
+            self.assertEqual(client.get("/api/chat/sessions").json()[0]["id"], session.id)
+            self.post(session, "continue after restoring")
+            self.assertEqual(self.finished(session).status, "idle")
+            args = self.calls()[-1]["args"]
+            self.assertEqual(args[args.index("resume") + 1], saved["nativeSessionId"])
+
+    def test_running_chat_cannot_be_archived_or_cancelled_by_archiving(self):
+        session = self.create()
+        self.post(session, "pause-test")
+        wait_for(lambda: self.store.get(session.id), lambda row: any(m.content == "ready" for m in row.messages))
+        running = self.store._running[session.id]
+        with self.assertRaises(HubFailure) as failure:
+            self.store.set_archived(session.id, True)
+        self.assertEqual(failure.exception.status, 409)
+        self.assertEqual(failure.exception.error.code, "CHAT_RUNNING")
+        self.assertFalse(running.stop.is_set())
+        self.assertIsNone(running.process.poll())
+        self.assertEqual(self.store.get(session.id).status, "running")
+        self.assertFalse(self.store.get(session.id).archived)
+        self.store.stop(session.id)
+        self.finished(session)
+        self.assertTrue(self.store.set_archived(session.id, True).archived)
+
+    def test_old_chat_without_archived_field_remains_active(self):
+        session = self.create()
+        path = self.runtime / "chats" / f"{session.id}.json"
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        saved.pop("archived")
+        saved.update(transport="acp", acpSessionId=str(uuid4()), acpDefaultModel="fixture-model-a")
+        path.write_text(json.dumps(saved), encoding="utf-8")
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+        self.assertFalse(self.store.get(session.id).archived)
+        self.assertEqual([row.id for row in self.store.list()], [session.id])
+        self.assertEqual(self.store.list(archived=True), [])
+        self.store.set_archived(session.id, True)
+        self.store.set_archived(session.id, False)
+        retained = json.loads(path.read_text(encoding="utf-8"))
+        for field in ("transport", "acpSessionId", "acpDefaultModel", "messages"):
+            self.assertEqual(retained[field], saved[field])
+
     def test_existing_codex_profile_keeps_provider_route(self):
         config = Path(os.environ["CODEX_HOME"])
         config.mkdir()
@@ -381,7 +462,7 @@ class ChatTests(unittest.TestCase):
         self.post(session, "try again")
         self.assertEqual(self.finished(session).status, "idle")
 
-    def test_stop_is_scoped_and_cross_project_changes_are_refused(self):
+    def test_cross_project_chats_run_together_and_stop_is_scoped(self):
         first, second, other = self.create(), self.create(), self.create(self.other)
         self.post(first, "pause-test")
         self.post(second, "pause-test")
@@ -389,18 +470,21 @@ class ChatTests(unittest.TestCase):
         with self.assertRaises(HubFailure) as wrong:
             self.store.post(first.id, ChatPostRequest(projectId=other.projectId, content="wrong project"))
         self.assertEqual(wrong.exception.error.code, "CHAT_PROJECT_MISMATCH")
-        with self.assertRaises(HubFailure) as busy:
-            self.post(other)
-        self.assertEqual(busy.exception.error.code, "CHAT_PROJECT_BUSY")
+        self.post(other, "pause-test")
+        self.assertEqual(self.store.get(other.id).status, "running")
         with self.assertRaises(HubFailure):
             with self.store.project_configuration(str(self.other)):
                 self.fail("A running chat must retain its project.")
         with self.assertRaises(HubFailure):
-            with self.store.application_lifecycle("monkeydiagram", stopping=True):
+            with self.store.application_lifecycle("monkeydiagram", stopping=True, project_dir=str(self.project)):
                 self.fail("A running chat must retain its shared Studio.")
         self.assertEqual(self.store.stop(first.id).status, "interrupted")
         self.assertEqual(self.store.get(second.id).status, "running")
         self.store.stop(second.id)
+        self.assertEqual(self.store.get(other.id).status, "running")
+        with self.store.application_lifecycle("monkeydiagram", stopping=True, project_dir=str(self.project)):
+            pass  # B remains admitted while A can close.
+        self.store.stop(other.id)
 
     def test_interrupted_record_is_readable_and_can_continue(self):
         session = self.create()
@@ -516,7 +600,11 @@ class ChatTests(unittest.TestCase):
         # them, so making a massing needs no schema round trip at all.
         for stated in ("/api/proposals/sketch", "stateDigest", "componentId", "elementId",
                        "profile", "height", "baseLevel", "metres", "[x, z]",
-                       "/api/proposals/{id}/candidate", "GET /api/state/frame"):
+                       "/api/proposals/{id}/candidate", "GET /api/state/frame", "/api/project/modeling",
+                       "GET /api/documents?runId=", "MonkeyDiagram's documents list automatically",
+                       "PUT /api/document-annotations", "baseRevisionSha256",
+                       "GET /api/drawings/styles", "POST /api/drawings/sheets",
+                       "Do not use PUT /api/board to save a generated drawing"):
             self.assertIn(stated, request_tool["description"], stated)
         self.assertIn("only for an action", schema_tool["description"])
 
@@ -525,19 +613,30 @@ class ChatTests(unittest.TestCase):
                 return session.model_dump()
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
-            if path == "/api/apps":
+            if path.startswith("/api/apps?"):
                 return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
                 return {"projectId": "chat-project", "projectDir": str(self.project)}
             if path == "/openapi.json":
-                return {"paths": {"/api/proposals/sketch": {"post": {"summary": "draw"}},
+                return {"paths": {"/api/project/modeling": {"post": {"summary": "initialize"}},
+                                  "/api/documents": {"get": {"summary": "list drawings"}},
+                                  "/api/proposals/sketch": {"post": {"summary": "draw"}},
                                   "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
                         "components": {"schemas": {}}}
             return {"method": method, "body": body, "path": path}
 
         with patch.object(chat, "_request_json", side_effect=request):
+            initialized = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/project/modeling", "body": {"projectId": session.projectId},
+            })
+            self.assertEqual(initialized["body"], {"projectId": session.projectId})
+            with self.assertRaises(HubFailure) as wrong_project:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "POST", "path": "/api/project/modeling", "body": {"projectId": "other"},
+                })
+            self.assertEqual(wrong_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
             drawn = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "POST", "path": "/api/proposals/sketch",
                 "body": {"stateDigest": "a" * 64, "componentId": "portico", "elementId": "drawn-1",
@@ -546,9 +645,44 @@ class ChatTests(unittest.TestCase):
             })
             self.assertEqual(drawn["path"], "/api/proposals/sketch")
             self.assertEqual(drawn["body"]["height"], 3.2)
+            documents = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": "/api/documents?runId=studio-drawing-1",
+            })
+            self.assertEqual(documents["path"], "/api/documents?runId=studio-drawing-1")
+            styles = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": "/api/drawings/styles"})
+            self.assertEqual(styles["path"], "/api/drawings/styles")
+            sheet_body = {"projectId": session.projectId, "styleId": "arch400-white", "scaleDenominator": 5,
+                          "modelSource": {"runId": "studio-candidate", "stateDigest": "d" * 64, "assetSha256": "e" * 64}}
+            sheet = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/drawings/sheets", "body": sheet_body})
+            self.assertEqual(sheet["body"], sheet_body)
+            annotation_body = {"projectId": session.projectId, "runId": "studio-drawing-1",
+                               "assetSha256": "b" * 64, "pageIndex": 0,
+                               "drawingRevisionRef": "retained-drawing", "baseRevisionSha256": "c" * 64,
+                               "annotations": [{"id": "width", "kind": "ruler", "label": "1600 mm (assumed)",
+                                                "points": [[0.1, 0.8], [0.9, 0.8]], "color": "#000000", "lineWidth": 0.001}]}
+            page = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": "/api/document-annotations?runId=studio-drawing-1&assetSha256=" + "b" * 64 + "&pageIndex=0"})
+            self.assertTrue(page["path"].startswith("/api/document-annotations?"))
+            annotated = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "PUT", "path": "/api/document-annotations", "body": annotation_body})
+            self.assertEqual(annotated["body"], annotation_body)
+            with self.assertRaises(HubFailure) as wrong_page_project:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "PUT", "path": "/api/document-annotations", "body": {**annotation_body, "projectId": "other"}})
+            self.assertEqual(wrong_page_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "GET", "path": "/api/documents",
+            })
+            self.assertEqual(schema["operation"]["summary"], "list drawings")
+            for method, path in (("POST", "/api/documents"), ("GET", "/api/documents/asset-1/bytes")):
+                with self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": method, "path": path})
+                self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
             # A documented template can be read as a schema, which is what an
             # exploring turn used to fail on.
-            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch"):
+            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling"):
                 answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                         {"method": "POST", "path": template})
                 self.assertEqual(answer["method"], "POST")
@@ -557,6 +691,107 @@ class ChatTests(unittest.TestCase):
             with self.assertRaises(HubFailure):
                 chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                {"method": "POST", "path": "/api/issue"})
+
+    def test_structured_edit_preserves_binding_and_checked_impact_without_duplicate_payloads(self):
+        session = self.create()
+        session.status = "running"
+        body = {
+            "stateDigest": "a" * 64, "sourceRunId": "studio-cand-base", "sourceStageRef": "stage-base",
+            "sourceProposalId": "studio-previous", "keep": ["entity:main"],
+            "semanticEdit": {"summary": "Widen and lift the canopy", "parameters": [
+                {"key": "width", "value": 4.2}, {"key": "elevation", "value": 3.1}]},
+        }
+        impact = {"direct": ["parameter:width", "parameter:elevation"],
+                  "propagated": ["entity:canopy", "entity:column-left", "entity:column-right"],
+                  "protected": ["entity:main"], "conflicts": [], "locks": [],
+                  "unknownCoverage": {"count": 1, "componentIds": ["unrelated"]},
+                  "honesty": ["Only declared dependencies are covered."]}
+        complete = {
+            "proposalId": "studio-next", "status": "proposed", "baseStateDigest": "a" * 64,
+            "sourceRunId": "studio-cand-base", "sourceStageRef": "stage-base",
+            "change": {"kind": "edit_components", "summary": body["semanticEdit"]["summary"],
+                       "changes": [{"entityId": "parameter:width", "action": "update"}],
+                       "kept": ["Main remains"], "edits": body["semanticEdit"]},
+            "decisionOperator": {"parameters": body["semanticEdit"]}, "impact": impact,
+        }
+        calls = []
+
+        def request(base, path, method="GET", body=None, timeout=None):
+            calls.append((method, path, body))
+            return complete
+
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=request):
+            concise = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/proposals", "body": body})
+            self.assertEqual(calls, [("POST", "/api/proposals", {**body, "projectId": session.projectId})])
+            self.assertEqual(concise["impact"], impact)
+            self.assertEqual(concise["baseStateDigest"], body["stateDigest"])
+            self.assertEqual(concise["sourceStageRef"], "stage-base")
+            self.assertEqual(concise["change"]["changes"], complete["change"]["changes"])
+            self.assertNotIn("edits", concise["change"])
+            self.assertNotIn("decisionOperator", concise)
+            detailed = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": "/api/proposals/studio-next"})
+            self.assertEqual(detailed, complete)
+            self.assertIn("edits", complete["change"], "shortening the tool reply must not mutate the stored proposal")
+
+            # Thousands of derived coordinates remain available through GET,
+            # without forcing every continuation to reread the entire list.
+            complete["change"]["changes"] = [{"entityId": f"parameter:coordinate-{i}", "action": "update"} for i in range(2783)]
+            impact["direct"] = [f"parameter:coordinate-{i}" for i in range(2783)]
+            impact["conflicts"] = [{"target": "entity:main", "reason": "Kept"}]
+            impact["locks"] = ["entity:main"]
+            large = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/proposals", "body": body})
+            for section, field in (("change", "changes"), ("impact", "direct")):
+                self.assertLess(len(large[section][field]), len(complete[section][field]))
+                self.assertEqual(large[section][f"{field}Count"], 2783)
+                self.assertEqual(len(large[section][field]) + large[section][f"{field}Omitted"], 2783)
+            self.assertEqual(large["change"]["kept"], complete["change"]["kept"])
+            for field in ("propagated", "protected", "conflicts", "locks", "unknownCoverage", "honesty"):
+                self.assertEqual(large["impact"][field], impact[field])
+            retained = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "GET", "path": large["detailsPath"]})
+            self.assertEqual(retained, complete)
+            self.assertEqual(len(retained["change"]["changes"]), 2783)
+            self.assertEqual(len(retained["impact"]["direct"]), 2783)
+
+    def test_schema_query_selects_the_actual_producer_inputs(self):
+        session = self.create()
+        variants = [{"properties": {"producer": {"enum": [name]},
+                                     "params": {"properties": {field: {"type": "number"}}}}}
+                    for name, field in (("prism", "height"), ("loft", "profile_size"))]
+        document = {
+            "paths": {"/api/proposals": {"post": {
+                "summary": "Author an edit", "requestBody": {"$ref": "#/components/schemas/ProposalRequestDto"},
+                "responses": {"201": {"$ref": "#/components/schemas/ProposalDto"}}}}},
+            "components": {"schemas": {
+                "ProposalRequestDto": {"properties": {"semanticEdit": {"$ref": "#/components/schemas/SemanticEditRequestDto"}}},
+                "SemanticEditRequestDto": {"properties": {
+                    "entities": {"items": {"anyOf": [{"properties": {"fields": {"anyOf": variants}}}]}},
+                    "parameters": {"type": "array"}}},
+                "ProposalDto": {"description": "The independently queryable complete response"},
+            }},
+        }
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
+                patch.object(chat, "_request_json", side_effect=lambda *a, **k: json.loads(json.dumps(document))):
+            answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals", "producer": "loft"})
+            schema = answer["components"]["schemas"]["SemanticEditRequestDto"]
+            selected = schema["properties"]["entities"]["items"]["anyOf"][0]["properties"]["fields"]["anyOf"]
+            self.assertEqual(selected, [variants[1]])
+            self.assertEqual(schema["properties"]["parameters"], {"type": "array"})
+            self.assertNotIn("ProposalDto", answer["components"]["schemas"])
+            full = chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                "method": "POST", "path": "/api/proposals"})
+            self.assertIn("ProposalDto", full["components"]["schemas"])
+            self.assertEqual(full["components"]["schemas"]["SemanticEditRequestDto"], document["components"]["schemas"]["SemanticEditRequestDto"])
+            with self.assertRaises(HubFailure) as unavailable:
+                chat.call_tool(self.store.hub_url, session.id, "studio_schema", {
+                    "method": "POST", "path": "/api/proposals", "producer": "missing"})
+            self.assertIn("loft", unavailable.exception.error.detail)
+            self.assertIn("prism", unavailable.exception.error.detail)
 
     def test_changing_something_starts_at_the_capability_index_not_at_a_guess(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""
@@ -591,7 +826,7 @@ class ChatTests(unittest.TestCase):
                 return session.model_dump()
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
-            if path == "/api/apps":
+            if path.startswith("/api/apps?"):
                 return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
@@ -645,7 +880,7 @@ class ChatTests(unittest.TestCase):
                 return session.model_dump()
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
-            if path == "/api/apps":
+            if path.startswith("/api/apps?"):
                 return [{"appId": "monkeyarch", "state": "running",
                          "url": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
@@ -737,13 +972,69 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(answer["next"], [],
                          "a finished answer must not invite the reads it already made")
 
+    def test_checkpoint_wait_uses_the_proposals_base_and_posts_only_once(self):
+        session = self.create()
+        session.status = "running"
+        request, sent = self._finishing_service(
+            session, job_states=[{"jobId": "job-1", "status": "succeeded"}],
+            candidate={"candidateId": "studio-cand-2", "artifacts": []},
+            compare={"against": "studio-cand-1", "changed": []})
+
+        def checkpoint(base, path, method="GET", body=None, timeout=None):
+            if path == "/api/proposals/studio-final":
+                return {"proposalId": "studio-final", "sourceRunId": "studio-cand-1"}
+            if path == "/api/proposals/studio-final/candidate":
+                sent.append({"method": method, "path": path, "body": body})
+                return {"jobId": "job-1", "candidateId": "studio-cand-2", "status": "queued"}
+            return request(base, path, method, body, timeout)
+
+        with patch.object(chat, "_request_json", side_effect=checkpoint):
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/proposals/studio-final/candidate", "awaitSeconds": 30})
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["compare"]["against"], "studio-cand-1")
+        self.assertEqual([row for row in sent if row["method"] == "POST"], [
+            {"method": "POST", "path": "/api/proposals/studio-final/candidate", "body": None}])
+
+    def test_first_checkpoint_reads_candidate_without_a_fictitious_comparison_run(self):
+        session = self.create()
+        session.status = "running"
+        objects = [{"name": "canopy", "componentId": "entry", "producerOp": "prism",
+                    "bbox": {"min": [-1.5, -1.8, 2.8], "max": [1.5, 0, 2.98]},
+                    "lengthUnit": "meter", "upAxis": "Z-up"}]
+        request, sent = self._finishing_service(
+            session, job_states=[{"jobId": "job-1", "status": "succeeded"}],
+            candidate={"candidateId": "studio-cand-2", "artifacts": [],
+                       "objects": objects, "objectReadbackError": None})
+
+        def first_checkpoint(base, path, method="GET", body=None, timeout=None):
+            if path == "/api/proposals/studio-first":
+                return {"proposalId": "studio-first", "sourceRunId": None}
+            if path == "/api/proposals/studio-first/candidate":
+                sent.append({"method": method, "path": path, "body": body})
+                return {"jobId": "job-1", "candidateId": "studio-cand-2", "status": "queued"}
+            if "/compare" in path:
+                self.fail("The first candidate has no retained before-run to compare against")
+            return request(base, path, method, body, timeout)
+
+        with patch.object(chat, "_request_json", side_effect=first_checkpoint):
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/proposals/studio-first/candidate", "awaitSeconds": 30})
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["readback"], "ok")
+        self.assertEqual(result["objects"], objects)
+        self.assertIsNone(result["objectReadbackError"])
+        self.assertIsNone(result["compare"])
+        self.assertEqual(result["next"], [])
+        self.assertEqual(len([row for row in sent if row["method"] == "POST"]), 1)
+
     def test_the_binding_is_settled_before_anything_is_posted(self):
         session = self.create()
         session.status = "running"
         request, sent = self._finishing_service(session, job_states=[{"jobId": "job-1", "status": "succeeded"}])
 
         def refuse(base, path, method="GET", body=None, timeout=None):
-            if path == "/api/apps":
+            if path.startswith("/api/apps?"):
                 sent.append({"method": method, "path": path, "body": body})
                 return [{"appId": "monkeyarch", "state": "stopped", "url": None, "processId": None}]
             return request(base, path, method, body, timeout)
@@ -761,7 +1052,7 @@ class ChatTests(unittest.TestCase):
 
         session = self.create()
         session.status = "running"
-        first = threading.Barrier(4, timeout=8)
+        first = threading.Barrier(2, timeout=8)
         second = threading.Barrier(2, timeout=8)
         readback = threading.Barrier(2, timeout=8)
         request, sent = self._finishing_service(
@@ -772,8 +1063,7 @@ class ChatTests(unittest.TestCase):
             barriers=[
                 # The Hub and the Studio both answer /api/health, so a group is
                 # which service is being asked as well as what is being asked.
-                (lambda base, path: base == self.store.hub_url and path in {
-                    f"/api/chat/sessions/{session.id}", "/api/settings/apps", "/api/apps", "/api/health"},
+                (lambda base, path: base == self.store.hub_url and (path.startswith("/api/apps?") or path == "/api/health"),
                  first),
                 (lambda base, path: base != self.store.hub_url and path in {"/api/health", "/api/project"},
                  second),
@@ -855,7 +1145,7 @@ class ChatTests(unittest.TestCase):
                 return session.model_dump()
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
-            if path == "/api/apps":
+            if path.startswith("/api/apps?"):
                 return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
@@ -886,6 +1176,113 @@ class ChatTests(unittest.TestCase):
             with self.assertRaises(HubFailure) as changed:
                 chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
             self.assertEqual(changed.exception.error.code, "CHAT_PROJECT_MISMATCH")
+
+    def test_tools_route_each_chat_to_its_project_while_both_are_running(self):
+        first, second = self.create(), self.create(self.other)
+        self.post(first, "pause-test")
+        self.post(second, "pause-test")
+        services = {first.projectDir: ("http://127.0.0.1:18791", 123, first),
+                    second.projectDir: ("http://127.0.0.1:18792", 456, second)}
+        calls = []
+        wrong_binding = False
+
+        def request(base, path, method="GET", body=None, timeout=None):
+            calls.append((base, path, method))
+            if base == self.store.hub_url:
+                if path.startswith("/api/chat/sessions/"):
+                    return self.store.get(path.rsplit("/", 1)[-1]).model_dump()
+                if path.startswith("/api/apps?"):
+                    target = parse_qs(urlsplit(path).query)["projectDir"][0]
+                    address, pid, _ = services[target]
+                    return [{"appId": "monkeyarch", "state": "running", "url": address + "/", "processId": pid}]
+                self.assertEqual(path, "/api/health", "binding must not depend on global project settings")
+                return {"sourceRevision": "revision"}
+            _, pid, session = next(row for row in services.values() if row[0] == base)
+            if path == "/api/health":
+                return {"sourceRevision": "revision", "processId": pid}
+            if path == "/api/project":
+                bound = second if wrong_binding else session
+                return {"projectId": bound.projectId, "projectDir": bound.projectDir}
+            self.assertEqual(path, "/api/state")
+            return {"projectId": session.projectId}
+
+        with patch.object(chat, "_request_json", side_effect=request):
+            for session in (first, second):
+                result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state"})
+                self.assertEqual(result["projectId"], session.projectId)
+            wrong_binding = True
+            before = sum(path == "/api/state" for _, path, _ in calls)
+            with self.assertRaises(HubFailure) as refused:
+                chat.call_tool(self.store.hub_url, first.id, "studio_request", {"method": "GET", "path": "/api/state"})
+            self.assertEqual(refused.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            self.assertEqual(sum(path == "/api/state" for _, path, _ in calls), before)
+        self.store.stop(first.id)
+        self.assertEqual(self.store.get(second.id).status, "running")
+        self.store.stop(second.id)
+
+    def test_modeling_preparation_proxies_only_the_verified_current_studio(self):
+        sent = []
+        studio_pid = 123
+
+        def request(base, path, method="GET", body=None, timeout=None):
+            if path == "/api/settings/apps":
+                return {"projectDir": str(self.project)}
+            if path.startswith("/api/apps?"):
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+            if path == "/api/health":
+                return {"processId": studio_pid, "sourceRevision": "same-revision"}
+            if path == "/api/project":
+                return {"projectId": "chat-project", "projectDir": str(self.project)}
+            self.assertEqual((base, method, path), ("http://127.0.0.1:8791", "POST", "/api/project/modeling"))
+            sent.append(body)
+            return {"projectId": "chat-project", "initialized": True}
+
+        app = create_app(HubSettings(self.runtime))
+        with TestClient(app, base_url="http://127.0.0.1:8790") as client, patch.object(chat, "_request_json", side_effect=request):
+            prepared = client.post("/api/project/modeling", json={"projectId": "chat-project"})
+            self.assertEqual(prepared.status_code, 200, prepared.text)
+            self.assertEqual(prepared.json(), {"projectId": "chat-project", "initialized": True})
+            wrong = client.post("/api/project/modeling", json={"projectId": "other-project"})
+            self.assertEqual(wrong.status_code, 409)
+            self.assertEqual(wrong.json()["code"], "CHAT_PROJECT_MISMATCH")
+            studio_pid = 999
+            replaced = client.post("/api/project/modeling", json={"projectId": "chat-project"})
+            self.assertEqual(replaced.status_code, 409)
+            self.assertEqual(replaced.json()["code"], "CHAT_SERVICE_CHANGED")
+        self.assertEqual(sent, [{"projectId": "chat-project"}])
+
+    def test_fab_tools_do_not_require_or_rebind_studio(self):
+        session = self.create()
+        session.status = "running"
+        sent = []
+
+        def request(base, path, method="GET", body=None, timeout=None):
+            self.assertEqual(base, self.store.hub_url)
+            sent.append(path)
+            if path == f"/api/chat/sessions/{session.id}":
+                return session.model_dump()
+            if path == "/api/fab/profiles":
+                return {"fixture": {"label": "Installed profile"}}
+            if path == "/api/fab/send":
+                return body
+            self.fail(f"Independent Fab tried to use Studio: {path}")
+
+        with patch.object(chat, "_request_json", side_effect=request):
+            profiles = chat.call_tool(self.store.hub_url, session.id, "fab_request", {"path": "/api/fab/profiles"})
+            self.assertIn("fixture", profiles)
+            checked = chat.call_tool(self.store.hub_url, session.id, "fab_request", {
+                "method": "POST", "path": "/api/fab/send",
+                "body": {"source": "job", "dryRun": False, "accessCode": "secret"},
+            })
+            self.assertTrue(checked["dryRun"])
+            self.assertNotIn("accessCode", checked)
+            for status, project_id, expected in (("idle", "chat-project", "CHAT_NOT_RUNNING"),
+                                                   ("running", "other", "CHAT_PROJECT_MISMATCH")):
+                session.status, session.projectId = status, project_id
+                with self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(self.store.hub_url, session.id, "fab_request", {"path": "/api/fab/profiles"})
+                self.assertEqual(refused.exception.error.code, expected)
+        self.assertEqual(sent.count("/api/fab/profiles"), 1)
 
     def test_tool_activity_is_summarised_and_survives_a_reopen(self):
         session = self.create()

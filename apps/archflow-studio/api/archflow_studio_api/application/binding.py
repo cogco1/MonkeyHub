@@ -40,7 +40,7 @@ from archflow.project.repository import (
 )
 from archflow.state.stage_workflow import HARNESS_WORKFLOW_IDS
 from archflow.state.design_portfolio import DesignBranch, DesignStage
-from archflow.state.state_record import StateRecord, StateRecordError
+from archflow.state.state_record import Entity, StateRecord, StateRecordError
 
 from ..settings import PROJECT_DIR_ENV, REFERENCE_RUN_ENV, StudioSettings
 from ..transport.errors import StudioError, error_sentence
@@ -605,6 +605,68 @@ def bound_project(state: State) -> ProjectBinding:
         binding = ProjectBinding.open(state.settings)
         state.binding = binding
     return binding
+
+
+def initialize_modeling(binding: ProjectBinding) -> bool:
+    """Prepare a genuinely empty project's first candidate, including old Board projects.
+
+    This is an explicit write action, never part of a projection or binding read.
+    Existing authored design and retained model records are left alone. The seed
+    declares a modeling root and zero datum, not geometry or a design decision.
+    """
+
+    from archflow.project.inputs import AuthoredRecordInvalid, AuthoredRecordMissing, load_authored_record
+    from ..adapters.harness import HARNESS_PHASE
+
+    repository = binding.repository
+    head = repository.read_head()
+    # Connecting an existing design must never reset it, even if its authored
+    # file is missing or stale relative to a retained candidate or Stage.
+    if head.version != 0 or repository.read_design_branches() or any(
+        record_kind(ref) in {STATE_RECORD, RUNNER_RUN_RECEIPT, STUDIO_CANDIDATE_DELTA}
+        for run_id in binding.run_ids() for ref in binding.record_refs(run_id)
+    ):
+        return False
+    try:
+        current = load_authored_record(repository).record
+    except AuthoredRecordMissing:
+        current = None
+    except AuthoredRecordInvalid as exc:
+        raise StudioError(422, "STATE_RECORD_INVALID", str(exc)) from exc
+    if current is not None:
+        empty = StateRecord(project_id=binding.project_id, run_id=current.run_id, entities=())
+        if current.to_dict() != empty.to_dict():
+            return False
+    evidence = "input:monkeyarch-modeling-setup"
+    record = StateRecord(
+        project_id=binding.project_id, run_id="authored",
+        entities=(
+            Entity("model", "Component@1", fields={
+                "semantic_kind": "building", "intent": "Root for candidate modeling",
+                "source_refs": [evidence],
+            }),
+            Entity("ground", "Level@1", fields={
+                "role": "ground", "elevation": 0.0,
+            }, basis_refs=(evidence,)),
+        ),
+        evidence_refs=(evidence,), option={"option_id": "modeling"},
+    )
+    seats = {
+        "schema": "RunnerSeats@1", "commitment_ref": "commitment:monkeyarch-candidate-modeling",
+        "branch_id": "runner-v1", "seats": [{
+            "seat_id": "modeler", "disciplines": ["structure_support"],
+            "phases": [HARNESS_PHASE.value], "owned_component_ids": ["model"],
+            "consumes": [], "reviewer": False,
+        }],
+    }
+    try:
+        return repository.initialize_authored_inputs(
+            expected_head=head,
+            expected_record=None if current is None else current.to_dict(),
+            authored_record=record.to_dict(), seat_pack=seats,
+        )
+    except ProjectRepositoryError as exc:
+        raise StudioError(409, "MODELING_INITIALIZATION_CONFLICT", str(exc)) from exc
 
 
 def _reference_state_not_exact(

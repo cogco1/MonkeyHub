@@ -169,6 +169,7 @@ class ChatSummary(BaseModel):
     provider: ChatProviderId
     model: str | None = None
     status: ChatStatus = "idle"
+    archived: bool = False
     createdAt: str
     updatedAt: str
     error: HubError | None = None
@@ -210,6 +211,12 @@ class ChatModelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatArchiveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    archived: bool
 
 
 class ChatPostRequest(BaseModel):

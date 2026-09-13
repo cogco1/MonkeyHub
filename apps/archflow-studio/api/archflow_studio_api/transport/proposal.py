@@ -114,7 +114,7 @@ class SketchPlaneDto(BaseModel):
         return self
 
 
-class SketchPrismRequestDto(BaseModel):
+class SketchActionDto(BaseModel):
     """A profile drawn on a work plane and the height it is pulled to.
 
     This is the same design edit ``edit_components`` already carries — one
@@ -131,11 +131,6 @@ class SketchPrismRequestDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
-    state_digest: str = Field(
-        alias="stateDigest",
-        pattern=STATE_DIGEST_PATTERN,
-        description="the stateDigest /api/state answered with; any other base is STALE_BASE",
-    )
     component_id: str = Field(alias="componentId", min_length=1)
     parent_component_id: str | None = Field(
         alias="parentComponentId",
@@ -168,10 +163,6 @@ class SketchPrismRequestDto(BaseModel):
     base_level: str | None = Field(alias="baseLevel", default=None, min_length=1)
     base_datum: str | None = Field(alias="baseDatum", default=None, min_length=1)
     summary: str | None = Field(default=None, min_length=1, max_length=240)
-    keep: list[str] = Field(default_factory=list, description="refs this action must not change")
-    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
-    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
-    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
 
     @field_validator("profile")
     @classmethod
@@ -194,7 +185,7 @@ class SketchPrismRequestDto(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def one_base(self) -> "SketchPrismRequestDto":
+    def one_base(self) -> "SketchActionDto":
         # What it stands on is one fact: a published level, or another
         # element's top. Both, or neither, is a request nobody can execute.
         if (self.base_level is None) == (self.base_datum is None):
@@ -206,9 +197,56 @@ class SketchPrismRequestDto(BaseModel):
 
         return {"level": self.base_level} if self.base_level is not None else {"datum": self.base_datum}
 
+class SketchPrismRequestDto(SketchActionDto):
+    """One drawing action against an exact retained or proposed source."""
+
+    source_proposal_id: str | None = Field(
+        alias="sourceProposalId", default=None, min_length=1,
+        description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
+        "Only executing the final proposal creates a candidate checkpoint.",
+    )
+    state_digest: str = Field(
+        alias="stateDigest",
+        pattern=STATE_DIGEST_PATTERN,
+        description="the stateDigest /api/state answered with; any other base is STALE_BASE",
+    )
+    keep: list[str] = Field(default_factory=list, description="refs this action must not change")
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+
+class SketchBatchRequestDto(BaseModel):
+    """Several planned forms become one proposal, with no intermediate writes."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    source_proposal_id: str | None = Field(
+        alias="sourceProposalId", default=None, min_length=1,
+        description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
+        "Only executing the final proposal creates a candidate checkpoint.",
+    )
+    state_digest: str = Field(
+        alias="stateDigest",
+        pattern=STATE_DIGEST_PATTERN,
+        description="the stateDigest /api/state answered with; any other base is STALE_BASE",
+    )
+    keep: list[str] = Field(default_factory=list, description="refs this action must not change")
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+    summary: str | None = Field(default=None, min_length=1, max_length=240)
+    sketches: list[SketchActionDto] = Field(min_length=1, description="Ordered drawing actions; later items may reference an earlier item in this batch.")
+
 
 class TransformElementRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    source_proposal_id: str | None = Field(
+        alias="sourceProposalId", default=None, min_length=1,
+        description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
+        "Only executing the final proposal creates a candidate checkpoint.",
+    )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
     kind: Literal["move", "rotate", "scale", "copy"]
@@ -239,6 +277,11 @@ class TransformElementRequestDto(BaseModel):
 
 class PushPullRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    source_proposal_id: str | None = Field(
+        alias="sourceProposalId", default=None, min_length=1,
+        description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
+        "Only executing the final proposal creates a candidate checkpoint.",
+    )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
     distance: float
@@ -268,6 +311,11 @@ class DeleteElementRequestDto(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
+    source_proposal_id: str | None = Field(
+        alias="sourceProposalId", default=None, min_length=1,
+        description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
+        "Only executing the final proposal creates a candidate checkpoint.",
+    )
     state_digest: str = Field(
         alias="stateDigest",
         pattern=STATE_DIGEST_PATTERN,
@@ -285,21 +333,69 @@ class DeleteElementRequestDto(BaseModel):
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
 
 
+def _semantic_edit_schema(schema: dict[str, Any]) -> None:
+    """Reuse the compiler's producer contracts for direct, partial upserts."""
+
+    from ..application.intent_agent import response_schema
+
+    edit = response_schema(strict=False)["properties"]["semanticEdit"]["anyOf"][1]
+    edit["required"] = ["summary"]
+    for name, identity in (("entities", "entity_id"), ("parameters", "key"), ("relations", "relation_id")):
+        items = edit["properties"][name]["items"]
+        for variant in items.get("anyOf", [items]):
+            variant["required"] = [identity]
+            variant["description"] = "Upsert: omitted fields retain the existing value; new items need their complete declared fields."
+            fields = variant.get("properties", {}).get("fields")
+            if fields is not None:
+                for field_variant in fields.get("anyOf", [fields]):
+                    field_variant["required"] = []
+    schema.update(edit)
+
+
+class SemanticEditRequestDto(BaseModel):
+    """Named design edits, validated by the existing component compiler."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", json_schema_extra=_semantic_edit_schema)
+
+    summary: str = Field(min_length=1)
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+    parameters: list[dict[str, Any]] = Field(default_factory=list)
+    relations: list[dict[str, Any]] = Field(default_factory=list)
+    remove_entity_ids: list[str] = Field(alias="removeEntityIds", default_factory=list)
+    remove_parameter_keys: list[str] = Field(alias="removeParameterKeys", default_factory=list)
+    remove_relation_ids: list[str] = Field(alias="removeRelationIds", default_factory=list)
+    protected: list[str] = Field(default_factory=list)
+    kept: list[str] = Field(default_factory=list)
+
+
 class ProposalRequestDto(BaseModel):
-    """One utterance against one selection, at one exact base."""
+    """One scalar utterance or a typed semantic edit, at one exact base."""
 
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
 
-    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    model_config = ConfigDict(populate_by_name=True, frozen=True, json_schema_extra={
+        "oneOf": [
+            {"required": ["utterance", "targetComponentId"],
+             "properties": {"utterance": {"type": "string"}, "targetComponentId": {"type": "string"}, "semanticEdit": {"type": "null"}}},
+            {"required": ["semanticEdit"],
+             "properties": {"semanticEdit": {"type": "object"}, "utterance": {"type": "null"}}},
+        ],
+    })
 
+    source_proposal_id: str | None = Field(
+        alias="sourceProposalId", default=None, min_length=1,
+        description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
+        "Only executing the final proposal creates a candidate checkpoint.",
+    )
     state_digest: str = Field(
         alias="stateDigest",
         pattern=STATE_DIGEST_PATTERN,
         description="the stateDigest /api/state answered with; a proposal "
         "against any other state is refused as STALE_BASE",
     )
-    target_component_id: str = Field(
+    target_component_id: str | None = Field(
         alias="targetComponentId",
+        default=None,
         min_length=1,
         description="the selected Component@1; selection comes from the "
         "request, never from the utterance",
@@ -311,11 +407,19 @@ class ProposalRequestDto(BaseModel):
         description="the selected Element@1, when one was picked; it must "
         "belong to targetComponentId",
     )
-    utterance: str = Field(
+    utterance: str | None = Field(
+        default=None,
         min_length=1,
         description="one sentence in the intent grammar; anything else comes "
         "back as BLOCKED_NEEDS_HUMAN with the accepted forms",
     )
+    semantic_edit: SemanticEditRequestDto | None = Field(
+        alias="semanticEdit", default=None,
+        description="Submit the current Agent's typed component edit directly, without another model call. "
+        "Entity producer inputs use @parameter_key bindings; expressions belong to Parameter.expr and inputs. "
+        "Exactly one of semanticEdit and utterance is required.",
+    )
+    keep: list[str] = Field(default_factory=list, description="Additional entity:/parameter: refs this edit must preserve.")
     project_id: str | None = Field(
         alias="projectId",
         default=None,
@@ -330,6 +434,14 @@ class ProposalRequestDto(BaseModel):
         description="the retained run selected as the editing base; omitted "
         "uses the project's default state projection",
     )
+
+    @model_validator(mode="after")
+    def one_edit(self) -> "ProposalRequestDto":
+        if (self.utterance is None) == (self.semantic_edit is None):
+            raise ValueError("provide exactly one of utterance or semanticEdit")
+        if self.utterance is not None and self.target_component_id is None:
+            raise ValueError("a scalar utterance requires targetComponentId")
+        return self
 
     def context_refs(self) -> list[str]:
         """The selection as the ``IntentProvider`` port takes it."""

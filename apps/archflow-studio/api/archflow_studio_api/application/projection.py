@@ -22,7 +22,7 @@ step exists.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from archflow.project.inputs import (
@@ -311,6 +311,24 @@ def project_state(
             binding_error=binding_error,
         ),
         source_stage_ref=source_stage_ref,
+    )
+
+
+def project_proposed_record(base: StateProjection, record: StateRecord) -> StateProjection:
+    """Read an in-memory successor for the next edit, without making a run."""
+
+    state, components, tree_error = _bound_view(
+        record, base.run, phase=base.phase, require_view=True,
+        record_source="in-memory proposal",
+    )
+    elements, binding_error = _elements(record)
+    if binding_error is not None:
+        raise StudioError(422, "STATE_RECORD_INVALID", binding_error)
+    return replace(
+        base, record=record, state=state, components=components,
+        component_tree_error=tree_error, elements=elements,
+        parameters=record.parameters, edges=record.dependency_edges(),
+        record_source="in-memory proposal", matches_reference_receipt=None,
     )
 
 

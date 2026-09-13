@@ -31,6 +31,7 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
 
 from fastapi.testclient import TestClient
 
+from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.settings import StudioSettings
 from monkeyhub_api.main import HubSettings, create_app
 
@@ -132,9 +133,9 @@ class LocalHubCase(unittest.TestCase):
         self.assertEqual(response.json(), body)
         return body
 
-    def wait_state(self, client, app_id, state):
+    def wait_state(self, client, app_id, state, *, project_dir=None):
         def read():
-            response = client.get("/api/apps")
+            response = client.get("/api/apps", params={"projectDir": str(project_dir)} if project_dir is not None else {})
             self.assertEqual(response.status_code, 200, response.text)
             item = next(row for row in response.json() if row["appId"] == app_id)
             if item["state"] == "error" and state != "error":
@@ -144,6 +145,72 @@ class LocalHubCase(unittest.TestCase):
 
 
 class HubApiLifecycleTests(LocalHubCase):
+    def test_projects_run_independent_studios_reuse_their_tools_and_shutdown_together(self):
+        fixture = project_fixture()
+        fixture.make_project(self.root / "projects")
+        project_a = self.root / "projects" / fixture.PROJECT_ID
+        project_b = self.root / "projects" / "parallel-project"
+        FilesystemProjectRepository.initialize(
+            project_b, project_id="parallel-project", initial_state={"project_id": "parallel-project", "version": 0},
+        )
+        web = self.root / "minimal Studio web"
+        web.mkdir()
+        (web / "index.html").write_text("<html>Parallel Studio fixture</html>", encoding="utf-8")
+        processes, ports = [], set()
+        with self.hub(studio_web=web) as client:
+            configured = self.configure(client, projectDir=str(project_a), referenceRun=fixture.REFERENCE_RUN_ID)
+            settings_file = self.runtime / "config/applications.json"
+            saved_settings = settings_file.read_bytes()
+            for project in (project_a, project_b):
+                response = client.post("/api/apps/monkeyarch/start", params={"projectDir": str(project)})
+                self.assertEqual(response.status_code, 202, response.text)
+            a = self.wait_state(client, "monkeyarch", "running")
+            b = self.wait_state(client, "monkeyarch", "running", project_dir=project_b)
+            self.assertNotEqual(a["processId"], b["processId"])
+            self.assertNotEqual(a["url"], b["url"])
+            self.assertEqual(a["url"], f"http://127.0.0.1:{self.studio_port}/")
+            for project, expected, project_id in ((project_a, a, fixture.PROJECT_ID), (project_b, b, "parallel-project")):
+                binding = http_json(expected["url"] + "api/project")
+                self.assertEqual(binding["projectId"], project_id)
+                self.assertEqual(Path(binding["projectDir"]).resolve(), project.resolve())
+                if project == project_b:
+                    self.assertNotEqual(binding["referenceRun"]["runId"], fixture.REFERENCE_RUN_ID)
+                alias = project.parent / "." / project.name / ".." / project.name
+                for tool in ("monkeyarch", "monkeydiagram", "monkeyboard"):
+                    response = client.post(f"/api/apps/{tool}/start", params={"projectDir": str(alias)})
+                    self.assertEqual(response.status_code, 202, response.text)
+                    self.assertEqual(response.json()["processId"], expected["processId"])
+                    self.assertEqual(self.wait_state(client, tool, "running", project_dir=project)["processId"], expected["processId"])
+            self.assertEqual(client.post("/api/apps/monkeymonitor/start", params={"projectDir": str(project_b)}).status_code, 202)
+            monitor = self.wait_state(client, "monkeymonitor", "running")
+            self.assertEqual(self.wait_state(client, "monkeymonitor", "running", project_dir=project_b)["processId"], monitor["processId"])
+            initial_children = tuple(client.app.state.applications._children.values())
+            processes.extend(child.process for child in initial_children)
+            ports.update(child.port for child in initial_children)
+
+            stopped = client.post("/api/apps/monkeyboard/stop", params={"projectDir": str(project_b)})
+            self.assertEqual(stopped.status_code, 202, stopped.text)
+            for tool in ("monkeyarch", "monkeydiagram", "monkeyboard"):
+                self.wait_state(client, tool, "stopped", project_dir=project_b)
+            self.assertEqual(self.wait_state(client, "monkeyarch", "running")["processId"], a["processId"])
+            self.assertEqual(http_json(a["url"] + "api/project")["projectId"], fixture.PROJECT_ID)
+            self.assertEqual(client.post("/api/apps/monkeydiagram/start", params={"projectDir": str(project_b)}).status_code, 202)
+            reopened = self.wait_state(client, "monkeyarch", "running", project_dir=project_b)
+            self.assertNotEqual(reopened["processId"], b["processId"])
+            self.assertEqual(http_json(reopened["url"] + "api/project")["projectId"], "parallel-project")
+            changed = client.put("/api/settings/apps", json={**configured, "cadExport": "occt"})
+            self.assertEqual(changed.status_code, 409, changed.text)
+            self.assertEqual(changed.json()["code"], "APPS_RUNNING")
+            self.assertEqual(client.get("/api/settings/apps").json(), configured)
+            self.assertEqual(settings_file.read_bytes(), saved_settings)
+            remaining_children = tuple(client.app.state.applications._children.values())
+            processes.extend(child.process for child in remaining_children)
+            ports.update(child.port for child in remaining_children)
+        for process in processes:
+            self.assertEqual(process.poll(), 0)
+        for port in ports:
+            self.assertFalse(port_open(port), f"Owned service on {port} survived Hub shutdown")
+
     def test_no_project_hub_runs_monitor_reopens_and_deduplicates_start(self):
         with patch.object(StudioSettings, "__post_init__", side_effect=AssertionError(
             "A project-free Hub must not construct StudioSettings"

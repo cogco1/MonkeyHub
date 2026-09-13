@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { ApplicationSettingsApiSettingsAppsGetData, ApplicationSettingsApiSettingsAppsGetResponses, ChatProjectsApiChatProjectsGetData, ChatProjectsApiChatProjectsGetResponses, ChatProvidersApiChatProvidersGetData, ChatProvidersApiChatProvidersGetErrors, ChatProvidersApiChatProvidersGetResponses, ChatSessionsApiChatSessionsGetData, ChatSessionsApiChatSessionsGetErrors, ChatSessionsApiChatSessionsGetResponses, ChatWorkspaceApiChatWorkspaceGetData, ChatWorkspaceApiChatWorkspaceGetResponses, CreateChatApiChatSessionsPostData, CreateChatApiChatSessionsPostErrors, CreateChatApiChatSessionsPostResponses, CreateChatProjectApiChatProjectsPostData, CreateChatProjectApiChatProjectsPostErrors, CreateChatProjectApiChatProjectsPostResponses, GetFabProfilesApiFabProfilesGetData, GetFabProfilesApiFabProfilesGetErrors, GetFabProfilesApiFabProfilesGetResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, HealthApiHealthGetData, HealthApiHealthGetResponses, ListAppsApiAppsGetData, ListAppsApiAppsGetResponses, PostChatApiChatSessionsSessionIdMessagesPostData, PostChatApiChatSessionsSessionIdMessagesPostErrors, PostChatApiChatSessionsSessionIdMessagesPostResponses, PrepareFabApiFabPreparePostData, PrepareFabApiFabPreparePostErrors, PrepareFabApiFabPreparePostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadChatApiChatSessionsSessionIdGetData, ReadChatApiChatSessionsSessionIdGetErrors, ReadChatApiChatSessionsSessionIdGetResponses, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostData, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses, SendFabApiFabSendPostData, SendFabApiFabSendPostErrors, SendFabApiFabSendPostResponses, SetChatModelApiChatSessionsSessionIdModelPutData, SetChatModelApiChatSessionsSessionIdModelPutErrors, SetChatModelApiChatSessionsSessionIdModelPutResponses, StartAppApiAppsAppIdStartPostData, StartAppApiAppsAppIdStartPostErrors, StartAppApiAppsAppIdStartPostResponses, StopAppApiAppsAppIdStopPostData, StopAppApiAppsAppIdStopPostErrors, StopAppApiAppsAppIdStopPostResponses, StopChatApiChatSessionsSessionIdStopPostData, StopChatApiChatSessionsSessionIdStopPostErrors, StopChatApiChatSessionsSessionIdStopPostResponses, UpdateApplicationSettingsApiSettingsAppsPutData, UpdateApplicationSettingsApiSettingsAppsPutErrors, UpdateApplicationSettingsApiSettingsAppsPutResponses } from './types.gen';
+import type { ApplicationSettingsApiSettingsAppsGetData, ApplicationSettingsApiSettingsAppsGetResponses, ChatProjectsApiChatProjectsGetData, ChatProjectsApiChatProjectsGetResponses, ChatProvidersApiChatProvidersGetData, ChatProvidersApiChatProvidersGetErrors, ChatProvidersApiChatProvidersGetResponses, ChatSessionsApiChatSessionsGetData, ChatSessionsApiChatSessionsGetErrors, ChatSessionsApiChatSessionsGetResponses, ChatWorkspaceApiChatWorkspaceGetData, ChatWorkspaceApiChatWorkspaceGetResponses, CreateChatApiChatSessionsPostData, CreateChatApiChatSessionsPostErrors, CreateChatApiChatSessionsPostResponses, CreateChatProjectApiChatProjectsPostData, CreateChatProjectApiChatProjectsPostErrors, CreateChatProjectApiChatProjectsPostResponses, GetFabProfilesApiFabProfilesGetData, GetFabProfilesApiFabProfilesGetErrors, GetFabProfilesApiFabProfilesGetResponses, GetUserSettingsApiSettingsUserGetData, GetUserSettingsApiSettingsUserGetResponses, HealthApiHealthGetData, HealthApiHealthGetResponses, ListAppsApiAppsGetData, ListAppsApiAppsGetErrors, ListAppsApiAppsGetResponses, PostChatApiChatSessionsSessionIdMessagesPostData, PostChatApiChatSessionsSessionIdMessagesPostErrors, PostChatApiChatSessionsSessionIdMessagesPostResponses, PrepareFabApiFabPreparePostData, PrepareFabApiFabPreparePostErrors, PrepareFabApiFabPreparePostResponses, PrepareProjectModelingApiProjectModelingPostData, PrepareProjectModelingApiProjectModelingPostErrors, PrepareProjectModelingApiProjectModelingPostResponses, PutUserSettingsApiSettingsUserPutData, PutUserSettingsApiSettingsUserPutErrors, PutUserSettingsApiSettingsUserPutResponses, ReadChatApiChatSessionsSessionIdGetData, ReadChatApiChatSessionsSessionIdGetErrors, ReadChatApiChatSessionsSessionIdGetResponses, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostData, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostErrors, ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses, SendFabApiFabSendPostData, SendFabApiFabSendPostErrors, SendFabApiFabSendPostResponses, SetChatArchivedApiChatSessionsSessionIdArchivePutData, SetChatArchivedApiChatSessionsSessionIdArchivePutErrors, SetChatArchivedApiChatSessionsSessionIdArchivePutResponses, SetChatModelApiChatSessionsSessionIdModelPutData, SetChatModelApiChatSessionsSessionIdModelPutErrors, SetChatModelApiChatSessionsSessionIdModelPutResponses, StartAppApiAppsAppIdStartPostData, StartAppApiAppsAppIdStartPostErrors, StartAppApiAppsAppIdStartPostResponses, StopAppApiAppsAppIdStopPostData, StopAppApiAppsAppIdStopPostErrors, StopAppApiAppsAppIdStopPostResponses, StopChatApiChatSessionsSessionIdStopPostData, StopChatApiChatSessionsSessionIdStopPostErrors, StopChatApiChatSessionsSessionIdStopPostResponses, UpdateApplicationSettingsApiSettingsAppsPutData, UpdateApplicationSettingsApiSettingsAppsPutErrors, UpdateApplicationSettingsApiSettingsAppsPutResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -26,7 +26,7 @@ export const healthApiHealthGet = <ThrowOnError extends boolean = false>(options
 /**
  * List Apps
  */
-export const listAppsApiAppsGet = <ThrowOnError extends boolean = false>(options?: Options<ListAppsApiAppsGetData, ThrowOnError>): RequestResult<ListAppsApiAppsGetResponses, unknown, ThrowOnError> => (options?.client ?? client).get<ListAppsApiAppsGetResponses, unknown, ThrowOnError>({ url: '/api/apps', ...options });
+export const listAppsApiAppsGet = <ThrowOnError extends boolean = false>(options?: Options<ListAppsApiAppsGetData, ThrowOnError>): RequestResult<ListAppsApiAppsGetResponses, ListAppsApiAppsGetErrors, ThrowOnError> => (options?.client ?? client).get<ListAppsApiAppsGetResponses, ListAppsApiAppsGetErrors, ThrowOnError>({ url: '/api/apps', ...options });
 
 /**
  * Start App
@@ -77,6 +77,18 @@ export const applicationSettingsApiSettingsAppsGet = <ThrowOnError extends boole
  */
 export const updateApplicationSettingsApiSettingsAppsPut = <ThrowOnError extends boolean = false>(options: Options<UpdateApplicationSettingsApiSettingsAppsPutData, ThrowOnError>): RequestResult<UpdateApplicationSettingsApiSettingsAppsPutResponses, UpdateApplicationSettingsApiSettingsAppsPutErrors, ThrowOnError> => (options.client ?? client).put<UpdateApplicationSettingsApiSettingsAppsPutResponses, UpdateApplicationSettingsApiSettingsAppsPutErrors, ThrowOnError>({
     url: '/api/settings/apps',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Prepare Project Modeling
+ */
+export const prepareProjectModelingApiProjectModelingPost = <ThrowOnError extends boolean = false>(options: Options<PrepareProjectModelingApiProjectModelingPostData, ThrowOnError>): RequestResult<PrepareProjectModelingApiProjectModelingPostResponses, PrepareProjectModelingApiProjectModelingPostErrors, ThrowOnError> => (options.client ?? client).post<PrepareProjectModelingApiProjectModelingPostResponses, PrepareProjectModelingApiProjectModelingPostErrors, ThrowOnError>({
+    url: '/api/project/modeling',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -150,6 +162,18 @@ export const postChatApiChatSessionsSessionIdMessagesPost = <ThrowOnError extend
  */
 export const setChatModelApiChatSessionsSessionIdModelPut = <ThrowOnError extends boolean = false>(options: Options<SetChatModelApiChatSessionsSessionIdModelPutData, ThrowOnError>): RequestResult<SetChatModelApiChatSessionsSessionIdModelPutResponses, SetChatModelApiChatSessionsSessionIdModelPutErrors, ThrowOnError> => (options.client ?? client).put<SetChatModelApiChatSessionsSessionIdModelPutResponses, SetChatModelApiChatSessionsSessionIdModelPutErrors, ThrowOnError>({
     url: '/api/chat/sessions/{session_id}/model',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set Chat Archived
+ */
+export const setChatArchivedApiChatSessionsSessionIdArchivePut = <ThrowOnError extends boolean = false>(options: Options<SetChatArchivedApiChatSessionsSessionIdArchivePutData, ThrowOnError>): RequestResult<SetChatArchivedApiChatSessionsSessionIdArchivePutResponses, SetChatArchivedApiChatSessionsSessionIdArchivePutErrors, ThrowOnError> => (options.client ?? client).put<SetChatArchivedApiChatSessionsSessionIdArchivePutResponses, SetChatArchivedApiChatSessionsSessionIdArchivePutErrors, ThrowOnError>({
+    url: '/api/chat/sessions/{session_id}/archive',
     ...options,
     headers: {
         'Content-Type': 'application/json',

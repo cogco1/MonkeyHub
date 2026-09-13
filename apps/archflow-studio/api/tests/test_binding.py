@@ -81,6 +81,25 @@ class BoundProjectTests(unittest.TestCase):
             payload["referenceRun"]["baseSha256"], head.state_sha256
         )
 
+    def test_modeling_entry_preserves_an_existing_design_and_refuses_another_project(self) -> None:
+        before = self.repository.layout.authored_record.read_bytes()
+        state = self.client.get("/api/state").json()
+        self.assertEqual(self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID}).json(),
+                         {"projectId": PROJECT_ID, "initialized": False})
+        self.assertEqual(self.repository.layout.authored_record.read_bytes(), before)
+        self.assertEqual(self.client.get("/api/state").json(), state)
+        response = self.client.post("/api/project/modeling", json={"projectId": "another-project"})
+        self.assertEqual(response.status_code, 404, response.text)
+
+    def test_initial_preparation_does_not_read_stale_authored_inputs_over_a_retained_model(self) -> None:
+        state = self.client.get("/api/state").json()
+        self.repository.layout.authored_record.write_bytes(b"unfinished authored edit")
+        response = self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(response.json()["initialized"])
+        self.assertEqual(self.client.get("/api/state").json(), state)
+        self.assertEqual(self.repository.layout.authored_record.read_bytes(), b"unfinished authored edit")
+
     def test_the_binding_is_opened_once_and_kept(self) -> None:
         first = self.client.get("/api/project")
         second = self.client.get("/api/project")

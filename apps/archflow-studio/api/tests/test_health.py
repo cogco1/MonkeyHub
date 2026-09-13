@@ -4,13 +4,19 @@ the error shape."""
 from __future__ import annotations
 
 import io
+import json
 import os
 from pathlib import Path
 import shutil
+import socket
+import subprocess
+import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from urllib.request import urlopen
 
 from fastapi.testclient import TestClient
 
@@ -59,6 +65,87 @@ class BoundHealthTests(unittest.TestCase):
 
 
 class ManagedStudioTests(unittest.TestCase):
+    def test_cold_managed_pipe_launch_serves_before_owner_sends_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+            probe.close()
+            root = Path(directory)
+            environment = {key: value for key, value in os.environ.items()
+                           if not key.startswith("ARCHFLOW_STUDIO_") and key != "MONKEYMONITOR_DATA_DIR"}
+            environment["ARCHFLOW_STUDIO_CAD_EXPORT"] = "off"
+            log_path = root / "studio.log"
+            with log_path.open("wb") as log:
+                child = subprocess.Popen(
+                    [sys.executable, "-m", "archflow_studio_api.main", "--port", str(port),
+                     "--project-dir", str(root / "missing-project"),
+                     "--managed-stdin", "--managed-instance-id", "cold-pipe-test"],
+                    env=environment, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                try:
+                    health = None
+                    deadline = time.monotonic() + 15
+                    while child.poll() is None and time.monotonic() < deadline:
+                        try:
+                            with urlopen(f"http://127.0.0.1:{port}/api/health", timeout=0.3) as response:
+                                health = json.load(response)
+                            break
+                        except OSError:
+                            time.sleep(0.05)
+                    self.assertIsNotNone(health, log_path.read_text(encoding="utf-8"))
+                    self.assertEqual(health["managedInstanceId"], "cold-pipe-test")
+                    self.assertFalse(health["projectBound"])
+                    self.assertFalse((root / "missing-project").exists())
+                finally:
+                    if child.poll() is None:
+                        child.stdin.write(b"stop\n")
+                        child.stdin.flush()
+                    child.stdin.close()
+                    try:
+                        child.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+                        child.wait(timeout=5)
+                self.assertEqual(child.returncode, 0, log_path.read_text(encoding="utf-8"))
+
+    def test_cold_start_initializes_drawing_libraries_before_request_workers(self) -> None:
+        # A fresh process is essential: the suite may already have imported the
+        # native libraries, concealing their first import in a request worker.
+        program = """
+import asyncio
+from pathlib import Path
+import sys
+import threading
+from anyio import to_thread
+from archflow_studio_api.main import create_app
+from archflow_studio_api.settings import StudioSettings
+
+app = create_app(StudioSettings(cad_export="off", project_dir=Path("unbound-placeholder")))
+
+def outline_area():
+    from shapely.geometry import Polygon
+    return Polygon(((0, 0), (1, 0), (1, 1), (0, 1))).area
+
+async def check():
+    assert threading.current_thread() is threading.main_thread()
+    async with app.router.lifespan_context(app):
+        assert "numpy" in sys.modules and "shapely.lib" in sys.modules
+        assert not hasattr(app.state, "binding")
+        results = await asyncio.gather(
+            to_thread.run_sync(outline_area),
+            to_thread.run_sync(lambda: "responsive"),
+        )
+        assert results == [1.0, "responsive"], results
+
+asyncio.run(check())
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", program], capture_output=True, text=True,
+            timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_stop_command_and_owner_pipe_eof_close_job_admission(self) -> None:
         for owner_input in ("ignored\nstop\n", ""):
             with self.subTest(owner_input=owner_input):

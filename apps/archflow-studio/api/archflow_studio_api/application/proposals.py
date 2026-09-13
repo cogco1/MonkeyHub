@@ -15,11 +15,14 @@ it exists at all is that ``POST /api/proposals`` must be able to answer a later
 
 from __future__ import annotations
 
-from dataclasses import MISSING, dataclass, fields
+from dataclasses import MISSING, dataclass, fields, replace
 from typing import TYPE_CHECKING, Any, Mapping
 
 from archflow.state.decision_operator import DecisionOperator
-from archflow.state.state_record import StateRecordOperator
+from archflow.state.state_record import (
+    StateRecord, StateRecordEditKind, StateRecordError, StateRecordOperator,
+    apply_state_record_operator,
+)
 from archflow.project.refs import ProjectRecordRef
 
 from ..transport.errors import StudioError
@@ -28,6 +31,7 @@ from .impact import Impact
 if TYPE_CHECKING:  # the pending intent is a value, not a dependency
     from .clarification import PendingIntent
     from .artifacts import ModelSource
+    from .projection import StateProjection
 
 # What the DTO says about itself, verbatim. A client that shows this has been
 # told the truth about what it is looking at.
@@ -85,6 +89,89 @@ class Proposal:
     document_comment_ref: ProjectRecordRef | None = None
     model_source: "ModelSource | None" = None
 
+
+
+def operator_of(proposal: Proposal, record: StateRecord) -> StateRecordOperator:
+    """The existing scalar or component operator, at its unchanged exact base."""
+
+    return proposal.state_record_operator or StateRecordOperator(
+        kind=StateRecordEditKind.SET_SCALAR,
+        base_record_digest=proposal.record_digest,
+        base_state_digest=record.state_digest,
+        protected=tuple(sorted(set(proposal.protected))),
+        target_ref=proposal.target_ref, key=proposal.key, value=proposal.new,
+    )
+
+
+def continue_proposal(
+    base: "StateProjection", previous: Proposal, proposal: Proposal,
+) -> Proposal:
+    """Fold another checked edit into one proposal on the first exact base.
+
+    The store still contains only ordinary, immutable proposal values. The
+    intermediate record is calculated here and discarded; only the existing
+    candidate endpoint can create a run or export geometry.
+    """
+
+    from .intent import component_edit_proposal
+
+    if proposal.status == "conflict":
+        raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", "The next edit reaches protected refs: " + ", ".join(proposal.impact.conflicts))
+    prior_operator = operator_of(previous, base.record)
+    prior_record = apply_state_record_operator(base.record, prior_operator)
+    try:
+        # Earlier keep conditions apply to the state in which they were made,
+        # including a form first drawn during this chain.
+        successor = apply_state_record_operator(
+            prior_record,
+            replace(operator_of(proposal, prior_record), protected=previous.protected),
+        )
+    except StateRecordError as exc:
+        raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", str(exc)) from exc
+
+    edit: dict[str, Any] = {}
+    for name, identity, removal in (
+        ("entities", "entity_id", "removeEntityIds"),
+        ("parameters", "key", "removeParameterKeys"),
+        ("relations", "relation_id", "removeRelationIds"),
+    ):
+        before = {getattr(item, identity): item for item in getattr(base.record, name)}
+        after = {getattr(item, identity): item for item in getattr(successor, name)}
+        # These are authorable fields. Existing lineage/locks are retained by
+        # the component compiler, not submitted as fresh authored authority.
+        edit[name] = [
+            {field: value for field, value in item.to_dict().items()
+             if field not in {"lineage", "lock_authority"}}
+            for key, item in after.items() if before.get(key) != item
+        ]
+        edit[removal] = sorted(before.keys() - after.keys())
+    if not any(edit.values()):
+        raise StudioError(422, "PROPOSAL_CHAIN_NO_CHANGE", "The editing chain returns to its starting state; no checkpoint is needed.")
+
+    # A keep introduced after a change protects that intermediate value, not
+    # the older value on the retained base. It was enforced above, and travels
+    # in Proposal.protected for subsequent edits. Only protections already
+    # true on the first base belong on the final operator replayed there.
+    earlier_changes = set(previous.impact.direct) | set(previous.impact.propagated)
+    root_protected = set(prior_operator.protected) | (set(proposal.protected) - earlier_changes)
+    protected = tuple(sorted(set(previous.protected) | set(proposal.protected)))
+    kept = list(dict.fromkeys(
+        list((previous.semantic_edit or {}).get("kept", ()))
+        + list((proposal.semantic_edit or {}).get("kept", ()))
+    ))
+    edit.update(summary=proposal.utterance, protected=sorted(root_protected), kept=kept)
+    combined = proposal_from(component_edit_proposal(
+        base, edit, utterance=proposal.utterance, component_id=proposal.component_id,
+    ))
+    return replace(
+        combined, source_run_id=previous.source_run_id,
+        source_stage_ref=previous.source_stage_ref, model_source=previous.model_source,
+        compilation_receipt=previous.compilation_receipt,
+        document_comment_ref=previous.document_comment_ref, pending=previous.pending,
+        # The cumulative keep list also governs later proposal continuations;
+        # the final operator and its impact remain relative to the first base.
+        protected=protected,
+    )
 
 
 def read_refs_of(proposal: "Proposal") -> frozenset[str]:

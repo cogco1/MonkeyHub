@@ -21,10 +21,12 @@ from ..application.capability import (
     capability_index,
     describe_capability,
     find_with_evidence,
+    initialization_description,
     require_runnable,
 )
 from ..application.intent import merge_keep
 from ..application.projection import project_state
+from ..transport.errors import StudioError
 from ..transport.capability import (
     CapabilityDetailDto,
     CapabilityIndexDto,
@@ -85,7 +87,13 @@ def read_capability(
 
     entry = capability(capability_id)
     binding = bound_project(request.app.state)
-    projection = project_state(binding, run_id=run, require_view=False, source_stage_ref=source_stage_ref)
+    try:
+        projection = project_state(binding, run_id=run, require_view=False, source_stage_ref=source_stage_ref)
+    except StudioError as exc:
+        if (capability_id != "project.initialize_modeling"
+                or exc.status != 404 or exc.code != "STATE_RECORD_NOT_FOUND"):
+            raise
+        return detail_dto(initialization_description(binding, entry))
     return detail_dto(
         describe_capability(binding, projection, entry, component_id=target, element_id=element_id)
     )

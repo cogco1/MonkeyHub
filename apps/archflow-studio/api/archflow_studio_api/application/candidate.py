@@ -115,15 +115,9 @@ def execute_candidate(
         source_run_id=proposal.source_run_id,
         source_stage_ref=proposal.source_stage_ref,
     )
-    operator = proposal.state_record_operator or StateRecordOperator(
-        kind=StateRecordEditKind.SET_SCALAR,
-        base_record_digest=proposal.record_digest,
-        base_state_digest=base_record.state_digest,
-        protected=tuple(sorted(set(proposal.protected))),
-        target_ref=proposal.target_ref,
-        key=proposal.key,
-        value=proposal.new,
-    )
+    from .proposals import operator_of
+
+    operator = operator_of(proposal, base_record)
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = ()
     if proposal.compilation_receipt is not None:
         # A chat turn is work in progress; a run is shared (ADR-007). The receipt of
@@ -168,8 +162,8 @@ def _retain_composed_candidate(
     after = {row["seat_id"]: row for row in _rows(receipt.get("seat_results"))}
     if not before or before.keys() != after.keys():
         raise ValueError("The composed candidate needs the same retained geometry seats as its source model.")
-    _, composed = artifact_bytes(binding, source.sha256)
-    listing = list_artifacts(binding)
+    _, composed = artifact_bytes(binding, source.sha256, run_id=source.run_id)
+    listing = list_artifacts(binding, run_id=run_id)
     for seat_id, seat in after.items():
         prior_ref = before[seat_id].get("program_ref")
         next_ref = seat.get("program_ref")
@@ -182,7 +176,7 @@ def _retain_composed_candidate(
             raise ValueError(f"The composed candidate needs an available native 3DM export for seat {seat_id}.")
         prior_program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(prior_ref, binding.project_id)))
         program = load_compiled_geometry_program(binding.repository.load_json(record_ref_from_uri(next_ref, binding.project_id)))
-        _, donor = artifact_bytes(binding, donors[0].sha256)
+        _, donor = artifact_bytes(binding, donors[0].sha256, run_id=run_id)
         composed = patch_composed_three_dm(composed, prior_program=prior_program, program=program, replacement_3dm=donor)
     projection = project_state(binding, run_id)
     register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode())
@@ -383,7 +377,7 @@ def run_operator(
         if stage.candidate_id == projection.run.run_id:
             model_source = ModelSource(stage.candidate_id, projection.state_digest, stage.model_sha256)
         else:
-            complete = [row.model_source for row in list_artifacts(binding).artifacts
+            complete = [row.model_source for row in list_artifacts(binding, run_id=projection.run.run_id).artifacts
                         if row.run_id == projection.run.run_id and row.design_state_digest == projection.state_digest
                         and row.representation == "composed" and row.model_source is not None]
             if len(complete) == 1:
@@ -659,10 +653,12 @@ def describe(
     seat_rows = _rows(receipt.get("seat_results"))
     record_digest = _text(receipt.get("state_record_digest"))
     projection = project_state(binding)
-    executed = _executed_record(binding, receipt)
-    # One listing answers both questions: which of this run's exports are
-    # servable, and which runs could not be read while finding out.
-    listing = list_artifacts(binding)
+    executed = (_executed_record(binding, receipt) if proposal is not None and any(
+        ref.startswith("parameter:") for ref in proposal.impact.propagated
+    ) else None)
+    # This run's exports are enough for its readout; the projection retains
+    # the project-wide diagnostics about unreadable runs.
+    listing = list_artifacts(binding, run_id=candidate_id)
     workflow_ref = receipt.get("workflow_ref")
     if workflow_ref:
         workflow = binding.repository.load_json(record_ref_from_uri(workflow_ref, binding.project_id))
@@ -711,7 +707,7 @@ def describe(
             for record in listing.artifacts
             if record.run_id == candidate_id
         ),
-        skipped_runs=listing.skipped_runs,
+        skipped_runs=tuple(sorted(set(listing.skipped_runs) | set(projection.reference.skipped_runs))),
         wall_time_s=_number(receipt.get("wall_time_s")),
         honesty=_honesty(proposal, projection, executed),
     )

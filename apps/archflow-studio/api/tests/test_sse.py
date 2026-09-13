@@ -17,6 +17,7 @@ bounded read is trying to avoid.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from pathlib import Path
 import shutil
@@ -27,8 +28,9 @@ import unittest
 from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
+import uvicorn
 
-from archflow_studio_api.main import create_app
+from archflow_studio_api.main import _watch_managed_stdin, create_app
 from archflow_studio_api.routes.events import stream_events
 from archflow_studio_api.settings import StudioSettings
 
@@ -140,6 +142,43 @@ class SseTestCase(unittest.TestCase):
             with self.assertRaises(StopAsyncIteration):
                 await asyncio.wait_for(waiting, timeout=2)
             await stream.aclose()
+
+        asyncio.run(check())
+
+    def test_managed_stop_closes_a_real_sse_connection_before_lifespan_shutdown(self) -> None:
+        async def check():
+            server = uvicorn.Server(uvicorn.Config(
+                self.app, host="127.0.0.1", port=0, log_level="error", log_config=None,
+            ))
+            serving = asyncio.create_task(server.serve())
+            writer = None
+            try:
+                async def started():
+                    while not server.started:
+                        if serving.done():
+                            await serving
+                        await asyncio.sleep(0.01)
+                await asyncio.wait_for(started(), timeout=10)
+                port = server.servers[0].sockets[0].getsockname()[1]
+                reader, writer = await asyncio.open_connection("127.0.0.1", port)
+                writer.write(b"GET /api/events HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                await writer.drain()
+                headers = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=5)
+                self.assertIn(b"200 OK", headers)
+                self.assertIn(b"text/event-stream", headers)
+                _watch_managed_stdin(server, self.app.state.jobs, io.StringIO("stop\n"))
+                # Keep the client open: server shutdown must finish its stream,
+                # rather than depend on the browser leaving first.
+                await asyncio.wait_for(asyncio.shield(serving), timeout=3)
+                self.assertFalse(self.app.state.jobs.accepting)
+                self.assertEqual(await asyncio.wait_for(reader.read(), timeout=1), b"0\r\n\r\n")
+            finally:
+                if writer is not None:
+                    writer.close()
+                    await writer.wait_closed()
+                server.should_exit = True
+                if not serving.done():
+                    await asyncio.wait_for(serving, timeout=5)
 
         asyncio.run(check())
 

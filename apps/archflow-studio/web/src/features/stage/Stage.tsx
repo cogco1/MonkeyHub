@@ -1257,9 +1257,12 @@ export function Stage({
       </div>
 
       {documentMounted && <div style={{ visibility: documentOpen ? "visible" : "hidden" }} inert={!documentOpen} aria-hidden={!documentOpen}>
-        {documentProjectId && documentRunId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}:${documentView.sourceSha}:${documentView.revisionRef}`}
+        {documentProjectId ? <DocumentCanvas key={`${documentProjectId}:${documentRunId}:${documentView.sourceSha}:${documentView.revisionRef}`}
           projectId={documentProjectId} runId={documentRunId} controller={documentAnnotationsController}
           modelSources={documentModelSources} editingModelSource={editingModelSource}
+          viewedModelSource={viewedModelSource} active={documentOpen && loadingSha === null && !changingBase}
+          onOpenGeneratedDocument={(result) => onDocumentView({ open: true, mounted: true, runId: result.runId,
+            sourceSha: result.assetSha256, revisionRef: result.revisionRef ?? null, pageIndex: 0 })}
           onContinueModelSource={onContinueModelSource}
           initialSourceSha={documentView.sourceSha} initialPageIndex={documentView.pageIndex}
           initialRevisionRef={documentView.revisionRef}

@@ -424,6 +424,8 @@ def save_document(
     binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
     replaces_pages: tuple[DocumentPageReplacement, ...] = (),
+    *, drawing_id: str | None = None, source_stage_ref: str | None = None,
+    view_recipe: dict[str, Any] | None = None, generated_at: str | None = None,
 ) -> SourceDocument:
     """Retain original bytes in a named run or the project's source-document run."""
 
@@ -470,7 +472,8 @@ def save_document(
                 raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document run could not be retained in its project.") from exc
             run_id = run.run_id
         document = SourceDocument(binding.project_id, run_id, digest, file_name, mime_type, len(data), pages,
-                                  model_source, replaces_pages=replaces_pages)
+                                  model_source, drawing_id=drawing_id, source_stage_ref=source_stage_ref,
+                                  view_recipe=view_recipe, generated_at=generated_at, replaces_pages=replaces_pages)
         try:
             binding.repository.ingest(
                 run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
@@ -483,7 +486,9 @@ def save_document(
                     key: value for key, value in asdict(document).items() if key not in (
                         "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
                     )
-                }, **({"modelSource": model_source.to_dict()} if model_source else {})},
+                }, **({"modelSource": model_source.to_dict()} if model_source else {}),
+                **({"drawingId": drawing_id, "sourceStageRef": source_stage_ref,
+                    "viewRecipe": view_recipe, "generatedAt": generated_at} if drawing_id is not None else {})},
             )
         except (ProjectRepositoryError, OSError) as exc:
             raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
@@ -588,15 +593,18 @@ def save_viewport_capture(
     )
 
 
-def list_artifacts(binding: ProjectBinding, *, include_candidate_sources: bool = False) -> ArtifactListing:
-    """Every artifact certified by a receipt in this project, run by run."""
+def list_artifacts(
+    binding: ProjectBinding, *, run_id: str | None = None, include_candidate_sources: bool = False,
+) -> ArtifactListing:
+    """Certified artifacts in the requested run, or the whole project when omitted."""
 
     records: list[ArtifactRecord] = []
     skipped: list[str] = []
-    for run_id in binding.run_ids():
+    for run_id in binding.run_ids() if run_id is None else (run_id,):
         try:
-            refs = _receipt_refs(binding, run_id)
-            records.extend(_registered_model_assets(binding, run_id))
+            record_refs = binding.record_refs(run_id)
+            refs = _receipt_refs(record_refs)
+            records.extend(_registered_model_assets(binding, run_id, record_refs))
         except (StudioError, ProjectRepositoryError, ValueError, OSError):
             skipped.append(run_id)
             continue
@@ -670,7 +678,7 @@ def require_model_source(
     require_actionable(actual)
     if not actual.reference_state_exact or (actual.run.run_id, actual.state_digest) != (source.run_id, source.state_digest):
         raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The model source does not match the exact retained editing state.")
-    record = next((row for row in list_artifacts(binding).artifacts if (
+    record = next((row for row in list_artifacts(binding, run_id=source.run_id).artifacts if (
         row.run_id, row.design_state_digest, row.sha256, row.format
     ) == (source.run_id, source.state_digest, source.asset_sha256, FORMAT_3DM)), None)
     if record is None:
@@ -726,8 +734,12 @@ def export_rhino_work_model(
     from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
 
     with _work_model_lock:
-        listing = list_artifacts(binding)
-        source_record = _work_model_source(listing, run_id=run_id, sha256=sha256)
+        listing = list_artifacts(binding, run_id=run_id)
+        source_listing = listing
+        if SHA256_HEX.match(sha256) is not None and not any(row.sha256 == sha256 for row in listing.artifacts):
+            # A wrong-run request still names the runs that actually exported it.
+            source_listing = list_artifacts(binding)
+        source_record = _work_model_source(source_listing, run_id=run_id, sha256=sha256)
         existing = _existing_work_model(listing, source_record)
         if existing is not None:
             return existing
@@ -842,7 +854,7 @@ def export_rhino_work_model(
                 409, "WORK_MODEL_EXPORT_FAILED",
                 error_sentence(_work_model_failure(execution)),
             )
-        exported = _existing_work_model(list_artifacts(binding), source_record)
+        exported = _existing_work_model(list_artifacts(binding, run_id=run_id), source_record)
         if exported is None:  # pragma: no cover - the receipt was just retained
             raise StudioError(
                 409, "WORK_MODEL_EXPORT_FAILED",
@@ -1092,9 +1104,11 @@ def register_model_asset(
         return registered
 
 
-def _registered_model_assets(binding: ProjectBinding, run_id: str) -> tuple[ArtifactRecord, ...]:
+def _registered_model_assets(
+    binding: ProjectBinding, run_id: str, refs: tuple[ProjectRecordRef, ...] | None = None,
+) -> tuple[ArtifactRecord, ...]:
     records = []
-    for ref in binding.record_refs(run_id):
+    for ref in binding.record_refs(run_id) if refs is None else refs:
         if record_kind(ref) != STUDIO_MODEL_ASSET:
             continue
         payload = binding.repository.load_json(ref)
@@ -1125,7 +1139,7 @@ def _registered_model_assets(binding: ProjectBinding, run_id: str) -> tuple[Arti
 
 
 def artifact_bytes(
-    binding: ProjectBinding, sha256: str
+    binding: ProjectBinding, sha256: str, *, run_id: str | None = None,
 ) -> tuple[ArtifactRecord, bytes]:
     """The bytes of the artifact with that digest, re-verified as they are read.
 
@@ -1142,7 +1156,7 @@ def artifact_bytes(
             f"{sha256!r} is not an artifact digest: artifacts are addressed by "
             "the 64 lowercase hex characters of their sha256.",
         )
-    listing = list_artifacts(binding)
+    listing = list_artifacts(binding, run_id=run_id)
     claiming = [item for item in listing.artifacts if item.sha256 == sha256]
     if not claiming:
         raise StudioError(
@@ -1230,9 +1244,7 @@ def _unsearched(skipped_runs: tuple[str, ...]) -> str:
     )
 
 
-def _receipt_refs(
-    binding: ProjectBinding, run_id: str
-) -> tuple[ProjectRecordRef, ...]:
+def _receipt_refs(refs: tuple[ProjectRecordRef, ...]) -> tuple[ProjectRecordRef, ...]:
     """The run's execution receipt records, digest-verified by the repository.
 
     Listing only. What each receipt *says* is read one at a time by the
@@ -1241,7 +1253,7 @@ def _receipt_refs(
 
     return tuple(
         ref
-        for ref in binding.record_refs(run_id)
+        for ref in refs
         if record_kind(ref) in EXPORT_RECEIPT_KINDS
     )
 

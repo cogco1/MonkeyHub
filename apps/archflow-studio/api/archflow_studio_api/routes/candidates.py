@@ -31,9 +31,11 @@ import secrets
 from fastapi import APIRouter, Query
 from starlette.requests import Request
 
+from archflow.project.repository import ProjectRepositoryError
+
 from ..application.binding import ProjectBinding, bound_project
-from ..application.candidate import describe, execute_candidate, prepare_combined_candidate, run_operator
-from ..application.compare import compare_runs
+from ..application.candidate import CandidateRun, describe, execute_candidate, prepare_combined_candidate, run_operator
+from ..application.compare import compare_runs, shapes_of
 from ..application.jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
 from ..application.monitoring import projection_source_ref
 from ..application.projection import (
@@ -180,7 +182,8 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
         # Jobs and proposals are process-local execution state. A completed
         # candidate remains readable after restart only when its exact P036
         # runner receipt proves that this run used the Studio harness.
-        return candidate_dto(
+        return _candidate_with_objects(
+            binding,
             describe(
                 binding,
                 None,
@@ -194,7 +197,8 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
         # Only unfinished/failed execution state is answered by the in-memory
         # registry. A succeeded candidate must still prove itself below with
         # its exact retained runner receipt.
-        return candidate_dto(
+        return _candidate_with_objects(
+            binding,
             describe(
                 binding,
                 None,
@@ -214,7 +218,8 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
         # option rather than a proposal. The run's own facts are unchanged —
         # they are the records' — and the readout says which it is.
         proposal = None
-    return candidate_dto(
+    return _candidate_with_objects(
+        binding,
         describe(
             binding,
             proposal,
@@ -223,6 +228,22 @@ def read_candidate(request: Request, candidate_id: str) -> CandidateDto:
             status=SUCCEEDED,
             proposal_id=job.proposal_id,
         )
+    )
+
+
+def _candidate_with_objects(binding: ProjectBinding, candidate: CandidateRun) -> CandidateDto:
+    if candidate.status != SUCCEEDED:
+        return candidate_dto(candidate, object_readback_error=f"Candidate is {candidate.status}; retained object inspection is unavailable.")
+    try:
+        shapes = shapes_of(binding, candidate.candidate_id)
+    except StudioError as exc:
+        return candidate_dto(candidate, object_readback_error=f"{exc.code}: {exc.detail}")
+    except ProjectRepositoryError as exc:
+        return candidate_dto(candidate, object_readback_error=str(exc))
+    missing = [seat.seat_id for seat in candidate.seat_results if not (seat.cad or {}).get("inspection_ref")]
+    return candidate_dto(
+        candidate, shapes=shapes,
+        object_readback_error=f"No retained object inspection for seats: {', '.join(missing)}." if missing else None,
     )
 
 

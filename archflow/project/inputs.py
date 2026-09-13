@@ -22,8 +22,9 @@ edits â€” an architect types a brief into a table and expects to find it again â
 so ``write_program_sheet_file`` is its single writer. The seat pack is the
 other: a continuation re-reads ``input/runner/seats.json``, so the seats a run
 was generated under have to be the seats the file holds, and
-``write_seat_pack_file`` is its single writer. The record stays a file only a
-person edits. Both writes are work-in-progress writes: they touch nothing under
+``write_seat_pack_file`` is its ongoing writer. Initial empty-model input
+preparation belongs to the repository's explicit initialization port; this
+module does not write the record. Both writes here are work-in-progress writes: they touch nothing under
 ``runs/``, ``canonical/`` or ``objects/``, and nothing about them is retained
 until a run reads the file. Keeping the bytes a write replaces is the caller's,
 through the repository; nothing here archives.
