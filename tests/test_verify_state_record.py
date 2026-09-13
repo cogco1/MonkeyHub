@@ -181,18 +181,21 @@ class VerifyStateRecordCadBackendTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_export_selects_occt_by_default_and_rhino_only_when_named(self) -> None:
+    def test_export_defaults_to_occt_and_forwards_explicit_backends(self) -> None:
         code, printed, _ = _invoke(self.root, "--export")
         self.assertEqual(code, 0, printed)
         code, printed, _ = _invoke(self.root, "--export", "--cad-backend", "rhino", "--powershell", "pwsh.exe")
         self.assertEqual(code, 0, printed)
+        code, printed, _ = _invoke(self.root, "--export", "--cad-backend", "blender")
+        self.assertEqual(code, 0, printed)
         code, printed, _ = _invoke(self.root)
         self.assertEqual(code, 0, printed)
-        self.assertEqual([(o.export, o.cad_backend) for o in self.seen], [(True, "occt"), (True, "rhino"), (False, "occt")])
-        occt, rhino, plain = self.seen
+        self.assertEqual([(o.export, o.cad_backend) for o in self.seen], [(True, "occt"), (True, "rhino"), (True, "blender"), (False, "occt")])
+        occt, rhino, blender, plain = self.seen
         self.assertEqual(occt.workspace_root, self.root.resolve() / "runs" / EQUIVALENCE_RUN / "workspaces")
         self.assertFalse(occt.patch_oracle)
         self.assertEqual(rhino.powershell, Path("pwsh.exe"))
+        self.assertFalse(blender.patch_oracle)
         self.assertIsNone(plain.workspace_root)
         # the export workspaces are prepared per producing seat, exactly as before
         self.assertEqual(sorted(p.name for p in occt.workspace_root.iterdir()), ["cad-equivalence-check-seat-envelope", "cad-equivalence-check-seat-structure"])
@@ -208,7 +211,8 @@ class VerifyStateRecordCadBackendTests(unittest.TestCase):
     def test_the_help_names_the_backend_selector_and_no_longer_calls_the_export_rhino(self) -> None:
         code, printed, _ = _invoke(self.root, "--help")
         self.assertEqual(code, 0)
-        self.assertIn("--cad-backend {occt,rhino}", printed)
+        self.assertIn("--cad-backend {occt,rhino,blender}", printed)
+        self.assertIn(".blend", printed)
         export_help = re.search(r"^\s+--export\s+(?P<help>.*?)^\s+--cad-backend", printed, re.S | re.M)
         self.assertIsNotNone(export_help, printed)
         self.assertNotIn("Rhino", export_help.group("help"))
@@ -218,7 +222,8 @@ class VerifyStateRecordCadBackendTests(unittest.TestCase):
     def test_the_patch_oracle_is_refused_under_occt_naming_the_rhino_backend(self) -> None:
         """Asked of OCCT the oracle neither runs Rhino unasked nor is reported as an oracle that never ran: it is refused by name."""
 
-        for argv in (("--export", "--patch-oracle"), ("--export", "--cad-backend", "occt", "--patch-oracle"), ("--patch-oracle",)):
+        for argv in (("--export", "--patch-oracle"), ("--export", "--cad-backend", "occt", "--patch-oracle"),
+                     ("--export", "--cad-backend", "blender", "--patch-oracle"), ("--patch-oracle",)):
             with self.subTest(argv=argv):
                 code, printed, err = _invoke(self.root, *argv)
                 self.assertEqual(code, 2, printed)

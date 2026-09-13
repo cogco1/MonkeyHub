@@ -260,7 +260,9 @@ def _options(options, allowed, backend_id):
 
 # Add an implementation here and declare it under compiled-cad-execution in the
 # module registry. The runner uses this same table for selection and execution.
-CAD_BACKEND_REGISTRY: dict[str, CadBackend] = {backend.backend_id: backend for backend in (OcctBackend(), RhinoBackend())}
+from archflow.adapters.blender_cad import BlenderBackend
+
+CAD_BACKEND_REGISTRY: dict[str, CadBackend] = {backend.backend_id: backend for backend in (OcctBackend(), RhinoBackend(), BlenderBackend())}
 
 
 def get_cad_backend(backend_id: str) -> CadBackend:
