@@ -32,8 +32,8 @@ MAX_BOARD_BYTES = 8 * 1024 * 1024
 MAX_BOARD_ELEMENTS = 10_000
 MAX_SEEN_DOCUMENTS = 10_000
 
-# Like document ink, check-and-save is serialized for this single Studio
-# process. The lock holds no saved state; cold reads use only P036 records.
+# Reads and check-and-save share this single Studio process lock so readers
+# cannot observe a partially created run. Cold reads use only P036 records.
 _board_lock = threading.RLock()
 
 
@@ -91,9 +91,10 @@ def _scene(binding: ProjectBinding, revision: str | None, payload: Mapping | Non
 
 
 def read_board(binding: ProjectBinding) -> BoardScene:
-    revisions = _revisions(binding)
-    latest = _latest(revisions)
-    return _scene(binding, latest, revisions.get(latest))
+    with _board_lock:
+        revisions = _revisions(binding)
+        latest = _latest(revisions)
+        return _scene(binding, latest, revisions.get(latest))
 
 
 def _export_name(index: int, file_name: str, suffix: str) -> str:
