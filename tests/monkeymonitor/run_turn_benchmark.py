@@ -67,9 +67,13 @@ def main():
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--hold-seconds", type=int, default=0, help="Keep isolated services available briefly for a separate headless preview check")
     parser.add_argument("--no-preview", action="store_true", help="Only measure provider/runtime on a machine without headless Chrome; first visible remains unknown")
+    parser.add_argument("--context-pack", action="store_true",
+                        help="Send the same incremental-edit prompt with this fixture's known source/digest/focus as designContext, so the turn is prepared before the provider starts")
     args = parser.parse_args()
     if not args.output.is_absolute():
         parser.error("--output must be an absolute nonproject directory")
+    if args.context_pack and args.scenario != "incremental-edit":
+        parser.error("--context-pack names one existing object to edit; it applies to incremental-edit only")
     config = json.loads(Path(__file__).with_name("benchmarks.json").read_text())
     scenario = next(row for row in config["scenarios"] if row["id"] == args.scenario)
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -125,9 +129,17 @@ def main():
                 raise TimeoutError("Isolated Studio did not become ready")
             session = request(base, "/api/chat/sessions", {"projectDir": str(project), "provider": config["provider"], "model": config["model"]})
             state_digest = fixture.runner_state_digest(repository, fixture.REFERENCE_RUN_ID)
-            posted = request(base, f"/api/chat/sessions/{session['id']}/messages", {
-                "projectId": fixture.PROJECT_ID, "content": scenario["prompt"].replace("{state_digest}", state_digest),
-            })
+            message = {"projectId": fixture.PROJECT_ID,
+                       "content": scenario["prompt"].replace("{state_digest}", state_digest)}
+            if args.context_pack:
+                # The same unchanged prompt, plus what this fixture's scenario
+                # already states in words: which run, which state, which object.
+                # Nothing is inferred here; a wrong name is refused by Studio.
+                message["designContext"] = {
+                    "sourceRunId": fixture.REFERENCE_RUN_ID, "stateDigest": state_digest,
+                    "targetComponentId": "portico", "elementId": "portico-cornice",
+                }
+            posted = request(base, f"/api/chat/sessions/{session['id']}/messages", message)
             turn_id = next(row["id"] for row in reversed(posted["messages"]) if row["role"] == "user")
             if not args.no_preview:
                 preview = subprocess.Popen([shutil.which("node") or "node", str(Path(__file__).with_name("benchmark_preview.mjs")),
@@ -166,7 +178,11 @@ def main():
             snapshot = request(monitor, "/api/traces")
             trace = next(row for row in snapshot["traces"] if row["turn_id"] == turn_id)
             report = {"benchmark": {**{key: config[key] for key in ("fixture", "fixture_revision", "provider", "model")},
-                                    "scenario": scenario["id"], "build_revision": revision, "fixture_last_change": fixture_revision},
+                                    "scenario": scenario["id"], "build_revision": revision, "fixture_last_change": fixture_revision,
+                                    # Which condition this run was: the scenario and its
+                                    # prompt are the same either way, so the two reports
+                                    # are comparable and say which is which.
+                                    "context_mode": "context_pack" if args.context_pack else "none"},
                       "observed_live": observed_live, "candidate_id": candidate, "candidate_readback_ok": readback_ok,
                       "expected_geometry_ok": geometry_ok,
                       "preview_status": "not_requested" if preview is None else "succeeded" if preview_code == 0 else "failed",

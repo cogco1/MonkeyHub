@@ -25,7 +25,9 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
-from monkeyhub_api.models import AppStatus, ChatCreateRequest, ChatPostRequest, HubFailure
+from monkeyhub_api.models import (
+    AppStatus, ChatCreateRequest, ChatDesignContext, ChatPostRequest, HubFailure,
+)
 
 
 FAKE_CLI = r'''
@@ -1649,6 +1651,143 @@ class ChatTests(unittest.TestCase):
         replies = [json.loads(row) for row in process.stdout.splitlines()]
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]}, {"studio_schema", "studio_request", "fab_request"})
+
+    # ---- a turn that names its own source and focus
+
+    PACK = {"contextPack": "ContextPack@1",
+            "source": {"projectId": "chat-project", "runId": "run-001", "stateDigest": "a" * 64,
+                       "writeWith": 'sourceRunId="run-001"'},
+            "target": {"componentId": "portico", "elementId": "portico-cornice",
+                       "editable": [{"field": "height", "value": 0.3, "unit": None}], "notEditable": []},
+            "contextTier": "design", "escalation": ["architectural_or_extended_scope"],
+            "context": {"elements": []}, "preflight": None, "honesty": []}
+
+    def selected(self, **overrides):
+        values = {"sourceRunId": "run-001", "stateDigest": "a" * 64,
+                  "targetComponentId": "portico", "elementId": "portico-cornice"}
+        return ChatDesignContext(**{**values, **overrides})
+
+    def studio(self, session, packs, refusal=None):
+        """A stand-in Hub and Studio for the one read a prepared turn makes."""
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == f"/api/chat/sessions/{session.id}":
+                return self.store.get(session.id).model_dump()
+            if path.startswith("/api/apps?"):
+                return [{"appId": "monkeyarch", "state": "running",
+                         "url": "http://127.0.0.1:8791/", "processId": 123}]
+            if path == "/api/health":
+                return {"processId": 123, "sourceRevision": "same-revision"}
+            if path == "/api/project":
+                return {"projectId": session.projectId, "projectDir": session.projectDir}
+            if path == "/api/intents/context":
+                packs.append({"method": method, "base": base, "body": body})
+                if refusal is not None:
+                    raise refusal
+                return self.PACK
+            raise AssertionError(f"a prepared turn asked for something unexpected: {method} {path}")
+
+        return request
+
+    def turns(self):
+        return [] if not self.log.exists() else self.calls()
+
+    def test_the_named_source_is_read_once_and_never_carried_into_the_next_turn(self):
+        session = self.create()
+        packs = []
+        words = "Raise portico-cornice to 0.5 m and keep portico-base as it is."
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content=words, designContext=self.selected()))
+            self.assertEqual(self.finished(session).status, "idle")
+            # The whole message travels, unedited, with exactly the named focus.
+            self.assertEqual(len(packs), 1)
+            self.assertEqual(packs[0]["method"], "POST")
+            self.assertEqual(packs[0]["base"], "http://127.0.0.1:8791")
+            self.assertEqual(packs[0]["body"], {
+                "utterance": words, "projectId": session.projectId, "sourceRunId": "run-001",
+                "stateDigest": "a" * 64, "targetComponentId": "portico",
+                "elementId": "portico-cornice"})
+            prompt = self.calls()[-1]["prompt"]
+            # The request is still the request: the pack follows it as data.
+            self.assertIn("\n\n" + words + "\n\n" + chat._CONTEXT_NOTE + "\n", prompt)
+            self.assertIn('"contextPack": "ContextPack@1"', prompt)
+            self.assertIn('"stateDigest": "' + "a" * 64, prompt)
+            # A later message that names nothing is the turn it always was.
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="and what did that change?"))
+            self.assertEqual(self.finished(session).status, "idle")
+        self.assertEqual(len(packs), 1, "a turn with no context of its own must inherit none")
+        plain = self.calls()[-1]["prompt"]
+        self.assertTrue(plain.endswith("\n\nand what did that change?"))
+        self.assertNotIn(chat._CONTEXT_NOTE, plain)
+
+    def test_a_refused_preparation_ends_the_turn_in_its_own_words_and_starts_no_cli(self):
+        session = self.create()
+        packs = []
+        before = len(self.turns())
+        refusal = HubFailure(409, "CHAT_TOOL_FAILED",
+                             "the request names state 0000, but chat-project is at abcd.")
+        with patch.object(chat, "_request_json",
+                          side_effect=self.studio(session, packs, refusal=refusal)):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="Raise it to 0.5 m.",
+                designContext=self.selected(stateDigest="0" * 64)))
+            finished = self.finished(session)
+        self.assertEqual(finished.status, "failed")
+        self.assertEqual(finished.error.code, "CHAT_TOOL_FAILED")
+        self.assertIn("is at abcd", finished.error.detail)
+        self.assertEqual(len(packs), 1, "a refusal is not retried against a guessed source")
+        self.assertEqual(len(self.turns()), before, "no provider may be started by a refused turn")
+
+    def test_a_turn_stopped_while_it_is_prepared_starts_no_cli(self):
+        session = self.create()
+        packs = []
+        before = len(self.turns())
+
+        def stop_then_answer(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == "/api/intents/context":
+                # Stopped between the preparation and the provider, which is
+                # exactly where the second cancellation check stands.
+                self.store._running[session.id].stop.set()
+            return self.studio(session, packs)(base, path, method, body, timeout, headers=headers)
+
+        with patch.object(chat, "_request_json", side_effect=stop_then_answer):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="Raise it to 0.5 m.",
+                designContext=self.selected()))
+            self.assertEqual(self.finished(session).status, "interrupted")
+        self.assertEqual(len(packs), 1)
+        self.assertEqual(len(self.turns()), before, "a stopped turn starts no provider")
+
+    def test_a_turn_already_stopped_is_never_prepared_at_all(self):
+        session = self.create()
+        running = chat._Running(design_context=self.selected())
+        running.stop.set()
+        with patch.object(chat, "_context_pack",
+                          side_effect=AssertionError("a stopped turn must not be prepared")):
+            self.store._run(session.id, "Raise it to 0.5 m.", running)
+        self.assertEqual(self.store.get(session.id).status, "interrupted")
+
+    def test_the_turns_trace_headers_do_not_outlive_its_preparation(self):
+        session = self.create()
+        session.status = "running"
+        session.messages.append(chat.ChatMessage(
+            id="turn-1", role="user", content="Raise it to 0.5 m.", createdAt=chat._now()))
+        packs = []
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == f"/api/chat/sessions/{session.id}":
+                return session.model_dump()
+            return self.studio(session, packs)(base, path, method, body, timeout, headers=headers)
+
+        with patch.object(chat, "_request_json", side_effect=request):
+            appended = chat._context_pack(self.store.hub_url, session.id, "Raise it to 0.5 m.",
+                                          self.selected())
+        self.assertIn(chat._CONTEXT_NOTE, appended)
+        # _bound_studio binds this turn's headers; nothing after it may inherit
+        # them, so a second turn cannot be correlated to the first one's span.
+        self.assertEqual(chat._trace_headers.get(), {})
 
 
 class AcpCommandTests(unittest.TestCase):

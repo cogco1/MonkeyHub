@@ -42,6 +42,7 @@ from .support import (
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
     RUNNER_SEATS_PATH,
+    make_portico_project,
     make_project,
     runner_state_digest,
     write_codex_shim,
@@ -885,3 +886,174 @@ class ProviderOnTheWireTests(IntentTestCase):
         response = self.client.get("/api/project")
         self.assertEqual(response.json()["intentProvider"], "codex")
         self.assertEqual(response.json()["intentModel"], "gpt-5")
+
+
+def benchmark_prompt(scenario: str) -> str:
+    """The real manual benchmark's words, read from the config it is run with.
+
+    Read rather than copied: what these assertions are about is how *that* text
+    compiles, and a second copy here would keep passing after the benchmark it
+    claims to be about had changed.
+    """
+
+    root = Path(__file__).resolve().parents[4]
+    config = json.loads((root / "tests/monkeymonitor/benchmarks.json").read_text(encoding="utf-8"))
+    return next(row["prompt"] for row in config["scenarios"] if row["id"] == scenario)
+
+
+class ContextPackTests(IntentTestCase):
+    """``POST /api/intents/context``: one named source and focus, read once.
+
+    Nothing here compiles anything. The compiler seat holds ``Failing``, which
+    raises the moment it is asked, so a pack that came back at all is a pack no
+    model was called for.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.app.state.intent_compiler = Failing()
+        self.head = self.repository.layout.head.read_bytes()
+
+    def pack(self, utterance: str, **body: object) -> tuple[int, dict]:
+        body.setdefault("projectId", PROJECT_ID)
+        body.setdefault("sourceRunId", REFERENCE_RUN_ID)
+        body.setdefault("stateDigest", self.state_digest)
+        body.setdefault("targetComponentId", "portico")
+        body.setdefault("elementId", "portico-cornice")
+        body["utterance"] = utterance
+        response = self.client.post("/api/intents/context", json=body)
+        return response.status_code, response.json()
+
+    def test_the_named_source_and_focus_answer_a_pack_with_no_compiler_and_no_write(self) -> None:
+        status, payload = self.pack("Raise portico-cornice height to 0.5 m.")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["contextPack"], "ContextPack@1")
+        # The exact base it was read against, not a nearby one.
+        self.assertEqual(payload["source"]["projectId"], PROJECT_ID)
+        self.assertEqual(payload["source"]["runId"], REFERENCE_RUN_ID)
+        self.assertEqual(payload["source"]["stateDigest"], self.state_digest)
+        self.assertTrue(payload["source"]["exactSource"])
+        self.assertTrue(payload["source"]["actionable"])
+        self.assertIn(f'sourceRunId="{REFERENCE_RUN_ID}"', payload["source"]["writeWith"])
+        self.assertEqual(payload["target"]["componentId"], "portico")
+        self.assertEqual(payload["target"]["elementId"], "portico-cornice")
+        # The registered entry is about the capability, not about this project,
+        # and is not what was asked for here.
+        self.assertNotIn("capability", payload)
+        # Reading changed nothing the project stands on.
+        self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
+    def test_the_request_is_a_template_of_the_current_values_not_of_the_asked_change(self) -> None:
+        status, payload = self.pack("set portico-cornice height to 0.5")
+        self.assertEqual(status, 200, payload)
+        # One named control with a number: the narrow reading, and no model.
+        self.assertEqual(payload["contextTier"], "scalar")
+        self.assertEqual(payload["escalation"], [])
+        self.assertIsNone(payload["preflight"])
+        self.assertEqual(payload["request"]["path"], "/api/capabilities/candidate.modify_existing/run")
+        body = payload["request"]["body"]
+        self.assertEqual(body["projectId"], PROJECT_ID)
+        self.assertEqual(body["sourceRunId"], REFERENCE_RUN_ID)
+        self.assertEqual(body["stateDigest"], self.state_digest)
+        self.assertEqual(body["targetComponentId"], "portico")
+        self.assertEqual(body["elementId"], "portico-cornice")
+        # 0.3 is what the record holds; 0.5 is what was asked. The template
+        # holds the first, so nothing here reads as an approved change.
+        self.assertEqual(body["utterance"], "set height to 0.3")
+        height = next(row for row in payload["target"]["editable"] if row["field"] == "height")
+        self.assertEqual(height["value"], 0.3)
+        # The capability's own reading of the unit, including where it declares
+        # none: a prism's height has none, and none is invented here.
+        self.assertIsNone(height["unit"])
+        self.assertTrue(any("values this element has now" in line for line in payload["honesty"]))
+
+    def test_the_benchmark_words_keep_their_design_reading_and_preservation_context(self) -> None:
+        prompt = benchmark_prompt("incremental-edit").replace("{state_digest}", self.state_digest)
+        status, payload = self.pack(prompt)
+        self.assertEqual(status, 200, payload)
+        # It names several objects and "all other authored fields": the existing
+        # compiler widens to the design tier, and this route does not narrow it
+        # back into a scalar request nobody made.
+        self.assertEqual(payload["contextTier"], "design")
+        self.assertIn("architectural_or_extended_scope", payload["escalation"])
+        elements = {row["elementId"] for row in payload["context"]["elements"]}
+        # What must not change is still readable beside what may.
+        self.assertIn("portico-base", elements)
+        self.assertIn("portico-cornice", elements)
+        self.assertIn(
+            "rel-cornice-on-base",
+            {row["relation_id"] for row in payload["context"]["relationships"]},
+        )
+        self.assertIn("entity:portico-base", payload["keep"]["accepted"])
+        # A wider reading is not a refusal: the element's current numbers and
+        # the template that holds them are still here.
+        self.assertIsNone(payload["preflight"])
+        self.assertEqual(payload["request"]["body"]["elementId"], "portico-cornice")
+
+    def test_another_project_a_stale_digest_and_an_unknown_source_are_each_refused(self) -> None:
+        for name, body, status, code in (
+            ("another project", {"projectId": "somebody-elses-project"}, 403, "PROJECT_MISMATCH"),
+            ("a stale digest", {"stateDigest": "0" * 64}, 409, "STALE_BASE"),
+            ("an unknown source", {"sourceRunId": "run-that-was-never-made"}, 404, "RUN_NOT_FOUND"),
+        ):
+            with self.subTest(name):
+                got, payload = self.pack("set portico-cornice height to 0.5", **body)
+                self.assertEqual(got, status, payload)
+                self.assertEqual(payload["code"], code)
+        self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
+    def test_an_unknown_focus_is_named_and_never_replaced(self) -> None:
+        for name, body, status, code in (
+            ("an unknown component", {"targetComponentId": "not-a-component"}, 404, "TARGET_UNKNOWN"),
+            ("an unknown element", {"elementId": "not-an-element"}, 404, "ELEMENT_UNKNOWN"),
+        ):
+            with self.subTest(name):
+                got, payload = self.pack("set the height to 0.5", **body)
+                self.assertEqual(got, status, payload)
+                self.assertEqual(payload["code"], code)
+                # It says what this record does declare, rather than choosing.
+                self.assertIn("portico", payload["detail"])
+
+    def test_an_obstacle_the_record_already_answers_advertises_no_runnable_request(self) -> None:
+        from unittest.mock import patch
+
+        from archflow_studio_api.routes import intents as route
+
+        # The shape the record's own preflight answers a locked control with.
+        # No fixture here binds an element field to a locked or derived
+        # parameter, so the obstacle is supplied and its composition checked.
+        blocked = {"status": "unsupported", "targetComponentId": "portico",
+                   "elementId": "portico-cornice", "utterance": None, "semanticEdit": None,
+                   "why": "The selected dimension is locked. Its lock must be released "
+                          "before it can be changed.",
+                   "question": None, "contextRefs": []}
+        with patch.object(route, "action_preflight", return_value=blocked):
+            status, payload = self.pack("set portico-cornice height to 0.5")
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["preflight"], blocked)
+        # The record answers this without a model, and a request that would run
+        # straight past that answer is not offered at all.
+        self.assertIsNone(payload["request"])
+        self.assertTrue(any("No executable request is offered" in line for line in payload["honesty"]))
+        # What the element actually is remains readable.
+        self.assertEqual(payload["target"]["elementId"], "portico-cornice")
+
+    def test_an_element_of_another_component_is_refused_rather_than_reassigned(self) -> None:
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        repository, digest = make_portico_project(root)
+        client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=root / PROJECT_ID)))
+        self.addCleanup(client.close)
+        head = repository.layout.head.read_bytes()
+        response = client.post("/api/intents/context", json={
+            "utterance": "set the height to 0.5", "projectId": PROJECT_ID,
+            "sourceRunId": REFERENCE_RUN_ID, "stateDigest": digest,
+            # The abutment is under portico-roofs; naming its grandparent is two
+            # selections that disagree, not a narrower one.
+            "targetComponentId": "portico", "elementId": "portico-roof-abutment-west",
+        })
+        self.assertEqual(response.status_code, 409, response.text)
+        payload = response.json()
+        self.assertEqual(payload["code"], "ELEMENT_COMPONENT_MISMATCH")
+        self.assertIn("portico-roofs", payload["detail"])
+        self.assertEqual(repository.layout.head.read_bytes(), head)

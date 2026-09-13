@@ -36,6 +36,7 @@ from ..application.intent import (
     merge_keep,
     parse_utterance,
 )
+from ..application.capability import capability, describe_capability
 from ..application.intent_agent import (
     AGENT_FAILED,
     DETERMINISTIC,
@@ -45,7 +46,10 @@ from ..application.intent_agent import (
     IntentCompiler,
     Selection,
     context_refs,
+    record_sheet,
 )
+from ..application.intent_context import compile_context, model_context
+from ..application.intent_requests import action_preflight
 from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
 from ..transport.errors import (
@@ -55,11 +59,14 @@ from ..transport.errors import (
     UnsupportedRequest,
 )
 from ..transport.intent import (
+    ContextPackDto,
+    ContextPackRequestDto,
     DocumentAnnotationsDto,
     DocumentAnnotationsRequestDto,
     DocumentCommentDto,
     DocumentCommentsDto,
     IntentBlockedDto,
+    context_pack_dto,
     IntentDto,
     IntentRequestDto,
     IntentTimingsDto,
@@ -210,6 +217,78 @@ def _semantic_answer(
         gestures=list(reading.facts), pending_intent=pending_dto(resolution.pending),
         document_comment_ref=None if document_comment_ref is None else document_comment_ref.uri,
     )
+
+
+@router.post("/intents/context", response_model=ContextPackDto, response_model_by_alias=True)
+def read_intent_context(request: Request, body: ContextPackRequestDto) -> ContextPackDto:
+    """The context one turn about one named object would otherwise go and find.
+
+    A caller that has already chosen its source and its focus should not have
+    to discover the project's shape before it can act: this composes what the
+    existing reads already answer — the capability description against that
+    exact base, the compiled read context for these words, and the record's own
+    preflight — into one read.
+
+    It reads. No proposal is made, no candidate is queued, no compiler or model
+    is called, and nothing about the project changes. Every check the write
+    path makes about the base is made here first and in the same order, so a
+    pack is never composed against a state the project has left: the project,
+    the exact reference, the digest, and then the focus itself. An element this
+    record does not declare, or one whose component disagrees with the request,
+    is refused by name — a request that named the wrong thing is not quietly
+    answered about a similar one.
+    """
+
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    require_actionable(projection)
+    if body.state_digest != projection.state_digest:
+        raise StudioError(
+            409,
+            "STALE_BASE",
+            f"the request names state {body.state_digest}, but "
+            f"{binding.project_id} is at {projection.state_digest}. Read "
+            "/api/state again and ask against the state that answers now.",
+        )
+    declared = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
+    if body.target_component_id not in declared:
+        raise StudioError(
+            404, "TARGET_UNKNOWN",
+            f"{body.target_component_id} is not a component this record declares; it declares "
+            f"{', '.join(sorted(declared))}.",
+        )
+    element = next((item for item in projection.elements if item.element_id == body.element_id), None)
+    if element is None:
+        raise StudioError(
+            404, "ELEMENT_UNKNOWN",
+            f"{body.element_id} is not an Element@1 this record declares; under "
+            f"{body.target_component_id} it declares "
+            + (", ".join(sorted(item.element_id for item in projection.elements
+                                if item.component_id == body.target_component_id)) or "none")
+            + ". Name the element this context is about.",
+        )
+    if element.component_id != body.target_component_id:
+        # Two selections that disagree, not a narrower one. Choosing either
+        # side here is how a change lands on the object nobody picked.
+        raise StudioError(
+            409, "ELEMENT_COMPONENT_MISMATCH",
+            f"element {body.element_id} belongs to component {element.component_id}, not "
+            f"{body.target_component_id}. Send the element's own component as targetComponentId.",
+        )
+    selection = Selection(component_id=body.target_component_id, element_id=body.element_id)
+    sheet = record_sheet(projection, selection)
+    # The complete message, read by the same compiler an intent uses. A request
+    # that names several objects widens to the design tier here exactly as it
+    # would there; narrowing it into a scalar would be this route inventing a
+    # request the architect did not make.
+    context = compile_context(body.utterance, sheet, record=projection.record)
+    preflight = action_preflight(context, projection.record)
+    description = describe_capability(
+        binding, projection, capability("candidate.modify_existing"),
+        component_id=body.target_component_id, element_id=body.element_id,
+    )
+    return context_pack_dto(description, context, preflight, model_context(context))
 
 
 @router.post(

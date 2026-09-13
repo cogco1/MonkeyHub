@@ -1442,6 +1442,121 @@ export type ComponentNodeDto = {
 };
 
 /**
+ * ContextPackDto
+ *
+ * What a caller would otherwise discover by reading before it can act.
+ *
+ * It is the existing capability description, the existing compiled read
+ * context and the existing preflight, composed for one named source and
+ * focus. It proposes nothing: ``request`` is the template the capability
+ * already reports, holding the values the record holds now.
+ */
+export type ContextPackDto = {
+    /**
+     * Contextpack
+     */
+    contextPack?: 'ContextPack@1';
+    source: CapabilitySourceDto;
+    /**
+     * the focus element's numbers, as the catalog decided them; null when the capability reads no target for it
+     */
+    target?: CapabilityTargetDto | null;
+    keep?: KeepScopeDto | null;
+    /**
+     * Request
+     *
+     * the capability's own next request with this project's base and the focus element's current values already in it; a template to edit, never an approved change. Null when the target has no number this capability can move, or when the preflight below already answers the request without one
+     */
+    request?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Contexttier
+     *
+     * which read context the existing compiler chose for these words: scalar, component or design
+     */
+    contextTier: string;
+    /**
+     * Escalation
+     *
+     * why the compiler widened the context, in its own reasons; empty when a narrow numeric reading was reached
+     */
+    escalation?: Array<string>;
+    /**
+     * Context
+     *
+     * the facts that reading makes available, as the existing model projection of it; it grants no edit and changes no reference
+     */
+    context: {
+        [key: string]: unknown;
+    };
+    /**
+     * Preflight
+     *
+     * the existing known obstacle to a numeric action — a lock, a derived value, a shared control, a top reference — as the record already answers it, needing no model call. Null when there is none and for the design tier, which this preflight does not judge
+     */
+    preflight?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Honesty
+     */
+    honesty?: Array<string>;
+};
+
+/**
+ * ContextPackRequestDto
+ *
+ * One turn's words, plus the exact source and focus they were said about.
+ *
+ * Nothing here is optional but the Stage: this read answers about the object
+ * the caller names, and a missing or wrong name is refused rather than
+ * replaced by a recent candidate, a parent or the record's first element.
+ */
+export type ContextPackRequestDto = {
+    /**
+     * Utterance
+     *
+     * the complete message the architect sent, unedited; it is read by the same context compiler an intent uses, so a request that names several objects keeps the wider context that reading needs
+     */
+    utterance: string;
+    /**
+     * Projectid
+     *
+     * the project the caller believes it is reading; a different one is refused as PROJECT_MISMATCH
+     */
+    projectId: string;
+    /**
+     * Sourcerunid
+     *
+     * the retained run this context is read against
+     */
+    sourceRunId: string;
+    /**
+     * Statedigest
+     *
+     * the stateDigest that run projects to; any other is refused as STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Targetcomponentid
+     *
+     * the Component@1 the focus element belongs to, exactly
+     */
+    targetComponentId: string;
+    /**
+     * Elementid
+     *
+     * the Element@1 in focus; it must declare targetComponentId as its own component
+     */
+    elementId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
  * CountsDto
  *
  * How much the record declares, before anyone asks what it means.
@@ -8868,6 +8983,41 @@ export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses = {
 };
 
 export type ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponse = ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses[keyof ReadSubmittedDocumentCommentsApiDocumentCommentsGetResponses];
+
+export type ReadIntentContextApiIntentsContextPostData = {
+    body: ContextPackRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/intents/context';
+};
+
+export type ReadIntentContextApiIntentsContextPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadIntentContextApiIntentsContextPostError = ReadIntentContextApiIntentsContextPostErrors[keyof ReadIntentContextApiIntentsContextPostErrors];
+
+export type ReadIntentContextApiIntentsContextPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContextPackDto;
+};
+
+export type ReadIntentContextApiIntentsContextPostResponse = ReadIntentContextApiIntentsContextPostResponses[keyof ReadIntentContextApiIntentsContextPostResponses];
 
 export type CompileIntentApiIntentsPostData = {
     body: IntentRequestDto;
