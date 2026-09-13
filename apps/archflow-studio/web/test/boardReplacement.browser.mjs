@@ -52,8 +52,7 @@ function sourceDocument(bytes, fileName, count, revisionRef, mimeType = "applica
 const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-drawing-revision");
 let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
-const uploadedReplacement = { ...sourceDocument(uploadBytes, "UI updated.pdf", 2, "ui-drawing-revision"),
-  replacesPages: [{ ...pageSource(oldDocument, 0), newPageIndex: 1 }] };
+let uploadedReplacement;
 const oldSource = pageSource(oldDocument, 1);
 const seeds = [
   { type: "image", id: "kept-image", fileId: "old-second-page", x: 80, y: 80, width: 500, height: 300,
@@ -71,6 +70,7 @@ const seeds = [
 let saved = { projectId, title: "Page replacement regression", elements: [],
   seenDocuments: [documentKey(oldDocument)], revisionSha256: "1".repeat(64) };
 let seeded = false, documents = [oldDocument], documentReads = 0;
+let competingVersion = false, conflicts = 0;
 const writes = [], uploads = [], failures = [], escaped = [], fileReads = [];
 let releasePreview;
 const previewGate = new Promise((resolve) => { releasePreview = resolve; });
@@ -136,6 +136,8 @@ try {
   }), "base64");
   replacement = { ...sourceDocument(replacementBytes, "Updated single page.png", 1, "new-drawing-revision", "image/png"),
     replacesPages: [{ ...oldSource, newPageIndex: 0 }] };
+  uploadedReplacement = { ...sourceDocument(uploadBytes, "UI updated.pdf", 2, "ui-drawing-revision"),
+    replacesPages: [{ ...pageSource(replacement, 0), newPageIndex: 1 }] };
   page.on("pageerror", (error) => failures.push(error.stack ?? error.message));
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request(), url = new URL(request.url());
@@ -172,13 +174,17 @@ try {
         assert.equal(body.mimeType, "application/pdf");
         assert.equal(body.contentBase64, uploadBytes.toString("base64"));
         assert.deepEqual(body.replacesPages, uploadedReplacement.replacesPages,
-          "The source card's old page and the new file's page number must form one exact mapping");
+          "The selected source page and the new file's page number must form one exact mapping");
         uploads.push(structuredClone(body)); documents = [...documents, uploadedReplacement];
         return await route.fulfill({ status: 201, json: uploadedReplacement });
       }
       assert.equal(`${request.method()} ${url.pathname}`, "PUT /api/board", "Only the scene is persisted in this test");
       const body = request.postDataJSON();
       assert.equal(body.projectId, projectId);
+      if (competingVersion && body.baseRevisionSha256 !== saved.revisionSha256) {
+        conflicts++;
+        return await route.fulfill({ status: 409, json: { code: "BOARD_STALE", detail: "The board changed since it was opened." } });
+      }
       assert.equal(body.baseRevisionSha256, saved.revisionSha256, "Every save must use the last acknowledged revision");
       writes.push(structuredClone(body));
       const { baseRevisionSha256: _base, ...scene } = body;
@@ -194,6 +200,42 @@ try {
   assert.equal(Object.hasOwn(byId(original, "kept-frame"), "children"), false,
     "The real Excalidraw frame stores membership on each image's frameId");
   assert.deepEqual(activeIds(original, "image"), ["deleted-copy", "kept-image", "unmapped-image"]);
+  const select = async (ids) => page.evaluate(async (ids) => {
+    const api = window.__boardApi;
+    api.updateScene({ appState: { selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])), selectedGroupIds: {} },
+      captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER });
+    await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);
+  }, ids);
+  const updateAction = (name = "Update this page") => page.locator(".monkeyboard-context").getByRole("button", { name, exact: true });
+  const expectUpdate = async (ids, visible) => {
+    await select(ids);
+    await updateAction().waitFor({ state: visible ? "visible" : "hidden" });
+    assert.equal(await updateAction().count(), Number(visible), `Update action selection: ${ids.join(", ") || "empty"}`);
+    if (visible) assert.equal(await updateAction().isEnabled(), true);
+  };
+  assert.equal(await page.getByRole("button", { name: "Project documents", exact: true }).getAttribute("aria-expanded"), "false");
+  for (const ids of [["kept-image"], ["kept-frame"], ["kept-image", "kept-frame"], ["kept-image", "existing-mark"]]) {
+    await expectUpdate(ids, true);
+  }
+  for (const ids of [[], ["existing-mark"], ["kept-image", "unmapped-image"], ["kept-image", "deleted-copy"], ["kept-frame", "deleted-frame"]]) {
+    await expectUpdate(ids, false);
+  }
+  // A native frame with two images stays ambiguous even when both name one page.
+  await page.evaluate(() => {
+    const api = window.__boardApi, { newElementWith, CaptureUpdateAction } = window.__boardHelpers;
+    api.updateScene({ elements: api.getSceneElementsIncludingDeleted().map((element) => element.id === "deleted-copy"
+      ? newElementWith(element, { frameId: "kept-frame" }) : element), captureUpdate: CaptureUpdateAction.NEVER });
+  });
+  await expectUpdate(["kept-frame"], false);
+  // A displayed image's file bytes do not substitute for its registered source.
+  await page.evaluate(() => {
+    const api = window.__boardApi, { newElementWith, CaptureUpdateAction } = window.__boardHelpers;
+    api.updateScene({ elements: api.getSceneElementsIncludingDeleted().map((element) => element.id === "kept-image"
+      ? newElementWith(element, { customData: null }) : element), captureUpdate: CaptureUpdateAction.NEVER });
+  });
+  await expectUpdate(["kept-image"], false);
+  await page.evaluate((elements) => window.__boardApi.updateScene({ elements,
+    appState: { selectedElementIds: {}, selectedGroupIds: {} }, captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER }), original.elements);
 
   documents = [oldDocument, replacement];
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -283,22 +325,39 @@ try {
   assert.ok(!reopened.elements.some((element) => element.id === "deleted-copy" && !element.isDeleted));
   assert.equal(writes.length, writesBeforeReload, "Reload and rediscovery must not create another saved revision");
 
-  // Exercise the actual upload dialog as well: old first page -> new second
-  // page, using file bytes in memory and the user-facing one-based page input.
+  // The source-card entry stays available, while the new selection entry also
+  // works for this cropped, unbound image whose marks cannot enter feedback.
   await page.getByRole("button", { name: "Project documents", exact: true }).click();
   const originalCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: oldDocument.fileName, exact: true }) });
   await originalCard.getByRole("combobox").selectOption("0");
   await originalCard.getByRole("button", { name: "Update this page", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Update this page", exact: true });
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Project documents", exact: true }).click();
+  await expectUpdate(["deleted-copy"], false);
+  await expectUpdate(["kept-image"], true);
+  await expectUpdate(["kept-frame"], true);
+  assert.ok(byId(reopened, "kept-image").crop);
+  assert.equal(replacement.modelSource, null);
+  if (process.env.BOARD_REPLACEMENT_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_REPLACEMENT_SCREENSHOT });
+  await updateAction().click();
+  assert.match(await dialog.locator(".monkeyboard-feedback-source").innerText(), /Updated single page\.png.*1\/1/);
   await dialog.getByLabel("Updated PDF / image", { exact: true }).setInputFiles({ name: uploadedReplacement.fileName, mimeType: "application/pdf", buffer: uploadBytes });
   await dialog.getByLabel("Page number in the new file", { exact: true }).fill("2");
   await dialog.getByRole("button", { name: "Update in place", exact: true }).click();
   await dialog.waitFor({ state: "hidden" });
   const afterUpload = await readScene();
   assert.equal(uploads.length, 1, "One user submission uploads one replacement");
-  assert.deepEqual(byId(afterUpload, "unmapped-image").customData.sourceDocument, pageSource(uploadedReplacement, 1));
-  assert.deepEqual(geometry(byId(afterUpload, "unmapped-image")), geometry(byId(reopened, "unmapped-image")));
-  assert.deepEqual(byId(afterUpload, "kept-image"), byId(reopened, "kept-image"));
+  assert.deepEqual(byId(afterUpload, "kept-image").customData.sourceDocument, pageSource(uploadedReplacement, 1));
+  assert.deepEqual(geometry(byId(afterUpload, "kept-image")), geometry(byId(reopened, "kept-image")));
+  assert.deepEqual(byId(afterUpload, "unmapped-image"), byId(reopened, "unmapped-image"));
+  const uploadCrop = byId(afterUpload, "kept-image").crop;
+  assert.ok(uploadCrop.naturalWidth > newCrop.naturalWidth, "The uploaded PDF must exercise a different preview resolution");
+  for (const [field, dimension] of [["x", "naturalWidth"], ["y", "naturalHeight"], ["width", "naturalWidth"], ["height", "naturalHeight"]]) {
+    assert.ok(Math.abs(uploadCrop[field] / uploadCrop[dimension] - newCrop[field] / newCrop[dimension]) < 1e-12,
+      `Selection update preserves the crop's ${field} fraction`);
+  }
+  for (const id of ["kept-frame", "existing-mark", "mark-during-preview"]) assert.deepEqual(byId(afterUpload, id), byId(reopened, id));
   assert.deepEqual(activeIds(afterUpload, "frame"), activeIds(reopened, "frame"));
   assert.deepEqual(activeIds(afterUpload, "image"), activeIds(reopened, "image"));
   assert.deepEqual(saved.elements, persisted(afterUpload.elements), "The dialog completes only after its updated scene is saved");
@@ -327,6 +386,9 @@ try {
     api.updateScene({ elements: [...elements, ...marks], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   });
   await page.getByRole("button", { name: "Exit", exact: true }).click();
+  for (const ids of [["bound-arrow"], ["arrow-label"], ["loose-note"], ["bound-arrow", "arrow-label"]]) await expectUpdate(ids, false);
+  await expectUpdate(["kept-image", "bound-arrow", "arrow-label"], true);
+  await select([]);
   const beforeClear = await readScene();
   const markIds = beforeClear.elements.filter((element) => !element.isDeleted && !["image", "frame"].includes(element.type)).map(({ id }) => id).sort();
   assert.ok(markIds.length >= 8, "The fixture covers freehand, lines, shapes, bound text and loose notes");
@@ -365,8 +427,30 @@ try {
   assert.deepEqual(activeIds(await readScene(), "image"), activeIds(beforeClear, "image"));
   assert.deepEqual(activeIds(await readScene(), "frame"), activeIds(beforeClear, "frame"));
   assert.deepEqual(saved.seenDocuments, seenBeforeReopen);
+  await select(["kept-frame"]);
+  const chineseUpdate = updateAction("更新此页原图");
+  await chineseUpdate.waitFor(); assert.equal(await chineseUpdate.isEnabled(), true);
+  await chineseUpdate.click();
+  const chineseDialog = page.getByRole("dialog", { name: "更新此页原图", exact: true });
+  assert.match(await chineseDialog.locator(".monkeyboard-feedback-source").innerText(), /UI updated\.pdf.*2\/2/);
+  await page.keyboard.press("Escape");
+  await chineseDialog.waitFor({ state: "hidden" });
+  assert.equal(await chineseUpdate.evaluate((element) => document.activeElement === element), true,
+    `Cancel replacement should return to its keyboard trigger, got ${await page.evaluate(() => document.activeElement.tagName)}`);
+  // Keep the server's competing revision and the page's unsent canvas separate.
+  competingVersion = true;
+  saved = { ...structuredClone(saved), title: "Another saved board", revisionSha256: "f".repeat(64) };
+  const winner = structuredClone(saved), localScene = await readScene();
+  await page.getByRole("textbox", { name: "画布标题", exact: true }).fill("我的未保存图墙");
+  await page.getByText(/已有另一份保存版本/).waitFor();
+  assert.equal(conflicts, 1);
+  assert.deepEqual(saved, winner, "A rejected stale save must not overwrite the winning board");
+  assert.deepEqual((await readScene()).elements, localScene.elements, "Conflict must preserve the current scene");
+  assert.equal(await page.getByRole("textbox", { name: "画布标题", exact: true }).inputValue(), "我的未保存图墙");
+  assert.equal(await chineseUpdate.isDisabled(), true, "Conflicted local state cannot upload another replacement");
+  assert.equal(uploads.length, 1);
   assert.deepEqual(failures, []); assert.deepEqual(escaped, []);
-  console.log(JSON.stringify({ passed: "real Excalidraw page replacement, clear annotations, immediate undo/redo in normal/Crit modes, and save/reopen", writes: writes.length, uploads: uploads.length, documentReads, fileReads: fileReads.length }));
+  console.log(JSON.stringify({ passed: "Excalidraw explicit image/frame replacement, exact source mapping and crop/marks preservation, clear annotations and undo/redo in normal/Crit modes, save/reopen and CAS", writes: writes.length, uploads: uploads.length, conflicts, documentReads, fileReads: fileReads.length }));
 } catch (error) {
   console.error(JSON.stringify({ failures, escaped, writes: writes.length, documentReads,
     visible: await page?.locator("body").innerText().catch(() => "") }));
