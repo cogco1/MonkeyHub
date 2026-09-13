@@ -32,6 +32,19 @@ This uses the existing external staging/cache/output roots and adds the EXE to
 that same bundle; the browser entry remains included. Double-click the bundled
 `MonkeyArch.exe`. A checkout build still needs the explicit options below.
 
+The existing installer selects `MonkeyArch.exe` and `MonkeyArch.lnk` for a desktop
+bundle. Its default version directory has a `-desktop` suffix, so a browser bundle
+from the same commit remains available. Missing desktop files cause installation
+to fail; it does not substitute the browser entry. Installer tests use private
+temporary installation and shortcut directories.
+
+MonkeyFab remains the package builder's optional independent input. To include
+it, combine `--desktop` with `--monkeyfab-source <checkout>` and
+`--monkeyfab-ref <commit>`; the same embedded interpreter then receives its
+preparation and `send` dependencies. In source mode the `--python` interpreter
+must already contain MonkeyFab. A host-only test interpreter can open Hub and
+Studio while the Fab card correctly reports that dependency as unavailable.
+
 For explicit source development (both frontend `dist` directories must exist):
 
 ```powershell
@@ -95,5 +108,6 @@ drain, independent-root isolation, reopen and bounded child-window origins.
 Tests use disposable source and runtime directories plus a small Python child;
 set `MONKEYARCH_TEST_PYTHON` when `python` is not on the test runner's PATH.
 The package's real Windows smoke tests separately exercise the native window
-and actual Hub. An installer, clean-machine acceptance and root restart/recovery
-remain subsequent issue #21 phases.
+and actual Hub. Full distribution and clean-machine acceptance, plus root
+restart/recovery, remain subsequent issue #21 phases. Local modeling drafts and
+undo belong to the modeling workspace; the shell does not recover unsynced edits.

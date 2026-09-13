@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -224,6 +225,59 @@ class PackageAdapterTests(unittest.TestCase):
 
 
 class DesktopPackageTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows installer and shortcut behavior")
+    def test_desktop_install_keeps_browser_version_and_selects_native_shortcut(self):
+        with tempfile.TemporaryDirectory(prefix="Hub install space ") as temporary:
+            root = Path(temporary)
+            local, shortcuts = root / "local", root / "shortcuts"
+            shortcuts.mkdir()
+            commit = "a" * 40
+            environment = dict(os.environ, LOCALAPPDATA=str(local))
+            for desktop in (False, True):
+                bundle = root / ("desktop" if desktop else "browser")
+                required = ["OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "apps/monkeyhub/run.py",
+                            "apps/monkeyhub/launch-hub.ps1", "apps/monkeyhub/web/dist/index.html",
+                            "apps/archflow-studio/web/dist/index.html"]
+                if desktop:
+                    required.extend(("MonkeyArch.exe", "_runtime/desktop-Cargo.lock"))
+                for relative in required:
+                    path = bundle / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(b"fixture - never executed")
+                (bundle / "source-version.txt").write_text(commit, encoding="utf-8")
+                (bundle / "build-info.json").write_text(json.dumps({"sourceCommit": commit,
+                    **({"desktop": {"sourceCommit": commit}} if desktop else {})}), encoding="utf-8")
+                script = bundle / "apps/monkeyhub/installer/install.ps1"
+                script.parent.mkdir(parents=True)
+                shutil.copy2(builder.SOURCE_ROOT / "apps/monkeyhub/installer/install.ps1", script)
+                command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                           "-CreateDesktopShortcut", "-DesktopDirectory", str(shortcuts)]
+                for _ in range(2):  # Reinstall the same build without changing its files.
+                    result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                name = commit[:12] + ("-desktop" if desktop else "")
+                self.assertTrue((local / "MonkeyHub/versions" / name / required[-1]).is_file())
+                if desktop:
+                    (bundle / "MonkeyArch.exe").unlink()
+                    missing = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(missing.returncode, 0)
+                    self.assertIn("MonkeyArch.exe", missing.stdout + missing.stderr)
+            browser_entry = local / "MonkeyHub/versions" / commit[:12] / "OPEN_MONKEYHUB.cmd"
+            desktop_entry = local / "MonkeyHub/versions" / (commit[:12] + "-desktop") / "MonkeyArch.exe"
+            self.assertTrue(browser_entry.is_file())
+            self.assertTrue(desktop_entry.is_file())
+            inspect = root / "inspect.ps1"
+            inspect.write_text("param($Directory)\n$shell = New-Object -ComObject WScript.Shell\n"
+                               "@('MonkeyHub.lnk','MonkeyArch.lnk') | ForEach-Object { "
+                               "$link = $shell.CreateShortcut((Join-Path $Directory $_)); "
+                               "[PSCustomObject]@{Target=$link.TargetPath; WindowStyle=$link.WindowStyle} } "
+                               "| ConvertTo-Json -Compress\n", encoding="utf-8")
+            result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(inspect), str(shortcuts)],
+                                    capture_output=True, text=True, timeout=15, check=True)
+            links = json.loads(result.stdout)
+            self.assertEqual([Path(link["Target"]) for link in links], [browser_entry, desktop_entry])
+            self.assertEqual([link["WindowStyle"] for link in links], [7, 1])
+
     def test_desktop_is_built_from_snapshot_with_bound_revision_and_external_target(self):
         with tempfile.TemporaryDirectory() as temporary:
             build = Path(temporary)

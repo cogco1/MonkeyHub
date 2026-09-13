@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import site
 import socket
 import subprocess
@@ -47,11 +48,11 @@ def wait_for(check, message, timeout=45):
     raise AssertionError(message() if callable(message) else message)
 
 
-def request(url, *, method="GET", payload=None, raw=False):
+def request(url, *, method="GET", payload=None, raw=False, timeout=5):
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     with build_opener(ProxyHandler({})).open(Request(
         url, method=method, data=body, headers={"Content-Type": "application/json"},
-    ), timeout=5) as response:
+    ), timeout=timeout) as response:
         return response.read() if raw else json.load(response)
 
 
@@ -90,6 +91,46 @@ class WindowsProcesses:
         for function, arguments, result in signatures:
             function.argtypes, function.restype = arguments, result
         self.handles = {}
+        self.webviews = set()
+        self.cleaned = False
+
+    def track_webviews(self, shell_pid):
+        class ProcessEntry(ctypes.Structure):
+            _fields_ = [
+                ("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                ("pid", wintypes.DWORD), ("heap", ctypes.c_size_t),
+                ("module", wintypes.DWORD), ("threads", wintypes.DWORD),
+                ("parent", wintypes.DWORD), ("priority", wintypes.LONG),
+                ("flags", wintypes.DWORD), ("exe", wintypes.WCHAR * 260),
+            ]
+        self.kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        self.kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        for function in (self.kernel.Process32FirstW, self.kernel.Process32NextW):
+            function.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
+            function.restype = wintypes.BOOL
+        snapshot = self.kernel.CreateToolhelp32Snapshot(0x00000002, 0)
+        if snapshot == wintypes.HANDLE(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        rows = {}
+        try:
+            entry = ProcessEntry(dwSize=ctypes.sizeof(ProcessEntry))
+            more = self.kernel.Process32FirstW(snapshot, ctypes.byref(entry))
+            while more:
+                rows[entry.pid] = (entry.parent, entry.exe.lower())
+                more = self.kernel.Process32NextW(snapshot, ctypes.byref(entry))
+        finally:
+            self.kernel.CloseHandle(snapshot)
+        owned = {shell_pid}
+        while descendants := {pid for pid, (parent, _) in rows.items() if parent in owned} - owned:
+            owned.update(descendants)
+        for pid in owned - {shell_pid}:
+            if rows[pid][1] == "msedgewebview2.exe":
+                try:
+                    self.track(pid)
+                    self.webviews.add(pid)
+                except OSError as error:
+                    if error.winerror != 87:  # It can exit between the snapshot and OpenProcess.
+                        raise
 
     def track(self, pid):
         if pid in self.handles and self.exited(pid):
@@ -128,17 +169,34 @@ class WindowsProcesses:
         return found
 
     def close_window(self, pid):
+        self.track_webviews(pid)
         for hwnd, _ in self.windows(pid):
             if not self.user.PostMessageW(hwnd, 0x0010, 0, 0):  # WM_CLOSE
                 raise ctypes.WinError(ctypes.get_last_error())
 
     def cleanup(self):
+        # WebView2 owns asynchronous profile flushing after the shell exits.
+        # These handles were captured from this shell's actual descendant tree.
+        failure = None
+        stopped = True
+        try:
+            wait_for(lambda: all(self.exited(pid) for pid in self.webviews),
+                     "This test's WebView2 children did not finish shutdown", timeout=20)
+        except Exception as error:
+            failure = error
         for pid, handle in self.handles.items():
             try:
                 self.kill(pid)
-                self.kernel.WaitForSingleObject(handle, 5000)
+                if self.kernel.WaitForSingleObject(handle, 5000) != 0:
+                    raise AssertionError(f"Owned test process {pid} did not exit during cleanup")
+            except Exception as error:
+                stopped = False
+                failure = failure or error
             finally:
                 self.kernel.CloseHandle(handle)
+        self.cleaned = stopped
+        if failure is not None:
+            raise failure
 
 
 @unittest.skipUnless(os.name == "nt" and EXE, "Set MONKEYARCH_DESKTOP_EXE to run the real Windows EXE tests")
@@ -156,12 +214,13 @@ class DesktopRuntimeTests(unittest.TestCase):
 
         self.revision = source_revision(ROOT)
         self.assertIsNotNone(self.revision)
-        temporary = tempfile.TemporaryDirectory(prefix="MonkeyArch desktop 测试 ")
-        self.addCleanup(temporary.cleanup)
+        # Explicit cleanup below waits for this instance's asynchronous WebView exit.
+        temporary = tempfile.TemporaryDirectory(prefix="MonkeyArch desktop 测试 ", delete=False)
+        self.addCleanup(self.cleanup_temporary, temporary)
         self.root = Path(temporary.name)
         self.runtime = self.root / "runtime"
         self.native = WindowsProcesses()
-        self.addCleanup(self.native.cleanup)
+        self.addCleanup(self.cleanup_processes)
         self.shells = []
         self.addCleanup(self.cleanup_shells)
         self.studio_port, self.monitor_port = free_ports(2)
@@ -186,6 +245,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.fixture.make_project(self.root / "projects")
         self.project = self.root / "projects" / self.fixture.PROJECT_ID
         self.before = self.project_bytes()
+        self.opened_bytes = None
         save_application_settings(self.runtime, ApplicationSettingsDto(
             projectDir=str(self.project), referenceRun=self.fixture.REFERENCE_RUN_ID,
             cadExport="off", studioPort=self.studio_port, monitorPort=self.monitor_port,
@@ -196,9 +256,43 @@ class DesktopRuntimeTests(unittest.TestCase):
         return {str(path.relative_to(self.project)): path.read_bytes()
                 for path in self.project.rglob("*") if path.is_file()}
 
+    def cleanup_temporary(self, temporary):
+        self.assertTrue(all(shell.poll() is not None for shell in self.shells), "Own EXE still running")
+        if not self.native.cleaned:
+            self.dump_logs()
+            self.fail(f"Own processes did not finish cleanup; retained diagnostics in {self.root}")
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                temporary.cleanup()
+                return
+            except OSError as error:
+                if error.winerror not in {5, 32, 145} or time.monotonic() >= deadline:
+                    self.dump_logs()
+                    raise
+                time.sleep(0.2)
+
+    def cleanup_processes(self):
+        try:
+            self.native.cleanup()
+        except Exception:
+            self.dump_logs()
+            raise
+
+    def dump_logs(self):
+        for path in sorted(self.runtime.glob("logs/*.log")):
+            print(f"\n{self.id()} — {path.name}\n{path.read_text(encoding='utf-8', errors='replace')[-12000:]}", file=sys.stderr)
+
+    def tearDown(self):
+        result = self._outcome.result
+        failures = getattr(result, "failures", ()) + getattr(result, "errors", ())
+        if any(test is self for test, _ in failures):
+            self.dump_logs()
+
     def cleanup_shells(self):
         for shell in self.shells:
             if shell.poll() is None:
+                self.native.track_webviews(shell.pid)
                 self.native.close_window(shell.pid)
                 try:
                     shell.wait(timeout=30)
@@ -263,6 +357,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         wait_for(lambda: self.url in PAGE_LOADED.findall(self.log_text()),
                  lambda: f"The native WebView did not finish loading the verified Hub root page: {self.log_text()}")
         self.assertEqual(request(self.url, raw=True), (ROOT / "apps/monkeyhub/web/dist/index.html").read_bytes())
+        self.native.track_webviews(self.shell.pid)
 
     def app_ready(self, app_id):
         def check():
@@ -291,9 +386,24 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.assertEqual(actual["projectId"], self.fixture.PROJECT_ID)
         self.assertEqual(Path(actual["projectDir"]).resolve(), self.project.resolve())
         self.assertEqual(actual["referenceRun"]["runId"], self.fixture.REFERENCE_RUN_ID)
+        # The real Hub UI prepares modeling when its selected project opens.
+        # Join the same idempotent API before taking the retained-data baseline.
+        prepared = request(self.url + "api/project/modeling?" + urlencode({"projectDir": str(self.project)}),
+                           method="POST", payload={"projectId": self.fixture.PROJECT_ID}, timeout=40)
+        self.assertEqual(prepared["projectId"], self.fixture.PROJECT_ID)
         wait_for(lambda: request(self.url + "api/runtime/projects/" + opened["runtimeId"])["projection"] == "ready",
                  "Studio runtime projection was not ready")
-        self.assertEqual(request(studio["url"], raw=True), (ROOT / "apps/archflow-studio/web/dist/index.html").read_bytes())
+        # A measured Windows first static response takes about 6.6 s even after
+        # modeling is ready; subsequent responses are under 0.1 s. Bound only
+        # this cold asset read; health and ordinary API requests keep 5 s.
+        self.assertEqual(request(studio["url"], raw=True, timeout=15),
+                         (ROOT / "apps/archflow-studio/web/dist/index.html").read_bytes())
+        current = self.project_bytes()
+        self.assertEqual({path: current.get(path) for path in self.before}, self.before)
+        if self.opened_bytes is None:
+            self.opened_bytes = current
+        else:
+            self.assertEqual(current, self.opened_bytes, "Reopening changed the prepared project")
         return studio
 
     def drained(self):
@@ -301,7 +411,7 @@ class DesktopRuntimeTests(unittest.TestCase):
                  lambda: f"Owned processes survived: {[pid for pid in self.pids if not self.native.exited(pid)]}")
         for port in self.ports:
             self.assertFalse(port_open(port), f"Owned listener {port} survived shutdown")
-        self.assertEqual(self.project_bytes(), self.before)
+        self.assertEqual(self.project_bytes(), self.opened_bytes or self.before)
         self.assertEqual((self.runtime / "config/applications.json").read_bytes(), self.saved_settings)
 
     def test_native_close_drains_accepted_work_and_reopen_preserves_project(self):
@@ -313,9 +423,10 @@ class DesktopRuntimeTests(unittest.TestCase):
         body = json.dumps({"usage": {"input_tokens": 1, "output_tokens": 1},
                            "rate": {"provider": "fixture", "model": "fixture", "input": "1", "output": "1"}}).encode()
         with socket.create_connection(("127.0.0.1", urlsplit(monitor["url"]).port), timeout=10) as pending:
-            pending.sendall((f"POST /api/quote HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            pending.sendall((f"POST /api/quote HTTP/1.1\r\nHost: 127.0.0.1:{urlsplit(monitor['url']).port}\r\n"
                              f"Content-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n").encode())
             self.assertEqual(request(monitor["url"] + "api/health")["name"], "MonkeyMonitor")
+            self.assertFalse(select.select([pending], [], [], 0)[0], "Monitor rejected the request before its body was sent")
             self.native.close_window(self.shell.pid)
             self.wait_state("stopping")
             wait_for(lambda: not port_open(urlsplit(monitor["url"]).port), "Monitor continued accepting work during shutdown")
@@ -397,6 +508,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.ready()
         self.open_project()
         self.app_ready("monkeymonitor")
+        self.native.track_webviews(self.shell.pid)
         self.shell.kill()
         self.shell.wait(timeout=10)
         self.drained()

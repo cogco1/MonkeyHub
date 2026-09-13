@@ -538,7 +538,7 @@
           "base_ref": "0ce0c111dbfeab2cb6373cf9050392e537caf20a",
           "contributor": "Codex task 01a0993d-4a50-7212-99d3-7ef936aadd2a",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "Phase A only: Tauri window owns one verified Hub root through existing managed stdin. Existing Hub owns workers; independent installer and crash recovery acceptance remain later phases. Isolated test runtimes only.",
+          "handoff": "PR #25 Phase A: Windows release and 8 host boundaries passed; 4 real EXE lifecycle/project reopen tests, 9 Hub lifecycle tests and 12 package tests passed. Existing installer selects a native shortcut in a separate desktop version directory. Await final exact-head Windows/Verify checks and coordinator review. Full distribution/clean-machine and root recovery acceptance remain later phases; modeling drafts and unsynced work stay with #14. Isolated runtimes only.",
           "modules": [
             "hub.shell",
             "tools.package_monkeyapps"
@@ -553,7 +553,8 @@
             "docs/SYSTEM_MAP.md",
             "docs/mapping/planning/P115-capability-consolidation.md",
             "apps/monkeyhub/api/monkeyhub_api/main.py",
-            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py"
+            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+            "apps/monkeyhub/installer/install.ps1"
           ],
           "depends_on": []
         }

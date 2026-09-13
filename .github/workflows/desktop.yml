@@ -6,7 +6,9 @@ on:
     paths:
       - 'apps/monkeyhub/desktop/**'
       - 'apps/monkeyhub/api/**'
+      - 'apps/monkeyhub/installer/**'
       - 'tools/package_monkeyapps.py'
+      - 'tests/test_package_monkeyapps.py'
       - '.github/workflows/desktop.yml'
 
 permissions:
@@ -74,6 +76,8 @@ jobs:
           $env:MONKEYARCH_DESKTOP_EXE = Join-Path $PWD 'apps/monkeyhub/desktop/target/release/MonkeyArch.exe'
           $env:PYTHONUTF8 = '1'
           python -m unittest discover -s apps/monkeyhub/desktop/tests -p test_runtime.py -v
+      - name: Package and native shortcut selection
+        run: python -m unittest discover -s tests -p test_package_monkeyapps.py -v
       - uses: actions/cache/save@v4
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
