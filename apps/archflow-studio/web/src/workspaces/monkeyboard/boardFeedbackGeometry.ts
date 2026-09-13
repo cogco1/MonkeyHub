@@ -5,6 +5,7 @@ import { findSource, imageSource, type PageSource } from "./boardScene";
 type Point = [number, number];
 type ErrorCode = "BOARD_FEEDBACK_SOURCE_REQUIRED" | "BOARD_FEEDBACK_SOURCE_AMBIGUOUS"
   | "BOARD_FEEDBACK_SOURCE_UNAVAILABLE" | "BOARD_FEEDBACK_UNSUPPORTED"
+  | "BOARD_FEEDBACK_TEXT_UNSUPPORTED"
   | "BOARD_FEEDBACK_OUTSIDE_PAGE" | "BOARD_FEEDBACK_INVALID_GEOMETRY";
 
 export class BoardFeedbackGeometryError extends Error {
@@ -143,7 +144,7 @@ export function createBoardFeedback(
   for (const element of chosen) {
     if (element.id === image.id || element.type === "frame") continue;
     if (!["ellipse", "rectangle", "line", "arrow", "freedraw"].includes(element.type)) {
-      fail("BOARD_FEEDBACK_UNSUPPORTED", element.type === "text"
+      fail(element.type === "text" ? "BOARD_FEEDBACK_TEXT_UNSUPPORTED" : "BOARD_FEEDBACK_UNSUPPORTED", element.type === "text"
         ? "Selected text cannot be transferred without changing its layout. Put that text in the feedback message, then unbind or remove it from the shape, or deselect the shape containing the bound text."
         : `Selected ${element.type} elements are not supported for feedback.`);
     }

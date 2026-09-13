@@ -1,9 +1,9 @@
 .monkeyboard { display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--ink); background: var(--ground); font-family: var(--font-ui, "Segoe UI", sans-serif); }
 .monkeyboard button, .monkeyboard input, .monkeyboard select, .monkeyboard textarea { font: inherit; }
-.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert) :is(button,select), .monkeyboard-loading button { min-height: 34px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); padding: 6px 10px; cursor: pointer; }
-.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert) button:hover:not(:disabled), .monkeyboard-loading button:hover { background: var(--accent-soft); border-color: var(--accent); }
-.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert) button:disabled { opacity: .5; cursor: default; }
-.monkeyboard :is(button,input,select,textarea,a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) :is(button,select,summary), .monkeyboard-loading button { min-height: 36px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); padding: 7px 10px; cursor: pointer; }
+.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) button:hover:not(:disabled), .monkeyboard-loading button:hover, .monkeyboard-actions summary:hover { background: var(--accent-soft); border-color: var(--accent); }
+.monkeyboard :is(.monkeyboard-topbar,.monkeyboard-sources,.monkeyboard-alert,.monkeyboard-context) button:disabled { opacity: .5; cursor: default; }
+.monkeyboard :is(button,input,select,textarea,a,summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .monkeyboard a { color: var(--accent); text-decoration: none; }
 .monkeyboard a:hover { text-decoration: underline; }
 .monkeyboard-topbar { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
@@ -11,15 +11,21 @@
 .monkeyboard-brand { font-weight: 650; font-size: 15px; letter-spacing: -.3px; }
 .monkeyboard-heading input { min-width: 80px; width: min(260px, 100%); border: 1px solid transparent; border-radius: 5px; padding: 7px; color: var(--ink-2); background: transparent; font-size: 13px; }
 .monkeyboard-heading input:hover, .monkeyboard-heading input:focus { border-color: var(--line); }
-.monkeyboard-save-state { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.monkeyboard-save-state { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .monkeyboard-save-state.is-error { color: var(--violated); }
 .monkeyboard button.monkeyboard-primary { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-.monkeyboard-export { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; color: var(--muted); }
-.monkeyboard-export > span { max-width: 156px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monkeyboard-actions { position: relative; font-size: 12px; }
+.monkeyboard-actions summary { display: flex; align-items: center; list-style: none; }
+.monkeyboard-actions summary::-webkit-details-marker { display: none; }
+.monkeyboard-actions[open] summary, .monkeyboard-topbar button[aria-expanded=true] { border-color: var(--accent); background: var(--accent-soft); }
+.monkeyboard-actions-panel { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; display: grid; gap: 6px; width: min(310px, calc(100vw - 32px)); max-height: calc(100dvh - 160px); overflow-y: auto; padding: 12px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
+.monkeyboard-actions-panel > button { text-align: left; }
+.monkeyboard-export { display: grid; gap: 8px; min-width: 0; padding-top: 12px; margin-top: 6px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .monkeyboard-export label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .monkeyboard-export input { margin: 0; }
 .monkeyboard-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .monkeyboard-sources { display: flex; flex-direction: column; flex: 0 0 248px; min-width: 0; border-right: 1px solid var(--line); background: var(--panel); padding: 18px 12px 12px; }
+.monkeyboard-sources[hidden] { display: none; }
 .monkeyboard-source-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 4px; }
 .monkeyboard-source-heading h2 { font-size: 13px; font-weight: 650; margin: 0; }
 .monkeyboard-source-heading > span { color: var(--muted); font-size: 11px; }
@@ -60,6 +66,11 @@
 .monkeyboard-canvas .excalidraw button { font-size: inherit; }
 .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-family: var(--font-ui, "Segoe UI", sans-serif); font-weight: 500; font-size: 26px; color: var(--ink); }
 .monkeyboard-welcome-body { max-width: 360px; color: var(--muted); font-size: 13px; line-height: 1.8; text-align: center; margin: 8px auto 16px; }
+.monkeyboard-welcome-body p { margin: 8px 0; }
+.monkeyboard-welcome-example { display: inline-block; border: 1px dashed var(--line); border-radius: 6px; padding: 8px 16px; margin: 4px 0; color: var(--ink-2); }
+.monkeyboard-context { position: absolute; z-index: 5; bottom: 76px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; width: max-content; max-width: min(440px, calc(100% - 32px)); padding: 10px 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); font-size: 13px; }
+.monkeyboard-context p { margin: 0; color: var(--ink-2); line-height: 1.6; }
+.monkeyboard-context a { padding: 8px 0; }
 .monkeyboard-alert { display: flex; align-items: center; gap: 14px; justify-content: space-between; padding: 9px 16px; border-bottom: 1px solid var(--line); color: var(--ink); background: var(--accent-soft); font-size: 12px; line-height: 1.6; }
 .monkeyboard-alert > span { overflow-wrap: anywhere; }
 .monkeyboard-alert :is(button,a) { flex-shrink: 0; }
@@ -89,5 +100,5 @@
 .monkeyboard-feedback-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .monkeyboard-feedback button { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); cursor: pointer; }
 .monkeyboard-feedback button:disabled { opacity: .5; cursor: default; }
-@media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } .monkeyboard-topbar { padding: 8px 10px; gap: 7px; flex-wrap: wrap; } .monkeyboard-heading { gap: 8px; } .monkeyboard-heading input { width: 150px; } .monkeyboard-footer { padding-inline: 10px; } .monkeyboard-export { order: 2; flex-basis: 100%; } }
-@media (max-width: 700px) { .monkeyboard-sources { flex-basis: 175px; } .monkeyboard-topbar { flex-wrap: wrap; } .monkeyboard-heading { flex-basis: 70%; } .monkeyboard-topbar button { font-size: 11px; } .monkeyboard-source { padding: 9px; } .monkeyboard-page-row { flex-direction: column; } .monkeyboard-footer > span:first-child { display: none; } .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-size: 20px; } }
+@media (max-width: 1000px) { .monkeyboard-sources { flex-basis: 215px; padding: 14px 8px; } .monkeyboard-topbar { padding: 8px 10px; gap: 7px; flex-wrap: wrap; } .monkeyboard-heading { gap: 8px; } .monkeyboard-heading input { width: 150px; } .monkeyboard-footer { padding-inline: 10px; } }
+@media (max-width: 700px) { .monkeyboard-body { position: relative; } .monkeyboard-sources { position: absolute; inset: 0 auto 0 0; width: min(280px, 85%); box-sizing: border-box; z-index: 15; box-shadow: var(--shadow); } .monkeyboard-heading { flex-basis: 70%; } .monkeyboard-topbar button { font-size: 12px; } .monkeyboard-actions { margin-left: auto; } .monkeyboard-source { padding: 9px; } .monkeyboard-footer > span:first-child { display: none; } .monkeyboard-canvas .excalidraw .welcome-screen-center__heading { font-size: 20px; } }

@@ -178,19 +178,20 @@ test("cropped images, unsupported selected content and unsupported line styles h
     crop: { x: 20, y: 0, width: 900, height: 500, naturalWidth: 1000, naturalHeight: 500 },
   })]));
   for (const mark of [
-    element("text", "text", { text: "Move this wall" }), element("diamond", "diamond"),
+    element("diamond", "diamond"),
     element("arrow", "curved", { points: [[0, 0], [50, 100], [100, 0]], roundness: { type: 2 } }),
     element("arrow", "elbow", { elbowed: true }), element("arrow", "symbol", { endArrowhead: "dot" }),
     element("line", "rough", { roughness: 1 }), element("line", "dashed", { strokeStyle: "dashed" }),
     element("ellipse", "filled", { backgroundColor: "#ffffff" }),
   ]) fails("BOARD_FEEDBACK_UNSUPPORTED", () => convert([image, mark]));
+  fails("BOARD_FEEDBACK_TEXT_UNSUPPORTED", () => convert([image, element("text", "text", { text: "Move this wall" })]));
 });
 
 test("a selected container cannot silently lose its bound text", () => {
   const image = element("image", "sheet");
   const box = element("rectangle", "box", { x: 100, y: 100, boundElements: [{ id: "label", type: "text" }] });
   const label = element("text", "label", { x: 110, y: 110, text: "Move", containerId: "box" });
-  fails("BOARD_FEEDBACK_UNSUPPORTED", () => geometry.createBoardFeedback([image, box, label], { sheet: true, box: true }, [document()]));
+  fails("BOARD_FEEDBACK_TEXT_UNSUPPORTED", () => geometry.createBoardFeedback([image, box, label], { sheet: true, box: true }, [document()]));
 });
 
 test("annotation groups are stable and escape image/element id separators", () => {
