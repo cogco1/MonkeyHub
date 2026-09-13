@@ -83,6 +83,30 @@ export function readBaseUrl(configured: string | undefined): string {
   return withoutSlash.replace(/\/api$/, "");
 }
 
+/** An embedded Studio may use only the loopback Hub that actually framed it. */
+export function embeddedHubBaseUrl(href: string, referrer: string): string | null {
+  try {
+    const page = new URL(href);
+    if (page.searchParams.get("embedded") !== "tool") return null;
+    const raw = page.searchParams.get("hubApi");
+    if (!raw) return null;
+    const hub = new URL(raw), parent = new URL(referrer);
+    if (hub.protocol !== "http:" || !["127.0.0.1", "localhost", "[::1]"].includes(hub.hostname)
+      || hub.origin !== parent.origin || hub.username || hub.password || hub.search || hub.hash
+      || !/^\/api\/runtime\/projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/studio$/i.test(hub.pathname)) return null;
+    return hub.href;
+  } catch { return null; }
+}
+
+/** A key belongs to one submitted request, never to the parent's diagnostic trace. */
+async function operationFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const request = new Request(input, init);
+  if (request.method !== "GET" && request.method !== "HEAD" && !request.headers.has("Idempotency-Key")) {
+    request.headers.set("Idempotency-Key", crypto.randomUUID());
+  }
+  return globalThis.fetch(request);
+}
+
 /**
  * The token in `?token=`, taken once and wiped from the address bar.
  *
@@ -137,6 +161,7 @@ export class ServerConnection {
   configure(): void {
     client.setConfig({
       baseUrl: this.baseUrl,
+      fetch: operationFetch,
       ...(this.token === null
         ? {}
         : { headers: { Authorization: `Bearer ${this.token}` } }),
@@ -203,7 +228,8 @@ export class ServerConnection {
 
 /** The one connection this app uses, configured before any call is made. */
 export const connection = new ServerConnection(
-  readBaseUrl(import.meta.env.VITE_ARCHFLOW_API_URL),
+  (typeof window === "undefined" || typeof document === "undefined" ? null
+    : embeddedHubBaseUrl(window.location.href, document.referrer)) ?? readBaseUrl(import.meta.env.VITE_ARCHFLOW_API_URL),
   claimTokenFromLocation(),
 );
 

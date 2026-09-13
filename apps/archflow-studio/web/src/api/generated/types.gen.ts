@@ -4663,6 +4663,102 @@ export type RhinoWorkExportRequestDto = {
 };
 
 /**
+ * RuntimeCandidateDto
+ */
+export type RuntimeCandidateDto = {
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Jobid
+     */
+    jobId: string | null;
+    /**
+     * Proposalid
+     */
+    proposalId: string | null;
+    base: ProjectVersionDto | null;
+    /**
+     * Baserecorddigest
+     */
+    baseRecordDigest: string | null;
+    /**
+     * Basestatedigest
+     *
+     * Exact StateRecord operator base binding digest, as retained by the candidate delta.
+     */
+    baseStateDigest: string | null;
+    /**
+     * Resultrecorddigest
+     */
+    resultRecordDigest: string | null;
+    /**
+     * Resultstatedigest
+     */
+    resultStateDigest: string | null;
+    /**
+     * Receiptref
+     */
+    receiptRef: string | null;
+    /**
+     * Commitstagerefs
+     */
+    commitStageRefs: Array<string>;
+    /**
+     * Error
+     */
+    error: string | null;
+};
+
+/**
+ * RuntimeDto
+ */
+export type RuntimeDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    published: ProjectVersionDto;
+    /**
+     * Jobs
+     */
+    jobs: Array<JobDto>;
+    /**
+     * Candidates
+     */
+    candidates: Array<RuntimeCandidateDto>;
+    /**
+     * Branches
+     */
+    branches: Array<DesignBranchDto>;
+    /**
+     * Stages
+     */
+    stages: Array<DesignStageDto>;
+    /**
+     * Errors
+     */
+    errors: Array<string>;
+    /**
+     * Runsscanned
+     */
+    runsScanned: number;
+    /**
+     * Hasmore
+     */
+    hasMore: boolean;
+};
+
+/**
  * ScopeOptionDto
  *
  * One reading of how far a change reaches, and exactly what it covers.
@@ -7209,6 +7305,50 @@ export type ReadProjectApiProjectGetResponses = {
 };
 
 export type ReadProjectApiProjectGetResponse = ReadProjectApiProjectGetResponses[keyof ReadProjectApiProjectGetResponses];
+
+export type ReadRuntimeApiRuntimeGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Candidateid
+         */
+        candidateId?: Array<string>;
+    };
+    url: '/api/runtime';
+};
+
+export type ReadRuntimeApiRuntimeGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRuntimeApiRuntimeGetError = ReadRuntimeApiRuntimeGetErrors[keyof ReadRuntimeApiRuntimeGetErrors];
+
+export type ReadRuntimeApiRuntimeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RuntimeDto;
+};
+
+export type ReadRuntimeApiRuntimeGetResponse = ReadRuntimeApiRuntimeGetResponses[keyof ReadRuntimeApiRuntimeGetResponses];
 
 export type ReadStateApiStateGetData = {
     body?: never;

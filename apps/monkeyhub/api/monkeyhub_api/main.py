@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import queue
 from urllib.parse import urlsplit
 from uuid import UUID
 import webbrowser
@@ -18,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.requests import Request
@@ -35,6 +36,8 @@ from archflow_studio_api.transport.project import ModelingInitializeDto, Modelin
 from . import chat as chat_tools
 from .applications import Applications
 from .chat import ChatStore
+from .runtime import ProjectRuntimeManager
+from .runtime_models import HubRuntimeDto, ProjectRuntimeDto, OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent
 from .fabrication import Fabrication
 from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
@@ -71,6 +74,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     applications = Applications(source_root, settings.runtime_root, settings.studio_web_dir, settings.port)
     fabrication = Fabrication(source_root)
     chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications)
+    runtimes = ProjectRuntimeManager(applications, chats)
+    chats.on_change = runtimes.chat_changed
 
     @asynccontextmanager
     async def lifespan(app):
@@ -83,11 +88,13 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         yield
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
+        await asyncio.to_thread(runtimes.shutdown)
 
-    app = FastAPI(title="MonkeyHub API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="MonkeyHub API", version="0.1.0", lifespan=lifespan, servers=[{"url": "/"}])
     app.state.settings = settings
     app.state.applications = applications
     app.state.chats = chats
+    app.state.runtimes = runtimes
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
@@ -137,9 +144,23 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         if host not in {f"127.0.0.1:{settings.port}", f"localhost:{settings.port}"}:
             return JSONResponse({"code": "LOCAL_HOST_REQUIRED", "detail": "Use the local Hub address."}, status_code=403)
         origin = request.headers.get("origin")
-        if origin and origin not in origins:
+        # Embedded Studio still serves its own assets. Its API attaches to the
+        # Hub only while this Hub owns that exact, verified worker origin.
+        worker_origins = {row.url.rstrip("/") for row in applications.worker_snapshots()
+                          if row.url and row.healthy and row.service_id == "studio"}
+        allowed_origins = origins | worker_origins
+        if origin and origin not in allowed_origins:
             return JSONResponse({"code": "LOCAL_ORIGIN_REQUIRED", "detail": "Use the local Hub page."}, status_code=403)
-        return await call_next(request)
+        if request.method == "OPTIONS" and origin in worker_origins:
+            response = Response(status_code=204)
+        else:
+            response = await call_next(request)
+        if origin in worker_origins:
+            response.headers.update({"Access-Control-Allow-Origin": origin, "Vary": "Origin",
+                "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key, X-Monkey-Operation, X-Monkey-Parent, Last-Event-ID, If-None-Match",
+                "Access-Control-Expose-Headers": "ETag, Content-Disposition, X-Monkey-Operation-Id"})
+        return response
 
     if settings.web_origin:
         app.add_middleware(CORSMiddleware, allow_origins=[settings.web_origin], allow_methods=["GET", "POST", "PUT"], allow_headers=["Content-Type"])
@@ -156,7 +177,16 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @app.post("/api/apps/{app_id}/start", response_model=AppStatus, status_code=202, responses=error_responses)
     def start_app(app_id: AppId, projectDir: str | None = None) -> AppStatus:
+        runtime = None
+        if app_id in {"monkeyarch", "monkeydiagram", "monkeyboard"}:
+            target = projectDir or read_application_settings(settings.runtime_root).project_dir
+            if target:
+                project_id, target = chat_tools._project(target)
+                runtime = runtimes.open(project_id, target)
         with chats.application_lifecycle(app_id, project_dir=projectDir):
+            if runtime is not None and any(row.state == "crashed" for row in applications.worker_snapshots(project_dir=runtime.project_dir)):
+                runtimes.recover(runtime)
+                return applications.status(app_id, project_dir=runtime.project_dir)
             return applications.start(app_id, project_dir=projectDir)
 
     @app.post("/api/apps/{app_id}/stop", response_model=AppStatus, status_code=202, responses=error_responses)
@@ -254,6 +284,92 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/chat/sessions/{session_id}/permissions/{permission_id}", response_model=ChatDetail)
     def resolve_chat_permission(session_id: str, permission_id: str, body: ChatPermissionRequest):
         return chats.resolve_permission(session_id, permission_id, body)
+
+    @app.get("/api/runtime", response_model=HubRuntimeDto)
+    def read_runtime():
+        runtimes.discover()
+        return runtimes.snapshot()
+
+    @app.post("/api/runtime/projects/open", response_model=ProjectRuntimeDto)
+    def open_runtime(body: OpenRuntimeRequest):
+        runtime = runtimes.open(body.projectId, body.projectDir)
+        return runtimes.project_snapshot(runtime)
+
+    @app.get("/api/runtime/projects/{runtime_id}", response_model=ProjectRuntimeDto)
+    def read_project_runtime(runtime_id: str):
+        return runtimes.project_snapshot(runtimes.get(runtime_id))
+
+    @app.post("/api/runtime/projects/{runtime_id}/recover", response_model=ProjectRuntimeDto, status_code=202)
+    def recover_runtime(runtime_id: str, body: RuntimeProjectRequest):
+        return runtimes.recover(runtimes.get(runtime_id, body.projectId))
+
+    @app.post("/api/runtime/projects/{runtime_id}/close", response_model=ProjectRuntimeDto, status_code=202)
+    def close_runtime(runtime_id: str, body: RuntimeProjectRequest):
+        return runtimes.close(runtimes.get(runtime_id, body.projectId))
+
+    @app.get("/api/runtime/events", response_class=StreamingResponse, response_model=RuntimeEvent,
+             responses={200: {"description": "Runtime SSE; every attachment begins with a coherent snapshot.",
+                              "content": {"text/event-stream": {"schema": {"type": "string"}}}}})
+    async def runtime_events(request: Request):
+        await asyncio.to_thread(runtimes.discover)
+
+        async def stream():
+            # Subscribe before reading the snapshot. Drop queued events the
+            # snapshot already includes, so no change can fall through a gap.
+            with runtimes.events.subscribe() as (_, inbox):
+                runtimes._clients += 1
+                try:
+                    snapshot = await asyncio.to_thread(runtimes.snapshot)
+                    sequence = snapshot.sequence
+                    event = RuntimeEvent(serverId=runtimes.server_id, sequence=sequence, kind="runtime/snapshot", snapshot=snapshot)
+                    yield f"id: {runtimes.server_id}:{sequence}\nevent: runtime\ndata: {event.model_dump_json()}\n\n"
+                    while not await request.is_disconnected() and not runtimes._closing.is_set():
+                        try:
+                            value = await asyncio.to_thread(inbox.get, True, 1)
+                        except queue.Empty:
+                            yield ": keepalive\n\n"
+                            continue
+                        if value["seq"] <= sequence:
+                            continue
+                        sequence = value["seq"]
+                        event = RuntimeEvent(serverId=runtimes.server_id, sequence=sequence, kind=value["kind"], runtimeId=value.get("runtimeId"))
+                        yield f"id: {runtimes.server_id}:{sequence}\nevent: runtime\ndata: {event.model_dump_json()}\n\n"
+                finally:
+                    runtimes._clients -= 1
+
+        return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    @app.api_route("/api/runtime/projects/{runtime_id}/studio/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "DELETE"], include_in_schema=False)
+    async def studio_request(request: Request, runtime_id: str, path: str):
+        runtime = await asyncio.to_thread(runtimes.get, runtime_id)
+        target = "/" + path + (f"?{request.url.query}" if request.url.query else "")
+        if path == "api/events" and request.method == "GET":
+            # Preserve the existing Studio job stream for embedded clients.
+            # The Hub's application stream above remains their runtime source.
+            from urllib.request import ProxyHandler, Request as HttpRequest, build_opener
+            worker = runtimes.service(runtime)
+            upstream = await asyncio.to_thread(
+                build_opener(ProxyHandler({}), chat_tools._NoRedirect()).open,
+                HttpRequest(worker.url.rstrip("/") + target,
+                            headers={"Last-Event-ID": request.headers.get("last-event-id", "")}), timeout=20)
+
+            async def chunks():
+                try:
+                    while not await request.is_disconnected():
+                        line = await asyncio.to_thread(upstream.readline)
+                        if not line:
+                            break
+                        yield line
+                except OSError:
+                    # A dead/replaced worker ends this attachment. The browser
+                    # reconnects; no operation is admitted by this read stream.
+                    return
+                finally:
+                    upstream.close()
+            return StreamingResponse(chunks(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+        result = await asyncio.to_thread(runtimes.forward, runtime, target, request.method,
+                                         await request.body(), dict(request.headers))
+        return Response(result.body, status_code=result.status, headers=result.headers)
 
     app.include_router(preferences_router, prefix="/api")
     if settings.hub_web_dir is not None:

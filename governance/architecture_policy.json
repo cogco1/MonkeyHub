@@ -185,7 +185,7 @@
       "reason": "Metadata-only usage.jsonl is appended under an explicitly supplied noncanonical diagnostics directory; it does not write any project document."
     },
     {
-      "path": "apps/monkeyhub/api/monkeyhub_api/applications.py",
+      "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",
       "function": "start",
       "operations": [
         "mkdir",

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import secrets
+import re
 
 from fastapi import APIRouter, Query
 from starlette.requests import Request
@@ -92,7 +93,7 @@ def start_candidate(
     _require_current_base(binding, projection, proposal)
     registry: JobRegistry = state.jobs
     settings: StudioSettings = state.settings
-    run_id = _run_id(proposal_id)
+    run_id = admitted_candidate_id(request, _run_id(proposal_id))
 
     def work() -> object:
         receipt = execute_candidate(binding, settings, proposal, run_id, monitor=state.monitor)
@@ -141,7 +142,7 @@ def combine_candidates(request: Request, body: CombineCandidatesRequestDto) -> C
         raise StudioError(409, "PROJECT_MISMATCH", "This request names another project.")
     candidate_ids = tuple(body.candidate_ids)
     projection, operator = prepare_combined_candidate(binding, candidate_ids)
-    run_id = _run_id("combined")
+    run_id = admitted_candidate_id(request, _run_id("combined"))
     return accepted_dto(state.jobs.submit(
         candidate_id=run_id, proposal_id="combined:" + "+".join(candidate_ids),
         work=lambda: run_operator(binding, state.settings, operator, run_id,
@@ -327,6 +328,26 @@ def _require_current_base(
         "propose again: a candidate is only meaningful against the exact "
         "record it was proposed for.",
     )
+
+
+def admitted_candidate_id(request: Request, generated: str) -> str:
+    """A managed Hub knows the result's run id before the 202 can be lost.
+
+    This does not grant execution authority or relax any proposal/base check.
+    A retained run is never executed again, even if its first execution failed.
+    Standalone callers retain the ordinary server-generated identity.
+    """
+    candidate_id = request.headers.get("x-monkey-candidate")
+    if candidate_id is None:
+        return generated
+    instance_id = getattr(request.app.state, "managed_instance_id", None)
+    if (not instance_id or request.headers.get("x-monkey-worker") != instance_id
+            or re.fullmatch(r"hub-cand-[0-9a-f]{32}", candidate_id) is None):
+        raise StudioError(409, "CANDIDATE_ADMISSION_MISMATCH", "The candidate admission is not bound to this managed Studio instance.")
+    binding = bound_project(request.app.state)
+    if candidate_id in binding.run_ids():
+        raise StudioError(409, "CANDIDATE_ALREADY_RETAINED", f"Run {candidate_id} already exists. Read its retained result; it cannot be executed again.")
+    return candidate_id
 
 
 def _run_id(proposal_id: str) -> str:

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
 import { readHostRequest, START_MODELING } from "../../../shared-web/src/hostBridge.js";
 import { presentFailure } from "./chatError";
 import "./ChatShell.css";
@@ -17,6 +17,7 @@ type Props = {
   apps: readonly AppStatus[] | null;
 };
 type ToolTab = { id: AppId; url: string; revision: number };
+type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
@@ -50,6 +51,8 @@ const words = {
     archivedChats: "已归档对话", activeChats: "返回当前对话", archive: "归档", restore: "恢复", archiveRunning: "回复结束或停止后可以归档。",
     archiveEmpty: "暂无已归档对话。", archivedNotice: "这段对话已归档，消息和候选仍保留。恢复后可以继续对话。", restoreChat: "恢复此对话",
     toolStopped: "按需启动", toolStarting: "启动中", toolRunning: "可用", toolStopping: "停止中", toolError: "连接失败", toolUnavailable: "缺少依赖", toolUnknown: "读取状态中", toolConnect: "连接此项目",
+    reconnecting: "连接中断，正在重新读取项目状态…", workerCrashed: "项目服务已退出", recoverWorker: "恢复项目服务", recovering: "正在恢复…",
+    recoveryHint: "恢复服务后读取已保存结果；未完成的修改需要重新检查。", operationRecovery: "有操作需要检查恢复结果", operationFailed: "有操作未完成", operationStale: "操作基底已过期", runtimeOperations: "项目操作", operationCommitted: "已提交", operationPending: "尚无提交确认",
   },
   en: {
     projects: "Projects", add: "Add project", newChat: "New chat", settings: "Hub settings", settingsHeading: "Hub settings (global)", close: "Close", cancel: "Cancel", addProject: "Add project",
@@ -80,6 +83,8 @@ const words = {
     archivedChats: "Archived chats", activeChats: "Back to current chats", archive: "Archive", restore: "Restore", archiveRunning: "Wait for the reply to finish or stop it before archiving.",
     archiveEmpty: "No archived chats.", archivedNotice: "This chat is archived. Its messages and candidates are kept. Restore it to continue.", restoreChat: "Restore this chat",
     toolStopped: "On demand", toolStarting: "Starting", toolRunning: "Ready", toolStopping: "Stopping", toolError: "Failed", toolUnavailable: "Unavailable", toolUnknown: "Checking", toolConnect: "Connect project",
+    reconnecting: "Connection interrupted. Reading the current project state…", workerCrashed: "The project service exited", recoverWorker: "Recover project service", recovering: "Recovering…",
+    recoveryHint: "Recovery reads saved results. Unfinished changes need review.", operationRecovery: "An operation needs recovery review", operationFailed: "An operation did not complete", operationStale: "An operation has an outdated base", runtimeOperations: "Project operations", operationCommitted: "Committed", operationPending: "No commit confirmed",
   },
 } as const;
 /** The rail's two kinds of entry: places you work in this project, and the
@@ -128,8 +133,8 @@ const asFailure = (cause: unknown): HubError => {
 };
 const wait = () => new Promise((resolve) => window.setTimeout(resolve, 400));
 /** What this page looked like last time: the same conversation and the same frame. */
-function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null } {
-  const empty = { chatId: null, projectDir: null, sidebar: null, panel: null, panelWidth: null };
+function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
+  const empty = { chatId: null, projectDir: null, sidebar: null, panel: null, panelWidth: null, tools: [], activeTool: null };
   try {
     const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? "null");
     return {
@@ -138,6 +143,9 @@ function readView(): { chatId: string | null; projectDir: string | null; sidebar
       sidebar: typeof saved?.sidebar === "boolean" ? saved.sidebar : null,
       panel: typeof saved?.panel === "boolean" ? saved.panel : null,
       panelWidth: typeof saved?.panelWidth === "number" && Number.isFinite(saved.panelWidth) ? saved.panelWidth : null,
+      tools: Array.isArray(saved?.tools) ? saved.tools.filter((item: SavedTool) => item && tools.some((tool) => tool.id === item.id))
+        .map((item: SavedTool) => ({ id: item.id, ...(typeof item.candidate === "string" ? { candidate: item.candidate } : {}) })) : [],
+      activeTool: tools.some((tool) => tool.id === saved?.activeTool) ? saved.activeTool : null,
     };
   } catch { return empty; }
 }
@@ -188,6 +196,9 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const [archiveBusy, setArchiveBusy] = useState<string | null>(null);
   const [providers, setProviders] = useState<ChatProvider[]>([]);
   const [projectApps, setProjectApps] = useState<{ projectDir: string | null; apps: AppStatus[] } | null>(null);
+  const [runtime, setRuntime] = useState<HubRuntimeDto | null>(null);
+  const [eventsConnected, setEventsConnected] = useState(true);
+  const [recovering, setRecovering] = useState(false);
   const [projectDir, setProjectDir] = useState<string | null>(initial.projectDir ?? configuredProject);
   const [chatId, setChatId] = useState<string | null>(initial.chatId);
   const [chat, setChat] = useState<ChatDetail | null>(null);
@@ -219,12 +230,21 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const actionLock = useRef(false);
   const permissionLock = useRef(false);
   const readLock = useRef(false);
+  const readAgain = useRef(false);
+  const runtimeRef = useRef<HubRuntimeDto | null>(null);
+  const runtimeAttachments = useRef(new Map<string, ProjectRuntimeDto>());
+  const restoredTools = useRef(false);
+  const workerInstances = useRef(new Map<string, string>());
   const observedSessions = useRef(new Map<string, ChatSummary["status"]>());
   const completedChats = useRef(new Set<string>());
   const openedCandidates = useRef(new Set<string>());
   const projectPreparations = useRef(new Map<string, ProjectPreparation>());
   const selection = useRef({ chatId, projectDir, archivedView, projects }); selection.current = { chatId, projectDir, archivedView, projects };
   const project = projects.find((item) => item.projectDir === projectDir);
+  const projectRuntime = runtime?.projects.find((item) => item.projectDir === projectDir && item.projectId === project?.projectId);
+  const studioWorker = projectRuntime?.workers?.find((item) => item.serviceId === "studio");
+  const crashed = studioWorker?.state === "crashed";
+  const recoverableOperation = projectRuntime?.operations?.find((item) => ["needs_recovery", "failed", "stale"].includes(item.status));
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
   const running = chat?.id === chatId && chat.status === "running";
@@ -246,8 +266,14 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const candidates = [...new Set([...(chat?.id === chatId ? chat.messages ?? [] : [])]
     .reverse().map((message) => message.candidateId).filter((id): id is string => Boolean(id)))].slice(0, 4);
 
+  const receiveRuntime = useCallback((snapshot: HubRuntimeDto) => {
+    const previous = runtimeRef.current;
+    if (previous?.serverId === snapshot.serverId && snapshot.sequence < previous.sequence) return;
+    for (const item of snapshot.projects) runtimeAttachments.current.set(item.projectDir, item);
+    runtimeRef.current = snapshot; setRuntime(snapshot);
+  }, []);
   const refresh = useCallback(async () => {
-    if (readLock.current) return;
+    if (readLock.current) { readAgain.current = true; return; }
     readLock.current = true;
     const selectedId = selection.current.chatId;
     const selectedProject = selection.current.projectDir;
@@ -255,14 +281,16 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     const preparedStudio = prepared?.apps?.find((item) => item.appId === "monkeyarch");
     const selectedArchived = selection.current.archivedView;
     try {
-      const [nextProjects, nextSessions, nextProviders, detail, nextApps] = await Promise.all([
+      const [nextProjects, nextSessions, nextProviders, detail, nextApps, nextRuntime] = await Promise.all([
         request<ChatProject[]>("/api/chat/projects"), request<ChatSummary[]>(`/api/chat/sessions${selectedArchived ? "?archived=true" : ""}`), request<ChatProvider[]>("/api/chat/providers"),
         selectedId ? request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(selectedId)}`).catch((cause: unknown) => {
           if (cause && typeof cause === "object" && "status" in cause && cause.status === 404) { if (selection.current.chatId === selectedId) setChatId(null); return null; }
           throw cause;
         }) : Promise.resolve(null),
         request<AppStatus[]>(`/api/apps${selectedProject ? `?${new URLSearchParams({ projectDir: selectedProject })}` : ""}`),
+        request<HubRuntimeDto>("/api/runtime"),
       ]);
+      receiveRuntime(nextRuntime);
       for (const session of nextSessions) {
         if (observedSessions.current.get(session.id) === "running" && session.status !== "running") completedChats.current.add(session.id);
         observedSessions.current.set(session.id, session.status);
@@ -287,13 +315,44 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       if (!knownProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(knownProjects.find((item) => item.projectDir === configuredProject)?.projectDir ?? knownProjects[0]?.projectDir ?? null);
       setLoading(false);
     } catch (cause) { setError(asFailure(cause)); setLoading(false); }
-    finally { readLock.current = false; }
-  }, [configuredProject]);
-  useEffect(() => { void refresh(); const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 1200); return () => window.clearInterval(timer); }, [refresh]);
+    finally { readLock.current = false; if (readAgain.current) { readAgain.current = false; void refresh(); } }
+  }, [configuredProject, receiveRuntime]);
+  useEffect(() => {
+    void refresh();
+    let connected = false;
+    let stream: EventSource, reconnectTimer: number | undefined;
+    const connect = () => {
+      reconnectTimer = undefined;
+      stream = new EventSource("/api/runtime/events");
+      stream.onopen = () => { connected = true; setEventsConnected(true); void refresh(); };
+      stream.onerror = () => {
+        connected = false; setEventsConnected(false);
+        // A 503 can close EventSource permanently; transport errors use its
+        // built-in retry. Both reconnect paths only read current state.
+        if (stream.readyState === EventSource.CLOSED && reconnectTimer === undefined) reconnectTimer = window.setTimeout(connect, 1500);
+      };
+      stream.addEventListener("runtime", (message) => {
+        try { const event: RuntimeEvent = JSON.parse((message as MessageEvent).data); if (event.snapshot) receiveRuntime(event.snapshot); } catch { /* Re-read the authoritative snapshot below. */ }
+        void refresh();
+      });
+    };
+    connect();
+    const timer = window.setInterval(() => { if (!connected && !document.hidden) void refresh(); }, 5000);
+    const visible = () => { if (!document.hidden) void refresh(); };
+    document.addEventListener("visibilitychange", visible);
+    return () => { stream.close(); window.clearTimeout(reconnectTimer); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
+  }, [refresh, receiveRuntime]);
+  useEffect(() => {
+    if (!providers.some((item) => item.modelCatalog === "checking")) return;
+    const timer = window.setInterval(() => { void request<ChatProvider[]>("/api/chat/providers").then(setProviders).catch(() => {}); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [providers]);
   useEffect(() => { setChat(null); setError(null); void refresh(); }, [chatId, refresh]);
   useEffect(() => { void refresh(); }, [archivedView, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
-  useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar, panel, panelWidth })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebar, panel, panelWidth]);
+  useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar, panel, panelWidth, activeTool,
+    tools: !restoredTools.current && initial.projectDir === projectDir ? initial.tools : tabs.map((item) => ({ id: item.id, candidate: new URL(item.url).searchParams.get("candidate") ?? undefined })),
+  })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebar, panel, panelWidth, tabs, activeTool, initial]);
   useEffect(() => { if (messages.current && messages.current.scrollHeight - messages.current.scrollTop - messages.current.clientHeight < 220) messages.current.scrollTop = messages.current.scrollHeight; }, [chat?.messages]);
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
   // An embedded page asking to come back to the conversation. It moves the
@@ -342,7 +401,15 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     if (!preparation) {
       const query = new URLSearchParams({ projectDir: target });
       const entry: ProjectPreparation = { apps: null, promise: (async () => {
-        await request(`/api/project/modeling?${query}`, { projectId });
+        const attached = await request<ProjectRuntimeDto>("/api/runtime/projects/open", { projectDir: target, projectId });
+        runtimeAttachments.current.set(target, attached);
+        const current = runtimeRef.current;
+        if (current) receiveRuntime({ ...current, projects: [...current.projects.filter((item) => item.runtimeId !== attached.runtimeId), attached] });
+        const worker = attached.workers?.find((item) => item.serviceId === "studio");
+        if (worker?.state === "crashed" || (worker?.state === "unavailable" && worker.processId)) {
+          throw Object.assign(new Error("The project service needs recovery."), { failure: worker.error ?? { code: "WORKER_NEEDS_RECOVERY", detail: "The project service exited. Recover it to read saved results." } });
+        }
+        if (!worker?.healthy || attached.projection !== "ready") await request(`/api/project/modeling?${query}`, { projectId });
         const statuses = await request<AppStatus[]>(`/api/apps?${query}`);
         if (!statuses.some((item) => item.appId === "monkeyarch" && item.state === "running" && item.url)) throw new Error("The project service did not become ready.");
         return statuses;
@@ -361,7 +428,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       if (projectPreparations.current.get(target) === preparation) projectPreparations.current.delete(target);
       throw cause;
     }
-  }, []);
+  }, [receiveRuntime]);
   useEffect(() => {
     if (!project) return;
     let cancelled = false;
@@ -370,6 +437,39 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     });
     return () => { cancelled = true; };
   }, [project?.projectDir, project?.projectId, ensureProject]);
+
+  const recoverWorker = async () => {
+    if (!projectRuntime || !crashed || recovering || actionLock.current) return;
+    const target = projectRuntime;
+    actionLock.current = true; setRecovering(true); setError(null);
+    try {
+      await request<ProjectRuntimeDto>(`/api/runtime/projects/${target.runtimeId}/recover`, { projectId: target.projectId });
+      projectPreparations.current.delete(target.projectDir);
+      await refresh();
+    } catch (cause) { if (selection.current.projectDir === target.projectDir) setError(asFailure(cause)); }
+    finally { actionLock.current = false; setRecovering(false); }
+  };
+
+  // A changed, healthy instance is a new page host. Preserve each view selection,
+  // but never submit a project operation while reconnecting its frame.
+  useEffect(() => {
+    if (!projectRuntime || !studioWorker?.healthy || !["ready", "busy"].includes(studioWorker.state)
+      || projectApps?.projectDir !== projectDir) return;
+    const statuses = projectApps.apps;
+    if (!statuses.some((item) => item.serviceId === "studio" && item.processId === studioWorker.processId && item.state === "running")) return;
+    const previous = workerInstances.current.get(projectRuntime.runtimeId);
+    workerInstances.current.set(projectRuntime.runtimeId, studioWorker.instanceId);
+    if (!previous || previous === studioWorker.instanceId) return;
+    projectPreparations.current.set(projectRuntime.projectDir, { apps: statuses, promise: Promise.resolve(statuses) });
+    setTabs((items) => items.map((item) => {
+      const app = statuses.find((app) => app.appId === item.id && app.serviceId === "studio" && app.url);
+      if (!app?.url) return item;
+      const url = new URL(app.url), selected = new URL(item.url);
+      for (const [key, value] of selected.searchParams) url.searchParams.set(key, value);
+      url.searchParams.set("hubApi", `${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`);
+      return { ...item, url: url.href, revision: item.revision + 1 };
+    }));
+  }, [projectRuntime, studioWorker, projectApps, projectDir]);
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -489,6 +589,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       // The page is told who embedded it, so it can ask this window - and only
       // this window - for the conversation it cannot open itself.
       url.searchParams.set("host", window.location.origin);
+      if (needsProject) {
+        const attached = runtimeAttachments.current.get(target!);
+        if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
+        url.searchParams.set("hubApi", `${window.location.origin}/api/runtime/projects/${attached.runtimeId}/studio`);
+      }
       for (const [key, value] of Object.entries(view ?? {})) url.searchParams.set(key, value);
       if (needsProject && (selection.current.projectDir !== target || selection.current.chatId !== targetChat)) return;
       setTabs((items) => items.some((item) => item.id === id && item.url === url.href) ? items : [...items.filter((item) => item.id !== id), { id, url: url.href, revision: 0 }]); setActiveTool(id);
@@ -498,8 +603,23 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     finally { actionLock.current = false; setToolBusy(null); }
   };
 
+  // Save view choices, not old worker URLs. Reopening always resolves the live host.
+  useEffect(() => {
+    if (restoredTools.current || !project) return;
+    if (!initial.tools.length || initial.projectDir !== projectDir) { restoredTools.current = true; return; }
+    if (!studioWorker?.healthy || busy || toolBusy || actionLock.current) return;
+    restoredTools.current = true;
+    void (async () => {
+      for (const item of initial.tools) {
+        if (selection.current.projectDir !== initial.projectDir) return;
+        await openTool(item.id, item.candidate ? { candidate: item.candidate } : undefined);
+      }
+      if (selection.current.projectDir === initial.projectDir) { setActiveTool(initial.activeTool); setPanel(initial.panel ?? false); }
+    })();
+  }, [project, projectDir, studioWorker, busy, toolBusy, initial]);
+
   // Show each successful candidate as soon as it is read back. A turn can keep
-  // working on drawings afterward; later polling never reloads the same view.
+  // working on drawings afterward; later readback never reloads the same view.
   useEffect(() => {
     if (!chat || chat.id !== chatId || chat.archived || chat.projectDir !== projectDir || (chat.status !== "running" && !completedChats.current.has(chat.id)) || actionLock.current) return;
     const messages = chat.messages ?? [];
@@ -542,6 +662,13 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     </aside>
     <main className="chat-main">
       <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}</h1></div></header>
+      {(!eventsConnected || crashed || recovering || recoverableOperation) && <div className="chat-runtime" role="status" aria-live="polite">
+        <div>{!eventsConnected && <p>{t.reconnecting}</p>}
+          {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
+          {recoverableOperation && <p>{recoverableOperation.status === "needs_recovery" ? t.operationRecovery : recoverableOperation.status === "stale" ? t.operationStale : t.operationFailed}</p>}
+        </div>
+        {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
+      </div>}
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text">
         {!chat?.messages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
           : <div className="chat-message-list">{(chat?.messages ?? []).map((message) => message.role === "tool"
@@ -616,7 +743,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
           const needsProject = item.id !== "monkeyfab" && item.id !== "monkeymonitor";
           const statuses = needsProject ? (projectApps?.projectDir === projectDir ? projectApps.apps : null) : apps;
           const status = statuses?.find((app) => app.appId === item.id);
-          const state = status?.state;
+          const state = needsProject && studioWorker?.state === "crashed" ? "error" : status?.state;
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
             : state === "running" ? t.toolRunning : state === "starting" ? t.toolStarting
             : state === "stopping" ? t.toolStopping : state === "stopped" ? t.toolStopped : t.toolUnknown;
@@ -633,6 +760,10 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
           <dt>{t.path}</dt><dd className="chat-project-card__path" title={project.projectDir}>{project.projectDir}</dd>
           <dt>{t.version}</dt><dd>{project.version === null || project.version === undefined ? t.versionUnknown : t.versionNumber(project.version)}</dd>
           <dt>{t.stage}</dt><dd>{project.stage ?? t.stageNone}</dd>
+          {Boolean(projectRuntime?.operations?.length) && <><dt>{t.runtimeOperations}</dt><dd>{projectRuntime!.operations!.map((operation) => <div className="chat-project-card__operation" key={operation.operationId}>
+            <span>{operation.kind} · {operation.status}</span><small>{operation.committed ? t.operationCommitted : t.operationPending}</small>
+            {operation.candidateId && <button type="button" className="chat-activity__open" disabled={Boolean(toolBusy)} onClick={() => void openTool("monkeyarch", { candidate: operation.candidateId! })}>{t.openCandidate}</button>}
+          </div>)}</dd></>}
           <dt>{t.candidate}</dt><dd>{candidates.length ? <>{candidates.map((candidate) => <div className="chat-project-card__run" key={candidate}>
             <span className="chat-project-card__candidate" title={candidate}>{candidate}</span>
             <button type="button" className="chat-activity__open" title={candidate} disabled={Boolean(toolBusy)}

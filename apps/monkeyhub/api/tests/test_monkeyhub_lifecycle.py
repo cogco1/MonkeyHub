@@ -188,7 +188,7 @@ class HubApiLifecycleTests(LocalHubCase):
             self.assertEqual(client.post("/api/apps/monkeymonitor/start", params={"projectDir": str(project_b)}).status_code, 202)
             monitor = self.wait_state(client, "monkeymonitor", "running")
             self.assertEqual(self.wait_state(client, "monkeymonitor", "running", project_dir=project_b)["processId"], monitor["processId"])
-            initial_children = tuple(client.app.state.applications._children.values())
+            initial_children = tuple(client.app.state.applications.supervisor._children.values())
             processes.extend(child.process for child in initial_children)
             ports.update(child.port for child in initial_children)
 
@@ -207,7 +207,7 @@ class HubApiLifecycleTests(LocalHubCase):
             self.assertEqual(changed.json()["code"], "APPS_RUNNING")
             self.assertEqual(client.get("/api/settings/apps").json(), configured)
             self.assertEqual(settings_file.read_bytes(), saved_settings)
-            remaining_children = tuple(client.app.state.applications._children.values())
+            remaining_children = tuple(client.app.state.applications.supervisor._children.values())
             processes.extend(child.process for child in remaining_children)
             ports.update(child.port for child in remaining_children)
         for process in processes:

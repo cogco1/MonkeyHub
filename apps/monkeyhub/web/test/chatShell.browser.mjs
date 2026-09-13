@@ -4,13 +4,27 @@ import { readFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { randomUUID } from "node:crypto";
 
 // Real built Hub UI; all provider and project calls are local, synthetic fixtures.
 const root = path.resolve(process.env.MONKEYHUB_WEB_DIST ?? fileURLToPath(new URL("../dist/", import.meta.url)));
 const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-chat-ui-"));
 const toolLoads = [];
+const streams = new Set();
+let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
+const emitRuntime = () => {
+  const event = { serverId: "fixture-hub", sequence: ++runtimeSequence, kind: "changed", snapshot: runtimeSnapshot() };
+  for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify(event)}\n\n`);
+};
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
+  if (pathname === "/api/runtime/events") {
+    if (!allowRuntimeEvents) { res.writeHead(503); res.end(); return; }
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    streams.add(res);
+    res.write(`retry: 250\nevent: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: runtimeSequence, kind: "snapshot", snapshot: runtimeSnapshot() })}\n\n`);
+    req.on("close", () => streams.delete(res)); return;
+  }
   if (pathname === "/tool") {
     toolLoads.push(req.url);
     res.setHeader("Content-Type", "text/html");
@@ -53,19 +67,44 @@ const projects = [
 ];
 const apps = ["monkeyarch", "monkeydiagram", "monkeyboard", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
 const projectApps = new Map();
+const runtimes = new Map();
 const appsFor = (target) => {
   if (!projectApps.has(target)) projectApps.set(target, apps.map((app) => app.serviceId === "studio" ? { ...app, state: "stopped", processId: null, url: `${app.url}&project=${encodeURIComponent(target)}` } : app));
   return projectApps.get(target);
 };
+const runtimeSnapshot = () => ({ serverId: "fixture-hub", sequence: runtimeSequence, workers: [], projects: [...runtimes.values()].map((runtime) => {
+  const app = appsFor(runtime.projectDir).find((app) => app.appId === "monkeyarch");
+  return { ...runtime, workers: app.processId || app.state === "error" ? [{ workerId: runtime.runtimeId, serviceId: "studio", projectId: runtime.projectId,
+    projectDir: runtime.projectDir, instanceId: `instance-${app.processId}`, processId: app.processId, desiredState: "running", healthy: app.state === "running",
+    state: app.state === "error" ? "crashed" : app.state === "running" ? "ready" : app.state, url: app.url, error: app.error ?? null }] : [],
+    sessions: sessions.filter((session) => session.projectId === runtime.projectId) };
+}) });
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
+  if (url.pathname === "/api/runtime/events") return route.continue();
   const data = () => req.postDataJSON();
-  const json = (body, status = 200) => route.fulfill({ json: body, status });
+  const json = async (body, status = 200) => { await route.fulfill({ json: body, status }); if (method !== "GET") emitRuntime(); };
   if (method !== "GET") writes.push([method, url.pathname, data(), url.searchParams.get("projectDir")]);
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
   if (url.pathname === "/api/settings/user") { if (method === "PUT") preferences = data(); return json(preferences); }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
+  if (url.pathname === "/api/runtime") { runtimeReads++; return json(runtimeSnapshot()); }
+  if (url.pathname === "/api/runtime/projects/open") {
+    const body = data(), project = projects.find((item) => item.projectDir === body.projectDir && item.projectId === body.projectId);
+    assert.ok(project, "runtime attachment needs the exact project");
+    if (!runtimes.has(body.projectDir)) runtimes.set(body.projectDir, { runtimeId: randomUUID(), ...body, state: "open", operations: [], retained: null, projection: "ready", clients: 1, error: null });
+    return json(runtimeSnapshot().projects.find((item) => item.projectDir === body.projectDir));
+  }
+  if (/^\/api\/runtime\/projects\/[^/]+\/recover$/.test(url.pathname)) {
+    const runtime = [...runtimes.values()].find((item) => url.pathname.includes(item.runtimeId));
+    assert.equal(data().projectId, runtime.projectId);
+    for (const app of appsFor(runtime.projectDir).filter((app) => app.serviceId === "studio")) {
+      assert.equal(app.state, "error", "only a crashed worker is recovered");
+      app.state = "running"; app.processId += 1000; app.error = null;
+    }
+    return json(runtimeSnapshot().projects.find((item) => item.runtimeId === runtime.runtimeId));
+  }
   if (url.pathname === "/api/project/modeling") {
     const selected = projects.find((item) => item.projectDir === url.searchParams.get("projectDir"));
     assert.equal(data().projectId, selected?.projectId);
@@ -73,6 +112,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     for (const item of currentApps) item.state = "starting";
     await modelingResponseGate;
     for (const item of currentApps) { item.state = "running"; item.processId = 2000 + [...projectApps.keys()].indexOf(selected.projectDir); }
+    runtimes.get(selected.projectDir).projection = modelingFailure ? "unknown" : "ready";
     return modelingFailure ? json(modelingFailure, 409) : json({ projectId: selected.projectId, initialized: true });
   }
   if (url.pathname.startsWith("/api/apps/")) {
@@ -274,6 +314,7 @@ try {
   ] };
   const permissionWrites = () => writes.filter((entry) => entry[1].includes("/permissions/"));
   pendingActivity.permission = permission;
+  emitRuntime();
   const choices = page.getByRole("group", { name: permission.title });
   await choices.waitFor();
   assert.deepEqual(await choices.getByRole("button").allInnerTexts(), ["Allow once", "Reject", "Cancel"]);
@@ -292,6 +333,7 @@ try {
   permissionResponseGate = Promise.resolve();
 
   pendingActivity.permission = { ...permission, id: "permission-cancel" };
+  emitRuntime();
   await choices.waitFor();
   await choices.getByRole("button", { name: "Cancel", exact: true }).click();
   await choices.waitFor({ state: "hidden" });
@@ -299,6 +341,7 @@ try {
 
   pendingActivity.permission = { ...permission, id: "permission-expired" };
   permissionFailure = 409;
+  emitRuntime();
   await choices.waitFor();
   await choices.getByRole("button", { name: "Reject", exact: true }).click();
   const permissionError = page.getByRole("alert").filter({ hasText: "CHAT_PERMISSION_EXPIRED" });
@@ -306,6 +349,7 @@ try {
   assert.equal(await choices.getByRole("button", { name: "Reject", exact: true }).isEnabled(), true);
   await permissionError.getByRole("button", { name: "Close", exact: true }).click();
   pendingActivity.permission = null; permissionFailure = null;
+  emitRuntime();
   await choices.waitFor({ state: "hidden" });
 
   // The candidate that step produced opens beside the conversation, which the
@@ -544,6 +588,7 @@ try {
   const completing = sessions[0];
   const beforeReadbackStarts = writes.filter(([, pathname]) => pathname.endsWith("/start")).length;
   completing.messages.push({ id: "final-checkpoint", role: "tool", status: "complete", candidateId: "cand-B-final", content: "Final checkpoint completed" });
+  emitRuntime();
   assert.equal(completing.status, "running");
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("candidate=cand-B-final"));
   await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
@@ -553,9 +598,65 @@ try {
   await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
   assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.completionMarker), "once", "clicking the same candidate preserves the iframe");
   completing.status = "idle";
+  emitRuntime();
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
   assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.completionMarker), "once", "finishing the chat does not reload the candidate");
   assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/start")).length, beforeReadbackStarts, "showing a candidate in its existing project never starts the app again");
+
+  // Refresh and reconnect read the retained operation, without replaying a
+  // modification. A crashed worker needs the person's explicit recovery.
+  const runtimeB = runtimes.get("D:\\fixture\\B");
+  runtimeB.operations = [{ operationId: "committed-operation", projectId: "B", kind: "candidate.commit", source: "studio",
+    status: "completed", committed: true, resultRevision: 1, candidateId: "cand-B-final" }];
+  const beforeCrash = writes.length;
+  for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) {
+    app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };
+  }
+  emitRuntime();
+  await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
+  assert.equal(writes.length, beforeCrash, "a crash event only reads state");
+  await page.reload();
+  await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
+  assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open"), "refreshing a crashed project only reattaches it");
+  await page.getByRole("button", { name: "Recover project service", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('iframe:not([hidden])')?.src.includes("candidate=cand-B-final"));
+  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
+  const restoredUrl = new URL(await page.locator('iframe:not([hidden])').getAttribute("src"));
+  assert.equal(restoredUrl.searchParams.get("hubApi"), `${origin}/api/runtime/projects/${runtimeB.runtimeId}/studio`);
+  assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 1);
+  assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")),
+    "recovery never replays modeling, messages, proposals, or commits");
+  await studioReady();
+  await page.locator('iframe:not([hidden])').evaluate((frame) => { frame.contentWindow.oldInstanceMarker = true; });
+  for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) app.state = "error";
+  emitRuntime();
+  await page.getByRole("button", { name: "Recover project service", exact: true }).click();
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('iframe:not([hidden])');
+    return frame?.contentDocument?.querySelector("#note") && !frame.contentWindow.oldInstanceMarker;
+  });
+  assert.match(await page.locator('iframe:not([hidden])').getAttribute("src"), /candidate=cand-B-final/);
+  assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 2);
+  assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")));
+  await page.screenshot({ path: path.join(temporary, "runtime-recovered.png") });
+  await page.getByRole("button", { name: /Project B/ }).last().click();
+  await page.getByRole("dialog", { name: "Project", exact: true }).getByText("Committed", { exact: true }).waitFor();
+  await page.getByRole("dialog", { name: "Project", exact: true }).getByRole("button", { name: "Close", exact: true }).click();
+  const beforeReconnect = writes.length;
+  allowRuntimeEvents = false;
+  for (const stream of streams) stream.end();
+  await page.getByText("Connection interrupted. Reading the current project state…", { exact: true }).waitFor();
+  await page.screenshot({ path: path.join(temporary, "runtime-disconnected.png") });
+  runtimeB.operations.push({ operationId: "unfinished-operation", projectId: "B", kind: "candidate.commit", source: "studio", status: "needs_recovery", committed: false });
+  allowRuntimeEvents = true;
+  await page.getByText("An operation needs recovery review", { exact: true }).waitFor();
+  await page.getByText("Connection interrupted. Reading the current project state…", { exact: true }).waitFor({ state: "hidden" });
+  assert.equal(writes.length, beforeReconnect, "SSE reconnection is read-only");
+  await page.waitForTimeout(150);
+  const quietReads = runtimeReads;
+  await page.waitForTimeout(1700);
+  assert.equal(runtimeReads, quietReads, "a connected quiet runtime is not polled every 1.2 seconds");
+  runtimeB.operations = []; emitRuntime();
 
   // 2 — a failure reads as a sentence, keeps its original text for diagnosis,
   // and only offers the model picker when the failure named the model.
@@ -652,6 +753,7 @@ try {
   const archivable = sessions.find((row) => row.projectId === "B");
   const activeBeforeArchive = sessions.find((row) => row.projectId === "A");
   activeBeforeArchive.status = "running";
+  emitRuntime();
   const archiveRunning = page.getByRole("button", { name: `Archive: ${activeBeforeArchive.title}`, exact: true });
   await archiveRunning.waitFor();
   await page.waitForFunction((title) => [...document.querySelectorAll(".chat-thread-action")].some((button) => button.getAttribute("aria-label") === `Archive: ${title}` && button.disabled), activeBeforeArchive.title);
@@ -698,6 +800,7 @@ try {
   assert.ok(!writes.slice(beforeAdd).some(([, pathname]) => pathname === "/api/chat/projects" || pathname.endsWith("/start")));
   assert.equal(await page.locator("iframe").count(), 0, "prepared services do not eagerly mount three expensive pages");
   for (const item of appsFor("D:\\fixture\\C").filter(item => item.serviceId === "studio")) { item.state = "stopped"; item.processId = null; }
+  emitRuntime();
   await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="Modeling"]')?.dataset.state === "stopped");
   const beforeReopen = writes.length;
   for (const [label, id] of [["Modeling", "monkeyarch"], ["Drawings", "monkeydiagram"], ["Board", "monkeyboard"]]) {
@@ -710,7 +813,7 @@ try {
   // older in-flight discovery response cannot discard the newly selected project.
   let releaseProjectList;
   projectListGate = new Promise(resolve => { releaseProjectList = resolve; });
-  await page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === "/api/chat/projects");
+  await Promise.all([page.waitForRequest(request => request.method() === "GET" && new URL(request.url()).pathname === "/api/chat/projects"), Promise.resolve().then(emitRuntime)]);
   chatCreationFailureFor = "D:\\fixture\\provider-recovery";
   await page.getByRole("button", { name: "New project", exact: true }).first().click();
   await page.locator("#new-project-name").fill("provider-recovery");
@@ -718,8 +821,8 @@ try {
   await page.locator(".chat-error").filter({ hasText: "The CLI connection is temporarily unavailable." }).waitFor();
   assert.equal(await create.isVisible(), false);
   releaseProjectList();
-  for (let refresh = 0; refresh < 2; refresh++) await page.waitForResponse(response =>
-    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/chat/projects");
+  for (let refresh = 0; refresh < 2; refresh++) await Promise.all([page.waitForResponse(response =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/chat/projects"), Promise.resolve().then(emitRuntime)]);
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "provider-recovery");
   assert.equal(sessions.filter(item => item.projectId === "provider-recovery").length, 0);
   assert.equal(projects.filter(item => item.projectId === "provider-recovery").length, 1);
