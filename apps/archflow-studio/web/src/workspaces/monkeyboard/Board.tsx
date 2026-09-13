@@ -21,11 +21,11 @@ const copy = {
 type Copy = typeof copy.en;
 
 const whiteboardCopy = {
-  en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Select a project drawing and your marks to discover design feedback.", textPending: "Board text is not sent yet. Copy the note, deselect text, then paste into the feedback message. For text bound to an arrow or shape, unbind it or deselect that shape first.", oneSource: "Select one drawing at a time to send feedback.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
-  "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "选中项目图纸与圈线，即可查看设计反馈入口。", textPending: "画板文字暂不随反馈发送。先复制文字，取消文字选择后打开反馈框粘贴；若文字绑定在箭头或形状上，请先解除绑定或取消选择该形状。", oneSource: "每次选中一张图纸发送反馈。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
+  en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Select a project drawing and your marks to discover design feedback.", oneSource: "Select one drawing at a time to send feedback.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
+  "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "选中项目图纸与圈线，即可查看设计反馈入口。", oneSource: "每次选中一张图纸发送反馈。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
 };
 
-type FeedbackContext = { source: PageSource | null; reason: "modelRequired" | "textPending" | "oneSource" | "stale" | "outside" | "unsupported" | "invalid" | null };
+type FeedbackContext = { source: PageSource | null; reason: "modelRequired" | "oneSource" | "stale" | "outside" | "unsupported" | "invalid" | null };
 
 // The same strict, local conversion powers eligibility and the explicit action.
 // Keep only the affordance in React state; the live Excalidraw scene remains its owner.
@@ -39,7 +39,6 @@ function feedbackContext(elements: readonly ExcalidrawElement[], selectedIds: Ap
       case "BOARD_FEEDBACK_SOURCE_REQUIRED": return null;
       case "BOARD_FEEDBACK_SOURCE_AMBIGUOUS": return { source: null, reason: "oneSource" };
       case "BOARD_FEEDBACK_SOURCE_UNAVAILABLE": return { source: null, reason: "stale" };
-      case "BOARD_FEEDBACK_TEXT_UNSUPPORTED": return { source: null, reason: "textPending" };
       case "BOARD_FEEDBACK_OUTSIDE_PAGE": return { source: null, reason: "outside" };
       case "BOARD_FEEDBACK_INVALID_GEOMETRY": return { source: null, reason: "invalid" };
       default: return { source: null, reason: "unsupported" };
@@ -91,8 +90,8 @@ function ReplacementDialog({ target, language, onCancel, onSubmit }: {
 }
 
 const feedbackCopy = {
-  en: { action: "Send design feedback", title: "Discuss this drawing", hint: "Select one drawing or its frame, together with the marks you want to send.", description: "The selected marks will join this drawing page. Continue the discussion in MonkeyArch to review a proposal or answer a design question.", label: "What would you like to change?", placeholder: "Describe the change and what should stay as it is.", send: "Send to design", sending: "Preparing drawing…", cancel: "Cancel", marks: "selected marks", modelRequired: "Link this drawing to its model in MonkeyDiagram before sending a design change.", sourceChanged: "This drawing's source changed. Close this dialog and select the drawing again.", modelChanged: "The drawing's linked model changed or cannot be opened for editing. Check its source in MonkeyDiagram.", empty: "Write the change you want to discuss.", failed: "The feedback could not be sent." },
-  "zh-CN": { action: "发送设计反馈", title: "讨论这张图纸", hint: "选中一张图纸或它的图框，并同时选中要提交的圈线。", description: "选中的圈线会加入对应图页。进入 MonkeyArch 后，可审阅修改提案或回答需要澄清的问题。", label: "希望怎样修改？", placeholder: "说明要调整的内容，以及需要保留的部分。", send: "发送到设计", sending: "正在准备图纸…", cancel: "取消", marks: "条选中标记", modelRequired: "请先在 MonkeyDiagram 中关联这张图纸对应的模型，再提交设计修改。", sourceChanged: "这张图纸的来源已发生变化，请关闭此窗口并重新选择图纸。", modelChanged: "图纸关联的模型已改变或暂时无法继续编辑，请在 MonkeyDiagram 中检查来源。", empty: "请写下希望讨论的修改。", failed: "意见暂时未能发送。" },
+  en: { action: "Send design feedback", title: "Discuss this drawing", hint: "Select one drawing or its frame, together with the marks and text you want to send.", description: "The selected marks will join this drawing page. Continue the discussion in MonkeyArch to review a proposal or answer a design question.", label: "What would you like to change?", placeholder: "Describe the change and what should stay as it is.", send: "Send to design", sending: "Preparing drawing…", cancel: "Cancel", marks: "selected marks", textIncluded: "Selected text is included below. Send it as it is, or add what should stay unchanged.", modelRequired: "Link this drawing to its model in MonkeyDiagram before sending a design change.", sourceChanged: "This drawing's source changed. Close this dialog and select the drawing again.", modelChanged: "The drawing's linked model changed or cannot be opened for editing. Check its source in MonkeyDiagram.", empty: "Write the change you want to discuss.", failed: "The feedback could not be sent." },
+  "zh-CN": { action: "发送设计反馈", title: "讨论这张图纸", hint: "选中一张图纸或它的图框，并同时选中要提交的圈线与文字。", description: "选中的圈线会加入对应图页。进入 MonkeyArch 后，可审阅修改提案或回答需要澄清的问题。", label: "希望怎样修改？", placeholder: "说明要调整的内容，以及需要保留的部分。", send: "发送到设计", sending: "正在准备图纸…", cancel: "取消", marks: "条选中标记", textIncluded: "已带入选中文字，可直接发送，或补充需要保留的内容。", modelRequired: "请先在 MonkeyDiagram 中关联这张图纸对应的模型，再提交设计修改。", sourceChanged: "这张图纸的来源已发生变化，请关闭此窗口并重新选择图纸。", modelChanged: "图纸关联的模型已改变或暂时无法继续编辑，请在 MonkeyDiagram 中检查来源。", empty: "请写下希望讨论的修改。", failed: "意见暂时未能发送。" },
 };
 
 function feedbackError(error: unknown, language: "en" | "zh-CN"): string {
@@ -102,7 +101,6 @@ function feedbackError(error: unknown, language: "en" | "zh-CN"): string {
   if (code === "MODEL_REQUIRED") return text.modelRequired;
   if (code === "MODEL_CHANGED") return text.modelChanged;
   if (code === "EMPTY_COMMENT") return text.empty;
-  if (code === "BOARD_FEEDBACK_TEXT_UNSUPPORTED") return whiteboardCopy[language].textPending;
   return errorText(error);
 }
 
@@ -112,7 +110,7 @@ function FeedbackDialog({ selection, language, returnFocus, onCancel, onSubmit }
   onCancel: () => void; onSubmit: (comment: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
-  const [comment, setComment] = useState("");
+  const [comment, setComment] = useState(selection.selectedText);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [error, setError] = useState("");
@@ -134,8 +132,9 @@ function FeedbackDialog({ selection, language, returnFocus, onCancel, onSubmit }
       <h2 id="monkeyboard-feedback-title">{text.title}</h2>
       <p className="monkeyboard-feedback-source">{selection.document.fileName} · {selection.page.pageIndex + 1}/{selection.document.pageCount} · {selection.annotationGroups.length} {text.marks}</p>
       <p>{text.description}</p>
+      {selection.selectedText && <p>{text.textIncluded}</p>}
       <label htmlFor="monkeyboard-feedback-comment">{text.label}</label>
-      <textarea id="monkeyboard-feedback-comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder={text.placeholder} autoFocus required rows={4} maxLength={8000} disabled={sending} />
+      <textarea id="monkeyboard-feedback-comment" value={comment} onChange={(event) => setComment(event.target.value)} placeholder={text.placeholder} autoFocus required rows={4} disabled={sending} />
       {!selection.document.modelSource && <p className="monkeyboard-feedback-error" role="alert">{text.modelRequired}</p>}
       {error && <p className="monkeyboard-feedback-error" role="alert">{text.failed} {error}</p>}
       <a href={documentUrl(window.location.href, selection.source)} target="_blank" rel="noopener noreferrer">{copy[language].open} ↗</a>

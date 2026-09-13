@@ -5,7 +5,6 @@ import { findSource, imageSource, type PageSource } from "./boardScene";
 type Point = [number, number];
 type ErrorCode = "BOARD_FEEDBACK_SOURCE_REQUIRED" | "BOARD_FEEDBACK_SOURCE_AMBIGUOUS"
   | "BOARD_FEEDBACK_SOURCE_UNAVAILABLE" | "BOARD_FEEDBACK_UNSUPPORTED"
-  | "BOARD_FEEDBACK_TEXT_UNSUPPORTED"
   | "BOARD_FEEDBACK_OUTSIDE_PAGE" | "BOARD_FEEDBACK_INVALID_GEOMETRY";
 
 export class BoardFeedbackGeometryError extends Error {
@@ -22,6 +21,7 @@ export interface BoardFeedbackSelection {
   source: PageSource;
   annotations: DocumentGestureDto[];
   annotationGroups: string[];
+  selectedText: string;
 }
 
 function fail(code: ErrorCode, message: string): never {
@@ -141,12 +141,18 @@ export function createBoardFeedback(
   };
   const annotations: DocumentGestureDto[] = [];
   const annotationGroups: string[] = [];
+  // Native frame/bound-label selection is already expanded and deduplicated by id.
+  // Board reading order is independent of scene stacking and selection-click order.
+  // Text supplies intent, so it need not sit inside the page like geometric ink.
+  const textElements = chosen.filter((element) => element.type === "text");
+  textElements.forEach(checkedGeometry);
+  const selectedText = textElements
+    .sort((left, right) => left.y - right.y || left.x - right.x || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+    .map((element) => (element.originalText ?? element.text).trim()).filter(Boolean).join("\n\n");
   for (const element of chosen) {
-    if (element.id === image.id || element.type === "frame") continue;
+    if (element.id === image.id || element.type === "frame" || element.type === "text") continue;
     if (!["ellipse", "rectangle", "line", "arrow", "freedraw"].includes(element.type)) {
-      fail(element.type === "text" ? "BOARD_FEEDBACK_TEXT_UNSUPPORTED" : "BOARD_FEEDBACK_UNSUPPORTED", element.type === "text"
-        ? "Selected text cannot be transferred without changing its layout. Put that text in the feedback message, then unbind or remove it from the shape, or deselect the shape containing the bound text."
-        : `Selected ${element.type} elements are not supported for feedback.`);
+      fail("BOARD_FEEDBACK_UNSUPPORTED", `Selected ${element.type} elements are not supported for feedback.`);
     }
     checkedGeometry(element);
     const style = strokeStyle(element, image);
@@ -210,5 +216,5 @@ export function createBoardFeedback(
     }
   }
   if (annotations.length > 2000) fail("BOARD_FEEDBACK_UNSUPPORTED", "Select fewer marks; one page supports at most 2000 annotations.");
-  return { image, document, page, source, annotations, annotationGroups };
+  return { image, document, page, source, annotations, annotationGroups, selectedText };
 }
