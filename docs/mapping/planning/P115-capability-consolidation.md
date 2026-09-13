@@ -1,5 +1,31 @@
 # P115 — 能力总索引与逐项整理
 
+### #14 Phases 2/3：本地会话与预选
+
+`P115/interaction` 在 PR #19 合入后的 `62c90302` 上继续，复用 `685e` worktree，分支为
+`codex/i14-hover`。EXTEND `studio.shell`／`studio.intent` 的 Stage、视口和既有点击解析调用者。
+
+Stage 与视口共用一次可丢弃的手势会话，保存草图、当前命中、指针、按下位置和一个 RAF；
+inactive／hovering／armed／anchored／dragging／value-override 从当前动作推导，不复制进项目状态。
+对象身份在模型加载时按文件原有 user strings 建索引，只凭同一 component 与明确 cad-object 引用
+关联显示对象。鼠标移动只在本地射线检测，复用中性轮廓、连通共面、边和吸附点图层；点击立即使用原选中高亮。
+原异步 semantic resolve 仍决定可操作对象，保留 exact-base、旧响应丢弃和空白点击清除路径。
+
+工具／相机／图层／比较与 ghost 切换立即清除 hover，模型替换和卸载释放临时资源。
+新模型清除旧锚点、面平面和测量，保留已选草图工具以连续绘制。隐藏子网格不参加轮廓或吸附；
+共面合并容许 Float32 存储舍入，并保留真实折角、偏移面和断开区域。
+
+验证覆盖本地 hover 的零 API／零 React 提交、图层与资源复用、点击即时反馈、ghost 到达与旧模型清理，
+以及既有草图完成、数值覆盖、平面、轴锁与取消路径。真实 Studio／OCCT 的 19 组回归通过，
+包括异步点击等待期间有本地高亮但仍不可删除，以及空白点击丢弃旧回复。
+本机独立 headless Chrome、1440×1000 的 400 网格／4,800 三角形场景，480 次 hover 移动合并为
+120 次绘制，零 React 提交、零 API 请求；帧间隔 P95 17.0 ms，pointer 到 Three.js onAfterRender
+P95 17.2 ms。该回调不代表 GPU 呈现时刻；本场景不代表复杂曲面或所有建筑模型的响应。
+类型／构建、相关 Web 单元测试与 archcheck 通过；独立 PR 由协调任务复核集成。
+
+此切片不实现 P/M/Q/S 拖动或新项目写入路径；原命令、候选接受和撤销仍由现有实现处理。
+空间索引和更大建筑模型的响应评估仍是后续任务，#14 保留未完成。
+
 ### #14 Phase 1：临时草图预览
 
 `P115/interaction` 从 `bcc5fbbb1fa28d9f560cd38502c4f2aa20df9024` 开始，

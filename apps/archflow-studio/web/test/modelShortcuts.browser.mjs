@@ -891,6 +891,7 @@ await page.mouse.click(pointB.x, pointB.y);
 await delay(200);
 const waiting = await snapshot();
 assert.equal(waiting.picked, null, "the old pick must be over the moment a new click is made");
+assert.ok(waiting.highlighted > 0, "B must be highlighted locally while semantic resolution is delayed");
 assert.equal(waiting.canDelete, false, "and nothing is deletable while the answer is on its way");
 await page.keyboard.press("Delete");
 await delay(600);

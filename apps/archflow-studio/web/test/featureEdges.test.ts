@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   candidatesOf,
   closestOnEdge,
+  connectedFace,
   distanceBetween,
   featureEdges,
   nearestCandidate,
@@ -68,6 +69,87 @@ test("a box offers its twelve real edges and nothing across a face", () => {
     [4, 4, 4],
     "four edges of each dimension",
   );
+});
+
+test("face preselection crosses a flat diagonal and stops at each box fold", () => {
+  assert.deepEqual(connectedFace(FLAT, 0), [0, 1]);
+  assert.deepEqual(connectedFace(FLAT, 1), [0, 1], "duplicated corners weld across the diagonal");
+  const mesh = box(6, 3.2, 4);
+  for (let triangle = 0; triangle < 12; triangle += 1) {
+    const first = Math.floor(triangle / 2) * 2;
+    assert.deepEqual(connectedFace(mesh, triangle), [first, first + 1]);
+  }
+});
+
+test("indexed face preselection accepts reversed winding but requires a full shared edge", () => {
+  const mesh = {
+    positions: [
+      0, 0, 0, 6, 0, 0, 6, 0, 4, 0, 0, 4,
+      10, 0, 0, 12, 0, 0, 12, 0, 4,
+      -2, 0, 0, 0, 0, -2,
+    ],
+    index: [0, 1, 2, 0, 3, 2, 4, 5, 6, 0, 7, 8],
+  };
+  assert.deepEqual(connectedFace(mesh, 1), [0, 1]);
+  assert.deepEqual(connectedFace(mesh, 2), [2], "a disconnected coplanar region stays separate");
+  assert.deepEqual(connectedFace(mesh, 3), [3], "one shared corner does not connect faces");
+});
+
+test("translated, sloped Float32 planes stay connected after coordinate rounding", () => {
+  const positions = [
+    123.603, 345.799, 457.007,
+    129.3491502826, 348.1274666478, 457.007,
+    128.9278604089, 349.1671186132, 461.571168997,
+    123.1817101263, 346.8386519654, 461.571168997,
+  ];
+  const index = [0, 1, 2, 0, 2, 3];
+  assert.deepEqual(connectedFace({ positions, index }, 0), [0, 1]);
+  for (const translation of [0, 10000]) {
+    const stored = new Float32Array(positions.map((coordinate) => coordinate + translation));
+    for (const triangle of [0, 1]) {
+      assert.deepEqual(connectedFace({ positions: stored, index }, triangle), [0, 1]);
+    }
+    const unindexed = new Float32Array(index.flatMap((corner) => Array.from(stored.slice(corner * 3, corner * 3 + 3))));
+    assert.deepEqual(connectedFace({ positions: unindexed, index: null }, 0), [0, 1]);
+    const folded = new Float32Array([...stored, stored[0]!, stored[1]! + 2, stored[2]!]);
+    const withFold = { positions: folded, index: [...index, 0, 1, 4] };
+    assert.deepEqual(connectedFace(withFold, 0), [0, 1], "storage tolerance still stops at a sharp fold");
+    assert.deepEqual(connectedFace(withFold, 2), [2]);
+  }
+});
+
+test("thin translated Float32 triangles cannot use large uncertainty to cross real folds", () => {
+  const index = [0, 1, 2, 0, 3, 1];
+  const ninetyDegrees = new Float32Array([
+    0, 0, 10000, 1, 0, 10000, 0, .001, 10000, 0, 0, 10001,
+  ]);
+  const shallowFold = new Float32Array([
+    0, 0, 10000, 1, 0, 10000, 0, .001, 10000,
+    0, -1, 10000 + Math.tan(0.1 * Math.PI / 180),
+  ]);
+  for (const positions of [ninetyDegrees, shallowFold]) {
+    assert.deepEqual(connectedFace({ positions, index }, 0), [0]);
+    assert.deepEqual(connectedFace({ positions, index }, 1), [1]);
+  }
+});
+
+test("preselection rejects offset planes, folded and degenerate triangles", () => {
+  const mesh = {
+    positions: [
+      ...FLAT.positions,
+      0, 0, 0, 6, 0, 0, 3, 2, 0, // a fold along a flat face boundary
+      0, 0, 0, 6, 0, 0, 3, 0, 0, // a collinear triangle along that boundary
+      0, 2e-7, 0, 6, 2e-7, 0, 6, 2e-7, 4, // same weld keys, different plane
+    ],
+    index: null,
+  };
+  for (const positions of [mesh.positions, new Float32Array(mesh.positions)]) {
+    assert.deepEqual(connectedFace({ positions, index: null }, 0), [0, 1]);
+    assert.deepEqual(connectedFace({ positions, index: null }, 2), [2]);
+    assert.deepEqual(connectedFace({ positions, index: null }, 3), []);
+    assert.deepEqual(connectedFace({ positions, index: null }, 4), [4]);
+  }
+  for (const invalid of [-1, 5, 0.5, NaN]) assert.deepEqual(connectedFace(mesh, invalid), []);
 });
 
 test("an edge offers its ends and its middle, in model coordinates", () => {

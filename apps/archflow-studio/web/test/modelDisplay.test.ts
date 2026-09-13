@@ -17,6 +17,31 @@ import {
   savedObjectVisible,
   semanticObjectNames,
 } from "../src/workspaces/monkeyarch/viewer/modelDisplay.ts";
+import { indexLoadedObjects } from "../src/workspaces/monkeyarch/viewer/sceneInspection.ts";
+
+test("loaded identity groups only explicit file bindings and expires with its model", () => {
+  const root = new Group();
+  const carrier = (name: string, strings: Record<string, string>) => {
+    const object = new Group(); object.name = name;
+    object.userData.attributes = { userStrings: strings };
+    object.add(new Group()); root.add(object);
+    return object;
+  };
+  const strings = { "archflow:component": "wall", "archflow:object_ref": "cad-object:wall-1" };
+  const first = carrier("front", strings), second = carrier("back", { ...strings });
+  const sameName = carrier("front", {});
+  const otherComponent = carrier("front", { ...strings, "archflow:component": "roof" });
+  const index = indexLoadedObjects(root);
+  const identity = index.identity(first)!;
+  assert.equal(index.identity(first.children[0]!), identity);
+  assert.deepEqual(index.siblings(first), [first, second]);
+  assert.deepEqual(index.siblings(sameName), [sameName]);
+  assert.deepEqual(index.siblings(otherComponent), [otherComponent]);
+  assert.ok(Object.isFrozen(identity.userStrings));
+  strings["archflow:component"] = "changed after loading";
+  assert.equal(identity.userStrings["archflow:component"], "wall");
+  assert.equal(indexLoadedObjects(new Group()).identity(first), undefined);
+});
 
 /** A mesh as the Rhino3dmLoader leaves it: attributes on userData, ``visible`` taken from its layer only. */
 function loadedMesh(name: string, layerIndex: number, saved: { visible?: boolean; layerVisible: boolean }): Mesh {

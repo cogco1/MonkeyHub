@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer as createHttpServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,7 +24,14 @@ for (let row = 0; row < 20; row++) for (let column = 0; column < 20; column++) {
     [x,y,height], [x+2,y,height], [x+2,y+2,height], [x,y+2,height]]) mesh.vertices().add(...point);
   for (const face of [[0,3,2,1], [4,5,6,7], [0,1,5,4], [1,2,6,5], [2,3,7,6], [3,0,4,7]]) mesh.faces().addQuadFace(...face);
   mesh.normals().computeNormals();
-  model.objects().add(mesh, null);
+  const attributes = new rhino.ObjectAttributes();
+  attributes.name = `mass-${row}-${column}`;
+  attributes.colorSource = rhino.ObjectColorSource.ColorFromObject;
+  attributes.objectColor = { r: 180, g: 184, b: 191, a: 255 };
+  attributes.setUserString("archflow:component", "fixture-massing");
+  attributes.setUserString("archflow:object_ref", `cad-object:mass-${row}-${column}`);
+  model.objects().add(mesh, attributes);
+  attributes.delete();
   mesh.delete();
 }
 const modelBytes = Buffer.from(model.toByteArray());
@@ -35,7 +42,7 @@ const html = `<!doctype html><html><head><style>
 </style></head><body><div id="root"></div><script type="module">
 import React, { createRef } from "react";
 import { createRoot } from "react-dom/client";
-import { Box3, PerspectiveCamera, Scene, Vector3 } from "three";
+import { Box3, BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Scene, Vector3 } from "three";
 import { Stage } from "/src/features/stage/Stage.tsx";
 import { UserPreferencesProvider } from "/src/features/settings/preferences.tsx";
 import "/src/styles.css";
@@ -46,8 +53,25 @@ window.previewRenders = 0;
 window.stageCommits = 0;
 window.previewTimes = [];
 window.pointerTimes = [];
+window.hoverRenders = 0;
+window.hoverTimes = [];
+window.picks = [];
 Scene.prototype.add = function (...objects) {
   for (const object of objects) {
+    if (object.name === "archflow-preselection") {
+      window.hoverGroup = object;
+      object.disposals = 0;
+      for (const child of object.children) {
+        child.geometry.addEventListener("dispose", () => object.disposals++);
+        child.material.addEventListener("dispose", () => object.disposals++);
+      }
+      this.onAfterRender = () => {
+        if (!window.hoverGroup?.visible) return;
+        window.hoverRenders++;
+        if (window.pointerStart !== undefined) window.hoverTimes.push(performance.now() - window.pointerStart);
+        delete window.pointerStart;
+      };
+    }
     if (object.name !== "archflow-sketch-preview") continue;
     window.previewGroup = object;
     window.previewGroups.push(object);
@@ -75,10 +99,10 @@ window.testRoot.render(
     modelAnnotations: null, annotationsReady: false, documentModelSources: [],
     editingModelSource: null, viewedModelSource: null, artifactError: null, baseError: null,
     blend: null, captureState: "idle", onTool: noop, onInspection: (value) => { window.inspection = value; }, onStatus: noop,
-    onRequestFile: noop, onOpenFile: noop, onSource: noop, onPick: noop,
+    onRequestFile: noop, onOpenFile: noop, onSource: noop, onPick: (pick) => { window.picks.push(pick); },
     onSketch: async (action) => { window.submitted.push(action); },
     model: { onDelete: noop, canDelete: true, deleting: false, subject: "Fixture", onUndo: noop, canUndo: true,
-      onRedo: noop, canRedo: true, onClearSelection: noop, hasSelection: true,
+      onRedo: noop, canRedo: true, onClearSelection: () => viewportRef.current.highlight(null), hasSelection: true,
       onTool: (tool) => { window.toolChanges.push(tool); } },
   }))),
 );
@@ -86,6 +110,14 @@ window.readPreviewBounds = () => {
   if (!window.previewGroup?.parent) return;
   const bounds = new Box3().setFromObject(window.previewGroup);
   window.previewBounds = { min: bounds.min.toArray(), max: bounds.max.toArray() };
+};
+window.objectBounds = (object) => new Box3().setFromObject(object);
+window.hiddenNearHit = () => {
+  const hit = window.interaction.hover;
+  const hidden = new Mesh(new BoxGeometry(0.01, 0.01, 0.01), new MeshBasicMaterial());
+  hidden.position.copy(hit.object.worldToLocal(hit.point.clone()));
+  hidden.visible = false; hit.object.add(hidden);
+  return hidden;
 };
 window.previewIdentity = () => [window.previewGroup, ...window.previewGroup.children.flatMap(
   (child) => [child, child.geometry, child.material, child.geometry.attributes.position, child.geometry.attributes.normal],
@@ -113,7 +145,12 @@ window.projectPoint = (point) => {
 try {
   vite = await createServer({
     root: webRoot, configFile: false, cacheDir, publicDir: ".generated/public", logLevel: "silent",
-    plugins: [react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null },
+    plugins: [{ name: "interaction-session-probe", enforce: "pre", transform(source, id) {
+      if (!id.replaceAll("\\", "/").endsWith("/features/stage/Stage.tsx")) return;
+      const marker = "  const interaction = useRef(createInteractionSession());";
+      assert.equal(source.split(marker).length, 2);
+      return { code: source.replace(marker, marker + "\n  (window as any).interaction = interaction.current;"), map: null };
+    } }, react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null },
   });
   http.on("request", async (request, response) => {
     if (request.url === "/sketch-test") {
@@ -453,6 +490,127 @@ try {
   });
   assert.deepEqual(await page.evaluate(() => ({ meshes: window.inspection.meshCount, triangles: window.inspection.triangleCount })),
     { meshes: 400, triangles: 4800 });
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  const hoverPoint = await page.evaluate(() => window.projectPoint([31, 29, 0]));
+  await page.mouse.move(...hoverPoint);
+  await page.waitForFunction(() => window.hoverGroup?.visible);
+  const hover = await page.evaluate(() => {
+    const hit = window.interaction.hover;
+    window.hoverMaterial = hit.mesh.material;
+    window.hoverIdentity = hit.userStrings;
+    return { phase: window.interaction.phase, faceVertices: window.hoverGroup.children[1].geometry.drawRange.count,
+      claims: hit.userStrings, immutable: Object.isFrozen(hit.userStrings), picks: window.picks.length };
+  });
+  assert.equal(hover.phase, "hovering");
+  assert.equal(hover.faceVertices, 6, "a box face includes both triangles, not just one half");
+  assert.equal(hover.claims["archflow:component"], "fixture-massing");
+  assert.equal(hover.immutable, true);
+  assert.equal(hover.picks, 0, "hover never triggers the click/semantic resolution callback");
+  const hoverPerformance = await page.evaluate(async (point) => {
+    const canvas = document.querySelector("canvas");
+    const identity = window.hoverGroup.children.flatMap((child) => [child, child.geometry, child.material, child.geometry.attributes.position]);
+    const commits = window.stageCommits, renders = window.hoverRenders;
+    const intervals = [];
+    window.hoverTimes = [];
+    let previous = await new Promise(requestAnimationFrame);
+    for (let frame = 0; frame < 120; frame++) {
+      for (let move = 0; move < 4; move++) canvas.dispatchEvent(new PointerEvent("pointermove",
+        { bubbles: true, clientX: point[0], clientY: point[1], pointerId: 1 }));
+      const now = await new Promise(requestAnimationFrame);
+      intervals.push(now - previous); previous = now;
+    }
+    const p95 = (values) => [...values].sort((a,b) => a-b)[Math.floor((values.length - 1) * 0.95)];
+    return { moves: 480, renders: window.hoverRenders - renders, commits: window.stageCommits - commits,
+      reused: identity.every((item, index) => item === window.hoverGroup.children.flatMap(
+        (child) => [child, child.geometry, child.material, child.geometry.attributes.position])[index]),
+      originalMaterial: window.interaction.hover.mesh.material === window.hoverMaterial,
+      sameClaims: window.interaction.hover.userStrings === window.hoverIdentity,
+      frameIntervalP95Ms: p95(intervals), pointerToAfterRenderP95Ms: p95(window.hoverTimes) };
+  }, hoverPoint);
+  assert.equal(hoverPerformance.renders, 120);
+  assert.equal(hoverPerformance.commits, 0);
+  assert.equal(hoverPerformance.reused, true);
+  assert.equal(hoverPerformance.originalMaterial, true, "hover never recolours the real model");
+  assert.equal(hoverPerformance.sameClaims, true, "loaded identity is indexed once");
+  console.log("MEASURE local hover / headless Chrome / 400 meshes:", JSON.stringify(hoverPerformance));
+  const hiddenSnap = await page.evaluate((point) => {
+    const before = window.viewport.current.snapOnModel(...point);
+    const hidden = window.hiddenNearHit();
+    const after = window.viewport.current.snapOnModel(...point);
+    hidden.removeFromParent(); hidden.geometry.dispose(); hidden.material.dispose();
+    return { before, after };
+  }, hoverPoint);
+  assert.deepEqual(hiddenSnap.after, hiddenSnap.before, "hidden children cannot supply snap edges or points");
+  const ghostClear = await page.evaluate(async (point) => {
+    const name = window.interaction.hover.objectName;
+    document.querySelector("canvas").dispatchEvent(new PointerEvent("pointermove",
+      { bubbles: true, clientX: point[0], clientY: point[1] }));
+    const meshes = window.viewport.current.ghost({ target: { objectNames: [name] }, factor: 1, scaleAxis: null, affected: [] });
+    const renders = window.hoverRenders;
+    await new Promise(requestAnimationFrame);
+    return { meshes, visible: window.hoverGroup.visible, hover: window.interaction.hover, late: window.hoverRenders - renders };
+  }, hoverPoint);
+  assert.deepEqual(ghostClear, { meshes: 1, visible: false, hover: null, late: 0 });
+  await page.evaluate(() => window.viewport.current.ghost(null));
+  await page.mouse.move(hoverPoint[0] + 0.1, hoverPoint[1]);
+  await page.waitForFunction(() => window.hoverGroup.visible);
+  // The actual snap path drives the endpoint marker and its incident edge.
+  const endpoint = await page.evaluate(() => {
+    const hit = window.interaction.hover;
+    const box = window.objectBounds(hit.object);
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const point = window.projectPoint([x,y,z]);
+      for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) {
+        const screen = [point[0] + dx, point[1] + dy];
+        if (window.viewport.current.snapOnModel(...screen)?.kind === "endpoint") return screen;
+      }
+    }
+    return null;
+  });
+  assert.ok(endpoint, "fixture supplies a visible endpoint");
+  await page.mouse.move(...endpoint);
+  await page.waitForFunction(() => window.hoverGroup?.children[2].visible && window.hoverGroup.children[3].visible);
+  if (process.env.INTERACTION_SCREENSHOT_DIR) {
+    await mkdir(process.env.INTERACTION_SCREENSHOT_DIR, { recursive: true });
+    await page.screenshot({ path: path.join(process.env.INTERACTION_SCREENSHOT_DIR, "hover.png") });
+  }
+  // Click feedback is synchronous even when the consumer does no resolving.
+  await page.mouse.click(...hoverPoint);
+  const clicked = await page.evaluate(() => ({
+    picks: window.picks.length, marked: window.picks.at(-1).object.material !== window.hoverMaterial,
+    hover: window.hoverGroup.visible, phase: window.interaction.phase,
+  }));
+  assert.deepEqual(clicked, { picks: 1, marked: true, hover: false, phase: "inactive" });
+  if (process.env.INTERACTION_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.INTERACTION_SCREENSHOT_DIR, "selected.png") });
+  await page.mouse.move(hoverPoint[0] + 0.1, hoverPoint[1]);
+  await page.waitForFunction(() => window.hoverGroup.visible);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => window.hoverGroup.visible), false);
+  const cancelledHover = await page.evaluate(async (point) => {
+    const canvas = document.querySelector("canvas");
+    canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point[0], clientY: point[1] }));
+    [...document.querySelectorAll("button")].find((button) => button.textContent === "Rectangle").click();
+    const renders = window.hoverRenders;
+    await new Promise(requestAnimationFrame);
+    return { late: window.hoverRenders - renders, visible: window.hoverGroup.visible, phase: window.interaction.phase };
+  }, hoverPoint);
+  assert.deepEqual(cancelledHover, { late: 0, visible: false, phase: "armed" });
+  await page.getByRole("button", { name: "Select", exact: true }).click();
+  await page.mouse.move(hoverPoint[0] + 0.2, hoverPoint[1]);
+  await page.waitForFunction(() => window.hoverGroup.visible);
+  await page.evaluate(() => window.viewport.current.setLayerVisibility(0, false));
+  assert.equal(await page.evaluate(() => window.hoverGroup.visible), false);
+  await page.evaluate(() => window.viewport.current.setLayerVisibility(0, true));
+  await page.mouse.move(hoverPoint[0] + 0.3, hoverPoint[1]);
+  await page.waitForFunction(() => window.hoverGroup.visible);
+  const replaced = await page.evaluate(async () => {
+    const oldHit = window.interaction.hover, oldGroup = window.hoverGroup;
+    const bytes = await (await fetch("/fixture.3dm")).blob();
+    await window.viewport.current.openFile(new File([bytes], "replacement.3dm"));
+    return { hover: window.interaction.hover, detached: oldGroup.parent === null, disposals: oldGroup.disposals,
+      staleMark: window.viewport.current.highlight({ object: oldHit.object }) };
+  });
+  assert.deepEqual(replaced, { hover: null, detached: true, disposals: 8, staleMark: 0 });
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
   const buildingAnchor = await page.evaluate(() => window.projectPoint([27, 27, 0]));
   const buildingCorner = await page.evaluate(() => window.projectPoint([31, 29, 0]));
@@ -500,11 +658,12 @@ try {
   });
   assert.deepEqual(unmounted, { late: 0, disposals: 6, submissions: 6 });
   assert.deepEqual(errors, []);
-  console.log("PASS sketch object/buffer reuse, RAF coalescing, latest-ref completion, typed values, planes/axes, theme, cancellation/tool switch/unmount, rectangle/circle/polygon and 3D measurement; zero API calls");
+  console.log("PASS local object/face/edge hover, immediate click feedback, hidden geometry and ghost cleanup; sketch buffer reuse, RAF coalescing, latest-ref completion, typed values, planes/axes, theme, cancellation/tool switch/unmount, rectangle/circle/polygon and measurement; zero API calls");
 } catch (error) {
   if (page && !page.isClosed()) {
     if (process.env.SKETCH_SCREENSHOT) await page.screenshot({ path: process.env.SKETCH_SCREENSHOT });
     console.error(await page.evaluate(() => {
+      if (!window.projectPoint) return { loaded: false };
       const anchor = window.projectPoint([0, 0, 0]);
       return { phase: document.querySelector(".stage-sketch")?.dataset.phase,
         preview: window.previewSpec, bounds: window.previewBounds, submitted: window.submitted,
