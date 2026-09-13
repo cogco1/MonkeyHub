@@ -140,6 +140,8 @@ class MonitorTraceWebTests(unittest.TestCase):
                        replace(base, event_id="unknown-root", turn_id="unknown-turn", project_id="unknown-project", session_id="unknown-session",
                                started_at=(origin - timedelta(minutes=1)).isoformat(), ended_at=(origin - timedelta(seconds=48)).isoformat())]
             records.append(replace(records[-1], event_id="unmeasured-activity", phase="provider_round", parent_event_id="unknown-root"))
+            records.append(replace(records[-1], event_id="native-token-record", source="codex", phase="agent", model_call=True,
+                                   timing_scope="unknown", duration_ms=None, ended_at=None, tokens=TokenUsage(input_tokens=77)))
             for record in records:
                 store.append(record)
             updated = replace(base, duration_ms=14000, ended_at=(origin + timedelta(seconds=14)).isoformat())

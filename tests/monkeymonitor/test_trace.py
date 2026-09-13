@@ -65,7 +65,8 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(actual["summary"]["first_visible_ms"], 8000)
         self.assertEqual(actual["summary"]["verified_ms"], 7500)
         self.assertEqual(actual["summary"]["provider_rounds"], 2)
-        self.assertEqual(actual["summary"]["model_rounds"], 2)
+        self.assertIsNone(actual["summary"]["model_rounds"])
+        self.assertEqual(actual["summary"]["usage_events"], 2)
         self.assertEqual(actual["summary"]["agent_resumes"], 1)
         self.assertEqual(actual["summary"]["background_ms"], 3000)
         self.assertEqual(sum(row["duration_ms"] for row in actual["attribution"]), 10000)
@@ -100,11 +101,11 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(actual["usage"]["tokens"]["input_tokens"], 20)
         self.assertIsNone(actual["usage"]["tokens"]["output_tokens"])
 
-    def test_host_activity_intervals_do_not_claim_model_rounds_without_metadata(self):
+    def test_host_activity_and_usage_metadata_do_not_establish_model_request_count(self):
         rows = [event("root", "hub_turn", 0, 4000),
                 event("first", "provider_round", 0, 1000),
                 event("second", "provider_round", 2000, 3000),
-                event("unknown-call", "model_request", 3100, 3500, model_call=True)]
+                event("unknown-call", "model_usage", 3100, 3500, model_call=True)]
         actual = trace(rows)["traces"][0]
         self.assertEqual(actual["summary"]["provider_rounds"], 2)
         self.assertIsNone(actual["summary"]["model_rounds"])
@@ -113,7 +114,36 @@ class TraceTests(unittest.TestCase):
         diagnostic = next(row for row in actual["diagnostics"] if row["code"] == "agent_resumes")
         self.assertIn("不能据此证明", diagnostic["note"])
         zero_usage = event("reported", "model_usage", 3500, 3500, model_call=True, tokens=TokenUsage(0, 0))
-        self.assertEqual(trace(rows + [zero_usage])["traces"][0]["summary"]["model_rounds"], 1)
+        actual = trace(rows + [zero_usage])["traces"][0]
+        self.assertIsNone(actual["summary"]["model_rounds"])
+        self.assertEqual(actual["summary"]["usage_events"], 2)
+
+    def test_explicit_request_boundary_counts_even_when_its_usage_is_unknown(self):
+        rows = [event("root", "hub_turn", 0, 1000),
+                event("request", "model_request", 100, 900, source="studio", timing_scope="model_call", model_call=True)]
+        actual = trace(rows)["traces"][0]
+        self.assertEqual(actual["summary"]["model_rounds"], 1)
+        self.assertEqual(actual["summary"]["usage_events"], 1)
+        self.assertIsNone(actual["usage"]["tokens"]["input_tokens"])
+
+    def test_unbound_native_usage_keeps_total_unknown_despite_a_known_studio_request(self):
+        root = event("root", "hub_turn", 0, 2000)
+        request = event("request", "model_request", 1000, 1900, source="studio", timing_scope="model_call", model_call=True,
+                        tokens=TokenUsage(10, 2))
+        native = event("native", "agent", 900, 900, source="codex", model_call=True, turn_id="native-turn", tokens=TokenUsage(100, 20))
+        actual = trace([root, request, native])["traces"][0]
+        self.assertIsNone(actual["summary"]["model_rounds"])
+        self.assertEqual(actual["summary"]["usage_events"], 2)
+        self.assertEqual(actual["usage"]["tokens"]["input_tokens"], 110)
+
+    def test_multiple_usage_updates_linked_to_one_explicit_request_are_one_request(self):
+        rows = [event("root", "hub_turn", 0, 2000),
+                event("request", "model_request", 100, 1900, source="studio", timing_scope="model_call", model_call=True)]
+        rows.extend(event(f"native-{index}", "agent", 200 + index * 100, 200 + index * 100, source="codex", model_call=True,
+                          turn_id="native-turn", related_event_id="request", tokens=TokenUsage(10, 2)) for index in range(5))
+        actual = trace(rows)["traces"][0]
+        self.assertEqual(actual["summary"]["model_rounds"], 1)
+        self.assertEqual(actual["summary"]["usage_events"], 6)
 
     def test_first_response_is_distinct_from_successful_browser_first_frame(self):
         rows = [event("root", "hub_turn", 0, 1000),

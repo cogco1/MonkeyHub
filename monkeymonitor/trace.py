@@ -163,6 +163,31 @@ def _usage(rows):
                       "excluded_duplicate_event_ids": [_code(value) for value in excluded]}
 
 
+def _model_rounds(rows, measured):
+    """Usage updates are not request boundaries; every usage source must bind."""
+    by_id = {row["event_id"]: row for row in rows}
+    requests = {row["event_id"] for row in rows if row["phase"] == "model_request" and row.get("model_call") is True}
+    if not requests:
+        return None
+    for row in measured:
+        pending, seen, bound = [row["event_id"]], set(), False
+        while pending:
+            key = pending.pop()
+            if key in requests:
+                bound = True
+                break
+            if key in seen or key not in by_id:
+                continue
+            seen.add(key)
+            item = by_id[key]
+            pending.extend(ref for ref in (item.get("parent_event_id"), item.get("related_event_id")) if ref)
+        if not bound:
+            # An observed Studio subrequest cannot establish a complete count
+            # for an external Agent whose metadata lacks request identities.
+            return None
+    return len(requests)
+
+
 def _event_price(row, rates):
     if row.get("rate_match_status") is not None:
         rate = RateCard.from_dict(row["rate_snapshot"]) if row.get("rate_snapshot") else None
@@ -313,7 +338,7 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
         attribution, critical, blocking, background, unknown = _timing(spans, _code(root["event_id"]) if root else None, elapsed)
         timeline = max([elapsed or 0, *(span["offset_ms"] + (span["duration_ms"] or 0) for span in spans if span["offset_ms"] is not None)])
         measured, usage = _usage(group)
-        model_rounds = sum(any(value is not None for value in row["tokens"].values()) for row in measured) or None
+        model_rounds = _model_rounds(group, measured)
         first_response = [span["offset_ms"] for span in spans if span["phase"] == "first_response" and span["offset_ms"] is not None]
         visible = [span["offset_ms"] for span in spans if span["phase"] == "first_visible" and span["offset_ms"] is not None]
         visible.extend(span["offset_ms"] + span["duration_ms"] for span in spans
@@ -328,6 +353,7 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
                        "elapsed_basis": "hub_turn" if root and root["phase"] == "hub_turn" else "recorded_root" if root else "unavailable",
                        "first_visible_ms": min(visible, default=None), "first_response_ms": min(first_response, default=None),
                        "verified_ms": min(verified, default=None), "provider_rounds": provider_rounds, "model_rounds": model_rounds,
+                       "usage_events": usage["events_count"],
                        "tool_rounds": sum(row["phase"] == "tool_call" for row in group), "agent_resumes": max(0, provider_rounds - 1),
                        "blocking_ms": blocking, "background_ms": background, "unattributed_ms": unknown},
                        "spans": spans, "attribution": attribution, "critical_path": critical, "usage": usage,
