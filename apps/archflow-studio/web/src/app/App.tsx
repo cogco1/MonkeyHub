@@ -664,20 +664,28 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // a user browses another version. Sync never swaps the viewport underneath them.
   const localModels = useRef(new Map<string, LocalModelSession>());
   const [localRevision, setLocalRevision] = useState(0);
-  const draftSource = viewedProjection?.stateDigest && project && sourceLabel !== LOCAL_SOURCE_LABEL
-    ? { projectId: project.projectId, stateDigest: viewedProjection.stateDigest,
-        sourceRunId: viewedProjection.referenceRun.runId,
-        sourceStageRef: viewedProjection.sourceStageRef ?? null } : null;
+  // An authored project can have a verified state before its first export.
+  // Its projection's synthetic reference id is not a retained run. A local
+  // file or an unresolved loaded export must never borrow this fallback.
+  const draftProjection = viewedProjection ?? (
+    loadedArtifact === null && sourceLabel === null && stateDigest !== null &&
+    projection?.projectId === project?.projectId ? projection : null);
+  const draftSource = draftProjection?.stateDigest && project && sourceLabel !== LOCAL_SOURCE_LABEL
+    ? { projectId: project.projectId, stateDigest: draftProjection.stateDigest,
+        sourceRunId: viewedProjection ? viewedProjection.referenceRun.runId : sourceRunId,
+        sourceStageRef: draftProjection.sourceStageRef ?? null } : null;
   const draftKey = draftSource ? `${draftSource.projectId}:${draftSource.sourceRunId}:${draftSource.stateDigest}:${draftSource.sourceStageRef ?? ""}` : null;
   const localModel = draftKey ? localModels.current.get(draftKey) ?? null : null;
   const draftSnapshot = localModel ? currentDraft(localModel.history) : null;
+  const hasLocalGeometry = !!localModel && !!draftSnapshot && [...draftSnapshot.objects.values()].some(object =>
+    object.spec !== null && !object.deleted && object !== localModel.history.snapshots[0]!.objects.get(object.elementId));
   localEditingRef.current = localModel !== null && localModel.history.index > 0;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
   const ensureLocalModel = useCallback((): LocalModelSession => {
-    if (!draftKey || !draftSource || !viewedProjection) throw new Error(t("stage.sketch.noComponent"));
+    if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));
     const retained = localModels.current.get(draftKey);
     if (retained) return retained;
-    const objects: DraftObject[] = viewedProjection.elements.map(element => ({
+    const objects: DraftObject[] = draftProjection.elements.map(element => ({
       elementId: element.elementId, componentId: element.componentId,
       spec: element.drawnShape ? specFromDrawnShape(element.drawnShape) : null,
       originalObjectNames: semanticCatalog?.elements.find(row => row.elementId === element.elementId)?.objectNames ?? [],
@@ -688,7 +696,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       pending: null, busy: false, error: null };
     localModels.current.set(draftKey, session);
     return session;
-  }, [draftKey, draftSource?.stateDigest, viewedProjection, semanticCatalog, t]);
+  }, [draftKey, draftSource?.stateDigest, draftProjection, semanticCatalog, t]);
   useEffect(() => {
     if (!localModel || !draftSnapshot) { viewportRef.current?.draftPreview(null); return; }
     const initial = localModel.history.snapshots[0]!.objects;
@@ -797,9 +805,10 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   }, [semanticCatalog]);
 
   useEffect(() => {
-    if (selection === null || semanticCatalog === null) return;
+    if (selection === null) return;
     if (selection.elementId && draftSnapshot?.objects.get(selection.elementId)?.spec &&
         viewportRef.current?.highlight({ draftElementId: selection.elementId })) return;
+    if (semanticCatalog === null) return;
     viewportRef.current?.highlight({
       objectNames: semanticObjectNames(
         semanticCatalog.objects,
@@ -1391,6 +1400,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   useEffect(() => {
     if (documentIntentStatus !== "done") return;
     if (autoLoadedRef.current) return;
+    // The first export may arrive while the architect is still drawing.
+    // Local Sync owns its adoption, with the same input guard as later runs.
+    if (localEditingRef.current) return;
     if (homeArtifacts === null) return;
     if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
     autoLoadedRef.current = true;
@@ -1443,10 +1455,10 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         documents?.["archflow:run_id"] === viewedProjection?.referenceRun.runId;
       const localId = pick.draftElementId ?? (knownExport ? binding.elementId : null);
       const localObject = localId ? draftSnapshot?.objects.get(localId) : null;
-      const element = localId ? viewedProjection?.elements.find(row => row.elementId === localId) : null;
+      const element = localId ? draftProjection?.elements.find(row => row.elementId === localId) : null;
       const componentId = localObject?.componentId ?? element?.componentId;
       if (localId && componentId && draftKey && !localObject?.deleted) {
-        setPicked({ elementId: localId, componentId, status: "local", sourceState: viewedProjection!.stateDigest!,
+        setPicked({ elementId: localId, componentId, status: "local", sourceState: draftProjection!.stateDigest!,
           fields: element ? Object.entries(element.numericFields) : [] });
         setSelection({ componentId, elementId: localId });
         return;
@@ -1543,7 +1555,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       }
     },
     [append, loadedArtifact, viewedProjection, recoverFromStaleBase, semanticCatalog, sourceLabel,
-     sourceRunId, stateDigest, viewedSource, draftSnapshot, draftKey],
+     sourceRunId, stateDigest, viewedSource, draftSnapshot, draftKey, draftProjection],
   );
 
   // One proposal in flight at a time. The busy flag renders the button; this
@@ -2255,7 +2267,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const runSketch = useCallback(async (action: FinishedSketch, gestureCurrent: () => boolean = () => true) => {
     if (!gestureCurrent() || changingBase || modelLoading) return;
     try {
-      const componentId = selection?.componentId ?? viewedProjection?.elements[0]?.componentId;
+      const componentId = selection?.componentId ?? draftProjection?.elements[0]?.componentId;
       if (!componentId) throw new Error(t("stage.sketch.noComponent"));
       const elementId = `drawn-${crypto.randomUUID()}`;
       commitLocalCommand({ kind: "sketch", elementId, componentId, action });
@@ -2263,7 +2275,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       setSelection({ componentId, elementId });
       setArtifactError(null);
     } catch (cause) { setArtifactError(asStudioApiError(cause)); }
-  }, [changingBase, modelLoading, selection?.componentId, viewedProjection, commitLocalCommand, t, draftSource?.stateDigest]);
+  }, [changingBase, modelLoading, selection?.componentId, draftProjection, commitLocalCommand, t, draftSource?.stateDigest]);
 
   const [directTool, setDirectTool] = useState<DirectModelTool | null>(null);
   const [directError, setDirectError] = useState<string | null>(null);
@@ -2292,9 +2304,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const navigatingHistory = useRef<string | null>(null);
   // The run on screen, which is what a step back has to return to: a change
   // made while looking at a candidate was made *from* that candidate, and undo
-  // means the picture before it. When nothing retained is shown - a local file
-  // - there is nothing to step through.
-  const baseRunId = loadedArtifact?.runId ?? projection?.referenceRun.runId ?? null;
+  // means the picture before it. A local file or an authored-only projection
+  // has no retained run to add to this history.
+  const baseRunId = loadedArtifact?.runId ?? sourceRunId ?? null;
   useEffect(() => {
     if (baseRunId === null) return;
     // Read once, outside the update: whether this base is one an undo or a redo
@@ -3181,7 +3193,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
           <Stage
             key={binding?.projectId ?? "unbound"}
             embedded={embedded}
-            hasModel={sourceLabel !== null}
+            hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
             sketchBusy={modelNavigationBusy}
             snapPoints={sketchSnapPoints}

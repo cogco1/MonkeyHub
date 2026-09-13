@@ -19,6 +19,9 @@ const rhino = await rhino3dm();
 const root = await mkdtemp(path.join(tmpdir(), "monkeyarch-model-sync-"));
 const projectDir = path.join(root, "demo-project");
 const errors = [];
+// Both authored-only modes reuse the same real fixture/service/browser setup.
+const authoredContinue = process.env.MONKEYARCH_AUTHORED_ONLY === "continue";
+const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredContinue;
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,8 +42,8 @@ try {
 const build = spawnSync(python, ["-c", `
 import sys
 sys.path.insert(0, r"${apiRoot.replaceAll("\\", "/")}")
-from tests.support import make_project
-make_project(r"${root.replaceAll("\\", "/")}")
+from tests.support import ${authoredOnly ? "make_empty_project" : "make_project"}
+${authoredOnly ? "make_empty_project" : "make_project"}(r"${root.replaceAll("\\", "/")}")
 print("built")
 `], { cwd: apiRoot, encoding: "utf8" });
 assert.equal(build.status, 0, `fixture project failed: ${build.stderr || build.stdout}`);
@@ -137,12 +140,15 @@ async function runIds() {
 //      project's default projection is not on.
 
 const home = await call("GET", "/api/state");
+let seedRun = null;
+if (!authoredOnly) {
 const seedProposal = await call("POST", "/api/proposals/sketch", {
   stateDigest: home.stateDigest, componentId: "portico", elementId: "seed-block",
   profile: [[10, 0], [12, 0], [12, 2], [10, 2]], height: 1.5, baseLevel: "level-ground",
 });
-const seedRun = (await finished((await call("POST", `/api/proposals/${seedProposal.proposalId}/candidate`)).jobId)).candidateId;
+seedRun = (await finished((await call("POST", `/api/proposals/${seedProposal.proposalId}/candidate`)).jobId)).candidateId;
 assert.ok((await exported(seedRun)).has("obj-seed-block"), "the seed candidate exported nothing");
+}
 
 // ---- the app, served by vite, talking to that API through this origin
 
@@ -158,6 +164,7 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
     } else if (module.endsWith("/app/App.tsx")) {
       marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
       insert = `(window as any).__app = () => ({ loaded: loadedArtifact?.runId, base: projection?.referenceRun.runId,
+        sessionStatus: session.status, stateDigest: projection?.stateDigest, sourceRunId, sourceLabel,
         status: viewerStatus, busy: modelNavigationBusy, picked: picked?.elementId, pickedStatus: picked?.status, interactionEpoch: modelInteractionEpoch.current,
         selection: selection?.elementId, canDelete: canDeleteModel, directTool, error: localModel?.error,
         syncBusy: localModel?.busy, dirty: localModel ? !snapshotsEquivalent(currentDraft(localModel.history), localModel.synced) : false,
@@ -179,12 +186,12 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
           const p = new Vector3(...point as [number,number,number]).project(r.camera);
           return { x: rect.left + (p.x + 1) * rect.width / 2, y: rect.top + (1 - p.y) * rect.height / 2 };
         },
-        blank: () => {
+        blank: (skip=0) => {
           const r = runtimeRef.current!, rect = r.renderer.domElement.getBoundingClientRect();
           for (let y=rect.top+100;y<rect.bottom-160;y+=45) for(let x=rect.left+100;x<rect.right-100;x+=45) {
             const ray = rayAt(x,y), point = new Vector3();
             if (document.elementFromPoint(x,y) === r.renderer.domElement && !hitAt(x,y) &&
-                ray?.ray.intersectPlane(new Plane(new Vector3(0,0,1),0), point) && point.length()<60) return {x,y};
+                ray?.ray.intersectPlane(new Plane(new Vector3(0,0,1),0), point) && point.length()<60 && skip--<=0) return {x,y};
           }
           return null;
         },
@@ -204,7 +211,8 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
         state: () => {
           const r=runtimeRef.current; if(!r)return null;
           const bounds=(o: Object3D) => {const b=new Box3().setFromObject(o);return {min:b.min.toArray(),max:b.max.toArray()};};
-          return { highlighted:r.highlighted.length, camera:r.camera.position.toArray(), drafts:[...r.draftObjects].map(([id,{object,spec}])=>({id,spec,...bounds(object),
+          return { hasBaseModel:r.model!==null, highlighted:r.highlighted.length, hover:r.preselection?.group.visible??false,
+            camera:r.camera.position.toArray(), drafts:[...r.draftObjects].map(([id,{object,spec}])=>({id,spec,...bounds(object),
             ids:[object.uuid,...object.children.flatMap((o:any)=>[o.uuid,o.geometry.uuid,o.material.uuid])],
             visible:object.children.map(o=>o.visible)})),
             hidden:[...r.draftHidden].map(([o,v])=>({name:o.name,visible:o.visible,original:v})),
@@ -278,8 +286,8 @@ const button=name=>page.getByRole('button',{name,exact:true});
 const localTimings=[];
 async function deselect(){await button('Select').click();await page.locator('body').click({position:{x:5,y:5}});}
 async function blank(){await deselect();const p=await page.evaluate(()=>window.__view.blank());assert.ok(p,'no usable ground-plane point');return p;}
-async function rectangle(side=2,height=1) {
-  const before=await snap(),p=await blank(); await button('Rectangle').click();await page.mouse.click(p.x,p.y);
+async function rectangle(side=2,height=1,from=null) {
+  const before=await snap(),p=from??await blank(); await button('Rectangle').click();await page.mouse.click(p.x,p.y);
   const input=page.locator('.sketch-entry input');await input.fill(String(side));await input.press('Enter');await input.fill(String(height));
   const start=performance.now();await input.press('Enter');
   const state=await wait(s=>s.view.drafts.length===before.view.drafts.length+1,'rectangle not retained');
@@ -296,6 +304,74 @@ async function pick(id,top=false){
   await page.mouse.click(p.x,p.y);await wait(s=>s.picked===id,'local pick');return p;
 }
 const candidateCalls=()=>sent.filter(row=>/^\/api\/proposals\/[^/]+\/candidate$/.test(row.path));
+if (authoredOnly) {
+  assert.deepEqual(await runIds(),[], 'authored-only fixture must begin with no retained run');
+  assert.deepEqual((await call('GET','/api/artifacts')).artifacts,[], 'authored-only fixture must begin with no export');
+  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool`);
+  await wait(s=>s.sessionStatus==='ready'&&s.stateDigest&&s.view&&!s.busy,'authored-only session',30000);
+  const initial=await snap(),writesBefore=sent.length;
+  assert.equal(initial.sourceRunId,null);assert.equal(initial.sourceLabel,null);assert.equal(initial.loaded,undefined);
+  assert.equal(initial.view.hasBaseModel,false);assert.equal(initial.view.drafts.length,0);
+  console.log('0 · authored-only project: first local drawing, selection, delete/undo, then one explicit Sync');
+  const first=await rectangle(2,1.25);
+  let state=await snap();assert.equal(state.loaded,undefined);assert.equal(state.sourceRunId,null);assert.equal(state.view.hasBaseModel,false);
+  assert.equal(await page.locator('.stage-empty').count(),0,'a retained local object must replace the empty-canvas message');
+  assert.equal(await page.locator('.viewport-state').count(),0,'a local model must not be covered by the idle overlay');
+  assert.equal(await page.locator('canvas').first().evaluate(canvas=>getComputedStyle(canvas).opacity),'1');
+  await pick(first,true);assert.equal((await snap()).pickedStatus,'local');
+  const second=await rectangle(1,.75);
+  await pick(first,true);await page.keyboard.press('Escape');await wait(s=>!s.picked&&!s.selection,'clear local selection');
+  const face=await page.evaluate(id=>window.__view.face(id,true),first);assert.ok(face);
+  await page.mouse.move(0,0);await page.mouse.move(face.x,face.y);await wait(s=>s.view.hover,'local preselection without a base model');
+  await pick(first,true);await page.keyboard.press('Delete');await wait(s=>s.view.drafts.length===1&&!s.view.drafts.some(o=>o.id===first),'local delete without a base model');
+  await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.length===2,'local undo without a base model');
+  await pick(second);assert.equal((await snap()).pickedStatus,'local');
+  assert.equal(sent.length,writesBefore,'authored-only draw/pick/delete/undo must make no write request');
+  assert.deepEqual(await runIds(),[],'local edits must not create the first run');
+  console.log('  authored-only local selection/preselection/delete/undo passed; starting first Sync');
+  let releaseFirst,firstReady,later;
+  const releasedFirst=new Promise(resolve=>releaseFirst=resolve),firstHeld=new Promise(resolve=>firstReady=resolve);
+  if(authoredContinue)await page.route('**/api/proposals/sketch',async route=>{
+    const response=await route.fetch();assert.equal(response.status(),201);firstReady();await releasedFirst;await route.fulfill({response});
+  },{times:1});
+  const beforeSyncRequests=requests.length;
+  const syncStart=Date.now();await button('Sync').click();
+  if(authoredContinue){
+    await within(firstHeld,15000,'first authored-only proposal was not held');const whileHeld=sent.length;
+    assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
+    await deselect();const nextCorner=await page.evaluate(()=>window.__view.blank(6));assert.ok(nextCorner);
+    later=await rectangle(.8,.6,nextCorner);await pick(first,true);await page.keyboard.press('Delete');
+    await wait(s=>s.view.drafts.length===2&&!s.view.drafts.some(o=>o.id===first),'delete during first Sync');
+    assert.equal(sent.length,whileHeld,'continued local edits wrote while first Sync was held');
+    assert.equal(candidateCalls().length,0);assert.deepEqual(await runIds(),[]);releaseFirst();
+  }
+  await wait(s=>{
+    assert.ok(!s.error,`first authored-only Sync refused: ${s.error}`);
+    return !s.syncBusy&&s.candidates.length===1&&(authoredContinue ? s.dirty :
+      !s.dirty&&s.loaded===s.candidates[0]&&s.base===s.candidates[0]);
+  },
+    'first authored-only Sync did not produce and display its candidate',45000).catch(async error=>{await stages(syncStart,'authored-only failure');throw error;});
+  state=await snap();assert.equal(candidateCalls().length,1);assert.equal((await runIds()).length,1);
+  const proposals=sent.slice(writesBefore).filter(row=>row.path==='/api/proposals/sketch');
+  assert.equal(proposals.length,2);for(const proposal of proposals){assert.equal(proposal.body.sourceRunId,null);assert.equal(proposal.body.stateDigest,initial.stateDigest);}
+  const model=await exported(state.candidates[0]);assert.equal(model.get('obj-'+first)?.z,1.25);assert.equal(model.get('obj-'+second)?.z,.75);
+  if(authoredContinue){
+    // Let artifact discovery and any home-load effect settle after the job.
+    await delay(500);state=await snap();
+    assert.equal(state.loaded,undefined);assert.equal(state.sourceLabel,null);assert.equal(state.sourceRunId,null);
+    assert.equal(state.view.hasBaseModel,false);assert.equal(state.dirty,true);assert.equal(state.view.drafts.length,2);
+    assert.ok(state.view.drafts.some(o=>o.id===later));assert.ok(!state.view.drafts.some(o=>o.id===first));
+    assert.ok(!model.has('obj-'+later),'later drawing leaked into first Sync snapshot');await pick(later,true);
+    assert.ok(!requests.slice(beforeSyncRequests).some(row=>row.path.endsWith('/bytes')),'home loading must not replace continued local work when the first export appears');
+  }else{
+    assert.equal(state.view.hasBaseModel,true);assert.equal(state.view.drafts.length,0);await pick(first,true);
+  }
+  assert.ok(!requests.some(row=>row.method==='GET'&&new URL(row.path,'http://fixture').searchParams.get('run')?.startsWith('studio-projection')),
+    'the authored projection placeholder must never be requested as a retained run');
+  await stages(syncStart,authoredContinue?'authored-only continued first Sync':'authored-only first Sync');
+  console.log(authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
+    'PASS authored-only: zero artifacts/runs → two local drawings with selection/preselection/delete/undo and zero writes → one explicit candidate, real OCCT export and visible saved model');
+} else {
 await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
 await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'initial model',120000);
 const originalRuns=await runIds(), beforeWrites=sent.length;
@@ -438,6 +514,7 @@ console.log('TIMING local actions (automation observation, 100 ms polling maximu
 const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});await deselect();await button('Line').hover();await delay(400);
 await page.screenshot({path:path.join(qa,'manual-sync-toolbar.png')});
 console.log('PASS manual Sync: local draw/P/delete/undo/redo zero writes; delayed Sync permits continued editing; one candidate per snapshot; exact OCCT export');
+}
 } finally {
   closing=true;await browser?.close().catch(()=>{});await vite?.close().catch(()=>{});
   if(http.listening)await new Promise(resolve=>http.close(resolve));api?.kill();await delay(300);await rm(root,{recursive:true,force:true}).catch(()=>{});

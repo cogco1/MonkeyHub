@@ -904,6 +904,7 @@ export const ThreeDmViewport = forwardRef<
   const callbacksRef = useRef({ onInspection, onStatus, onSource, onPick });
   const [dragActive, setDragActive] = useState(false);
   const [visualStatus, setVisualStatus] = useState<ViewportStatus>("idle");
+  const [hasDraft, setHasDraft] = useState(false);
   const [visualMessage, setVisualMessage] = useState("No model on screen · reference brings the reference run back, or choose a version below, or drop a .3dm from this machine here");
 
   callbacksRef.current = { onInspection, onStatus, onSource, onPick };
@@ -933,6 +934,7 @@ export const ThreeDmViewport = forwardRef<
     interaction.current.press = null;
     if (runtime) { runtime.preselection?.dispose(); runtime.preselection = null; runtime.modelIndex = null; }
     callbacksRef.current.onSource(null);
+    setHasDraft(false);
     if (runtime) {
       // The mark on a picked object belongs to the picture; it comes off
       // first so the meshes are disposed wearing their own materials.
@@ -1042,6 +1044,7 @@ export const ThreeDmViewport = forwardRef<
       if (!runtime.draftRoot.parent) runtime.scene.add(runtime.draftRoot);
       runtime.draftBounds = new Box3().setFromObject(runtime.draftRoot).getBoundingSphere(new Sphere());
     } else { runtime.draftRoot.removeFromParent(); runtime.draftBounds = null; }
+    setHasDraft(runtime.draftObjects.size > 0);
     runtime.render();
   }, [clearHover]);
 
@@ -1412,6 +1415,7 @@ export const ThreeDmViewport = forwardRef<
       restoreHighlight(runtime);
       clearHover(false);
       clearDraftPreview(runtime);
+      setHasDraft(false);
       interaction.current.press = null;
       runtime.preselection?.dispose(); runtime.preselection = null;
       if (runtime.model) {
@@ -2025,7 +2029,7 @@ export const ThreeDmViewport = forwardRef<
       onPointerLeave={() => { clearHover(); }}
       onPointerCancel={() => { interaction.current.press = null; clearHover(); }}
     >
-      {visualStatus !== "ready" && (
+      {visualStatus !== "ready" && !(visualStatus === "idle" && hasDraft) && (
         <div className={`viewport-state viewport-state--${visualStatus}`}>
           {visualStatus === "loading" && (
             <span className="activity-rail activity-rail--compact" aria-hidden="true" />
