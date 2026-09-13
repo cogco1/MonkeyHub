@@ -345,13 +345,13 @@ const english = {
   "生产代码": "Producer code", "构件席位": "Element seat", "上下文摘要": "Context digest", "供应商配置身份": "Provider configuration identity", "请求摘要": "Prompt digest", "增量导出": "Incremental export"
 };
 Object.assign(english, {
-  "跳到任务观测": "Skip to turn observatory", "一轮任务，完整看清": "Understand the whole turn", "任务轮次": "Turn", "暂无任务记录": "No turns recorded yet",
-  "从 MonkeyHub 发起任务后，已关联的模型、工具与候选阶段会自动显示。": "Start a turn in MonkeyHub. Correlated model, tool and candidate activity will appear automatically.",
+  "跳到任务概览": "Skip to task overview", "任务记录": "Task records", "任务耗时与用量": "Task timing and usage", "任务轮次": "Turn", "暂无任务记录": "No turns recorded yet",
+  "从 MonkeyHub 发起任务后，可查看已关联的模型、工具与候选阶段记录。": "Start a turn in MonkeyHub to view its linked model, tool and candidate activity records.",
   "下载 Trace JSON": "Download trace JSON", "任务耗时": "Turn timeline", "实线：阻塞 · 虚线：后台 · 加粗：观测关键路径": "Solid: blocking · Dashed: background · Bold: observed critical path",
   "所有阶段共用时间轴。重叠与嵌套阶段不累加；点选色条可查看记录。": "All stages share one time axis. Overlapping and nested durations are not added. Select a bar to inspect its record.",
-  "为什么慢": "Why slow?", "由执行记录直接计算": "Calculated from execution records", "活动树": "Activity tree", "活动详情": "Activity details",
+  "耗时分析": "Timing analysis", "基于已记录的执行阶段": "Based on recorded execution stages", "活动树": "Activity tree", "活动详情": "Activity details",
   "选择一个阶段查看模型、状态与关联记录。": "Select a stage to inspect its model, status and linked evidence.", "记录与价格依据": "Coverage and price basis",
-  "高级详情 · 原始调用与手动估算": "Advanced · raw calls and manual estimate", "任务每 3 秒刷新；原始用量每 30 秒刷新": "Turns refresh every 3 seconds; raw usage every 30 seconds",
+  "调用记录与费用估算": "Call records and cost estimates", "任务每 3 秒刷新；原始用量每 30 秒刷新": "Turns refresh every 3 seconds; raw usage every 30 seconds",
   "总历时": "Elapsed", "首次可见": "First visible", "候选已验证": "Verified candidate", "模型轮次": "Model rounds", "工具调用": "Tool calls", "模型唤醒": "Model wake-ups", "费用 / 等值": "Price / equivalent",
   "阻塞": "Blocking", "后台": "Background", "阻塞属性未知": "Blocking status unknown", "观测关键路径": "Observed critical path", "尚无已计时阶段": "No timed stages recorded",
   "未记录完整时间范围的阶段仍列在活动树中。": "Stages without a complete time range remain in the activity tree.", "原始记录（已脱敏）": "Raw record (sanitized)",

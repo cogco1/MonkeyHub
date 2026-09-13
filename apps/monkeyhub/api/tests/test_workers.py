@@ -9,8 +9,11 @@ import sys
 import tempfile
 import unittest
 
+from fastapi.testclient import TestClient
+
 from test_monkeyhub_lifecycle import ROOT, LocalHubCase, free_ports, http_json, port_open, project_fixture, wait_for
 from monkeyhub_api.applications import Applications
+from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import HubFailure
 from monkeyhub_api.workers import WorkerLaunch, WorkerSupervisor
 
@@ -34,12 +37,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
     def do_GET(self):
-        if Path(os.environ["OUTAGE_FILE"]).exists():
+        outage = Path(os.environ["OUTAGE_FILE"])
+        seen = outage.with_suffix(".seen")
+        if outage.exists():
+            with seen.open("a") as observed:
+                observed.write("x")
             self.send_error(503)
             return
+        if seen.exists():
+            seen.unlink()
         result = {
             "managedInstanceId": args.managed_instance_id,
-            "sourceRevision": "a" * 40,
+            "sourceRevision": ("b" if outage.with_suffix(".mismatch").exists() else "a") * 40,
             "processId": os.getpid(), "parentProcessId": os.getppid(),
             "serverVersion": "0.1.0", "projectBound": True,
         } if self.path == "/api/health" else {
@@ -87,11 +96,20 @@ class WorkerSupervisorTests(unittest.TestCase):
             return value if value and value.state == state else None
         return wait_for(check, f"Worker {key} did not reach {state}", timeout=10)
 
+    def hub_client(self):
+        port = free_ports(1)[0]
+        app = create_app(HubSettings(runtime_root=self.root / "hub", port=port), source_root=ROOT)
+        app.state.applications.supervisor = self.supervisor
+        client = TestClient(app, base_url=f"http://127.0.0.1:{port}")
+        self.addCleanup(client.close)
+        return client
+
     def test_parallel_crash_explicit_recovery_same_port_and_normal_shutdown(self):
         a, b = self.launch("project-a"), self.launch("project-b")
         self.supervisor.start(a)
         self.supervisor.start(b)
         ready_a, ready_b = self.wait_state(a.worker_id, "ready"), self.wait_state(b.worker_id, "ready")
+        self.assertEqual(self.supervisor.verified_origins("studio"), {ready_a.url.rstrip("/"), ready_b.url.rstrip("/")})
         self.assertNotEqual(ready_a.process_id, ready_b.process_id)
         self.assertEqual([row.project_id for row in self.supervisor.snapshots(project_dir=a.project_dir)], ["project-a"])
         self.supervisor.set_busy(a.worker_id, True)
@@ -100,6 +118,7 @@ class WorkerSupervisorTests(unittest.TestCase):
         child = self.supervisor._children[a.worker_id]
         child.process.kill()  # Deliberate fault injection, solely this test's process.
         child.process.wait(timeout=5)
+        self.assertEqual(self.supervisor.verified_origins("studio"), {ready_b.url.rstrip("/")})
         crashed = self.supervisor.snapshot(a.worker_id)
         self.assertEqual(crashed.state, "crashed")
         self.assertEqual(crashed.desired_state, "running")
@@ -115,6 +134,7 @@ class WorkerSupervisorTests(unittest.TestCase):
         self.assertNotEqual(recovered.instance_id, ready_a.instance_id)
         self.assertEqual(http_json(recovered.url + "api/project")["projectId"], "project-a")
         self.supervisor.stop(a.worker_id)
+        self.assertEqual(self.supervisor.verified_origins("studio"), {ready_b.url.rstrip("/")})
         stopped = self.wait_state(a.worker_id, "stopped")
         self.assertEqual(stopped.desired_state, "stopped")
         self.assertFalse(port_open(a.port))
@@ -165,6 +185,7 @@ class WorkerSupervisorTests(unittest.TestCase):
                 self.assertFalse(rejected.healthy)
                 self.assertEqual(rejected.error.code, "SERVICE_IDENTITY_MISMATCH")
                 self.assertEqual(rejected.desired_state, "stopped")
+                self.assertNotIn(f"http://127.0.0.1:{launch.port}", self.supervisor.verified_origins("studio"))
                 self.assertEqual(self.supervisor._children[launch.worker_id].process.wait(timeout=5), 0)
                 self.assertFalse(port_open(launch.port))
                 with self.assertRaises(HubFailure) as raised:
@@ -182,10 +203,68 @@ class WorkerSupervisorTests(unittest.TestCase):
         self.assertEqual(unavailable.process_id, original.process_id)
         self.assertFalse(unavailable.healthy)
         self.assertEqual(unavailable.error.code, "SERVICE_UNAVAILABLE")
+        origin = original.url.rstrip("/")
+        self.assertIn(origin, self.supervisor.verified_origins("studio"))
+        response = self.hub_client().get("/api/health", headers={"Origin": origin})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
         outage.unlink()
         ready = self.wait_state(launch.worker_id, "ready")
         self.assertEqual(ready.instance_id, original.instance_id)
         self.assertIsNone(ready.error)
+
+    def test_brief_outage_keeps_the_verified_page_attached_and_clears_on_success(self):
+        launch = self.launch("brief")
+        self.supervisor.start(launch)
+        original = self.wait_state(launch.worker_id, "ready")
+        outage = Path(launch.environment["OUTAGE_FILE"])
+        seen = outage.with_suffix(".seen")
+        outage.touch()
+        wait_for(lambda: seen.exists() and len(seen.read_text()) >= 2,
+                 "Worker did not observe the short outage", timeout=4)
+        current = self.supervisor.snapshot(launch.worker_id)
+        self.assertEqual(current.state, "ready")
+        self.assertTrue(current.healthy)
+        self.assertEqual(current.instance_id, original.instance_id)
+        origin = original.url.rstrip("/")
+        client = self.hub_client()
+        for response in (client.get("/api/health", headers={"Origin": origin}),
+                         client.options("/api/health", headers={"Origin": origin, "Access-Control-Request-Method": "GET"})):
+            self.assertIn(response.status_code, (200, 204), response.text)
+            self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
+        unknown = client.get("/api/health", headers={"Origin": f"http://127.0.0.1:{free_ports(1)[0]}"})
+        self.assertEqual(unknown.status_code, 403)
+        self.assertNotIn("Access-Control-Allow-Origin", unknown.headers)
+        self.assertEqual(self.supervisor.verified_origins("monitor"), set())
+        outage.unlink()
+        wait_for(lambda: not seen.exists(), "Worker did not observe health recovery", timeout=3)
+        self.assertEqual(self.supervisor.snapshot(launch.worker_id).state, "ready")
+        self.supervisor.stop(launch.worker_id)
+        stopped = client.get("/api/health", headers={"Origin": origin})
+        self.assertEqual(stopped.status_code, 403)
+        self.assertNotIn("Access-Control-Allow-Origin", stopped.headers)
+
+    def test_origin_requires_verification_and_is_revoked_on_identity_change(self):
+        launch = self.launch("identity-change")
+        outage = Path(launch.environment["OUTAGE_FILE"])
+        outage.touch()
+        self.supervisor.start(launch)
+        origin = f"http://127.0.0.1:{launch.port}"
+        client = self.hub_client()
+        self.assertEqual(client.get("/api/health", headers={"Origin": origin}).status_code, 403)
+        self.assertEqual(self.supervisor.verified_origins("studio"), set())
+        outage.unlink()
+        self.wait_state(launch.worker_id, "ready")
+        self.assertEqual(client.get("/api/health", headers={"Origin": origin}).status_code, 200)
+        outage.with_suffix(".mismatch").touch()
+        def rejected_identity():
+            value = self.supervisor.snapshot(launch.worker_id)
+            return value if value.desired_state == "stopped" else None
+        rejected = wait_for(rejected_identity, "Identity mismatch was not rejected immediately", timeout=3)
+        self.assertEqual(rejected.error.code, "SERVICE_IDENTITY_MISMATCH")
+        response = client.get("/api/health", headers={"Origin": origin})
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn("Access-Control-Allow-Origin", response.headers)
 
 
 class StudioWorkerRecoveryTests(LocalHubCase):

@@ -89,6 +89,15 @@ class WorkerSupervisor:
             child = self._children.get(worker_id)
             return self._snapshot(child) if child else None
 
+    def verified_origins(self, service_id: str) -> set[str]:
+        """Origins verified for still-owned live launches, including a health outage."""
+        with self._lock:
+            return {
+                f"http://127.0.0.1:{child.port}" for child in self._children.values()
+                if child.launch.service_id == service_id and child.service_pid is not None
+                and child.desired_state == "running" and self._observe_exit(child)
+            }
+
     def _snapshot(self, child: _Child) -> WorkerSnapshot:
         # Status reads cannot claim ready between an exit and the watcher's next poll.
         alive = self._observe_exit(child)
@@ -181,6 +190,7 @@ class WorkerSupervisor:
 
     def _watch(self, child: _Child) -> None:
         deadline = time.monotonic() + 30
+        unavailable_since = None
         opener = build_opener(ProxyHandler({}))
         while child.process.poll() is None:
             with self._lock:
@@ -211,6 +221,7 @@ class WorkerSupervisor:
                     with self._lock:
                         if child.desired_state == "running" and child.process.poll() is None:
                             if matches:
+                                unavailable_since = None
                                 child.service_pid = health["processId"]
                                 child.healthy = True
                                 child.error = None
@@ -224,9 +235,14 @@ class WorkerSupervisor:
                     with self._lock:
                         if child.desired_state == "running":
                             if child.service_pid is not None:
-                                child.healthy = False
-                                child.state = "unavailable"
-                                child.error = HubError(code="SERVICE_UNAVAILABLE", detail="The owned service is not answering its health and project binding checks.")
+                                # A busy service can miss one probe without
+                                # losing its verified launch or usable page.
+                                if unavailable_since is None:
+                                    unavailable_since = time.monotonic()
+                                if time.monotonic() - unavailable_since >= 5:
+                                    child.healthy = False
+                                    child.state = "unavailable"
+                                    child.error = HubError(code="SERVICE_UNAVAILABLE", detail="The owned service is not answering its health and project binding checks.")
                             elif time.monotonic() >= deadline:
                                 self._reject(child, "START_TIMEOUT", f"The application did not become ready. See {child.log_path}.")
             time.sleep(0.1 if child.service_pid is None else 1)

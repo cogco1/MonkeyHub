@@ -162,8 +162,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         origin = request.headers.get("origin")
         # Embedded Studio still serves its own assets. Its API attaches to the
         # Hub only while this Hub owns that exact, verified worker origin.
-        worker_origins = {row.url.rstrip("/") for row in applications.worker_snapshots()
-                          if row.url and row.healthy and row.service_id == "studio"}
+        worker_origins = applications.supervisor.verified_origins("studio")
         allowed_origins = origins | worker_origins
         if origin and origin not in allowed_origins:
             return JSONResponse({"code": "LOCAL_ORIGIN_REQUIRED", "detail": "Use the local Hub page."}, status_code=403)

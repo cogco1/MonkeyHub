@@ -489,7 +489,10 @@ class ProjectRuntimeManager:
             alive = False
         if retained.get("projectId") != runtime.project_id or project_key(retained.get("projectDir", "")) != project_key(runtime.project_dir):
             raise HubFailure(409, "PROJECT_MISMATCH", "The runtime snapshot belongs to another project.")
-        projection_key = (worker.instance_id, retained.get("published"), retained.get("branches")) if alive else None
+        # A missed health check does not change the projection's source. Keep
+        # its binding while stale so the same worker/base can recover without
+        # another expensive state read; a new instance or base still rebuilds.
+        projection_key = (worker.instance_id, retained.get("published"), retained.get("branches")) if alive else runtime.projection_key
         if alive and projection_key != runtime.projection_key:
             # Rebuild through the existing state projection owner after a
             # worker/retained-base change. This is a read, never candidate replay.

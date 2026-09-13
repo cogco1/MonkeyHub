@@ -15,10 +15,12 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, SEAT_3DM_INSPECTION
+from archflow.state.state_record import StateRecord
 
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.catalog import (
@@ -182,6 +184,18 @@ class ObjectBindingTests(CatalogTestCase):
 
 
 class ComponentTests(CatalogTestCase):
+    def test_component_closures_share_dependency_reads_within_the_catalog(self) -> None:
+        binding = bound_project(self.app.state)
+        projection = project_state(binding)
+        with patch.object(StateRecord, "dependency_edges", autospec=True,
+                          side_effect=StateRecord.dependency_edges) as read_edges:
+            catalog = catalog_of(binding, projection)
+        for component in catalog.components:
+            self.assertEqual(component.closure, ("entity:portico-base", "entity:portico-cornice"))
+        # One read for capability references and one for every component's
+        # closure together; adding components must not rebuild the full graph.
+        self.assertLessEqual(read_edges.call_count, 2)
+
     def test_a_component_knows_its_descendants_capabilities_and_gaps(self) -> None:
         catalog = self.catalog()
         portico = catalog.component("portico")

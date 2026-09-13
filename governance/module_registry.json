@@ -3336,7 +3336,7 @@
         "the binding identity a geometry program cites (StateRecord.state_digest)",
         "the entity schema vocabulary (Level@1, GridAxis@1, Type@1, Element@1, Assembly@1, Space@1, Reading@1, Component@1, MassingLevel@1, Volume@1, Connection@1)",
         "referential integrity inside one record: unique ids, known parents, known relation endpoints, known parameter inputs, known zone volumes and connection zones",
-        "the record's dependency edges and the downstream closure over them (dependency_edges, closure)",
+        "the record's dependency edges and the downstream closure over them (dependency_edges, closure, closures); batched closures reuse one graph within the same record",
         "binding an authored portable record to one run and canonical base (bound_to, run_ref)",
         "the record's own relation shape with datum role, propagation and validator binding (Relation, ValidatorBinding)",
         "CHECK_KINDS: the check_kind vocabulary a validator may name, one line of meaning each, and the field each kind takes; solid_nonpenetration requires explicit distinct final object_pairs and zero linear tolerance, and may check distinct outputs of the same host entity without a self-dependency",
@@ -3408,7 +3408,8 @@
         "compile_component_edit",
         "StateRecordOperator.to_dict",
         "StateRecordOperator.from_dict",
-        "combine_component_changes"
+        "combine_component_changes",
+        "StateRecord.closures"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -5901,7 +5902,8 @@
         "/api/runtime/projects/{runtime_id}/studio/{path}",
         "MonkeyArch.exe [--source-root PATH --python PATH] [--runtime-root PATH] [--port PORT] [--startup-timeout-seconds SECONDS] [--version]",
         "GET /api/chat/usage-sources",
-        "ChatStore.usage_sources"
+        "ChatStore.usage_sources",
+        "WorkerSupervisor.verified_origins"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",

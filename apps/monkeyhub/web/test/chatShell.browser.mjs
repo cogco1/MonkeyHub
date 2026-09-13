@@ -237,7 +237,7 @@ const studioReady = () => page.waitForFunction(() => ["Modeling", "Drawings", "B
   document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
 try {
   await page.goto(origin);
-  await page.getByRole("heading", { name: "Start with an idea" }).waitFor();
+  await page.getByRole("heading", { name: "Start a project conversation" }).waitFor();
   assert.equal(await page.getByRole("link", { name: "Enter workspace" }).count(), 0);
 
   // A — one vertical rail on the far right holds every tool entry, and there

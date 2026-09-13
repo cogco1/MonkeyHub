@@ -459,9 +459,10 @@ def _components(
             stack.extend(children.get(current, ()))
         return found
 
+    descendant_ids = [descendants(node.entity_id) for node in nodes]
+    closures = record.closures(tuple(tuple(f"entity:{eid}" for eid in ids) for ids in descendant_ids))
     out: list[CatalogComponent] = []
-    for node in nodes:
-        element_ids = descendants(node.entity_id)
+    for node, element_ids, closure in zip(nodes, descendant_ids, closures):
         caps = [cap for eid in element_ids for cap in capabilities_by_element.get(eid, ())]
         states: list[str] = []
         if any(cap.status == EDITABLE for cap in caps):
@@ -485,7 +486,7 @@ def _components(
                 states=tuple(states),
                 object_count=len(subtree),
                 unbound_object_count=len(unbound),
-                closure=record.closure(tuple(f"entity:{eid}" for eid in element_ids)) if element_ids else (),
+                closure=closure,
             )
         )
     return tuple(out)

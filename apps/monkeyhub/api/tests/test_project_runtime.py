@@ -3,6 +3,7 @@
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 import os
 from pathlib import Path
 import signal
@@ -357,6 +358,29 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             ready = self.wait_runtime(client, runtime_id, lambda row: row["projection"] == "ready" and row["workers"][0]["healthy"])
             self.assertNotEqual(ready["workers"][0]["instanceId"], original["instanceId"])
             self.assertEqual(ready["workers"][0]["desiredState"], "running")
+            self.assertEqual(self.project_bytes(self.project), before)
+
+    def test_same_worker_recovers_readiness_without_rebuilding_unchanged_projection(self):
+        from monkeyhub_api.runtime import request_http
+
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            applications = client.app.state.applications
+            before = self.project_bytes(self.project)
+            # Serialize against the real observer while simulating one transport
+            # outage. The worker remains alive and its retained base is unchanged.
+            with runtime.refresh_lock:
+                worker = applications.worker_snapshots(project_dir=str(self.project))[0]
+                unavailable = replace(worker, state="unavailable", healthy=False)
+                with patch.object(applications, "worker_snapshots", return_value=(unavailable,)):
+                    manager._refresh(runtime)
+                self.assertEqual(runtime.projection, "stale")
+                with patch("monkeyhub_api.runtime.request_http", wraps=request_http) as reads:
+                    manager._refresh(runtime)
+                self.assertEqual(runtime.projection, "ready")
+                self.assertFalse(any(call.args[1] == "/api/state" for call in reads.call_args_list))
             self.assertEqual(self.project_bytes(self.project), before)
 
     def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
