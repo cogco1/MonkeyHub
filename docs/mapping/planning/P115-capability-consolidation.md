@@ -1,5 +1,15 @@
 # P115 — 能力总索引与逐项整理
 
+### Hub 会话用量自动接入
+
+`P115/monitor-usage` 在独立 `codex/monitor-hub-usage` 工作区 EXTEND `hub.shell` 与 `monkeymonitor`。
+运行中 GRAVE 的空调用列表已定位为只有 Studio 操作耗时、没有接入 Hub Codex 会话数值；
+61 次可读取调用已按保存的两条项目／会话绑定补入既有诊断日志，未重启服务或改项目数据。
+源码增加 Hub 只读身份投影，由 Monitor 按确切 native／ACP session ID 读取本地 Codex 索引与用量。
+归档会话保留归属，手选与自动来源统一去重，补回记录不重复累计；正文与凭据不进入 Monitor。
+缺失来源与计数保持可见，日志没有单次请求起止时不补造 P50。自动连接待本片测试和集成后生效。
+`main.py` 仅新增只读路由，与 desktop lane 的 CLI 生命周期修改分开协调；保留其余并发 lanes。
+
 ### #23：白板手势与选区反馈入口
 
 在 `codex/board-ux` 的 c68e worktree 中 EXTEND `studio.board`。首片收起并可重新打开项目资料栏，
