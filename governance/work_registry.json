@@ -537,25 +537,6 @@
           ],
           "depends_on": [],
           "blocked_reason": "Awaiting a new-user blind walkthrough of the Board reference-to-model-feedback workflow."
-        },
-        {
-          "id": "issue-sequencing",
-          "issue": "#53 Phase 0 and #46 analysis; existing P115 issue sequencing",
-          "status": "review",
-          "branch": "codex/p115-issue-sequencing",
-          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-p115-issue-sequencing",
-          "base_ref": "ae5c9fd51f63623ed9b0512702921c06babf6221",
-          "contributor": "Codex coordinator with delegated Claude CLI analysis",
-          "reviewer": "Codex coordinator",
-          "handoff": "Issue priorities updated on GitHub; duplicate #49 closed into #50 with unique requirements retained. #46 analysis is reviewed and returned to the user for discussion; no UI implementation. #53 local C API file spike is reviewed, with GUI/version/identity and SDK distribution conditions still open. Existing merged #43/#44/#45 source claims are released into blocked human acceptance; #48 implementation lane removed. Only the existing P115 card and work registry change in this PR.",
-          "modules": [
-            "studio.shell"
-          ],
-          "write_scope": [
-            "governance/work_registry.json",
-            "docs/mapping/planning/P115-capability-consolidation.md"
-          ],
-          "depends_on": []
         }
       ]
     },
