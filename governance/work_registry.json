@@ -433,21 +433,20 @@
           "status": "active",
           "branch": "codex/p115-agent-latency-context",
           "worktree": "C:/Users/asus/.codex/worktrees/597e/ARCHFLOW_V4",
-          "base_ref": "f8a563f851317e842edd9c18704504cdeb33ae65",
+          "base_ref": "82a4c008fbb2c019cbb6d3f8a839b1a86def070a",
           "contributor": "Codex task 01a09b53-017d-7fa3-99d3-10177536354e",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "Phase 0 is separately frozen in PR #47 at f8a563f851317e842edd9c18704504cdeb33ae65; its measured provider baselines remain bfbaca62. This slice reuses studio.intent context compilation and capability descriptions to prepare one read-only ContextPack before the native agent starts, only when a message explicitly supplies exact source/base/focus. Project/process/health checks and downstream proposal guards remain. The observed target is the initial capability-description tool round trip in the successful cornice benchmark. Use existing exported traces for before/after comparison; no new Monitor comparison product, cache or transaction compiler in this slice. Claude implements the bounded source edits and routine tests; Codex owns the binding design and independent review. Do not infer viewport focus or a recent candidate, and do not weaken context fallback or preservation to improve metrics.",
+          "handoff": "Phase 0 and its nonblocking diagnostic lock correction are separately frozen in PR #47 at 82a4c008fbb2c019cbb6d3f8a839b1a86def070a; its measured provider baselines remain bfbaca62. This slice reuses studio.intent context compilation and capability descriptions to prepare one read-only ContextPack before the native agent starts, only when a message explicitly supplies exact source/base/focus. Project/process/health checks and downstream proposal guards remain. The observed target is the initial capability-description tool round trip in the successful cornice benchmark. Use existing exported traces for before/after comparison; no new Monitor comparison product, cache or transaction compiler in this slice. Claude implements the bounded source edits and routine tests; Codex owns the binding design and independent review. Do not infer viewport focus or a recent candidate, and do not weaken context fallback or preservation to improve metrics.",
           "modules": ["monkeymonitor", "hub.shell", "studio.shell", "studio.intent", "studio.candidate"],
           "write_scope": [
             "monkeymonitor/",
             "tests/monkeymonitor/",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/web/src/api/generated/",
             "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
             "apps/monkeyhub/api/tests/test_chat_trace.py",
             "apps/monkeyhub/api/tests/test_chat.py",
-            "apps/monkeyhub/api/tests/test_runtime_operations.py",
             "apps/archflow-studio/api/archflow_studio_api/main.py",
             "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
             "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -552,31 +551,27 @@
           "depends_on": []
         },
         {
-          "id": "desktop",
-          "issue": "#21 Phase C complete desktop package and isolated installation",
+          "id": "runtime",
+          "issue": "#12 cold Hub admission and retained-result recovery",
           "status": "review",
-          "branch": "codex/desktop-product-package",
+          "branch": "codex/hub-cold-admission",
           "worktree": "C:/Users/asus/.codex/worktrees/a6c0/ARCHFLOW_V4",
-          "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
+          "base_ref": "666865c250f17310373f2def6da6b5191f3e1cf7",
           "contributor": "Codex lifecycle task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR #42 extends the existing package builder and Windows workflow. The first complete --desktop ZIP build, checksum/extraction/isolated install, five native lifecycle tests using only bundled Python/Node/assets, reinstall/project/user-data preservation, and 13 package/installer tests passed in Windows run 34765256386 at 02e9d5f8. ArchFlow Verify also passed. build-info.json identifies the shipped runtime and frontend versions. The runner supplies WebView2; no clean second-user machine, real-version data migration, or optional MonkeyFab/provider acceptance is claimed. No active services or user installation changes. Await coordinator exact-head review; #12 admission/restore is separately coordinated.",
+          "handoff": "EXTEND existing OperationManager admission/restore at the coordinated nonproject runtime/operations location. Signatures and exact binding persist before dispatch; no request bodies, cached HTTP responses or canonical result copies. Cold restart refuses replay and reconciles outcomes from P036. 14 operation recovery tests, 7 real Hub/Studio lifecycle tests and archcheck passed locally, including truncated HTTP, same-key project isolation and Hub restart. #32 forward header allowlist unchanged. #42 is merged and its completed source lane removed. Await exact-head CI/coordinator review; broader CAD/provider coverage and #8 remain subsequent slices.",
           "modules": [
-            "hub.shell",
-            "tools.package_monkeyapps"
+            "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/desktop/",
-            "tools/package_monkeyapps.py",
-            "tests/test_package_monkeyapps.py",
-            ".github/workflows/desktop.yml",
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "governance/architecture_policy.json",
             "governance/module_registry.json",
             "governance/work_registry.json",
             "docs/SYSTEM_MAP.md",
-            "docs/mapping/planning/P115-capability-consolidation.md",
-            "apps/monkeyhub/api/monkeyhub_api/main.py",
-            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
-            "apps/monkeyhub/installer/install.ps1"
+            "docs/mapping/planning/P115-capability-consolidation.md"
           ],
           "depends_on": []
         }

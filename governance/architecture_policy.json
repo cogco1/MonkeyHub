@@ -60,6 +60,19 @@
   ],
   "allowed_write_sites": [
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+      "function": "_save",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "replace",
+        "unlink"
+      ],
+      "kind": "application_operations",
+      "owner": "hub.shell",
+      "reason": "Atomically saves only request signatures, exact project binding and recovery observations at runtime/operations/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. No request body or canonical result is stored; P036 alone proves project outcomes."
+    },
+    {
       "path": "apps/archflow-studio/api/archflow_studio_api/settings.py",
       "function": "_save_local_settings",
       "operations": [
@@ -191,10 +204,10 @@
     {
       "path": "monkeymonitor/store.py",
       "function": "_locked",
-      "operations": ["mkdir"],
+      "operations": ["mkdir", "open_write"],
       "kind": "diagnostics",
       "owner": "monkeymonitor",
-      "reason": "Create the caller-selected diagnostics directory for the shared Hub/Studio journal lock; no project authority."
+      "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
     },
     {
       "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",

@@ -91,13 +91,75 @@ class _Admission:
 
 
 class OperationManager:
-    """In-process request admission, keyed independently from diagnostic spans."""
+    """Request admission and recovery observations, never a project writer."""
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, *, journal_path: Path | None = None,
+                 project_dir: str | None = None):
         self.project_id = project_id
+        self.journal_path = journal_path
+        self.project_dir = project_key(project_dir) if project_dir is not None else None
+        if journal_path is not None and self.project_dir is None:
+            raise ValueError("A durable operation manager requires its exact project directory.")
         self._lock = threading.RLock()
         self._operations: dict[str, _Admission] = {}
         self._retained: dict[str, OperationRecord] = {}
+        self._restore()
+
+    def _restore(self) -> None:
+        if self.journal_path is None or not self.journal_path.exists():
+            return
+        try:
+            saved = json.loads(self.journal_path.read_text(encoding="utf-8"))
+            if saved["projectId"] != self.project_id or saved["projectDir"] != self.project_dir:
+                raise ValueError("The operation journal belongs to another project binding.")
+            for row in saved["operations"]:
+                record = OperationRecord.model_validate(row["record"])
+                signature = row["signature"]
+                if (record.projectId != self.project_id or str(UUID(record.operationId)) != record.operationId
+                        or record.operationId in self._operations
+                        or not isinstance(signature, list) or len(signature) != 3
+                        or not all(isinstance(value, str) for value in signature)
+                        or not re.fullmatch(r"[0-9a-f]{64}", signature[2])
+                        or not isinstance(row["acceptingCandidate"], bool)
+                        or not isinstance(row["branchId"], str)
+                        or (row["expectedStage"] is not None and not isinstance(row["expectedStage"], str))):
+                    raise ValueError("Invalid saved operation binding.")
+                # A local journal never proves a successful P036 commit/result.
+                record.committed, record.resultDigest, record.resultRevision = False, None, None
+                if record.status in _ACTIVE or (record.candidateId and record.status == "completed"):
+                    record.status = "needs_recovery"
+                    record.reason = "Hub restarted before this operation's retained result was reconciled. No request was replayed."
+                admission = _Admission(record, tuple(signature), row["expectedStage"],
+                                       row["branchId"], row["acceptingCandidate"])
+                admission.finished.set()  # A prior process cannot deliver its HTTP response.
+                self._operations[record.operationId] = admission
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise HubFailure(503, "OPERATION_LOG_INVALID", "The saved operation identities could not be read for this project. Requests were not replayed.") from exc
+
+    def _save(self) -> None:
+        if self.journal_path is None:
+            return
+        # Only recovery metadata crosses this Hub-runtime boundary. Request
+        # bodies and successful project results stay with their existing owners.
+        saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
+            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason"}),
+            "signature": row.signature, "expectedStage": row.expected_stage,
+            "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
+        } for row in self._operations.values()]}
+        temporary = self.journal_path.with_suffix(".tmp")
+        try:
+            self.journal_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with temporary.open("w", encoding="utf-8") as stream:
+                    json.dump(saved, stream, ensure_ascii=False)
+                    stream.write("\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, self.journal_path)
+            finally:
+                temporary.unlink(missing_ok=True)
+        except OSError as exc:
+            raise HubFailure(503, "OPERATION_LOG_UNAVAILABLE", "The operation identity could not be saved. Read runtime status before any new request; this request was not retried.") from exc
 
     def admit(self, operation_id: str, method: str, path: str, body: bytes, *,
               retained: dict | None, source: str, session_id: str | None) -> tuple[_Admission, bool]:
@@ -135,8 +197,16 @@ class OperationManager:
                 proposalId=proposal.group(1) if proposal else None,
                 candidateId=candidate, sessionId=session_id,
             )
-            admission = _Admission(record, signature, payload.get("expectedHeadStageRef"), payload.get("branchId", "main"), bool(accepted))
+            expected_stage, branch_id = payload.get("expectedHeadStageRef"), payload.get("branchId", "main")
+            admission = _Admission(record, signature,
+                expected_stage if isinstance(expected_stage, str) else None,
+                branch_id if isinstance(branch_id, str) else "main", bool(accepted))
             self._operations[operation_id] = admission
+            try:
+                self._save()  # Must succeed before a caller can dispatch this request.
+            except HubFailure:
+                del self._operations[operation_id]
+                raise
             return admission, True
 
     def replied(self, admission: _Admission, response: HttpResult) -> None:
@@ -160,13 +230,19 @@ class OperationManager:
                 record.status = "committing" if admission.accepting_candidate else "executing"
             else:
                 record.status = "completed"
-            admission.finished.set()
+            try:
+                self._save()
+            finally:
+                admission.finished.set()
 
     def interrupted(self, admission: _Admission, reason: str) -> None:
         with self._lock:
             admission.record.status = "needs_recovery"
             admission.record.reason = reason
-            admission.finished.set()
+            try:
+                self._save()
+            finally:
+                admission.finished.set()
 
     def bind_proposal(self, admission: _Admission, proposal: dict, base_revision: int):
         with self._lock:
@@ -177,6 +253,7 @@ class OperationManager:
             record.sourceRunId = proposal.get("sourceRunId")
             record.sourceStageRef = proposal.get("sourceStageRef")
             record.status = "validated"
+            self._save()
 
     def reconcile(self, retained: dict, *, worker_alive: bool) -> None:
         candidates = {row["candidateId"]: row for row in retained.get("candidates", [])}
@@ -311,7 +388,9 @@ class ProjectRuntimeManager:
                 settings = StudioSettings(project_dir=Path(actual_dir), cad_export="off")
                 binding = ProjectBinding(FilesystemProjectRepository.open(Path(actual_dir)),
                     project_id=actual_id, project_dir=Path(actual_dir), settings=settings)
-                runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, OperationManager(actual_id), binding)
+                operations = OperationManager(actual_id, project_dir=actual_dir,
+                    journal_path=self.applications.runtime_root / "runtime/operations" / f"{runtime_id}.json")
+                runtime = ProjectRuntime(runtime_id, actual_id, actual_dir, operations, binding)
                 self._projects[runtime_id] = runtime
             if runtime.state == "closed":
                 runtime.state = "open"

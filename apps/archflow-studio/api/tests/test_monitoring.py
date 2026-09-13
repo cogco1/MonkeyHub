@@ -5,22 +5,27 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import os
+import subprocess
 import sys
+import threading
 import time
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
+
+from fastapi.testclient import TestClient
 
 from archflow_studio_api.application.intent_agent import DeterministicCompiler, Selection
 from archflow_studio_api.application.jobs import JobRegistry
 from archflow_studio_api.application.monitoring import MonitoredCompiler, StudioMonitor, candidate_event_id
 from archflow.project.refs import record_ref_from_uri
 from monkeyarch.runtime import project_runner
-from monkeymonitor.store import UsageLog
+from monkeymonitor.store import BUSY_NOTICE, UsageLog
+from monkeymonitor.trace import build_traces
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID
+from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_cad_export import NEEDS_OCCT, OcctCandidateTestCase, no_process
 from .test_queue import Gate, Recorder, wait_until
 
@@ -245,6 +250,107 @@ class MonitoringTests(unittest.TestCase):
                 self.assertGreaterEqual(observations[0]["duration_ms"], 0)
 
 
+HOLD_JOURNAL = r'''
+import os, sys
+from pathlib import Path
+directory = Path(sys.argv[1])
+directory.mkdir(parents=True, exist_ok=True)
+stream = (directory / "usage.lock").open("a+b")
+if os.name == "nt":
+    import msvcrt
+    stream.seek(0)
+    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.readline()
+'''
+
+
+def bounded(case, action, *, seconds=30, on_timeout=None):
+    """Run something that must not block, on a worker, with a bounded wait.
+
+    A blocking journal lock waits forever on POSIX, where an elapsed assertion
+    after the call would never be reached. This fails instead of hanging.
+    """
+
+    outcome = {}
+
+    def run():
+        try:
+            outcome["value"] = action()
+        except BaseException as exc:
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        if on_timeout is not None:
+            on_timeout()  # free the holder before any cleanup waits on it
+        case.fail(f"the request blocked on diagnostics for more than {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value")
+
+
+class BusyJournalRequestTests(unittest.TestCase):
+    """A real HTTP request answers while another process owns the usage journal."""
+
+    def setUp(self):
+        self.root = Path(self.enterContext(TemporaryDirectory()))
+        self.repository, self.ref = make_project(self.root)
+        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="off",
+                                       monitor_dir=self.root / "monitor")
+        self.app = create_app(self.settings)
+        self.client = self.enterContext(TestClient(self.app))
+        self.payload = {
+            "eventId": str(uuid4()), "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID,
+            "sourceRef": self.ref.uri, "startedAt": "2026-09-09T10:00:00+00:00",
+            "endedAt": "2026-09-09T10:00:01+00:00", "durationMs": 998, "status": "succeeded",
+        }
+
+    def kill(self):
+        if self.holder.poll() is None:
+            self.holder.kill()
+            self.holder.wait(30)
+
+    def hold(self):
+        self.holder = subprocess.Popen([sys.executable, "-c", HOLD_JOURNAL, str(self.settings.monitor_dir)],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(self.holder.wait, 30)
+        self.addCleanup(self.holder.stdin.close)
+        self.addCleanup(self.holder.stdout.close)
+        self.addCleanup(self.kill)
+        self.assertEqual(bounded(self, self.holder.stdout.readline, on_timeout=self.kill).strip(), "held")
+        return self.holder
+
+    def test_held_journal_neither_delays_nor_repeats_a_real_studio_request(self):
+        head = self.repository.layout.head.read_bytes()
+        holder = self.hold()
+        clock = time.perf_counter()
+        response = bounded(self, lambda: self.client.post("/api/events/model-load", json=self.payload),
+                           on_timeout=self.kill)
+        elapsed = time.perf_counter() - clock
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertLess(elapsed, 1.0, "a skipped observation must not delay the request")
+        self.assertIsNone(holder.poll(), "measured while the lock was still held")
+        self.assertFalse((self.settings.monitor_dir / "usage.jsonl").exists(), "no unlocked fallback write")
+        self.assertEqual(bounded(self, self.app.state.monitor.store.read, on_timeout=self.kill),
+                         ([], [BUSY_NOTICE]))
+        holder.stdin.write("\n")
+        holder.stdin.flush()
+        self.assertEqual(holder.wait(30), 0)
+        second = self.client.post("/api/events/model-load", json=dict(self.payload, eventId=str(uuid4())))
+        self.assertEqual(second.status_code, 200, second.text)
+        rows, warnings = self.app.state.monitor.store.read()
+        self.assertFalse(warnings)
+        self.assertEqual(len(rows), 1, "the skipped observation was not replayed")
+        self.assertIs(rows[0].details["missing_observations"], True)
+        self.assertEqual(self.repository.layout.head.read_bytes(), head, "diagnostics changed no project state")
+
+
 @NEEDS_OCCT
 class MonitoringOcctTests(OcctCandidateTestCase):
     """Real model generation, acceptance and restart with the shared usage log."""
@@ -254,6 +360,22 @@ class MonitoringOcctTests(OcctCandidateTestCase):
         self.settings = replace(self.settings, monitor_dir=self.root / "diagnostics")
         self.client = self.open_client(self.settings)
         self.store = self.client.app.state.monitor.store
+        # A worker and its request thread observe at the same moment, so the
+        # busy journal may skip one. What every phase reported is asserted at
+        # the append boundary; the journal is still written and read for real.
+        self.emitted, guard, original = [], threading.Lock(), self.store.append
+
+        def capture(event):
+            with guard:
+                self.emitted.append(event)
+            original(event)
+
+        self.enterContext(patch.object(self.store, "append", capture))
+
+    def observed(self):
+        """The revision merge a reader applies, over everything emitted."""
+
+        return list({row.event_id: row for row in self.emitted}.values())
 
     def initialize_from_generated_model(self):
         accepted, job = self.run_candidate(self.client, "set height to 2.1", elementId="portico-base")
@@ -308,8 +430,8 @@ class MonitoringOcctTests(OcctCandidateTestCase):
             self.assertTrue(self.bytes_of(self.client, preview))
         hub.tool("candidate", "studio_request", {}, running=False, candidate_id=run_id)
         hub.first_response()
-        events, warnings = self.store.read()
-        self.assertFalse(warnings)
+        self.assertFalse(self.store.read()[1])
+        events = self.observed()
         candidate_event = next(row for row in events if row.event_id == candidate_event_id(PROJECT_ID, run_id))
         phases = {row.phase for row in events if row.run_id == run_id}
         self.assertTrue({"candidate_queue", "candidate", "step_readback", "preview_readback", "candidate_readback", "validation"} <= phases, phases)
@@ -335,11 +457,13 @@ class MonitoringOcctTests(OcctCandidateTestCase):
             "durationMs": 0, "status": "succeeded", "details": {"blocking": True},
         })
         self.assertEqual(response.status_code, 200, response.text)
-        rows, warnings = self.store.read()
-        self.assertFalse(warnings)
-        self.assertEqual(rows[-1].related_event_id, candidate_event.event_id)
+        self.assertFalse(self.store.read()[1])
+        self.assertEqual(self.observed()[-1].related_event_id, candidate_event.event_id)
         hub.finish("succeeded")
-        report = MonitorData(self.settings.monitor_dir).traces()
+        # The real reader stays the journal's; the trace under test is built
+        # from every emitted phase, not only from the ones it managed to store.
+        self.assertFalse(MonitorData(self.settings.monitor_dir).traces()["warnings"])
+        report = build_traces([row.to_dict() for row in self.observed()])
         self.assertEqual(len(report["traces"]), 1, report["warnings"])
         trace = report["traces"][0]
         self.assertEqual(trace["turn_id"], turn_id)

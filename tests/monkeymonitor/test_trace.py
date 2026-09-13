@@ -317,6 +317,20 @@ class JournalTests(unittest.TestCase):
             self.assertEqual(UsageLog(path).read()[0][0].event_id, "legacy")
             self.assertFalse((path / "usage.lock").exists(), "read-only legacy access creates no new file")
 
+    def test_skipped_observations_name_the_writer_not_this_turn_and_carry_no_count(self):
+        rows = [event("root", "hub_turn", 0, 10000, timing_scope="agent_turn"),
+                event("tool", "tool_call", 1000, 2000, parent_event_id="root",
+                      details={"blocking": True, "missing_observations": True})]
+        result = trace(rows)["traces"][0]
+        notice = next(warning for warning in result["warnings"] if "跳过" in warning)
+        self.assertIn("写入方", notice)
+        self.assertIn("未知", notice)
+        self.assertNotRegex(notice, r"\d", "the notice never states a count or a duration")
+        # The carrier is only where the notice was stored, not the loss itself.
+        self.assertEqual(result["summary"]["elapsed_ms"], 10000)
+        self.assertIsNotNone(next(span for span in result["spans"] if span["event_id"] == "tool")["duration_ms"])
+        self.assertFalse(trace(rows[:1])["traces"][0]["warnings"])
+
     def test_multiple_processes_append_and_rotate_one_journal_without_corruption(self):
         with TemporaryDirectory() as directory:
             script = """import sys

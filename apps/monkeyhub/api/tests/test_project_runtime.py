@@ -102,6 +102,38 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def project_bytes(project):
         return {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*") if path.is_file()}
 
+    def test_cold_hub_preserves_admission_identity_for_two_projects_without_retained_runs(self):
+        other_id, other_project = self.make_parallel_project()
+        operation_id = str(uuid4())
+        requests = []
+        with self.hub(studio_web=self.web) as client:
+            for project_id, project in ((self.project_id, self.project), (other_id, other_project)):
+                runtime_id = self.open_project(client, project_id, project)
+                state = self.proxy(client, runtime_id, "/api/state").json()
+                body = {"projectId": project_id, "stateDigest": state["stateDigest"],
+                        "targetComponentId": "portico", "elementId": "portico-base", "utterance": "set height to 2.2"}
+                response = self.proxy(client, runtime_id, "/api/proposals", "POST", operation_id=operation_id, json=body)
+                self.assertEqual(response.status_code, 201, response.text)
+                self.assertEqual(sorted(path.name for path in (project / "runs").iterdir()), [self.fixture.REFERENCE_RUN_ID])
+                requests.append((project_id, project, runtime_id, body, self.project_bytes(project)))
+        # New Hub app/managers and new real workers, sharing only their explicit
+        # runtime directory and the original P036 projects.
+        with self.hub(studio_web=self.web) as client:
+            for project_id, project, prior_runtime, body, before in requests:
+                runtime_id = self.open_project(client, project_id, project)
+                self.assertEqual(runtime_id, prior_runtime)
+                repeated = self.proxy(client, runtime_id, "/api/proposals", "POST", operation_id=operation_id, json=body)
+                self.assertEqual(repeated.status_code, 409, repeated.text)
+                self.assertEqual(repeated.json()["code"], "OPERATION_NEEDS_RECOVERY")
+                changed = self.proxy(client, runtime_id, "/api/proposals", "POST", operation_id=operation_id,
+                                     json={**body, "utterance": "set height to 9"})
+                self.assertEqual(changed.status_code, 409, changed.text)
+                self.assertEqual(changed.json()["code"], "OPERATION_ID_CONFLICT")
+                self.assertEqual(self.project_bytes(project), before)
+                rows = self.read_runtime(client, runtime_id)["operations"]
+                self.assertEqual([(row["operationId"], row["projectId"]) for row in rows if row["operationId"] == operation_id],
+                                 [(operation_id, project_id)])
+
     def test_concurrent_duplicate_submission_parallel_projects_and_page_reopen(self):
         other_id, other_project = self.make_parallel_project()
         with self.hub(studio_web=self.web) as client:

@@ -24,6 +24,7 @@ _DETAIL_KEYS = {
     "duplicate_reason", "opportunity_refs", "stable_input_parts",
     "context_budget", "task_type", "success", "validator_pass", "validator_scope", "escalation",
     "tool_name", "blocking", "first_token_ms", "provider_timing_basis", "billing_plan", "native_turn_id",
+    "missing_observations",
 }
 _IDENTITY_KEYS = {
     "context_digest", "prompt_sha256", "provider_fingerprint", "program_digest", "source_program_digest",
@@ -102,7 +103,7 @@ def diagnostic_details(value: Mapping[str, object]) -> dict[str, object]:
             _count(detail, name)
         elif name == "context_budget":
             _context_budget(detail)
-        elif name in {"success", "validator_pass", "escalation", "blocking"}:
+        elif name in {"success", "validator_pass", "escalation", "blocking", "missing_observations"}:
             if detail is not None and type(detail) is not bool:
                 raise ValueError(f"{name} must be bool or None")
         elif name == "task_type":
