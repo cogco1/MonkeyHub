@@ -254,7 +254,7 @@ class DesktopPackageTests(unittest.TestCase):
                 self.assertEqual(inventory["frontends"][name]["files"], {asset: builder.sha256(bundle / asset)})
 
     @unittest.skipUnless(sys.platform == "win32", "Windows installer and shortcut behavior")
-    def test_desktop_install_keeps_browser_version_and_selects_native_shortcut(self):
+    def test_desktop_install_preserves_old_files_and_updates_both_shortcuts(self):
         with tempfile.TemporaryDirectory(prefix="Hub install space ") as temporary:
             root = Path(temporary)
             local, shortcuts = root / "local", root / "shortcuts"
@@ -299,8 +299,10 @@ class DesktopPackageTests(unittest.TestCase):
                     missing = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
                     self.assertNotEqual(missing.returncode, 0)
                     self.assertIn("MonkeyArch.exe", missing.stdout + missing.stderr)
-            browser_entry = local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd"
-            desktop_entry = local / "MonkeyHub/versions" / (commit[:12] + "-desktop") / "MonkeyArch.exe"
+            self.assertTrue((local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd").is_file())
+            installed = local / "MonkeyHub/versions" / (commit[:12] + "-desktop")
+            browser_entry = installed / "OPEN_MONKEYHUB.cmd"
+            desktop_entry = installed / "MonkeyArch.exe"
             self.assertTrue(browser_entry.is_file())
             self.assertTrue(desktop_entry.is_file())
             inspect = root / "inspect.ps1"

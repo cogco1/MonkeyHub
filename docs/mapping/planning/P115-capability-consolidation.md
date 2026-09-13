@@ -146,6 +146,12 @@ Agent 等待区间不冒充纯推理，首文本到达也不冒充浏览器首�
 
 ### #21 Phase C：完整包与隔离安装
 
+2026-09-13 后续：`P115/desktop` 在 `codex/desktop-web-parity` 从 `a035e07e` 继续。
+桌面安装同时更新桌面和网页快捷方式，指向同一包；Windows CI 随每次主线提交构建，
+避免纯前端或 Monitor 修改没有对应桌面包。用户要求版本与功能一致，允许各自运行，
+本片不新增共享进程或同步机制。打包/安装 13 项检查及 archcheck 已通过；
+同版本原生构建、本机完整包和两个真实入口验收正在进行。私有 MonkeyFab 只在本机集成。
+
 `P115/desktop` 在独立 `a6c0` worktree 从 `293756cf` 继续，分支为
 `codex/desktop-product-package`。PR #33 的原生宿主已经合入；本片沿既有
 `package_monkeyapps.py --desktop` 生成完整 ZIP，并让 Windows workflow 从该包安装，

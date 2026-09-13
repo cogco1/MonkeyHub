@@ -428,6 +428,27 @@
       ],
       "lanes": [
         {
+          "id": "desktop",
+          "issue": "#21 desktop and browser version parity",
+          "status": "active",
+          "branch": "codex/desktop-web-parity",
+          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-desktop-web-parity",
+          "base_ref": "a035e07e9e4395ac7db9699d6219b8159e14d03a",
+          "contributor": "Codex coordinator",
+          "reviewer": "Repository owner",
+          "handoff": "Keep desktop and browser shortcuts on one installed bundle, build every main revision, and verify both entrypoints with the same locally integrated applications. No shared live-process attachment is requested.",
+          "modules": ["hub.shell"],
+          "write_scope": [
+            ".github/workflows/desktop.yml",
+            "apps/monkeyhub/installer/install.ps1",
+            "apps/monkeyhub/desktop/README.md",
+            "tests/test_package_monkeyapps.py",
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "interaction",
           "issue": "#14 Phase 5 snap retention and continuous modeling",
           "status": "blocked",

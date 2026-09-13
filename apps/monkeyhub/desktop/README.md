@@ -32,11 +32,12 @@ This uses the existing external staging/cache/output roots and adds the EXE to
 that same bundle; the browser entry remains included. Double-click the bundled
 `MonkeyArch.exe`. A checkout build still needs the explicit options below.
 
-The existing installer selects `MonkeyArch.exe` and `MonkeyArch.lnk` for a desktop
-bundle. Its default version directory has a `-desktop` suffix, so a browser bundle
-from the same commit remains available. Missing desktop files cause installation
-to fail; it does not substitute the browser entry. Installer tests use private
-temporary installation and shortcut directories.
+When shortcuts are selected, the installer updates both `MonkeyArch.lnk` (desktop)
+and `MonkeyHub.lnk` (browser) to the same desktop bundle. Both entries use the same
+frontend, Python and included applications. Its default version directory has a
+`-desktop` suffix; earlier installations remain available for rollback. Missing
+desktop files cause installation to fail. Installer tests use private temporary
+installation and shortcut directories.
 
 MonkeyFab remains the package builder's optional independent input. To include
 it, combine `--desktop` with `--monkeyfab-source <checkout>` and
