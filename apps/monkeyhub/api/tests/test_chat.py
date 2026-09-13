@@ -11,7 +11,7 @@ import time
 import tomllib
 import unittest
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -31,6 +31,7 @@ FAKE_CLI = r'''
 import json, os, sys, time, tomllib
 from pathlib import Path
 from uuid import uuid4
+sys.stdin.reconfigure(encoding="utf-8")
 args = sys.argv[2:]
 # The read-only questions Hub asks a connection: status and catalogue. They are
 # answered without touching the call log, which records conversation turns.
@@ -588,6 +589,23 @@ class ChatTests(unittest.TestCase):
         self.assertIn("existing numeric control", call["prompt"])
         self.assertIn("documented modification flow instead of drawing it again", call["prompt"])
 
+    def _studio_tool_path(self, base, path, method, headers, session):
+        """Verify the Hub admission boundary before routing its fake Studio call."""
+
+        if method in {"POST", "PUT"} and not path.startswith("/api/fab/"):
+            self.assertEqual(base, self.store.hub_url)
+            runtime_id = uuid5(NAMESPACE_URL, f"{session.projectId}:{os.path.normcase(str(Path(session.projectDir).resolve()))}")
+            prefix = f"/api/runtime/projects/{runtime_id}/studio"
+            self.assertTrue(path.startswith(prefix + "/api/"), path)
+            self.assertEqual(set(headers or {}), {"Idempotency-Key", "X-Monkey-Chat"})
+            self.assertEqual(headers["X-Monkey-Chat"], session.id)
+            self.assertEqual(str(UUID(headers["Idempotency-Key"])), headers["Idempotency-Key"])
+            return path.removeprefix(prefix)
+        self.assertIsNone(headers, "Readback and service identity checks do not admit a mutation")
+        if path.startswith(("/api/proposals/", "/api/jobs/", "/api/candidates/", "/api/state")) or path == "/api/project":
+            self.assertEqual(base, "http://127.0.0.1:8791")
+        return path
+
     def test_the_drawing_action_is_findable_and_callable_without_exploring(self):
         """What a request to make a form actually needs: the described path works."""
 
@@ -608,7 +626,8 @@ class ChatTests(unittest.TestCase):
             self.assertIn(stated, request_tool["description"], stated)
         self.assertIn("only for an action", schema_tool["description"])
 
-        def request(base, path, method="GET", body=None, timeout=None):
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
             if path == f"/api/chat/sessions/{session.id}":
                 return session.model_dump()
             if path == "/api/settings/apps":
@@ -715,16 +734,23 @@ class ChatTests(unittest.TestCase):
             "decisionOperator": {"parameters": body["semanticEdit"]}, "impact": impact,
         }
         calls = []
+        operation_ids = []
+        explicit_operation_id = str(uuid4())
 
-        def request(base, path, method="GET", body=None, timeout=None):
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            if headers:
+                operation_ids.append(headers["Idempotency-Key"])
             calls.append((method, path, body))
             return complete
 
         with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", session.model_dump())), \
                 patch.object(chat, "_request_json", side_effect=request):
             concise = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
-                "method": "POST", "path": "/api/proposals", "body": body})
+                "method": "POST", "path": "/api/proposals", "body": body,
+                "operationId": explicit_operation_id})
             self.assertEqual(calls, [("POST", "/api/proposals", {**body, "projectId": session.projectId})])
+            self.assertEqual(operation_ids, [explicit_operation_id])
             self.assertEqual(concise["impact"], impact)
             self.assertEqual(concise["baseStateDigest"], body["stateDigest"])
             self.assertEqual(concise["sourceStageRef"], "stage-base")
@@ -744,6 +770,7 @@ class ChatTests(unittest.TestCase):
             impact["locks"] = ["entity:main"]
             large = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "POST", "path": "/api/proposals", "body": body})
+            self.assertEqual(len(set(operation_ids)), 2, "A new logical mutation receives its own operation id")
             for section, field in (("change", "changes"), ("impact", "direct")):
                 self.assertLess(len(large[section][field]), len(complete[section][field]))
                 self.assertEqual(large[section][f"{field}Count"], 2783)
@@ -821,7 +848,8 @@ class ChatTests(unittest.TestCase):
         self.assertIn("/api/proposals/sketch", description)
         self.assertIn("compare?against=<runId>", description)
 
-        def request(base, path, method="GET", body=None, timeout=None):
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
             if path == f"/api/chat/sessions/{session.id}":
                 return session.model_dump()
             if path == "/api/settings/apps":
@@ -870,7 +898,8 @@ class ChatTests(unittest.TestCase):
 
         sent = []
 
-        def request(base, path, method="GET", body=None, timeout=None):
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
             sent.append({"method": method, "path": path, "body": body})
             if barriers:
                 for belongs, barrier in barriers:
@@ -980,7 +1009,8 @@ class ChatTests(unittest.TestCase):
             candidate={"candidateId": "studio-cand-2", "artifacts": []},
             compare={"against": "studio-cand-1", "changed": []})
 
-        def checkpoint(base, path, method="GET", body=None, timeout=None):
+        def checkpoint(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
             if path == "/api/proposals/studio-final":
                 return {"proposalId": "studio-final", "sourceRunId": "studio-cand-1"}
             if path == "/api/proposals/studio-final/candidate":
@@ -1007,7 +1037,8 @@ class ChatTests(unittest.TestCase):
             candidate={"candidateId": "studio-cand-2", "artifacts": [],
                        "objects": objects, "objectReadbackError": None})
 
-        def first_checkpoint(base, path, method="GET", body=None, timeout=None):
+        def first_checkpoint(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
             if path == "/api/proposals/studio-first":
                 return {"proposalId": "studio-first", "sourceRunId": None}
             if path == "/api/proposals/studio-first/candidate":
@@ -1140,7 +1171,8 @@ class ChatTests(unittest.TestCase):
     def test_bound_tool_checks_project_and_does_not_expose_issue_or_upload(self):
         session = self.create()
         session.status = "running"
-        def request(base, path, method="GET", body=None, timeout=None):
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
             if path == f"/api/chat/sessions/{session.id}":
                 return session.model_dump()
             if path == "/api/settings/apps":

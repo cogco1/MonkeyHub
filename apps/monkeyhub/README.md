@@ -112,4 +112,22 @@ Default ports are Hub 8790, Studio 8789 and Monitor 8788. Poll GET /api/apps whi
 
 The source identity comes from root source-version.txt in a package, or the actual checkout HEAD. Missing or malformed identity cannot be presented as a verified launch. A responding child must match its launch UUID, source revision, service version and the owned PID (or its direct child's parent PID, for Windows Python venv redirectors). Stop always uses the owned stdin pipe rather than a reported PID.
 
-Logs and process handles belong to this local run. This does not add a persistent task queue or restore in-flight jobs after a crash. Independent package and second-machine validation are handled by the installation workstream.
+## Project runtime and recovery
+
+Hub keeps one runtime for each exact project identity and resolved path. Switching or reopening a page attaches to that runtime; it does not stop another project or restart a crashed worker. `GET /api/runtime` reports project bindings, the published P036 position, committed Stage history, owned worker health, attached chats, and active/recent operations. `GET /api/runtime/events` streams changes and begins every connection with a fresh snapshot, including after an old or foreign event cursor.
+
+Worker and session observation continues every second. Retained history refreshes for active work, submitted mutations, attachment and worker changes; an idle runtime reuses its current projection and checks external project changes every 30 seconds. Status reads verify retained receipts and exact sources without rebuilding candidate previews. The Hub entry point closes SSE subscriptions before draining accepted HTTP work and owned processes during shutdown.
+
+| Request | Result |
+| --- | --- |
+| `POST /api/runtime/projects/open` with `projectId`, `projectDir` | Attach or reopen a runtime; no worker is started |
+| `GET /api/runtime/projects/{runtime_id}` | The same project/worker/operation/retained-state snapshot |
+| `POST /api/runtime/projects/{runtime_id}/recover` with `projectId` | Inspect retained results, then restart a crashed owned Studio on its original port; no mutation is replayed |
+| `POST /api/runtime/projects/{runtime_id}/close` with `projectId` | Cancel that project's agent turns and pending permissions, close its ACP connections, and drain its owned Studio; other projects continue |
+| `/api/runtime/projects/{runtime_id}/studio/api/...` | Forward the existing Studio request to its verified, bound worker |
+
+Embedded Studio tools and chat mutations use this project-scoped forwarding path. Each mutation has its own UUID `Idempotency-Key`; diagnostic `X-Monkey-Operation` spans remain separate. Repeating a key with the same request returns its admission/result, while a different request returns `409 OPERATION_ID_CONFLICT`. Chat's `studio_request` optionally accepts the same UUID as `operationId`.
+
+Hub assigns candidate run ids before dispatch, so a lost 202 cannot hide which retained run to inspect. A completed candidate requires the existing complete runner/composed-model readback. Stage acceptance is reported committed only when the matching candidate, branch and exact parent Stage are reachable from the retained branch. A prepared Stage file alone is not a commit. An interrupted request without that proof stays `needs_recovery`; recovery never resends it. A confirmed refusal before dispatch remains a failure even if an older candidate exists.
+
+Operation admissions and HTTP replies live in the Hub process. Restarting Hub reconstructs retained candidates, committed Stages and saved chats, but does not restore proposals/jobs or requests that never reached a retained run. Reusing a candidate operation UUID after a Hub restart refuses an already existing run and directs the caller to read it. This is not a durable background task queue. Warm provider/geometry reuse remains inside the existing Studio/ACP owners; external Rhino bridges and other processes Hub does not own are not automatically restarted. Installed-package and second-machine validation remain separate from this source change.

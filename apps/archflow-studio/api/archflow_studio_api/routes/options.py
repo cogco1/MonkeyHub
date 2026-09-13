@@ -157,7 +157,8 @@ def select_option(request: Request, option_id: str) -> CandidateAcceptedDto:
     if option.model_source is not None:
         require_model_source(binding, option.model_source, projection)
     settings: StudioSettings = state.settings
-    run_id = _run_id(option_id)
+    from .candidates import admitted_candidate_id
+    run_id = admitted_candidate_id(request, _run_id(option_id))
     pack = option.pack
 
     def work() -> object:

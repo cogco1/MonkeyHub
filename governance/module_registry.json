@@ -4034,7 +4034,8 @@
         "rechecking a proposal model source and its exact pinned document association before candidate execution",
         "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through studio.artifacts",
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
-        "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance"
+        "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
+        "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run"
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -4096,7 +4097,10 @@
         "MonitorWriteDto",
         "POST /api/events/timing",
         "ClientTimingDto",
-        "ClientTimingDetailsDto"
+        "ClientTimingDetailsDto",
+        "inspect_runtime",
+        "GET /api/runtime",
+        "JobRegistry.list"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -4115,7 +4119,8 @@
         "state.stage_workflow",
         "studio.artifacts",
         "studio.intent",
-        "adapters.cad_execution"
+        "adapters.cad_execution",
+        "state.design_portfolio"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
@@ -4140,7 +4145,8 @@
         "independent same-Stage component changes form a new candidate; overlapping writes or declared dependency effects refuse combination before creating a run",
         "Shutdown closes admission before draining all accepted queued and running jobs, and only then closes the executor",
         "Candidate service timing begins at worker entry and includes nested geometry export; browser load timing is separately marked client_wait and validates the project, run and optional retained source",
-        "configured Runtime acceptance delegates to its shared service and then pulls the retained result; shared acceptance records the authenticated actor in existing accepted_by; older records retain their original attribution"
+        "configured Runtime acceptance delegates to its shared service and then pulls the retained result; shared acceptance records the authenticated actor in existing accepted_by; older records retain their original attribution",
+        "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage"
       ],
       "status": "canonical",
       "tests": [
@@ -4154,7 +4160,8 @@
         "apps/archflow-studio/api/tests/test_document_annotations.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
-        "apps/archflow-studio/web/test/candidatePreview.browser.mjs"
+        "apps/archflow-studio/web/test/candidatePreview.browser.mjs",
+        "apps/archflow-studio/api/tests/test_runtime.py"
       ],
       "notes": "The whole module is arrangement: the kernel runner does the work, this decides when and with what.",
       "files": [
@@ -4166,7 +4173,10 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/candidates.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/events.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/candidate.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/events.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/events.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/runtime.py"
       ]
     },
     {
@@ -5779,7 +5789,7 @@
       "module_id": "hub.shell",
       "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
       "status": "canonical",
-      "purpose": "Host project-bound conversations through installed coding CLIs and open the existing local architecture tools beside the chat; domain state and settings retain their existing owners.",
+      "purpose": "Own project runtime attachments, managed workers, idempotent Studio request admission and recovery observations, alongside existing project-bound CLI conversations and local tools; P036 retains all design authority.",
       "owns": [
         "Hub FastAPI, project/chat navigation including existing projects in the configured workspace, persistent CLI conversation transcripts with recoverable archive/restore and embedded local tool pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing page",
         "One owned Studio process per project, shared by that project's MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
@@ -5788,7 +5798,9 @@
         "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring",
         "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
         "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
-        "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio"
+        "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio",
+        "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, in-process request deduplication, retained-result reconciliation, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
+        "Project-scoped Studio API forwarding for embedded tools and chat, with request-scoped idempotency keys independent of diagnostic correlation; browser refresh reattaches to retained/runtime state and never restarts a crashed worker implicitly"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -5836,7 +5848,19 @@
         "PUT /api/chat/sessions/{id}/model",
         "POST /api/chat/sessions/{id}/permissions/{permission_id}",
         "POST /api/chat/sessions/{id}/stop",
-        "POST /api/project/modeling"
+        "POST /api/project/modeling",
+        "ProjectRuntimeManager",
+        "WorkerSupervisor",
+        "OperationManager",
+        "Applications.worker_snapshots",
+        "Applications.recover",
+        "GET /api/runtime",
+        "GET /api/runtime/events",
+        "POST /api/runtime/projects/open",
+        "GET /api/runtime/projects/{runtime_id}",
+        "POST /api/runtime/projects/{runtime_id}/recover",
+        "POST /api/runtime/projects/{runtime_id}/close",
+        "/api/runtime/projects/{runtime_id}/studio/{path}"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -5849,7 +5873,10 @@
         "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
-        "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them"
+        "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
+        "Runtime records are in-process observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",
+        "An operation id cannot bind a different request; duplicate requests and worker recovery do not replay mutations. Hub cold startup reconstructs retained outcomes; pre-admission requests with no retained record are not durable jobs",
+        "A Hub-assigned candidate run identity is bound to the managed Studio instance before submission; any existing retained run prevents executing that identity again"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -5866,7 +5893,10 @@
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
         "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/ChatShell.css"
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/api/monkeyhub_api/workers.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime_models.py"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -5874,12 +5904,19 @@
         "apps/monkeyhub/api/tests/test_chat.py",
         "apps/monkeyhub/api/tests/test_acp_session.py",
         "apps/monkeyhub/api/tests/test_acp_chat.py",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/api/tests/test_workers.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "apps/monkeyhub/api/tests/test_runtime_sse.py",
+        "apps/monkeyhub/api/tests/test_project_runtime.py"
       ],
       "depends_on": [
         "project.repository",
         "project.refs",
-        "state.record"
+        "state.record",
+        "project.manifest",
+        "studio.binding",
+        "studio.candidate"
       ]
     },
     {

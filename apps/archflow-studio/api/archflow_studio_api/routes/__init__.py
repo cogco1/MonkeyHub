@@ -21,6 +21,7 @@ from . import (
     projects,
     protocol,
     proposals,
+    runtime,
     settings,
     state,
     synchronization,
@@ -33,6 +34,7 @@ router.include_router(protocol.router)
 router.include_router(settings.router)
 router.include_router(projects.router)
 router.include_router(project.router)
+router.include_router(runtime.router)
 router.include_router(state.router)
 router.include_router(program.router)
 router.include_router(artifacts.router)

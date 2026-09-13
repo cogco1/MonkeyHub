@@ -182,6 +182,46 @@ class AcpChatTests(unittest.TestCase):
         self.store = self.open_store()
         self.assertEqual(self.store.get(session.id).messages[-1].content, "x" * 30)
 
+    def test_runtime_close_cancels_only_its_project_permission_and_agent(self):
+        other_project = self.root / "second-project"
+        FilesystemProjectRepository.initialize(other_project, project_id="other-project",
+                                              initial_state={"project_id": "other-project", "version": 0})
+        before = {str(p): p.read_bytes() for root in (self.project, other_project)
+                  for p in root.rglob("*") if p.is_file()}
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            session = self.create()
+            other = self.store.create(ChatCreateRequest(projectDir=str(other_project), provider="codex"))
+            for row in (session, other):
+                self.post(row, "permission")
+                self.permission(row)
+            first_agent = self.store._acp_sessions[session.id]
+            other_agent = self.store._acp_sessions[other.id]
+            opened = client.post("/api/runtime/projects/open", json={
+                "projectId": session.projectId, "projectDir": session.projectDir})
+            self.assertEqual(opened.status_code, 200, opened.text)
+            with patch.object(first_agent, "close", wraps=first_agent.close) as closed_agent:
+                closed = client.post(f"/api/runtime/projects/{opened.json()['runtimeId']}/close",
+                                     json={"projectId": session.projectId})
+                self.assertEqual(closed.status_code, 202, closed.text)
+                self.assertEqual(closed.json()["state"], "closed")
+                closed_agent.assert_called_once()
+            recovery = client.post(f"/api/runtime/projects/{opened.json()['runtimeId']}/recover",
+                                   json={"projectId": session.projectId})
+            self.assertEqual(recovery.status_code, 409, recovery.text)
+            self.assertEqual(recovery.json()["code"], "RUNTIME_CLOSED")
+            stopped = self.store.get(session.id)
+            self.assertEqual(stopped.status, "interrupted")
+            self.assertFalse(any(m.permission for m in stopped.messages))
+            self.assertNotIn(session.id, self.store._acp_sessions)
+            self.assertIs(self.store._acp_sessions[other.id], other_agent)
+            self.assertEqual(self.store.get(other.id).status, "running")
+            self.assertTrue(any(m.permission for m in self.store.get(other.id).messages))
+            self.store.stop(other.id)
+        self.assertEqual(before, {str(p): p.read_bytes() for root in (self.project, other_project)
+                                 for p in root.rglob("*") if p.is_file()})
+
 
 if __name__ == "__main__":
     unittest.main()

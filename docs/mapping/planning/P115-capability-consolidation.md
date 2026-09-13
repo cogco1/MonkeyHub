@@ -1,5 +1,25 @@
 # P115 — 能力总索引与逐项整理
 
+### Hub 项目运行时（issue #12）
+
+本 lane 从已合并 PR #11 的 `f3b928399a092f2a0b51853a737377fd969aa96a` 开始，
+复用分配的 `efa8` worktree 与 `codex/hub-runtime` 分支。归口为 `hub.shell`，
+窄范围是 Hub API/Web、既有 Studio candidate/job 的状态读取与受管候选 admission，以及对应测试。
+共享治理文件只更新这两个 owner、本 lane 与生成地图。#13 的 CAD backend 契约和 runner dispatch 独立推进。
+
+Hub 现按项目标识和精确目录维护运行时，统一读取 worker、聊天、操作、正式 HEAD 与已提交 Stage；
+界面通过 SSE 重连并重建所选候选页面。通用 worker 监督保留实际进程、实例、源码和项目身份校验，
+崩溃后只能显式恢复原端口的受管 Studio。候选执行前分配 run 标识，操作去重与诊断 span 分开，
+恢复先核对 P036：提交后的结果只读恢复，提交前无完整结果则保持 `needs_recovery`，不重放修改。
+
+隔离测试已经覆盖双项目并行、并发重复提交、页面刷新、真实受管进程在提交前退出、Stage 提交后退出、
+原端口新实例恢复、错误项目及过期基底拒绝。保留态检查区分完整候选、真实 branch 可达提交和仅准备的 Stage 文件。
+ACP 关闭测试确认只取消目标项目的 turn 和待决权限，并保留另一项目会话及两个项目的原始文件；完整检查结果以本 lane 的 PR 为准。
+
+运行时 admission 与 HTTP 回复属于当前 Hub 进程；Hub 冷启动重建已有候选、提交链和对话，
+不恢复尚未保留的请求或丢失的 proposal/job registry。原有 warm provider/geometry 路径继续由 Studio/ACP 管理，
+本 lane 不替外部 Rhino bridge 创建新的生命周期或自动重启机制。源代码验收不代表安装包或当前服务已经更新。
+
 ### #13 Phase 0：共同 CAD 后端契约（2026-09-12）
 
 - Issue：[#13](https://github.com/cogco1/ARCHFLOW_V4/issues/13)，Phase 0 已由 [PR #15](https://github.com/cogco1/ARCHFLOW_V4/pull/15) 合入 `main`，合入提交 `1e77a32a8b5ad939a86e45c0fd14f22a7c77268d`。

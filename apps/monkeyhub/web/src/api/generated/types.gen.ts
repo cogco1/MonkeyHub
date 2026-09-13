@@ -417,6 +417,63 @@ export type ChatWorkspace = {
 };
 
 /**
+ * DesignBranchDto
+ */
+export type DesignBranchDto = {
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Parentbranch
+     */
+    parentBranch: string | null;
+    /**
+     * Forkstageref
+     */
+    forkStageRef: string;
+    /**
+     * Headstageref
+     */
+    headStageRef: string;
+};
+
+/**
+ * DesignStageDto
+ */
+export type DesignStageDto = {
+    /**
+     * Stageref
+     */
+    stageRef: string;
+    /**
+     * Parentstageref
+     */
+    parentStageRef: string | null;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    modelSource: ModelSourceDto;
+    /**
+     * Recorddigest
+     */
+    recordDigest: string;
+    /**
+     * Acceptedby
+     */
+    acceptedBy: string;
+};
+
+/**
  * FabPrepareRequest
  */
 export type FabPrepareRequest = {
@@ -621,6 +678,118 @@ export type HubHealth = {
 };
 
 /**
+ * HubRuntimeDto
+ */
+export type HubRuntimeDto = {
+    /**
+     * Serverid
+     */
+    serverId: string;
+    /**
+     * Sequence
+     */
+    sequence: number;
+    /**
+     * Projects
+     */
+    projects: Array<ProjectRuntimeDto>;
+    /**
+     * Workers
+     */
+    workers: Array<WorkerStatus>;
+};
+
+/**
+ * JobDto
+ *
+ * The wire form of ``GET /api/jobs/{id}``.
+ */
+export type JobDto = {
+    /**
+     * Jobid
+     */
+    jobId: string;
+    /**
+     * Status
+     *
+     * queued | running | succeeded | failed
+     */
+    status: string;
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    /**
+     * Proposalid
+     */
+    proposalId: string;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Startedat
+     */
+    startedAt: string | null;
+    /**
+     * Finishedat
+     */
+    finishedAt: string | null;
+    /**
+     * Error
+     *
+     * the runner's own message when the run failed; never a summary of it and never hidden
+     */
+    error: string | null;
+    /**
+     * Walltimes
+     */
+    wallTimeS: number | null;
+    /**
+     * Lane
+     *
+     * parallel, or exclusive when the run exports through Rhino: one Rhino export at a time on this machine. The ordinary in-process (OCCT) export runs in the parallel lane
+     */
+    lane: string;
+    /**
+     * Waitingfor
+     *
+     * while queued, the candidate this one waits for; null when nothing ahead of it conflicts
+     */
+    waitingFor: string | null;
+    /**
+     * Waitingreason
+     *
+     * why it waits, in the queue's words: the refs the two closures share, the export lane, or every worker busy
+     */
+    waitingReason: string | null;
+    /**
+     * Persistence
+     *
+     * where this job lives; it is not version history
+     */
+    persistence: string;
+};
+
+/**
+ * ModelSourceDto
+ */
+export type ModelSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+};
+
+/**
  * ModelingInitializeDto
  */
 export type ModelingInitializeDto = {
@@ -640,6 +809,287 @@ export type ModelingInitializeDto = {
  * ModelingInitializeRequestDto
  */
 export type ModelingInitializeRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
+ * OpenRuntimeRequest
+ */
+export type OpenRuntimeRequest = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+};
+
+/**
+ * OperationRecord
+ */
+export type OperationRecord = {
+    /**
+     * Operationid
+     */
+    operationId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Source
+     */
+    source: string;
+    /**
+     * Status
+     */
+    status: 'queued' | 'planning' | 'validated' | 'executing' | 'committing' | 'completed' | 'failed' | 'cancelled' | 'stale' | 'needs_recovery';
+    /**
+     * Baserevision
+     */
+    baseRevision?: number | null;
+    /**
+     * Basedigest
+     */
+    baseDigest?: string | null;
+    /**
+     * Baserecorddigest
+     */
+    baseRecordDigest?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Proposalid
+     */
+    proposalId?: string | null;
+    /**
+     * Jobid
+     */
+    jobId?: string | null;
+    /**
+     * Candidateid
+     */
+    candidateId?: string | null;
+    /**
+     * Resultrevision
+     */
+    resultRevision?: number | null;
+    /**
+     * Resultdigest
+     */
+    resultDigest?: string | null;
+    /**
+     * Committed
+     */
+    committed?: boolean;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * Sessionid
+     */
+    sessionId?: string | null;
+};
+
+/**
+ * ProjectRuntimeDto
+ */
+export type ProjectRuntimeDto = {
+    /**
+     * Runtimeid
+     */
+    runtimeId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * State
+     */
+    state?: 'open' | 'closed';
+    /**
+     * Workers
+     */
+    workers?: Array<WorkerStatus>;
+    /**
+     * Operations
+     */
+    operations?: Array<OperationRecord>;
+    /**
+     * Sessions
+     */
+    sessions?: Array<ChatSummary>;
+    retained?: RuntimeDto | null;
+    /**
+     * Projection
+     */
+    projection?: 'unknown' | 'ready' | 'stale' | 'rebuilding';
+    /**
+     * Clients
+     */
+    clients?: number;
+    error?: HubError | null;
+};
+
+/**
+ * ProjectVersionDto
+ *
+ * One canonical project version.
+ */
+export type ProjectVersionDto = {
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Statesha256
+     */
+    stateSha256: string | null;
+};
+
+/**
+ * RuntimeCandidateDto
+ */
+export type RuntimeCandidateDto = {
+    /**
+     * Candidateid
+     */
+    candidateId: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Jobid
+     */
+    jobId: string | null;
+    /**
+     * Proposalid
+     */
+    proposalId: string | null;
+    base: ProjectVersionDto | null;
+    /**
+     * Baserecorddigest
+     */
+    baseRecordDigest: string | null;
+    /**
+     * Basestatedigest
+     *
+     * Exact StateRecord operator base binding digest, as retained by the candidate delta.
+     */
+    baseStateDigest: string | null;
+    /**
+     * Resultrecorddigest
+     */
+    resultRecordDigest: string | null;
+    /**
+     * Resultstatedigest
+     */
+    resultStateDigest: string | null;
+    /**
+     * Receiptref
+     */
+    receiptRef: string | null;
+    /**
+     * Commitstagerefs
+     */
+    commitStageRefs: Array<string>;
+    /**
+     * Error
+     */
+    error: string | null;
+};
+
+/**
+ * RuntimeDto
+ */
+export type RuntimeDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    published: ProjectVersionDto;
+    /**
+     * Jobs
+     */
+    jobs: Array<JobDto>;
+    /**
+     * Candidates
+     */
+    candidates: Array<RuntimeCandidateDto>;
+    /**
+     * Branches
+     */
+    branches: Array<DesignBranchDto>;
+    /**
+     * Stages
+     */
+    stages: Array<DesignStageDto>;
+    /**
+     * Errors
+     */
+    errors: Array<string>;
+    /**
+     * Runsscanned
+     */
+    runsScanned: number;
+    /**
+     * Hasmore
+     */
+    hasMore: boolean;
+};
+
+/**
+ * RuntimeEvent
+ */
+export type RuntimeEvent = {
+    /**
+     * Serverid
+     */
+    serverId: string;
+    /**
+     * Sequence
+     */
+    sequence: number;
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Runtimeid
+     */
+    runtimeId?: string | null;
+    snapshot?: HubRuntimeDto | null;
+};
+
+/**
+ * RuntimeProjectRequest
+ */
+export type RuntimeProjectRequest = {
     /**
      * Projectid
      */
@@ -712,6 +1162,53 @@ export type ValidationError = {
     ctx?: {
         [key: string]: unknown;
     };
+};
+
+/**
+ * WorkerStatus
+ */
+export type WorkerStatus = {
+    /**
+     * Workerid
+     */
+    workerId: string;
+    /**
+     * Serviceid
+     */
+    serviceId: string;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Projectdir
+     */
+    projectDir?: string | null;
+    /**
+     * Instanceid
+     */
+    instanceId: string;
+    /**
+     * Processid
+     */
+    processId?: number | null;
+    /**
+     * Desiredstate
+     */
+    desiredState: string;
+    /**
+     * State
+     */
+    state: 'starting' | 'ready' | 'busy' | 'stopping' | 'stopped' | 'crashed' | 'recovering' | 'unavailable';
+    /**
+     * Healthy
+     */
+    healthy: boolean;
+    /**
+     * Url
+     */
+    url?: string | null;
+    error?: HubError | null;
 };
 
 /**
@@ -1387,6 +1884,153 @@ export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionId
 };
 
 export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponse = ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses[keyof ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses];
+
+export type ReadRuntimeApiRuntimeGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/runtime';
+};
+
+export type ReadRuntimeApiRuntimeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: HubRuntimeDto;
+};
+
+export type ReadRuntimeApiRuntimeGetResponse = ReadRuntimeApiRuntimeGetResponses[keyof ReadRuntimeApiRuntimeGetResponses];
+
+export type OpenRuntimeApiRuntimeProjectsOpenPostData = {
+    body: OpenRuntimeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/runtime/projects/open';
+};
+
+export type OpenRuntimeApiRuntimeProjectsOpenPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type OpenRuntimeApiRuntimeProjectsOpenPostError = OpenRuntimeApiRuntimeProjectsOpenPostErrors[keyof OpenRuntimeApiRuntimeProjectsOpenPostErrors];
+
+export type OpenRuntimeApiRuntimeProjectsOpenPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectRuntimeDto;
+};
+
+export type OpenRuntimeApiRuntimeProjectsOpenPostResponse = OpenRuntimeApiRuntimeProjectsOpenPostResponses[keyof OpenRuntimeApiRuntimeProjectsOpenPostResponses];
+
+export type ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: never;
+    url: '/api/runtime/projects/{runtime_id}';
+};
+
+export type ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetError = ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetErrors[keyof ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetErrors];
+
+export type ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ProjectRuntimeDto;
+};
+
+export type ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetResponse = ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetResponses[keyof ReadProjectRuntimeApiRuntimeProjectsRuntimeIdGetResponses];
+
+export type RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostData = {
+    body: RuntimeProjectRequest;
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: never;
+    url: '/api/runtime/projects/{runtime_id}/recover';
+};
+
+export type RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostError = RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostErrors[keyof RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostErrors];
+
+export type RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: ProjectRuntimeDto;
+};
+
+export type RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostResponse = RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostResponses[keyof RecoverRuntimeApiRuntimeProjectsRuntimeIdRecoverPostResponses];
+
+export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostData = {
+    body: RuntimeProjectRequest;
+    path: {
+        /**
+         * Runtime Id
+         */
+        runtime_id: string;
+    };
+    query?: never;
+    url: '/api/runtime/projects/{runtime_id}/close';
+};
+
+export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostError = CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostErrors[keyof CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostErrors];
+
+export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: ProjectRuntimeDto;
+};
+
+export type CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponse = CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses[keyof CloseRuntimeApiRuntimeProjectsRuntimeIdClosePostResponses];
+
+export type RuntimeEventsApiRuntimeEventsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/runtime/events';
+};
+
+export type RuntimeEventsApiRuntimeEventsGetResponses = {
+    /**
+     * Runtime SSE; every attachment begins with a coherent snapshot.
+     */
+    200: string;
+};
+
+export type RuntimeEventsApiRuntimeEventsGetResponse = RuntimeEventsApiRuntimeEventsGetResponses[keyof RuntimeEventsApiRuntimeEventsGetResponses];
 
 export type GetUserSettingsApiSettingsUserGetData = {
     body?: never;
