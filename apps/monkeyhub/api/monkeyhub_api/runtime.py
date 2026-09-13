@@ -5,6 +5,7 @@ reconciled against retained results; absence of proof remains visible.
 """
 
 from dataclasses import dataclass, field
+from http.client import HTTPException
 import hashlib
 import json
 import os
@@ -448,7 +449,7 @@ class ProjectRuntimeManager:
                     # made through a separate Studio/project client.
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
-            except (HubFailure, StudioError, OSError, ValueError) as exc:
+            except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
                     runtime.error = exc.error if isinstance(exc, HubFailure) else HubError(code="RUNTIME_READ_FAILED", detail=str(exc)[:1200])
@@ -540,7 +541,7 @@ class ProjectRuntimeManager:
                 self.emit("operation/progress" if admission.record.status in _ACTIVE else f"operation/{admission.record.status}", runtime.runtime_id)
             runtime.wake.set()
             return result
-        except (OSError, TimeoutError, HubFailure) as exc:
+        except (OSError, TimeoutError, HTTPException, HubFailure) as exc:
             if admission:
                 if not dispatched and isinstance(exc, HubFailure):
                     # A refusal before dispatch is known, even when a previous

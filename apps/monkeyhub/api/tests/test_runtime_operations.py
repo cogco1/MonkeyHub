@@ -1,10 +1,12 @@
 """Hub operation recovery uses real Studio runs and committed P036 history."""
 
 import base64
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 import unittest
@@ -147,6 +149,46 @@ class OperationRecoveryTests(unittest.TestCase):
         self.manager.reconcile(self.snapshot(), worker_alive=False)
         self.assertEqual(self.record(admission).status, "needs_recovery")
         self.assertEqual(bound_project(self.app.state).run_ids(), (self.fixture.REFERENCE_RUN_ID,))
+
+    def test_truncated_http_response_is_interrupted_and_duplicate_is_not_dispatched(self):
+        received = []
+
+        class TruncatedResponse(BaseHTTPRequestHandler):
+            def do_POST(self):
+                received.append(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                self.send_response(202)
+                self.send_header("Content-Length", "100")
+                self.end_headers()
+                self.wfile.write(b"{")
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), TruncatedResponse)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        manager = ProjectRuntimeManager(None, None)
+        runtime = ProjectRuntime("truncated-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, ProjectBinding.open(self.settings), retained=self.snapshot())
+        worker = SimpleNamespace(url=f"http://127.0.0.1:{server.server_port}", instance_id="truncated-worker")
+        operation_id = str(uuid4())
+        try:
+            with patch.object(manager, "service", return_value=worker):
+                for expected in ("OPERATION_INTERRUPTED", "OPERATION_NEEDS_RECOVERY"):
+                    with self.assertRaises(HubFailure) as failure:
+                        manager.forward(runtime, "/api/program", "POST", b"{}", {"idempotency-key": operation_id})
+                    self.assertEqual(failure.exception.error.code, expected)
+            self.manager.reconcile(self.snapshot(), worker_alive=False)
+            record = next(row for row in self.manager.records() if row.operationId == operation_id)
+            self.assertEqual(record.status, "needs_recovery")
+            self.assertFalse(record.committed)
+            self.assertEqual(received, [b"{}"])
+            self.assertEqual(bound_project(self.app.state).run_ids(), (self.fixture.REFERENCE_RUN_ID,))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
     def test_same_operation_id_refuses_changed_payload_method_or_path(self):
         admission, body = self.admission("/api/proposals", {"stateDigest": self.state_digest})

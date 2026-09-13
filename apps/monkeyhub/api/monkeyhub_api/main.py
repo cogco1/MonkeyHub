@@ -364,7 +364,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         if path == "api/events" and request.method == "GET":
             # Preserve the existing Studio job stream for embedded clients.
             # The Hub's application stream above remains their runtime source.
-            from http.client import HTTPConnection
+            from http.client import HTTPConnection, HTTPException
             worker = runtimes.service(runtime)
             address = urlsplit(worker.url)
             connection = HTTPConnection(address.hostname, address.port, timeout=20)
@@ -389,7 +389,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                         if not line:
                             break
                         yield line
-                except OSError:
+                except (OSError, HTTPException):
                     # A dead/replaced worker ends this attachment. The browser
                     # reconnects; no operation is admitted by this read stream.
                     return
