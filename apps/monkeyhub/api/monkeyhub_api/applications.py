@@ -180,7 +180,8 @@ class Applications:
         environ = os.environ.copy()
         diagnostics = self.runtime_root / "diagnostics" / "monkeymonitor"
         if service == "monitor":
-            return args + ["serve", "--data-dir", str(diagnostics)], environ
+            return args + ["serve", "--data-dir", str(diagnostics), "--codex-bindings-url",
+                           f"http://127.0.0.1:{self.hub_port}/api/chat/usage-sources"], environ
         if settings.project_dir is None:
             raise HubFailure(409, "PROJECT_REQUIRED", "Choose a complete project folder before opening MonkeyArch or MonkeyDiagram.")
         project = Path(settings.project_dir)

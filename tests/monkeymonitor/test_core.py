@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -8,7 +9,7 @@ import unittest
 from monkeymonitor.algorithms import (
     Action, Budget, Decision, FirstAvailablePolicy, SelectionContext, choose_action,
 )
-from monkeymonitor.codex import iter_codex_events
+from monkeymonitor.codex import bound_codex_sources, iter_codex_events
 from monkeymonitor.pricing import RateCard, quote
 from monkeymonitor.usage import TokenUsage, UsageEvent
 
@@ -445,6 +446,106 @@ class CodexTests(unittest.TestCase):
         self.assertEqual([event.duration_ms for event in events], [1000, 3000])
         self.assertEqual(len({event.event_id for event in events}), 2)
         self.assertTrue(all(event.turn_id is None for event in events))
+
+
+class BoundCodexSourceTests(unittest.TestCase):
+    def setUp(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name)
+        self.database = sqlite3.connect(self.home / "state_5.sqlite")
+        self.addCleanup(self.database.close)
+        self.database.execute("CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)")
+        self.database.commit()
+
+    def source(self, session, *, metadata=None, name="selected.jsonl"):
+        path = self.home / name
+        rows = session_rows(session if metadata is None else metadata) + [token_row(counts(10, 2), counts(10, 2))]
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        self.database.execute("INSERT INTO threads VALUES (?, ?)", (session, str(path)))
+        self.database.commit()
+        return path
+
+    def test_exact_opaque_ids_resolve_without_scanning_other_logs_or_writing(self):
+        session = "fixture/session:not-a-uuid"
+        path = self.source(session)
+        (self.home / "unselected.jsonl").write_text("private unselected body is not JSON", encoding="utf-8")
+        before = {item.name: item.read_bytes() for item in self.home.iterdir()}
+        warnings = []
+        paths, projects = bound_codex_sources([{"projectId": "project-a", "sessionId": session}] * 2, self.home, warnings)
+        self.assertEqual(paths, {path: session})
+        self.assertEqual(projects, {session: "project-a"})
+        events = list(iter_codex_events(paths, expected_sessions=paths, warnings=warnings))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].session_id, session)
+        self.assertIsNone(events[0].duration_ms)
+        self.assertFalse(warnings)
+        self.assertEqual(before, {item.name: item.read_bytes() for item in self.home.iterdir()})
+
+    def test_conflicting_projects_missing_ids_and_paths_never_guess(self):
+        self.source("conflict")
+        self.database.execute("INSERT INTO threads VALUES ('outside', ?)", (str(self.home.parent / "outside.jsonl"),))
+        self.database.commit()
+        warnings = []
+        paths, projects = bound_codex_sources([
+            {"projectId": "a", "sessionId": "conflict"}, {"projectId": "b", "sessionId": "conflict"},
+            {"projectId": "a", "sessionId": "not-indexed"}, {"projectId": "a", "sessionId": "outside"},
+        ], self.home, warnings)
+        self.assertEqual((paths, projects), ({}, {}))
+        self.assertEqual(len(warnings), 3)
+        self.assertNotIn(str(self.home), "".join(warnings))
+
+    def test_native_metadata_mismatch_or_absence_discards_the_whole_bound_source(self):
+        path = self.source("expected", metadata="other")
+        expected = {path: "expected"}
+        for rows in (
+            session_rows("other") + [token_row(counts(10, 2), counts(10, 2))],
+            [token_row(counts(10, 2), counts(10, 2))],
+            session_rows("expected") + [token_row(counts(10, 2), counts(10, 2))] + session_rows("other"),
+        ):
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+            warnings = []
+            self.assertEqual(list(iter_codex_events([path], expected_sessions=expected, warnings=warnings)), [])
+            self.assertEqual(len(warnings), 1)
+            self.assertIn("身份不符", warnings[0])
+
+    def test_missing_database_is_not_created_and_a_new_index_can_be_read_later(self):
+        root = self.home / "not-created"
+        bindings = [{"projectId": "a", "sessionId": "new"}]
+        warnings = []
+        self.assertEqual(bound_codex_sources(bindings, root, warnings), ({}, {}))
+        self.assertFalse(root.exists())
+        self.assertEqual(len(warnings), 1)
+        path = self.source("new")
+        self.assertEqual(bound_codex_sources(bindings, self.home, []), ({path: "new"}, {"new": "a"}))
+
+    def test_read_only_lookup_sees_the_running_codex_wal_and_updated_archive_path(self):
+        self.database.execute("PRAGMA journal_mode=WAL")
+        path = self.source("live")
+        bindings = [{"projectId": "a", "sessionId": "live"}]
+        self.assertTrue((self.home / "state_5.sqlite-wal").exists())
+        self.assertEqual(bound_codex_sources(bindings, self.home, [])[0], {path: "live"})
+        archive = self.home / "archived_sessions"
+        archive.mkdir()
+        moved = archive / path.name
+        path.rename(moved)
+        self.database.execute("UPDATE threads SET rollout_path = ? WHERE id = 'live'", (str(moved),))
+        self.database.commit()
+        self.assertEqual(bound_codex_sources(bindings, self.home, [])[0], {moved: "live"})
+
+    def test_shared_rollout_path_and_invalid_binding_payloads_are_rejected(self):
+        path = self.source("first")
+        self.database.execute("INSERT INTO threads VALUES ('second', ?)", (str(path),))
+        self.database.commit()
+        warnings = []
+        self.assertEqual(bound_codex_sources([
+            {"projectId": "a", "sessionId": session} for session in ("first", "second")
+        ], self.home, warnings), ({}, {}))
+        self.assertEqual(len(warnings), 1)
+        for body in ({}, [None], [{"projectId": "a", "sessionId": ""}],
+                     [{"projectId": "a", "sessionId": "first", "messages": ["private"]}]):
+            with self.assertRaises(ValueError):
+                bound_codex_sources(body, self.home, [])
 
 
 if __name__ == "__main__":

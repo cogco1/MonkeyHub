@@ -22,6 +22,7 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
 from fastapi.testclient import TestClient
 
 from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import AppStatus, ChatCreateRequest, ChatPostRequest, HubFailure
@@ -323,6 +324,45 @@ class ChatTests(unittest.TestCase):
         # Its own built-in tools, so it can edit and run what it is working on.
         self.assertEqual(args[args.index("--tools") + 1], "default")
         self.assertIn("--strict-mcp-config", args)
+
+    def test_usage_sources_keep_project_and_archive_binding_without_transcripts(self):
+        native = self.create()
+        acp = self.create(self.other)
+        self.create()  # A conversation without a native connection has no usage source yet.
+        claude = self.create(provider="claude")
+        for session, changes in (
+            (native, {"transport": "cli", "nativeSessionId": str(uuid4())}),
+            (acp, {"transport": "acp", "acpSessionId": "fixture/session:not-a-uuid",
+                   "nativeSessionId": "obsolete-cli-identity"}),
+            (claude, {"nativeSessionId": str(uuid4())}),
+        ):
+            row = self.store._sessions[session.id]
+            for key, value in changes.items():
+                setattr(row, key, value)
+            row.messages.append(chat.ChatMessage(id=str(uuid4()), role="user",
+                content="private conversation must not reach Monitor", createdAt=row.createdAt))
+            self.store._save(row)
+        expected = [
+            {"projectId": native.projectId, "sessionId": self.store._sessions[native.id].nativeSessionId},
+            {"projectId": acp.projectId, "sessionId": "fixture/session:not-a-uuid"},
+        ]
+        self.store.set_archived(native.id, True)
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        saved = {path: path.read_bytes() for path in (self.runtime / "chats").glob("*.json")}
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            response = client.get("/api/chat/usage-sources")
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertCountEqual(response.json(), expected)
+            self.assertNotIn("private conversation", response.text)
+            command, _ = app.state.applications._command("monitor", ApplicationSettingsDto())
+            self.assertEqual(command[command.index("--codex-bindings-url") + 1],
+                             "http://127.0.0.1:8790/api/chat/usage-sources")
+        self.assertEqual({path: path.read_bytes() for path in saved}, saved)
+        self.assertFalse(self.log.exists(), "Reading usage sources never calls the CLI")
 
     def test_archive_keeps_transcript_and_native_session_after_restart(self):
         session = self.create()

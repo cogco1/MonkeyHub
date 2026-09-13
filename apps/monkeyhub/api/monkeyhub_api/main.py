@@ -44,7 +44,7 @@ from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
-    ChatModelRequest, ChatPostRequest, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
+    ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -274,6 +274,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.get("/api/chat/sessions", response_model=list[ChatSummary])
     def chat_sessions(projectId: str | None = None, archived: bool = False):
         return chats.list(projectId, archived=archived)
+
+    @app.get("/api/chat/usage-sources", response_model=list[ChatUsageSource])
+    def chat_usage_sources():
+        return chats.usage_sources()
 
     @app.post("/api/chat/sessions", response_model=ChatDetail, status_code=201)
     def create_chat(body: ChatCreateRequest):
