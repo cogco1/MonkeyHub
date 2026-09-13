@@ -1,279 +1,450 @@
 # ArchFlow / Monkey Team Meeting Agenda
 
-> Meeting purpose: align the team on what the project is, separate research goals from product delivery, establish the GitHub collaboration rules, and assign the next implementation lanes without overlapping work.
+> Meeting purpose: briefly align everyone on the current system, then divide the next two weeks into **four active tracks only: Paper / Blender / Interaction / Backend**. Everything else is a later development plan, not tomorrow's assignment list.
 
-## 0. One-sentence project framing
+## 0. One-sentence framing
 
 **Generation is replaceable; design state is not.**
 
-ArchFlow is the shared design-state / dependency / runtime layer. MonkeyArch, MonkeyBoard, MonkeyDiagram, MonkeyFab and MonkeyMonitor are product surfaces over that state and runtime. Humans, agents and different CAD backends may all generate or edit; the system must keep identity, dependencies, provenance, revisions and recovery coherent.
+ArchFlow is the shared design-state / dependency / runtime layer. MonkeyArch, MonkeyBoard, MonkeyDiagram, MonkeyFab and MonkeyMonitor are product surfaces over that state and runtime. Humans, general-purpose agents and different CAD backends may all generate or edit; the system keeps identity, dependencies, provenance, revisions and recovery coherent.
 
 ---
 
-## 1. Meeting flow — 25 to 30 minutes
+# 1. Meeting flow — 25 to 30 minutes
 
-### 0–4 min — Introductions
+## 0–4 min — Introductions
 
 Each person says only:
 
 - name;
-- current technical/design focus;
-- which part of the project they are most interested in touching.
+- background / current focus;
+- which of the four tracks they are interested in.
 
-Goal: everyone knows who to ask, not a long personal introduction.
+No long personal introductions.
 
-### 4–8 min — Two tracks: paper vs product
+## 4–8 min — Where the project is now
 
-**Research / paper track** asks:
+Very short update only:
 
-- what is the new mechanism;
-- why it matters;
-- how it differs from terminal generation / one-shot CAD agents;
-- how it is evaluated and benchmarked.
+- MonkeyHub already connects the main product surfaces;
+- manual modeling is now largely local/immediate rather than one candidate per gesture;
+- Board can carry visual review + selected text back into design feedback;
+- OCCT / Rhino / Blender already sit behind a common CAD backend contract;
+- Hub has the first project-runtime/recovery slice;
+- MonkeyMonitor already records usage/timing sources, but its observability UX still needs redesign;
+- a Windows desktop host exists in draft PR #33.
 
-Current research mechanism family:
+The meeting is not a Git-history presentation. The important point is that the project has moved from **"can we build the pieces?"** to **"how do we turn them into a coherent system and research result?"**
 
-- canonical design state;
-- dependency-aware editing;
-- compiled context;
-- declarative design transactions;
-- human / agent / backend convergence at a typed action boundary;
-- explicit revision, provenance and recovery.
-
-**Product track** asks:
-
-- is it understandable;
-- is it fast;
-- is it stable;
-- can several people work on it safely;
-- can the user finish a real design workflow without knowing the internals.
-
-These tracks share code, but not every product feature must become a paper novelty and not every research idea must immediately become a UI button.
-
-### 8–12 min — System map
-
-Use this simple model:
+## 8–11 min — Shared architecture
 
 ```text
-Human / Agent / Generator
-        ↓
-     Intent / Action
-        ↓
-     ArchFlow State
+Human / General Agent / Generator
+            ↓
+      Intent / Typed Action
+            ↓
+          ArchFlow
  identity / dependencies / provenance / revisions
-        ↓
-     Runtime / App Server
+            ↓
+        Runtime Layer
  operations / workers / recovery / projections
-        ↓
+            ↓
  OCCT / Rhino / Blender / Diagram / Fab / Viewer
 ```
 
-MonkeyArch is the main architectural-design workspace. MonkeyBoard is review / feedback. MonkeyDiagram is representation. MonkeyFab is fabrication. MonkeyMonitor is observability: what ran, how long it took, what consumed tokens/cost, and where the system wasted work.
+Product rule:
 
-### 12–18 min — What is already working
+> Tools may change; project state should not reset every time the tool changes.
 
-Do not retell the full Git history. Use the delivered milestones only:
+Research rule:
 
-- stable CAD backend contract for OCCT / Rhino / Blender;
-- multi-contributor lane / worktree tooling;
-- Hub project runtime and explicit recovery first slice;
-- low-latency local modeling preview, hover/preselection, local push-pull and manual Sync;
-- Board UX simplification, selected text → design feedback, contextual source replacement;
-- Monitor automatic Hub/Codex usage binding;
-- current desktop Windows host implementation is in PR #33.
+> The general-purpose agent should make the design judgment once; deterministic software should execute the rest whenever possible.
 
-### 18–24 min — GitHub collaboration rules
+## 11–24 min — Four active tracks
+
+Spend roughly three minutes on each track. For each one agree on:
+
+- owner;
+- first PR / first artifact;
+- exact boundary with the other tracks;
+- what counts as a useful result in two weeks.
+
+## 24–30 min — GitHub workflow + assignment confirmation
 
 Memorize this sentence:
 
 > **先看谁在改什么，再开自己的 lane；共享接口先合，业务实现后分；main 是共同事实。**
 
-Rules:
-
-1. One task = one Issue / lane / branch / worktree / PR.
-2. Before coding, run `python tools/devctl.py work` and inspect the target module/contract.
-3. Never share one dirty worktree or absorb another person's unmerged WIP.
-4. If two lanes need the same public interface, stop and make the interface change a small upstream PR first.
-5. Dependent work updates from landed `main`; do not maintain private copies of shared contracts.
-6. Keep PRs narrow and independently reviewable.
-7. Codex / Claude Code / other coding agents follow the same lane rules as human developers.
-8. `main` is integration truth. Local memory, chat history and one person's machine are not project management systems.
-
-### 24–30 min — Assign lanes and define first deliverables
-
-Assign the lanes below. Each owner states the first PR they expect to open, the files/contracts they expect to touch, and any dependency before leaving the meeting.
+Then each owner states their first concrete deliverable before the meeting ends.
 
 ---
 
-## 2. Current open work snapshot
+# 2. Track A — Paper / Research
 
-### PR to review first
+## Goal
 
-| Item | Status | What it means tomorrow |
-| --- | --- | --- |
-| **PR #33 — Windows desktop host** | Open, draft, mergeable | Review exact-head Windows checks. If clean, merge Phase A first. Do not start another desktop implementation in parallel. |
+Turn the existing prototype into a **clear research claim + benchmark**, rather than writing a product feature list as a paper.
 
-### Open Issues
+The central question for the next paper iteration is:
 
-| Issue | Current state | Remaining work / decision | Priority |
-| --- | --- | --- | --- |
-| **#32 Agent latency + MonkeyMonitor** | Major work not implemented yet | First slice = `TurnTrace@1` + automatic timing/token/price context + live visual waterfall/activity tree + deterministic “Why slow?” diagnostics. Then ContextPack and DesignTransaction. | **P0 / primary** |
-| **#14 Interaction Engine** | Large part delivered by PRs #19/#20/#22/#28 | Continue pointer-first M/Q/S/Copy, snap/inference hysteresis, large-scene snap indexing only where measured. Also decide whether unsynced local-draft reload recovery belongs here or a separate issue. | **P0 / primary** |
-| **#21 Desktop EXE** | Phase A implemented in PR #33 | After #33, Phase B = App Server lifecycle/reconnect/recovery; Phase C = clean-machine standalone packaging. | **P1** |
-| **#12 App Server/runtime** | First major slice delivered by PR #16 | Expand ownership/recovery only where #21/#32 reveal real gaps: provider/CAD worker coverage, cold-start reconstruction limits, unified operation visibility. Avoid another parallel server. | **P1, paired with #21** |
-| **#13 CAD backend + multi-contributor** | Core contract, lane tooling and Blender backend already delivered by PRs #15/#17/#18 | Remaining acceptance: new teammate independent replay/handoff, real Rhino-host acceptance, verify the team can extend the backend without touching runner dispatch. Close when this rehearsal passes. | **P1 / good onboarding task** |
-| **#23 MonkeyBoard zero-training UX** | Most core UX slices delivered by PRs #26/#27/#30 | Run a real no-explanation new-user test; decide whether sticky preset / non-file HTML-remote paste are required before closing the basic UX issue. | **P2** |
-| **#24 Project Rooms / Board collaboration** | Architecture defined, implementation not started | Start only after Board basics and runtime boundary are stable. First implementation should be narrow room/share gateway + realtime Board path, not exposing MonkeyHub. | **P3 / later** |
-| **#8 Warm runtime latency** | Older latency issue; partially overlaps #32 | Do not assign as an independent lane tomorrow. Use #32 trace first; then fold measured warm-provider/state/geometry work into the owner that actually shows up on the critical path. Consider closing/superseding #8 after that decision. | **HOLD** |
+> **Can a general-purpose agent stop acting as a CAD operator / workflow engine and instead compile design intent into a typed transaction executed by a dependency-aware design runtime?**
 
----
-
-## 3. Recommended team allocation
-
-### Lane A — Agent / Monitor owner
-
-**Issue #32**
-
-First PR only:
-
-- inventory existing Hub / Studio / provider / Monitor events;
-- define `TurnTrace@1` normalization and stable correlation;
-- automatically collect time and actual usage;
-- make MonkeyMonitor show one live semantic waterfall + activity tree;
-- leave raw Studio rows under advanced details;
-- no ContextPack / DesignTransaction semantics in the same first PR.
-
-Success criterion: after one real turn, a person can answer **what was happening, what blocked, and what consumed tokens/cost** without reading transport logs.
-
-### Lane B — Interaction owner
-
-**Issue #14**
-
-Next PR:
-
-- pick one direct-manipulation family, preferably Move + Copy first;
-- pointer is primary, numeric entry is exact override;
-- zero provider/API writes while pointer is moving;
-- reuse current InteractionSession / local draft / typed-action boundary;
-- add snap hysteresis only where the chosen tool needs it.
-
-Do not add a large batch of unrelated modeling commands.
-
-### Lane C — Desktop / Runtime owner
-
-**PR #33 → Issues #21 + #12**
-
-Order matters:
-
-1. review/finish PR #33;
-2. merge desktop Phase A if exact-head checks are clean;
-3. only then open the next Phase B PR around App Server restart/reconnect and clean lifecycle;
-4. do not create a shell-owned duplicate runtime.
-
-#21 and #12 should normally be one sequential ownership lane because they overlap in Hub/runtime lifecycle. Do not give them to two people to edit the same core files simultaneously.
-
-### Lane D — CAD backend / new teammate onboarding
-
-**Issue #13 acceptance**
-
-Use this as the first real teammate rehearsal:
-
-- clone from current `main` independently;
-- run `devctl work` / module lookup;
-- execute the existing Blender backend contract tests on the teammate machine;
-- independently trace the one request → backend → artifact → readback path;
-- run real Rhino-host acceptance if the machine has Rhino;
-- document any missing contract instead of bypassing the registry/factory.
-
-If this works without asking “which private branch/file do I need?”, #13 has achieved its collaboration goal and can be closed.
-
-### Optional Lane E — Board owner
-
-Only if a fifth person is available.
-
-**Issue #23** first, not #24.
-
-Run a real new-user test and fix only observed usability failures. Once #23 is acceptably closed, prepare the smallest Phase 0 slice of #24.
-
----
-
-## 4. If fewer people are available
-
-### 4 people
-
-Use A / B / C / D above. Leave #23/#24 for later.
-
-### 3 people
-
-1. #32 Monitor / agent trace;
-2. #14 Interaction;
-3. PR #33 → #21/#12 runtime/desktop.
-
-Keep #13 as an onboarding/verification task rather than a large feature lane.
-
-### 5+ people
-
-Add #23 UX validation as the fifth lane. Do **not** start #24 merely to keep someone busy; collaboration work has a large cross-cutting surface and should start from a stable Board/runtime baseline.
-
----
-
-## 5. What should *not* happen tomorrow
-
-- Do not start another Blender architecture; Blender is already behind the common backend contract.
-- Do not create another App Server beside MonkeyHub.
-- Do not route manual pointer interactions through an LLM.
-- Do not make MonkeyMonitor a second canonical project store.
-- Do not let every person modify `App.tsx`, Hub runtime and shared registries at once.
-- Do not try to finish all of #32 in one PR.
-- Do not treat Issue count as workload count: several open Issues are mostly acceptance/remaining phases rather than greenfield implementation.
-
----
-
-## 6. End-of-day deliverable for each lane
-
-Every lane should be able to report:
+The research mechanism should connect the existing ideas:
 
 ```text
-Issue / lane:
-Owner:
-Base main SHA:
-Target contract/module:
-Files expected to change:
-First PR goal:
-Tests / benchmark:
-Blocked by:
-Handoff needed from:
+Canonical State
+      +
+Dependency / provenance structure
+      ↓
+Compiled Context
+      ↓
+General-purpose Agent
+      ↓
+Declarative Design Transaction
+      ↓
+Deterministic Runtime
+      ↓
+Verified Candidate State
 ```
 
-A good first day is not “everyone wrote lots of code.” It is:
+## Two-week work
 
-> everyone can work independently, shared interfaces remain stable, and every PR has a clear reason to exist.
+1. Freeze the core terminology and formal diagram.
+2. Define a narrow `ContextPack` / `DesignTransaction` research abstraction without trying to model every possible design action.
+3. Build a fixed benchmark set from real tasks.
+4. Compare three conditions:
+
+```text
+A. direct/raw CAD agent
+B. current ArchFlow multi-round agent loop
+C. compiled-context + transaction-runtime path
+```
+
+5. Measure at least:
+
+- model rounds;
+- schema/state/context reads;
+- tool calls;
+- input/output/cached tokens when available;
+- time to first visible result;
+- time to verified candidate;
+- semantic failure / ambiguity rate;
+- drift across repeated edits.
+
+## Useful deliverable in two weeks
+
+- one paper-ready architecture figure;
+- one benchmark protocol;
+- one first results table;
+- one written claim that can be falsified by the experiment.
+
+The paper track may use #32 instrumentation/Monitor results as evidence, but it should not own every product implementation detail.
 
 ---
 
-## 7. PPT generation guidance
+# 3. Track B — Blender Projection (Panny)
 
-Codex may turn this document into the meeting deck. Prefer **8 concise slides**, diagram-heavy and not text-heavy:
+## Goal
 
-1. **What are ArchFlow + Monkey?** — one sentence + “Generation is replaceable; design state is not.”
-2. **Two tracks** — Research vs Product, shared code but different success criteria.
-3. **System architecture** — Human/Agent → ArchFlow State → Runtime → CAD/Diagram/Fab.
-4. **What already works** — backend contract, Hub runtime, interaction, Board, Monitor, desktop PR.
-5. **What remains** — open-issue matrix grouped into P0/P1/P2/Hold.
-6. **How we work in GitHub** — one task/one lane/one worktree/one PR; main is truth; interface-first.
-7. **Tomorrow's lanes** — A Monitor/#32, B Interaction/#14, C Desktop/#21+#12, D Backend acceptance/#13, optional E Board/#23.
-8. **End state / next sync** — what each lane should bring back and the common product direction.
+Do **not** make Blender another MonkeyArch or another source of project truth.
 
-Visual preferences:
+Make Blender a **rich scene projection / execution target** of the same ArchFlow state.
 
-- use architecture diagrams, swim lanes and issue-number tags;
-- use color by workstream, not decorative gradients;
-- no screenshots of long Issue bodies;
-- keep details in speaker notes / this document;
-- make the assignment slide readable in under 30 seconds.
+Current backend work already proves that Blender can receive supported compiled geometry, save native `.blend`, cold-read it again and verify ArchFlow identities / units / materials / exact binding. The next question is: **what is Blender for in the product?**
+
+Answer:
+
+```text
+Canonical ArchFlow State
+          ↓
+     Blender Projection
+          ↓
+ geometry + materials + assets
+ camera + lighting + environment
+ procedural scene work
+ render / animation / presentation
+```
+
+## Two-week work
+
+Panny's target should be a vertical slice, not generic "continue adapting Blender".
+
+### Required demo
+
+```text
+ArchFlow project
+    ↓ one command / one explicit projection action
+native .blend
+    ↓
+materials / semantic collections preserved
+camera + basic lighting created
+    ↓
+render one PNG
+    ↓
+change Canonical State
+    ↓
+rebuild / update Blender projection
+    ↓
+render the changed result
+```
+
+### Priorities
+
+1. preserve semantic/object identity from ArchFlow;
+2. map ArchFlow materials into usable Blender materials;
+3. establish collection / scene organization that follows semantic roles, not arbitrary object names;
+4. camera + basic lighting defaults;
+5. one reliable render path (Eevee or Cycles — choose one first);
+6. document which geometry remains unsupported instead of silently approximating it.
+
+### Later uses enabled by this boundary
+
+- architectural rendering;
+- furniture / vegetation / entourage assets;
+- Geometry Nodes as a specialized execution backend;
+- animation / phasing / exploded views;
+- presentation output.
+
+## Hard boundary
+
+Blender object IDs / names are projection identity only.
+
+> **Blender may be a powerful executor, but it is not Canonical State.**
+
+Use #13's existing backend contract rather than inventing a Blender-specific parallel architecture.
 
 ---
 
-## 8. Closing line for the meeting
+# 4. Track C — Interaction
 
-**把麻烦事交给 repo 管，把脑子留给真正的设计、系统和研究问题。**
+## Goal
+
+Make MonkeyArch feel like a **real direct modeling environment**, not a collection of correct commands hidden behind panels.
+
+Core rule from #14:
+
+> **While the hand is moving, state is transient interaction state. When the gesture settles, it becomes one typed design action.**
+
+A lot is already delivered:
+
+- local preview reuse + RAF;
+- local hover / preselection;
+- immediate click feedback;
+- pointer-first Push/Pull;
+- local draft + manual Sync;
+- basic line / curve / arc drawing;
+- delete / undo / redo without per-gesture candidate generation.
+
+## Two-week work
+
+Do not add twenty new commands. Finish the hand-feel of the commands that already exist.
+
+Recommended order:
+
+1. **Move + Copy** pointer-first;
+2. Rotate;
+3. Scale / mirror;
+4. snap hysteresis and only the inference modes the current tool actually needs;
+5. large-scene snap indexing only where measurements show it is necessary.
+
+Desired interaction pattern:
+
+```text
+select / hover
+    ↓
+activate tool
+    ↓
+pointer manipulation + local preview
+    ↓
+typed number optionally overrides pointer
+    ↓
+click / Enter
+    ↓
+one typed action / one settled local draft operation
+```
+
+No model/provider call while the pointer moves.
+
+## Useful deliverable in two weeks
+
+A user should be able to create and reshape a simple housing / massing model for several minutes without feeling that each action is waiting for ArchFlow.
+
+Measure separately:
+
+- pointer → preview;
+- gesture settle → local acknowledgement;
+- Sync → verified candidate.
+
+Do not mix these into one latency number.
+
+---
+
+# 5. Track D — Backend / Runtime
+
+## Goal
+
+Make the existing product **faster, observable, recoverable and simple for a general-purpose agent to operate**.
+
+This track owns the infrastructure underneath the other three tracks, but should still work in small slices.
+
+The most important current problem is the remaining 30–150 second agent path. CAD execution is often not the dominant cost; repeated agent wake-ups, broad context exploration and serial tool orchestration are.
+
+## First priority — #32 trace + MonkeyMonitor
+
+Before further optimization, make one design turn observable end-to-end.
+
+First backend PR should deliver:
+
+```text
+TurnTrace@1
+Hub → provider/agent → Studio → candidate → CAD → verify → preview
+```
+
+MonkeyMonitor should then show:
+
+- total elapsed;
+- first visible result;
+- verified candidate time;
+- model rounds;
+- token usage;
+- qualified cost / API-equivalent estimate when appropriate;
+- a horizontal waterfall / Gantt timeline;
+- semantic activity tree;
+- critical path;
+- repeated state/schema reads, retries and avoidable model wake-ups.
+
+Actual time/token/rate facts should come from task configuration and execution records. Users should not manually type the measurement for a run.
+
+## Second priority — collapse the agent loop
+
+Once the trace proves where time goes:
+
+```text
+compiled ContextPack
+        ↓
+one general-agent decision
+        ↓
+DesignTransaction
+        ↓
+deterministic execution DAG
+        ↓
+candidate
+```
+
+The agent wakes again only for genuine ambiguity / design judgment.
+
+Do not train a special architecture model; the default agent remains replaceable.
+
+## Runtime / desktop work
+
+PR #33 is the current open desktop Phase A implementation. Review/merge it separately; do not turn the backend lane into a simultaneous rewrite of desktop, App Server and Agent runtime.
+
+After that, #12 / #21 work should proceed only when required by measured runtime/recovery gaps:
+
+- restart/reconnect without replay;
+- explicit operation status;
+- provider/CAD worker supervision where needed;
+- clean desktop lifecycle / standalone packaging.
+
+## Useful deliverable in two weeks
+
+A single design task should produce a trace that clearly explains where every major second went, and one simple benchmark should demonstrate fewer agent rounds / less context exploration than the current path.
+
+---
+
+# 6. Four-track boundary
+
+The four tracks should meet at stable contracts rather than edit each other's internals.
+
+```text
+Paper
+  observes / formalizes / benchmarks
+             │
+             ▼
+Backend ── Context / Transaction / Runtime ──► Blender
+   │                                         projection
+   ▼
+Interaction
+ typed actions / local draft
+```
+
+### Paper does not
+
+- own product UI implementation;
+- change benchmark rules after seeing results.
+
+### Blender does not
+
+- create another Canonical State;
+- own MonkeyArch interaction.
+
+### Interaction does not
+
+- route pointer motion through Agent/Backend round trips;
+- implement runtime orchestration.
+
+### Backend does not
+
+- redesign the architecture UI while fixing latency;
+- turn Monitor telemetry into design state.
+
+---
+
+# 7. GitHub collaboration rules
+
+1. **One task = one lane / branch / worktree / PR.**
+2. Run `python tools/devctl.py work` before starting and inspect the target module / contract.
+3. `main` is the integration truth.
+4. If two tracks need the same public contract, make a small upstream contract PR first.
+5. Do not absorb another person's unmerged WIP.
+6. Keep PRs small enough for another person to review independently.
+7. Codex / Claude Code / other agents follow the same lane rules as humans.
+8. Shared registries / generated files are coordination surfaces, not invitations for several lanes to edit the same production files casually.
+
+Before leaving the meeting, every active track should state:
+
+```text
+Track:
+Owner:
+Base main SHA:
+Issue / lane:
+First deliverable:
+Expected files / modules:
+Tests / benchmark:
+Blocked by:
+```
+
+---
+
+# 8. Later development plan — mention only, do not assign tomorrow
+
+These remain valid, but are **not part of the four active tracks for tomorrow's division of work**:
+
+- #23 remaining MonkeyBoard new-user UX validation;
+- #24 Project Rooms / realtime Board collaboration;
+- fuller desktop packaging / clean-machine distribution after PR #33;
+- additional App Server recovery coverage beyond measured needs;
+- warm provider/state/geometry optimizations from #8 after #32 identifies the actual critical path;
+- broader MonkeyDiagram improvements;
+- MonkeyFab printer / CNC / laser workflows;
+- richer imported-geometry ingestion / staged semantic decomposition;
+- broader analysis integrations such as structural / environmental tools.
+
+These can be developed gradually after the four current lines establish a stronger research and product core.
+
+---
+
+# 9. PPT generation guidance
+
+Codex should make the meeting deck from this document. Prefer **8 concise slides**, diagram-heavy and not text-heavy:
+
+1. **Where we are now** — product prototype exists; question is how to make it coherent and provable.
+2. **Core architecture** — Human/Agent → ArchFlow State → Runtime → downstream tools.
+3. **The four active tracks** — Paper / Blender / Interaction / Backend.
+4. **Paper** — research question, mechanism, three-way benchmark.
+5. **Blender** — rich scene projection; render-ready vertical slice.
+6. **Interaction** — hand-fast, pointer-first direct modeling.
+7. **Backend** — TurnTrace/Monitor → ContextPack/DesignTransaction → fewer agent rounds.
+8. **How we work** — GitHub lane rules + later-development roadmap in one small footer/side panel.
+
+Do not turn the deck into a list of all open Issues. The four tracks are the meeting structure; the rest are only a future-roadmap note.
