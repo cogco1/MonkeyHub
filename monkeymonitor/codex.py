@@ -9,13 +9,71 @@ call, if available, and marks its status: it does not invent an interval total.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from contextlib import closing
 from datetime import datetime, timezone
 import heapq
 import json
 from pathlib import Path
+import sqlite3
 from typing import Iterable, Iterator, Mapping
 
 from .usage import TokenUsage, UsageEvent
+
+
+def bound_codex_sources(bindings: object, home: Path, warnings: list[str]) -> tuple[dict[Path, str], dict[str, str]]:
+    """Resolve only Hub-named sessions through Codex's read-only native index."""
+    if not isinstance(bindings, list) or any(
+        not isinstance(row, dict) or set(row) != {"projectId", "sessionId"}
+        or any(not isinstance(row[key], str) or not row[key].strip() for key in ("projectId", "sessionId"))
+        for row in bindings
+    ):
+        raise ValueError("Hub usage bindings must contain projectId and sessionId")
+    projects: dict[str, str] = {}
+    conflicts = set()
+    for row in bindings:
+        session, project = row["sessionId"], row["projectId"]
+        if session in projects and projects[session] != project:
+            conflicts.add(session)
+        projects[session] = project
+    for session in conflicts:
+        projects.pop(session)
+    if conflicts:
+        warnings.append("Hub 的同一 Codex 会话绑定了多个项目；已跳过冲突来源。")
+    if not projects:
+        return {}, {}
+    home = home.resolve()
+    paths: dict[Path, str] = {}
+    missing = invalid = False
+    try:
+        with closing(sqlite3.connect((home / "state_5.sqlite").as_uri() + "?mode=ro", uri=True, timeout=1)) as database:
+            for session in projects:
+                row = database.execute("SELECT rollout_path FROM threads WHERE id = ?", (session,)).fetchone()
+                if row is None:
+                    missing = True
+                    continue
+                value = row[0]
+                path = Path(value) if isinstance(value, str) and value else None
+                if path is None or not path.is_absolute() or path.suffix != ".jsonl":
+                    invalid = True
+                    continue
+                path = path.resolve()
+                if not path.is_relative_to(home) or not path.is_file():
+                    invalid = True
+                    continue
+                if path in paths and paths[path] != session:
+                    invalid = True
+                    paths[path] = ""  # Neither binding owns this conflicting path.
+                else:
+                    paths[path] = session
+    except (sqlite3.Error, OSError, ValueError):
+        warnings.append("Codex 原生会话索引暂不可读；已有诊断和手选来源仍保留。")
+        return {}, {}
+    if missing:
+        warnings.append("部分 Hub 会话尚未在 Codex 原生索引中找到；未猜测日志来源。")
+    if invalid:
+        warnings.append("部分 Hub 会话的 Codex 日志路径不可用或冲突；已跳过。")
+    paths = {path: session for path, session in paths.items() if session}
+    return paths, {session: projects[session] for session in paths.values()}
 
 
 def _tokens(value: object) -> TokenUsage | None:
@@ -110,7 +168,7 @@ class _Row:
         return self.session_key, self.kind, self.turn_id, self.started_at, self.ended_at, self.timestamp
 
 
-def _read_rows(path: Path, file_index: int, warnings: list[str]) -> Iterator[_Row]:
+def _read_rows(path: Path, file_index: int, warnings: list[str], expected_session: str | None = None) -> Iterator[_Row]:
     session_id = parent_id = turn_id = None
     session_key = f"file-{file_index}"
     provider = model = "unknown"
@@ -131,12 +189,16 @@ def _read_rows(path: Path, file_index: int, warnings: list[str]) -> Iterator[_Ro
             payload = row["payload"]
             if row.get("type") == "session_meta":
                 session_id = _text(payload.get("id"))
+                if expected_session is not None and session_id != expected_session:
+                    raise ValueError("Codex session identity differs from its Hub binding")
                 session_key = session_id or session_key
                 parent_id = _parent(payload)
                 provider = _text(payload.get("model_provider")) or provider
                 history_mode = payload.get("history_mode", "legacy")
                 value = payload.get("subagent_history_start_ordinal")
                 boundary = value if type(value) is int and value >= 0 else None
+                continue
+            if expected_session is not None and session_id is None:
                 continue
             ordinal = row.get("ordinal")
             ordinal = ordinal if type(ordinal) is int and ordinal >= 0 else None
@@ -177,6 +239,8 @@ def _read_rows(path: Path, file_index: int, warnings: list[str]) -> Iterator[_Ro
             )
             if kind in {"task_complete", "turn_aborted"}:
                 turn_id = None
+    if expected_session is not None and session_id != expected_session:
+        raise ValueError("Codex session identity is unavailable")
 
 
 def _merge_rows(chains: list[list[_Row]]) -> list[_Row]:
@@ -313,23 +377,48 @@ def _session_events(rows: list[_Row], inherited_turns: set[str]) -> Iterator[Usa
     yield from turns.values()
 
 
-def iter_codex_events(paths: Iterable[str | Path], *, warnings: list[str] | None = None) -> Iterator[UsageEvent]:
+def iter_codex_events(paths: Iterable[str | Path], *, warnings: list[str] | None = None,
+                      expected_sessions: Mapping[Path, str] | None = None,
+                      manual_sources: Iterable[str | Path] = (),
+                      project_ids: Mapping[str, str] | None = None) -> Iterator[UsageEvent]:
     """Read selected metadata only, merging copies by their real session identity.
 
     Token timestamps never measure model-call latency. Task boundaries produce
     separate rows with unknown tokens. Missing metadata never makes two distinct
     files one session. No source paths, prompt, response or tool bodies are exported.
+    Hub-resolved sources must match their expected native session metadata in
+    this same read; missing or conflicting identity rejects the whole source.
+    Explicit manual overlap keeps its original reader on automatic failure,
+    without granting the rejected binding's project attribution.
     """
     notices = warnings if warnings is not None else []
     groups: dict[str, list[list[_Row]]] = {}
+    manual = {Path(value).resolve() for value in manual_sources}
+    verified = set()
     for index, path in enumerate(dict.fromkeys(Path(value).resolve() for value in paths)):
         selected: list[_Row] = []
+        expected = (expected_sessions or {}).get(path)
         try:
-            selected.extend(_read_rows(path, index, notices))
+            selected.extend(_read_rows(path, index, notices, expected))
+            if expected is not None:
+                verified.add(expected)
         except (OSError, ValueError, UnicodeError):
             if warnings is None:
                 raise
-            notices.append("指定的 Codex 会话暂时不可读或包含无效计数。")
+            if expected is not None:
+                selected.clear()
+                notice = "Hub 绑定的 Codex 日志身份不符、暂不可读或计数无效；已跳过该来源。"
+            else:
+                notice = "指定的 Codex 会话暂时不可读或包含无效计数。"
+            if notice not in notices:
+                notices.append(notice)
+            if expected is not None and path in manual:
+                try:
+                    selected.extend(_read_rows(path, index, notices))
+                except (OSError, ValueError, UnicodeError):
+                    notice = "指定的 Codex 会话暂时不可读或包含无效计数。"
+                    if notice not in notices:
+                        notices.append(notice)
         by_session: dict[str, list[_Row]] = {}
         for row in selected:
             by_session.setdefault(row.session_key, []).append(row)
@@ -352,4 +441,6 @@ def iter_codex_events(paths: Iterable[str | Path], *, warnings: list[str] | None
             ancestors = merged[parent]
             inherited_turns.update(row.turn_id for row in ancestors if row.turn_id is not None)
             parent = next((row.parent_session_id for row in ancestors if row.parent_session_id), None)
-        yield from _session_events(rows, inherited_turns)
+        for event in _session_events(rows, inherited_turns):
+            project = (project_ids or {}).get(event.session_id) if event.session_id in verified else None
+            yield replace(event, project_id=project) if project is not None else event

@@ -11,7 +11,7 @@ import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
-import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import "./board.css";
 
 const copy = {
@@ -55,8 +55,9 @@ const replacementCopy = {
   "zh-CN": { action: "更新此页原图", file: "更新后的 PDF / 图片", page: "新文件中的页码", hint: "更新图墙中此页的所有副本，保留位置、缩放与批注。新页须保持相同宽高比；旧原图仍保存在项目资料中。", cancel: "取消", submit: "原位更新", sending: "正在更新…" },
 };
 
-function ReplacementDialog({ target, language, onCancel, onSubmit }: {
+function ReplacementDialog({ target, language, returnFocus, onCancel, onSubmit }: {
   target: { document: SourceDocumentDto; pageIndex: number }; language: "en" | "zh-CN";
+  returnFocus: HTMLElement | null;
   onCancel: () => void; onSubmit: (file: File, newPageIndex: number) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
@@ -66,7 +67,11 @@ function ReplacementDialog({ target, language, onCancel, onSubmit }: {
   const sendingRef = useRef(false);
   const [error, setError] = useState("");
   const text = replacementCopy[language];
-  useEffect(() => { const element = dialog.current; element?.showModal(); return () => element?.close(); }, []);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    return () => { element?.close(); if (returnFocus?.isConnected) returnFocus.focus(); };
+  }, []);
   const submit = async () => {
     if (!file || sendingRef.current) return;
     sendingRef.current = true; setSending(true); setError("");
@@ -251,6 +256,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const feedbackReturnFocus = useRef<HTMLElement | null>(null);
   const feedbackOpen = useRef(false);
   const [replacement, setReplacement] = useState<{ document: SourceDocumentDto; pageIndex: number } | null>(null);
+  const replacementReturnFocus = useRef<HTMLElement | null>(null);
   const replacementOpen = useRef(false);
   const feedbackQueued = useRef(false);
   const [feedbackWaiting, setFeedbackWaiting] = useState(false);
@@ -532,6 +538,17 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     finally { if (alive.current) setExporting(false); }
   };
   const source = selected && findSource(documents, selected);
+  const openReplacement = (document: SourceDocumentDto, pageIndex: number) => {
+    replacementReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
+    replacementOpen.current = true; setReplacement({ document, pageIndex });
+  };
+  const openSelectedReplacement = () => {
+    const api = canvas.current;
+    if (!api || !ready || busyRef.current || queue.getState().conflict) return;
+    const current = selectedPageSource(records(api.getSceneElements()), api.getAppState().selectedElementIds);
+    const document = current && findSource(documentsRef.current, current);
+    if (document && current) openReplacement(document, current.pageIndex);
+  };
   const closeActions = () => {
     const element = actions.current;
     if (!element?.open) return;
@@ -658,7 +675,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <p className="monkeyboard-received">{seen.current.has(key) ? text.received : text.pending}{document.generatedAt ? ` · ${new Date(document.generatedAt).toLocaleString(language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>
             <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
             <a className="monkeyboard-source-link" href={documentUrl(window.location.href, pageSource(document, page))} target="_blank" rel="noopener noreferrer">{text.open} ↗</a>
-            <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => { replacementOpen.current = true; setReplacement({ document, pageIndex: page }); }}>{replacementCopy[language].action}</button>
+            <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementCopy[language].action}</button>
           </article>;
         })}</div>
       </aside>
@@ -676,8 +693,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
               if (board.elements.some((element) => !element.isDeleted && !ids.has(String(element.id)))) return;
               initialized.current = true; setReady(true);
             }
-            const selection = elements.find((element) => !element.isDeleted && appState.selectedElementIds[element.id] && element.type === "image");
-            const selectedSource = selection ? imageSource(selection as unknown as Record<string, unknown>) : null;
+            const selectedSource = selectedPageSource(records(elements), appState.selectedElementIds);
             setSelected((previous) => JSON.stringify(previous) === JSON.stringify(selectedSource) ? previous : selectedSource);
             setHasAnnotations(elements.some(isAnnotation));
             updateContext(elements, appState);
@@ -688,11 +704,12 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         </Excalidraw>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
-        {!critMode && context && <div className="monkeyboard-context" role="group" aria-label={feedbackCopy[language].action}>
-          {context.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
-          {context.reason === "modelRequired" && context.source
+        {!critMode && (context || source) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
+          {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementCopy[language].action}</button>}
+          {context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
+          {context && (context.reason === "modelRequired" && context.source
             ? <a href={documentUrl(window.location.href, context.source)} target="_blank" rel="noopener noreferrer">{boardText.linkModel} ↗</a>
-            : <button className="monkeyboard-primary" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>}
+            : <button className="monkeyboard-primary" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
         </div>}
         {critMode && <div className="monkeyboard-crit-actions" role="group" aria-label={text.crit}>
           <button type="button" className="monkeyboard-primary" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>
@@ -703,6 +720,6 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     </div>
     <footer className="monkeyboard-footer"><span>{text.hint}</span>{source && selected ? <a href={documentUrl(window.location.href, selected)} target="_blank" rel="noopener noreferrer">{source.fileName} · {selected.pageIndex + 1}/{source.pageCount} · {text.open} ↗</a> : <span>{text.select}</span>}</footer>
     {feedback && <FeedbackDialog selection={feedback} language={language} returnFocus={feedbackReturnFocus.current} onCancel={() => { feedbackOpen.current = false; setFeedback(null); }} onSubmit={submitFeedback} />}
-    {replacement && <ReplacementDialog target={replacement} language={language} onCancel={() => { replacementOpen.current = false; setReplacement(null); }} onSubmit={replacePage} />}
+    {replacement && <ReplacementDialog target={replacement} language={language} returnFocus={replacementReturnFocus.current} onCancel={() => { replacementOpen.current = false; setReplacement(null); }} onSubmit={replacePage} />}
   </section>;
 }

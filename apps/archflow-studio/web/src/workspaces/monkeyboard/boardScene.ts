@@ -70,6 +70,29 @@ export function findSource(documents: readonly SourceDocumentDto[], source: Page
     && document.pages.some((page) => page.pageIndex === source.pageIndex));
 }
 
+/** Select one image explicitly or through its native frame; marks never choose a source. */
+export function selectedPageSource(
+  elements: readonly Record<string, unknown>[], selectedElementIds: Readonly<Record<string, boolean>>,
+): PageSource | null {
+  const visible = elements.filter((element) => !element.isDeleted);
+  const byId = new Map(visible.map((element) => [String(element.id), element]));
+  const selected = new Set<string>();
+  const include = (element: Record<string, unknown>) => {
+    const id = String(element.id);
+    if (selected.has(id)) return;
+    selected.add(id);
+    if (element.type === "frame") visible.filter((item) => item.frameId === id).forEach(include);
+  };
+  for (const [id, active] of Object.entries(selectedElementIds)) {
+    if (!active) continue;
+    const element = byId.get(id);
+    if (!element) return null;
+    include(element);
+  }
+  const images = visible.filter((element) => element.type === "image" && selected.has(String(element.id)));
+  return images.length === 1 ? imageSource(images[0]) : null;
+}
+
 /** New deliveries occupy fresh space; existing elements are never arranged again. */
 export function nextDocumentPosition(elements: readonly Record<string, unknown>[]): { x: number; y: number } {
   const visible = elements.filter((element) => !element.isDeleted

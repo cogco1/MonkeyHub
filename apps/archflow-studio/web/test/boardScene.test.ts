@@ -100,6 +100,45 @@ test("persisted image metadata resolves only its exact run, file, drawing revisi
   ]) assert.equal(imageSource(malformed), null);
 });
 
+test("source actions resolve one explicit image or native frame independently of model and mark geometry", async (t) => {
+  const { selectedPageSource, pageSource, findSource } = await harness(t);
+  const original = document({ modelSource: null });
+  const source = pageSource(original, 1);
+  const elements = [
+    { id: "page", type: "image", frameId: "frame", crop: { x: 10, y: 20 }, customData: { sourceDocument: source } },
+    { id: "frame", type: "frame", customData: { sourceDocument: pageSource(original, 0) } },
+    { id: "mark", type: "diamond", frameId: "frame", x: -1000, backgroundColor: "red", startBinding: { elementId: "page" } },
+    { id: "label", type: "text", containerId: "page" },
+    { id: "deleted", type: "image", frameId: "frame", isDeleted: true },
+  ];
+  const before = structuredClone(elements);
+  for (const selection of [{ page: true }, { frame: true }, { frame: true, page: true }, { page: true, mark: true, label: true }]) {
+    assert.deepEqual(selectedPageSource(elements, selection), source);
+    assert.equal(findSource([original], selectedPageSource(elements, selection)!), original);
+  }
+  for (const selection of [{}, { page: false }, { mark: true }, { label: true }, { deleted: true }, { page: true, missing: true }]) {
+    assert.equal(selectedPageSource(elements, selection), null, "only explicit live image/frame membership may choose a source");
+  }
+  assert.deepEqual(elements, before);
+});
+
+test("source actions refuse multiple images, unregistered sources and frame metadata without a page", async (t) => {
+  const { selectedPageSource, pageSource, findSource } = await harness(t);
+  const original = document();
+  const source = pageSource(original, 1);
+  const page = { id: "page", type: "image", frameId: "frame", customData: { sourceDocument: source } };
+  const frame = { id: "frame", type: "frame", customData: { sourceDocument: source } };
+  for (const second of [page, { ...page, customData: { sourceDocument: pageSource(original, 0) } }, { type: "image" }]) {
+    const elements = [page, frame, { ...second, id: "second", frameId: "frame" }];
+    assert.equal(selectedPageSource(elements, { page: true, second: true }), null);
+    assert.equal(selectedPageSource(elements, { frame: true }), null, "even identical page copies require one selected image");
+  }
+  assert.equal(selectedPageSource([frame], { frame: true }), null);
+  assert.equal(selectedPageSource([{ id: "raw", type: "image" }], { raw: true }), null);
+  const stale = { ...page, customData: { sourceDocument: { ...source, revisionRef: "missing" } } };
+  assert.equal(findSource([original], selectedPageSource([stale], { page: true })!), undefined);
+});
+
 test("opening a source preserves appearance parameters and selects its exact revision and page", async (t) => {
   const { documentUrl, pageSource } = await harness(t);
   const source = pageSource(document({ runId: "drawing run + 1" }), 1);

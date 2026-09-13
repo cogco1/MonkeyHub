@@ -23,36 +23,30 @@ App Server 故障恢复、独立安装环境和更新/重装验收继续由 #21 
 桌面包和浏览器包使用不同版本目录及快捷方式；缺少 EXE 会拒绝安装。PR #25 等待最终 head
 的 Windows／主线检查及协调审查，不据此关闭 #21。
 
-### #23：白板手势、选区反馈与文字意图
+### #23：选中图页就地更新来源
 
-首片的可收起资料栏、次级操作入口、手势提示、严格选区反馈与中文干净导出修复，
-已由协调任务独立审查并合并为 PR #26，四项 CI 全绿。
-第二片复用 c68e worktree，分支 `codex/board-text`，基线为该合并
-`df264b512491232ae534df3ee3d7e80d9fcac38b`，继续 EXTEND `studio.board`。
+白板界面整理与选区反馈（PR #26）、选中文字免重输与首次保存读写竞态修复（PR #27），
+均已由协调任务独立复验并合并。第三片复用 c68e worktree，分支 `codex/board-source`，
+基线为 `e988f940a44953fb91930c30179d1e9f07ee1068`，继续 EXTEND `studio.board`。
 
-`BoardFeedbackSelection.selectedText`
-承接明确选中的文字，包括原生图框子对象与绑定标签，同一对象只纳入一次；按画板 y、x、id 排序，
-保留作者原始换行，不从附近对象或 OCR 猜测内容。文字直接填入原反馈框，用户可发送或补充保留条件，
-现有 `prepareBoardDesignRequest` 只发送最终编辑后的意图一次。文字不写入几何 DTO 或图页批注，
-因此明确选中的页外文字也可以表达意图，几何仍必须位于图页范围。普通文字编辑仍留在 Excalidraw。
-输入框承接的是现有无 8000 字限制的 `utterance`，移除旧输入控件的该上限，以免长文字无法补充条件。
-本片已通过 34 项 Board 前端行为测试、真实私有 Studio／临时项目浏览器的中文文字免重输、
-绑定标签／页外明确选择／排序／无关文字排除／追加条件不重复，以及上传、文件型粘贴、干净导出、
-自动收图、撤销、重开、CAS 与键盘回归。来源／模型变化以只读响应注入验证拒绝提交并保留正文。
-几何 DTO 不含文字、仅改变文字时批注 PNG 不变；5 种既有反馈交接场景、替换与 Crit 撤销回归、
-构建和架构检查通过。文件型粘贴验收不覆盖 HTML 或远程图片粘贴，不自动宣告 #23 全部完成。
+本片补齐 #23 Phase 6 的选区更新来源入口：明确选中一个图像，或选中原生图框且其中只有一个图像时，
+就地显示“更新此页原图”，复用现有 `ReplacementDialog` 与确切页替换路径，并保留资料栏原入口。
+选择依据实际图像的 run／asset／revision／page 和原生 frameId，不使用图框标签或附近圈线推断来源。
+多图选择（包括同页的两个副本）不提供更新；单独选择绑定箭头或文字也不会选择其关联图片。
+更新原图不要求模型关联、未裁切图像或可转换的批注几何，这些条件仅属于设计反馈。
+点击时再次读取当前选区与资料列表；替换继续沿用原有位置、裁切、批注、删除和 CAS 处理。
+替换窗口取消后将焦点还给触发按钮，修复了键盘 Escape 关闭后焦点落到页面主体的问题。
 
-协调侧独立浏览器复验发现首建 Board 的读取竞态：保存已建立 `studio-board` 目录、尚未安装
-`run.json` 时，未持有 Board 保存锁的读取会枚举到该目录并返回 `RUN_NOT_FOUND`。
-修复限定为让 `read_board` 复用既有 `_board_lock`，读取同一 Studio 保存前或保存后的完整快照。
-暂停实际 manifest 安装的并发回归在旧实现稳定复现 404，修复后确认 GET 等待并返回与 PUT 相同的版本；
-11 项 Board API 测试全通过。使用协调复验的 Python 环境重跑完整真实浏览器也通过：
-63 次 API 请求、2 次显式提交。没有增加 404 重试或修改 P036 持久化。
+36 项 Board 前端行为测试、构建与架构检查通过。既有替换浏览器从新增按钮完成一次精确上传，
+覆盖图像／图框／多图歧义、裁切比例与位置批注保持、原资料栏入口、Crit／撤销／重开、
+取消焦点和一次预期 CAS 拒绝；完整真实白板浏览器同时通过（63 次请求、2 次显式反馈交接）。
 
-本片生产源码限定在 `apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx`
-与 `boardFeedbackGeometry.ts`，以及 `apps/archflow-studio/api/archflow_studio_api/application/boards.py`，
-并更新相关既有 Board 测试及原有登记。共享文件保留其他 lanes。
-不吸收 #14 的 App／Stage／DTO 或 #21 桌面实现；下一独立 PR 由协调任务审查准确 head 与 CI 后合并。
+生产修改限 `apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx` 与 `boardScene.ts`，
+扩展既有 `boardScene.test.ts` 和 `boardReplacement.browser.mjs`，不改变公开 API／DTO 或模块契约。
+共享卡片和登记保留其他 lanes，独立 PR 由协调任务审查准确 head 与 CI 后合并。
+
+真实新用户能否无说明完成整条操作仍待试用；不把自动化回归当作零培训验收。
+本轮不新增便签预设、HTML／远程图片粘贴或多人协作，也不刷新活动服务。
 
 ### #14 Phases 2/3：本地会话与预选
 

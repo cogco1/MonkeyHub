@@ -46,7 +46,7 @@ from archflow_studio_api.settings import read_application_settings
 from .models import (
     ChatCreateRequest, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest,
-    ChatProjectRequest, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubFailure,
+    ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
 
 
@@ -811,6 +811,19 @@ class ChatStore:
             return [ChatSummary.model_validate(row.model_dump()) for row in
                     sorted(self._sessions.values(), key=lambda item: item.updatedAt, reverse=True)
                     if row.archived == archived and (project_id is None or row.projectId == project_id)]
+
+    def usage_sources(self) -> list[ChatUsageSource]:
+        """Archiving hides a chat, not the usage of its bound native session."""
+        with self._lock:
+            self._load()
+            sources = []
+            for row in self._sessions.values():
+                if row.provider != "codex":
+                    continue
+                identifier = row.acpSessionId if row.transport == "acp" else row.nativeSessionId
+                if identifier:
+                    sources.append(ChatUsageSource(projectId=row.projectId, sessionId=identifier))
+            return sources
 
     def _session(self, session_id: str) -> _SavedChat:
         self._load()
