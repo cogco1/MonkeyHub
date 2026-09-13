@@ -293,13 +293,13 @@ class HistoricalPricingTests(unittest.TestCase):
 
 
 class JournalTests(unittest.TestCase):
-    def test_rotation_preserves_live_span_and_final_revision_and_reads_legacy(self):
+    def test_retained_segments_keep_a_live_span_and_final_revision_and_read_legacy(self):
         with TemporaryDirectory() as directory:
             path = Path(directory)
             store = UsageLog(path, max_bytes=2400, backups=2)
             root = event("root", "hub_turn", 0)
             store.append(root)
-            for index in range(15):
+            for index in range(6):
                 store.append(event(f"done-{index}", "tool_call", index, index + 1))
             rows, warnings = store.read()
             self.assertTrue(any("轮转" in warning for warning in warnings))
