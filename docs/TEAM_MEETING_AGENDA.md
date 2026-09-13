@@ -1,5 +1,7 @@
 # ArchFlow / Monkey Team Meeting Agenda
 
+[Download the eight-slide meeting deck](TEAM_MEETING_DECK.pptx) — Chinese slides with editable diagrams, a four-track allocation table and speaker notes.
+
 > Meeting purpose: briefly align everyone on the current system, then divide the next two weeks into **four active tracks only: Paper / Blender / Interaction / Backend**. Everything else is mentioned only as later development, not assigned tomorrow.
 
 ## 0. One-sentence framing
@@ -31,7 +33,7 @@ Very short update:
 - OCCT / Rhino / Blender sit behind a common CAD backend contract;
 - Hub has the first runtime/recovery slice;
 - MonkeyMonitor already records timing/usage sources but still needs a better observability UI;
-- Windows desktop host is currently in PR #33.
+- Windows desktop host Phase A has merged in PR #33; full distribution and clean-machine acceptance remain later work.
 
 The project has moved from **“can we build the pieces?”** to **“how do we turn them into a coherent product and research result?”**
 
