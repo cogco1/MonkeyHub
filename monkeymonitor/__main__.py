@@ -23,6 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=("serve", "report"))
     parser.add_argument("--data-dir", type=Path, help="Explicit Studio diagnostic directory (read only)")
     parser.add_argument("--codex-session", action="append", type=Path, default=[], help="One explicit Codex JSONL source; repeat for known related sources (no discovery)")
+    parser.add_argument("--codex-bindings-url", help="Loopback Hub usage-sources endpoint for exactly bound Codex sessions")
     parser.add_argument("--port", type=int, default=8788)
     parser.add_argument("--managed-stdin", action="store_true", help="Stop this managed server on stdin stop or EOF")
     parser.add_argument("--managed-instance-id", type=UUID, help="Hub-owned instance UUID (requires --managed-stdin)")
@@ -31,7 +32,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--managed-stdin and --managed-instance-id must be used together")
     if args.command != "serve" and args.managed_stdin:
         parser.error("managed options require serve")
-    data = MonitorData(args.data_dir, tuple(args.codex_session))
+    try:
+        data = MonitorData(args.data_dir, tuple(args.codex_session), codex_bindings_url=args.codex_bindings_url)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.command == "report":
         print(json.dumps(data.snapshot(), ensure_ascii=False, indent=2))
         return 0

@@ -179,6 +179,13 @@ class ChatDetail(ChatSummary):
     messages: list[ChatMessage] = Field(default_factory=list)
 
 
+class ChatUsageSource(BaseModel):
+    """Only the native conversation identity and its Hub project binding."""
+
+    projectId: str
+    sessionId: str
+
+
 class ChatCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 

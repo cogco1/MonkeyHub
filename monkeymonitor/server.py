@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import partial
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -9,8 +10,9 @@ from pathlib import Path
 import re
 import subprocess
 from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
-from .codex import iter_codex_events
+from .codex import bound_codex_sources, iter_codex_events
 from .pricing import RateCard, quote
 from .store import UsageLog
 from .usage import TokenUsage
@@ -43,10 +45,41 @@ def _source_revision() -> str | None:
     return revision.lower() if re.fullmatch(r"[0-9a-fA-F]{40}", revision) else None
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class MonitorData:
-    def __init__(self, data_dir: Path | None = None, codex_sessions: tuple[Path, ...] = ()):
+    def __init__(self, data_dir: Path | None = None, codex_sessions: tuple[Path, ...] = (), *,
+                 codex_bindings_url: str | None = None, codex_home: Path | None = None):
         self.store = UsageLog(data_dir) if data_dir is not None else None
         self.codex_sessions = codex_sessions
+        if codex_bindings_url is not None:
+            parsed = urlsplit(codex_bindings_url)
+            if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+                    or parsed.username is not None or parsed.password is not None
+                    or parsed.path != "/api/chat/usage-sources" or parsed.query or parsed.fragment
+                    or parsed.port == 0):
+                raise ValueError("Codex bindings must use the loopback Hub usage-sources endpoint")
+        self.codex_bindings_url = codex_bindings_url
+        self.codex_home = Path(codex_home or os.environ.get("CODEX_HOME") or Path.home() / ".codex").resolve()
+
+    def _bound_sources(self, warnings: list[str]) -> tuple[dict[Path, str], dict[str, str]]:
+        if self.codex_bindings_url is None:
+            return {}, {}
+        try:
+            # This private Hub projection contains identity fields only. Never
+            # follow a redirect or send it through a machine-configured proxy.
+            opener = build_opener(ProxyHandler({}), _NoRedirect())
+            with opener.open(self.codex_bindings_url, timeout=2) as response:
+                body = response.read(1024 * 1024 + 1)
+            if len(body) > 1024 * 1024:
+                raise ValueError("Hub usage bindings response is too large")
+            return bound_codex_sources(json.loads(body), self.codex_home, warnings)
+        except (OSError, ValueError, UnicodeError):
+            warnings.append("Hub 会话用量绑定暂不可读；已有诊断和手选来源仍保留。")
+            return {}, {}
 
     def codex_sources(self) -> dict:
         return {"paths": [path.as_posix() for path in dict.fromkeys(
@@ -72,11 +105,23 @@ class MonitorData:
                 events, warnings = self.store.read()
             except (OSError, UnicodeError):
                 warnings.append("Studio 用量文件暂时不可读。")
+        paths, projects = self._bound_sources(warnings)
         try:
-            events.extend(iter_codex_events(self.codex_sessions, warnings=warnings))
+            events.extend(iter_codex_events((*self.codex_sessions, *paths), warnings=warnings,
+                                           expected_sessions=paths, manual_sources=self.codex_sessions,
+                                           project_ids=projects))
         except (OSError, ValueError, UnicodeError):
             warnings.append("指定的 Codex 会话暂时不可读或包含无效计数。")
-        unique = {event.event_id: event for event in events}
+        unique = {}
+        for event in events:
+            previous = unique.get(event.event_id)
+            if previous is not None and previous.project_id is not None:
+                if event.project_id is not None and event.project_id != previous.project_id:
+                    warning = "同一用量记录的项目归属存在冲突；已保留原诊断归属。"
+                    if warning not in warnings:
+                        warnings.append(warning)
+                event = replace(event, project_id=previous.project_id)
+            unique[event.event_id] = event
         rows = sorted(unique.values(), key=lambda event: event.started_at, reverse=True)
         if any(event.status in {"counter_discontinuity", "partial_history", "counter_reset_unknown", "last_only"} for event in rows):
             warnings.append("Codex 累计计数存在断点，已保留可识别的单次用量；此汇总不是完整账单。")

@@ -5705,7 +5705,8 @@
         "Read-only HTTP delivery of the four shared appearance, translation and base-style assets through the existing loopback boundary",
         "Explicitly selected Codex task/child-source families and known turn intervals; distinct model-call, service, client-wait and agent-turn timing views",
         "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities",
-        "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage"
+        "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage",
+        "Automatic numeric usage from explicitly Hub-bound Codex session identities, resolved through the local read-only Codex index and verified against session metadata"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -5717,7 +5718,8 @@
       "inputs": [
         "Provider-reported numeric usage metadata",
         "Explicit diagnostic directory or Codex JSONL session paths",
-        "Caller-selected rates and available actions, observations, objectives and remaining budget"
+        "Caller-selected rates and available actions, observations, objectives and remaining budget",
+        "Optional loopback Hub session/project identity projection and explicitly selected Codex home"
       ],
       "outputs": [
         "UsageEvent values and optional diagnostic JSONL",
@@ -5746,7 +5748,8 @@
         "GET /shared/browserTranslator.js",
         "GET /shared/base.css",
         "GET /api/sources/codex",
-        "PUT /api/sources/codex"
+        "PUT /api/sources/codex",
+        "bound_codex_sources"
       ],
       "depends_on": [],
       "used_by": [
@@ -5765,7 +5768,8 @@
         "Only explicitly selected Codex paths are read; lineage uses recorded session/parent ids, repeated source snapshots count once and token event gaps never become model duration",
         "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration",
         "Interaction wall time comes only from an explicit client root; active waits and between-action time remain separate and overlapping child durations are never summed into a total; repeated inputs alone do not prove an avoidable retry or eligible provider cache",
-        "Estimated section tokens never substitute for actual provider input/output/cache tokens; each context expansion keeps its own usage and model"
+        "Estimated section tokens never substitute for actual provider input/output/cache tokens; each context expansion keeps its own usage and model",
+        "Automatic sources are matched by exact recorded session identity, never cwd or recency; identity conflicts or unavailable sources are reported, and persisted diagnostic event identities prevent backfill double counting"
       ],
       "status": "canonical",
       "tests": [
@@ -5803,7 +5807,8 @@
         "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
         "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio",
         "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, in-process request deduplication, retained-result reconciliation, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
-        "Project-scoped Studio API forwarding for embedded tools and chat, with request-scoped idempotency keys independent of diagnostic correlation; browser refresh reattaches to retained/runtime state and never restarts a crashed worker implicitly"
+        "Project-scoped Studio API forwarding for embedded tools and chat, with request-scoped idempotency keys independent of diagnostic correlation; browser refresh reattaches to retained/runtime state and never restarts a crashed worker implicitly",
+        "Read-only project/native-session identity projection for Monitor, including archived chats, without exposing messages or project paths"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -5823,7 +5828,8 @@
         "Application status and URL",
         "Owned process lifecycle and local diagnostic logs",
         "The independent Fab CLI result; geometry files stay in the caller-selected output directory",
-        "Project-bound chat transcripts and continuation of the same native CLI session under the explicit Hub runtime root"
+        "Project-bound chat transcripts and continuation of the same native CLI session under the explicit Hub runtime root",
+        "Typed project/session metadata for the owned Monitor Codex source connection"
       ],
       "public_api": [
         "create_app",
@@ -5863,7 +5869,9 @@
         "GET /api/runtime/projects/{runtime_id}",
         "POST /api/runtime/projects/{runtime_id}/recover",
         "POST /api/runtime/projects/{runtime_id}/close",
-        "/api/runtime/projects/{runtime_id}/studio/{path}"
+        "/api/runtime/projects/{runtime_id}/studio/{path}",
+        "GET /api/chat/usage-sources",
+        "ChatStore.usage_sources"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
