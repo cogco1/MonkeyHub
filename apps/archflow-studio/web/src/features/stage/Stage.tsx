@@ -92,6 +92,13 @@ export interface ReviewSummary {
 
 export type CaptureState = "idle" | "busy" | "success" | "error";
 
+function sketchControls(state: SketchState) {
+  return {
+    tool: state.tool, phase: state.phase, typed: state.typed, axisLock: state.axisLock,
+    hasAnchor: state.anchor !== null, canClose: enclosesArea(state.vertices),
+  };
+}
+
 export function Stage({
   embedded = false,
   viewportRef,
@@ -331,7 +338,7 @@ export function Stage({
   const [viewToolsOpen, setViewToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   // One drawing action at a time, entirely local until it is finished.
-  const [sketch, setSketch] = useState<SketchState>(SKETCH_IDLE);
+  const [sketch, setSketch] = useState(() => sketchControls(SKETCH_IDLE));
   const [workPlaneName, setWorkPlaneName] = useState<"xy" | "xz" | "yz" | "face">("xy");
   const [snapNote, setSnapNote] = useState<string | null>(null);
   // A measurement is looking, not changing: two points off the model itself,
@@ -367,22 +374,39 @@ export function Stage({
     setSnapNote(null);
   }, [showMeasure]);
   const sketchRef = useRef<SketchState>(SKETCH_IDLE);
-  sketchRef.current = sketch;
+  const sketchFrameRef = useRef<number | null>(null);
   // How far a snap reaches, in world units: a fifth of what the last drawn
   // rectangle spans, so it stays usable at any size the project is drawn at.
   const snapRadius = useCallback(() => {
+    const sketch = sketchRef.current;
     const spans = sketch.profile.length > 1
       ? Math.max(...sketch.profile.map(([x]) => x)) - Math.min(...sketch.profile.map(([x]) => x))
       : 0;
     return Math.max(0.2, spans / 5);
-  }, [sketch.profile]);
-  const showSketch = useCallback((next: SketchState) => {
-    sketchRef.current = next;
-    setSketch(next);
+  }, []);
+  const paintSketch = useCallback(() => {
+    sketchFrameRef.current = null;
+    const next = sketchRef.current;
     viewportRef.current?.sketchPreview(
-      next.profile.length > 1 ? { profile: next.profile, base: next.base, height: next.height, ...(next.plane ? { plane: next.plane } : {}) } : null,
+      next.phase !== "idle" ? { profile: next.profile, base: next.base, height: next.height, ...(next.plane ? { plane: next.plane } : {}) } : null,
     );
   }, [viewportRef]);
+  const cancelSketchFrame = useCallback(() => {
+    if (sketchFrameRef.current !== null) cancelAnimationFrame(sketchFrameRef.current);
+    sketchFrameRef.current = null;
+  }, []);
+  const showSketch = useCallback((next: SketchState, pointerMove = false) => {
+    // Geometry lives in this one disposable session. React only sees controls,
+    // and must never copy an older UI snapshot back over the latest pointer.
+    sketchRef.current = next;
+    if (pointerMove) {
+      if (sketchFrameRef.current === null) sketchFrameRef.current = requestAnimationFrame(paintSketch);
+    } else {
+      cancelSketchFrame();
+      setSketch(sketchControls(next));
+      paintSketch();
+    }
+  }, [cancelSketchFrame, paintSketch]);
   const stopSketching = useCallback(() => {
     setSnapNote(null);
     showSketch(cancelledSketch(sketchRef.current));
@@ -440,7 +464,10 @@ export function Stage({
     window.addEventListener("keydown", listen);
     return () => window.removeEventListener("keydown", listen);
   }, [sketch.tool, showSketch, stopSketching]);
-  useEffect(() => () => { viewportRef.current?.sketchPreview(null); }, [viewportRef]);
+  useEffect(() => () => {
+    cancelSketchFrame();
+    viewportRef.current?.sketchPreview(null);
+  }, [cancelSketchFrame, viewportRef]);
 
   // The keys an architect already has in their fingers, and who owns each one.
   //
@@ -796,7 +823,7 @@ export function Stage({
               setSnapNote(moved.snapped ? moved.snapped.kind : null);
               const profile = sketch.tool === "circle" ? circleOf(sketch.anchor, Math.hypot(point[0] - sketch.anchor[0], point[1] - sketch.anchor[1]))
                 : sketch.tool === "polygon" ? [...sketch.vertices, point] : rectangleOf(sketch.anchor, point);
-              showSketch({ ...sketch, profile, cursor: point });
+              showSketch({ ...sketch, profile, cursor: point }, true);
             } else if (sketch.phase === "height") {
               // The plane a height is read on stands through the corner the
               // pointer is already at — the one that was just clicked, which
@@ -812,7 +839,7 @@ export function Stage({
                 : viewportRef.current?.unprojectOnPlane(event.clientX, event.clientY, origin, true));
               if (!raised) return;
               const height = normal.reduce((sum, value, index) => sum + value * (raised[index]! - origin![index]!), 0);
-              showSketch({ ...sketch, height });
+              showSketch({ ...sketch, height }, true);
             }
           }}
           onPointerDown={(event) => {
@@ -1123,12 +1150,12 @@ export function Stage({
               <span className="sketch-entry__step" role="status">
                 {sketchBusy ? t("stage.sketch.busy")
                   : sketch.phase === "height" ? t("stage.sketch.pull")
-                    : sketch.tool === "circle" ? sketch.anchor === null ? t("stage.sketch.center") : t("stage.sketch.radiusHint")
+                    : sketch.tool === "circle" ? !sketch.hasAnchor ? t("stage.sketch.center") : t("stage.sketch.radiusHint")
                       : sketch.tool === "polygon" ? t("stage.sketch.polygonHint")
-                        : sketch.anchor === null ? t("stage.sketch.firstCorner") : t("stage.sketch.secondCorner")}
+                        : !sketch.hasAnchor ? t("stage.sketch.firstCorner") : t("stage.sketch.secondCorner")}
                 {snapNote !== null && <span className="quiet"> · {t("stage.sketch.snapped", { kind: snapNote })}</span>}
               </span>
-              {sketch.anchor !== null && !sketchBusy && (
+              {sketch.hasAnchor && !sketchBusy && (
                 <label className="sketch-entry__value">
                   {sketch.phase === "height" ? t("stage.sketch.height") : sketch.tool === "circle" ? t("stage.sketch.radius")
                     : sketch.tool === "polygon" ? t("stage.sketch.segment") : t("stage.sketch.side")}
@@ -1136,17 +1163,20 @@ export function Stage({
                     autoFocus
                     inputMode="decimal"
                     value={sketch.typed}
-                    onChange={(event) => setSketch((current) => ({ ...current, typed: event.target.value }))}
+                    onChange={(event) => {
+                      sketchRef.current = { ...sketchRef.current, typed: event.target.value };
+                      setSketch(sketchControls(sketchRef.current));
+                    }}
                     onKeyDown={(event) => {
                       if (event.key !== "Enter") return;
                       event.preventDefault();
+                      const sketch = sketchRef.current;
                       const value = typedNumber(sketch.typed);
                       if (sketch.phase === "height") {
                         if (value === null) return;
                         // One confirmation submits once: the action is taken
                         // off the pointer before anything is sent.
                         const settled = { ...sketchRef.current, height: value, typed: "" };
-                        sketchRef.current = settled;
                         showSketch(settled);
                         submitSketch(value === 0);
                       } else {
@@ -1177,10 +1207,10 @@ export function Stage({
               )}
               {sketch.phase === "profile" && <>
                 <button type="button" aria-pressed={sketch.axisLock === "x"} title={t("stage.sketch.axisHint")}
-                  onClick={() => showSketch({ ...sketch, axisLock: sketch.axisLock === "x" ? null : "x" })}>{t("stage.sketch.axisX")}</button>
+                  onClick={() => showSketch({ ...sketchRef.current, axisLock: sketchRef.current.axisLock === "x" ? null : "x" })}>{t("stage.sketch.axisX")}</button>
                 <button type="button" aria-pressed={sketch.axisLock === "y"} title={t("stage.sketch.axisHint")}
-                  onClick={() => showSketch({ ...sketch, axisLock: sketch.axisLock === "y" ? null : "y" })}>{t("stage.sketch.axisY")}</button>
-                {sketch.tool === "polygon" && <button type="button" disabled={!enclosesArea(sketch.vertices)}
+                  onClick={() => showSketch({ ...sketchRef.current, axisLock: sketchRef.current.axisLock === "y" ? null : "y" })}>{t("stage.sketch.axisY")}</button>
+                {sketch.tool === "polygon" && <button type="button" disabled={!sketch.canClose}
                   onClick={closePolygon}>{t("stage.sketch.closePolygon")}</button>}
               </>}
               {sketch.phase === "height" && <button type="button" disabled={sketchBusy} onClick={() => {
