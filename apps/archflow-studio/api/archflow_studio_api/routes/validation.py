@@ -39,6 +39,15 @@ router = APIRouter(tags=["validation"])
 def read_validation(request: Request, candidate_id: str) -> ValidationDto:
     """Validate a Stage continuation on its source base, or a legacy candidate on HEAD."""
 
+    project_id = bound_project(request.app.state).project_id
+    with request.app.state.monitor.measure("validation", project_id=project_id, run_id=candidate_id,
+        related_event_id=f"studio:candidate:{project_id}:{candidate_id}", details={"blocking": True}) as interval:
+        result = _read_validation(request, candidate_id)
+        interval["details"]["validator_pass"] = result.receipt.passed
+        return result
+
+
+def _read_validation(request: Request, candidate_id: str) -> ValidationDto:
     state = request.app.state
     binding = bound_project(state)
     try:

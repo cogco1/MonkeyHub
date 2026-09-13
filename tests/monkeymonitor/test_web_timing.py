@@ -27,6 +27,7 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=en');
+  await page.locator('#raw-details > summary').click();
   await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(7)');
   assert.equal(await page.locator('#stat-input').getAttribute('title'), '1,475 Token');
   assert.equal(await page.locator('#stat-output').getAttribute('title'), '117 Token');
@@ -181,6 +182,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (output) await page.screenshot({ path: join(output, 'monitor-timing-mobile.png'), fullPage: true });
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=zh-CN&theme=dark');
+  await page.locator('#raw-details > summary').click();
   await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(7)');
   assert.equal(await page.locator('#stat-duration').textContent(), '300 ms');
   assert.match(await page.locator('#duration-stat').textContent(), /等待时间/);
@@ -211,6 +213,7 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=en&theme=light');
+  await page.locator('#raw-details > summary').click();
   await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(4)');
   await page.locator('#project-filter').selectOption('benchmark-project');
   assert.equal(await page.locator('#event-count').textContent(), '(3)');
@@ -282,6 +285,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   if (output) await page.screenshot({ path: join(output, 'monitor-benchmark-mobile-en.png'), fullPage: true });
   await page.goto(process.env.MONITOR_TEST_URL + '/?lang=zh-CN&theme=dark');
+  await page.locator('#raw-details > summary').click();
   await page.waitForFunction(() => document.querySelector('#event-count').textContent === '(4)');
   await page.locator('#project-filter').selectOption('benchmark-project');
   assert.match(await page.locator('.stats .stat').nth(0).textContent(), /缓存输入/);

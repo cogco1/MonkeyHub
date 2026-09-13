@@ -1,5 +1,34 @@
 # P115 — 能力总索引与逐项整理
 
+### #32 Phase 0：整轮任务观测与 MonkeyMonitor
+
+`P115/agent-latency` 从 `293756cf` 开始，复用分配的 `597e` worktree，
+EXTEND `monkeymonitor`、`hub.shell`、`studio.shell` 与 `studio.candidate`。
+Hub 用户消息、Agent 活动、工具、Studio 请求、候选队列、CAD、读回、验证与浏览器预览
+归入同一 turn。原 `UsageEvent` / `UsageLog` 是唯一诊断日志，P036 保持原有设计保存权。
+
+Monitor 首页提供真实记录驱动的摘要、五泳道水平耗时图、嵌套活动树、阻塞区间与重复请求诊断。
+模型调用次数只统计明确的请求边界；原生用量事件数与 Agent 活动段分别显示，边界不足时保留未知。
+Agent 等待区间不冒充纯推理，首文本到达也不冒充浏览器首帧。
+进程内时长取单调时钟，跨进程位置保留毫秒墙钟口径；并行时间不相加，关键分支证据不足时保留未归因。
+计价按精确 provider/model/billing plan 与有来源、生效日期的费率；未知身份显示不可用。
+原调用表和假设计算器保留在高级工具。JSON 下载与页面使用同一归一化记录。
+
+固定 simple-create / incremental-edit 基准与可丢弃 Hub/Studio/OCCT 运行入口位于
+`tests/monkeymonitor/`。真实 provider 测试只使用合成项目和隔离端口；不更新安装包或活动服务。
+已核实真实 Codex 回合能产生并读回候选，实际浏览器加载与原生 token 记录出现在同一 trace。
+同一源码提交 `bfbaca62` 的真实 Codex/OCCT/headless Chrome 单次基线：创建任务总历时 43.533 s、
+首帧 29.282 s；檐口高度 0.3→0.5 m 的增量任务总历时 55.583 s、首帧 49.377 s。
+两者各 3 次观测工具调用、5 条原生用量事件；几何包围盒与对象集合符合固定场景，项目 HEAD 不变。
+这些单次样本不构成速度提升或分布统计。实际模型请求数、自动价格与未调用的正式验证时间保留未知。
+原底座升高且保护依附檐口的场景被既有保护规则拒绝；其失败样本不计入上述成功基线。
+源码检查包括监控/聊天/队列/候选/验证、实际 3DM 模型载入浏览器、OpenAPI、构建与 archcheck。
+完整旧浏览器套件另有绘图工具按钮被 footer 遮挡的问题；聚焦模型计时场景均通过。
+
+后续切片以这些真实记录为基线：先加入同任务比较与精确 focus/base 的 ContextPack，
+再沿现有 proposal/candidate 完成一次声明式设计事务。尚未在本片改变 Agent 权限、
+生命周期、缓存所有权或设计语义；不据此关闭 #32。
+
 ### #21 Phase C：完整包与隔离安装
 
 `P115/desktop` 在独立 `a6c0` worktree 从 `293756cf` 继续，分支为

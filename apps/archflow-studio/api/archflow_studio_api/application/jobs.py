@@ -149,17 +149,19 @@ class JobRegistry:
             operation_id = association.get("operation_id") or (candidate_event_id(project_id, candidate_id) if project_id else queue_id)
 
             def measured_work():
-                with self._monitor.scope(operation_id=operation_id, parent_event_id=association.get("event_id")):
+                with self._monitor.scope(operation_id=operation_id, parent_event_id=association.get("event_id"),
+                                         turn_id=association.get("turn_id")):
                     self._monitor.record(
                         phase="candidate_queue", event_id=queue_id, status="succeeded",
                         started_at=queued_at, ended_at=_now(), duration_ms=round((time.perf_counter() - queued_clock) * 1000),
                         project_id=project_id, run_id=candidate_id, source_ref=source_ref,
-                        details={"wait_reason": "worker_admission", "execution_path": "exclusive" if exclusive else "parallel"},
+                        details={"wait_reason": "worker_admission", "execution_path": "exclusive" if exclusive else "parallel", "blocking": True},
                     )
                     with self._monitor.measure(
                         "candidate", project_id=project_id, run_id=candidate_id,
                         source_ref=source_ref, related_event_id=related_event_id,
                         event_id=candidate_event_id(project_id, candidate_id) if project_id is not None else None,
+                        details={"blocking": True},
                     ):
                         return operation()
 

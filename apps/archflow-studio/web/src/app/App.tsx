@@ -1140,10 +1140,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       }
       const timing = monitorDiagnostics && projectId ? startClientTiming("model_load",
         { projectId, runId: artifact.runId, sourceRef: artifact.receiptRef }, parentTiming?.trace,
-        { asset_sha256: artifact.sha256 }) : null;
+        { asset_sha256: artifact.sha256, blocking: !background }) : null;
       const download = timing ? startClientTiming("model_download", timing.binding, timing.trace,
-        { asset_sha256: artifact.sha256, request_kind: "artifact_bytes" }) : null;
+        { asset_sha256: artifact.sha256, request_kind: "artifact_bytes", blocking: !background }) : null;
       let parse: ClientTimingSpan | null = null;
+      const viewportTiming: { current: ClientTimingSpan | null } = { current: null };
       const finishTiming = timing ? (status: "succeeded" | "failed" | "cancelled") => timing.finish(status)
         : startModelLoadTiming(projectId, artifact.runId, artifact.receiptRef);
       let succeeded = false;
@@ -1162,9 +1163,15 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         const viewport = viewportRef.current;
         if (!viewport) throw new Error("The 3D viewport is not ready yet; try again in a moment.");
         parse = timing ? startClientTiming("model_parse", timing.binding, timing.trace,
-          { asset_sha256: artifact.sha256, input_bytes: file.size }) : null;
+          { asset_sha256: artifact.sha256, input_bytes: file.size, blocking: !background }) : null;
         await viewport.openFile(file, label, {
           isCurrent, background,
+          onLoadPhase: (phase) => {
+            parse?.finish("succeeded");
+            viewportTiming.current?.finish("succeeded");
+            viewportTiming.current = timing ? startClientTiming(phase === "install" ? "model_install" : "model_projection",
+              timing.binding, timing.trace, { asset_sha256: artifact.sha256!, blocking: !background }) : null;
+          },
           preserveCamera: preserveCamera && previous.length > 0 && artifact.lengthUnit !== null &&
             previous.every((row) => row.lengthUnit === artifact.lengthUnit),
         });
@@ -1177,6 +1184,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         const status = !isCurrent() ? "cancelled" : succeeded ? "succeeded" : "failed";
         download?.finish(status);
         parse?.finish(status);
+        viewportTiming.current?.finish(status);
         finishTiming(status);
         if (request === modelLoadRequest.current) {
           pendingArtifacts.current = [];

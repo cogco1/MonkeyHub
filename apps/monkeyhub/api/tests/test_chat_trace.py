@@ -1,0 +1,313 @@
+"""Actual CLI callbacks and HTTP headers produce content-free turn observations."""
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+import test_chat
+from test_chat import wait_for
+from monkeyhub_api import chat
+from monkeyhub_api.chat_trace import HubTurnObserver
+from monkeyhub_api.main import HubSettings, create_app
+from monkeymonitor.store import BUSY_NOTICE, UsageLog
+from monkeymonitor.trace import build_traces
+
+HOLD_JOURNAL = r'''
+import os, sys
+from pathlib import Path
+directory = Path(sys.argv[1])
+directory.mkdir(parents=True, exist_ok=True)
+stream = (directory / "usage.lock").open("a+b")
+if os.name == "nt":
+    import msvcrt
+    stream.seek(0)
+    msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+else:
+    import fcntl
+    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+print("held", flush=True)
+sys.stdin.readline()
+'''
+
+
+def bounded(case, action, *, seconds=30, on_timeout=None):
+    """Run something that must not block, on a worker, with a bounded wait.
+
+    A blocking journal lock waits forever on POSIX, where an elapsed assertion
+    after the call would never be reached. This fails instead of hanging.
+    """
+
+    outcome = {}
+
+    def run():
+        try:
+            outcome["value"] = action()
+        except BaseException as exc:
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        if on_timeout is not None:
+            on_timeout()  # free the holder before any cleanup waits on it
+        case.fail(f"the turn blocked on diagnostics for more than {seconds}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value")
+
+
+class HubTraceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = self.enterContext(tempfile.TemporaryDirectory())
+        self.store = UsageLog(Path(self.temp))
+
+    def rows(self):
+        rows, warnings = self.store.read()
+        self.assertFalse(warnings)
+        return rows
+
+    def test_live_turn_parallel_tools_and_permissions_do_not_add_model_rounds(self):
+        trace = HubTurnObserver(self.store, "turn-one", "project-one", "codex", "model-a")
+        trace.bind("native-session")
+        trace.ready()
+        trace.tool("a", "studio_schema", {"path": "/api/proposals"}, running=True)
+        trace.tool("b", "studio_request", {"path": "/api/state"}, running=True)
+        live = self.rows()
+        self.assertEqual(sum(r.status == "running" and r.phase == "tool_call" for r in live), 2)
+        trace.tool("a", "studio_schema", {}, running=False)
+        self.assertIsNone(trace.round_id)
+        trace.permission("permission-one")
+        trace.tool("b", "studio_request", {}, running=False)
+        self.assertIsNone(trace.round_id)
+        trace.permission("permission-one", completed=True)
+        self.assertEqual(trace.rounds, 2)
+        trace.tool("a", "studio_schema", {}, running=False)
+        trace.first_response()
+        trace.first_response()
+        trace.finish("succeeded")
+        rows = self.rows()
+        self.assertEqual(sum(r.phase == "first_response" for r in rows), 1)
+        self.assertEqual(sum(r.phase == "tool_call" for r in rows), 2)
+        self.assertEqual(sum(r.phase == "provider_round" for r in rows), 2)
+        self.assertTrue(all(r.status != "running" for r in rows))
+        self.assertTrue(all(r.turn_id == "turn-one" and r.session_id == "native-session" for r in rows))
+        self.assertTrue(all(r.duration_ms is not None for r in rows))
+        self.assertTrue(all(r.tokens.input_tokens is None for r in rows))
+
+    def test_cli_message_metadata_is_counted_once_without_content_or_inference_duration(self):
+        trace = HubTurnObserver(self.store, "turn", "project", "claude", None)
+        trace.ready()
+        message = {"id": "message-one", "model": "exact-model", "content": [{"text": "private-response"}],
+                   "usage": {"input_tokens": 100, "cache_read_input_tokens": 50,
+                             "cache_creation_input_tokens": 0, "output_tokens": 20}}
+        trace.claude_usage(message)
+        trace.claude_usage(message)
+        trace.tool("a", "private-command-title", {"body": {"prompt": "private-prompt"}}, running=True)
+        trace.finish("cancelled")
+        rows = self.rows()
+        usage = [row for row in rows if row.model_call]
+        self.assertEqual(len(usage), 1)
+        self.assertEqual(usage[0].tokens.input_tokens, 150)
+        self.assertEqual(usage[0].tokens.cached_input_tokens, 50)
+        self.assertEqual(usage[0].model, "exact-model")
+        self.assertEqual(usage[0].timing_scope, "unknown")
+        exported = json.dumps([row.to_dict() for row in rows])
+        for private in ("private-response", "private-prompt", "private-command-title"):
+            self.assertNotIn(private, exported)
+
+    def test_completed_tool_without_start_keeps_tool_and_prior_agent_duration_unknown(self):
+        clock = [0.0]
+        origin = datetime(2026, 9, 13, tzinfo=timezone.utc)
+        with patch("monkeyhub_api.chat_trace.perf_counter", side_effect=lambda: clock[0]), \
+             patch("monkeyhub_api.chat_trace._now", side_effect=lambda: (origin + timedelta(seconds=clock[0])).isoformat()):
+            trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
+            trace.ready()
+            clock[0] = 5.0
+            trace.tool("completed-only", "studio_request", {"path": "/api/state"}, running=False)
+            clock[0] = 6.0
+            trace.finish("succeeded")
+        rows = self.rows()
+        tool = next(row for row in rows if row.phase == "tool_call")
+        self.assertEqual(tool.status, "succeeded")
+        self.assertIsNone(tool.duration_ms)
+        self.assertIsNone(tool.ended_at)
+        self.assertEqual(tool.details["wait_reason"], "missing_tool_start")
+        preceding = next(row for row in rows if row.event_id.endswith(":round:1"))
+        self.assertIsNone(preceding.duration_ms)
+        self.assertIsNone(preceding.ended_at)
+        self.assertEqual(preceding.details["provider_timing_basis"], "missing_tool_start")
+        actual = build_traces([row.to_dict() for row in rows])["traces"][0]
+        self.assertEqual(actual["summary"]["elapsed_ms"], 6000)
+        self.assertEqual(actual["summary"]["unattributed_ms"], 5000)
+        self.assertEqual(next(row for row in actual["attribution"] if row["lane"] == "agent")["duration_ms"], 1000)
+
+    def test_failed_context_and_broken_store_do_not_leave_running_phase_or_raise(self):
+        trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
+        trace.finish("failed")
+        self.assertTrue(all(row.status == "failed" for row in self.rows()))
+        with patch.object(self.store, "append", side_effect=OSError("unavailable")):
+            with self.assertLogs("monkeyhub_api.chat_trace", level="WARNING"):
+                trace = HubTurnObserver(self.store, "another", "project", "codex", None)
+                trace.ready()
+                trace.finish("succeeded")
+
+    def test_parallel_http_reads_keep_same_trace_and_next_tool_cannot_inherit_it(self):
+        captured = []
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                captured.append((self.headers.get("X-Monkey-Turn-Id"), self.headers.get("X-Monkey-Parent-Span-Id")))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{}')
+            def log_message(self, *_):
+                pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_port}"
+            token = chat._trace_headers.set({"X-Monkey-Turn-Id": "turn", "X-Monkey-Parent-Span-Id": "hub:turn:turn"})
+            try:
+                chat._together({"a": (base, "/a"), "b": (base, "/b")}, 2)
+                def actual(*_):
+                    return chat._request_json(base, "/c")
+                with patch.object(chat, "_call_tool", side_effect=actual):
+                    chat.call_tool(base, "chat", "studio_request", {})
+            finally:
+                chat._trace_headers.reset(token)
+            self.assertEqual(captured[:2], [("turn", "hub:turn:turn")] * 2)
+            self.assertEqual(captured[2], (None, None))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(2)
+
+    def test_non_finite_tool_payload_cannot_fail_the_observed_turn(self):
+        trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
+        trace.ready()
+        with self.assertLogs("monkeyhub_api.chat_trace", level="WARNING"):
+            trace.tool("invalid", "studio_request", {"body": {"value": float("nan")}}, running=True)
+        trace.finish("succeeded")
+        self.assertEqual(next(row for row in self.rows() if row.phase == "hub_turn").status, "succeeded")
+
+
+class CliTraceTests(unittest.TestCase):
+    # Reuse the existing isolated fake CLI process setup, without inheriting
+    # and rerunning unrelated chat tests. This checks real stream boundaries.
+    setUp = test_chat.ChatTests.setUp
+    close_store = test_chat.ChatTests.close_store
+    create = test_chat.ChatTests.create
+    post = test_chat.ChatTests.post
+    finished = test_chat.ChatTests.finished
+    calls = test_chat.ChatTests.calls
+
+    def kill_journal_holder(self):
+        if self.holder.poll() is None:
+            self.holder.kill()
+            self.holder.wait(30)
+
+    def hold_journal(self):
+        """Own the real usage journal from another process, as a peer Hub would."""
+
+        directory = self.store.usage_log.path.parent
+        self.holder = subprocess.Popen([sys.executable, "-c", HOLD_JOURNAL, str(directory)],
+                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(self.holder.wait, 30)
+        self.addCleanup(self.holder.stdin.close)
+        self.addCleanup(self.holder.stdout.close)
+        self.addCleanup(self.kill_journal_holder)
+        line = bounded(self, self.holder.stdout.readline, on_timeout=self.kill_journal_holder)
+        self.assertEqual(line.strip(), "held")
+        return self.holder
+
+    def test_held_journal_neither_delays_nor_repeats_a_real_hub_turn(self):
+        holder = self.hold_journal()
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            created = client.post("/api/chat/sessions", json={"projectDir": str(self.project), "provider": "codex"})
+            self.assertEqual(created.status_code, 201, created.text)
+            session = created.json()["id"]
+            clock = time.perf_counter()
+            posted = bounded(self, lambda: client.post(f"/api/chat/sessions/{session}/messages",
+                                                       json={"projectId": "chat-project", "content": "hello"}),
+                             on_timeout=self.kill_journal_holder)
+            elapsed = time.perf_counter() - clock
+            self.assertEqual(posted.status_code, 202, posted.text)
+            self.assertLess(elapsed, 1.0, "a skipped observation must not delay the turn")
+            self.assertIsNone(holder.poll(), "measured while the lock was still held")
+            finished = wait_for(lambda: client.get(f"/api/chat/sessions/{session}").json(),
+                                lambda row: row["status"] != "running")
+            self.assertEqual(finished["status"], "idle", finished.get("error"))
+            self.assertEqual(len(self.calls()), 1, "the CLI turn ran exactly once")
+            self.assertFalse(self.store.usage_log.path.exists(), "no unlocked fallback write")
+            self.assertEqual(self.store.usage_log.read(), ([], [BUSY_NOTICE]))
+            holder.stdin.write("\n")
+            holder.stdin.flush()
+            self.assertEqual(holder.wait(30), 0)
+            second = client.post(f"/api/chat/sessions/{session}/messages",
+                                 json={"projectId": "chat-project", "content": "hello again"})
+            self.assertEqual(second.status_code, 202, second.text)
+            self.assertEqual(wait_for(lambda: client.get(f"/api/chat/sessions/{session}").json(),
+                                      lambda row: row["status"] != "running")["status"], "idle")
+        self.assertEqual(len(self.calls()), 2, "the dropped observations replayed no turn")
+        rows, warnings = self.store.usage_log.read()
+        self.assertFalse(warnings)
+        roots = [row for row in rows if row.phase == "hub_turn"]
+        self.assertEqual([row.status for row in roots], ["succeeded"], "only the second turn is recorded")
+        self.assertTrue(any(row.details.get("missing_observations") for row in rows))
+        notice = build_traces([row.to_dict() for row in rows])["traces"][0]["warnings"]
+        self.assertTrue(any("跳过" in warning for warning in notice), notice)
+
+    def test_cli_progress_update_keeps_tool_open_until_completion(self):
+        session = self.create()
+        saved = self.store._sessions[session.id]
+        trace = HubTurnObserver(self.store.usage_log, "turn", session.projectId, "codex", None)
+        trace.ready()
+        self.store._running[session.id] = chat._Running(trace=trace)
+        item = {"type": "mcp_tool_call", "id": "one", "tool": "studio_request", "server": "monkeyhub",
+                "arguments": {"method": "GET", "path": "/api/state"}, "status": "in_progress"}
+        try:
+            for kind in ("item.started", "item.updated"):
+                self.store._event(saved, {"type": kind, "item": item}, {})
+            events, _ = self.store.usage_log.read()
+            self.assertEqual(next(row for row in events if row.phase == "tool_call").status, "running")
+            self.assertEqual(trace.rounds, 1)
+            self.store._event(saved, {"type": "item.completed", "item": {**item, "status": "completed"}}, {})
+            events, _ = self.store.usage_log.read()
+            self.assertEqual(next(row for row in events if row.phase == "tool_call").status, "succeeded")
+            self.assertEqual(trace.rounds, 2)
+        finally:
+            trace.finish("succeeded")
+            self.store._running.pop(session.id, None)
+
+    def test_cli_turn_is_live_then_completed_under_exact_native_identity(self):
+        session = self.create()
+        posted = self.post(session, "tool-test private-request-for-trace")
+        turn_id = posted.messages[-1].id
+        result = self.finished(session)
+        self.assertEqual(result.status, "idle", result.error)
+        events, warnings = self.store.usage_log.read()
+        self.assertFalse(warnings)
+        roots = [row for row in events if row.phase == "hub_turn"]
+        self.assertEqual(len(roots), 1)
+        self.assertEqual(roots[0].turn_id, turn_id)
+        self.assertEqual(roots[0].session_id, self.store._sessions[session.id].nativeSessionId)
+        self.assertEqual(roots[0].status, "succeeded")
+        self.assertTrue(any(row.phase == "tool_call" for row in events))
+        self.assertTrue(all(row.turn_id == turn_id for row in events))
+        self.assertNotIn("private-request-for-trace", json.dumps([row.to_dict() for row in events]))
+
+
+if __name__ == "__main__":
+    unittest.main()

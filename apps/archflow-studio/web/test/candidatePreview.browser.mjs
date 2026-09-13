@@ -12,6 +12,8 @@ import rhino3dm from "rhino3dm";
 // Actual App, job observation and 3DM parser; every API response is in memory.
 // No user service, project, browser profile or accepted design is touched.
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+// Run the independent model timing cases without requiring the drawing/history UI tour.
+const modelTimingOnly = process.argv.includes("--model-timing");
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-candidate-preview-test-"));
 const rhino = await rhino3dm();
 const published = { version: 0, stateSha256: "1".repeat(64) };
@@ -395,6 +397,7 @@ try {
   await page.goto(`${origin}/?lang=en`, { waitUntil: "domcontentloaded" });
   await rendered(home.runId);
 
+  if (!modelTimingOnly) {
   await step("model metadata and publication status are available in Settings without cluttering the model", async () => {
     assert.equal(await page.locator(".stage .source").count(), 0);
     assert.equal(await page.getByText("published · issue 0", { exact: true }).count(), 0);
@@ -931,6 +934,7 @@ try {
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, older.revisionRef);
   });
 
+  }
   diagnosticsEnabled = true;
   await page.reload({ waitUntil: "domcontentloaded" });
   await until(snapshot, (value) => value.status === "ready" && !value.changingBase, "Diagnostics fixture did not reload");
@@ -964,12 +968,18 @@ try {
     const load = await finishedDiagnostic("model_load", root.operationId);
     const download = await finishedDiagnostic("model_download", root.operationId);
     const parse = await finishedDiagnostic("model_parse", root.operationId);
+    const install = await finishedDiagnostic("model_install", root.operationId);
+    const projection = await finishedDiagnostic("model_projection", root.operationId);
     assert.equal(ended.eventId, root.eventId);
     assert.equal(ended.details.active_wait_ms, intent.durationMs + wait.durationMs);
     assert.ok(ended.details.between_actions_ms >= 100);
     assert.ok(Math.abs(ended.durationMs - ended.details.active_wait_ms - ended.details.between_actions_ms) < 50);
     assert.equal(wait.parentEventId, root.eventId); assert.equal(load.parentEventId, wait.eventId);
     assert.equal(download.parentEventId, load.eventId); assert.equal(parse.parentEventId, load.eventId);
+    assert.equal(install.parentEventId, load.eventId); assert.equal(projection.parentEventId, load.eventId);
+    assert.ok(Date.parse(parse.endedAt) <= Date.parse(install.startedAt));
+    assert.ok(Date.parse(install.endedAt) <= Date.parse(projection.startedAt));
+    assert.equal(projection.runId, candidate.candidateId);
     assert.equal(download.details.input_bytes, models.get(candidate.artifacts[0].sha256).length);
     const fetch = requests.findLast((row) => row.name === `/api/artifacts/${candidate.artifacts[0].sha256}/bytes`);
     assert.equal(fetch.headers["x-monkey-operation"], root.operationId);
@@ -1051,6 +1061,7 @@ try {
     await view(currentHome);
   });
 
+  if (!modelTimingOnly) {
   await step("drawing wait ends only after its returned revision is downloaded and painted", async () => {
     const viewTools = page.locator('button[aria-controls="view-tools"]');
     if (await viewTools.getAttribute("aria-expanded") === "false") await viewTools.click();
@@ -1103,6 +1114,7 @@ try {
     assert.equal(root.sourceRef, null);
     assert.equal(diagnosticEvents().some((row) => row.runId === "studio-projection"), false);
   });
+  }
 
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);

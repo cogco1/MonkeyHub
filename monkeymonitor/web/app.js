@@ -344,6 +344,44 @@ const english = {
   "几何程序摘要": "Geometry program digest", "来源几何程序摘要": "Source program digest", "来源 STEP 摘要": "Source STEP digest", "状态记录摘要": "State record digest",
   "生产代码": "Producer code", "构件席位": "Element seat", "上下文摘要": "Context digest", "供应商配置身份": "Provider configuration identity", "请求摘要": "Prompt digest", "增量导出": "Incremental export"
 };
+Object.assign(english, {
+  "跳到任务观测": "Skip to turn observatory", "一轮任务，完整看清": "Understand the whole turn", "任务轮次": "Turn", "暂无任务记录": "No turns recorded yet",
+  "从 MonkeyHub 发起任务后，已关联的模型、工具与候选阶段会自动显示。": "Start a turn in MonkeyHub. Correlated model, tool and candidate activity will appear automatically.",
+  "下载 Trace JSON": "Download trace JSON", "任务耗时": "Turn timeline", "实线：阻塞 · 虚线：后台 · 加粗：观测关键路径": "Solid: blocking · Dashed: background · Bold: observed critical path",
+  "所有阶段共用时间轴。重叠与嵌套阶段不累加；点选色条可查看记录。": "All stages share one time axis. Overlapping and nested durations are not added. Select a bar to inspect its record.",
+  "为什么慢": "Why slow?", "由执行记录直接计算": "Calculated from execution records", "活动树": "Activity tree", "活动详情": "Activity details",
+  "选择一个阶段查看模型、状态与关联记录。": "Select a stage to inspect its model, status and linked evidence.", "记录与价格依据": "Coverage and price basis",
+  "高级详情 · 原始调用与手动估算": "Advanced · raw calls and manual estimate", "任务每 3 秒刷新；原始用量每 30 秒刷新": "Turns refresh every 3 seconds; raw usage every 30 seconds",
+  "总历时": "Elapsed", "首次可见": "First visible", "候选已验证": "Verified candidate", "模型轮次": "Model rounds", "工具调用": "Tool calls", "模型唤醒": "Model wake-ups", "费用 / 等值": "Price / equivalent",
+  "阻塞": "Blocking", "后台": "Background", "阻塞属性未知": "Blocking status unknown", "观测关键路径": "Observed critical path", "尚无已计时阶段": "No timed stages recorded",
+  "未记录完整时间范围的阶段仍列在活动树中。": "Stages without a complete time range remain in the activity tree.", "原始记录（已脱敏）": "Raw record (sanitized)",
+  "起点": "Start offset", "阶段历时": "Stage duration", "关联记录": "Linked evidence", "未归因时间": "Unattributed time", "已知 Token 小计": "Known token subtotal",
+  "实时更新": "Live updates", "已暂停更新": "Updates paused", "任务读取失败，保留上次记录。": "Turn refresh failed. Keeping the last loaded records.", "暂时无法读取任务记录。": "Turn records are unavailable.",
+  "Trace 下载失败，请重试。": "Trace download failed. Try again.", "价格未核实": "Price unavailable", "没有已记录的诊断信号。": "No diagnostic signals recorded.",
+  "关键路径需要完整的阻塞时段记录。": "The critical path needs recorded blocking intervals.", "父阶段缺失": "Parent stage unavailable", "未关联父阶段": "Unlinked parent stage",
+  "用量记录数：{count}；其中 {missing} 条不完整。": "Usage records: {count}; {missing} are incomplete.",
+  "按记录费率计算；订阅模型显示 API 等值，不代表实际扣款。": "Calculated from recorded rates. Subscription models show an API equivalent, not an actual charge.",
+  "模型": "Model", "价格快照": "Rate snapshots", "详情": "Details", "尚无诊断摘要": "No diagnosis yet", "已知费用小计": "Known price subtotal",
+  "用户请求": "User request", "构建上下文": "Build context", "模型活动": "Model activity", "模型请求": "Model request", "工具调用": "Tool calls", "最终回复": "Final response", "结果验证": "Result verification", "候选验证": "Candidate validation", "候选读回": "Candidate readback", "STEP 读回": "STEP readback", "预览读回": "Preview readback", "模型安装": "Install model", "视图投影": "Project view", "模型加载": "Load model", "原生模型用量": "Native model usage", "原生 Agent 回合": "Native agent turn",
+  "订阅 API 等价值（非实际扣款）": "Subscription API equivalent (not an actual charge)", "API 费用估算（非账单）": "API estimate (not an invoice)", "订阅 API 等价值与 API 估算（均非实际扣款）": "Subscription API equivalent / API estimate (not an actual charge)",
+  "重复 schema 查询": "Repeated schema reads", "重复状态查询": "Repeated state reads", "重复工具活动": "Repeated tool activity", "已记录重试": "Recorded retries", "模型重新活动": "Model wake-ups", "上下文估算超预算": "Context estimate over budget", "相同已记录输入再次执行": "Repeated recorded inputs", "状态": "Status",
+  "记录显示重复查询；状态是否改变、查询是否必要仍需核对。": "Repeated reads were recorded. Whether state changed or each read was needed requires checking.",
+  "工具名和请求参数散列相同；状态是否改变、查询是否必要仍需核对。": "The tool name and request argument hash match. Whether state changed or each read was needed requires checking.",
+  "已归因的阻塞时间": "Attributed blocking time",
+  "显示传输明细": "Show transport details", "传输请求": "Transport request", "OCCT 几何导出": "OCCT geometry export",
+  "Agent 续行": "Agent resumes", "首段回复到达": "First response received", "Agent 活动区间": "Agent activity intervals",
+  "工具或权限等待后恢复的活动段。": "Activity resumes after tools or permission waits.", "仅统计明确的模型请求边界": "Counted only from explicit model request boundaries",
+  "首段回复到达记录的是服务端收文时点；首次可见来自客户端显示记录。": "First response is the server receipt time. First visible comes from client display records.",
+  "宿主记录的 Agent 活动区间恢复，可能包含等待；不能据此证明模型被重新唤醒。": "The host recorded resumed agent activity, which may include waiting. It does not prove that another model call occurred.",
+  "同名工具调用可能作用于不同输入，不能据此断言可以省略。": "Calls to the same tool may use different inputs; repetition alone does not show that they can be skipped.",
+  "仅统计生产者明确标记的重试；失败后恢复不等于无效工作。": "Only explicitly recorded retries are counted. Recovery after a failure is not necessarily wasted work.",
+  "活动区间由宿主边界记录，含等待；不是纯模型推理时长。": "The host records these activity intervals, including waits. They are not pure model inference time.",
+  "文字估算仅用于上下文诊断，真实 token 仍以 provider 元数据为准。": "Text estimates diagnose context size. Actual tokens come from provider metadata.",
+  "需要结合结果绑定、版本和缓存条件判断是否能复用。": "Reuse depends on result binding, version and cache conditions.",
+  "缺少完整请求根区间，不能推定关键路径。": "A complete request interval is missing; the critical path cannot be determined.",
+  "按明确阻塞事件的依赖层级分配非重叠区间；未观测部分保留未知，不能视为完整执行 DAG。": "Non-overlapping intervals follow the hierarchy of recorded blocking events. Unobserved time stays unknown; this is not a complete execution DAG.",
+  "并行阻塞分支没有等待先后证据，其重叠区间未指定关键分支。": "Parallel blocking branches have no recorded wait ordering, so their overlap is not assigned to a critical branch."
+});
 const catalog = locale === "en" ? english : {};
 const t = (key, parameters) => translateMessage(catalog, key, parameters);
 
@@ -363,16 +401,20 @@ for (const attribute of ["aria-label", "placeholder"]) {
   const usageFields = ["input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens", "cache_write_1h_input_tokens", "reasoning_output_tokens"];
   const rateFields = ["input", "cached_input", "cache_write_input", "cache_write_1h_input", "output"];
   const state = { events: [], source: "all", project: "", group: "operation", visibleGroups: 10, openGroups: new Set(), sourcesLoaded: false, sourceBusy: false, sort: "uncached_input", loaded: false, loading: false, rates: [], ratesLoaded: false, selectedRate: null, quoteEvent: null, warnings: [], excluded: 0, visibleEvents: 10, quoteVersion: 0 };
+  const traces = { items: [], warnings: [], project: "", selected: "", activeSpan: "", showTransport: false, loaded: false, loading: false, signature: "", open: new Set(), closed: new Set() };
+  const traceLanes = ["agent", "hub", "studio", "cad", "client"];
+  const traceLaneLabels = { agent: "Agent", hub: "Hub", studio: "Studio", cad: "CAD", client: "Client" };
   const controllers = new Set();
   const integerFormat = new Intl.NumberFormat(locale);
   const timeFormat = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
   const actionTimeFormat = new Intl.DateTimeFormat(locale, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-  const sourceLabels = { studio: "Studio", codex: "Codex" };
+  const sourceLabels = { studio: "Studio", codex: "Codex", hub: "Hub" };
   const statusLabels = { completed: "已完成", succeeded: "成功", success: "成功", failed: "失败", error: "失败", cancelled: "已取消", aborted: "已中止", running: "进行中", recorded: "已记录", observed: "已观测", compiled: "已编译", question: "待补充", unsupported: "不支持", last_only: "仅末次用量", token_count: "已记录", partial_history: "历史不完整", counter_discontinuity: "计数不连续", counter_reset_unknown: "计数重置未知" };
   const partialStatuses = new Set(["partial_history", "counter_discontinuity", "counter_reset_unknown", "last_only"]);
   const scopeLabels = { interaction: "交互历时", model_call: "模型请求往返", service: "服务阶段", client_wait: "客户端等待", agent_turn: "代理整轮", unknown: "耗时范围未知" };
   const phaseLabels = { design_edit: "设计修改", intent_compile: "意图处理", model_request: "模型请求往返", model_usage: "模型用量（请求时段未记录）", intent_wait: "意图请求等待", candidate_wait: "候选请求等待", candidate_queue: "候选排队", drawing_wait: "图纸请求等待", drawing_generate: "图纸生成", "drawing.load": "图纸模型读取", "drawing.hlr": "图纸线条计算", "drawing.svg": "SVG 输出", "drawing.png": "PNG 输出", "drawing.persist": "图纸写入", "drawing.register": "图纸登记", candidate: "候选生成（含几何导出）", geometry_export: "几何导出", model_load: "模型读取与解析", stage_save: "Stage 保存", intent: "意图理解", agent: "代理调用", agent_turn: "代理整轮" };
   Object.assign(phaseLabels, { element_production: "构件生成", export_cache_lookup: "导出缓存检查", source_export_lookup: "来源导出检查", occt_initialization: "几何内核初始化", occt_reuse_check: "几何复用检查", geometry_build: "几何构建", step_write: "STEP 写入", step_readback: "STEP 读回校验", tessellation: "曲面网格化", preview_write: "预览模型写入", preview_readback: "预览模型读回校验", model_download: "模型下载", model_parse: "模型解析", document_load: "图纸下载", document_render: "图纸显示", stage_wait: "Stage 请求等待", api_wait: "API 请求等待", produce_rows: "构件逐项生成", build_program_shapes: "几何构建", write_step: "STEP 写入", read_step: "STEP 读取", verify_step: "STEP 校验", tessellate_shape: "曲面网格化", write_preview_three_dm: "预览模型写入", inspect_three_dm: "预览模型检查", verify_preview: "预览模型校验" });
+  Object.assign(phaseLabels, { api_request: "传输请求", "geometry_export.occt.occt": "OCCT 几何导出" });
   const cacheLabels = { hit: "已复用", miss: "未命中", partial: "部分复用", refused: "未采用复用", not_applicable: "不适用缓存", unknown: "缓存情况未知" };
   const duplicateLabels = { repeated_execution: "已知重复执行；是否可避免仍待判断。", same_input_request: "已记录的请求输入相同；是否可避免待定。", same_asset_request: "再次请求同一资产", reused_result: "复用已保留结果", first_observed_input: "首次观察到这些输入", insufficient_input_identity: "缺少可比较的输入记录", none: "未标记重复执行", unknown: "重复情况未知" };
   const checkLabels = { same: "相同", changed: "已变化", missing: "缺失", unknown: "未知", verified: "已校验", unreadable: "不可读" };
@@ -819,6 +861,223 @@ for (const attribute of ["aria-label", "placeholder"]) {
     $("more-events").hidden = shown.length >= events.length;
   }
 
+  function traceDuration(value) { return typeof value === "number" && Number.isFinite(value) && value >= 0 ? duration(Math.round(value)) : "—"; }
+  function traceLabel(span) {
+    const semanticPhase = !["agent", "agent_turn"].includes(span.phase) && (Object.hasOwn(phaseLabels, span.phase) || span.phase?.startsWith("geometry_export."));
+    const parts = (semanticPhase || span.label === span.phase ? phaseLabel(span) : label(span.label, phaseLabel(span) || "未记录")).split(" · ");
+    return parts.map((part) => t(part)).join(" · ");
+  }
+  function visibleTraceSpans(trace) { return (trace.spans || []).filter((span) => traces.showTransport || span.phase !== "api_request"); }
+  function selectedTrace() { return traces.items.find((item) => item.trace_id === traces.selected); }
+  function traceStatus(status) { return t(statusLabels[status] || (status === "interrupted" ? "待补充" : "未记录")); }
+  function traceStat(title, value, note = "") {
+    const item = node("div"); item.dataset.metric = title;
+    item.append(node("dt", "", t(title)), node("dd", "", value));
+    if (note) item.append(node("small", "", note));
+    return item;
+  }
+  function traceTokenText(usage) {
+    const tokens = usage?.tokens || {};
+    return known(tokens.input_tokens) && known(tokens.output_tokens) ? count(tokens.input_tokens + tokens.output_tokens) : "—";
+  }
+  function tracePriceText(price) {
+    return price?.currency === "USD" && typeof price.amount_usd === "string" && /^\d+(?:\.\d+)?$/.test(price.amount_usd) ? `$${price.amount_usd}` : t("价格未核实");
+  }
+  function renderTraceSelectors() {
+    const projects = [...new Set(traces.items.map((trace) => trace.project_id).filter(Boolean))].sort();
+    if (traces.project && !projects.includes(traces.project)) traces.project = "";
+    const all = node("option", "", t("全部项目")); all.value = "";
+    const options = projects.map((project) => { const option = node("option", "", project); option.value = project; return option; });
+    const items = traces.items.filter((trace) => !traces.project || trace.project_id === traces.project);
+    if (!items.some((trace) => trace.trace_id === traces.selected)) { traces.selected = items[0]?.trace_id || ""; traces.activeSpan = ""; }
+    const signature = JSON.stringify([projects, traces.project, traces.selected, items.map((trace) => [trace.trace_id, trace.status, trace.started_at, trace.turn_id])]);
+    if (traces.selectorSignature === signature) return; traces.selectorSignature = signature;
+    $("trace-project").replaceChildren(all, ...options); $("trace-project").value = traces.project;
+    const turns = items.map((trace) => {
+      const parsed = new Date(trace.started_at);
+      const stamp = Number.isNaN(parsed.getTime()) ? t("时间未知") : actionTimeFormat.format(parsed);
+      const option = node("option", "", `${stamp} · ${traceStatus(trace.status)} · ${label(trace.turn_id || trace.trace_id)}`);
+      option.value = trace.trace_id; return option;
+    });
+    $("trace-select").replaceChildren(...(turns.length ? turns : [node("option", "", t("暂无任务记录"))]));
+    $("trace-select").disabled = !items.length; $("trace-select").value = traces.selected;
+    $("trace-download").disabled = !items.length;
+  }
+  function showTraceEvidence(span, focus = false) {
+    traces.activeSpan = span.event_id;
+    for (const button of $("trace-waterfall").querySelectorAll("button[data-span-id]")) button.setAttribute("aria-pressed", String(button.dataset.spanId === span.event_id));
+    for (const button of $("trace-tree").querySelectorAll("button[data-span-id]")) button.setAttribute("aria-pressed", String(button.dataset.spanId === span.event_id));
+    const title = node("h3", "", traceLabel(span));
+    const metadata = node("dl", "trace-evidence-metrics");
+    for (const [key, value] of [["状态", traceStatus(span.status)], ["模型", span.model && span.model !== "none" ? span.model : t("未记录")], ["起点", traceDuration(span.offset_ms)], ["阶段历时", traceDuration(span.duration_ms)], ["费用 / 等值", tracePriceText(span.price)]]) metadata.append(traceStat(key, value));
+    const binding = node("p", "field-help", [traceLaneLabels[span.lane] || span.lane, span.blocking === true ? t("阻塞") : span.blocking === false ? t("后台") : t("阻塞属性未知")].filter(Boolean).join(" · "));
+    const previousRaw = $("trace-evidence").querySelector(".trace-raw");
+    const raw = node("details", "trace-raw"); raw.dataset.spanId = span.event_id; raw.open = previousRaw?.dataset.spanId === span.event_id && previousRaw.open; raw.append(node("summary", "", t("原始记录（已脱敏）")), node("pre", "", JSON.stringify(span, null, 2)));
+    const links = node("dl", "trace-bindings");
+    for (const key of ["operation_id", "proposal_id", "candidate_id", "run_id", "source_ref"]) {
+      const value = span[key] ?? span.details?.[key];
+      if (typeof value === "string" && value) { const item = node("div"); item.append(node("dt", "", key), node("dd", "", value)); links.append(item); }
+    }
+    $("trace-evidence").replaceChildren(title, binding, metadata, links, raw);
+    if (focus) { $("trace-evidence-title").tabIndex = -1; $("trace-evidence-title").focus({ preventScroll: true }); $("trace-evidence-panel").scrollIntoView({ block: "nearest", behavior: "auto" }); }
+  }
+  function renderTraceWaterfall(trace) {
+    const spans = trace.spans || [];
+    const visible = visibleTraceSpans(trace);
+    const timed = visible.filter((span) => Number.isFinite(span.offset_ms) && span.offset_ms >= 0 && Number.isFinite(span.duration_ms) && span.duration_ms >= 0);
+    const extent = Math.max(1, trace.summary?.timeline_ms || trace.summary?.elapsed_ms || 0, ...timed.map((span) => span.offset_ms + span.duration_ms));
+    const critical = new Set((trace.critical_path?.segments || []).map((segment) => segment.event_id));
+    const fragment = document.createDocumentFragment();
+    const axis = node("div", "trace-axis"); axis.append(node("span", "", "")); const ticks = node("div", "trace-ticks");
+    for (let tick = 0; tick <= 4; tick += 1) ticks.append(node("span", "", traceDuration(extent * tick / 4)));
+    axis.append(ticks); fragment.append(axis);
+    for (const lane of traceLanes) {
+      const row = node("div", "trace-lane"); row.dataset.lane = lane; row.append(node("strong", "trace-lane-name", traceLaneLabels[lane]));
+      const track = node("div", "trace-track"); const occupied = [];
+      const laneSpans = timed.filter((span) => span.lane === lane).sort((a, b) => a.offset_ms - b.offset_ms || b.duration_ms - a.duration_ms);
+      for (const span of laneSpans) {
+        let slot = occupied.findIndex((end) => end <= span.offset_ms); if (slot < 0) slot = occupied.length;
+        occupied[slot] = span.offset_ms + Math.max(span.duration_ms, extent * 0.003);
+        const bar = node("button", `trace-bar${span.blocking === false ? " is-background" : ""}${span.blocking == null ? " is-unclassified" : ""}${critical.has(span.event_id) ? " is-critical" : ""}${span.duration_ms === 0 ? " is-milestone" : ""}`, span.duration_ms === 0 ? "" : traceLabel(span));
+        bar.type = "button"; bar.dataset.spanId = span.event_id; bar.dataset.status = span.status;
+        bar.style.left = `${span.offset_ms / extent * 100}%`; bar.style.width = `${span.duration_ms / extent * 100}%`; bar.style.top = `${slot * 34 + 5}px`;
+        const description = `${traceLabel(span)} · ${traceDuration(span.offset_ms)} → ${traceDuration(span.offset_ms + span.duration_ms)} · ${traceDuration(span.duration_ms)} · ${traceStatus(span.status)} · ${span.blocking === true ? t("阻塞") : span.blocking === false ? t("后台") : t("阻塞属性未知")}${critical.has(span.event_id) ? ` · ${t("观测关键路径")}` : ""}`;
+        bar.title = description; bar.setAttribute("aria-label", description); bar.setAttribute("aria-pressed", String(traces.activeSpan === span.event_id));
+        bar.addEventListener("click", () => showTraceEvidence(span, true)); track.append(bar);
+      }
+      track.style.height = `${Math.max(1, occupied.length) * 34 + 10}px`;
+      if (!laneSpans.length) track.append(node("span", "trace-lane-empty", "—")); row.append(track); fragment.append(row);
+    }
+    const path = trace.critical_path;
+    if (path?.segments?.length) {
+      const row = node("div", "trace-lane trace-critical"); row.append(node("strong", "trace-lane-name", t("观测关键路径")));
+      const track = node("div", "trace-track");
+      for (const segment of path.segments) {
+        if (!Number.isFinite(segment.offset_ms) || !Number.isFinite(segment.duration_ms)) continue;
+        const span = spans.find((item) => item.event_id === segment.event_id); const bar = node("span", "trace-critical-segment");
+        if (span) bar.dataset.lane = span.lane;
+        bar.style.left = `${segment.offset_ms / extent * 100}%`; bar.style.width = `${segment.duration_ms / extent * 100}%`;
+        bar.title = `${span ? traceLabel(span) : segment.event_id} · ${traceDuration(segment.duration_ms)}`; track.append(bar);
+      }
+      row.append(track); fragment.append(row);
+    }
+    if (timed.length < visible.length) fragment.append(node("p", "field-help", t("未记录完整时间范围的阶段仍列在活动树中。")));
+    $("trace-waterfall").replaceChildren(fragment);
+    const pathNote = path?.note ? path.note.split(/(?<=。)/).filter(Boolean).map((sentence) => t(sentence)).join(locale === "en" ? " " : "") : t("关键路径需要完整的阻塞时段记录。");
+    $("trace-critical-note").textContent = [pathNote, `${t("未归因时间")} ${traceDuration(path?.unattributed_ms ?? trace.summary?.unattributed_ms)}`].join(" · ");
+  }
+  function renderTraceTree(trace) {
+    const spans = visibleTraceSpans(trace); const byId = new Map((trace.spans || []).map((span) => [span.event_id, span])); const visibleIds = new Set(spans.map((span) => span.event_id)); const children = new Map(); const visited = new Set();
+    function visibleParent(span) {
+      let parent = span.parent_event_id; const seen = new Set([span.event_id]);
+      while (parent && byId.has(parent) && !visibleIds.has(parent) && !seen.has(parent)) { seen.add(parent); parent = byId.get(parent).parent_event_id; }
+      return visibleIds.has(parent) && !seen.has(parent) ? parent : "";
+    }
+    for (const span of spans) { const parent = visibleParent(span); if (!children.has(parent)) children.set(parent, []); children.get(parent).push(span); }
+    function branch(span) {
+      if (visited.has(span.event_id)) return null; visited.add(span.event_id);
+      const item = node("li", "trace-activity"); item.dataset.spanId = span.event_id; item.dataset.parentId = visibleParent(span);
+      const descendants = children.get(span.event_id) || [];
+      const heading = node("div", "trace-activity-heading"); const button = node("button", "trace-activity-button", traceLabel(span));
+      button.type = "button"; button.dataset.spanId = span.event_id; button.setAttribute("aria-pressed", String(traces.activeSpan === span.event_id));
+      button.addEventListener("click", () => showTraceEvidence(span, true));
+      const meta = node("span", "trace-activity-meta", `${traceStatus(span.status)} · ${traceDuration(span.duration_ms)}${span.blocking === false ? ` · ${t("后台")}` : ""}`);
+      heading.append(button, meta);
+      if (descendants.length) {
+        const details = node("details"); details.open = !traces.closed.has(span.event_id) && (traces.open.has(span.event_id) || !visibleParent(span));
+        const summary = node("summary", "trace-activity-branch", `${traceLabel(span)} · ${traceStatus(span.status)} · ${traceDuration(span.duration_ms)}`);
+        summary.dataset.branchId = span.event_id;
+        details.append(summary, heading); details.addEventListener("toggle", () => { if (!details.isConnected) return; if (details.open) { traces.open.add(span.event_id); traces.closed.delete(span.event_id); } else { traces.open.delete(span.event_id); traces.closed.add(span.event_id); } });
+        const list = node("ul"); for (const child of descendants) { const result = branch(child); if (result) list.append(result); } details.append(list); item.append(details);
+      } else item.append(heading);
+      if (span.parent_event_id && !byId.has(span.parent_event_id)) item.append(node("small", "field-help", t("父阶段缺失")));
+      return item;
+    }
+    const list = node("ul", "trace-activity-root");
+    for (const span of [...(children.get("") || []), ...spans]) { const item = branch(span); if (item) list.append(item); }
+    $("trace-tree").replaceChildren(list);
+  }
+  function renderTraceDiagnostics(trace) {
+    const attribution = (trace.attribution || []).filter((item) => item.duration_ms > 0).sort((a, b) => b.duration_ms - a.duration_ms);
+    text("trace-attribution", attribution.length ? `${t("已归因的阻塞时间")} · ${attribution.map((item) => `${traceLaneLabels[item.lane] || item.lane} ${traceDuration(item.duration_ms)}`).join(" · ")}` : "关键路径需要完整的阻塞时段记录。");
+    const list = node("ul", "trace-diagnosis-list");
+    for (const diagnostic of trace.diagnostics || []) {
+      const item = node("li"); item.dataset.code = diagnostic.code;
+      item.append(node("strong", "", `${t(diagnostic.label)}${known(diagnostic.count) ? ` · ${count(diagnostic.count)}` : ""}`));
+      if (diagnostic.note) item.append(node("p", "field-help", t(diagnostic.note)));
+      for (const id of diagnostic.event_ids || []) {
+        const span = trace.spans.find((span) => span.event_id === id); if (!span) continue;
+        const button = node("button", "text-button", traceLabel(span)); button.type = "button"; button.addEventListener("click", () => showTraceEvidence(span, true)); item.append(button);
+      }
+      list.append(item);
+    }
+    $("trace-diagnostics").replaceChildren(list.children.length ? list : node("p", "field-help", t("没有已记录的诊断信号。")));
+  }
+  function renderTraceCoverage(trace) {
+    const fragment = document.createDocumentFragment();
+    const usage = trace.usage || {};
+    fragment.append(node("p", "", `${t("首段回复到达")} ${traceDuration(trace.summary?.first_response_ms)} · ${t("Agent 活动区间")} ${count(trace.summary?.provider_rounds)}`));
+    fragment.append(node("p", "field-help", t("首段回复到达记录的是服务端收文时点；首次可见来自客户端显示记录。")));
+    fragment.append(node("p", "", t("用量记录数：{count}；其中 {missing} 条不完整。", { count: count(usage.events_count), missing: count(usage.missing_events_count) })));
+    for (const warning of [...traces.warnings, ...(trace.warnings || []), ...(trace.price?.missing || [])]) fragment.append(node("p", "field-help", warning));
+    const seen = new Set();
+    for (const snapshot of trace.price?.rate_snapshots || []) {
+      const rate = snapshot.rate; if (!rate || seen.has(JSON.stringify(rate))) continue; seen.add(JSON.stringify(rate));
+      const paragraph = node("p", "field-help", [rate.provider, rate.model, rate.billing_plan, rate.effective_date].filter(Boolean).join(" · "));
+      try { const url = new URL(rate.source_url); if (url.protocol === "https:" && !url.username && !url.password) { const link = node("a", "", t("费率来源")); link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer"; paragraph.append(document.createTextNode(" · "), link); } } catch { /* Unavailable sources remain in the sanitized snapshot. */ }
+      fragment.append(paragraph);
+    }
+    const rates = node("details", "trace-raw"); rates.open = Boolean($("trace-coverage").querySelector("details[open]")); rates.append(node("summary", "", t("价格快照")), node("pre", "", JSON.stringify(trace.price || {}, null, 2))); fragment.append(rates);
+    $("trace-coverage").replaceChildren(fragment);
+  }
+  function renderTrace(force = false) {
+    renderTraceSelectors(); const trace = selectedTrace();
+    $("trace-content").hidden = !trace; $("trace-empty").hidden = Boolean(trace);
+    if (!trace) { traces.signature = ""; return; }
+    const signature = JSON.stringify(trace); if (!force && traces.signature === signature) return; traces.signature = signature;
+    const active = document.activeElement; const focusedSpan = active?.dataset?.spanId; const focusedBranch = active?.dataset?.branchId; const focusedTree = active?.closest("#trace-tree"); const focusedRaw = active?.tagName === "SUMMARY" && active.closest("#trace-evidence");
+    const summary = trace.summary || {}; const usage = trace.usage || {}; const subtotal = usage.known_subtotal_tokens || {};
+    const tokenNote = traceTokenText(usage) === "—" ? `${t("已知 Token 小计")} ${known(subtotal.input_tokens) && known(subtotal.output_tokens) ? count(subtotal.input_tokens + subtotal.output_tokens) : "—"}` : `${t("缓存输入")} ${count(usage.tokens?.cached_input_tokens)}`;
+    $("trace-summary").replaceChildren(
+      traceStat("总历时", traceDuration(summary.elapsed_ms)), traceStat("首次可见", traceDuration(summary.first_visible_ms)), traceStat("候选已验证", traceDuration(summary.verified_ms)),
+      traceStat("模型轮次", count(summary.model_rounds), t("仅统计明确的模型请求边界")), traceStat("工具调用", count(summary.tool_rounds)), traceStat("Agent 续行", count(summary.agent_resumes), t("工具或权限等待后恢复的活动段。")),
+      traceStat("Token 用量", traceTokenText(usage), tokenNote), traceStat("费用 / 等值", tracePriceText(trace.price), t(trace.price?.label || "价格未核实"))
+    );
+    text("trace-identity", [trace.project_id, trace.turn_id || trace.trace_id].filter(Boolean).join(" · "));
+    text("trace-status", traceStatus(trace.status)); $("trace-status").dataset.status = trace.status;
+    text("trace-price-note", "按记录费率计算；订阅模型显示 API 等值，不代表实际扣款。");
+    renderTraceWaterfall(trace); renderTraceTree(trace); renderTraceDiagnostics(trace); renderTraceCoverage(trace);
+    const span = visibleTraceSpans(trace).find((span) => span.event_id === traces.activeSpan);
+    if (span) showTraceEvidence(span); else { traces.activeSpan = ""; $("trace-evidence").replaceChildren(node("p", "field-help", t("选择一个阶段查看模型、状态与关联记录。"))); }
+    if (focusedSpan) { const container = focusedTree ? $("trace-tree") : $("trace-waterfall"); [...container.querySelectorAll("button[data-span-id]")].find((button) => button.dataset.spanId === focusedSpan)?.focus({ preventScroll: true }); }
+    if (focusedBranch) [...$("trace-tree").querySelectorAll("summary[data-branch-id]")].find((summary) => summary.dataset.branchId === focusedBranch)?.focus({ preventScroll: true });
+    if (focusedRaw) $("trace-evidence").querySelector(".trace-raw > summary")?.focus({ preventScroll: true });
+  }
+  async function refreshTraces() {
+    if (traces.loading || document.visibilityState === "hidden") return;
+    traces.loading = true;
+    try {
+      const payload = await request("/api/traces"); if (!Array.isArray(payload.traces)) throw new Error("invalid_traces");
+      traces.items = payload.traces.filter((trace) => trace && typeof trace.trace_id === "string" && Array.isArray(trace.spans)).sort((a, b) => (Date.parse(b.started_at) || 0) - (Date.parse(a.started_at) || 0));
+      traces.warnings = Array.isArray(payload.warnings) ? payload.warnings.filter((warning) => typeof warning === "string") : [];
+      traces.loaded = true; renderTrace(); $("trace-notice").hidden = true;
+      text("trace-live", `${t("实时更新")} · ${new Date().toLocaleTimeString(locale, { hour12: false })}`);
+    } catch {
+      text("trace-notice", traces.loaded ? "任务读取失败，保留上次记录。" : "暂时无法读取任务记录。"); $("trace-notice").hidden = false;
+      text("trace-live", "连接未确认");
+    } finally { traces.loading = false; }
+  }
+  async function downloadTrace() {
+    const trace = selectedTrace(); if (!trace) return;
+    $("trace-download").disabled = true;
+    try {
+      const payload = await request(`/api/traces/export?trace_id=${encodeURIComponent(trace.trace_id)}`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+      const link = node("a"); link.href = url; link.download = `turn-${trace.trace_id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100)}.json`; document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { text("trace-notice", "Trace 下载失败，请重试。"); $("trace-notice").hidden = false; }
+    finally { $("trace-download").disabled = false; }
+  }
+
   function populateRates(payload) {
     if (!Array.isArray(payload.rates)) throw new Error("invalid_rates");
     state.rates = payload.rates.filter((rate) => rate && typeof rate.provider === "string" && typeof rate.model === "string");
@@ -840,7 +1099,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
     if (eventsResult.status === "fulfilled" && Array.isArray(eventsResult.value.events)) {
       const unique = new Map(); let excluded = 0;
       for (const event of eventsResult.value.events) {
-        if (!event || typeof event.event_id !== "string" || !event.event_id || !["studio", "codex"].includes(event.source)) { excluded += 1; continue; }
+        if (!event || typeof event.event_id !== "string" || !event.event_id || !["studio", "codex", "hub"].includes(event.source)) { excluded += 1; continue; }
         unique.set(event.event_id, event);
       }
       state.events = [...unique.values()].sort((a, b) => (Date.parse(b.started_at) || 0) - (Date.parse(a.started_at) || 0));
@@ -961,10 +1220,15 @@ for (const attribute of ["aria-label", "placeholder"]) {
   for (const button of document.querySelectorAll("[data-source]")) button.addEventListener("click", () => { state.source = button.dataset.source; state.visibleEvents = 10; for (const filter of document.querySelectorAll("[data-source]")) filter.setAttribute("aria-pressed", String(filter === button)); renderOverview(); });
   $("open-calculator").addEventListener("click", () => fillEvent());
   $("close-calculator").addEventListener("click", () => $("calculator").close());
-  $("refresh").addEventListener("click", refresh);
+  $("refresh").addEventListener("click", () => { refresh(); refreshTraces(); });
+  $("trace-select").addEventListener("change", () => { traces.selected = $("trace-select").value; traces.activeSpan = ""; renderTrace(true); });
+  $("trace-project").addEventListener("change", () => { traces.project = $("trace-project").value; renderTrace(true); });
+  $("trace-show-transport").addEventListener("change", () => { traces.showTransport = $("trace-show-transport").checked; renderTrace(true); });
+  $("trace-download").addEventListener("click", downloadTrace);
   $("more-events").addEventListener("click", () => { state.visibleEvents += 10; renderOverview(); });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { refresh(); refreshTraces(); } else text("trace-live", "已暂停更新"); });
   const timer = setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 30000);
-  window.addEventListener("pagehide", () => { clearInterval(timer); for (const controller of controllers) controller.abort(); }, { once: true });
-  refresh();
+  const traceTimer = setInterval(refreshTraces, 3000);
+  window.addEventListener("pagehide", () => { clearInterval(timer); clearInterval(traceTimer); for (const controller of controllers) controller.abort(); }, { once: true });
+  refresh(); refreshTraces();
 })();
