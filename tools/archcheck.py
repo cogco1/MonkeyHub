@@ -7,8 +7,8 @@ the same path.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
 policy and work registry from Git. Once the scope rule exists in a parent,
-a commit declares its card (``P###``) in the subject, or in the body when the
-subject names none, and may write only that card's scope plus shared ledgers.
+a commit declares its card (``P###``), or ``P###/lane`` for a card with lanes,
+in the subject or body. It may write only that claim's scope plus shared ledgers.
 ``P000-governance`` permits only governance files and README.md maintenance.
 This is the mode CI runs on a pull request; it does not impose a new rule on
 the commits that preceded or introduced that rule.
@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import ntpath
 import re
 import subprocess
 import sys
@@ -637,7 +638,9 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
 WORK_REGISTRY = "governance/work_registry.json"
 ARCHITECTURE_POLICY = "governance/architecture_policy.json"
 LIVE_SCOPE_STATUSES = frozenset({"active", "ready"})
-CARD_ID = re.compile(r"\b(?:P000-governance(?![\w-])|P\d{3}(?!\d))")
+CARD_ID = re.compile(r"\b(?:P000-governance(?![\w-])|P\d{3}(?!\d)(?:/[a-z0-9][a-z0-9_-]*)?)")
+LANE_STATUSES = frozenset({"planned", "active", "review", "blocked", "done"})
+LIVE_LANE_STATUSES = frozenset({"active", "review"})
 # Governance paths a commit may touch without naming a card. Everything else
 # belongs to exactly one card, whose write_scope says so.
 UNCARDED_WRITE_SCOPE = ("docs/adr/", "docs/REPO_LAYOUT.md", "CONTRIBUTING.md")
@@ -696,27 +699,99 @@ def check_scopes(
     policy: dict[str, Any],
     registry: dict[str, Any] | None,
 ) -> Iterator[PolicyFinding]:
-    """Two live cards cannot own the same path.
+    """Validate lane metadata and report competing live path claims.
 
-    ``write_scope`` is what a card may write, and it is the only boundary
-    between people developing in parallel. If two cards that are active or
-    ready claim the same directory, or one claims a directory inside the
-    other's, nobody can say whose change a conflict is. The shared ledgers
-    (``shared_write_scope`` in the policy: the suite, the card directory and the
-    two registries) are exempt because every card must be able to write them.
+    Cards without lanes retain their active/ready claims. With lanes, only
+    active/review lanes claim paths; the card remains the commit scope ceiling.
+    Shared tests and ledgers are exempt according to the existing policy.
     """
 
     if registry is None:
         return
     shared = policy["shared_write_scope"]
-    live = [
-        item
-        for item in registry["items"]
-        if isinstance(item, dict) and item.get("status") in LIVE_SCOPE_STATUSES
-    ]
+    live = []
+    dependencies = {str(item.get("id")) for item in registry["items"] if isinstance(item, dict)}
+    for item in registry["items"]:
+        if not isinstance(item, dict):
+            continue
+        if "lanes" not in item:
+            if item.get("status") in LIVE_SCOPE_STATUSES:
+                live.append(item)
+            continue
+        lanes = item["lanes"]
+        if not isinstance(lanes, list):
+            yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{item.get('id')}: lanes must be a list")
+            continue
+        seen = set()
+        for lane in lanes:
+            if not isinstance(lane, dict):
+                yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{item.get('id')}: lane must be an object")
+                continue
+            lane_id = lane.get("id")
+            name = f"{item.get('id')}/{lane_id}"
+            problems = []
+            if not isinstance(lane_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", lane_id):
+                problems.append("id must be a short lowercase lane name")
+            elif lane_id in seen:
+                problems.append("duplicate lane id")
+            else:
+                seen.add(lane_id)
+            status = lane.get("status") if isinstance(lane.get("status"), str) else None
+            if status not in LANE_STATUSES:
+                problems.append(f"status must be one of {sorted(LANE_STATUSES)}")
+            if not isinstance(lane.get("issue"), str) or not lane["issue"].strip():
+                problems.append("issue must name an Issue or agreed work item")
+            for field in ("branch", "worktree", "base_ref", "contributor", "reviewer", "handoff"):
+                value = lane.get(field)
+                if value is not None and (not isinstance(value, str) or not value.strip()):
+                    problems.append(f"{field} must be non-empty text or null")
+                if status in LIVE_LANE_STATUSES and field in ("branch", "worktree", "base_ref", "contributor") and not value:
+                    problems.append(f"{field} is required for active/review work")
+            for field in ("modules", "write_scope", "depends_on"):
+                values = lane.get(field)
+                if not isinstance(values, list) or any(not isinstance(v, str) or not v.strip() for v in values):
+                    problems.append(f"{field} must be a list of non-empty strings")
+            if isinstance(lane.get("modules"), list) and not lane["modules"]:
+                problems.append("modules must identify an intended owner")
+            scope = lane.get("write_scope")
+            if isinstance(scope, list):
+                if status in LIVE_LANE_STATUSES and not scope:
+                    problems.append("active/review work requires narrow write_scope")
+                for path in scope:
+                    if isinstance(path, str) and (path.startswith("/") or any(c in path for c in "\\:*?[]{}") or
+                                                  any(p in ("", ".", "..") for p in path.rstrip("/").split("/"))):
+                        problems.append(f"write_scope {path!r} must be a literal repository-relative file or directory")
+            if status == "blocked" and (not isinstance(lane.get("blocked_reason"), str) or not lane["blocked_reason"].strip()):
+                problems.append("blocked_reason is required for blocked work")
+            if problems:
+                for problem in problems:
+                    yield PolicyFinding(WORK_REGISTRY, 1, "LANE_METADATA", f"{name}: {problem}")
+                continue
+            if status != "done":
+                dependencies.add(name)
+            if status in LIVE_LANE_STATUSES:
+                live.append({**lane, "id": name})
+    for lane in live:
+        if "/" not in str(lane.get("id", "")):
+            continue
+        waiting = sorted(set(lane["depends_on"]) & dependencies)
+        if waiting:
+            yield PolicyFinding(WORK_REGISTRY, 1, "LANE_DEPENDENCY", f"{lane['id']} cannot be {lane['status']} while waiting for {', '.join(waiting)}; mark it blocked and record the handoff/order")
     live.sort(key=lambda item: str(item.get("id", "")))
     for index, first in enumerate(live):
         for second in live[index + 1 :]:
+            for field in ("branch", "worktree"):
+                left_value, right_value = first.get(field), second.get(field)
+                if not left_value or not right_value:
+                    continue
+                identities = [
+                    ntpath.normcase(ntpath.normpath(value))
+                    if field == "worktree" and ntpath.splitdrive(value)[0]
+                    else value.replace("\\", "/").rstrip("/")
+                    for value in (left_value, right_value)
+                ]
+                if identities[0] == identities[1]:
+                    yield PolicyFinding(WORK_REGISTRY, 1, "LANE_CHECKOUT", f"{first['id']} and {second['id']} share {field} {left_value!r}; use independent short branches/worktrees")
             pairs = sorted(
                 {
                     (left, right)
@@ -736,7 +811,7 @@ def check_scopes(
                     "SCOPE_OVERLAP",
                     f"{first.get('id')} write_scope {left!r} overlaps "
                     f"{second.get('id')} write_scope {right!r}; "
-                    "narrow one card or make the path a shared ledger",
+                    "narrow the claims or mark the later lane blocked with depends_on and an explicit handoff/order; shared surfaces come from policy",
                 )
 
 
@@ -786,6 +861,13 @@ def _git_json(root: Path, revision: str, path: str) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         raise ArchitecturePolicyError(f"invalid {path} at {revision[:8]}")
     return value
+
+
+def _lane(card: dict[str, Any], lane_id: str) -> dict[str, Any] | None:
+    lanes = card.get("lanes", ())
+    if not isinstance(lanes, (list, tuple)):
+        return None
+    return next((row for row in lanes if isinstance(row, dict) and row.get("id") == lane_id), None)
 
 
 def check_changed_scopes(
@@ -874,10 +956,13 @@ def check_changed_scopes(
                 if line.strip()
             }
         )
-        card_id = _commit_card(message)
+        claim_id = _commit_card(message)
+        card_id, _, lane_id = (claim_id or "").partition("/")
+        card_id = card_id or None
         card = cards.get(card_id) if card_id else None
         if card is None and card_id not in (None, "P000-governance") and parents:
             card = cards_at(parents[0]).get(card_id)
+        parent_allowed = None
         if card_id == "P000-governance":
             allowed = shared + list(GOVERNANCE_WRITE_SCOPE)
             code = "SCOPE_VIOLATION"
@@ -894,8 +979,18 @@ def check_changed_scopes(
             allowed = list(card.get("write_scope", ())) + shared
             code = "SCOPE_VIOLATION"
             named = f"commit {revision[:8]} is {card_id}"
+            if "lanes" in card:
+                parent_allowed = allowed
+                lane = _lane(card, lane_id)
+                if lane_id and parents and (lane is None or lane.get("status") == "done"):
+                    previous = cards_at(parents[0]).get(card_id, {})
+                    lane = _lane(previous, lane_id)
+                if lane is not None and lane.get("status") not in ("active", "review"):
+                    lane = None
+                allowed = list(lane.get("write_scope", ())) + shared if lane is not None else shared
+                named = f"commit {revision[:8]} is {claim_id}" if lane is not None else f"commit {revision[:8]} must name an active/review {card_id}/<lane>"
         for path in files:
-            if _covered_by_any(path, allowed) or (
+            if (_covered_by_any(path, allowed) and (parent_allowed is None or _covered_by_any(path, parent_allowed))) or (
                 card_id == "P000-governance" and path.rsplit("/", 1)[-1] == "README.md"
             ):
                 continue

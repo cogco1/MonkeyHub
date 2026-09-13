@@ -22,7 +22,7 @@ ACP 关闭测试确认只取消目标项目的 turn 和待决权限，并保留�
 
 ### #13 Phase 0：共同 CAD 后端契约（2026-09-12）
 
-- Issue：[#13](https://github.com/cogco1/ARCHFLOW_V4/issues/13)，先提交独立 Phase 0 PR。
+- Issue：[#13](https://github.com/cogco1/ARCHFLOW_V4/issues/13)，Phase 0 已由 [PR #15](https://github.com/cogco1/ARCHFLOW_V4/pull/15) 合入 `main`，合入提交 `1e77a32a8b5ad939a86e45c0fd14f22a7c77268d`。
 - 基线：远端 `main` / 已合并 PR #11，`f3b928399a092f2a0b51853a737377fd969aa96a`。
 - Lane：`codex/cad-contract`，本任务分配的 `8a9c/ARCHFLOW_V4` 独立 worktree；实施由本 Codex 任务负责，人工 reviewer/Blender 接手成员待指定。
 - Owner 与窄路径：EXTEND `adapters.cad_execution` 的 `cad_execution.py`、同 owner 的 `cad_backend.py` 及 README；`runtime.project_runner` 的 `project_runner.py`；共同 CAD/runner tests；仅相应 module 条目、P115 scope/本段与生成 SYSTEM_MAP。
@@ -32,7 +32,15 @@ ACP 关闭测试确认只取消目标项目的 turn 和待决权限，并保留�
 
 本 lane 的本地契约验证包含真实 OCCT 写入与冷读回、受控 Rhino 宿主监督，以及测试后端注册后无需修改 runner 的执行/复用。受控 Rhino 验证不代表真实 Rhino 宿主几何验收。用户主工作区源码、现有项目及运行中的 Hub/GRAVE/ABC/Monitor 不用于测试。
 
-**依赖与剩余验收：** Phase 0 PR 需独立 review 并合入 main；之后才实施 Phase 1 的 `work_registry`/`devctl work` lane 与实际重叠提示，以及 Phase 2 Blender 的单场景保存/读回闭环。后续成员从该合入提交创建独立 lane，不复制私有接口。#13 的多成员演练（实际成员、重叠提示、上游契约合入、Blender 独立进展）尚未完成，本卡和 issue 继续保留。
+### #13 Phase 1：并行任务与交接
+
+本次从 Phase 0 的合入提交开始，EXTEND `tools.devctl` 与 `tools.archcheck`，复用本卡 `lanes`、policy 和既有 CI。`devctl work` 显示当前任务；`work P115/team-lanes` 展开实际基线、责任、范围和交接。卡片范围仍是提交上限，active/review lane 声明本次窄路径；重叠时缩窄范围或将后行 lane 阻塞至上游交接完成。没有 lanes 的旧卡保留原规则。
+
+真实 #12 `codex/hub-runtime` / `efa8` 的路径与基线已向该任务核对，并以 [PR #16](https://github.com/cogco1/ARCHFLOW_V4/pull/16) 的实际文件登记；本次仅修改协作工具和文档。共享 policy、注册表、测试与生成地图按已有 shared scope 机制处理，各任务只修改自己的条目。Blender 记录为 planned，尚未把同事、宿主或独立复跑写成完成。
+
+本地协作工具与历史范围测试 66 项通过；独立 review 后补核旧卡斜杠标题、Windows 同一检出和 lane 关闭行为，4 项聚焦检查通过。archcheck、文档链接与生成地图一致性通过。真实 Blender 运行和成员接手仍属于下一阶段。
+
+**剩余验收：** Phase 1 单独 review/PR；Phase 2 在已落地的公共契约上完成 Blender 单场景保存/读回，再核实同事独立复跑与跨 lane 交接。测试中的三成员与故意路径冲突是临时仓库演练，不替代真实 Blender 宿主或团队接入。本卡和 #13 继续保留。
 
 ### 空项目进入建模（2026-09-12）
 
