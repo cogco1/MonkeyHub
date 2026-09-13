@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -186,6 +187,23 @@ class StateProjectionTests(unittest.TestCase):
         self.assertEqual(
             elements["portico-cornice"]["numericFields"], {"height": 0.3}
         )
+
+    def test_drawn_shapes_use_record_inputs_and_refuse_unresolved_host_datums(self) -> None:
+        elements = {item["elementId"]: item for item in self.payload["elements"]}
+        self.assertEqual(elements["portico-base"]["drawnShape"], {
+            "profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 0.6,
+            "workPlane": {"origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0]},
+            "parameterBoundFields": [],
+        })
+        self.assertIsNone(elements["portico-base"]["drawnShapeReason"])
+        self.assertIsNone(elements["portico-cornice"]["drawnShape"])
+        self.assertIn("host datum portico-base-top", elements["portico-cornice"]["drawnShapeReason"])
+        self.assertIn("modeling panel", elements["portico-cornice"]["drawnShapeReason"])
+        before = self.repository.read_head()
+        with patch("monkeyarch.capabilities.element_producers.produce_rows", side_effect=AssertionError("state reads must not produce geometry")):
+            after = self.client.get("/api/state").json()
+        self.assertEqual(after, self.payload)
+        self.assertEqual(self.repository.read_head(), before)
 
     def test_parameters_carry_their_lock_and_their_inputs(self) -> None:
         parameters = {
@@ -868,6 +886,66 @@ class BoundElementTests(unittest.TestCase):
             "value follows module. set module (= 1.2 m) instead, or re-declare "
             "bay without an expression in input/runner/state-record.json.",
         )
+
+    def test_drawn_shape_resolves_inherited_nested_bindings_and_world_plane(self) -> None:
+        payload = deepcopy(RECORD_PAYLOAD)
+        level = next(item for item in payload["entities"] if item["entity_id"] == "level-ground")
+        level["fields"]["elevation"] = 5
+        base = next(item for item in payload["entities"] if item["entity_id"] == "portico-base")
+        base["fields"].update({
+            "type_ref": "drawn-type", "params": {},
+            "references": {"base": {"offset_from": {"level": "level-ground", "offset": 0.25}}},
+        })
+        payload["entities"].append({
+            "entity_id": "drawn-type", "schema": "Type@1", "fields": {
+                "producer": "prism", "params": {
+                    "profile": [["@module", 0], [4, 0], [4, 2], ["@module", 2]],
+                    "height": "@bay", "elevation": "@module",
+                    "work_plane": {"origin": [10, "@module", 20], "xAxis": [1, 0, 0],
+                                   "yAxis": [0, 0.6, 0.8], "normal": [0, -0.8, 0.6]},
+                },
+            },
+        })
+        _, state = self._project(payload)
+        shape = next(item["drawnShape"] for item in state["elements"] if item["elementId"] == "portico-base")
+        self.assertEqual(shape["profile"], [[1.2, 0], [4, 0], [4, 2], [1.2, 2]])
+        self.assertEqual(shape["height"], 2.4)
+        self.assertEqual(shape["workPlane"]["origin"][::2], [10, 20])
+        self.assertAlmostEqual(shape["workPlane"]["origin"][1], 5 + 0.25 + 1.2 + 1.2)
+        self.assertEqual(shape["workPlane"]["normal"], [0, -0.8, 0.6])
+        self.assertEqual(shape["workPlane"]["yAxis"], [0, 0.6, 0.8])
+        self.assertEqual(shape["parameterBoundFields"], ["height", "profile", "work_plane"])
+
+    def test_planar_shape_keeps_its_closed_profile_and_only_marks_parameters_p_changes(self) -> None:
+        payload = deepcopy(RECORD_PAYLOAD)
+        base = next(item for item in payload["entities"] if item["entity_id"] == "portico-base")
+        profile = [[0, 0], [4, 0], [4, 2], [0, 2], [0, 0]]
+        base["fields"].update({
+            "producer": "planar-surface", "references": {"base": {"datum": "level-ground", "offset": 0.25}},
+            "params": {"profile": profile, "elevation": "@module",
+                       "work_plane": {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, -1]}},
+        })
+        _, state = self._project(payload)
+        shape = next(item["drawnShape"] for item in state["elements"] if item["elementId"] == "portico-base")
+        self.assertEqual(shape["profile"], profile)
+        self.assertEqual(shape["height"], 0)
+        self.assertAlmostEqual(shape["workPlane"]["origin"][1], 5.45)
+        self.assertEqual(shape["workPlane"]["normal"], [0, 0, -1])
+        self.assertEqual(shape["parameterBoundFields"], [], "an elevation binding does not block P")
+
+    def test_constrained_drawings_have_an_explicit_local_preview_refusal(self) -> None:
+        for change in ("top", "rectangular_cutouts"):
+            with self.subTest(constraint=change):
+                payload = deepcopy(RECORD_PAYLOAD)
+                base = next(item for item in payload["entities"] if item["entity_id"] == "portico-base")
+                if change == "top":
+                    base["fields"]["references"]["top"] = {"level": "level-ground"}
+                else:
+                    base["fields"]["params"]["rectangular_cutouts"] = []
+                _, state = self._project(payload)
+                element = next(item for item in state["elements"] if item["elementId"] == "portico-base")
+                self.assertIsNone(element["drawnShape"])
+                self.assertIn("cannot detach", element["drawnShapeReason"])
 
     def test_a_stale_bound_value_is_left_out_and_named_rather_than_shown(self) -> None:
         _, payload = self._project(_bound_payload(bay_value=99.0))       # stored 99 while 2 * module says 2.4

@@ -35,6 +35,10 @@ import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useMode
 import { hostOrigin, requestStartModeling } from "../../../../../shared-web/src/hostBridge.js";
 import { distanceBetween } from "../../workspaces/monkeyarch/viewer/featureEdges";
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
+import type { PushPullTarget } from "../../workspaces/monkeyarch/interactionSession";
+import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
+import { ModelToolButton } from "./ModelToolButton";
+import { preparePushPull } from "./pushPull";
 import {
   IDLE as SKETCH_IDLE,
   cancelled as cancelledSketch,
@@ -320,13 +324,20 @@ export function Stage({
     onClearSelection(): void;
     hasSelection: boolean;
     onTool?(tool: "select" | "pushPull" | "move" | "rotate" | "scale" | "copy"): void;
-    toolPanel?: ReactNode;
+    directTool?: DirectModelTool | null;
+    busy?: boolean;
+    interactionBlocked?: boolean;
+    error?: string | null;
+    pushPullTarget?: PushPullTarget | null;
+    pushPullReason?: string | null;
+    onApply?(action: DirectModelAction): void;
   };
   /** A host page already shows the workspace entries and the project's position. */
   embedded?: boolean;
 }) {
   const t = useT();
-  const { developerMode } = usePreferences();
+  const { developerMode, language } = usePreferences();
+  const zh = language === "zh-CN";
   const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
   const [elevationView, setElevationView] = useState<NonNullable<ElevationRequestDto["view"]>>("front");
   const [annotationCancel, setAnnotationCancel] = useState(0);
@@ -375,6 +386,84 @@ export function Stage({
     setSnapNote(null);
   }, [showMeasure]);
   const interaction = useRef(createInteractionSession());
+  const modelKeysRef = useRef(model);
+  modelKeysRef.current = model;
+  const pushPullInput = useRef<HTMLInputElement>(null);
+  const [pushPullActive, setPushPullActive] = useState(false);
+  const [pushPullError, setPushPullError] = useState<string | null>(null);
+  const pushPullErrorRef = useRef<string | null>(null);
+  const reportPushPullError = useCallback((message: string | null) => {
+    if (pushPullErrorRef.current === message) return;
+    pushPullErrorRef.current = message;
+    setPushPullError(message);
+  }, []);
+  const stopPushPull = useCallback(() => {
+    cancelInteractionFrame(interaction.current, "pushPull");
+    if (interaction.current.pushPull) viewportRef.current?.sketchPreview(null);
+    interaction.current.pushPull = null;
+    setPushPullActive(false);
+    reportPushPullError(null);
+  }, [reportPushPullError, viewportRef]);
+  const closeDirectTool = useCallback(() => {
+    stopPushPull();
+    modelKeysRef.current?.onTool?.("select");
+  }, [stopPushPull]);
+  const paintPushPull = useCallback(() => {
+    const current = interaction.current.pushPull;
+    if (!current) return;
+    const value = current.typed === null ? current.distance : Number(current.typed);
+    if (current.typed === null && pushPullInput.current) pushPullInput.current.value = String(Number(value.toFixed(4)));
+    try {
+      viewportRef.current?.sketchPreview(current.prepared.preview(value));
+      reportPushPullError(null);
+    } catch (error) {
+      viewportRef.current?.sketchPreview(null);
+      reportPushPullError(error instanceof Error ? error.message : String(error));
+    }
+  }, [reportPushPullError, viewportRef]);
+  const commitPushPull = useCallback((distance?: number) => {
+    const current = interaction.current.pushPull;
+    const keys = modelKeysRef.current;
+    if (!current || !keys?.onApply || keys.busy || keys.directTool !== "pushPull" || current.target !== keys.pushPullTarget) return;
+    const value = distance ?? (current.typed === null ? current.distance : Number(current.typed));
+    try {
+      if (!Number.isFinite(value) || Math.abs(value) < 1e-9 || !current.prepared.preview(value)) return;
+      // Dispose synchronously: a second click/Enter cannot submit this gesture again.
+      stopPushPull();
+      keys.onApply({ kind: "pushPull", distance: value, normal: current.face.normal, target: current.target });
+    } catch (error) {
+      reportPushPullError(error instanceof Error ? error.message : String(error));
+    }
+  }, [reportPushPullError, stopPushPull]);
+  useEffect(() => {
+    stopPushPull();
+    if (model?.directTool !== "pushPull" || !model.pushPullTarget || documentOpen || model.interactionBlocked) return;
+    const face = viewportRef.current?.workPlaneFromSelection();
+    if (!face) return;
+    try {
+      const prepared = preparePushPull(model.pushPullTarget.shape, face.normal);
+      interaction.current.pushPull = { target: model.pushPullTarget, face, prepared, distance: 0, typed: null };
+      if (pushPullInput.current) pushPullInput.current.value = "0";
+      setPushPullActive(true);
+    } catch (error) {
+      reportPushPullError(error instanceof Error ? error.message : String(error));
+    }
+    return stopPushPull;
+  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, reportPushPullError, stopPushPull, viewportRef]);
+  useEffect(() => {
+    if (model?.directTool !== "pushPull") return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return;
+      if (event.key === "Escape") { event.preventDefault(); closeDirectTool(); return; }
+      if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey || documentOpen) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest("input, textarea, select, [contenteditable]") ||
+          (target.closest("button, a") && !target.closest('button[data-model-tool="pushPull"]')))) return;
+      event.preventDefault(); commitPushPull();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [closeDirectTool, commitPushPull, documentOpen, model?.directTool]);
   // How far a snap reaches, in world units: a fifth of what the last drawn
   // rectangle spans, so it stays usable at any size the project is drawn at.
   const snapRadius = useCallback(() => {
@@ -417,22 +506,24 @@ export function Stage({
   }, [onSketch, stopSketching]);
   const chooseDrawingTool = useCallback((next: SketchTool | null) => {
     if (sketchBusy) return;
+    stopPushPull();
     setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, showSketch, sketchBusy, stopMeasuring]);
+  }, [onTool, model?.onTool, showSketch, sketchBusy, stopMeasuring, stopPushPull]);
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
   }, [chooseDrawingTool]);
   const choosePlane = useCallback((name: "xy" | "xz" | "yz" | "face") => {
+    closeDirectTool();
     const plane: SketchPlane | null = name === "face"
       ? viewportRef.current?.workPlaneFromSelection() ?? null : WORK_PLANES[name];
     if (!plane) return;
     setWorkPlaneName(name); setSnapNote(null);
     showSketch({ ...cancelledSketch(interaction.current.sketch), plane: name === "xy" ? null : plane, base: 0 });
-  }, [showSketch, viewportRef]);
+  }, [closeDirectTool, showSketch, viewportRef]);
   const closePolygon = useCallback(() => {
     const current = interaction.current.sketch;
     if (current.tool !== "polygon" || current.phase !== "profile" || !enclosesArea(current.vertices)) return;
@@ -487,12 +578,10 @@ export function Stage({
   //      make it the owner: a mark drawn earlier must not swallow the Ctrl+Z
   //      that belongs to the volume just made. Its buttons stay for that;
   //   5. otherwise the model: its own history, its own Delete, its own Esc.
-  const modelKeysRef = useRef(model);
-  modelKeysRef.current = model;
   const modelKeysAvailable = model !== undefined;
   // What is *in progress*, which is not the same as what is armed.
   const actionInProgressRef = useRef(false);
-  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null);
+  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive;
   actionInProgressRef.current = actionInProgress;
   const inkRef = useRef({
     undo: onUndoGesture, redo: onRedoGesture, canUndo: false, canRedo: false, busy: false,
@@ -531,7 +620,7 @@ export function Stage({
       if (key === " " && !(target instanceof HTMLElement && target.closest("button, a"))) {
         event.preventDefault(); chooseDrawingTool(null); return;
       }
-      if (inkRef.current.busy || actionInProgressRef.current) return;
+      if (inkRef.current.busy || (actionInProgressRef.current && !interaction.current.pushPull)) return;
       if (onSketch && (key === "r" || key === "c" || key === "l")) {
         event.preventDefault(); chooseDrawingTool(key === "r" ? "rectangle" : key === "c" ? "circle" : "polygon"); return;
       }
@@ -681,7 +770,7 @@ export function Stage({
     </div>}
   </>;
   return (
-    <section className="stage" aria-label={t("stage.ariaLabel")}>
+    <section className="stage" data-footer={!embedded || developerMode} aria-label={t("stage.ariaLabel")}>
       {(!embedded || picked !== null) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")} data-embedded={String(embedded)}>
         {/* A host page carries these entries in its own rail; this page would
             only repeat them, and its board entry would leave the host. */}
@@ -733,7 +822,7 @@ export function Stage({
         <ThreeDmViewport
           ref={viewportRef}
           interaction={interaction}
-          hoverEnabled={sketch.tool === null && !measuring && tool === null && !documentOpen && !sketchBusy}
+          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && tool === null && !documentOpen && !sketchBusy}
           onInspection={onInspection}
           onStatus={onStatus}
           onRequestFile={onRequestFile}
@@ -741,6 +830,7 @@ export function Stage({
           onSource={(label) => {
             // A new picture invalidates anchors and face planes. Keep the
             // chosen tool armed so another shape can follow a completed one.
+            stopPushPull();
             showSketch({ ...SKETCH_IDLE, tool: interaction.current.sketch.tool }); setWorkPlaneName("xy");
             stopMeasuring(); setMeasuring(false);
             onSource(label);
@@ -777,6 +867,19 @@ export function Stage({
           )}
         />
       </ErrorBoundary>
+      {pushPullActive && <div className="stage-sketch stage-pushpull" data-phase="pushPull"
+        onPointerDown={(event) => {
+          if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
+        }}
+        onPointerMove={(event) => {
+          const current = interaction.current.pushPull;
+          if (!current || current.typed !== null || event.buttons) return;
+          const point = viewportRef.current?.pointAlongAxis(event.clientX, event.clientY, [...current.face.origin], [...current.face.normal]);
+          if (!point) return;
+          current.distance = point.reduce((sum, value, index) => sum + (value - current.face.origin[index]!) * current.face.normal[index]!, 0);
+          scheduleInteractionFrame(interaction.current, "pushPull", paintPushPull);
+        }}
+        onClick={(event) => { if (event.button === 0) commitPushPull(); }} />}
       {measuring && (
         /* Two points off the loaded model, and the distance between them. It
            reads geometry and writes nothing: no candidate, no record. */
@@ -936,48 +1039,52 @@ export function Stage({
           )}
         </div>
         <div className="viewtools-wrap">
-          <div className="viewtools">
-            <button type="button" title={t("stage.sketch.selectTitle")} aria-pressed={sketch.tool === null && !measuring}
-              onClick={() => chooseDrawingTool(null)}>{t("stage.sketch.select")}</button>
+          <div className="viewtools model-tools">
+            <div className="model-tools__group" role="group" aria-label={zh ? "选择与绘制" : "Select and draw"}>
+            <ModelToolButton icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
+              onClick={() => chooseDrawingTool(null)} />
             {onSketch && <>
-              {(["rectangle", "circle", "polygon"] as const).map((kind) => <button key={kind} type="button"
-                aria-pressed={sketch.tool === kind} title={t(`stage.sketch.${kind}Title`)} disabled={sketchBusy}
-                onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)}>{t(`stage.sketch.${kind}`)}</button>)}
-              <select aria-label={t("stage.sketch.workPlane")} value={workPlaneName} disabled={sketchBusy}
+              {(["rectangle", "circle", "polygon"] as const).map((kind) => <ModelToolButton key={kind} icon={kind}
+                label={t(`stage.sketch.${kind}`)} shortcut={{ rectangle: "R", circle: "C", polygon: "L" }[kind]}
+                aria-pressed={sketch.tool === kind} disabled={sketchBusy}
+                onClick={() => chooseDrawingTool(sketch.tool === kind ? null : kind)} />)}
+              <select className="model-tools__plane" aria-label={t("stage.sketch.workPlane")} title={t("stage.sketch.workPlane")} value={workPlaneName} disabled={sketchBusy}
                 onChange={(event) => choosePlane(event.target.value as typeof workPlaneName)}>
-                <option value="xy">{t("stage.sketch.planeXY")}</option>
-                <option value="xz">{t("stage.sketch.planeXZ")}</option>
-                <option value="yz">{t("stage.sketch.planeYZ")}</option>
-                <option value="face" disabled={!model?.hasSelection}>{t("stage.sketch.planeFace")}</option>
+                <option value="xy">XY</option>
+                <option value="xz">XZ</option>
+                <option value="yz">YZ</option>
+                <option value="face" disabled={!model?.hasSelection}>{zh ? "选中面" : "Face"}</option>
               </select>
             </>}
-            {model?.onTool && (["pushPull", "move", "rotate", "scale", "copy"] as const).map((kind) => <button
-              key={kind} type="button" disabled={!model.hasSelection || sketchBusy} title={t(`stage.model.${kind}Title`)}
-              onClick={() => { chooseDrawingTool(null); model.onTool?.(kind); }}>{t(`stage.model.${kind}`)}</button>)}
+            </div>
+            <div className="model-tools__group" role="group" aria-label={zh ? "修改模型" : "Edit model"}>
+            {model?.onTool && (["pushPull", "move", "rotate", "scale", "copy"] as const).map((kind) => <ModelToolButton
+              key={kind} icon={kind} data-model-tool={kind} label={t(`stage.model.${kind}`)} shortcut={{ pushPull: "P", move: "M", rotate: "Q", scale: "S", copy: "" }[kind]}
+              aria-pressed={model.directTool === kind} disabled={sketchBusy || (kind !== "pushPull" && !model.hasSelection)}
+              onClick={() => { chooseDrawingTool(null); model.onTool?.(model.directTool === kind ? "select" : kind); }} />)}
             {model && <>
-              <button type="button" disabled={!model.canUndo || sketchBusy || actionInProgress} title="Ctrl+Z" onClick={model.onUndo}>{t("stage.model.undo")}</button>
-              <button type="button" disabled={!model.canRedo || sketchBusy || actionInProgress} title="Ctrl+Shift+Z / Ctrl+Y" onClick={model.onRedo}>{t("stage.model.redo")}</button>
+              <ModelToolButton icon="undo" label={t("stage.model.undo")} disabled={!model.canUndo || sketchBusy || actionInProgress} shortcut="Ctrl+Z" onClick={model.onUndo} />
+              <ModelToolButton icon="redo" label={t("stage.model.redo")} disabled={!model.canRedo || sketchBusy || actionInProgress} shortcut="Ctrl+Shift+Z" onClick={model.onRedo} />
             </>}
-            <button type="button" aria-pressed={measuring} title={t("stage.measure.title")}
-              onClick={() => measuring ? chooseDrawingTool(null) : chooseMeasure()}>
-              {t("stage.measure.label")}
-            </button>
-            <button type="button" aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
-              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); setVersionsOpen(false); }}>
-              {t("stage.tools.annotate")}{activeTool && !eraser ? ` · ${t(activeTool.labelKey)}` : ""}
-            </button>
-            <button type="button" aria-pressed={eraser} disabled={!annotationsReady} title={t("document.tool.eraser")}
-              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser((value) => !value); }}>{t("document.tool.eraser")}</button>
-            <button type="button" disabled={!canUndoGesture} title={t("stage.tools.undo.title")} onClick={onUndoGesture}>{t("stage.tools.undo.label")}</button>
-            <button type="button" disabled={!canRedoGesture} title={t("document.redo")} onClick={onRedoGesture}>{t("document.redo")}</button>
-            {(tool !== null || eraser) && <button type="button" title={t("stage.tools.cancel.title")} onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }}>{t("stage.tools.cancel.label")}</button>}
-            <span className="viewtools__sep" aria-hidden="true" />
-            <button type="button" onClick={() => viewportRef.current?.fitView()}>{t("stage.tools.fit")}</button>
-            <button type="button" onClick={() => viewportRef.current?.frontView()}>{t("stage.tools.front")}</button>
-            <button type="button" aria-expanded={viewToolsOpen} aria-controls="view-tools"
-              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); }}>{t("stage.tools.viewOptions")}</button>
+            </div>
+            <div className="model-tools__group" role="group" aria-label={zh ? "查看与批注" : "View and annotate"}>
+            <ModelToolButton icon="measure" label={t("stage.measure.label")} shortcut="T" aria-pressed={measuring}
+              onClick={() => measuring ? chooseDrawingTool(null) : chooseMeasure()} />
+            <ModelToolButton icon="annotate" label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
+              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); setVersionsOpen(false); }} />
+            <ModelToolButton icon="fit" label={t("stage.tools.fit")} onClick={() => viewportRef.current?.fitView()} />
+            <ModelToolButton icon="front" label={t("stage.tools.front")} onClick={() => viewportRef.current?.frontView()} />
+            <ModelToolButton icon="more" label={t("stage.tools.viewOptions")} aria-expanded={viewToolsOpen} aria-controls="view-tools"
+              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); }} />
+            </div>
           </div>
           {annotationToolsOpen && <div id="annotation-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.annotate")}>
+            <ModelToolButton icon="erase" label={t("document.tool.eraser")} aria-pressed={eraser} disabled={!annotationsReady}
+              onClick={() => { const next = !eraser; chooseDrawingTool(null); setAnnotationToolsOpen(true); setAnnotationCancel((value) => value + 1); setEraser(next); }} />
+            <ModelToolButton icon="undo" label={t("stage.tools.undo.label")} disabled={!canUndoGesture} onClick={onUndoGesture} />
+            <ModelToolButton icon="redo" label={t("document.redo")} disabled={!canRedoGesture} onClick={onRedoGesture} />
+            {(tool !== null || eraser) && <ModelToolButton icon="close" label={t("stage.tools.cancel.label")}
+              onClick={() => { setAnnotationCancel((value) => value + 1); setEraser(false); onTool(null); }} />}
             {GESTURE_TOOLS.map((item) => (
               <button key={item.kind} type="button" disabled={!annotationsReady} title={t(item.titleKey)}
                 aria-pressed={!eraser && tool === item.kind}
@@ -1225,7 +1332,20 @@ export function Stage({
               <span className="quiet sketch-entry__hint">{t("stage.sketch.cancel")}</span>
             </div>
           )}
-          {model?.toolPanel}
+          {model?.directTool && model.onApply && <ModelEditPanel key={model.directTool} tool={model.directTool}
+            subject={model.subject} busy={model.busy ?? false} error={pushPullError ?? model.error ?? null}
+            onApply={model.onApply} onClose={closeDirectTool}
+            pushPull={{ inputRef: pushPullInput, active: pushPullActive,
+              hint: pushPullActive
+                ? (zh ? "移动鼠标推拉；输入精确距离覆盖。单击或 Enter 确认，Esc 取消。" : "Move to push/pull; type an exact distance to override. Click or Enter to apply, Esc to cancel.")
+                : model.pushPullReason || (zh ? "先选择一个面，再移动鼠标或输入距离。" : "Select a face, then move the pointer or enter a distance."),
+              onChange: (value) => {
+                const current = interaction.current.pushPull;
+                if (!current) return;
+                current.typed = value;
+                cancelInteractionFrame(interaction.current, "pushPull");
+                paintPushPull();
+              }, onCommit: commitPushPull }} />}
           {captureFeedback && <span className="viewtools__feedback" role="status" aria-live="polite" aria-atomic="true">{captureFeedback}</span>}
         </div>
       </div>

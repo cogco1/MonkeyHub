@@ -465,7 +465,7 @@ try {
     await page.mouse.move(...negativeCorner);
     const result = await page.evaluate(async (change) => {
       window.moveBurst([[650, 400]]);
-      if (change === "tool") [...document.querySelectorAll("button")].find((button) => button.textContent === "Circle").click();
+      if (change === "tool") document.querySelector('button[aria-label="Circle"]').click();
       else {
         const select = document.querySelector('select[aria-label="Drawing plane"]');
         select.value = "yz";
@@ -625,7 +625,7 @@ try {
   const cancelledHover = await page.evaluate(async (point) => {
     const canvas = document.querySelector("canvas");
     canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: point[0], clientY: point[1] }));
-    [...document.querySelectorAll("button")].find((button) => button.textContent === "Rectangle").click();
+    document.querySelector('button[aria-label="Rectangle"]').click();
     const renders = window.hoverRenders;
     await new Promise(requestAnimationFrame);
     return { late: window.hoverRenders - renders, visible: window.hoverGroup.visible, phase: window.interaction.phase };

@@ -81,7 +81,8 @@ import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { usePreferences } from "../features/settings/preferences";
 import { FrameEditor } from "../features/stage/FrameEditor";
-import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "../features/stage/ModelEditPanel";
+import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
+import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
 import type { FinishedSketch, SketchVector } from "../features/stage/sketch";
 import {
   ProgramPanel,
@@ -501,7 +502,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   useEffect(() => {
     task?.setBusy(proposalBusy || candidateBusy || drawingBusy || historyBusy || optionsBusy || applyingProgram || selectingWorkingCopy || refiningEntryId !== null);
   }, [task, proposalBusy, candidateBusy, drawingBusy, historyBusy, optionsBusy, applyingProgram, selectingWorkingCopy, refiningEntryId]);
-  const [viewerCatalog, setViewerCatalog] = useState<CatalogDto | null>(null);
+  const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
     const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
       label: `${copy.label} · ${option.label}`, modelSource: option.modelSource,
@@ -627,31 +628,32 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const editGestures = (change: (current: readonly ModelGestureDto[]) => readonly ModelGestureDto[]) => {
     modelAnnotations.changeAnnotations(change(gestures));
   };
-  const semanticCatalog = useMemo(() => {
+  const viewedProjection = useMemo(() => {
     const runId = loadedArtifact?.runId;
     if (runId === undefined) return null;
-    if (projection?.catalog?.inspectionRun === runId) return projection.catalog;
-    return viewerCatalog?.inspectionRun === runId ? viewerCatalog : null;
-  }, [loadedArtifact?.runId, projection?.catalog, viewerCatalog]);
+    if (projection?.catalog?.inspectionRun === runId) return projection;
+    return viewerProjection?.catalog?.inspectionRun === runId ? viewerProjection : null;
+  }, [loadedArtifact?.runId, projection, viewerProjection]);
+  const semanticCatalog = viewedProjection?.catalog ?? null;
 
   useEffect(() => {
     const runId = loadedArtifact?.runId;
     if (changingBase || selectingWorkingCopy || modelLoading || runId === undefined || projection?.catalog?.inspectionRun === runId) {
-      setViewerCatalog(null);
+      setViewerProjection(null);
       return;
     }
     let current = true;
     const controller = new AbortController();
-    setViewerCatalog(null);
+    setViewerProjection(null);
     void studio
       .state(runId, undefined, controller.signal)
       .then((answer) => {
         if (current) {
-          setViewerCatalog(answer.catalog?.inspectionRun === runId ? answer.catalog : null);
+          setViewerProjection(answer.catalog?.inspectionRun === runId ? answer : null);
         }
       })
       .catch(() => {
-        if (current) setViewerCatalog(null);
+        if (current) setViewerProjection(null);
       });
     return () => {
       current = false;
@@ -1396,7 +1398,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
           ]),
         });
         const element = resolution.elementId
-          ? projection?.elements.find(
+          ? viewedProjection?.elements.find(
               (row) => row.elementId === resolution.elementId,
             )
           : undefined;
@@ -1442,7 +1444,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
         append({ kind: "refusal", error, what: "POST /api/pick/resolve" });
       }
     },
-    [append, loadedArtifact, projection, recoverFromStaleBase, semanticCatalog, sourceLabel,
+    [append, loadedArtifact, viewedProjection, recoverFromStaleBase, semanticCatalog, sourceLabel,
      sourceRunId, stateDigest, viewedSource],
   );
 
@@ -2233,6 +2235,20 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const [modelEditBusy, setModelEditBusy] = useState(false);
   const [directTool, setDirectTool] = useState<DirectModelTool | null>(null);
   const [directError, setDirectError] = useState<string | null>(null);
+  const directPendingRef = useRef(false);
+  const directToolEpoch = useRef(0);
+  const chooseDirectTool = useCallback((next: "select" | DirectModelTool) => {
+    directToolEpoch.current += 1;
+    setDirectTool(next === "select" ? null : next);
+    setDirectError(null);
+  }, []);
+  const pickedShape = picked?.status === "resolved" && picked.elementId
+    ? viewedProjection?.elements.find((row) => row.elementId === picked.elementId) : null;
+  const pushPullTarget = useMemo<PushPullTarget | null>(() => picked?.elementId && pickedShape?.drawnShape
+    ? { elementId: picked.elementId, shape: pickedShape.drawnShape } : null,
+  [picked, pickedShape, loadedModelSource, project?.projectId]);
+  const directContext = useRef({ projectId: project?.projectId, source: loadedModelSource, tool: directTool, target: pushPullTarget });
+  directContext.current = { projectId: project?.projectId, source: loadedModelSource, tool: directTool, target: pushPullTarget };
   // What this tab has moved through, in order, as run ids. It is navigation,
   // not a second copy of the design: which run is current is still the
   // session's projection, and every run named here stays in the project
@@ -2364,29 +2380,42 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       runCandidate]);
 
   const applyDirectModelAction = useCallback(async (action: DirectModelAction) => {
-    if (!canDeleteModel || !deletableElementId || !deleteBase || !project) return;
+    if (directPendingRef.current || !canDeleteModel || !deletableElementId || !deleteBase || !project) return;
+    const context = directContext.current;
+    if (action.kind === "pushPull" && action.target && action.target !== context.target) return;
+    const pickRequest = pickRequestRef.current;
+    const viewRequest = modelLoadRequest.current;
+    const toolEpoch = directToolEpoch.current;
+    const stillCurrent = () => pickRequest === pickRequestRef.current && toolEpoch === directToolEpoch.current &&
+      viewRequest === modelLoadRequest.current &&
+      context.projectId === directContext.current.projectId && context.source === directContext.current.source &&
+      context.tool === directContext.current.tool;
+    directPendingRef.current = true;
     setModelEditBusy(true);
     setDirectError(null);
     setArtifactError(null);
     try {
       const base = { ...deleteBase, projectId: project.projectId, elementId: deletableElementId };
-      const face = viewportRef.current?.workPlaneFromSelection();
-      if (action.kind === "pushPull" && !face) throw new Error("Select a face in the model before using Push/Pull.");
+      const normal = action.kind === "pushPull" ? action.normal ?? viewportRef.current?.workPlaneFromSelection()?.normal : null;
+      if (action.kind === "pushPull" && !normal) throw new Error("Select a face in the model before using Push/Pull.");
       const proposal = action.kind === "pushPull"
-        ? await studio.pushPull({ ...base, distance: action.distance, normal: face ? buildingVector(face.normal) : null })
+        ? await studio.pushPull({ ...base, distance: action.distance, normal: normal ? buildingVector(normal) : null })
         : await studio.transform({ ...base, kind: action.kind,
           ...(action.kind === "move" || action.kind === "copy" ? { translation: buildingVector(action.translation) } : {}),
           // Swapping Y/Z reverses handedness, so the rotation angle reverses too.
           ...(action.kind === "rotate" ? { angleDegrees: -action.angleDegrees, axis: buildingVector(action.axis) } : {}),
           ...(action.kind === "scale" ? { scale: buildingVector(action.scale) } : {}),
         });
+      if (!stillCurrent()) return;
       await runCandidate(proposal.proposalId);
     } catch (cause) {
+      if (!stillCurrent()) return;
       const error = asStudioApiError(cause);
       setDirectError(error.detail);
       setArtifactError(error);
       recoverFromStaleBase(error);
     } finally {
+      directPendingRef.current = false;
       setModelEditBusy(false);
     }
   }, [canDeleteModel, deletableElementId, deleteBase, project, recoverFromStaleBase, runCandidate]);
@@ -3111,10 +3140,11 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
               canRedo: canRedoModel,
               onClearSelection: clearModelSelection,
               hasSelection: selection !== null || picked !== null,
-              onTool: (next) => { setDirectTool(next === "select" ? null : next); setDirectError(null); },
-              toolPanel: directTool ? <ModelEditPanel key={directTool} tool={directTool} subject={deletableElementId}
-                busy={modelNavigationBusy} error={directError} onApply={(action) => void applyDirectModelAction(action)}
-                onClose={() => { setDirectTool(null); setDirectError(null); }} /> : null,
+              onTool: chooseDirectTool,
+              directTool, busy: modelNavigationBusy, error: directError,
+              interactionBlocked: changingBase || selectingWorkingCopy || modelLoading || modelRunPending !== null,
+              pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
+              onApply: (action) => void applyDirectModelAction(action),
             }}
             viewportRef={viewportRef}
             message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : modelRunPending !== null ? t("stage.sketch.busy") : viewerMessage}

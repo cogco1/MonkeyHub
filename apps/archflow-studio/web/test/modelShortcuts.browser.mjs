@@ -21,6 +21,8 @@
  *   - blank canvas clicks clear the pick, selection and highlight, including
  *     when a real pick answer arrives late; camera gestures do not clear them;
  *   - a held key is one deletion, not a stream of them.
+ *   - P motion and numeric overrides remain temporary, one confirmation starts
+ *     one candidate, and cancelled or unresolved actions cannot write a run.
  *
  * No user service, project, browser profile or accepted design is touched.
  */
@@ -180,6 +182,18 @@ vite = await createServer({
     enforce: "pre",
     transform(source, id) {
       const modulePath = id.split("?")[0].replaceAll("\\", "/");
+      if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/features/stage/Stage.tsx`) {
+        const marker = "  const interaction = useRef(createInteractionSession());";
+        assert.equal(source.split(marker).length, 2);
+        return { code: source.replace(marker, marker + `
+          (window as unknown as { __interactionProbe: unknown }).__interactionProbe = () => {
+            const current = interaction.current.pushPull;
+            return { phase: interaction.current.phase, frame: interaction.current.frame?.kind ?? null,
+              pushPull: current ? { elementId: current.target.elementId, distance: current.distance,
+                typed: current.typed, origin: current.face.origin, normal: current.face.normal,
+                shape: current.target.shape } : null };
+          };`), map: null };
+      }
       if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx`) {
         const marker = "  const pickAt = useCallback(";
         assert.equal(source.split(marker).length, 2);
@@ -187,6 +201,13 @@ vite = await createServer({
           code: source.replace(marker, `
             (window as unknown as { __viewportProbe: unknown }).__viewportProbe = {
               hitAt: (x: number, y: number) => hitAt(x, y) !== null,
+              project: (point: [number, number, number]) => {
+                const runtime = runtimeRef.current!;
+                const rect = runtime.renderer.domElement.getBoundingClientRect();
+                const projected = new Vector3(...point).project(runtime.camera);
+                return { x: rect.left + (projected.x + 1) * rect.width / 2,
+                  y: rect.top + (1 - projected.y) * rect.height / 2 };
+              },
               pointForObject: (name: string) => {
                 const runtime = runtimeRef.current;
                 const object = runtime?.model?.getObjectByName(name);
@@ -211,10 +232,17 @@ vite = await createServer({
               state: () => {
                 const modelNames: string[] = [];
                 runtimeRef.current?.model?.traverse((object) => { if (object.name) modelNames.push(object.name); });
+                const sketch = runtimeRef.current?.sketch;
+                const bounds = sketch?.visible ? new Box3().setFromObject(sketch) : null;
                 return {
                   highlighted: runtimeRef.current?.highlighted.length ?? 0,
                   camera: runtimeRef.current?.camera.position.toArray() ?? null,
                   modelNames,
+                  preview: bounds ? { min: bounds.min.toArray(), max: bounds.max.toArray(),
+                    objects: [sketch!.uuid, ...sketch!.children.flatMap((object) => {
+                      const mesh = object as Mesh;
+                      return [mesh.uuid, mesh.geometry.uuid, (mesh.material as Material).uuid];
+                    })] } : null,
                 };
               },
             };
@@ -240,6 +268,8 @@ vite = await createServer({
             canUndo: canUndoModel,
             canRedo: canRedoModel,
             busy: modelNavigationBusy,
+            directBusy: modelEditBusy,
+            directTool,
             pending: modelRunPending,
             artifactError: artifactError?.detail ?? null,
             sourceLabel,
@@ -269,8 +299,10 @@ vite = await createServer({
   server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null },
 });
 const sent = [];
+const apiRequests = [];
 http.on("request", (request, response) => {
   if (!request.url?.startsWith("/api/")) { vite.middlewares(request, response); return; }
+  apiRequests.push({ method: request.method, path: request.url });
   if (request.method === "POST" || request.method === "PUT") {
     const chunks = [];
     request.on("data", (chunk) => chunks.push(chunk));
@@ -287,7 +319,8 @@ http.on("request", (request, response) => {
   });
   proxied.on("error", (cause) => {
     if (!closing) errors.push(`proxy: ${cause.message}`);
-    response.writeHead(502); response.end();
+    if (!response.headersSent) response.writeHead(502);
+    response.end();
   });
   request.pipe(proxied);
 });
@@ -331,6 +364,8 @@ const snapshot = () => page.evaluate(() => new Promise((resolve) => requestAnima
   ...window.__shortcuts,
   highlighted: window.__viewportProbe?.state().highlighted ?? 0,
   modelNames: window.__viewportProbe?.state().modelNames ?? [],
+  preview: window.__viewportProbe?.state().preview ?? null,
+  interaction: window.__interactionProbe?.() ?? null,
 })))));
 const modelHistoryOf = (state) => state?.history ?? [];
 
@@ -1187,6 +1222,244 @@ try {
   await page.unroute(catalogPath, holdCatalog);
 }
 
+// ---- 20. P motion is a disposable preview; only confirmation crosses the API
+console.log("20 · P mouse preview, click and exact Enter each obey the real candidate boundary");
+const gestureDrawing = await drawRectangle(2.25, 1.75, { x: centre.x + 175, y: centre.y + 140 });
+const gestureElement = gestureDrawing.element;
+const pForm = () => page.getByRole("form", { name: "Push/Pull P", exact: true });
+const proposalCalls = (start) => sent.slice(start).filter((row) => row.path === "/api/proposals/push-pull");
+const candidateCalls = (start) => sent.slice(start).filter((row) => /^\/api\/proposals\/[^/]+\/candidate$/.test(row.path));
+
+async function armPushPull() {
+  await pickOn(gestureElement, { requireVisible: true });
+  await page.keyboard.press("p");
+  await pForm().waitFor({ state: "visible", timeout: 5000 });
+  await settled((state) => state.interaction?.pushPull?.elementId === gestureElement,
+    "P did not capture the resolved drawn shape and picked face");
+  await page.waitForLoadState("networkidle");
+  return snapshot();
+}
+
+async function movePull(distance) {
+  const point = await page.evaluate((value) => {
+    const current = window.__interactionProbe().pushPull;
+    return window.__viewportProbe.project(current.origin.map((coordinate, index) => coordinate + value * current.normal[index]));
+  }, distance);
+  assert.equal(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.classList.contains("stage-pushpull"), point), true,
+    "the actual pointer must meet the P gesture overlay, not a toolbar");
+  await page.mouse.move(point.x, point.y, { steps: 12 });
+  return { point, state: await snapshot() };
+}
+
+function assertPullPreview(state, original, distance) {
+  assert.ok(state.preview, "the real viewport has no P preview geometry");
+  const normal = state.interaction.pushPull.normal;
+  const axis = normal.findIndex((value) => Math.abs(value) > 0.99);
+  assert.ok(axis >= 0, "the rectangular fixture needs an axis-aligned picked normal");
+  for (const bound of ["min", "max"]) for (let coordinate = 0; coordinate < 3; coordinate += 1) {
+    const changes = coordinate === axis && (bound === "min" ? normal[axis] < 0 : normal[axis] > 0);
+    const expected = original[bound][coordinate] + (changes ? distance * normal[axis] : 0);
+    assert.ok(Math.abs(state.preview[bound][coordinate] - expected) < 0.002,
+      `P preview moved ${bound}[${coordinate}] away from its picked face: ${JSON.stringify({ original,
+        preview: state.preview, gesture: state.interaction.pushPull, distance, expected })}`);
+  }
+}
+
+async function assertFinishedPull(before, start, runsBefore, distance, beforeModel) {
+  const done = await settled((state) => state.editingRunId !== before.editingRunId &&
+    state.loadedRunId === state.editingRunId && !state.busy && !state.loading && state.status === "ready",
+    "P confirmation never became the saved and visible candidate");
+  const calls = proposalCalls(start);
+  assert.equal(calls.length, 1, "one P confirmation must send exactly one typed proposal");
+  assert.equal(candidateCalls(start).length, 1, "one P confirmation must start exactly one candidate");
+  const body = calls[0].body;
+  assert.equal(body.elementId, gestureElement);
+  assert.equal(body.sourceRunId, before.loadedRunId);
+  assert.equal(body.stateDigest, (await call("GET", `/api/state?run=${before.loadedRunId}`)).stateDigest,
+    "the gesture must retain the exact source binding");
+  assert.ok(Math.abs(body.distance - distance) < 1e-6, `expected pull distance ${distance}, got ${body.distance}`);
+  const cadNormal = [body.normal[0], body.normal[2], body.normal[1]];
+  const axis = cadNormal.findIndex((value) => Math.abs(value) > 0.99);
+  assert.ok(axis >= 0, "the new rectangular fixture must expose an axis-aligned face");
+  const afterModel = await exported(done.editingRunId);
+  const beforeBox = beforeModel.get(`obj-${gestureElement}`);
+  const afterBox = afterModel.get(`obj-${gestureElement}`);
+  for (const [index, dimension] of ["x", "y", "z"].entries()) {
+    assert.ok(Math.abs(afterBox[dimension] - beforeBox[dimension] - (index === axis ? distance : 0)) < 0.002,
+      `the saved ${dimension} dimension does not match the confirmed face pull`);
+  }
+  for (const [name, box] of beforeModel) {
+    if (name !== `obj-${gestureElement}`) assert.deepEqual(afterModel.get(name), box, `P changed neighbouring ${name}`);
+  }
+  assert.equal((await runIds()).filter((run) => !runsBefore.includes(run)).length, 1);
+  assert.equal(done.preview, null, "finished P left a temporary preview in the real viewport");
+  assert.equal(done.interaction.pushPull, null, "finished P retained the disposable gesture");
+  await pForm().getByRole("button", { name: "Close tool", exact: true }).click();
+  return afterModel;
+}
+
+const clickBase = await armPushPull();
+const clickRuns = await runIds();
+const clickStart = sent.length;
+const pointerStart = apiRequests.length;
+const firstMotion = await movePull(0.25);
+assert.ok(firstMotion.state.preview, "real P motion displayed no temporary geometry");
+const clickMotion = await movePull(0.625);
+assertPullPreview(clickMotion.state, gestureDrawing.model.get(`obj-${gestureElement}`), 0.625);
+const previewOriginal = gestureDrawing.model.get(`obj-${gestureElement}`);
+console.log(`  real P preview bounds: ${JSON.stringify({ normal: clickMotion.state.interaction.pushPull.normal,
+  distance: clickMotion.state.interaction.pushPull.distance, original: { min: previewOriginal.min, max: previewOriginal.max },
+  preview: { min: clickMotion.state.preview.min, max: clickMotion.state.preview.max } })}`);
+assert.deepEqual(clickMotion.state.preview.objects, firstMotion.state.preview.objects, "P motion replaced the preview subtree");
+assert.notDeepEqual(clickMotion.state.preview, firstMotion.state.preview, "P motion did not update the existing geometry");
+assert.ok(Math.abs(clickMotion.state.interaction.pushPull.distance - 0.625) < 1e-6);
+assert.deepEqual(apiRequests.slice(pointerStart), [], "pointer motion called the Studio API");
+assert.deepEqual(await runIds(), clickRuns, "pointer motion created a candidate run");
+if (process.env.MONKEYARCH_MODEL_UI_QA_DIR) {
+  const screenshotPath = path.join(process.env.MONKEYARCH_MODEL_UI_QA_DIR, "pushpull-preview.png");
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log(`real P preview screenshot: ${screenshotPath}`);
+}
+// Several moves and the final click arrive before RAF. The click must consume
+// the latest session even though the pixels still show the preceding frame.
+const unpaintedClick = await page.evaluate(() => {
+  const overlay = document.querySelector(".stage-pushpull");
+  const current = window.__interactionProbe().pushPull;
+  let point;
+  for (const distance of [0.7, 0.8, 0.875]) {
+    point = window.__viewportProbe.project(current.origin.map((coordinate, index) => coordinate + distance * current.normal[index]));
+    overlay.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerId: 1, clientX: point.x, clientY: point.y }));
+  }
+  const pending = window.__interactionProbe();
+  overlay.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, clientX: point.x, clientY: point.y }));
+  return { pending, after: window.__interactionProbe() };
+});
+assert.equal(unpaintedClick.pending.frame, "pushPull");
+assert.ok(Math.abs(unpaintedClick.pending.pushPull.distance - 0.875) < 1e-6);
+assert.equal(unpaintedClick.after.pushPull, null, "the click must synchronously consume the latest gesture");
+assert.equal(unpaintedClick.after.frame, null, "the consumed gesture left an older preview frame queued");
+await page.keyboard.press("Enter");
+const clickModel = await assertFinishedPull(clickBase, clickStart, clickRuns, 0.875, gestureDrawing.model);
+
+const typedBase = await armPushPull();
+const typedRuns = await runIds();
+const typedStart = sent.length;
+await movePull(0.2);
+const distanceInput = pForm().getByRole("spinbutton", { name: "Distance m", exact: true });
+await distanceInput.fill("0.375");
+const overridden = await snapshot();
+assert.equal(overridden.interaction.phase, "value-override");
+assertPullPreview(overridden, clickModel.get(`obj-${gestureElement}`), 0.375);
+const ignoredMotion = await movePull(0.9);
+assert.deepEqual(ignoredMotion.state.preview, overridden.preview, "pointer motion overrode the typed preview");
+assert.equal(ignoredMotion.state.interaction.pushPull.typed, "0.375");
+assert.equal(proposalCalls(typedStart).length, 0, "typing an override submitted before confirmation");
+await distanceInput.press("Enter");
+await page.keyboard.press("Enter");
+await assertFinishedPull(typedBase, typedStart, typedRuns, 0.375, clickModel);
+
+// ---- 21. cancellation never turns a preview or an unresolved face into a run
+console.log("21 · P Esc and unresolved semantic picks remain local");
+await armPushPull();
+const cancelledRuns = await runIds();
+const cancelledStart = sent.length;
+await movePull(0.4);
+await page.keyboard.press("Escape");
+const cancelled = await settled((state) => state.directTool === null && state.interaction.pushPull === null,
+  "Esc did not discard P");
+assert.equal(cancelled.preview, null);
+assert.equal(cancelled.interaction.frame, null);
+assert.deepEqual(sent.slice(cancelledStart), [], "Esc sent a request from an uncommitted P gesture");
+assert.deepEqual(await runIds(), cancelledRuns);
+
+const unresolvedPath = (url) => url.pathname === "/api/pick/resolve";
+let releaseResolution, announceResolution;
+const resolutionGate = new Promise((resolve) => { releaseResolution = resolve; });
+const resolutionReady = new Promise((resolve) => { announceResolution = resolve; });
+const holdResolution = async (route) => {
+  const answer = await route.fetch();
+  announceResolution(answer.status());
+  await resolutionGate;
+  await route.fulfill({ response: answer });
+};
+await page.route(unresolvedPath, holdResolution);
+try {
+  const point = await page.evaluate((id) => window.__viewportProbe.pointForObject("obj-" + id), gestureElement);
+  assert.ok(point);
+  await page.mouse.click(point.x, point.y);
+  assert.equal(await Promise.race([resolutionReady, delay(10000).then(() => { throw new Error("no real semantic reply to hold"); })]), 200);
+  const requestStart = sent.length;
+  await page.keyboard.press("p");
+  await pForm().waitFor({ state: "visible", timeout: 5000 });
+  await pForm().getByRole("spinbutton", { name: "Distance m", exact: true }).fill("0.8");
+  await pForm().getByRole("spinbutton", { name: "Distance m", exact: true }).press("Enter");
+  const unresolved = await snapshot();
+  assert.ok(unresolved.highlighted > 0, "the waiting pick must still have a local visual response");
+  assert.equal(unresolved.canDelete, false);
+  assert.equal(unresolved.interaction.pushPull, null, "an unresolved pick armed a bound P gesture");
+  assert.deepEqual(sent.slice(requestStart), [], "P/Enter submitted before semantic resolution");
+  assert.deepEqual(await runIds(), cancelledRuns);
+  await page.keyboard.press("Escape");
+  releaseResolution();
+  await settled((state) => state.picked === gestureElement && state.canDelete, "released pick never resolved");
+} finally {
+  releaseResolution();
+  await page.unroute(unresolvedPath, holdResolution);
+}
+
+// ---- 22. a real proposal arriving after cancellation cannot start a candidate
+console.log("22 · late P proposals cannot survive Esc or a tool switch");
+for (const cancellation of ["escape", "rectangle"]) {
+  const before = await armPushPull();
+  const runsBefore = await runIds();
+  const requestStart = sent.length;
+  let releaseProposal, announceProposal, finishProposalRoute;
+  let proposalRouteError, responseHeld = false;
+  const proposalGate = new Promise((resolve) => { releaseProposal = resolve; });
+  const proposalReady = new Promise((resolve) => { announceProposal = resolve; });
+  const proposalRouteDone = new Promise((resolve) => { finishProposalRoute = resolve; });
+  const path = (url) => url.pathname === "/api/proposals/push-pull";
+  const holdProposal = async (route) => {
+    try {
+      const answer = await route.fetch();
+      responseHeld = true;
+      announceProposal({ status: answer.status(), body: await answer.json() });
+      await proposalGate;
+      await route.fulfill({ response: answer });
+    } catch (error) { proposalRouteError = error; }
+    finally { finishProposalRoute(); }
+  };
+  await page.route(path, holdProposal);
+  try {
+    await pForm().getByRole("spinbutton", { name: "Distance m", exact: true }).fill("0.5");
+    await pForm().getByRole("spinbutton", { name: "Distance m", exact: true }).press("Enter");
+    const held = await Promise.race([proposalReady, delay(10000).then(() => { throw new Error("no real P proposal to hold"); })]);
+    assert.equal(held.status, 201);
+    assert.ok(held.body.proposalId, "the delayed response must be a real typed proposal");
+    assert.equal(candidateCalls(requestStart).length, 0);
+    if (cancellation === "escape") await page.keyboard.press("Escape");
+    else await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+    await settled((state) => state.directTool === null, "P remained active after cancellation");
+    releaseProposal();
+    await proposalRouteDone;
+    assert.ifError(proposalRouteError);
+    const after = await settled((state) => !state.directBusy, "the late proposal never finished unwinding");
+    assert.equal(proposalCalls(requestStart).length, 1);
+    assert.equal(candidateCalls(requestStart).length, 0, `${cancellation} allowed a late proposal to startCandidate`);
+    assert.deepEqual(await runIds(), runsBefore);
+    assert.equal(after.loadedRunId, before.loadedRunId);
+    assert.equal(after.editingRunId, before.editingRunId);
+    assert.equal(after.preview, null);
+    assert.equal(after.interaction.pushPull, null);
+    if (cancellation === "rectangle") await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+    console.log(`  late proposal · ${cancellation} prevented candidate creation`);
+  } finally {
+    releaseProposal();
+    if (responseHeld) await proposalRouteDone;
+    await page.unroute(path, holdProposal);
+  }
+}
+
 // ---- done
 
 } finally {
@@ -1203,5 +1476,5 @@ if (errors.length) {
   process.exit(1);
 }
 console.log(modelUiOnly
-  ? "model UI: viewed-source drawings, P/M/Q/S/Copy and delayed-catalog visibility verified against real saved geometry"
-  : "model shortcuts: drawing, deletion, history, text keys, selection, camera gestures, P/M/Q/S/Copy and delayed-catalog visibility verified against real saved geometry");
+  ? "model UI: viewed-source drawings, P gestures/typed override/cancellation, P/M/Q/S/Copy and delayed replies verified against real saved geometry"
+  : "model shortcuts: drawing, deletion, history, text keys, selection, camera gestures, local P gestures, P/M/Q/S/Copy and delayed replies verified against real saved geometry");

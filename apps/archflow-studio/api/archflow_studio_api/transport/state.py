@@ -8,10 +8,13 @@ point; a client that confused them would compare a project against itself.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from archflow.contracts.fields import number
+from archflow.state.state_record import parameter_bindings_of, project_levels_of, resolve_element_bindings
+from monkeyarch.capabilities.reference_resolver import ReferenceContext, parse_reference, resolve_elevation
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
@@ -22,6 +25,7 @@ from .project import (
     project_version_dto,
     reference_run_dto,
 )
+from .proposal import SketchPlaneDto
 
 
 class ReferenceReceiptDto(BaseModel):
@@ -63,6 +67,21 @@ class ComponentNodeDto(BaseModel):
     revision: int
 
 
+class DrawnShapeDto(BaseModel):
+    """A recorded face/prism for local preview, in building-world Y-up metres."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
+
+    profile: list[tuple[float, float]] = Field(min_length=3)
+    work_plane: SketchPlaneDto = Field(
+        alias="workPlane", description="World placement including the base level, reference offset and elevation.",
+    )
+    height: float = Field(ge=0, description="Zero for a planar-surface; positive extrusion distance for a prism.")
+    parameter_bound_fields: list[Literal["height", "profile", "work_plane"]] = Field(
+        alias="parameterBoundFields", description="Only these producer parameters are bound; refuse gestures that change one of them.",
+    )
+
+
 class ElementDto(BaseModel):
     """One element row and the scalars an intent can target."""
 
@@ -74,6 +93,8 @@ class ElementDto(BaseModel):
     # Authored producer params keep the type they were written with; a count
     # that was authored as 4 must not come back as 4.0.
     numeric_fields: dict[str, int | float] = Field(alias="numericFields")
+    drawn_shape: DrawnShapeDto | None = Field(alias="drawnShape", default=None)
+    drawn_shape_reason: str | None = Field(alias="drawnShapeReason", default=None)
 
 
 class ParameterDto(BaseModel):
@@ -305,10 +326,71 @@ def catalog_dto(catalog: Catalog) -> CatalogDto:
     )
 
 
+def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto | None, str | None]]:
+    """Read drawing inputs without producing geometry or guessing host datums."""
+
+    record = projection.record
+    elements = record.entities_of("Element@1")
+    try:
+        resolved = resolve_element_bindings(record)
+        levels = project_levels_of(record)
+    except (KeyError, TypeError, ValueError) as exc:
+        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}") for entity in elements}
+    elevations = {level.level_id: level.elevation for level in levels.levels}
+    context = ReferenceContext(grids=None, levels=levels)
+    shapes: dict[str, tuple[DrawnShapeDto | None, str | None]] = {}
+    for entity in elements:
+        fields = resolved[entity.entity_id]
+        producer = fields["producer"]
+        if producer not in {"prism", "planar-surface"}:
+            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.")
+            continue
+        params, references = fields.get("params", {}), fields.get("references", {})
+        if "top" in references or "rectangular_cutouts" in params:
+            shapes[entity.entity_id] = (None, "Direct push/pull cannot detach panel cutouts or a top-reference constraint.")
+            continue
+        try:
+            base = references["base"]
+            if isinstance(base, Mapping) and "datum" in base:
+                datum_id = str(base["datum"])
+                # Published host tops live in the producer context, not in the
+                # StateProjection. Retain the panel route instead of compiling
+                # geometry on a state read or guessing from an element name.
+                if datum_id not in elevations:
+                    shapes[entity.entity_id] = (None, f"Local preview cannot resolve host datum {datum_id}; use the modeling panel.")
+                    continue
+                offset = number(base.get("offset", 0), "base offset")
+            else:
+                datum_id, offset = resolve_elevation(parse_reference(base), context)
+            elevation = elevations[datum_id] + offset + number(params.get("elevation", 0), "elevation")
+            plane = SketchPlaneDto.model_validate(params.get("work_plane", {
+                "origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0],
+            }))
+            origin = (plane.origin[0], plane.origin[1] + elevation, plane.origin[2])
+            plane = SketchPlaneDto.model_validate({**plane.model_dump(by_alias=True), "origin": origin})
+            height = 0.0 if producer == "planar-surface" else number(params["height"], "height")
+            if producer == "prism" and height <= 0:
+                raise ValueError("prism height must be positive")
+            bound_fields = sorted({
+                path[len("params."):].split(".", 1)[0].split("[", 1)[0]
+                for path, _ in parameter_bindings_of(entity, record)
+                if path.startswith("params.")
+            } & {"height", "profile", "work_plane"})
+            shape = DrawnShapeDto(profile=params["profile"], work_plane=plane, height=height,
+                                 parameter_bound_fields=bound_fields)
+            if producer == "planar-surface" and (len(shape.profile) < 4 or shape.profile[0] != shape.profile[-1]):
+                raise ValueError("planar-surface profile must explicitly close at its first point")
+            shapes[entity.entity_id] = (shape, None)
+        except (KeyError, TypeError, ValueError) as exc:
+            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}")
+    return shapes
+
+
 def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> StateProjectionDto:
     """Shape one projection for the wire; every value is already the kernel's."""
 
     record = projection.record
+    drawn_shapes = _drawn_shapes(projection)
     return StateProjectionDto(
         project_id=projection.project_id,
         published=project_version_dto(projection.head),
@@ -364,6 +446,8 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 component_id=element.component_id,
                 producer=element.producer,
                 numeric_fields=dict(element.numeric_fields),
+                drawn_shape=drawn_shapes[element.element_id][0],
+                drawn_shape_reason=drawn_shapes[element.element_id][1],
             )
             for element in projection.elements
         ],

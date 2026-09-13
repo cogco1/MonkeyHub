@@ -410,6 +410,23 @@ class DrawingPlaneTests(unittest.TestCase):
         with self.assertRaisesRegex(ElementProducerError, "convex profiles"):
             self.edit(row, kind="push_pull", distance=1, normal=[1, 0, 0])
 
+    def test_triangle_side_pull_cannot_invert_after_crossing_its_opposite_vertex(self):
+        vertices = [[0, 0], [4, 0], [0, 3]]
+        for profile in (vertices, list(reversed(vertices))):
+            row = self.row(profile=profile)
+            for distance in (-0.5, 1):
+                with self.subTest(profile=profile, distance=distance):
+                    changed = self.edit(row, kind="push_pull", distance=distance, normal=[0.6, 0, 0.8])
+                    scale = (2.4 + distance) / 2.4
+                    for actual, original in zip(changed.params["profile"], profile):
+                        for coordinate, source in zip(actual, original):
+                            self.assertAlmostEqual(coordinate, source * scale)
+                    self.assertEqual(changed.params["height"], row.params["height"])
+            for distance in (-2.4, -3):
+                with self.subTest(profile=profile, distance=distance):
+                    with self.assertRaisesRegex(ElementProducerError, "collapse or cross"):
+                        self.edit(row, kind="push_pull", distance=distance, normal=[0.6, 0, 0.8])
+
 
 class PrismElevationTests(unittest.TestCase):
     def test_top_reference_accounts_for_both_base_offset_and_elevation(self) -> None:

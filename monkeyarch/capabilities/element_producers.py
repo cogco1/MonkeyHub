@@ -901,7 +901,11 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
                     raise ElementProducerError("side push/pull cannot intersect parallel adjoining edges")
                 result[i] = ((constants[left] * b[1] - a[1] * constants[right]) / determinant,
                              (a[0] * constants[right] - constants[left] * b[0]) / determinant)
-            if not convex(result):
+            # A triangle can become convex again after crossing its opposite
+            # vertex. Keep every corner inside the moved edge half-planes too.
+            inside = all(nx * x + ny * y <= constant + 1e-9
+                         for x, y in result for (nx, ny), constant in zip(normals, constants))
+            if not convex(result) or not inside:
                 raise ElementProducerError("this side pull would collapse or cross another profile edge")
             params["profile"] = [list(point) for point in result]
             return replace(row, params=params)

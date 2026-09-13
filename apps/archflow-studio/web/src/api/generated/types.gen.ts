@@ -2028,6 +2028,37 @@ export type DrawingStylesDto = {
 };
 
 /**
+ * DrawnShapeDto
+ *
+ * A recorded face/prism for local preview, in building-world Y-up metres.
+ */
+export type DrawnShapeDto = {
+    /**
+     * Profile
+     */
+    profile: Array<[
+        number,
+        number
+    ]>;
+    /**
+     * World placement including the base level, reference offset and elevation.
+     */
+    workPlane: SketchPlaneDto;
+    /**
+     * Height
+     *
+     * Zero for a planar-surface; positive extrusion distance for a prism.
+     */
+    height: number;
+    /**
+     * Parameterboundfields
+     *
+     * Only these producer parameters are bound; refuse gestures that change one of them.
+     */
+    parameterBoundFields: Array<'height' | 'profile' | 'work_plane'>;
+};
+
+/**
  * EditableFieldDto
  */
 export type EditableFieldDto = {
@@ -2099,6 +2130,11 @@ export type ElementDto = {
     numericFields: {
         [key: string]: number | number;
     };
+    drawnShape?: DrawnShapeDto | null;
+    /**
+     * Drawnshapereason
+     */
+    drawnShapeReason?: string | null;
 };
 
 /**
