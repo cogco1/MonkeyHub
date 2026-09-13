@@ -8,12 +8,12 @@ import "./ModelEditPanel.css";
 export type DirectModelTool = "pushPull" | "move" | "rotate" | "scale" | "copy";
 export type DirectModelAction =
   | { kind: "pushPull"; distance: number; normal?: SketchVector; target?: PushPullTarget }
-  | { kind: "move" | "copy"; translation: [number, number, number] }
+  | { kind: "move" | "copy"; translation: [number, number, number]; target?: PushPullTarget }
   | { kind: "rotate"; angleDegrees: number; axis: [number, number, number] }
   | { kind: "scale"; scale: [number, number, number] };
 
 /** Typed model actions; the server owns their geometry and exact-base checks. */
-export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, pushPull }: {
+export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, pushPull, move }: {
   tool: DirectModelTool;
   subject: string | null;
   busy: boolean;
@@ -26,6 +26,12 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     hint: string;
     onChange(value: string): void;
     onCommit(distance: number): void;
+  };
+  move?: {
+    inputs: readonly RefObject<HTMLInputElement | null>[];
+    hint: string;
+    onChange(index: number, value: string): void;
+    onCommit(): void;
   };
 }) {
   const { language } = usePreferences();
@@ -42,6 +48,23 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
   const valid = values.slice(0, count).every((value) => value.trim() !== "" && Number.isFinite(Number(value))) &&
     (tool !== "scale" || values.slice(0, count).every((value) => Math.abs(Number(value)) > 1e-9)) &&
     (tool !== "pushPull" || Number(values[0]) !== 0);
+  if ((tool === "move" || tool === "copy") && move) return <form className="model-edit-panel model-edit-panel--pushpull model-edit-panel--move" aria-label={titles[tool]}
+    onKeyDown={(event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+    }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) move.onCommit(); }}>
+    <div className="model-edit-panel__distance">
+      <ModelToolButton icon="help" label={move.hint} />
+      {move.inputs.map((input, index) => <label key={index}>
+        <span className="quiet">{["X", "Y", "Z"][index]}</span>
+        <input ref={input} aria-label={`${["X", "Y", "Z"][index]} m`} type="number" step="any" defaultValue="0" disabled={busy}
+          onFocus={(event) => event.currentTarget.select()} onChange={(event) => move.onChange(index, event.target.value)} />
+      </label>)}
+      <span className="quiet" aria-hidden="true">m</span>
+      <ModelToolButton icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
+      <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+    </div>
+    {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
+  </form>;
   if (tool === "pushPull") {
     const inputRef = pushPull?.inputRef ?? fallbackInput;
     const hint = pushPull?.hint || (zh ? "先选择一个面。正值向外推，负值向内拉。" : "Select a face. Positive extends outward; negative pulls inward.");

@@ -3,6 +3,7 @@ import type { LocalHit } from "./viewer/preselection";
 import type { DrawnShapeDto } from "../../api/generated";
 import type { PreparedPushPull } from "../../features/stage/pushPull";
 import type { SketchPlane } from "../../features/stage/sketch";
+import type { SketchPreview } from "./viewer/ThreeDmViewport";
 
 export interface PushPullTarget {
   readonly elementId: string;
@@ -17,21 +18,33 @@ export interface PushPullGesture {
   typed: string | null;
 }
 
+export interface MoveGesture {
+  readonly target: PushPullTarget;
+  readonly tool: "move" | "copy";
+  readonly spec: SketchPreview;
+  plane: SketchPlane;
+  anchor: [number, number, number] | null;
+  translation: [number, number, number];
+  typed: [string, string, string] | null;
+}
+
 /** One disposable hand interaction, shared by Stage and its viewport. */
 export interface InteractionSession {
   sketch: SketchState;
   pushPull: PushPullGesture | null;
+  move: MoveGesture | null;
   hover: LocalHit | null;
   pointer: { x: number; y: number } | null;
   press: { x: number; y: number; dragging: boolean } | null;
-  frame: { id: number; kind: "sketch" | "hover" | "pushPull"; paint: () => void } | null;
+  frame: { id: number; kind: "sketch" | "hover" | "pushPull" | "move"; paint: () => void } | null;
   readonly phase: "inactive" | "hovering" | "armed" | "anchored" | "dragging" | "value-override";
 }
 
 export function createInteractionSession(): InteractionSession {
   return {
-    sketch: IDLE, pushPull: null, hover: null, pointer: null, press: null, frame: null,
+    sketch: IDLE, pushPull: null, move: null, hover: null, pointer: null, press: null, frame: null,
     get phase() {
+      if (this.move) return this.move.typed !== null ? "value-override" : this.move.anchor ? "dragging" : "armed";
       if (this.pushPull) return this.pushPull.typed !== null ? "value-override" : this.pushPull.distance === 0 ? "anchored" : "dragging";
       if (this.sketch.tool !== null) {
         if (this.sketch.typed.trim()) return "value-override";
@@ -44,14 +57,14 @@ export function createInteractionSession(): InteractionSession {
   };
 }
 
-export function cancelInteractionFrame(session: InteractionSession, kind?: "sketch" | "hover" | "pushPull"): void {
+export function cancelInteractionFrame(session: InteractionSession, kind?: "sketch" | "hover" | "pushPull" | "move"): void {
   if (!session.frame || (kind && session.frame.kind !== kind)) return;
   cancelAnimationFrame(session.frame.id);
   session.frame = null;
 }
 
 /** Both consumers read their latest session at paint time, never a queued snapshot. */
-export function scheduleInteractionFrame(session: InteractionSession, kind: "sketch" | "hover" | "pushPull", paint: () => void): void {
+export function scheduleInteractionFrame(session: InteractionSession, kind: "sketch" | "hover" | "pushPull" | "move", paint: () => void): void {
   if (session.frame?.kind === kind) { session.frame.paint = paint; return; }
   cancelInteractionFrame(session);
   const frame = { id: 0, kind, paint };
