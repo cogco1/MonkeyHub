@@ -19,8 +19,16 @@
 几何 DTO 不含文字、仅改变文字时批注 PNG 不变；5 种既有反馈交接场景、替换与 Crit 撤销回归、
 构建和架构检查通过。文件型粘贴验收不覆盖 HTML 或远程图片粘贴，不自动宣告 #23 全部完成。
 
+协调侧独立浏览器复验发现首建 Board 的读取竞态：保存已建立 `studio-board` 目录、尚未安装
+`run.json` 时，未持有 Board 保存锁的读取会枚举到该目录并返回 `RUN_NOT_FOUND`。
+修复限定为让 `read_board` 复用既有 `_board_lock`，读取同一 Studio 保存前或保存后的完整快照。
+暂停实际 manifest 安装的并发回归在旧实现稳定复现 404，修复后确认 GET 等待并返回与 PUT 相同的版本；
+11 项 Board API 测试全通过。使用协调复验的 Python 环境重跑完整真实浏览器也通过：
+63 次 API 请求、2 次显式提交。没有增加 404 重试或修改 P036 持久化。
+
 本片生产源码限定在 `apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx`
-与 `boardFeedbackGeometry.ts`，并更新相关 Board 测试及原有登记。共享文件保留其他 lanes，
+与 `boardFeedbackGeometry.ts`，以及 `apps/archflow-studio/api/archflow_studio_api/application/boards.py`，
+并更新相关既有 Board 测试及原有登记。共享文件保留其他 lanes。
 不吸收 #14 的 App／Stage／DTO 或 #21 桌面实现；下一独立 PR 由协调任务审查准确 head 与 CI 后合并。
 
 ### #14 Phases 2/3：本地会话与预选
