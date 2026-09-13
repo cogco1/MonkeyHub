@@ -117,6 +117,7 @@ tolerate it.
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
+| POST | `/api/intents/context` | the read a turn about one already named object would otherwise go and find: the capability description against the named exact base, the compiled read context for the same words, and the record's own preflight, composed as one `ContextPack@1` | reads work in progress + shared + published | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
@@ -148,7 +149,8 @@ over environment rule. Saving does not change the current compiler. The launcher
 unreadable or invalid file with a warning and never changes project, CAD or credential settings.
 
 `/api/intents` is provisional because who
-signs an agent's compilation receipt is still moving; the three deliberation resources because a
+signs an agent's compilation receipt is still moving; `/api/intents/context` because everything it
+composes is provisional itself and how much context it answers with is not bounded (below); the three deliberation resources because a
 judgement not yet met by a run is still one process's memory; `/api/compare` because its `why` comes from one
 process's memory of a proposal; `/api/events` because its event types are not a closed set and
 authenticated streams have no answer yet (§7); `/api/state/frame` and `/api/state/closure` because
@@ -166,6 +168,36 @@ preserves the existing default-binding behavior. Selecting an option uses its cr
 source for both preflight and execution, even after the client views another run.
 Missing or inexact explicit runs are errors, not a fallback to authored WIP. These are
 optional API inputs; a client must pass the selected source to use this continuation.
+
+**Prepared context for one already named object.** `POST /api/intents/context` answers a
+`ContextPack@1` to a caller that has already chosen what it is talking about. The request carries
+the architect's complete message unedited as `utterance`, the `projectId`, the `sourceRunId` and
+`stateDigest` it is read against, the `targetComponentId` and `elementId` in focus, and optionally
+`sourceStageRef`. Only the Stage is optional: a partial selection is refused rather than completed
+by guessing, because a guess about which object a change lands on is the one thing this must not
+make. The checks the write path makes are made here first and in the same order — `403
+PROJECT_MISMATCH`, the named run itself, `409 STALE_BASE` against the digest that run projects to,
+`404 TARGET_UNKNOWN`, `404 ELEMENT_UNKNOWN`, and `409 ELEMENT_COMPONENT_MISMATCH` when the element
+and the component named disagree. Every refusal names what the record does declare; none is
+quietly answered about a similar object.
+
+It reads. No proposal is made, no candidate is queued, no model provider is called and nothing is
+written. `source`, `target` and `keep` are the same halves `GET /api/capabilities/{capabilityId}`
+already answers with, so the two cannot drift, and the registered entry itself is left out — the
+caller asked what its project is, not what the registry says. `request` is that capability's own
+next body already holding the values the record holds now: a template to edit, never a change that
+was asked for or approved, and null when the `preflight` beside it already answers the request
+without one. `contextTier`, `escalation`, `context` and `preflight` are the existing compiler's own
+reading of those same words, and `honesty[]` says which of these applies.
+
+**What the pack is not.** It is not a bounded or token-optimised context product, and a smaller
+pack is not what it promises. A message that names several objects, speaks of a whole building, or
+asks that other authored fields be preserved widens to the design tier exactly as `/api/intents`
+would; when no local anchor can be resolved from the words themselves, the `context` it answers
+with is the complete record sheet. That is deliberate. Narrowing it would prepare for a request
+nobody made, and stated keep conditions and preservation context must stay readable beside what may
+change, so nothing here is dropped or truncated to make the answer smaller. There is no size
+ceiling on this resource; a client that forwards the pack to a model of its own owns that budget.
 
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
@@ -719,6 +751,25 @@ committed only when branch ancestry contains the matching candidate and exact ex
 candidate completion and formal project issue remain separate. `close` at the same runtime path
 cancels only its attached agents/permissions and drains its owned Studio. Normal Hub shutdown
 preserves the existing accepted-work drain.
+
+A chat message may carry an optional `designContext`: `sourceRunId`, `stateDigest`,
+`targetComponentId`, `elementId`, and optionally `sourceStageRef`, each nonempty. When it is there,
+Hub prepares that one turn against the bound Studio's `POST /api/intents/context` (§4) and appends
+the `ContextPack@1` it answers with to the prompt as data, leaving the architect's own message
+unedited and ahead of it. The selection belongs to the message that carried it: it is never
+inferred from a viewport, a recent candidate or the previous turn, and a later message with none of
+its own is prepared exactly as it was before. A refusal is that turn's answer in the words the
+refusal came with — no provider starts, and no other source is tried to get one started. The
+project the turn is bound to is still the conversation's own.
+
+Preparing is bounded by the turn's own limit and can be stopped inside it: a stop ends the turn
+then, abandoning that read rather than waiting it out, and the answer it may still produce reaches
+nothing. What the limit means after that differs by transport, and one does not stand in for the
+other. The CLI transports hold **one total limit for the turn**, so what preparing spent is time
+the CLI no longer has rather than a wait added outside the limit, and a turn whose budget is gone
+before the CLI starts answers `CHAT_TIMEOUT` without starting it. The ACP adapter's limit is an
+**inactivity interval** that its own updates reschedule, not a total; it keeps the whole interval,
+and preparing neither shortens it nor bounds the turn through it.
 
 The runtime admission/reply map is in-process. Hub cold startup reconstructs retained results
 and saved conversations, not pre-admission requests or lost proposal/job registries. No additional

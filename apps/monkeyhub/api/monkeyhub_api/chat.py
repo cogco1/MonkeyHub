@@ -1150,6 +1150,8 @@ class ChatStore:
                         running.trace.bind(identifier, session.model or client.default_model)
                     self._save(session)
 
+            # This adapter's own limit is an inactivity interval that its updates
+            # reschedule, not a total for the turn. It keeps the whole of it.
             client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s)
             return None
         except AcpCancelled:
@@ -1166,6 +1168,12 @@ class ChatStore:
         error: HubError | None = None
         stderr: list[str] = []
         completed_turn = False
+        # When this turn's own limit is spent. Preparing a named source is bound
+        # by it and cancellable within it, and the CLI transport — which holds
+        # one total limit for the turn — gets what preparing left rather than a
+        # fresh limit beside it. The ACP adapter keeps its own inactivity
+        # interval, which this is not and cannot stand in for.
+        deadline = time.monotonic() + self.timeout_s
         try:
             with self._lock:
                 session = self._sessions[session_id]
@@ -1212,7 +1220,8 @@ class ChatStore:
                     # Outside the lock deliberately: preparing this reads the
                     # Hub's own session over HTTP, and that read takes the same
                     # lock this turn would still be holding.
-                    prompt += _context_pack(self.hub_url, session_id, content, running.design_context)
+                    prepared = _prepared_context(self.hub_url, session_id, content,
+                                                 running.design_context, running.stop, deadline)
                 except (HubFailure, OSError, ValueError, TimeoutError) as cause:
                     # The preparation refused, or could not be read. That is
                     # this turn's answer, in the words the refusal came with. No
@@ -1221,12 +1230,28 @@ class ChatStore:
                     error = (cause.error if isinstance(cause, HubFailure)
                              else HubError(code="CHAT_TOOL_FAILED", detail=_reason(cause)))
                     return
-                if running.stop.is_set():
+                if prepared is None:
+                    # Stopped, or this turn's limit ran out while it waited. The
+                    # read is abandoned either way: no provider starts on a turn
+                    # that is already over, and the answer it may still produce
+                    # belongs to nothing.
+                    if not running.stop.is_set():
+                        error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit ran out while "
+                                         "its selected context was being prepared.")
                     return
+                prompt += prepared
             if session.transport == "acp":
                 if running.trace:
                     running.trace.ready()
                 error = self._run_acp(session_id, prompt, running)
+                return
+            if time.monotonic() >= deadline:
+                # The CLI transport holds one total limit for the turn, so a
+                # budget preparing already spent starts no process: a CLI given
+                # no time would be reported as its own failure rather than as
+                # the limit it actually ran into.
+                error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit was spent before "
+                                 "the CLI could be started.")
                 return
             command, environment = self._command(session)
             if running.trace:
@@ -1259,10 +1284,11 @@ class ChatStore:
             errors = threading.Thread(target=read_errors, daemon=True)
             feeder.start()
             errors.start()
-            timer = threading.Timer(self.timeout_s, lambda: _stop_process(process) if process.poll() is None else None)
+            timer = threading.Timer(max(0.0, deadline - time.monotonic()),
+                                    lambda: _stop_process(process) if process.poll() is None else None)
             timer.daemon = True
             timer.start()
-            started, last_save = time.monotonic(), 0.0
+            last_save = 0.0
             try:
                 for line in process.stdout:
                     try:
@@ -1288,7 +1314,7 @@ class ChatStore:
                 for stream in (process.stdin, process.stdout, process.stderr):
                     stream.close()
             if not running.stop.is_set():
-                if time.monotonic() - started >= self.timeout_s:
+                if time.monotonic() >= deadline:
                     error = HubError(code="CHAT_TIMEOUT", detail="The CLI did not finish within this turn's time limit.")
                 elif process.returncode and error is None:
                     detail = "".join(stderr).strip()[-1000:] or f"The CLI exited with code {process.returncode}."
@@ -1516,39 +1542,64 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
 def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
     """Ask for several independent things at once, and wait for all of them.
 
-    Only calls that do not depend on each other are passed here, and the pool
-    lives and dies inside this function: there is no worker layer, and nothing
-    is queued across requests. A refusal is raised in the order the caller
-    listed the calls, so the answer a client gets does not depend on which
-    reply happened to lose the race.
+    Only calls that do not depend on each other are passed here, and the threads
+    live and die inside this function: there is no worker layer, and nothing is
+    queued across requests. They are daemon threads holding a result local to
+    this call, so a service that has stopped answering is abandoned at the
+    deadline and cannot go on holding this process open — neither this wait nor
+    the interpreter's own exit is left waiting on a socket nobody wants any
+    more. A refusal is raised in the order the caller listed the calls, so the
+    answer a client gets does not depend on which reply happened to lose the
+    race.
     """
 
-    from concurrent.futures import ThreadPoolExecutor
-
     ends = time.monotonic() + timeout
-    pool = ThreadPoolExecutor(max_workers=max(1, len(calls)))
-    try:
-        pending = {name: pool.submit(copy_context().run, _request_json, *call, timeout=timeout) for name, call in calls.items()}
-        answers = {}
-        for name, future in pending.items():
-            try:
-                # Waiting is bounded by the same deadline the calls are: a
-                # thread that outlives it is abandoned rather than waited on.
-                answers[name] = future.result(timeout=max(0.0, ends - time.monotonic()))
-            except BaseException as cause:  # noqa: BLE001 - re-raised below, in order
-                answers[name] = cause
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-    for name, answer in answers.items():
+    answers: dict[str, object] = {}
+    keep = threading.Lock()
+
+    def collect(name: str, call: tuple, context) -> None:
+        try:
+            answer = context.run(_request_json, *call, timeout=timeout)
+        except BaseException as cause:  # noqa: BLE001 - re-raised below, in order
+            answer = cause
+        with keep:
+            answers[name] = answer
+
+    threads = [(name, threading.Thread(target=collect, args=(name, call, copy_context()),
+                                       daemon=True, name="hub-together"))
+               for name, call in calls.items()]
+    for _, thread in threads:
+        thread.start()
+    for _, thread in threads:
+        # Waiting is bounded by the same deadline the calls are: a thread that
+        # outlives it is abandoned rather than waited on.
+        thread.join(timeout=max(0.0, ends - time.monotonic()))
+    ordered = []
+    for name, _ in threads:
+        with keep:
+            answered, answer = name in answers, answers.get(name)
+        ordered.append((name, answer if answered else
+                        TimeoutError(f"no answer for {name} within {timeout:.0f}s")))
+    for _, answer in ordered:
         if isinstance(answer, BaseException):
             raise answer
-    return answers
+    return dict(ordered)
 
 
-def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, project_id: str | None = None, project_dir: str | None = None) -> tuple[str, dict]:
-    """Resolve the chat's own Studio, then verify its process and project before use."""
+def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, project_id: str | None = None,
+                  project_dir: str | None = None, deadline: float | None = None) -> tuple[str, dict]:
+    """Resolve the chat's own Studio, then verify its process and project before use.
+
+    With a ``deadline`` these checks share what is left of one budget instead of
+    each starting ``timeout`` again; without one they keep the per-check limit
+    the tool callers already have.
+    """
+
+    def left() -> float:
+        return timeout if deadline is None else deadline - time.monotonic()
+
     if chat_id is None:
-        configured_path = project_dir if project_dir is not None else _request_json(hub, "/api/settings/apps", timeout=timeout).get("projectDir")
+        configured_path = project_dir if project_dir is not None else _request_json(hub, "/api/settings/apps", timeout=left()).get("projectDir")
         if not configured_path:
             raise HubFailure(409, "PROJECT_REQUIRED", "Choose a project before preparing its modeling workspace.")
         actual_id, actual_path = _project(configured_path)
@@ -1556,7 +1607,7 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The selected project changed before its workspace was prepared.")
         session = {"projectId": actual_id, "projectDir": actual_path}
     else:
-        session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}", timeout=timeout)
+        session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}", timeout=left())
         if session.get("status") != "running":
             raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
         turn = next((row.get("id") for row in reversed(session.get("messages", [])) if row.get("role") == "user"), None)
@@ -1567,7 +1618,7 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
     first = _together({
         "apps": (hub, "/api/apps?" + urlencode({"projectDir": session["projectDir"]})),
         "hub_health": (hub, "/api/health"),
-    }, timeout)
+    }, left())
     studio = next((row for row in first["apps"] if row.get("appId") == "monkeyarch"), {})
     if studio.get("state") != "running" or not studio.get("url") or not studio.get("processId"):
         raise HubFailure(409, "CHAT_STUDIO_UNAVAILABLE", "Open MonkeyArch for this project before using a design tool.")
@@ -1575,7 +1626,7 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
     second = _together({
         "health": (base, "/api/health"),
         "binding": (base, "/api/project"),
-    }, timeout)
+    }, left())
     health = second["health"]
     if health.get("processId") != studio["processId"] or health.get("sourceRevision") != first["hub_health"].get("sourceRevision"):
         raise HubFailure(409, "CHAT_SERVICE_CHANGED", "The responding Studio is not the Hub's current service.")
@@ -1601,18 +1652,66 @@ _CONTEXT_NOTE = (
 )
 
 
-def _context_pack(hub: str, chat_id: str, content: str, selected: ChatDesignContext) -> str:
+def _prepared_context(hub: str, chat_id: str, content: str, selected: ChatDesignContext,
+                      stop: threading.Event, deadline: float) -> str | None:
+    """This turn's prepared context, waited for only as long as this turn lasts.
+
+    A synchronous socket read cannot be interrupted once it is waiting, so the
+    one read is made on a daemon thread this call owns, holding a result local
+    to it, while this turn waits on the stop it already has. ``None`` means the
+    turn ended first, by a stop or by its own deadline, and the caller starts no
+    provider.
+
+    An abandoned read is abandoned for good: the result is local to this call,
+    nothing retries it, and no later turn can be given what it eventually
+    returns. Nothing waits on it either — not this function and not the
+    interpreter's own exit — so a Studio that has stopped answering cannot keep
+    the Hub from shutting down. It stays safe to leave running because the route
+    it calls only reads: it makes no proposal, holds no project lock and writes
+    nothing through P036, so the answer nobody collects changes nothing.
+    """
+
+    done, outcome = threading.Event(), {}
+
+    def read(context) -> None:
+        try:
+            outcome["pack"] = context.run(_context_pack, hub, chat_id, content, selected, deadline)
+        except BaseException as cause:  # noqa: BLE001 - re-raised below, in the turn's own thread
+            outcome["cause"] = cause
+        finally:
+            done.set()
+
+    threading.Thread(target=read, args=(copy_context(),), daemon=True,
+                     name="hub-prepared-context").start()
+    while not done.wait(0.02):
+        # Ending at the stop, rather than at whatever the socket decides to do
+        # next, is the whole point of waiting here instead of in the read.
+        if stop.is_set() or time.monotonic() >= deadline:
+            return None
+    if stop.is_set() or time.monotonic() >= deadline:
+        return None
+    if "cause" in outcome:
+        raise outcome["cause"]
+    return outcome["pack"]
+
+
+def _context_pack(hub: str, chat_id: str, content: str, selected: ChatDesignContext, deadline: float) -> str:
     """This turn's selected-source context, as a paragraph to append to its prompt.
 
     The whole message goes to the Studio, unedited: the read context it compiles
     is the one these words actually need, and sending a shortened stand-in would
     prepare for a request nobody made. Every check belongs to the Studio and
     happens there; a refusal travels back as itself.
+
+    ``deadline`` is when this turn's limit is spent. Every check and the read
+    itself share what is left of it rather than each starting a limit of its
+    own; it is not what makes the wait cancellable, which is the caller's
+    business.
     """
 
     token = _trace_headers.set({})
     try:
-        base, session = _bound_studio(hub, chat_id)
+        base, session = _bound_studio(hub, chat_id, deadline=deadline)
         pack = _request_json(base, "/api/intents/context", "POST", {
             "utterance": content,
             "projectId": session["projectId"],
@@ -1621,7 +1720,7 @@ def _context_pack(hub: str, chat_id: str, content: str, selected: ChatDesignCont
             "targetComponentId": selected.targetComponentId,
             "elementId": selected.elementId,
             **({} if selected.sourceStageRef is None else {"sourceStageRef": selected.sourceStageRef}),
-        })
+        }, timeout=deadline - time.monotonic())
     finally:
         # The headers belong to the turn that set them and to nothing after it.
         _trace_headers.reset(token)
