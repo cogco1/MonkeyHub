@@ -1,5 +1,17 @@
 # P115 — 能力总索引与逐项整理
 
+### #21 Phase A：Windows 桌面窗口与 Hub 生命周期
+
+`P115/desktop` 从实际主线 `0ce0c111dbfeab2cb6373cf9050392e537caf20a` 开始，
+复用 `12ee` worktree 与 `codex/desktop`。EXTEND `hub.shell` 的入口，新增薄 Tauri
+宿主；EXTEND `tools.package_monkeyapps`，沿用其精确源码快照、前端资源、Python/Node
+运行时及候选 ZIP 路径。壳只管理一个通过 PID、父进程、实例 ID、源码版本和健康检查
+确认的 Hub 根进程；Studio、Monitor、ACP 继续由 Hub 管理，项目保存继续使用 P036。
+
+本阶段实现独立窗口、启动/崩溃诊断、受限导航和 stdin 协调退出，保留原浏览器开发入口。
+测试仅用隔离项目、配置和端口。源码 PR 与 EXE 运行验证不代表独立安装包已完成验收；
+App Server 故障恢复、独立安装环境和更新/重装验收继续由 #21 后续阶段处理。
+
 ### #14 Phases 2/3：本地会话与预选
 
 `P115/interaction` 在 PR #19 合入后的 `62c90302` 上继续，复用 `685e` worktree，分支为

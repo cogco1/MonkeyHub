@@ -1,0 +1,51 @@
+name: Windows desktop
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/monkeyhub/desktop/**'
+      - 'tools/package_monkeyapps.py'
+      - '.github/workflows/desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Rust toolchain
+        run: rustup show
+      - uses: actions/cache/restore@v4
+        id: rust-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/monkeyhub/desktop/target
+          key: windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}
+      - name: Test host boundaries
+        working-directory: apps/monkeyhub/desktop
+        run: cargo test --locked
+      - name: Build native window
+        working-directory: apps/monkeyhub/desktop
+        run: cargo build --locked --release
+      - name: Keep review executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonkeyArch-desktop-${{ github.event.pull_request.head.sha || github.sha }}
+          path: apps/monkeyhub/desktop/target/release/MonkeyArch.exe
+          if-no-files-found: error
+      - uses: actions/cache/save@v4
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/monkeyhub/desktop/target
+          key: windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}

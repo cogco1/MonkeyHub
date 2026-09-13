@@ -375,7 +375,9 @@
         "archflow/adapters/blender_cad.py",
         "archflow/adapters/blender_worker.py",
         "tests/test_blender_cad.py",
-        "tests/test_verify_state_record.py"
+        "tests/test_verify_state_record.py",
+        "tests/test_package_monkeyapps.py",
+        ".github/workflows/desktop.yml"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -418,7 +420,12 @@
           "contributor": "Codex task 01a098b4-553a-7ff0-baa5-0e1360333293",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
           "handoff": "PR #22: local P preview, exact numeric override and one existing typed request; cancellation/exact-source guards, precision fallback and coherent icon tools with hover labels. Full 22-group Studio/OCCT browser regression, focused API/producer/Web tests, build, generated API and architecture checks pass locally. Coordinator independently reviews exact-head CI and integrates this slice before another direct tool. Isolated fixtures only; installed services remain unchanged.",
-          "modules": ["studio.shell", "studio.intent", "studio.binding", "capabilities.element_producers"],
+          "modules": [
+            "studio.shell",
+            "studio.intent",
+            "studio.binding",
+            "capabilities.element_producers"
+          ],
           "write_scope": [
             "monkeyarch/capabilities/element_producers.py",
             "tests/test_element_producers.py",
@@ -483,6 +490,32 @@
             "tools/run_project.py",
             "tools/verify_state_record.py",
             "tests/test_verify_state_record.py"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "desktop",
+          "issue": "#21 Phase A Windows desktop host",
+          "status": "active",
+          "branch": "codex/desktop",
+          "worktree": "C:/Users/asus/.codex/worktrees/12ee/ARCHFLOW_V4",
+          "base_ref": "0ce0c111dbfeab2cb6373cf9050392e537caf20a",
+          "contributor": "Codex task 01a0993d-4a50-7212-99d3-7ef936aadd2a",
+          "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
+          "handoff": "Phase A only: Tauri window owns one verified Hub root through existing managed stdin. Existing Hub owns workers; independent installer and crash recovery acceptance remain later phases. Isolated test runtimes only.",
+          "modules": [
+            "hub.shell",
+            "tools.package_monkeyapps"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/desktop/",
+            "tools/package_monkeyapps.py",
+            "tests/test_package_monkeyapps.py",
+            ".github/workflows/desktop.yml",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/P115-capability-consolidation.md"
           ],
           "depends_on": []
         }

@@ -223,5 +223,42 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual((notices / "web-agentclientprotocol-codex-acp-1.11.0-1-LICENSE.txt").read_bytes(), b"adapter license\n")
 
 
+class DesktopPackageTests(unittest.TestCase):
+    def test_desktop_is_built_from_snapshot_with_bound_revision_and_external_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            build = Path(temporary)
+            source, bundle = build / "source", build / "bundle"
+            desktop = source / "apps/monkeyhub/desktop"
+            desktop.mkdir(parents=True)
+            (desktop / "Cargo.toml").write_text('[package]\nversion="0.1.0"\n', encoding="utf-8")
+            (desktop / "Cargo.lock").write_text('version = 4\n', encoding="utf-8")
+            (bundle / "_runtime").mkdir(parents=True)
+            executable = build / "desktop-target/release/MonkeyArch.exe"
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"fixture native executable")
+            cargo = build / "cargo.exe"
+            with patch.object(builder, "run", side_effect=["", json.dumps({"sourceRevision": "a" * 40, "version": "0.1.0"}), "cargo fixture"]) as run:
+                result = builder.build_desktop(source, bundle, "a" * 40, cargo, {"TEMP": str(build / "tmp")})
+            command = run.call_args_list[0]
+            self.assertEqual(command.args[0], [str(cargo), "build", "--locked", "--release",
+                                              "--target-dir", str(build / "desktop-target")])
+            self.assertEqual(command.kwargs["cwd"], desktop)
+            self.assertEqual(command.kwargs["environment"]["ARCHFLOW_SOURCE_REVISION"], "a" * 40)
+            self.assertEqual((bundle / "MonkeyArch.exe").read_bytes(), executable.read_bytes())
+            self.assertEqual((bundle / "_runtime/desktop-Cargo.lock").read_bytes(), (desktop / "Cargo.lock").read_bytes())
+            self.assertEqual(result["sourceCommit"], "a" * 40)
+            self.assertEqual(result["executableSha256"], builder.sha256(executable))
+
+    def test_missing_desktop_compiler_fails_before_staging_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(builder.sys, "platform", "win32"), patch.object(builder, "run", return_value="a" * 40):
+                with self.assertRaisesRegex(ValueError, "Rust/MSVC Cargo"):
+                    builder.package(root / "source", "HEAD", root / "staging", root / "output", root / "cache",
+                                    root / "node.exe", root / "npm-cli.js", desktop=True, cargo=root / "missing.exe")
+            self.assertFalse((root / "staging").exists())
+            self.assertFalse((root / "output").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
