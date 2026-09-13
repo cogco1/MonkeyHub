@@ -39,7 +39,7 @@ import type { PushPullTarget } from "../../workspaces/monkeyarch/interactionSess
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
-import { previewDirectModel, specFromDrawnShape } from "./modelDraft";
+import { draftTransformCenter, previewDirectModel, specFromDrawnShape } from "./modelDraft";
 import {
   IDLE as SKETCH_IDLE,
   cancelled as cancelledSketch,
@@ -423,11 +423,94 @@ export function Stage({
     interaction.current.move = null;
     setMovePhase(null); setMoveError(null);
   }, [viewportRef]);
+  const rotateInput = useRef<HTMLInputElement>(null);
+  const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
+  const [rotatePhase, setRotatePhase] = useState<"reference" | "angle" | null>(null);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+  const stopRotate = useCallback(() => {
+    cancelInteractionFrame(interaction.current, "rotate");
+    if (interaction.current.rotate) viewportRef.current?.sketchPreview(null);
+    interaction.current.rotate = null;
+    setRotatePhase(null); setRotateError(null);
+  }, [viewportRef]);
   const closeDirectTool = useCallback(() => {
     stopPushPull();
     stopMove();
+    stopRotate();
     modelKeysRef.current?.onTool?.("select");
-  }, [stopPushPull, stopMove]);
+  }, [stopPushPull, stopMove, stopRotate]);
+  const paintRotate = useCallback(() => {
+    const current = interaction.current.rotate;
+    if (!current) return;
+    const angleDegrees = current.typed === null ? current.angleDegrees : Number(current.typed);
+    if (current.typed === null && rotateInput.current) rotateInput.current.value = angleDegrees === null ? "" : String(Number(angleDegrees.toFixed(4)));
+    if (angleDegrees === null) { viewportRef.current?.sketchPreview(null); return; }
+    try {
+      if (current.typed !== null && !current.typed.trim()) throw new Error("Enter a finite rotation angle.");
+      viewportRef.current?.sketchPreview(previewDirectModel({ spec: current.spec,
+        parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: "rotate", angleDegrees, axis: [...current.plane.normal] }));
+      setRotateError(null);
+    } catch (error) {
+      viewportRef.current?.sketchPreview(null);
+      setRotateError(error instanceof Error ? error.message : String(error));
+    }
+  }, [viewportRef]);
+  const commitRotate = useCallback(() => {
+    const current = interaction.current.rotate, keys = modelKeysRef.current;
+    if (!current || !keys?.onApply || keys.busy || keys.directTool !== "rotate" || keys.pushPullTarget !== current.target) return;
+    if (!current.reference && current.typed === null) return;
+    const angleDegrees = current.typed === null ? current.angleDegrees : Number(current.typed);
+    if (angleDegrees === null || !Number.isFinite(angleDegrees) || Math.abs(angleDegrees) < 1e-9 || (current.typed !== null && !current.typed.trim())) return;
+    try {
+      const action = { kind: "rotate" as const, angleDegrees, axis: [...current.plane.normal] as Vec3 };
+      previewDirectModel({ spec: current.spec, parameterBoundFields: current.target.shape.parameterBoundFields }, action);
+      stopRotate();
+      keys.onApply({ ...action, target: current.target });
+      keys.onTool?.("select");
+    } catch (error) { setRotateError(error instanceof Error ? error.message : String(error)); }
+  }, [stopRotate]);
+  const changeRotateAxis = useCallback((axis: "x" | "y" | "z") => {
+    const current = interaction.current.rotate;
+    setRotateAxis(axis);
+    if (!current) return;
+    cancelInteractionFrame(interaction.current, "rotate");
+    // U cross V must point along the positive chosen world axis. The drawing
+    // XZ plane faces -Y, so rotation around +Y uses -Z for its V direction.
+    const basis = axis === "x" ? WORK_PLANES.yz : axis === "z" ? WORK_PLANES.xy
+      : { xAxis: [1, 0, 0] as const, yAxis: [0, 0, -1] as const, normal: [0, 1, 0] as const };
+    current.plane = { ...basis, origin: draftTransformCenter(current.spec) };
+    current.reference = null; current.angleDegrees = 0;
+    interaction.current.pointer = null;
+    setRotatePhase("reference"); setRotateError(null);
+    if (current.typed !== null) paintRotate();
+    else { viewportRef.current?.sketchPreview(null); if (rotateInput.current) rotateInput.current.value = "0"; }
+  }, [paintRotate, viewportRef]);
+  useEffect(() => {
+    stopRotate(); setRotateAxis("z");
+    if (model?.directTool !== "rotate" || documentOpen || model.interactionBlocked) return;
+    const target = model.pushPullTarget;
+    if (!target) { setRotateError("Select a drawn solid or face before rotating."); return; }
+    const spec = specFromDrawnShape(target.shape);
+    interaction.current.rotate = { target, spec, plane: { ...WORK_PLANES.xy, origin: draftTransformCenter(spec) }, reference: null, centerTolerance: 1e-9, angleDegrees: 0, typed: null };
+    interaction.current.pointer = null;
+    if (rotateInput.current) rotateInput.current.value = "0";
+    setRotatePhase("reference");
+    return stopRotate;
+  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, stopRotate]);
+  useEffect(() => {
+    if (model?.directTool !== "rotate") return;
+    const listen = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || documentOpen) return;
+      if (event.key === "Escape") { event.preventDefault(); closeDirectTool(); return; }
+      if (event.key !== "Enter" || event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.closest("input, textarea, select, [contenteditable]") ||
+          (target.closest("button, a") && !target.closest('button[data-model-tool="rotate"]')))) return;
+      event.preventDefault(); commitRotate();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, [model?.directTool, documentOpen, closeDirectTool, commitRotate]);
   const paintMove = useCallback(() => {
     const current = interaction.current.move;
     if (!current) return;
@@ -596,11 +679,12 @@ export function Stage({
     setLineToolsOpen(false);
     stopPushPull();
     stopMove();
+    stopRotate();
     setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
-  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull, stopMove]);
+  }, [onTool, model?.onTool, showSketch, stopMeasuring, stopPushPull, stopMove, stopRotate]);
   const chooseMeasure = useCallback(() => {
     chooseDrawingTool(null);
     setMeasuring(true);
@@ -682,7 +766,7 @@ export function Stage({
   const modelKeysAvailable = model !== undefined;
   // What is *in progress*, which is not the same as what is armed.
   const actionInProgressRef = useRef(false);
-  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive || movePhase !== null;
+  const actionInProgress = sketch.phase !== "idle" || (measuring && measure.from !== null) || pushPullActive || movePhase !== null || rotatePhase !== null;
   actionInProgressRef.current = actionInProgress;
   const inkRef = useRef({
     undo: onUndoGesture, redo: onRedoGesture, canUndo: false, canRedo: false, busy: false,
@@ -931,7 +1015,7 @@ export function Stage({
         <ThreeDmViewport
           ref={viewportRef}
           interaction={interaction}
-          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && movePhase === null && tool === null && !documentOpen && !sketchBusy}
+          hoverEnabled={sketch.tool === null && !measuring && !pushPullActive && movePhase === null && rotatePhase === null && tool === null && !documentOpen && !sketchBusy}
           onInspection={onInspection}
           onStatus={onStatus}
           onRequestFile={onRequestFile}
@@ -941,6 +1025,7 @@ export function Stage({
             // chosen tool armed so another shape can follow a completed one.
             stopPushPull();
             stopMove();
+            stopRotate();
             sketchEpoch.current += 1;
             showSketch({ ...SKETCH_IDLE, tool: interaction.current.sketch.tool }); setWorkPlaneName("xy");
             stopMeasuring(); setMeasuring(false);
@@ -978,6 +1063,45 @@ export function Stage({
           )}
         />
       </ErrorBoundary>
+      {rotatePhase !== null && <div className="stage-sketch stage-rotate" data-phase={rotatePhase}
+        onPointerDown={(event) => {
+          if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
+        }}
+        onPointerMove={(event) => {
+          const current = interaction.current.rotate;
+          if (!current || current.typed !== null || event.buttons) return;
+          interaction.current.pointer = { x: event.clientX, y: event.clientY };
+          if (!current.reference) return;
+          const world = viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, current.plane);
+          const point = world ? pointToPlane(world, current.plane) : null;
+          current.angleDegrees = !point || Math.hypot(...point) <= current.centerTolerance ? null : Math.atan2(
+            current.reference[0] * point[1] - current.reference[1] * point[0],
+            current.reference[0] * point[0] + current.reference[1] * point[1]) * 180 / Math.PI;
+          scheduleInteractionFrame(interaction.current, "rotate", paintRotate);
+        }}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          const current = interaction.current.rotate;
+          if (!current) return;
+          if (current.typed === null && !current.reference) {
+            const pointer = interaction.current.pointer ?? { x: event.clientX, y: event.clientY };
+            const world = viewportRef.current?.pointOnSketchPlane(pointer.x, pointer.y, current.plane);
+            if (!world) return;
+            const point = pointToPlane(world, current.plane);
+            // Cache a one-pixel centre tolerance when capturing the reference.
+            // Browser pointer coordinates are float-quantized; a microscopic
+            // world epsilon turns their centre error into an arbitrary angle.
+            const neighbours = [[pointer.x + 1, pointer.y], [pointer.x, pointer.y + 1]]
+              .map(([x, y]) => viewportRef.current?.pointOnSketchPlane(x!, y!, current.plane));
+            current.centerTolerance = Math.max(1e-9, ...neighbours.map(neighbour => neighbour
+              ? Math.hypot(...neighbour.map((value, i) => value - world[i]!)) : 0));
+            if (Math.hypot(...point) <= current.centerTolerance) return;
+            current.reference = point;
+            setRotatePhase("angle"); return;
+          }
+          // Confirm the precise pointer angle already captured before RAF.
+          commitRotate();
+        }} />}
       {movePhase !== null && <div className="stage-sketch stage-move" data-phase={movePhase}
         onPointerDown={(event) => {
           if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
@@ -1583,8 +1707,17 @@ export function Stage({
             </div>
           )}
           {model?.directTool && model.onApply && <ModelEditPanel key={model.directTool} tool={model.directTool}
-            subject={model.subject} busy={model.busy ?? false} error={moveError ?? pushPullError ?? model.error ?? null}
+            subject={model.subject} busy={model.busy ?? false} error={rotateError ?? moveError ?? pushPullError ?? model.error ?? null}
             onApply={model.onApply} onClose={closeDirectTool}
+            rotate={{ inputRef: rotateInput, axis: rotateAxis, onAxis: changeRotateAxis,
+              hint: zh ? "绕对象中心旋转。先点参考方向，再移动鼠标；输入角度可覆盖。单击或 Enter 完成，Esc 取消。"
+                : "Rotate around the object centre. Pick a reference direction, then move the pointer; type an angle to override. Click or Enter to apply, Esc to cancel.",
+              onChange: (value) => {
+                const current = interaction.current.rotate;
+                if (!current) return;
+                current.typed = value;
+                cancelInteractionFrame(interaction.current, "rotate"); paintRotate();
+              }, onCommit: commitRotate }}
             move={{ inputs: moveInputs,
               hint: zh ? "点基点，再沿所选面平面指向目标。X/Y/Z 可覆盖位移；单击或 Enter 完成，Esc 取消。"
                 : "Pick a base point, then a destination on the selected face plane. X/Y/Z override the translation; click or Enter to apply, Esc to cancel.",

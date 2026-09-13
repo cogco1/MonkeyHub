@@ -427,14 +427,14 @@
       "lanes": [
         {
           "id": "interaction",
-          "issue": "#14 pointer-first Move and Copy",
+          "issue": "#14 pointer-first Rotate",
           "status": "review",
-          "branch": "codex/i14-move-copy",
+          "branch": "codex/i14-rotate",
           "worktree": "C:/Users/asus/.codex/worktrees/685e/ARCHFLOW_V4",
-          "base_ref": "15c8c262b5dd1564f6070f5ec19c12ec234986de",
+          "base_ref": "3a6ce71343ebafc8de16f3bbc54d422ebac05280",
           "contributor": "Codex task 01a098b4-553a-7ff0-baa5-0e1360333293",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR28 local modeling and manual Sync are merged. Extend their existing Move/Copy UI with pointer base and destination, reusable transient preview, optional XYZ override, Click/Enter completion and Escape cancellation. Retain exact-source guards, local Undo/Redo and editing during frozen Sync. No provider/backend calls during pointer motion; only explicit Sync generates its captured candidate. Rotate, scale/mirror, large-scene indexing and interaction-framework refactoring are outside this slice. Four focused real Studio/OCCT browser groups passed: base-point capture, fractional pointer precision, preview reuse with zero pointer React commits, XYZ Copy, stable Undo/Redo, side-plane cancellation and continued Move during frozen Sync with exact model readback. Existing 42 focused tests, type/build and archcheck passed. Await coordinator review and exact-head CI before merge. Installed services remain unchanged.",
+          "handoff": "PR36 pointer Move/Copy is merged. Rotate now reuses the existing world AABB centre, X/Y/Z axes, local transform math, transient preview and interaction session: reference direction, signed pointer angle, numeric override, Click/Enter and Escape. Target identity, latest pointer precision, RAF resource reuse, local Undo/Redo and frozen manual Sync remain intact. Four focused real Studio/OCCT browser groups passed on an asymmetric triangular prism: independent six-vertex checks, signed axes, numeric override, same-frame confirmation, zero pointer React commits and gesture writes, centre quantization refusal, cancel/undo/redo and continued local rotation during one frozen candidate Sync with exact export readback. One-pixel centre tolerance is captured once per reference, adding no per-pointer ray work. Existing 42 focused tests, build and archcheck passed. Await coordinator review and exact-head CI. Scale/mirror, arbitrary pivots, backend APIs, public contracts and broader inference remain outside this slice. Installed Hub unchanged.",
           "modules": [
             "studio.shell",
             "studio.intent"

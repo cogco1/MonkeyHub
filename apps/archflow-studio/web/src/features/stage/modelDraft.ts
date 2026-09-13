@@ -91,6 +91,14 @@ function specFromSketch(action: FinishedSketch): SketchPreview {
     ? { ...plane, normal: plane.normal.map(n => -n) as [number, number, number] } : plane });
 }
 
+/** Existing direct transforms use the world bounding-box centre, including extrusion. */
+export function draftTransformCenter(spec: SketchPreview): [number, number, number] {
+  const plane = planeOf(spec);
+  const corners = spec.profile.map(([x, y]) => plane.origin.map((c, i) => c + x * plane.xAxis[i]! + y * plane.yAxis[i]!) as [number, number, number]);
+  if (spec.height) corners.push(...corners.map(point => point.map((c, i) => c + spec.height * plane.normal[i]!) as [number, number, number]));
+  return [0, 1, 2].map(i => (Math.min(...corners.map(p => p[i]!)) + Math.max(...corners.map(p => p[i]!))) / 2) as [number, number, number];
+}
+
 /** Mirrors edit_drawn_element arithmetic in CAD coordinates; it is not a geometry validation result. */
 export function previewDirectModel(object: Pick<DraftObject, "spec" | "parameterBoundFields">, action: DirectModelAction): SketchPreview {
   const before = object.spec!;
@@ -101,9 +109,7 @@ export function previewDirectModel(object: Pick<DraftObject, "spec" | "parameter
     if (!result) throw new Error("Pull distance must be nonzero.");
     return copySpec(result);
   }
-  const corners = before.profile.map(([x, y]) => plane.origin.map((c, i) => c + x * plane.xAxis[i]! + y * plane.yAxis[i]!) as [number, number, number]);
-  if (before.height) corners.push(...corners.map(point => point.map((c, i) => c + before.height * plane.normal[i]!) as [number, number, number]));
-  const pivot = [0, 1, 2].map(i => (Math.min(...corners.map(p => p[i]!)) + Math.max(...corners.map(p => p[i]!))) / 2) as [number, number, number];
+  const pivot = draftTransformCenter(before);
   const offset = action.kind === "move" || action.kind === "copy" ? vector(action.translation) : [0, 0, 0];
   const factors = action.kind === "scale" ? vector(action.scale) : [1, 1, 1];
   if (factors.some(n => Math.abs(n) < 1e-9)) throw new Error("Scale factors must be nonzero.");
