@@ -96,6 +96,7 @@
         "apps/archflow-studio/web/src/api/generated/sdk.gen.ts",
         "apps/archflow-studio/web/src/api/generated/types.gen.ts",
         "apps/archflow-studio/web/src/app/App.tsx",
+        "apps/archflow-studio/web/src/app/ErrorPanel.tsx",
         "apps/archflow-studio/web/src/app/transcript.ts",
         "apps/archflow-studio/web/src/app/useCandidateRuns.ts",
         "apps/archflow-studio/web/src/app/useSession.ts",
@@ -440,7 +441,6 @@
             "studio.intent"
           ],
           "write_scope": [
-            "apps/archflow-studio/web/src/app/App.tsx",
             "apps/archflow-studio/web/src/features/stage/Stage.tsx",
             "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
             "apps/archflow-studio/web/src/features/stage/ModelEditPanel.css",
@@ -488,22 +488,23 @@
         },
         {
           "id": "board",
-          "issue": "#23 selected source update",
+          "issue": "#23 acceptance follow-up",
           "status": "review",
-          "branch": "codex/board-source",
-          "worktree": "C:/Users/asus/.codex/worktrees/c68e/ARCHFLOW_V4",
-          "base_ref": "e988f940a44953fb91930c30179d1e9f07ee1068",
+          "branch": "codex/board-acceptance",
+          "worktree": "C:/Users/asus/.codex/worktrees/bb66/ARCHFLOW_V4",
+          "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex Board task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR #26 and #27 merged. Final #23 slice adds selected-source Update through the existing ReplacementDialog, independently of feedback geometry/model eligibility; preserves the rail entry and restores focus on cancel. Validation passed: 36 Board tests, build and archcheck; replacement browser covers exact image/frame selection, ambiguity refusal, crop/placement/marks, undo/reopen and CAS (3 saves, 1 upload, 1 expected conflict); full real whiteboard browser (63 requests, 2 explicit handoffs). New-user usability remains unverified; no sticky preset, remote paste, multiplayer or live-service update. Coordinator independently reviews the PR and exact-head CI before merging.",
+          "handoff": "PR #26, #27 and #30 are merged. Fix the reproduced initial Board model-binding refusal: consume the one-time handoff, retain the original draft, and show a Board-specific reason in ordinary mode; recovery and refresh never auto-submit it. The coordinator confirmed the App.tsx handoff effect and ErrorPanel scope; interaction released its old App.tsx claim, and runtime's separate viewer hunk remains for coordinator integration. Validation: 36 Board tests, 11 Board API tests, real Studio/P036 whiteboard browser (89 requests, 2 explicit handoffs), replacement browser, six handoff scenarios including changed/unavailable base recovery and refresh, build and archcheck. Exact source guards and all other errors remain unchanged. New-user blind usability remains unverified; see the existing P115 card for the short onsite task.",
           "modules": [
-            "studio.board"
+            "studio.board",
+            "studio.shell"
           ],
           "write_scope": [
-            "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
-            "apps/archflow-studio/web/src/workspaces/monkeyboard/boardScene.ts",
-            "apps/archflow-studio/web/test/boardScene.test.ts",
-            "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
+            "apps/archflow-studio/web/src/app/App.tsx",
+            "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+            "apps/archflow-studio/web/src/app/ErrorPanel.tsx",
+            "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
             "governance/work_registry.json",
             "docs/mapping/planning/P115-capability-consolidation.md"
           ],
