@@ -11,6 +11,7 @@
 .model-edit-panel--pushpull { left: 50%; transform: translateX(-50%); width: max-content; max-width: 100%; padding: 4px; overflow: visible; }
 .model-edit-panel__distance { display: flex; align-items: center; gap: 4px; }
 .model-edit-panel__distance label { min-width: 0; }
+.model-edit-panel__distance select { min-height: 36px; padding: 4px 6px; border: 0; border-radius: 6px; background: var(--panel-2); color: inherit; font: inherit; }
 .model-edit-panel__distance input { width: 96px; max-width: 20vw; min-height: 36px; padding: 4px 6px; border: 0; border-radius: 6px; background: var(--panel-2); color: inherit; font: inherit; font-variant-numeric: tabular-nums; }
 .model-edit-panel__distance .model-tool-button__tooltip { max-width: min(300px, 70vw); white-space: normal; width: max-content; }
 .model-edit-panel--pushpull .model-edit-panel__error { max-width: 290px; margin: 4px 8px 8px; }

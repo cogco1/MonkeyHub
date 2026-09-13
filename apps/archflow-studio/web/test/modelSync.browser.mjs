@@ -25,6 +25,7 @@ const authoredUndo = process.env.MONKEYARCH_AUTHORED_ONLY === "undo";
 const authoredInput = authoredContinue || authoredUndo;
 const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredInput;
 const moveCopyOnly = process.env.MONKEYARCH_MOVE_COPY === "1";
+const rotateOnly = process.env.MONKEYARCH_ROTATE === "1";
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -147,7 +148,7 @@ let seedRun = null;
 if (!authoredOnly) {
 const seedProposal = await call("POST", "/api/proposals/sketch", {
   stateDigest: home.stateDigest, componentId: "portico", elementId: "seed-block",
-  profile: [[10, 0], [12, 0], [12, 2], [10, 2]], height: 1.5, baseLevel: "level-ground",
+  profile: rotateOnly ? [[10, 0], [13, 0], [10.5, 2]] : [[10, 0], [12, 0], [12, 2], [10, 2]], height: 1.5, baseLevel: "level-ground",
 });
 seedRun = (await finished((await call("POST", `/api/proposals/${seedProposal.proposalId}/candidate`)).jobId)).candidateId;
 assert.ok((await exported(seedRun)).has("obj-seed-block"), "the seed candidate exported nothing");
@@ -164,7 +165,7 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
       marker = "  const interaction = useRef(createInteractionSession());";
       insert = `useEffect(() => { (window as any).__stageCommits = ((window as any).__stageCommits ?? 0) + 1; });
         (window as any).__gesture = () => ({ phase: interaction.current.sketch.phase,
-        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull, move: interaction.current.move });`;
+        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull, move: interaction.current.move, rotate: interaction.current.rotate });`;
     } else if (module.endsWith("/app/App.tsx")) {
       marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
       insert = `(window as any).__app = () => ({ loaded: loadedArtifact?.runId, base: projection?.referenceRun.runId,
@@ -185,6 +186,21 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
       source = source.replace(readyMarker, '__parseTiming.end = performance.timeOrigin + performance.now();\n' + readyMarker);
       marker = "  const pickAt = useCallback(";
       insert = `(window as any).__view = {
+        vertices: (id: string) => {
+          const r=runtimeRef.current!, object=id==='preview'?r.sketch:r.draftObjects.get(id)?.object??r.model?.getObjectByName('obj-'+id);
+          const points:number[][]=[];
+          object?.updateWorldMatrix(true,true);
+          object?.traverse((child:any)=>{
+            if(!child.isMesh||!child.visible)return;
+            const attribute=child.geometry.getAttribute('position');
+            const count=Math.min(attribute.count,child.geometry.drawRange.count);
+            for(let i=0;i<count;i++) {
+              const point=new Vector3().fromBufferAttribute(attribute,i).applyMatrix4(child.matrixWorld).toArray();
+              if(!points.some(p=>p.every((v,j)=>Math.abs(v-point[j]!)<1e-6)))points.push(point);
+            }
+          });
+          return points;
+        },
         previewIdentity: () => {
           const object=runtimeRef.current?.sketch;
           return object ? [object,...object.children.flatMap((child:any)=>[child,child.geometry,child.material,child.geometry.getAttribute('position')])] : [];
@@ -391,6 +407,113 @@ if (authoredOnly) {
   console.log(authoredUndo ? 'PASS authored-only undo to empty: first Sync saves its two captured drawings once; current index 0 / zero drafts stay empty and unsynced; no model download or synthetic-run request' :
     authoredContinue ? 'PASS authored-only continued input: first Sync yields one captured candidate; later local drawing/deletion remain visible and unsynced; first export discovery performs no model download' :
     'PASS authored-only: zero artifacts/runs → two local drawings with selection/preselection/delete/undo and zero writes → one explicit candidate, real OCCT export and visible saved model');
+} else if(rotateOnly) {
+  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Rotate seed model',120000);
+  const originalRuns=await runIds(),writeStart=sent.length,id='seed-block';
+  // Independently rotate the six known corners; asymmetric geometry exposes sign/axis errors.
+  const initialVertices=[0,1.5].flatMap(z=>[[10,0,z],[13,0,z],[10.5,2,z]]);
+  const bounds=points=>({min:[0,1,2].map(i=>Math.min(...points.map(p=>p[i]))),max:[0,1,2].map(i=>Math.max(...points.map(p=>p[i])))});
+  const center=points=>{const b=bounds(points);return b.min.map((v,i)=>(v+b.max[i])/2);};
+  const rotated=(points,pivot,axis,degrees)=>points.map(point=>{
+    const v=point.map((value,i)=>value-pivot[i]),angle=degrees*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle);
+    const dot=v.reduce((sum,value,i)=>sum+value*axis[i],0);
+    const cross=[axis[1]*v[2]-axis[2]*v[1],axis[2]*v[0]-axis[0]*v[2],axis[0]*v[1]-axis[1]*v[0]];
+    return v.map((value,i)=>pivot[i]+value*c+cross[i]*s+axis[i]*dot*(1-c));
+  });
+  const sameVector=(actual,expected,label,tolerance=1e-4)=>{
+    assert.ok(actual,`${label}: missing vector`);
+    assert.ok(actual.every((v,i)=>Math.abs(v-expected[i])<tolerance),`${label}: ${JSON.stringify(actual)} != ${JSON.stringify(expected)}`);
+  };
+  const sameVertices=async(target,expected,label)=>{
+    const actual=await page.evaluate(id=>window.__view.vertices(id),target);
+    assert.equal(actual.length,expected.length,`${label}: corner count ${JSON.stringify(actual)}`);
+    for(const point of expected)assert.ok(actual.some(p=>p.every((v,i)=>Math.abs(v-point[i])<1e-4)),`${label}: missing ${JSON.stringify(point)} in ${JSON.stringify(actual)}`);
+  };
+  const frames=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const axes={x:[1,0,0],y:[0,1,0],z:[0,0,1]};
+  async function aim(world) {
+    const point=await page.evaluate(p=>window.__view.project(p),world);
+    assert.equal(await page.evaluate(p=>document.elementFromPoint(p.x,p.y)?.classList.contains('stage-rotate'),point),true,'reference/angle point must meet the real Rotate overlay');
+    await page.mouse.move(point.x,point.y);await frames();return point;
+  }
+  async function arm(expected,axis='z',keyboard=false) {
+    await deselect();await pick(id);const before=await snap();
+    if(keyboard)await page.keyboard.press('q');else await button('Rotate').click();
+    await page.locator('.stage-rotate[data-phase="reference"]').waitFor({state:'visible'});
+    if(axis!=='z')await page.getByLabel('Rotation axis',{exact:true}).selectOption(axis);
+    const gesture=(await snap()).gesture.rotate,pivot=center(expected),normal=axes[axis];
+    sameVector(gesture.plane.origin,pivot,'world AABB center');sameVector(gesture.plane.normal,normal,'chosen rotation axis');
+    const direction=axis==='x'?[0,2.5,0]:[2.5,0,0],reference=pivot.map((v,i)=>v+direction[i]);
+    const point=await aim(reference);await sameVertices(id,expected,'reference pointer must not rotate');
+    await page.mouse.click(point.x,point.y);await page.locator('.stage-rotate[data-phase="angle"]').waitFor({state:'visible'});await frames();
+    const captured=await snap();assert.ok(captured.gesture.rotate.reference);assert.equal(captured.index,before.index);
+    assert.ok(Math.abs(captured.gesture.rotate.angleDegrees)<1e-6,'reference capture must begin at zero angle');
+    await sameVertices(id,expected,'reference click must not jump');
+    if(captured.view.preview)await sameVertices('preview',expected,'zero rotation preview');
+    return {before,pivot,normal,reference};
+  }
+  console.log('R1 · asymmetric triangle: Z +37° preview, latest same-frame Click and reused geometry without pointer React commits');
+  const first=await arm(initialVertices,'z',true),firstAngle=37;
+  const firstResult=rotated(initialVertices,first.pivot,first.normal,firstAngle);
+  const firstPoint=await aim(rotated([first.reference],first.pivot,first.normal,firstAngle)[0]);
+  await sameVertices('preview',firstResult,'positive Z preview');await sameVertices(id,initialVertices,'rotation preview preserves source');
+  assert.ok(Math.abs((await snap()).gesture.rotate.angleDegrees-firstAngle)<1e-5);assert.equal(sent.length,writeStart);
+  const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});
+  await page.screenshot({path:path.join(qa,'rotate-preview.png')});
+  const points=await page.evaluate(points=>points.map(p=>window.__view.project(p)),[38,39,40,41].map(angle=>rotated([first.reference],first.pivot,first.normal,angle)[0]));
+  const reuse=await page.evaluate(async points=>{
+    const refs=window.__view.previewIdentity(),commits=window.__stageCommits,overlay=document.querySelector('.stage-rotate');
+    for(const p of points){for(let i=0;i<3;i++)overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:p.x,clientY:p.y,pointerId:1}));await new Promise(requestAnimationFrame);}
+    return {commits:window.__stageCommits-commits,reused:refs.length>0&&refs.every((item,i)=>item===window.__view.previewIdentity()[i])};
+  },points);assert.deepEqual(reuse,{commits:0,reused:true});
+  await page.evaluate(p=>{
+    const overlay=document.querySelector('.stage-rotate');
+    for(let i=8;i>=0;i--)overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:p.x+i,clientY:p.y,pointerId:1}));
+    overlay.dispatchEvent(new PointerEvent('click',{bubbles:true,clientX:p.x,clientY:p.y,pointerId:1}));
+  },firstPoint);
+  let state=await wait(s=>!s.gesture.rotate&&s.index===(first.before.index??0)+1,'same-frame Rotate commit');
+  await sameVertices(id,firstResult,'positive Z committed vertices');assert.equal(state.view.preview,null);
+  const firstIndex=state.index;await page.keyboard.press('Enter');assert.equal((await snap()).index,firstIndex,'repeated Enter must not repeat rotation');
+  await page.keyboard.press('Control+z');await wait(s=>s.index===(first.before.index??0),'Rotate undo');await sameVertices(id,initialVertices,'undone original triangle');
+  await page.keyboard.press('Control+y');await wait(s=>s.index===firstIndex,'Rotate redo');await sameVertices(id,firstResult,'redone triangle');
+  console.log('R2 · Y -28° numeric override survives pointer motion and Enter commits the exact signed angle');
+  const numeric=await arm(firstResult,'y'),numericAngle=-28,input=page.getByRole('form',{name:'Rotate Q',exact:true}).locator('input');
+  const secondResult=rotated(firstResult,numeric.pivot,numeric.normal,numericAngle);
+  await input.fill(String(numericAngle));await frames();await sameVertices('preview',secondResult,'negative Y numeric preview');
+  await aim(rotated([numeric.reference],numeric.pivot,numeric.normal,45)[0]);await sameVertices('preview',secondResult,'numeric angle overrides pointer');
+  await input.press('Enter');state=await wait(s=>!s.gesture.rotate&&s.index===numeric.before.index+1,'numeric Rotate commit');
+  await sameVertices(id,secondResult,'negative Y committed vertices');
+  console.log('R3 · X -23° pointer preview has the correct handedness; Esc leaves geometry/history unchanged');
+  const cancelled=await arm(secondResult,'x'),cancelAngle=-23;
+  await aim(rotated([cancelled.reference],cancelled.pivot,cancelled.normal,cancelAngle)[0]);
+  await sameVertices('preview',rotated(secondResult,cancelled.pivot,cancelled.normal,cancelAngle),'negative X pointer preview');
+  assert.ok(Math.abs((await snap()).gesture.rotate.angleDegrees-cancelAngle)<1e-5);
+  const actualPivot=(await snap()).gesture.rotate.plane.origin,centerPoint=await aim(actualPivot);
+  assert.equal((await snap()).gesture.rotate.angleDegrees,null,'the pivot has no angle');
+  await page.mouse.click(centerPoint.x,centerPoint.y);
+  assert.equal((await snap()).index,cancelled.before.index,'clicking the pivot must not commit the previous angle');
+  assert.ok((await snap()).gesture.rotate);
+  await page.keyboard.press('Escape');state=await wait(s=>!s.gesture.rotate,'Rotate Esc');
+  assert.equal(state.index,cancelled.before.index);assert.equal(state.view.preview,null);await sameVertices(id,secondResult,'Esc preserved triangle');
+  assert.equal(sent.length,writeStart,'local Rotate/Undo/Redo/Esc wrote to API');assert.deepEqual(await runIds(),originalRuns);
+  console.log('R4 · frozen Sync saves both rotations once while a later X rotation remains local');
+  let release,ready;const released=new Promise(resolve=>release=resolve),held=new Promise(resolve=>ready=resolve);
+  await page.route('**/api/proposals/transform',async route=>{const response=await route.fetch();assert.equal(response.status(),201);ready();await released;await route.fulfill({response});},{times:1});
+  await button('Sync').click();await within(held,15000,'Rotate Sync transform was not held');
+  const heldWrites=sent.length;assert.equal((await snap()).syncBusy,true);assert.equal((await snap()).busy,false);
+  const late=await arm(secondResult,'x'),lateAngle=19,lateResult=rotated(secondResult,late.pivot,late.normal,lateAngle);
+  const latePoint=await aim(rotated([late.reference],late.pivot,late.normal,lateAngle)[0]);await page.mouse.click(latePoint.x,latePoint.y);
+  await wait(s=>!s.gesture.rotate&&s.index===late.before.index+1,'Rotate during Sync');await sameVertices(id,lateResult,'late X local rotation');
+  assert.equal(sent.length,heldWrites);assert.equal(candidateCalls().length,0);release();
+  await wait(s=>!s.syncBusy&&s.candidates.length===1,'Rotate candidate',120000);
+  state=await snap();assert.equal(state.loaded,seedRun);assert.equal(state.base,seedRun);assert.equal(state.dirty,true);assert.equal(candidateCalls().length,1);
+  await sameVertices(id,lateResult,'late rotation survives Sync');
+  const saved=(await exported(state.candidates[0])).get('obj-'+id),expectedBox=bounds(secondResult);
+  sameVector(saved?.min,expectedBox.min,'real OCCT frozen rotated triangle min',.0011);sameVector(saved?.max,expectedBox.max,'real OCCT frozen rotated triangle max',.0011);
+  const transforms=sent.slice(writeStart).filter(row=>row.path==='/api/proposals/transform');assert.equal(transforms.length,2);
+  for(const transform of transforms){assert.equal(transform.body.kind,'rotate');assert.equal(transform.body.sourceRunId,seedRun);}
+  console.log('PASS Rotate: asymmetric six vertices, signed Z/Y/X angles, reference without jump, exact latest-pointer Click/numeric Enter, reused preview/zero pointer commits, Esc/Undo/Redo and one frozen real OCCT candidate');
 } else if(moveCopyOnly) {
   await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool&candidate=${seedRun}`);
   await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'Move/Copy seed model',120000);

@@ -9,11 +9,11 @@ export type DirectModelTool = "pushPull" | "move" | "rotate" | "scale" | "copy";
 export type DirectModelAction =
   | { kind: "pushPull"; distance: number; normal?: SketchVector; target?: PushPullTarget }
   | { kind: "move" | "copy"; translation: [number, number, number]; target?: PushPullTarget }
-  | { kind: "rotate"; angleDegrees: number; axis: [number, number, number] }
+  | { kind: "rotate"; angleDegrees: number; axis: [number, number, number]; target?: PushPullTarget }
   | { kind: "scale"; scale: [number, number, number] };
 
 /** Typed model actions; the server owns their geometry and exact-base checks. */
-export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, pushPull, move }: {
+export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, pushPull, move, rotate }: {
   tool: DirectModelTool;
   subject: string | null;
   busy: boolean;
@@ -33,11 +33,18 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     onChange(index: number, value: string): void;
     onCommit(): void;
   };
+  rotate: {
+    inputRef: RefObject<HTMLInputElement | null>;
+    axis: "x" | "y" | "z";
+    hint: string;
+    onAxis(axis: "x" | "y" | "z"): void;
+    onChange(value: string): void;
+    onCommit(): void;
+  };
 }) {
   const { language } = usePreferences();
   const zh = language === "zh-CN";
   const [values, setValues] = useState<[string, string, string]>(tool === "scale" ? ["1", "1", "1"] : ["1", "0", "0"]);
-  const [axis, setAxis] = useState("z");
   const [uniform, setUniform] = useState(true);
   const fallbackInput = useRef<HTMLInputElement>(null);
   const titles = zh
@@ -48,6 +55,23 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
   const valid = values.slice(0, count).every((value) => value.trim() !== "" && Number.isFinite(Number(value))) &&
     (tool !== "scale" || values.slice(0, count).every((value) => Math.abs(Number(value)) > 1e-9)) &&
     (tool !== "pushPull" || Number(values[0]) !== 0);
+  if (tool === "rotate") return <form className="model-edit-panel model-edit-panel--pushpull" aria-label={titles[tool]}
+    onKeyDown={(event) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+    }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) rotate.onCommit(); }}>
+    <div className="model-edit-panel__distance">
+      <ModelToolButton icon="help" label={rotate.hint} />
+      <input ref={rotate.inputRef} aria-label={zh ? "角度 °" : "Angle °"} type="number" step="any" defaultValue="0" disabled={busy}
+        onFocus={(event) => event.currentTarget.select()} onChange={(event) => rotate.onChange(event.target.value)} />
+      <span className="quiet" aria-hidden="true">°</span>
+      <select aria-label="Rotation axis" value={rotate.axis} disabled={busy} onChange={(event) => rotate.onAxis(event.target.value as "x" | "y" | "z")}>
+        <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+      </select>
+      <ModelToolButton icon="check" label={zh ? "应用" : "Apply"} shortcut="Enter" type="submit" disabled={busy || !subject} />
+      <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
+    </div>
+    {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
+  </form>;
   if ((tool === "move" || tool === "copy") && move) return <form className="model-edit-panel model-edit-panel--pushpull model-edit-panel--move" aria-label={titles[tool]}
     onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
@@ -99,18 +123,16 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     event.preventDefault();
     if (busy || !subject || !valid) return;
     const nums = values.map(Number) as [number, number, number];
-    if (tool === "rotate") onApply({ kind: tool, angleDegrees: nums[0], axis: axis === "x" ? [1, 0, 0] : axis === "y" ? [0, 1, 0] : [0, 0, 1] });
-    else if (tool === "scale") onApply({ kind: tool, scale: uniform ? [nums[0], nums[0], nums[0]] : nums });
+    if (tool === "scale") onApply({ kind: tool, scale: uniform ? [nums[0], nums[0], nums[0]] : nums });
     else onApply({ kind: tool, translation: nums });
   }}>
     <div className="model-edit-panel__heading"><strong>{titles[tool]}</strong><ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} /></div>
     <p className="model-edit-panel__subject">{subject ?? (zh ? "先在模型中点击选择对象或面" : "Select an object or face in the model")}</p>
     <div className="model-edit-panel__fields">
       {Array.from({ length: count }, (_, index) => <label key={index}>
-        {vector ? ["X", "Y", "Z"][index] : tool === "scale" ? (zh ? "倍率" : "Factor") : tool === "rotate" ? (zh ? "角度 °" : "Angle °") : (zh ? "距离 m" : "Distance m")}
+        {vector ? ["X", "Y", "Z"][index] : tool === "scale" ? (zh ? "倍率" : "Factor") : (zh ? "距离 m" : "Distance m")}
         <input type="number" step="any" autoFocus={index === 0} value={values[index]} disabled={busy} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setValues((current) => current.map((value, i) => i === index ? event.target.value : value) as [string, string, string])} />
       </label>)}
-      {tool === "rotate" && <label>{zh ? "轴" : "Axis"}<select value={axis} onChange={(event) => setAxis(event.target.value)} disabled={busy}><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>}
     </div>
     {tool === "scale" && <label className="model-edit-panel__uniform"><input type="checkbox" checked={uniform} disabled={busy} onChange={(event) => {
       if (!event.target.checked) setValues(([factor]) => [factor, factor, factor]);
