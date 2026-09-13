@@ -4,6 +4,14 @@
 `module_registry` 记录软件归口与公开契约，`work_registry` 记录未完成任务及源码范围，
 `architecture_policy` 配置静态检查。模块 owner 是软件职责，可以包含多个实现文件，不是个人姓名；工作卡不是发布证明。
 
+## 贡献许可
+
+MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提供独立商业许可的可能。为避免多人贡献后无法统一授权，新贡献者在提交代码、文档、测试或其他可版权材料前应阅读并同意 [`CLA.md`](CLA.md)。
+
+贡献者**保留自己的版权**；CLA 仅授予项目继续以 AGPL 发布，并在需要时提供独立商业许可所需的版权与专利许可。Pull Request 模板包含确认项。外部贡献在未确认 CLA（或另有等效书面授权）前不应合入。
+
+提交前也请确认没有把雇主/学校的保密材料、私有项目数据、API key、个人数据、受限模型/数据集或未经授权的第三方代码带入仓库。第三方内容必须明确标注来源和许可。
+
 1. **先取基线，再查任务与 owner。** `git fetch origin main` 后记录约定的提交（如 `git rev-parse origin/main`），读 Issue，再运行 `python tools/devctl.py work`、`work <卡/lane>` 和 `module <目标>`。用返回的精确 module id 查契约、真实调用方及相关测试，确认当前路径重叠后再改代码。
 2. **一个任务一个 lane、短分支和独立 worktree。** 在现有 live 卡的 `lanes` 下登记本次任务；没有合适卡时才新建。新 worktree 使用 `python tools/workspace.py create --branch codex/<简短名称> --base <约定提交>`；首次根目录配置见[开发环境指南](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#开发目录只配置一次)。继续任务复用原检出，不共用脏 worktree，不吸收别人的 WIP。
 3. **按 lane 的窄路径修改。** 开工前写明本次 `write_scope`；lane 范围和所属卡范围共同约束提交，policy 的 `shared_write_scope` 仍可共享，不是运行权限。共享测试、生成视图及治理文件按 policy 处理，不自动视为生产路径冲突；共享文件只改本任务条目或段落。有 lane 的提交 subject 写 `P###/lane`，例如 `P115/team-lanes`；无 lane 的旧卡继续写 `P###`。
@@ -44,6 +52,8 @@ python tools/devctl.py work --json
 
 ## 接着读什么
 
+- [`CLA.md`](CLA.md) — 贡献版权/专利授权与双重许可边界。
+- [`LICENSING.md`](LICENSING.md) — AGPL 与商业许可说明。
 - [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md) — 什么放哪、什么不进仓库。
 - [`AGENTS.md`](AGENTS.md) — 少量长期规则与项目边界。
 - [`docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md`](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — 环境搭建与首次跑通(队友从第 8 节开始)。

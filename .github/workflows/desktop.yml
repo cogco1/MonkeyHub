@@ -2,7 +2,9 @@ name: Windows desktop
 
 on:
   workflow_dispatch:
-  pull_request:
+  push:
+    branches:
+      - main
     paths:
       - 'apps/monkeyhub/desktop/**'
       - 'apps/monkeyhub/api/**'
@@ -14,6 +16,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   desktop:
     runs-on: windows-latest
@@ -21,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.sha }}
       - name: Rust toolchain
         run: rustup show
       - uses: actions/cache/restore@v4
@@ -55,7 +61,7 @@ jobs:
         shell: pwsh
         run: |
           Push-Location "$env:PACKAGE_BUILD/source/apps/monkeyhub/desktop"
-          $env:ARCHFLOW_SOURCE_REVISION = '${{ github.event.pull_request.head.sha || github.sha }}'
+          $env:ARCHFLOW_SOURCE_REVISION = '${{ github.sha }}'
           cargo test --locked --release --target-dir "$env:PACKAGE_BUILD/desktop-target"
           $result = $LASTEXITCODE
           Pop-Location
@@ -86,16 +92,18 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MonkeyArch-package-${{ github.event.pull_request.head.sha || github.sha }}
+          name: MonkeyArch-package-${{ github.sha }}
           path: ${{ runner.temp }}/mhp/output/*
           compression-level: 0
+          retention-days: 7
           if-no-files-found: error
       - name: Keep review executable
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: MonkeyArch-desktop-${{ github.event.pull_request.head.sha || github.sha }}
+          name: MonkeyArch-desktop-${{ github.sha }}
           path: ${{ runner.temp }}/mhp/installed/MonkeyArch/MonkeyArch.exe
+          retention-days: 7
           if-no-files-found: warn
       - name: Package and native shortcut selection
         run: python -m unittest discover -s tests -p test_package_monkeyapps.py -v
