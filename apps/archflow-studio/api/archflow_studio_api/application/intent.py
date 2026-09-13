@@ -674,7 +674,7 @@ def component_edit_proposal(
             "summary": summary.strip(), "changes": changes, "kept": list(kept),
             "edits": {
                 "entities": [
-                    {**entity.to_dict(), "fields": dict(payload["fields"])}
+                    {**entity.to_dict(), "fields": dict(payload.get("fields", {}))}
                     for entity, payload in zip(entities, edit["entities"])
                 ],
                 "parameters": [parameter.to_dict() for parameter in parameters],

@@ -429,6 +429,18 @@ export type CandidateDto = {
      */
     artifacts: Array<ProjectArtifactDto>;
     /**
+     * Objects
+     *
+     * objects read from this run's retained inspections; null means unavailable, not an empty model
+     */
+    objects?: Array<CandidateObjectDto> | null;
+    /**
+     * Objectreadbackerror
+     *
+     * why retained object inspection is missing or incomplete, without hiding the candidate
+     */
+    objectReadbackError?: string | null;
+    /**
      * Skippedruns
      *
      * runs whose records could not be listed while resolving this candidate's exported models; normally empty, never hidden
@@ -451,6 +463,46 @@ export type CandidateDto = {
      * what this candidate cannot tell you, in lines the UI shows verbatim; empty is a real answer, not a missing one
      */
     honesty: Array<string>;
+};
+
+/**
+ * CandidateObjectDto
+ *
+ * A retained export inspection, in its registered CAD coordinates.
+ */
+export type CandidateObjectDto = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Seatid
+     */
+    seatId: string;
+    /**
+     * Componentid
+     */
+    componentId: string | null;
+    /**
+     * Producerop
+     */
+    producerOp: string | null;
+    /**
+     * retained inspected bounds; null when no box was recorded
+     */
+    bbox: BoxDto | null;
+    /**
+     * Lengthunit
+     *
+     * the matching export's length unit; null when unknown
+     */
+    lengthUnit: string | null;
+    /**
+     * Upaxis
+     *
+     * the matching export's CAD up axis, before viewer conversion; null when unknown
+     */
+    upAxis: string | null;
 };
 
 /**
@@ -711,23 +763,26 @@ export type CapabilityRunDto = {
     next: Array<string>;
 };
 
-/**
- * CapabilityRunRequestDto
- *
- * A proposal request, plus the keep list written as a list.
- *
- * Every other field *is* ``ProposalRequestDto``'s — inherited, not copied, so
- * there is one definition of ``stateDigest``, ``targetComponentId``,
- * ``elementId``, ``utterance``, ``projectId``, ``sourceRunId`` and
- * ``sourceStageRef`` and no second schema to keep in step. ``keep`` is the
- * one addition: the same protected refs the grammar takes as a ``keep``
- * clause, as a list a client can build without writing a sentence.
- */
-export type CapabilityRunRequestDto = {
+export type CapabilityRunRequestDto = ({
+    utterance: string;
+    targetComponentId: string;
+    semanticEdit?: null;
+} | {
+    semanticEdit: {
+        [key: string]: unknown;
+    };
+    utterance?: null;
+}) & {
     /**
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
     /**
      * Statedigest
      *
@@ -739,7 +794,7 @@ export type CapabilityRunRequestDto = {
      *
      * the selected Component@1; selection comes from the request, never from the utterance
      */
-    targetComponentId: string;
+    targetComponentId?: string | null;
     /**
      * Elementid
      *
@@ -751,7 +806,19 @@ export type CapabilityRunRequestDto = {
      *
      * one sentence in the intent grammar; anything else comes back as BLOCKED_NEEDS_HUMAN with the accepted forms
      */
-    utterance: string;
+    utterance?: string | null;
+    /**
+     * Semanticedit
+     *
+     * This capability runs existing numeric controls; typed component edits use POST /api/proposals.
+     */
+    semanticEdit?: null;
+    /**
+     * Keep
+     *
+     * refs this change must not disturb, as entity:<id> or parameter:<key>; a change that reaches one comes back as a conflict and is not run
+     */
+    keep?: Array<string>;
     /**
      * Projectid
      *
@@ -764,12 +831,6 @@ export type CapabilityRunRequestDto = {
      * the retained run selected as the editing base; omitted uses the project's default state projection
      */
     sourceRunId?: string | null;
-    /**
-     * Keep
-     *
-     * refs this change must not disturb, as entity:<id> or parameter:<key>; a change that reaches one comes back as a conflict and is not run
-     */
-    keep?: Array<string>;
 };
 
 /**
@@ -1448,6 +1509,12 @@ export type CoverageDto = {
  */
 export type DeleteElementRequestDto = {
     /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
+    /**
      * Statedigest
      *
      * the stateDigest /api/state answered with; any other base is STALE_BASE
@@ -1914,6 +1981,53 @@ export type DocumentVisualInputDto = {
 };
 
 /**
+ * DrawingStyleDto
+ */
+export type DrawingStyleDto = {
+    /**
+     * Id
+     */
+    id: 'arch400-white' | 'arch364-technical';
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Nameen
+     */
+    nameEn: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Descriptionen
+     */
+    descriptionEn: string;
+    /**
+     * Papersizemm
+     */
+    paperSizeMm: [
+        number,
+        number
+    ];
+    /**
+     * Previewkind
+     */
+    previewKind: 'presentation' | 'technical';
+};
+
+/**
+ * DrawingStylesDto
+ */
+export type DrawingStylesDto = {
+    /**
+     * Styles
+     */
+    styles: Array<DrawingStyleDto>;
+};
+
+/**
  * EditableFieldDto
  */
 export type EditableFieldDto = {
@@ -2002,8 +2116,10 @@ export type ElevationRequestDto = {
     modelSource?: ModelSourceDto | null;
     /**
      * View
+     *
+     * Whole-model orthographic direction. top looks down CAD -Z with X right and Y up on the sheet; it is a top projection of visible geometry, not a cut floor plan.
      */
-    view?: 'front' | 'back' | 'left' | 'right';
+    view?: 'front' | 'back' | 'left' | 'right' | 'top';
     /**
      * Drawingid
      */
@@ -3308,6 +3424,32 @@ export type ModelSourceDto = {
 };
 
 /**
+ * ModelingInitializeDto
+ */
+export type ModelingInitializeDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Initialized
+     *
+     * Initial modeling inputs were installed; no geometry, run or issued version was created.
+     */
+    initialized: boolean;
+};
+
+/**
+ * ModelingInitializeRequestDto
+ */
+export type ModelingInitializeRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
  * ModifiedToDto
  *
  * What the architect said instead, when the decision was ``modified``.
@@ -4267,16 +4409,26 @@ export type ProposalDto = {
     scope?: ProposalScopeDto | null;
 };
 
-/**
- * ProposalRequestDto
- *
- * One utterance against one selection, at one exact base.
- */
-export type ProposalRequestDto = {
+export type ProposalRequestDto = ({
+    utterance: string;
+    targetComponentId: string;
+    semanticEdit?: null;
+} | {
+    semanticEdit: {
+        [key: string]: unknown;
+    };
+    utterance?: null;
+}) & {
     /**
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
     /**
      * Statedigest
      *
@@ -4288,7 +4440,7 @@ export type ProposalRequestDto = {
      *
      * the selected Component@1; selection comes from the request, never from the utterance
      */
-    targetComponentId: string;
+    targetComponentId?: string | null;
     /**
      * Elementid
      *
@@ -4300,7 +4452,17 @@ export type ProposalRequestDto = {
      *
      * one sentence in the intent grammar; anything else comes back as BLOCKED_NEEDS_HUMAN with the accepted forms
      */
-    utterance: string;
+    utterance?: string | null;
+    /**
+     * Submit the current Agent's typed component edit directly, without another model call. Entity producer inputs use @parameter_key bindings; expressions belong to Parameter.expr and inputs. Exactly one of semanticEdit and utterance is required.
+     */
+    semanticEdit?: SemanticEditRequestDto | null;
+    /**
+     * Keep
+     *
+     * Additional entity:/parameter: refs this edit must preserve.
+     */
+    keep?: Array<string>;
     /**
      * Projectid
      *
@@ -4368,6 +4530,12 @@ export type ProposalTargetDto = {
  * PushPullRequestDto
  */
 export type PushPullRequestDto = {
+    /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
     /**
      * Statedigest
      */
@@ -4538,6 +4706,947 @@ export type SeatTimingDto = {
 };
 
 /**
+ * SemanticEditRequestDto
+ *
+ * Named design edits, validated by the existing component compiler.
+ */
+export type SemanticEditRequestDto = {
+    summary: string;
+    entities?: Array<{
+        entity_id: string;
+        schema?: 'Element@1';
+        parent_id?: string | null;
+        basis_refs?: Array<string>;
+        fields?: {
+            component_id?: string;
+            producer?: 'wall';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                };
+                top?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+                /**
+                 * Existing support reference; bearing is declared by a named support relationship.
+                 */
+                support?: string;
+                line?: {
+                    from: {
+                        grid: string | [
+                            string,
+                            string
+                        ];
+                    } | {
+                        axis_point: {
+                            /**
+                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             */
+                            axis: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                        };
+                    } | {
+                        host: {
+                            element: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            across?: number | string;
+                        };
+                    };
+                    to: {
+                        grid: string | [
+                            string,
+                            string
+                        ];
+                    } | {
+                        axis_point: {
+                            /**
+                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             */
+                            axis: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                        };
+                    } | {
+                        host: {
+                            element: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            across?: number | string;
+                        };
+                    };
+                    /**
+                     * The existing wall face label, when the record names one.
+                     */
+                    face?: string;
+                    inward?: [
+                        number,
+                        number
+                    ];
+                };
+            };
+            params?: {
+                /**
+                 * Wall height; optional when references.top determines it.
+                 */
+                height?: number | string;
+                /**
+                 * Positive wall thickness towards the line's inward normal.
+                 */
+                thickness?: number | string;
+                openings?: Array<{
+                    opening_id: string;
+                    component_id?: string;
+                    kind: 'door' | 'window';
+                    /**
+                     * The aperture profile. An unfilled doorway has no door leaf.
+                     */
+                    shape?: 'rectangular' | 'semicircular_arch';
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    along?: number | string;
+                    at?: {
+                        grid: string | [
+                            string,
+                            string
+                        ];
+                    } | {
+                        axis_point: {
+                            /**
+                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             */
+                            axis: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                        };
+                    } | {
+                        host: {
+                            element: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            across?: number | string;
+                        };
+                    };
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    width: number | string;
+                    sill: number | string | {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                    } | {
+                        offset_from: {
+                            /**
+                             * The existing Level@1 entity_id, not its role.
+                             */
+                            level: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            offset: number | string;
+                        };
+                    };
+                    head: number | string | {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                    } | {
+                        offset_from: {
+                            /**
+                             * The existing Level@1 entity_id, not its role.
+                             */
+                            level: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            offset: number | string;
+                        };
+                    };
+                    /**
+                     * For semicircular_arch only: springing above the wall base; head - spring_height = width / 2.
+                     */
+                    spring_height?: number | string;
+                    count?: number | string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    step?: number | string;
+                    /**
+                     * Only an existing compatible rectangular window or door type; omit for an empty passage.
+                     */
+                    type_id?: string;
+                    interface_ref?: string;
+                }>;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'prism';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    datum: string;
+                };
+                top?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * How far the profile is pulled; optional when references.top determines it.
+                 */
+                height?: number | string;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
+                 */
+                elevation?: number | string;
+                /**
+                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
+                 */
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+                /**
+                 * Openings through an axis-aligned rectangular profile.
+                 */
+                rectangular_cutouts?: Array<{
+                    cutout_id: string;
+                    span0: number;
+                    span1: number;
+                    bottom: number;
+                    top: number;
+                }>;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'loft';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                };
+            };
+            params?: {
+                /**
+                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
+                 */
+                profiles?: Array<Array<[
+                    number | string,
+                    number | string,
+                    number | string
+                ]>>;
+                /**
+                 * The same number of vertices in every section; do not repeat the first vertex.
+                 */
+                profile_size?: number;
+                /**
+                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
+                 */
+                loft_type?: 'straight' | 'normal';
+                /**
+                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
+                 */
+                profile_basis?: 'polyline';
+                /**
+                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
+                 */
+                cap_ends?: boolean;
+                closed_profile?: true;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            component_id?: string;
+            producer?: 'planar-surface';
+            type_ref?: string | null;
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    datum: string;
+                };
+            };
+            params?: {
+                /**
+                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        };
+    } | {
+        entity_id: string;
+        schema?: 'Component@1';
+        parent_id?: string | null;
+        basis_refs?: Array<string>;
+        fields?: {
+            /**
+             * One registered alias in local-id form, for example building, cover or support. Choose a fitting aliases entry from GET /api/semantics, not its role.* or condition.* id. Put the specific object description in intent.
+             */
+            semantic_kind?: string;
+            intent?: string;
+            source_refs?: Array<string>;
+        };
+    } | {
+        entity_id: string;
+        schema?: 'Type@1';
+        parent_id?: string | null;
+        basis_refs?: Array<string>;
+        fields?: {
+            producer?: 'wall';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                };
+                top?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+                /**
+                 * Existing support reference; bearing is declared by a named support relationship.
+                 */
+                support?: string;
+                line?: {
+                    from: {
+                        grid: string | [
+                            string,
+                            string
+                        ];
+                    } | {
+                        axis_point: {
+                            /**
+                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             */
+                            axis: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                        };
+                    } | {
+                        host: {
+                            element: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            across?: number | string;
+                        };
+                    };
+                    to: {
+                        grid: string | [
+                            string,
+                            string
+                        ];
+                    } | {
+                        axis_point: {
+                            /**
+                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             */
+                            axis: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                        };
+                    } | {
+                        host: {
+                            element: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            across?: number | string;
+                        };
+                    };
+                    /**
+                     * The existing wall face label, when the record names one.
+                     */
+                    face?: string;
+                    inward?: [
+                        number,
+                        number
+                    ];
+                };
+            };
+            params?: {
+                /**
+                 * Wall height; optional when references.top determines it.
+                 */
+                height?: number | string;
+                /**
+                 * Positive wall thickness towards the line's inward normal.
+                 */
+                thickness?: number | string;
+                openings?: Array<{
+                    opening_id: string;
+                    component_id?: string;
+                    kind: 'door' | 'window';
+                    /**
+                     * The aperture profile. An unfilled doorway has no door leaf.
+                     */
+                    shape?: 'rectangular' | 'semicircular_arch';
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    along?: number | string;
+                    at?: {
+                        grid: string | [
+                            string,
+                            string
+                        ];
+                    } | {
+                        axis_point: {
+                            /**
+                             * The existing GridAxis@1 fields.role, not its entity_id.
+                             */
+                            axis: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                        };
+                    } | {
+                        host: {
+                            element: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            along: number | string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            across?: number | string;
+                        };
+                    };
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    width: number | string;
+                    sill: number | string | {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                    } | {
+                        offset_from: {
+                            /**
+                             * The existing Level@1 entity_id, not its role.
+                             */
+                            level: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            offset: number | string;
+                        };
+                    };
+                    head: number | string | {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                    } | {
+                        offset_from: {
+                            /**
+                             * The existing Level@1 entity_id, not its role.
+                             */
+                            level: string;
+                            /**
+                             * A value in metres, or an explicit @parameter binding.
+                             */
+                            offset: number | string;
+                        };
+                    };
+                    /**
+                     * For semicircular_arch only: springing above the wall base; head - spring_height = width / 2.
+                     */
+                    spring_height?: number | string;
+                    count?: number | string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    step?: number | string;
+                    /**
+                     * Only an existing compatible rectangular window or door type; omit for an empty passage.
+                     */
+                    type_id?: string;
+                    interface_ref?: string;
+                }>;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            producer?: 'prism';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    datum: string;
+                };
+                top?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                };
+            };
+            params?: {
+                /**
+                 * The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * How far the profile is pulled; optional when references.top determines it.
+                 */
+                height?: number | string;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero. It moves the whole prism and leaves the height alone.
+                 */
+                elevation?: number | string;
+                /**
+                 * Optional orthonormal drawing frame relative to references.base. Profile pairs follow xAxis/yAxis; height follows normal. Omit for the retained XZ/+Y convention.
+                 */
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+                /**
+                 * Openings through an axis-aligned rectangular profile.
+                 */
+                rectangular_cutouts?: Array<{
+                    cutout_id: string;
+                    span0: number;
+                    span1: number;
+                    bottom: number;
+                    top: number;
+                }>;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            producer?: 'loft';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                };
+            };
+            params?: {
+                /**
+                 * Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters.
+                 */
+                profiles?: Array<Array<[
+                    number | string,
+                    number | string,
+                    number | string
+                ]>>;
+                /**
+                 * The same number of vertices in every section; do not repeat the first vertex.
+                 */
+                profile_size?: number;
+                /**
+                 * straight (default) connects sections with ruled faces; normal interpolates between the sections.
+                 */
+                loft_type?: 'straight' | 'normal';
+                /**
+                 * Polyline sections (default); interpolated section curves are not exposed by this authoring path.
+                 */
+                profile_basis?: 'polyline';
+                /**
+                 * True (default) caps both ends into one solid; false leaves both end sections open as a surface.
+                 */
+                cap_ends?: boolean;
+                closed_profile?: true;
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        } | {
+            producer?: 'planar-surface';
+            references?: {
+                base?: {
+                    /**
+                     * The existing Level@1 entity_id, not its role.
+                     */
+                    level: string;
+                } | {
+                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    offset?: number | string;
+                } | {
+                    offset_from: {
+                        /**
+                         * The existing Level@1 entity_id, not its role.
+                         */
+                        level: string;
+                        /**
+                         * A value in metres, or an explicit @parameter binding.
+                         */
+                        offset: number | string;
+                    };
+                } | {
+                    datum: string;
+                };
+            };
+            params?: {
+                /**
+                 * One simple boundary in work_plane coordinates (XZ when omitted), repeating its first vertex at the end.
+                 */
+                profile?: Array<[
+                    number | string,
+                    number | string
+                ]>;
+                /**
+                 * Metres above references.base, added to that reference's own offset; defaults to zero.
+                 */
+                elevation?: number | string;
+                work_plane?: {
+                    origin: [
+                        number,
+                        number,
+                        number
+                    ];
+                    xAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    yAxis: [
+                        number,
+                        number,
+                        number
+                    ];
+                    normal: [
+                        number,
+                        number,
+                        number
+                    ];
+                };
+            };
+            name?: string | null;
+            label?: string | null;
+            note?: string | null;
+        };
+    }>;
+    parameters?: Array<{
+        key: string;
+        value?: number;
+        unit?: string;
+        expr?: string | null;
+        inputs?: Array<string>;
+        epistemic_status?: 'declared' | 'derived' | 'hypothesis';
+        source_ref?: string | null;
+    }>;
+    relations?: Array<{
+        relation_id: string;
+        kind?: 'composition' | 'aggregates' | 'primary_contains' | 'references_zone' | 'adjacent' | 'intersects' | 'dependency' | 'support' | 'load_transfer' | 'host' | 'hosts_void' | 'fills_void' | 'access' | 'allows_passage' | 'clearance' | 'realization' | 'realizes' | 'lineage' | 'refines' | 'replaces' | 'interface' | 'alignment' | 'symmetric_with' | 'blocks' | 'evidences';
+        subject?: string;
+        object?: string;
+        datum_role?: string | null;
+        propagation?: 'unchanged' | 'revalidate' | 'invalidate';
+        validator?: null | {
+            check_kind: 'support_contact' | 'aperture_exists';
+            tolerance: number;
+        } | {
+            check_kind: 'clearance_interval';
+            interval_m: [
+                number,
+                number
+            ];
+        };
+        parameters?: {
+            engagement_depth?: number;
+            rise?: number;
+        };
+        epistemic_status?: 'declared' | 'derived' | 'hypothesis';
+        basis_refs?: Array<string>;
+    }>;
+    removeEntityIds?: Array<string>;
+    removeParameterKeys?: Array<string>;
+    removeRelationIds?: Array<string>;
+    protected?: Array<string>;
+    kept?: Array<string>;
+};
+
+/**
  * SemanticTermDto
  *
  * One registered term: its id, what it means, and what may stand for it.
@@ -4625,47 +5734,48 @@ export type ServerIdentityDto = {
 };
 
 /**
- * SketchPlaneDto
- *
- * An explicit orthonormal drawing plane in building-local Y-up coordinates.
+ * SheetRequestDto
  */
-export type SketchPlaneDto = {
+export type SheetRequestDto = {
     /**
-     * Origin
+     * Projectid
      */
-    origin: [
-        number,
-        number,
-        number
-    ];
+    projectId: string;
     /**
-     * Xaxis
+     * Sourcestageref
      */
-    xAxis: [
-        number,
-        number,
-        number
-    ];
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
     /**
-     * Yaxis
+     * Styleid
      */
-    yAxis: [
-        number,
-        number,
-        number
-    ];
+    styleId: 'arch400-white' | 'arch364-technical';
     /**
-     * Normal
+     * Scaledenominator
+     *
+     * Exact drawing scale; oversized layouts are refused, never silently rescaled.
      */
-    normal: [
-        number,
-        number,
-        number
-    ];
+    scaleDenominator?: number;
+    /**
+     * Hiddenobjectids
+     *
+     * Exact physical object ids excluded before all three visibility solves.
+     */
+    hiddenObjectIds?: Array<string>;
+    /**
+     * Outlineobjectids
+     *
+     * Visible physical object ids to simplify to outlines in this sheet.
+     */
+    outlineObjectIds?: Array<string>;
+    /**
+     * Notes
+     */
+    notes?: Array<string>;
 };
 
 /**
- * SketchPrismRequestDto
+ * SketchActionDto
  *
  * A profile drawn on a work plane and the height it is pulled to.
  *
@@ -4680,13 +5790,7 @@ export type SketchPlaneDto = {
  * zero height is a real face and negative height reverses the pull. The
  * pointer preview stays in the browser; only a finished action arrives here.
  */
-export type SketchPrismRequestDto = {
-    /**
-     * Statedigest
-     *
-     * the stateDigest /api/state answered with; any other base is STALE_BASE
-     */
-    stateDigest: string;
+export type SketchActionDto = {
     /**
      * Componentid
      */
@@ -4740,6 +5844,167 @@ export type SketchPrismRequestDto = {
      * Summary
      */
     summary?: string | null;
+};
+
+/**
+ * SketchBatchRequestDto
+ *
+ * Several planned forms become one proposal, with no intermediate writes.
+ */
+export type SketchBatchRequestDto = {
+    /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Statedigest
+     *
+     * the stateDigest /api/state answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
+    /**
+     * Keep
+     *
+     * refs this action must not change
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+    /**
+     * Sketches
+     *
+     * Ordered drawing actions; later items may reference an earlier item in this batch.
+     */
+    sketches: Array<SketchActionDto>;
+};
+
+/**
+ * SketchPlaneDto
+ *
+ * An explicit orthonormal drawing plane in building-local Y-up coordinates.
+ */
+export type SketchPlaneDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Xaxis
+     */
+    xAxis: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Yaxis
+     */
+    yAxis: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Normal
+     */
+    normal: [
+        number,
+        number,
+        number
+    ];
+};
+
+/**
+ * SketchPrismRequestDto
+ *
+ * One drawing action against an exact retained or proposed source.
+ */
+export type SketchPrismRequestDto = {
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentcomponentid
+     *
+     * required when componentId is new here: the existing component it belongs under, which is what decides the seat that builds it
+     */
+    parentComponentId?: string | null;
+    /**
+     * Semantickind
+     *
+     * what a new component is, in the record's own vocabulary; required only when componentId is new here
+     */
+    semanticKind?: string | null;
+    /**
+     * Elementid
+     *
+     * the Element@1 this action authors; an existing id edits that element
+     */
+    elementId: string;
+    /**
+     * Profile
+     *
+     * the closed plan profile as (x, z) pairs, in order, without repeating the first point
+     */
+    profile: Array<[
+        number,
+        number
+    ]>;
+    /**
+     * Height
+     *
+     * Signed pull distance in project length units; zero creates a real planar face.
+     */
+    height: number;
+    /**
+     * Optional drawing frame. origin is relative to the resolved base datum; profile pairs are distances along xAxis/yAxis and positive height follows normal. Omit for the retained XZ plane.
+     */
+    plane?: SketchPlaneDto | null;
+    /**
+     * Baselevel
+     */
+    baseLevel?: string | null;
+    /**
+     * Basedatum
+     */
+    baseDatum?: string | null;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+    /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Statedigest
+     *
+     * the stateDigest /api/state answered with; any other base is STALE_BASE
+     */
+    stateDigest: string;
     /**
      * Keep
      *
@@ -5137,6 +6402,12 @@ export type TransferFileDto = {
  * TransformElementRequestDto
  */
 export type TransformElementRequestDto = {
+    /**
+     * Sourceproposalid
+     *
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     */
+    sourceProposalId?: string | null;
     /**
      * Statedigest
      */
@@ -5868,6 +7139,41 @@ export type ReadProjectByIdApiProjectsProjectIdGetResponses = {
 };
 
 export type ReadProjectByIdApiProjectsProjectIdGetResponse = ReadProjectByIdApiProjectsProjectIdGetResponses[keyof ReadProjectByIdApiProjectsProjectIdGetResponses];
+
+export type PrepareModelingApiProjectModelingPostData = {
+    body: ModelingInitializeRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/project/modeling';
+};
+
+export type PrepareModelingApiProjectModelingPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PrepareModelingApiProjectModelingPostError = PrepareModelingApiProjectModelingPostErrors[keyof PrepareModelingApiProjectModelingPostErrors];
+
+export type PrepareModelingApiProjectModelingPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelingInitializeDto;
+};
+
+export type PrepareModelingApiProjectModelingPostResponse = PrepareModelingApiProjectModelingPostResponses[keyof PrepareModelingApiProjectModelingPostResponses];
 
 export type ReadProjectApiProjectGetData = {
     body?: never;
@@ -6623,6 +7929,76 @@ export type ExportBoardApiBoardExportPostResponses = {
     200: unknown;
 };
 
+export type ReadDrawingStylesApiDrawingsStylesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/styles';
+};
+
+export type ReadDrawingStylesApiDrawingsStylesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDrawingStylesApiDrawingsStylesGetError = ReadDrawingStylesApiDrawingsStylesGetErrors[keyof ReadDrawingStylesApiDrawingsStylesGetErrors];
+
+export type ReadDrawingStylesApiDrawingsStylesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrawingStylesDto;
+};
+
+export type ReadDrawingStylesApiDrawingsStylesGetResponse = ReadDrawingStylesApiDrawingsStylesGetResponses[keyof ReadDrawingStylesApiDrawingsStylesGetResponses];
+
+export type CreateSheetApiDrawingsSheetsPostData = {
+    body: SheetRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/sheets';
+};
+
+export type CreateSheetApiDrawingsSheetsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateSheetApiDrawingsSheetsPostError = CreateSheetApiDrawingsSheetsPostErrors[keyof CreateSheetApiDrawingsSheetsPostErrors];
+
+export type CreateSheetApiDrawingsSheetsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateSheetApiDrawingsSheetsPostResponse = CreateSheetApiDrawingsSheetsPostResponses[keyof CreateSheetApiDrawingsSheetsPostResponses];
+
 export type CreateElevationApiDrawingsElevationsPostData = {
     body: ElevationRequestDto;
     headers?: {
@@ -6729,7 +8105,10 @@ export type CreateProposalApiProposalsPostResponses = {
 export type CreateProposalApiProposalsPostResponse = CreateProposalApiProposalsPostResponses[keyof CreateProposalApiProposalsPostResponses];
 
 export type CreateSketchProposalApiProposalsSketchPostData = {
-    body: SketchPrismRequestDto;
+    /**
+     * Body
+     */
+    body: SketchPrismRequestDto | SketchBatchRequestDto;
     headers?: {
         /**
          * X-Monkey-Operation

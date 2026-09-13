@@ -31,7 +31,10 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
 
 from fastapi.testclient import TestClient
 
-from archflow_studio_api.settings import StudioSettings
+from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.settings import StudioSettings, save_application_settings
+from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from monkeyhub_api import chat as chat_tools
 from monkeyhub_api.main import HubSettings, create_app
 
 
@@ -109,6 +112,8 @@ class LocalHubCase(unittest.TestCase):
         environment_patch = patch.dict(os.environ, environment, clear=True)
         environment_patch.start()
         self.addCleanup(environment_patch.stop)
+        # Hub prepares its shared Monitor during lifespan startup.
+        save_application_settings(self.runtime, ApplicationSettingsDto(**self.configuration()))
 
     @contextmanager
     def hub(self, *, studio_web=None):
@@ -132,9 +137,9 @@ class LocalHubCase(unittest.TestCase):
         self.assertEqual(response.json(), body)
         return body
 
-    def wait_state(self, client, app_id, state):
+    def wait_state(self, client, app_id, state, *, project_dir=None):
         def read():
-            response = client.get("/api/apps")
+            response = client.get("/api/apps", params={"projectDir": str(project_dir)} if project_dir is not None else {})
             self.assertEqual(response.status_code, 200, response.text)
             item = next(row for row in response.json() if row["appId"] == app_id)
             if item["state"] == "error" and state != "error":
@@ -144,6 +149,72 @@ class LocalHubCase(unittest.TestCase):
 
 
 class HubApiLifecycleTests(LocalHubCase):
+    def test_projects_run_independent_studios_reuse_their_tools_and_shutdown_together(self):
+        fixture = project_fixture()
+        fixture.make_project(self.root / "projects")
+        project_a = self.root / "projects" / fixture.PROJECT_ID
+        project_b = self.root / "projects" / "parallel-project"
+        FilesystemProjectRepository.initialize(
+            project_b, project_id="parallel-project", initial_state={"project_id": "parallel-project", "version": 0},
+        )
+        web = self.root / "minimal Studio web"
+        web.mkdir()
+        (web / "index.html").write_text("<html>Parallel Studio fixture</html>", encoding="utf-8")
+        processes, ports = [], set()
+        with self.hub(studio_web=web) as client:
+            configured = self.configure(client, projectDir=str(project_a), referenceRun=fixture.REFERENCE_RUN_ID)
+            settings_file = self.runtime / "config/applications.json"
+            saved_settings = settings_file.read_bytes()
+            for project in (project_a, project_b):
+                response = client.post("/api/apps/monkeyarch/start", params={"projectDir": str(project)})
+                self.assertEqual(response.status_code, 202, response.text)
+            a = self.wait_state(client, "monkeyarch", "running")
+            b = self.wait_state(client, "monkeyarch", "running", project_dir=project_b)
+            self.assertNotEqual(a["processId"], b["processId"])
+            self.assertNotEqual(a["url"], b["url"])
+            self.assertEqual(a["url"], f"http://127.0.0.1:{self.studio_port}/")
+            for project, expected, project_id in ((project_a, a, fixture.PROJECT_ID), (project_b, b, "parallel-project")):
+                binding = http_json(expected["url"] + "api/project")
+                self.assertEqual(binding["projectId"], project_id)
+                self.assertEqual(Path(binding["projectDir"]).resolve(), project.resolve())
+                if project == project_b:
+                    self.assertNotEqual(binding["referenceRun"]["runId"], fixture.REFERENCE_RUN_ID)
+                alias = project.parent / "." / project.name / ".." / project.name
+                for tool in ("monkeyarch", "monkeydiagram", "monkeyboard"):
+                    response = client.post(f"/api/apps/{tool}/start", params={"projectDir": str(alias)})
+                    self.assertEqual(response.status_code, 202, response.text)
+                    self.assertEqual(response.json()["processId"], expected["processId"])
+                    self.assertEqual(self.wait_state(client, tool, "running", project_dir=project)["processId"], expected["processId"])
+            self.assertEqual(client.post("/api/apps/monkeymonitor/start", params={"projectDir": str(project_b)}).status_code, 202)
+            monitor = self.wait_state(client, "monkeymonitor", "running")
+            self.assertEqual(self.wait_state(client, "monkeymonitor", "running", project_dir=project_b)["processId"], monitor["processId"])
+            initial_children = tuple(client.app.state.applications._children.values())
+            processes.extend(child.process for child in initial_children)
+            ports.update(child.port for child in initial_children)
+
+            stopped = client.post("/api/apps/monkeyboard/stop", params={"projectDir": str(project_b)})
+            self.assertEqual(stopped.status_code, 202, stopped.text)
+            for tool in ("monkeyarch", "monkeydiagram", "monkeyboard"):
+                self.wait_state(client, tool, "stopped", project_dir=project_b)
+            self.assertEqual(self.wait_state(client, "monkeyarch", "running")["processId"], a["processId"])
+            self.assertEqual(http_json(a["url"] + "api/project")["projectId"], fixture.PROJECT_ID)
+            self.assertEqual(client.post("/api/apps/monkeydiagram/start", params={"projectDir": str(project_b)}).status_code, 202)
+            reopened = self.wait_state(client, "monkeyarch", "running", project_dir=project_b)
+            self.assertNotEqual(reopened["processId"], b["processId"])
+            self.assertEqual(http_json(reopened["url"] + "api/project")["projectId"], "parallel-project")
+            changed = client.put("/api/settings/apps", json={**configured, "cadExport": "occt"})
+            self.assertEqual(changed.status_code, 409, changed.text)
+            self.assertEqual(changed.json()["code"], "APPS_RUNNING")
+            self.assertEqual(client.get("/api/settings/apps").json(), configured)
+            self.assertEqual(settings_file.read_bytes(), saved_settings)
+            remaining_children = tuple(client.app.state.applications._children.values())
+            processes.extend(child.process for child in remaining_children)
+            ports.update(child.port for child in remaining_children)
+        for process in processes:
+            self.assertEqual(process.poll(), 0)
+        for port in ports:
+            self.assertFalse(port_open(port), f"Owned service on {port} survived Hub shutdown")
+
     def test_no_project_hub_runs_monitor_reopens_and_deduplicates_start(self):
         with patch.object(StudioSettings, "__post_init__", side_effect=AssertionError(
             "A project-free Hub must not construct StudioSettings"
@@ -153,6 +224,8 @@ class HubApiLifecycleTests(LocalHubCase):
             self.assertEqual(set(rows), {"monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard", "monkeyfab"})
             self.assertEqual(rows["monkeyboard"]["state"], "stopped")
             self.assertEqual(rows["monkeyboard"]["serviceId"], "studio")
+            self.assertIn(rows["monkeymonitor"]["state"], {"starting", "running"})
+            self.assertIsNotNone(rows["monkeymonitor"]["processId"])
             self.assertIsNone(client.get("/api/settings/apps").json()["projectDir"])
             self.configure(client)
             for app_id in ("monkeyarch", "monkeydiagram", "monkeyboard"):
@@ -166,7 +239,7 @@ class HubApiLifecycleTests(LocalHubCase):
                 self.assertEqual(first.status_code, 202, first.text)
                 self.assertEqual(repeated.status_code, 202, repeated.text)
                 self.assertEqual(first.json()["processId"], repeated.json()["processId"])
-                self.assertEqual(spawn.call_count, 1)
+                spawn.assert_not_called()
             running = self.wait_state(client, "monkeymonitor", "running")
             first_health = http_json(running["url"] + "api/health")
             self.assertEqual(first_health["name"], "MonkeyMonitor")
@@ -248,6 +321,7 @@ class HubApiLifecycleTests(LocalHubCase):
             self.assertEqual(response.status_code, 202, response.text)
             failure = self.wait_state(client, "monkeymonitor", "error")
             self.assertEqual(failure["error"]["code"], "SERVICE_IDENTITY_MISMATCH")
+            self.assertIn("Restart MonkeyHub", failure["error"]["detail"])
 
             def exited():
                 rows = client.get("/api/apps").json()
@@ -255,6 +329,48 @@ class HubApiLifecycleTests(LocalHubCase):
                 return item["processId"] is None
             wait_for(exited, "The rejected owned child did not exit")
             self.assertFalse(port_open(self.monitor_port))
+
+    def test_created_project_prepares_one_shared_studio_and_retries_without_recreating(self):
+        web = self.root / "new Studio web"
+        with self.hub(studio_web=web) as client:
+            created = client.post("/api/chat/projects", json={"name": "prepared-project"})
+            self.assertEqual(created.status_code, 201, created.text)
+            project = created.json()
+            root = Path(project["projectDir"])
+            identity = (root / "project.json").read_bytes()
+            head = (root / "HEAD").read_bytes()
+            route = "/api/project/modeling"
+            query, body = {"projectDir": str(root)}, {"projectId": project["projectId"]}
+            refused = client.post(route, params=query, json=body)
+            self.assertEqual(refused.status_code, 503, refused.text)
+            self.assertEqual(refused.json()["code"], "STUDIO_WEB_MISSING")
+            self.assertEqual((root / "project.json").read_bytes(), identity)
+            web.mkdir()
+            (web / "index.html").write_text("<html>Prepared Studio fixture</html>", encoding="utf-8")
+            actual_request = chat_tools._request_json
+
+            def request(base, path, method="GET", body=None, timeout=180):
+                if base == self.base_url:
+                    response = client.request(method, path, json=body)
+                    response.raise_for_status()
+                    return response.json()
+                return actual_request(base, path, method, body, timeout)
+
+            with patch.object(chat_tools, "_request_json", side_effect=request):
+                prepared = client.post(route, params=query, json=body)
+                self.assertEqual(prepared.status_code, 200, prepared.text)
+                self.assertTrue(prepared.json()["initialized"])
+                arch = self.wait_state(client, "monkeyarch", "running", project_dir=root)
+                with patch("monkeyhub_api.applications.subprocess.Popen") as spawn:
+                    repeated = client.post(route, params=query, json=body)
+                    self.assertEqual(repeated.status_code, 200, repeated.text)
+                    self.assertFalse(repeated.json()["initialized"])
+                    spawn.assert_not_called()
+            for tool in ("monkeydiagram", "monkeyboard"):
+                self.assertEqual(self.wait_state(client, tool, "running", project_dir=root)["processId"], arch["processId"])
+            self.assertEqual((root / "project.json").read_bytes(), identity)
+            self.assertEqual((root / "HEAD").read_bytes(), head)
+            self.assertEqual(client.get("/api/chat/workspace").json()["projects"], ["prepared-project"])
 
     def test_arch_diagram_and_board_share_one_studio_and_any_card_stops_it(self):
         fixture = project_fixture()

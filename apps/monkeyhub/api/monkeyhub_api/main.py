@@ -4,10 +4,12 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import logging
 import os
 from pathlib import Path
 import sys
 import threading
+import time
 from urllib.parse import urlsplit
 from uuid import UUID
 import webbrowser
@@ -28,7 +30,9 @@ from archflow_studio_api.settings import (
 )
 from archflow_studio_api.transport.errors import StudioError
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
+from . import chat as chat_tools
 from .applications import Applications
 from .chat import ChatStore
 from .fabrication import Fabrication
@@ -36,7 +40,7 @@ from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
-    ChatModelRequest, ChatPostRequest, ChatWorkspace, ChatPermissionRequest,
+    ChatModelRequest, ChatPostRequest, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -70,6 +74,12 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
 
     @asynccontextmanager
     async def lifespan(app):
+        try:
+            await asyncio.to_thread(applications.start, "monkeymonitor")
+        except (HubFailure, OSError, SettingsError, ValidationError, UnicodeError) as exc:
+            # A launch failure must leave the Hub available for configuration
+            # and an explicit retry through the existing application route.
+            logging.getLogger(__name__).warning("MonkeyMonitor could not be prepared: %s", exc)
         yield
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
@@ -139,20 +149,20 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return HubHealth(processId=os.getpid(), parentProcessId=os.getppid(), managedInstanceId=settings.managed_instance_id, sourceRevision=applications.source_revision)
 
     @app.get("/api/apps", response_model=list[AppStatus])
-    def list_apps() -> list[AppStatus]:
-        return applications.statuses()
+    def list_apps(projectDir: str | None = None) -> list[AppStatus]:
+        return applications.statuses(project_dir=projectDir)
 
     error_responses = {409: {"model": HubError}, 503: {"model": HubError}}
 
     @app.post("/api/apps/{app_id}/start", response_model=AppStatus, status_code=202, responses=error_responses)
-    def start_app(app_id: AppId) -> AppStatus:
-        with chats.application_lifecycle(app_id):
-            return applications.start(app_id)
+    def start_app(app_id: AppId, projectDir: str | None = None) -> AppStatus:
+        with chats.application_lifecycle(app_id, project_dir=projectDir):
+            return applications.start(app_id, project_dir=projectDir)
 
     @app.post("/api/apps/{app_id}/stop", response_model=AppStatus, status_code=202, responses=error_responses)
-    def stop_app(app_id: AppId) -> AppStatus:
-        with chats.application_lifecycle(app_id, stopping=True):
-            return applications.stop(app_id)
+    def stop_app(app_id: AppId, projectDir: str | None = None) -> AppStatus:
+        with chats.application_lifecycle(app_id, stopping=True, project_dir=projectDir):
+            return applications.stop(app_id, project_dir=projectDir)
 
     fab_errors = {422: {"model": HubError}, 502: {"model": HubError}, 503: {"model": HubError}}
 
@@ -177,6 +187,26 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         with chats.project_configuration(body.project_dir):
             return applications.configure(body)
 
+    @app.post("/api/project/modeling", response_model=ModelingInitializeDto, response_model_by_alias=True)
+    def prepare_project_modeling(body: ModelingInitializeRequestDto, projectDir: str | None = None) -> dict:
+        target = projectDir if projectDir is not None else read_application_settings(settings.runtime_root).project_dir
+        if not target:
+            raise HubFailure(409, "PROJECT_REQUIRED", "Choose a project before preparing its modeling workspace.")
+        project_id, project_dir = chat_tools._project(target)
+        if project_id != body.project_id:
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The selected project changed before its workspace was prepared.")
+        status = start_app("monkeyarch", projectDir=project_dir)
+        deadline = time.monotonic() + 35
+        while status.state == "starting" and time.monotonic() < deadline:
+            time.sleep(0.1)
+            status = applications.status("monkeyarch", project_dir=project_dir)
+        if status.state != "running":
+            if status.error is not None:
+                raise HubFailure(503, status.error.code, status.error.detail)
+            raise HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "The project workspace is not ready. Retry preparing this project.")
+        base, binding = chat_tools._bound_studio(chats.hub_url, None, project_id=project_id, project_dir=project_dir)
+        return chat_tools._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
+
     @app.get("/api/chat/providers", response_model=list[ChatProvider])
     def chat_providers(refresh: bool = False):
         return chats.providers(refresh)
@@ -194,8 +224,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return chats.create_project(body)
 
     @app.get("/api/chat/sessions", response_model=list[ChatSummary])
-    def chat_sessions(projectId: str | None = None):
-        return chats.list(projectId)
+    def chat_sessions(projectId: str | None = None, archived: bool = False):
+        return chats.list(projectId, archived=archived)
 
     @app.post("/api/chat/sessions", response_model=ChatDetail, status_code=201)
     def create_chat(body: ChatCreateRequest):
@@ -212,6 +242,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.put("/api/chat/sessions/{session_id}/model", response_model=ChatDetail)
     def set_chat_model(session_id: str, body: ChatModelRequest):
         return chats.set_model(session_id, body.model)
+
+    @app.put("/api/chat/sessions/{session_id}/archive", response_model=ChatDetail)
+    def set_chat_archived(session_id: str, body: ChatArchiveRequest):
+        return chats.set_archived(session_id, body.archived)
 
     @app.post("/api/chat/sessions/{session_id}/stop", response_model=ChatDetail)
     def stop_chat(session_id: str):

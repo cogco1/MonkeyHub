@@ -386,17 +386,18 @@ class StateRecord:
             if e.parent_id is not None and e.parent_id not in known:
                 raise StateRecordError(f"entity {e.entity_id}: unknown parent {e.parent_id!r}")
         keys = [p.key for p in self.parameters]
-        if len(set(keys)) != len(keys):
+        parameter_keys = set(keys)
+        if len(parameter_keys) != len(keys):
             raise StateRecordError("parameter keys must be unique")
         for p in self.parameters:
             for item in p.inputs:
-                if item not in set(keys):
+                if item not in parameter_keys:
                     raise StateRecordError(f"parameter {p.key}: unknown input {item!r}")
         for e in self.entities:
             if e.schema == "Element@1" and "type_ref" in e.fields:
                 _element_fields(self, e)
             for path, name in parameter_bindings_of(e):
-                if name not in set(keys):
+                if name not in parameter_keys:
                     raise StateRecordError(f"entity {e.entity_id}: {path} binds @{name}, which names no parameter (parameters: {', '.join(sorted(keys)) or 'none'})")
         rids = [r.relation_id for r in self.relations]
         if len(set(rids)) != len(rids):

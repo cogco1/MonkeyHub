@@ -135,6 +135,76 @@
         "apps/archflow-studio/api/tests/test_candidate.py"
       ],
       "status_note": "PARTIAL, and not yet PRODUCTION: the static entry describes a chain whose real-project run is verified separately. Runtime availability (is a project bound, is this state actionable) is answered per request, never from this entry."
+    },
+    {
+      "capability_id": "project.initialize_modeling",
+      "owner": "studio.binding",
+      "execution_owner": "project.repository",
+      "kind": "authoring",
+      "status": "PARTIAL",
+      "purpose": "Prepare empty authored inputs for the first modeling candidate without creating geometry or replacing existing design.",
+      "purpose_zh": "准备空项目的首个建模候选入口，保留现有设计和上传资料；此动作本身不生成几何。",
+      "goals": [
+        "initialize empty project",
+        "prepare first model",
+        "初始化空项目",
+        "创建首个模型"
+      ],
+      "aliases": [
+        "empty project modeling",
+        "首个体块",
+        "建模初始化"
+      ],
+      "requires": [
+        "bound_project",
+        "project_id"
+      ],
+      "reads": [
+        "authored_inputs",
+        "retained_model_records",
+        "published_HEAD"
+      ],
+      "writes": [
+        "initial_authored_inputs_via_P036"
+      ],
+      "effects": [
+        "prepare_modeling_root_level_and_seat"
+      ],
+      "inputs_ref": "/openapi.json#/components/schemas/ModelingInitializeRequestDto",
+      "entrypoints": [
+        "POST /api/project/modeling",
+        "GET /api/state",
+        "GET /api/state/frame",
+        "POST /api/proposals/sketch",
+        "POST /api/proposals/{proposal_id}/candidate"
+      ],
+      "composes": [
+        "studio.binding: prepare the initial modeling context",
+        "project.repository: preserve project identity and existing input with exact comparison"
+      ],
+      "produces": [
+        "initial modeling context; no geometric artifact"
+      ],
+      "validators": [],
+      "estimated_cost": "Local input preparation; no model or CAD call.",
+      "works": [
+        "first sketch candidate from a new empty project",
+        "empty project with existing Board uploads",
+        "repeated connection preserves existing model inputs"
+      ],
+      "missing": [
+        "image interpretation",
+        "automatic reconstruction of uploaded references"
+      ],
+      "ui": {
+        "preview": "MonkeyArch"
+      },
+      "tests": [
+        "apps/archflow-studio/api/tests/test_boards.py",
+        "apps/archflow-studio/api/tests/test_binding.py",
+        "tests/test_project_repository.py"
+      ],
+      "status_note": "Initial input preparation is verified through real OCCT modeling and drawing tests; image interpretation is a separate task."
     }
   ],
   "modules": [
@@ -690,7 +760,8 @@
         "the queryable semantic authoring signature of the wall producer and its rectangular or semicircular hosted apertures; project values remain in StateRecord",
         "in-memory checking of a semantic element edit by the advertised signature and the existing producers before a candidate is queued",
         "prism rectangular_cutouts: parameter-bound rectangular openings trim a material panel through its Z thickness, retire empty panels and retain stable fragment ids",
-        "prism semantic authoring: profile, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
+        "prism semantic authoring: parameter-bound profile coordinates, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
+        "loft semantic authoring: corresponding polyline sections with parameter-bound coordinates form one normal or straight loft, capped or open; unsupported section bases and inconsistent vertex counts refuse before execution",
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
         "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits"
       ],
@@ -767,7 +838,8 @@
         "tests/test_whole_stair.py",
         "tests/test_cad_patch.py",
         "tests/test_project_runner.py",
-        "tests/test_prism_cutouts.py"
+        "tests/test_prism_cutouts.py",
+        "tests/test_occt_execution.py"
       ],
       "notes": "The single geometry-emission owner on the spine; P105 is where monument vocabulary would be added here rather than beside it."
     },
@@ -2097,7 +2169,7 @@
         "run creation and the run record areas (create_run, create_run_batch, load_run)",
         "format-version compatibility between CanonicalSnapshot@1 and CanonicalSnapshot@2",
         "integrity verification of the snapshot/event chain and orphan reporting (verify, RecoveryReport)",
-        "installing optional caller-authored State Record and seat-pack mappings at the existing input paths during initialize; no run is created and later authored edits remain with their existing owners",
+        "installing caller-authored State Record and seat-pack mappings at creation or on explicit initial-input preparation with exact previous input and initial HEAD checks; no run, accepted Stage or issue is created",
         "project-scoped design branch refs with atomic compare-and-swap under the existing process and file locking primitives; independent of canonical HEAD",
         "exact historical published state read through the retained event chain",
         "design Stage reachability and unreferenced prepared Stage reporting in verify",
@@ -2117,7 +2189,8 @@
         "PersistenceDestination",
         "JSON mapping payload",
         "binary stream",
-        "optional authored_record and seat_pack mappings on initialize"
+        "optional authored_record and seat_pack mappings on initialize",
+        "expected_head and expected_record for initial authored-input preparation"
       ],
       "outputs": [
         "ProjectRecordRef",
@@ -2142,7 +2215,8 @@
         "FilesystemProjectRepository.read_transfer_file",
         "FilesystemProjectRepository.bootstrap_transfer",
         "FilesystemProjectRepository.import_candidate_transfer",
-        "FilesystemProjectRepository.pull_transfer"
+        "FilesystemProjectRepository.pull_transfer",
+        "FilesystemProjectRepository.initialize_authored_inputs"
       ],
       "depends_on": [
         "project.digests",
@@ -2399,7 +2473,7 @@
     {
       "module_id": "runtime.drawing_elevation",
       "owner_path": "monkeydiagram/drawing_elevation.py",
-      "purpose": "Freeze one model-axis orthographic elevation of a retained exact STEP: verify the source through its receipt, project every object, write SVG, PNG and one receipt into a drawing run on the source base, and read them back.",
+      "purpose": "Freeze one model-axis orthographic elevation or top projection of a retained exact STEP: verify the source through its receipt, project every object, write SVG, PNG and one receipt into a drawing run on the source base, and read them back.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
         "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
@@ -2412,7 +2486,7 @@
         "the hidden-line solve - adapters.cad_execution",
         "SVG serialisation and PNG rendering - adapters.drawing_svg",
         "writing files - project.repository (put_workspace_file, put_json); this module never writes a path itself",
-        "plans, sections, axonometrics, sheets, annotations, freshness/update, Studio routes or jobs: not implemented"
+        "cut plans, sections, axonometrics, sheets, annotations, freshness/update, Studio routes or jobs: not implemented"
       ],
       "inputs": [
         "FilesystemProjectRepository",
@@ -2437,6 +2511,8 @@
         "project_model_axis_elevation",
         "freeze_model_axis_elevation",
         "read_model_axis_elevation",
+        "read_elevation_source",
+        "VerifiedElevationSource",
         "list_model_axis_elevations",
         "DRAWING_PROJECTION_RECEIPT_SCHEMA",
         "ELEVATION_KIND",
@@ -3530,7 +3606,8 @@
         "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
         "retaining an explicitly supplied composed 3dm in P036 objects and a registration in its exact retained run state; listing composed alongside native exports with registered status and no native readback claim",
         "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
-        "registering model-axis elevation revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt",
+        "registering model-axis elevation and top projection revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt; top is an uncut orthographic projection",
+        "composing front/right/top review sheets from the exact retained model using a selected drawing style and explicit scale, registering PDF and same-scene editable DXF through P036, and reusing an identical retained sheet without another projection",
         "requiring a native Stage model to cover every producing seat execution, or an explicitly registered complete composed model",
         "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation",
         "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration",
@@ -3593,6 +3670,9 @@
         "POST /api/documents/{asset_sha256}/model-source",
         "POST /api/drawings/elevations",
         "generate_elevation",
+        "GET /api/drawings/styles",
+        "POST /api/drawings/sheets",
+        "generate_sheet",
         "require_complete_model",
         "POST /api/artifacts/{sha256}/rhino-export",
         "export_rhino_work_model"
@@ -3610,6 +3690,11 @@
         "project.refs",
         "project.repository",
         "runtime.drawing_elevation",
+        "documentation.drawings",
+        "monkeydiagram.documentation.styles",
+        "monkeydiagram.drawing_output",
+        "archflow.adapters.occt_backend",
+        "contracts.canonical",
         "studio.binding",
         "studio.shell"
       ],
@@ -3748,10 +3833,12 @@
         "the record's frame: each Level@1 and GridAxis@1 with its role, its value (const x / const y as element_reindex.axis_lines_of reads it), the elements whose own references name it, and the closure of changing it (GET /api/state/frame, POST /api/state/closure); read-only, no grammar rule for editing a level or an axis",
         "a capability a reference pins (a height whose top names a level, another element's datum or a grid role) is status=derived with source='derived from <ref>', read from the record's own dependency edges; it is shown, never created",
         "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source",
-        "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes"
+        "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes",
+        "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
+        "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate"
       ],
       "does_not_own": [
-        "issuing a project version, and every project file write: the ProjectBinding object stays read-only, runtime.project_runner is the only writer of a run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
+        "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
         "parsing an utterance or making a proposal - studio.intent",
         "running a candidate - studio.candidate",
         "closure and impact - studio.validation, over archflow.state.state_record's one closure rule",
@@ -3816,7 +3903,10 @@
         "GET /api/sync/files",
         "POST /api/sync/candidates",
         "POST /api/sync/pull",
-        "POST /api/sync/push"
+        "POST /api/sync/push",
+        "POST /api/project/modeling",
+        "initialize_modeling",
+        "project_proposed_record"
       ],
       "depends_on": [
         "project.inputs",
@@ -3833,7 +3923,8 @@
         "state.stage_workflow",
         "capabilities.element_reindex",
         "capabilities.reference_resolver",
-        "state.design_portfolio"
+        "state.design_portfolio",
+        "state.state_record"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -3863,7 +3954,8 @@
         "apps/archflow-studio/api/tests/test_catalog.py",
         "apps/archflow-studio/api/tests/test_conventions.py",
         "apps/archflow-studio/api/tests/test_frame.py",
-        "apps/archflow-studio/api/tests/test_collaboration_http.py"
+        "apps/archflow-studio/api/tests/test_collaboration_http.py",
+        "apps/archflow-studio/api/tests/test_boards.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -3892,7 +3984,7 @@
         "turning the authored seat pack project.inputs read onto SeatSpec, and refusing a pack that declares no seat",
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
-        "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines",
+        "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines; candidate reads also expose the retained inspected object bounds and their declared units/frame, with explicit unavailable readback",
         "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy",
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
         "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
@@ -4055,7 +4147,7 @@
         "the in-process episode store, and the flush that writes judgements made before a run into the next run made against the same state; a judgement is retained only into a run that happened, an episode that met no run says so and is lost on restart; the payload states facts only (ADR-004)",
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
         "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
-        "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; a proposal carries a concise change summary and explicit kept conditions",
+        "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
         "showing the Agent project types, source readings, parameter bindings and named relationships as context; no geometry program or deferred replay payload is accepted as semantic authoring",
         "retaining complete 2D page stroke and plain-text revisions and page comments through P036 against exact source-file content, named run and page; reading exact submitted revisions into source context beside existing 3D gesture facts",
         "retaining submitted document words and their exact annotation references before intent resolution, and carrying that retained context with scalar or semantic proposals and modifications",
@@ -4092,7 +4184,8 @@
         "page-normalized DocumentGesture values, including text content, anchor and independent font size, and exact saved DocumentAnnotationRef values",
         "optional StudioEventSink for successful API registration or option additions",
         "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes",
-        "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities"
+        "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities",
+        "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4199,7 +4292,9 @@
         "sketch_prism_proposal",
         "POST /api/proposals/transform",
         "POST /api/proposals/push-pull",
-        "direct_element_proposal"
+        "direct_element_proposal",
+        "operator_of",
+        "continue_proposal"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4270,7 +4365,8 @@
         "A scoped request retains the complete validation closure privately; numeric and explicitly local design requests send only relevant state, dependencies, affected hosts and applicable keep constraints. Global or unresolved design requests retain full context. Server adaptation preserves untouched data and refuses unrelated, shared, derived or locked-control changes; at most two exact-reference supplements grant no additional write scope",
         "Before every provider attempt, the application text estimate must fit the configured context budget or return unsupported without a model invocation. This estimate excludes provider framing and image tokens and is not billed usage",
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
-        "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters"
+        "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters",
+        "Unexecuted proposal continuations fold checked operators onto their original run/Stage base in memory; a sketch batch stores only its complete proposal, failures leave previous proposals unchanged, and only final candidate execution creates a run or model file"
       ],
       "status": "canonical",
       "tests": [
@@ -4295,7 +4391,8 @@
         "apps/archflow-studio/api/tests/test_intent_budget.py",
         "apps/archflow-studio/api/tests/test_capabilities.py",
         "apps/archflow-studio/api/tests/test_delete.py",
-        "apps/archflow-studio/api/tests/test_sketch.py"
+        "apps/archflow-studio/api/tests/test_sketch.py",
+        "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4420,7 +4517,9 @@
         "SynchronizationDto"
       ],
       "depends_on": [
-        "monkeymonitor"
+        "monkeymonitor",
+        "documentation.drawings",
+        "monkeydiagram.documentation.styles"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/*.py",
@@ -5632,13 +5731,14 @@
       "status": "canonical",
       "purpose": "Host project-bound conversations through installed coding CLIs and open the existing local architecture tools beside the chat; domain state and settings retain their existing owners.",
       "owns": [
-        "Hub FastAPI, project/chat navigation, persistent CLI conversation transcripts and embedded local tool pages",
-        "One owned Studio process shared by MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
+        "Hub FastAPI, project/chat navigation including existing projects in the configured workspace, persistent CLI conversation transcripts with recoverable archive/restore and embedded local tool pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing page",
+        "One owned Studio process per project, shared by that project's MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
         "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring",
         "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
-        "the bounded completion option of the design request tool: for the one capability run it names, a single accepted POST followed by reads of the existing job, candidate and comparison within a stated wait, answered as a projection of those reads"
+        "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
+        "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -5649,7 +5749,7 @@
         "Explicit nonproject runtime root",
         "Optional existing project path and retained run",
         "Packaged or checkout source revision and built web directories",
-        "Fixed application id and start/stop request",
+        "Fixed application id, optional projectDir scope, and start/stop request",
         "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code",
         "An existing complete project folder, chosen installed CLI/model and user chat message"
       ],
@@ -5681,20 +5781,22 @@
         "GET /api/chat/sessions",
         "POST /api/chat/sessions",
         "GET /api/chat/sessions/{id}",
+        "PUT /api/chat/sessions/{id}/archive",
         "POST /api/chat/sessions/{id}/messages",
         "PUT /api/chat/sessions/{id}/model",
         "POST /api/chat/sessions/{id}/permissions/{permission_id}",
-        "POST /api/chat/sessions/{id}/stop"
+        "POST /api/chat/sessions/{id}/stop",
+        "POST /api/project/modeling"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
-        "Arch, Diagram and Board share one service; Diagram opens its documents view and Board opens its board view",
+        "Within each project Arch, Diagram and Board share one service; projects have independent Studio processes and ports, and switching does not rewrite launch settings",
         "Only this Hub's stdin pipes can stop its children; a occupied port or mismatched service is never adopted",
         "Accepted work is allowed to finish; no taskkill or forced process termination is a normal exit path",
         "Settings and logs have explicit nonproject locations; retained building writes use the existing project interfaces",
         "Fab uses the existing CLI, never duplicates its geometry or file-output implementation; it does not create a second project store",
         "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing",
-        "CLI tools verify the actual Hub/Studio project binding; retained design changes use existing Studio/P036 APIs, and running chats prevent cross-project service rebinding",
+        "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them"
@@ -5838,7 +5940,8 @@
         "Drawing Standard v0.1: configurable sheet, view, graphic, annotation, information, status, coordination and revision conventions",
         "DrawingState structural and cross-record validation: preferred scales, view references, dimension values and chains, source certainty, note placement, tags, interfaces, revisions and paper bounds",
         "DrawingPlan as a detached plain domain value without receipt, digest or persistence authority",
-        "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF serialization of those same scenes"
+        "PaperCanvas recording of resolved paper primitives with glyph and stroke bounds, and PDF/DXF serialization of those same scenes",
+        "reusable ARCH400 white presentation and ARCH364 technical sheet styles extracted from existing drawings; compose_review_sheet places caller-supplied orthographic linework and measured dimensions at one explicit scale without changing model geometry"
       ],
       "does_not_own": [
         "source design objects, dimensions, parameter dependencies or confirmation decisions",
@@ -5868,12 +5971,19 @@
         "PaperSheet",
         "PaperCanvas",
         "render_pdf",
-        "render_dxf"
+        "render_dxf",
+        "list_drawing_styles",
+        "drawing_style",
+        "compose_review_sheet",
+        "initialize_drawing_runtime"
       ],
-      "depends_on": [],
+      "depends_on": ["adapters.cad_execution"],
       "used_by": [
         "tests/test_drawing_standard.py",
-        "tests/test_drawing_output.py"
+        "tests/test_drawing_output.py",
+        "tests/test_drawing_styles.py",
+        "apps/archflow-studio/api/archflow_studio_api/main.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py"
       ],
       "invariants": [
         "Source design and project information remain the only facts; drawing values do not confirm or mutate them.",
@@ -5886,12 +5996,14 @@
       "status": "canonical",
       "files": [
         "monkeydiagram/documentation/drawings.py",
+        "monkeydiagram/documentation/styles.py",
         "monkeydiagram/documentation/drawing_standard_v0_1.json",
         "monkeydiagram/documentation/drawing_state.schema.json",
         "monkeydiagram/drawing_output.py"
       ],
       "tests": [
         "tests/test_drawing_standard.py",
+        "tests/test_drawing_styles.py",
         "tests/test_drawing_output.py"
       ],
       "notes": "CREATE justified in docs/DRAWING_STANDARD_V0.1.md: existing CAD execution explicitly excludes drawing styles and sheets. The first consumer is the externally configured interior cabinet project; no project content or second persistence path enters the framework."

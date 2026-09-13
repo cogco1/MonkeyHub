@@ -389,6 +389,31 @@ def _keep_scope(projection: StateProjection, target_element: str | None) -> Keep
     )
 
 
+def initialization_description(
+    binding: ProjectBinding,
+    entry: Mapping[str, Any],
+    projection: StateProjection | None = None,
+) -> Description:
+    """Offer input preparation even when no authored record can be projected."""
+
+    return Description(
+        entry=entry, project_id=binding.project_id,
+        run_id=binding.reference_run().run.run_id if projection is None else projection.run.run_id,
+        state_digest=None if projection is None else projection.state_digest,
+        exact_source=projection is not None and projection.reference_state_exact,
+        actionable=projection is not None and projection.state is not None,
+        source_stage_ref=None, read_with="GET /api/state",
+        write_with="POST /api/project/modeling with projectId",
+        target=None, keep=None,
+        request={"method": "POST", "path": "/api/project/modeling",
+                 "body": {"projectId": binding.project_id}},
+        honesty=("Initializes only missing or empty authored modeling inputs. Existing design, uploads, "
+                 "runs and HEAD are preserved. Creates no geometry; read state and frame, then "
+                 "use POST /api/proposals/sketch and its candidate route. Before the first real "
+                 "candidate omit sourceRunId; studio-projection is not a stored run.",),
+    )
+
+
 def describe_capability(
     binding: ProjectBinding,
     projection: StateProjection,
@@ -413,6 +438,9 @@ def describe_capability(
     # Imported here, not at module scope: the searching half above is shared
     # with the governance CLI and must stay importable without the kernel.
     from .catalog import DERIVED_STATUS, EDITABLE, catalog_of
+
+    if entry.get("capability_id") == "project.initialize_modeling":
+        return initialization_description(binding, entry, projection)
 
     honesty: list[str] = []
     status = str(entry.get("status", ""))
@@ -484,6 +512,7 @@ def describe_capability(
                 "targetComponentId. Each row carries the componentId to send with it."
             )
     stage_ref = None if projection.source_stage_ref is None else projection.source_stage_ref.uri
+    source_run_id = None if projection.reference.source == "none" else projection.run.run_id
     return Description(
         entry=entry,
         project_id=projection.project_id,
@@ -499,8 +528,10 @@ def describe_capability(
         # each half is written out in full, with the Stage this was read
         # against when one was selected. A hint that said "the same base" and
         # pointed at another projection would be worse than no hint.
-        read_with=_read_with(projection.run.run_id, stage_ref),
-        write_with=(f'sourceRunId="{projection.run.run_id}"'
+        read_with=_read_with(source_run_id, stage_ref),
+        write_with=("omit sourceRunId; use stateDigest from GET /api/state for authored input"
+                    if source_run_id is None else
+                    f'sourceRunId="{source_run_id}"'
                     + ("" if stage_ref is None else f', sourceStageRef="{stage_ref}"')),
         target=target,
         keep=keep,
@@ -509,13 +540,13 @@ def describe_capability(
     )
 
 
-def _read_with(run_id: str, stage_ref: str | None) -> str:
+def _read_with(run_id: str | None, stage_ref: str | None) -> str:
     """The read that answers for this same base, as a URL a client can send."""
 
-    query = {"run": run_id}
+    query = {} if run_id is None else {"run": run_id}
     if stage_ref is not None:
         query["sourceStageRef"] = stage_ref
-    return "GET /api/state?" + urlencode(query)
+    return "GET /api/state" + ("?" + urlencode(query) if query else "")
 
 
 def _request(
@@ -540,12 +571,13 @@ def _request(
     body: dict[str, Any] = {
         "projectId": projection.project_id,
         "stateDigest": projection.state_digest,
-        "sourceRunId": projection.run.run_id,
         "targetComponentId": first.component_id,
         "elementId": first.element_id,
         "utterance": first.utterance,
         "keep": [],
     }
+    if projection.reference.source != "none":
+        body["sourceRunId"] = projection.run.run_id
     if projection.source_stage_ref is not None:
         # The Stage this description was read against travels into the write,
         # so the run is made from the source the reader was looking at.

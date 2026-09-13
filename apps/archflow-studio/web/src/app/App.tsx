@@ -1772,7 +1772,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
       setSelectingWorkingCopy(false);
     }
     if (next !== null) {
-      if (!keepDocument) setDocumentView((current) => ({ ...current, runId: next.projection.referenceRun.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
+      if (!keepDocument) setDocumentView((current) => ({ ...current, runId: next.projection.referenceRunSource === "none" ? null : next.projection.referenceRun.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
       pendingIntentRef.current = null;
       if (selectedSource && selectedSource.runId === next.projection.referenceRun.runId && selectedSource.stateDigest === next.projection.stateDigest) {
         documentEditingRef.current = { projectId: next.project.projectId, modelSource: selectedSource };
@@ -2894,7 +2894,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // the launcher's exact-status convention into the browser and ends when the shell has a
   // project to name.
   // Registered source pages need a project binding, not a restored 3D editing base.
-  const canOpenDocuments = documentView.open && documentView.runId !== null && binding !== null;
+  const canOpenDocuments = documentView.open && binding !== null;
   const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");
 
   if ((session.status === "failed" || missingChosenModel) && !canOpenDocuments) {
@@ -2919,7 +2919,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             onClick={() => void changeEditingBase(null)}>
             {t("stage.base.default")}
           </button>
-          {binding && documentView.mounted && documentView.runId && <button type="button" className="btn"
+          {binding && documentView.mounted && <button type="button" className="btn"
             onClick={() => setDocumentView((current) => ({ ...current, open: true }))}>
             {t("workspace.monkeydiagram")}
           </button>}
@@ -3195,7 +3195,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             onOpenWorkingOption={openWorkingOption}
             loadingSha={artifactLoadingSha}
             loadedShas={loadedShas}
-            editingBaseRunId={projection?.referenceRun.runId ?? null}
+            editingBaseRunId={projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId ?? null}
             editingBaseLabel={modelSources.find((row) => sameModelSource(row.modelSource, editingModelSource))?.label ??
               sentenceOfCandidate(projection?.referenceRun.runId ?? null)}
             explicitBase={sourceRunId !== null}

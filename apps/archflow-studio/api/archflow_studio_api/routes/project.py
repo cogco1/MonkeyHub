@@ -11,11 +11,25 @@ from __future__ import annotations
 from fastapi import APIRouter
 from starlette.requests import Request
 
-from ..application.binding import bound_project
-from ..transport.project import ProjectBindingDto
+from ..application.binding import bound_project, initialize_modeling, resolve_project
+from ..transport.project import ProjectBindingDto, ModelingInitializeDto, ModelingInitializeRequestDto
 from .projects import binding_answer
 
 router = APIRouter(tags=["project"])
+
+
+@router.post("/project/modeling", response_model=ModelingInitializeDto, response_model_by_alias=True)
+def prepare_modeling(request: Request, body: ModelingInitializeRequestDto) -> ModelingInitializeDto:
+    """Prepare an empty project for its first sketch or massing candidate.
+
+    Existing projects keep their model inputs. After this action read GET
+    /api/state and /api/state/frame, then use the existing proposal/candidate
+    routes. Without a real source run omit sourceRunId; studio-projection is
+    a transient projection identifier, not a retained candidate.
+    """
+
+    binding = resolve_project(request.app.state, body.project_id)
+    return ModelingInitializeDto(project_id=binding.project_id, initialized=initialize_modeling(binding))
 
 
 @router.get(

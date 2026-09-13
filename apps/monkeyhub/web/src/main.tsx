@@ -302,8 +302,7 @@ function App() {
     </section></>;
   return <ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
-    workspace={workspace}
-    onProjectBound={(value) => { setSavedLaunch(value); setLaunchDraft(value); launchEdits.current += 1; }} />;
+    workspace={workspace} apps={statusIssue ? null : apps} />;
 }
 const root = document.getElementById("root");
 if (!root) throw new Error("MonkeyHub root is missing.");

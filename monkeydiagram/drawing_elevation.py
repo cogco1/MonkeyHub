@@ -332,7 +332,7 @@ class ElevationDrawing:
 
 
 @dataclass(frozen=True, slots=True)
-class _VerifiedSource:
+class VerifiedElevationSource:
     run: RunRef
     receipt: Mapping[str, Any]
     length_unit: str
@@ -356,7 +356,7 @@ def _artifact_bytes(repository: FilesystemProjectRepository, ref: ProjectArtifac
     return data
 
 
-def _verified_source(repository: FilesystemProjectRepository, source: ElevationSource) -> _VerifiedSource:
+def read_elevation_source(repository: FilesystemProjectRepository, source: ElevationSource) -> VerifiedElevationSource:
     """The source receipt, STEP and names, checked against each other; read-only."""
 
     if not isinstance(source, ElevationSource):
@@ -412,7 +412,7 @@ def _verified_source(repository: FilesystemProjectRepository, source: ElevationS
     extra = sorted(set(names) - set(physical))
     _require(not missing and not extra,
              f"STEP names and receipt physical object ids differ: missing {missing[:5]}, extra {extra[:5]}")
-    return _VerifiedSource(run=run, receipt=receipt, length_unit=length_unit, program_digest=program_digest,
+    return VerifiedElevationSource(run=run, receipt=receipt, length_unit=length_unit, program_digest=program_digest,
                            stage_id=stage_id, physical_object_ids=tuple(sorted(physical)), entries=tuple(entries))
 
 
@@ -470,7 +470,7 @@ def freeze_model_axis_elevation(
     observer = observe if operation_observer is not None else None
     with _observed_stage(observer, "drawing.load", parent_event_id=parent_event_id) as observation:
         head_before = repository.read_head()
-        verified = _verified_source(repository, source)
+        verified = read_elevation_source(repository, source)
         backend = backend_identity()
         identity.update(backend=backend["binding"], backend_version=backend["binding_version"])
         observation["input_object_ids"] = list(verified.physical_object_ids)

@@ -41,6 +41,69 @@ def image_element(document: dict, page_index: int = 0, identifier: str = "drawin
 
 
 class BoardTests(unittest.TestCase):
+    def test_empty_board_project_can_create_its_first_real_model_and_drawing(self) -> None:
+        import time
+        import json
+        from archflow.adapters.occt_backend import occt_available
+        from archflow.state.state_record import StateRecord
+
+        if not occt_available():
+            self.skipTest("cadquery-ocp is not installed")
+        # Hub-created projects have an empty authored record; uploaded assets
+        # and saved Board content must survive first modeling initialization.
+        self.repository.layout.authored_record.parent.mkdir(parents=True, exist_ok=True)
+        self.repository.layout.authored_record.write_text(
+            json.dumps(StateRecord(project_id=PROJECT_ID, run_id="authored", entities=()).to_dict()), encoding="utf-8",
+        )
+        document = self.upload(two_page_pdf())
+        scene = self.save(body([image_element(document)]))
+        before = self.files()
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(project_dir=self.root, cad_export="occt")))
+        self.addCleanup(self.client.close)
+        self.assertIsNone(self.client.get("/api/state").json()["stateDigest"])
+        initialized = self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID})
+        self.assertEqual(initialized.status_code, 200, initialized.text)
+        self.assertTrue(initialized.json()["initialized"])
+        self.assertFalse(self.client.post("/api/project/modeling", json={"projectId": PROJECT_ID}).json()["initialized"])
+        for path, data in before.items():
+            if path != "input/runner/state-record.json":
+                self.assertEqual((self.root / path).read_bytes(), data, path)
+        state = self.client.get("/api/state").json()
+        self.assertIsNotNone(state["stateDigest"])
+        self.assertEqual(state["elements"], [])
+        self.assertEqual(self.client.get("/api/board").json(), scene)
+        self.assertEqual(self.client.get("/api/documents").json()["documents"], [document])
+        self.assertFalse((self.repository.layout.runs / "studio-projection").exists())
+        proposed = self.client.post("/api/proposals/sketch", json={
+            "projectId": PROJECT_ID, "stateDigest": state["stateDigest"], "componentId": "model",
+            "elementId": "first-block", "profile": [[0, 0], [1.2, 0], [1.2, 0.4], [0, 0.4]],
+            "height": 1.8, "baseLevel": "ground",
+        })
+        self.assertEqual(proposed.status_code, 201, proposed.text)
+        started = self.client.post(f"/api/proposals/{proposed.json()['proposalId']}/candidate")
+        self.assertEqual(started.status_code, 202, started.text)
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
+            job = self.client.get(f"/api/jobs/{started.json()['jobId']}").json()
+            if job["status"] in {"succeeded", "failed"}:
+                break
+            time.sleep(0.05)
+        self.assertEqual(job["status"], "succeeded", job)
+        candidate = self.client.get(f"/api/candidates/{job['candidateId']}").json()
+        self.assertEqual({row["format"] for row in candidate["artifacts"]}, {"3dm", "step"})
+        model = next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
+        drawing = self.client.post("/api/drawings/elevations", json={
+            "projectId": PROJECT_ID, "modelSource": model, "view": "front", "drawingId": "first-elevation",
+        })
+        self.assertEqual(drawing.status_code, 201, drawing.text)
+        reopened = self.new_client()
+        self.assertIn(drawing.json(), reopened.get("/api/documents").json()["documents"])
+        self.assertIn(document, reopened.get("/api/documents").json()["documents"])
+        self.assertEqual(reopened.get("/api/board").json(), scene)
+        self.assertEqual(self.repository.read_head(), self.head)
+        self.assertEqual(self.repository.read_design_branches(), {})
+
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory(prefix="studio-board-")
         self.addCleanup(temporary.cleanup)

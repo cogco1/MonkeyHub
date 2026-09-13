@@ -7,6 +7,7 @@ import base64
 from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
+import json
 import unittest
 from unittest.mock import patch
 
@@ -54,6 +55,145 @@ class DrawingTests(CandidateTestCase):
             "view": "front", "drawingId": "main-elevation", **body,
         })
 
+    def sheet(self, **body):
+        return self.client.post("/api/drawings/sheets", json={
+            "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"],
+            "styleId": "arch400-white", **body,
+        })
+
+    def test_sheet_styles_generate_scaled_pdfs_on_source_run_and_reuse_after_restart(self):
+        from pypdf import PdfReader
+        from archflow.adapters.cad_execution import project_occt_lines
+
+        self.enable_monitor()
+        styles = self.client.get("/api/drawings/styles")
+        self.assertEqual(styles.status_code, 200, styles.text)
+        catalog = {style["id"]: style for style in styles.json()["styles"]}
+        self.assertEqual(set(catalog), {"arch400-white", "arch364-technical"})
+        before_runs = set(self.repository.layout.runs.iterdir())
+        for style_id, scale in (("arch400-white", 20), ("arch364-technical", 40)):
+            with self.subTest(style=style_id), patch(
+                "archflow_studio_api.application.drawings.project_occt_lines", wraps=project_occt_lines,
+            ) as project:
+                result = self.sheet(styleId=style_id, scaleDenominator=scale, notes=["Review dimensions on the retained model."])
+                self.assertEqual(result.status_code, 201, result.text)
+                document = result.json()
+                self.assertEqual(project.call_count, 3)
+                self.assertEqual([call.kwargs["right"] for call in project.call_args_list],
+                                 [(1, 0, 0), (0, 1, 0), (1, 0, 0)])
+                self.assertEqual([call.kwargs["up"] for call in project.call_args_list],
+                                 [(0, 0, 1), (0, 0, 1), (0, 1, 0)])
+                self.assertIsNone(document["revisionRef"])
+                self.assertEqual((document["runId"], document["modelSource"], document["sourceStageRef"]),
+                                 (self.model["runId"], self.model, self.stage["stageRef"]))
+                self.assertEqual(document["viewRecipe"]["style"]["id"], style_id)
+                self.assertEqual(document["viewRecipe"]["style"]["version"], "1")
+                self.assertEqual(document["viewRecipe"]["scaleDenominator"], scale)
+                events = self.drawing_events()
+                parent = next(event for event in events if event.phase == "drawing_generate"
+                              and event.status == "succeeded"
+                              and event.details["input_identity"]["view_recipe"]["style_id"] == style_id)
+                self.assertEqual(parent.details["cache_status"], "miss")
+                projections = [event for event in events if event.parent_event_id == parent.event_id
+                               and event.phase == "drawing.hlr" and event.status == "succeeded"]
+                self.assertEqual({event.details["input_identity"]["view_recipe"]["view"] for event in projections},
+                                 {"front", "right", "top"})
+                data = self.client.get(f"/api/documents/{document['assetSha256']}/bytes", params={"runId": document["runId"]})
+                self.assertEqual(data.status_code, 200, data.text[:100] if data.status_code != 200 else "")
+                pdf = PdfReader(BytesIO(data.content))
+                self.assertEqual(len(pdf.pages), 1)
+                for actual, mm in zip((pdf.pages[0].mediabox.width, pdf.pages[0].mediabox.height), catalog[style_id]["paperSizeMm"]):
+                    self.assertAlmostEqual(float(actual) * 25.4 / 72, mm, places=3)
+                self.assertEqual(json.loads(pdf.metadata["/ArchFlowViewRecipe"]), document["viewRecipe"])
+                workspace = self.repository.layout.run(document["runId"]).workspaces / "documentation" / document["assetSha256"] / "sheet.pdf"
+                self.assertEqual(workspace.read_bytes(), data.content)
+                import ezdxf
+
+                dxf = ezdxf.readfile(workspace.with_suffix(".dxf"))
+                self.assertTrue(any(len(layout) for layout in dxf.layouts if layout.name != "Model"))
+                with TestClient(create_app(self.settings)) as reopened, patch(
+                    "archflow_studio_api.application.drawings.project_occt_lines", side_effect=AssertionError("cached sheet cannot run HLR"),
+                ), patch("monkeydiagram.drawing_output.render_pdf", side_effect=AssertionError("cached PDF cannot be rerendered")):
+                    repeated = reopened.post("/api/drawings/sheets", json={
+                        "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "styleId": style_id,
+                        "scaleDenominator": scale, "notes": ["Review dimensions on the retained model."],
+                    })
+                    self.assertEqual(repeated.status_code, 201, repeated.text)
+                    self.assertEqual(repeated.json(), document)
+                    self.assertEqual(reopened.get(f"/api/documents/{document['assetSha256']}/bytes",
+                                                 params={"runId": document["runId"]}).content, data.content)
+        documents = self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"]
+        self.assertEqual([row["drawingId"] for row in documents[:2]], ["arch364-technical", "arch400-white"])
+        self.assertEqual(set(self.repository.layout.runs.iterdir()), before_runs)
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_sheet_hidden_objects_are_removed_before_visibility_and_recipe_changes_keep_old_pdf(self):
+        from archflow.adapters.cad_execution import project_occt_lines
+
+        receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
+        physical = set(receipt["physical_object_ids"])
+        hidden = next(name for name in physical if "base" in name)
+        outline = next(name for name in physical if "cornice" in name)
+        original = self.sheet()
+        self.assertEqual(original.status_code, 201, original.text)
+        with patch("archflow_studio_api.application.drawings.project_occt_lines", wraps=project_occt_lines) as project:
+            result = self.sheet(hiddenObjectIds=[hidden], outlineObjectIds=[outline], notes=["Base hidden for review."])
+        self.assertEqual(result.status_code, 201, result.text)
+        changed = result.json()
+        self.assertEqual(project.call_count, 3)
+        for call in project.call_args_list:
+            self.assertEqual(set(call.kwargs["object_ids"]), physical - {hidden})
+        self.assertEqual(changed["viewRecipe"]["hiddenObjectIds"], [hidden])
+        self.assertEqual(changed["viewRecipe"]["outlineObjectIds"], [outline])
+        self.assertNotEqual(changed["assetSha256"], original.json()["assetSha256"])
+        documents = self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"]
+        self.assertEqual([row["assetSha256"] for row in documents[:2]], [changed["assetSha256"], original.json()["assetSha256"]])
+
+    def test_sheet_invalid_selections_or_oversized_scale_leave_no_drawing(self):
+        receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
+        physical = receipt["physical_object_ids"]
+        with patch("archflow_studio_api.application.drawings.project_occt_lines", side_effect=AssertionError("invalid request cannot run HLR")):
+            for body, code in (
+                ({"hiddenObjectIds": ["not-a-physical-object"]}, "DRAWING_OBJECT_UNKNOWN"),
+                ({"outlineObjectIds": ["not-a-physical-object"]}, "DRAWING_OBJECT_UNKNOWN"),
+                ({"hiddenObjectIds": physical}, "DRAWING_EMPTY"),
+                ({"hiddenObjectIds": [physical[0]], "outlineObjectIds": [physical[0]]}, "DRAWING_OBJECT_CONFLICT"),
+                ({"scaleDenominator": 1}, "DRAWING_GENERATION_FAILED"),
+            ):
+                with self.subTest(body=body):
+                    response = self.sheet(**body)
+                    self.assertEqual(response.status_code, 422, response.text)
+                    self.assertEqual(response.json()["code"], code)
+        mismatch = self.sheet(modelSource={**self.model, "stateDigest": "0" * 64})
+        self.assertEqual(mismatch.status_code, 409, mismatch.text)
+        self.assertEqual(mismatch.json()["code"], "DRAWING_SOURCE_MISMATCH")
+        self.assertEqual(self.sheet(projectId="other-project").status_code, 403)
+        self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
+        self.assertFalse((self.repository.layout.run(self.model["runId"]).workspaces / "documentation").exists())
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_sheet_identical_geometry_keeps_distinct_stage_recipes_and_rejects_changed_step(self):
+        from pypdf import PdfReader
+
+        staged = self.sheet()
+        self.assertEqual(staged.status_code, 201, staged.text)
+        direct = self.sheet(sourceStageRef=None, modelSource=self.model)
+        self.assertEqual(direct.status_code, 201, direct.text)
+        self.assertNotEqual(staged.json()["assetSha256"], direct.json()["assetSha256"])
+        self.assertIsNone(direct.json()["sourceStageRef"])
+        pages = []
+        for document in (staged.json(), direct.json()):
+            data = self.client.get(f"/api/documents/{document['assetSha256']}/bytes", params={"runId": document["runId"]}).content
+            pages.append(PdfReader(BytesIO(data)).pages[0].get_contents().get_data())
+        self.assertEqual(*pages)
+        step_path = self.repository.layout.root / self.step["relativePath"]
+        step_path.write_bytes(step_path.read_bytes() + b"\nchanged-source")
+        with patch("archflow_studio_api.application.drawings.project_occt_lines", side_effect=AssertionError("changed source cannot run HLR")):
+            response = self.sheet()
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def enable_monitor(self):
         self.client.close()
         self.settings = replace(self.settings, monitor_dir=self.root / "diagnostics")
@@ -65,6 +205,46 @@ class DrawingTests(CandidateTestCase):
         events, warnings = self.app.state.monitor.store.read()
         self.assertFalse(warnings)
         return [event for event in events if event.phase == "drawing_generate" or event.phase.startswith("drawing.")]
+
+    def test_top_projection_keeps_plan_dimensions_stage_source_and_cold_cache(self) -> None:
+        self.enable_monitor()
+        front = self.generate()
+        self.assertEqual(front.status_code, 201, front.text)
+        response = self.generate(view="top")
+        self.assertEqual(response.status_code, 201, response.text)
+        top = response.json()
+        recipe = top["viewRecipe"]
+        self.assertEqual((recipe["look"], recipe["right"], recipe["up"]), ([0, 0, -1], [1, 0, 0], [0, 1, 0]))
+        self.assertEqual(recipe["name"], "elevation-top")
+        self.assertNotEqual(top["revisionRef"], front.json()["revisionRef"])
+        self.assertEqual((top["modelSource"], top["sourceStageRef"]), (self.model, self.stage["stageRef"]))
+        receipt = self.repository.load_json(record_ref_from_uri(self.step["receiptRef"], PROJECT_ID))
+        bounds = [receipt["readback"][name]["bbox"] for name in receipt["physical_object_ids"]]
+        left, right = min(b["min"][0] for b in bounds), max(b["max"][0] for b in bounds)
+        bottom, upper = min(b["min"][1] for b in bounds), max(b["max"][1] for b in bounds)
+        margin = max(right - left, upper - bottom, 0.001) * 0.05
+        for actual, expected in zip(recipe["crop_uv"], (left - margin, bottom - margin, right + margin, upper + margin)):
+            self.assertAlmostEqual(actual, expected)
+        self.assertAlmostEqual(recipe["near_depth"], -max(b["max"][2] for b in bounds) - margin)
+        self.assertAlmostEqual(recipe["far_depth"], -min(b["min"][2] for b in bounds) + margin)
+        drawing = read_model_axis_elevation(self.repository, record_ref_from_uri(top["revisionRef"], PROJECT_ID))
+        self.assertEqual(drawing.receipt["source"]["step"]["sha256"], self.step["sha256"])
+        self.assertEqual(drawing.run.base, self.head)
+        with TestClient(create_app(self.settings)) as reopened, patch(
+            "archflow_studio_api.application.drawings.freeze_model_axis_elevation",
+            side_effect=AssertionError("the retained top projection must not be regenerated"),
+        ):
+            repeated = reopened.post("/api/drawings/elevations", json={
+                "projectId": PROJECT_ID, "sourceStageRef": self.stage["stageRef"], "view": "top", "drawingId": "main-elevation",
+            })
+            self.assertEqual(repeated.status_code, 201, repeated.text)
+            self.assertEqual(repeated.json(), top)
+            data = reopened.get(f"/api/documents/{top['assetSha256']}/bytes", params={"runId": top["runId"], "revisionRef": top["revisionRef"]})
+            self.assertEqual((data.status_code, data.content), (200, drawing.png))
+        parents = [event for event in self.drawing_events() if event.phase == "drawing_generate"]
+        self.assertEqual([event.details["cache_status"] for event in parents], ["miss", "miss", "hit"])
+        self.assertEqual(parents[1].details["cache_checks"]["view_recipe"], "changed")
+        self.assertEqual(self.repository.read_head(), self.head)
 
     def test_timing_records_real_projection_then_a_cold_cache_hit_without_regenerating(self) -> None:
         self.enable_monitor()

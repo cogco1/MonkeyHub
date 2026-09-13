@@ -848,6 +848,39 @@ class DirectLoftTests(unittest.TestCase):
             self.assertNotIn("closed_profile", params, op.op_id)
 
 
+class SemanticLoftContractTests(unittest.TestCase):
+    def _record(self, **params):
+        record = authored_record()
+        element = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
+            "producer": "loft", "component_id": "envelope", "references": {"base": {"level": "level-ground"}},
+            "params": {"profiles": [_ring(1.0, 0.0), _ring(0.6, 1.0), _ring(0.8, 2.0)], "profile_size": 8, **params},
+        })
+        return replace(record, entities=tuple(element if e.entity_id == element.entity_id else e for e in record.entities))
+
+    def test_advertised_solid_and_open_surface_each_produce_one_loft(self) -> None:
+        for cap_ends in (True, False):
+            for loft_type in ("straight", "normal"):
+                with self.subTest(cap_ends=cap_ends, loft_type=loft_type):
+                    record = self._record(cap_ends=cap_ends, loft_type=loft_type, closed_profile=True, profile_basis="polyline")
+                    validate_element_contract(record, ("wall-south",))
+                    row = next(row for row in element_rows_of(record) if row.element_id == "wall-south")
+                    produced, _ = _produce((row,))
+                    (operation,) = produced[0].operations
+                    self.assertEqual((operation.kind, operation.output_object_ids), (GeometryOperationKind.LOFT, ("obj-wall-south",)))
+                    self.assertEqual(_op_params(operation)["cap_ends"], cap_ends)
+                    self.assertEqual(produced[0].datums, ())
+
+    def test_unavailable_or_mismatched_sections_fail_before_a_candidate(self) -> None:
+        bad_sections = [_ring(1.0, 0.0), _ring(0.6, 1.0, 7), _ring(0.8, 2.0, 9)]
+        repeated = [_ring(1.0, 0.0) + [[1.0, 0.0, 0.0]], _ring(1.0, 2.0) + [[1.0, 2.0, 0.0]]]
+        for params in ({"profile_basis": "interpolated"}, {"loft_type": "loose"}, {"cap_ends": 1},
+                       {"closed_profile": False}, {"profiles": [_ring(1.0, 0.0)]},
+                       {"profiles": bad_sections}, {"profiles": repeated, "profile_size": 9},
+                       {"profile_size": 8.5}, {"profiles": [[[0, 0]] * 8] * 2}):
+            with self.subTest(params=params), self.assertRaises(ElementProducerError):
+                validate_element_contract(self._record(**params), ("wall-south",))
+
+
 class AuthoredRecordTests(unittest.TestCase):
     """A record is producible from its own levels, grids and references."""
 
@@ -899,6 +932,61 @@ class BoundRowTests(unittest.TestCase):
         with self.assertRaisesRegex(ElementProducerError, r"element wall-south: params.height binds @wall_height: stored value 2.5 of derived parameter wall_height disagrees"):
             element_rows_of(self._bound(wall_height=2.5))
         self.assertEqual([r.element_id for r in element_rows_of(self._bound(height=2.5, wall_height=2.5))], ["plinth", "wall-south"])   # unbound: the literal runs
+
+
+class BoundProfileContractTests(unittest.TestCase):
+    def _record(self, producer):
+        from archflow.state.state_record import Parameter
+        from tests.support import shared_bound_state
+
+        record = authored_record()
+        profile = [[0, 0], ["@width", 0], ["@width", "@half_width"], [0, "@half_width"]]
+        params = {"profile": profile, "elevation": 0.4}
+        if producer == "planar-surface":
+            profile.append([0, 0])
+        else:
+            params["height"] = 1.5
+        element = replace(next(e for e in record.entities if e.entity_id == "wall-south"), fields={
+            "producer": producer, "component_id": "envelope", "references": {"base": {"level": "level-ground"}},
+            "params": params,
+        })
+        return replace(record, entities=tuple(element if e.entity_id == element.entity_id else e for e in record.entities),
+                       parameters=record.parameters + (Parameter("width", 4.0, "m"),
+                                                       Parameter("half_width", 2.0, "m", expr="width / 2"))).bound_to(shared_bound_state()[1])
+
+    def test_advertised_profile_bindings_drive_geometry_after_a_parameter_edit(self) -> None:
+        from archflow.state.state_record import StateRecordEditKind, StateRecordOperator, apply_state_record_operator
+        from monkeyarch.capabilities.element_producers import _check_signature_value
+
+        for producer in ("prism", "planar-surface"):
+            with self.subTest(producer=producer):
+                record = self._record(producer)
+                authored = next(e for e in record.entities if e.entity_id == "wall-south")
+                _check_signature_value(authored.fields["params"], producer_signatures()[producer]["parameters"], "params")
+                changed = apply_state_record_operator(record, StateRecordOperator(
+                    kind=StateRecordEditKind.SET_SCALAR, base_record_digest=record.digest, base_state_digest=record.state_digest,
+                    target_ref="parameter:width", key="width", value=6.0,
+                ))
+                for current, width, depth in ((record, 4.0, 2.0), (changed, 6.0, 3.0)):
+                    validate_element_contract(current, (authored.entity_id,))
+                    row = next(row for row in element_rows_of(current) if row.element_id == authored.entity_id)
+                    produced, _ = _produce((row,))
+                    operation = _op_params(produced[0].operations[0])
+                    _assert_bbox(self, operation["profile"], ((0, width), (0, 0), (0, depth)))
+                    self.assertAlmostEqual(operation["base_offset"], 0.4)
+                    if producer == "prism":
+                        self.assertEqual(operation["vector"], [0, 1.5, 0])
+                    self.assertEqual(next(e for e in current.entities if e.entity_id == authored.entity_id).fields["params"],
+                                     authored.fields["params"])
+
+    def test_advertised_profile_coordinates_refuse_invalid_values_and_bindings(self) -> None:
+        from monkeyarch.capabilities.element_producers import _check_signature_value
+
+        for producer in ("prism", "planar-surface"):
+            schema = producer_signatures()[producer]["parameters"]["properties"]["profile"]
+            for value in (True, None, float("inf"), float("nan"), "4", "@", "@width + 1", {"parameter": "width"}):
+                with self.subTest(producer=producer, value=value), self.assertRaises(ElementProducerError):
+                    _check_signature_value([[0, 0], [value, 0], [4, 2], [0, 2], [0, 0]], schema, "profile")
 
 
 class StatedRowsThroughTheProposalTests(ProducerFixture):

@@ -42,7 +42,8 @@ class _FabCase(unittest.TestCase):
         self.runtime = self.root / "runtime"
         with patch("monkeyhub_api.applications.source_revision", return_value="a" * 40):
             self.app = create_app(HubSettings(runtime_root=self.runtime), source_root=ROOT)
-        self.client = self.enterContext(TestClient(self.app, base_url="http://127.0.0.1:8790"))
+        with patch.object(self.app.state.applications, "start"):
+            self.client = self.enterContext(TestClient(self.app, base_url="http://127.0.0.1:8790"))
         self.source = self.root / "closed model.obj"
         self.output = self.root / "explicit output"
         self.job = self.root / "sliced job.gcode.3mf"

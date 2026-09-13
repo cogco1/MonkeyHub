@@ -2,27 +2,57 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+import base64
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
+import hashlib
+from io import BytesIO
 from itertools import product
+import json
+import os
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from archflow.adapters.cad_execution import project_occt_lines
+from archflow.adapters.occt_backend import OcctBackendError
+from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    DrawingElevationError, ElevationSource, ElevationView, freeze_model_axis_elevation,
+    DrawingElevationError, ElevationSource, ElevationView, freeze_model_axis_elevation, read_elevation_source,
 )
 
 from .artifacts import (
     ModelSource, SourceDocument, _document_pages, _document_source_lock,
-    document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source,
+    document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
 )
 from .binding import ProjectBinding
 from .monitoring import StudioMonitor
 from .projection import project_state
 from ..transport.errors import StudioError
+
+
+def _selected_source(
+    binding: ProjectBinding, source_stage_ref: str | None, model_source: ModelSource | None,
+) -> tuple[ModelSource, ProjectRecordRef | None]:
+    try:
+        stage_ref = None if source_stage_ref is None else record_ref_from_uri(source_stage_ref, binding.project_id)
+        if stage_ref is not None and stage_ref.record_kind != DESIGN_STAGE:
+            raise ValueError("the source is not a design Stage")
+    except (TypeError, ValueError) as exc:
+        raise StudioError(422, "DESIGN_STAGE_REF_INVALID", "Select a retained design Stage in this project.") from exc
+    if stage_ref is not None:
+        stage = binding.design_stage(stage_ref)
+        projection = project_state(binding, source_stage_ref=stage_ref)
+        stage_model = ModelSource(stage.candidate_id, projection.state_digest, stage.model_sha256)
+        if model_source is not None and model_source != stage_model:
+            raise StudioError(409, "DRAWING_SOURCE_MISMATCH", "The selected Stage and model name different contents.")
+        model_source = stage_model
+    if model_source is None:
+        raise StudioError(422, "DRAWING_SOURCE_REQUIRED", "Select a committed Stage or an exact retained model.")
+    return model_source, stage_ref
 
 
 def _complete_source(
@@ -39,7 +69,7 @@ def _complete_source(
         require_complete_model(artifact, projection.reference.receipt or {})
     except StudioError as exc:
         raise StudioError(409, "DRAWING_COMPLETE_SOURCE_UNAVAILABLE", exc.detail) from exc
-    choices = [row for row in list_artifacts(binding).artifacts if row.run_id == model.run_id
+    choices = [row for row in list_artifacts(binding, run_id=model.run_id).artifacts if row.run_id == model.run_id
                and row.receipt_ref == cad_ref.uri and row.format == "step" and row.available
                and row.design_state_digest == model.state_digest]
     if len(choices) != 1 or choices[0].relative_path is None or choices[0].sha256 is None:
@@ -53,11 +83,12 @@ def _elevation_view(
 ) -> ElevationView:
     # Coordinates are the CAD Z-up frame used by the verified STEP. The
     # crop follows the retained cold-read bounds of every physical object.
-    right, look = {
-        "front": ((1, 0, 0), (0, 1, 0)),
-        "back": ((-1, 0, 0), (0, -1, 0)),
-        "left": ((0, -1, 0), (1, 0, 0)),
-        "right": ((0, 1, 0), (-1, 0, 0)),
+    right, up, look = {
+        "front": ((1, 0, 0), (0, 0, 1), (0, 1, 0)),
+        "back": ((-1, 0, 0), (0, 0, 1), (0, -1, 0)),
+        "left": ((0, -1, 0), (0, 0, 1), (1, 0, 0)),
+        "right": ((0, 1, 0), (0, 0, 1), (-1, 0, 0)),
+        "top": ((1, 0, 0), (0, 1, 0), (0, 0, -1)),
     }[direction]
     try:
         physical = receipt["physical_object_ids"]
@@ -68,11 +99,11 @@ def _elevation_view(
             measured[object_id]["bbox"]["min"], measured[object_id]["bbox"]["max"],
         ))]
         us = [sum(a * b for a, b in zip(point, right)) for point in corners]
-        vs = [point[2] for point in corners]
+        vs = [sum(a * b for a, b in zip(point, up)) for point in corners]
         depths = [sum(a * b for a, b in zip(point, look)) for point in corners]
         margin = max(max(us) - min(us), max(vs) - min(vs), 0.001) * 0.05
         return ElevationView(
-            name=f"elevation-{direction}", origin=(0, 0, 0), look=look, right=right, up=(0, 0, 1),
+            name=f"elevation-{direction}", origin=(0, 0, 0), look=look, right=right, up=up,
             crop_uv=(min(us) - margin, min(vs) - margin, max(us) + margin, max(vs) + margin),
             near_depth=min(depths) - margin, far_depth=max(depths) + margin,
             hidden_lines=hidden_lines, scale_denominator=scale_denominator,
@@ -94,21 +125,7 @@ def generate_elevation(
     ) as operation:
         details = operation["details"]
         try:
-            try:
-                stage_ref = None if source_stage_ref is None else record_ref_from_uri(source_stage_ref, binding.project_id)
-                if stage_ref is not None and stage_ref.record_kind != DESIGN_STAGE:
-                    raise ValueError("the source is not a design Stage")
-            except (TypeError, ValueError) as exc:
-                raise StudioError(422, "DESIGN_STAGE_REF_INVALID", "Select a retained design Stage in this project.") from exc
-            if stage_ref is not None:
-                stage = binding.design_stage(stage_ref)
-                projection = project_state(binding, source_stage_ref=stage_ref)
-                stage_model = ModelSource(stage.candidate_id, projection.state_digest, stage.model_sha256)
-                if model_source is not None and model_source != stage_model:
-                    raise StudioError(409, "DRAWING_SOURCE_MISMATCH", "The selected Stage and model name different contents.")
-                model_source = stage_model
-            if model_source is None:
-                raise StudioError(422, "DRAWING_SOURCE_REQUIRED", "Select a committed Stage or an exact retained model.")
+            model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source)
             operation["run_id"] = model_source.run_id
             source, cad_receipt = _complete_source(binding, model_source, stage_ref)
             recipe = _elevation_view(cad_receipt, view, hidden_lines=hidden_lines, scale_denominator=scale_denominator)
@@ -206,3 +223,137 @@ def generate_elevation(
                 registration["details"]["output_refs"] = [ref.uri]
             details["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri, ref.uri]
             return document
+
+
+def _sheet_fonts() -> dict[str, Path]:
+    """Installed TTFs for the paper renderer; machine paths stay out of project data."""
+
+    import reportlab
+
+    windows = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    bundled = Path(reportlab.__file__).parent / "fonts"
+    for normal, bold in (
+        (windows / "arial.ttf", windows / "arialbd.ttf"),
+        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
+        (Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"), Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf")),
+        (Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"), Path("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf")),
+        (bundled / "Vera.ttf", bundled / "VeraBd.ttf"),
+    ):
+        if normal.is_file() and bold.is_file():
+            return {"normal": normal, "bold": bold}
+    raise StudioError(503, "DRAWING_FONT_UNAVAILABLE", "Install Arial, DejaVu Sans or Liberation Sans regular and bold TTF fonts to render this sheet.")
+
+
+def generate_sheet(
+    binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
+    style_id: str, scale_denominator: int = 20, hidden_object_ids: tuple[str, ...] = (),
+    outline_object_ids: tuple[str, ...] = (), notes: tuple[str, ...] = (),
+    monitor: StudioMonitor | None = None,
+) -> SourceDocument:
+    """Three exact visibility projections, composed and retained as one source PDF."""
+
+    from pypdf import PdfReader, PdfWriter
+    from monkeydiagram.documentation.styles import compose_review_sheet, drawing_style
+    from monkeydiagram.drawing_output import render_dxf, render_pdf
+
+    model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+    source, receipt = _complete_source(binding, model_source, stage_ref)
+    try:
+        verified = read_elevation_source(binding.repository, source)
+        style = drawing_style(style_id)
+    except (DrawingElevationError, ValueError) as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    physical = set(verified.physical_object_ids)
+    hidden, outline = set(hidden_object_ids), set(outline_object_ids)
+    unknown = (hidden | outline) - physical
+    if unknown:
+        raise StudioError(422, "DRAWING_OBJECT_UNKNOWN", "These physical objects are not in the selected model: " + ", ".join(sorted(unknown)))
+    if hidden & outline:
+        raise StudioError(422, "DRAWING_OBJECT_CONFLICT", "An object cannot be both hidden and outlined: " + ", ".join(sorted(hidden & outline)))
+    selected = tuple(sorted(physical - hidden))
+    if not selected:
+        raise StudioError(422, "DRAWING_EMPTY", "Keep at least one physical object visible on the sheet.")
+    fonts = _sheet_fonts()
+    selected_receipt = {**receipt, "physical_object_ids": selected,
+                        "readback": {key: receipt["readback"][key] for key in selected}}
+    mm_per_unit = {"meter": 1000, "millimeter": 1, "inch": 25.4, "foot": 304.8}[verified.length_unit]
+    frames = {
+        view: replace(_elevation_view(selected_receipt, view, hidden_lines=False, scale_denominator=scale_denominator),
+                      linear_deflection=0.1 / mm_per_unit)
+        for view in ("front", "right", "top")
+    }
+    bounds = {key: receipt["readback"][key]["bbox"] for key in selected}
+    recipe = {
+        "kind": "review-sheet", "style": style, "scaleDenominator": scale_denominator,
+        "hiddenObjectIds": sorted(hidden), "outlineObjectIds": sorted(outline), "notes": list(notes),
+        "views": {name: frame.to_dict() for name, frame in frames.items()},
+        "source": {"modelSource": model_source.to_dict(), "sourceStageRef": None if stage_ref is None else stage_ref.uri,
+                   "stepSha256": source.step_sha256, "cadReceiptRef": ProjectRecordRef(
+                       binding.project_id, source.cad_receipt_relative_path, source.cad_receipt_sha256).uri},
+        "fonts": {name: path.name for name, path in fonts.items()}, "title": binding.project_id,
+    }
+    # Use the wire form for both cold comparison and the PDF's provenance metadata.
+    recipe_json = canonical_json(recipe, ascii=False)
+    recipe = json.loads(recipe_json)
+    monitor = monitor if monitor is not None else StudioMonitor(None)
+    with monitor.measure("drawing_generate", project_id=binding.project_id, run_id=model_source.run_id,
+                         source_ref=recipe["source"]["sourceStageRef"] or recipe["source"]["cadReceiptRef"],
+                         details={"scope": "global_visibility", "input_identity": {"view_recipe": {
+                                      "style_id": style_id, "scale_denominator": scale_denominator}},
+                                  "input_object_ids": list(selected), "cache_status": "unknown"}) as operation:
+        with _document_source_lock:
+            for document in list_documents(binding, model_source.run_id):
+                if document.model_source == model_source and document.view_recipe == recipe:
+                    document_bytes(binding, document.run_id, document.asset_sha256)
+                    operation["details"].update(cache_status="hit", execution_path="retained_drawing")
+                    return document
+        operation["details"].update(cache_status="miss", execution_path="full_projection")
+        layout = dict(style_id=style_id, bounds=bounds, length_unit=verified.length_unit,
+                      title=binding.project_id, scale_denominator=scale_denominator,
+                      notes=notes, outline_object_ids=tuple(sorted(outline)), font_mapping=fonts)
+        try:
+            # The same composer checks fit before any expensive visibility solve.
+            compose_review_sheet(views={name: () for name in frames}, **layout)
+            views = {}
+            for name, frame in frames.items():
+                with monitor.measure("drawing.hlr", project_id=binding.project_id, run_id=model_source.run_id,
+                                     details={"input_identity": {"view_recipe": {"view": name}},
+                                              "input_object_ids": list(selected)}) as projection:
+                    views[name] = project_occt_lines(
+                        verified.entries, object_ids=selected, origin=frame.origin,
+                        right=frame.right, up=frame.up, linear_deflection=frame.linear_deflection,
+                    )
+                    projection["details"]["emitted_object_ids"] = sorted({line.object_id for line in views[name]})
+            canvas = compose_review_sheet(views=views, **layout)
+            pdf = render_pdf(canvas)
+            # Source/configuration identity remains recoverable from the exported
+            # PDF, including two recipes that happen to draw identical lines.
+            reader = PdfReader(BytesIO(pdf))
+            writer = PdfWriter(clone_from=reader)
+            writer.add_metadata({"/ArchFlowViewRecipe": recipe_json})
+            output = BytesIO()
+            writer.write(output)
+            pdf = output.getvalue()
+            dxf = render_dxf(canvas)
+        except (ValueError, OcctBackendError) as exc:
+            raise StudioError(422, "DRAWING_GENERATION_FAILED", str(exc)) from exc
+        _document_pages(pdf, "application/pdf")
+        digest = hashlib.sha256(pdf).hexdigest()
+        binding.repository.put_workspace_file(
+            run=verified.run, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=verified.run.run_id),
+            artifact_id=f"drawing-sheet-{digest}", workspace_relative_path=f"documentation/{digest}/sheet.pdf",
+            media_type="application/pdf", source=BytesIO(pdf),
+        )
+        binding.repository.put_workspace_file(
+            run=verified.run, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=verified.run.run_id),
+            artifact_id=f"drawing-dxf-{digest}", workspace_relative_path=f"documentation/{digest}/sheet.dxf",
+            media_type="application/dxf", source=BytesIO(dxf),
+        )
+        document = save_document(
+            binding, model_source.run_id, f"{style_id}-1-{scale_denominator}.pdf", "application/pdf",
+            base64.b64encode(pdf).decode("ascii"), model_source,
+            drawing_id=style_id, source_stage_ref=None if stage_ref is None else stage_ref.uri,
+            view_recipe=recipe, generated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        operation["details"]["output_refs"] = [document.model_source_binding_ref]
+        return document

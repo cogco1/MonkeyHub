@@ -72,6 +72,37 @@ def _decision(
 
 
 class ProjectRepositoryTests(unittest.TestCase):
+    def test_initial_inputs_retry_after_interruption_and_preserve_existing_project(self) -> None:
+        head = self.repository.read_head()
+        run = self.repository.create_run("uploaded-documents")
+        before = self.repository.layout.head.read_bytes()
+        args = dict(expected_head=head, expected_record=None,
+                    authored_record={"initial": "model"}, seat_pack={"seats": ["modeler"]})
+        with patch("archflow.project.repository._replace_atomic", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                self.repository.initialize_authored_inputs(**args)
+        self.assertFalse(self.repository.layout.authored_record.exists())
+        self.assertTrue(self.repository.initialize_authored_inputs(**args))
+        self.assertFalse(self.repository.initialize_authored_inputs(**args))
+        self.assertEqual(self.repository.layout.head.read_bytes(), before)
+        self.assertEqual(self.repository.load_run(run.run_id), run)
+        self.assertEqual(FilesystemProjectRepository.open(self.root).read_head(), head)
+
+    def test_initial_inputs_refuse_competing_authored_content_and_seats(self) -> None:
+        args = dict(expected_head=self.repository.read_head(), expected_record=None,
+                    authored_record={"initial": "model"}, seat_pack={"seats": ["modeler"]})
+        self.repository.initialize_authored_inputs(**args)
+        before = self.repository.layout.authored_record.read_bytes()
+        with self.assertRaises(ProjectAlreadyExists):
+            self.repository.initialize_authored_inputs(**{**args, "authored_record": {"other": 1}})
+        with self.assertRaises(ProjectAlreadyExists):
+            self.repository.initialize_authored_inputs(**{**args, "seat_pack": {"other": 1}})
+        with self.assertRaises(StaleProjectHead):
+            self.repository.initialize_authored_inputs(**{
+                **args, "expected_head": ProjectVersionRef("project-a", 0, "0" * 64),
+            })
+        self.assertEqual(self.repository.layout.authored_record.read_bytes(), before)
+
     def stage(self, name: str, parent: ProjectRecordRef | None = None) -> ProjectRecordRef:
         run = self.repository.create_run(name)
         return self.repository.put_json(
@@ -290,6 +321,29 @@ class ProjectRepositoryTests(unittest.TestCase):
             self.repository.layout.resolve_record(artifact).read_bytes(),
             b"voxel-data",
         )
+
+    def test_json_load_parses_the_verified_bytes_when_the_file_changes(self) -> None:
+        run = self.repository.create_run("changing-record")
+        payload = {"schema": "StateRecord@1", "value": 1}
+        ref = self.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STATE_RECORD,
+            payload=payload,
+        )
+        record_path = self.repository.layout.resolve_record(ref)
+        read_bytes = Path.read_bytes
+
+        def replace_after_read(path: Path) -> bytes:
+            data = read_bytes(path)
+            if path == record_path:
+                path.write_bytes(b'{"schema":"StateRecord@1","value":2}\n')
+            return data
+
+        with patch.object(Path, "read_bytes", autospec=True, side_effect=replace_after_read):
+            self.assertEqual(self.repository.load_json(ref), payload)
+        with self.assertRaisesRegex(ProjectIntegrityError, "record digest mismatch"):
+            self.repository.load_json(ref)
 
     def test_workspace_binary_lands_only_in_the_assigned_run_and_leaves_head_unchanged(
         self,

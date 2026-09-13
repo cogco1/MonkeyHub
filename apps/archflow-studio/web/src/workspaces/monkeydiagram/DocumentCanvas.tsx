@@ -7,6 +7,7 @@ import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, 
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
+import { usePreferences } from "../../features/settings/preferences";
 import { eraseAt, inkPath, toPagePoint, zoomPageAt, type PagePoint, type PageView } from "./documentInk";
 import { useDocumentAnnotations, type createDocumentAnnotationsController } from "./useDocumentAnnotations";
 import { DocumentTextLayer } from "./DocumentTextLayer";
@@ -419,11 +420,14 @@ export interface DocumentViewContext {
 
 export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, modelSources, editingModelSource,
   onContinueModelSource, documentVisualInputAvailable, initialSourceSha = null, initialPageIndex = 0, onBeforeLeave,
-  initialRevisionRef = null, sourceStageRef, timing }: {
-  projectId: string; runId: string; busy: boolean;
+  initialRevisionRef = null, sourceStageRef, timing, viewedModelSource = null, active = true, onOpenGeneratedDocument }: {
+  projectId: string; runId: string | null; busy: boolean;
   documentVisualInputAvailable: boolean;
   modelSources: readonly { label: string; modelSource: ModelSourceDto }[];
   editingModelSource: ModelSourceDto | null;
+  viewedModelSource?: ModelSourceDto | null;
+  active?: boolean;
+  onOpenGeneratedDocument?(document: SourceDocumentDto): void;
   onContinueModelSource(source: ModelSourceDto): Promise<void>;
   initialSourceSha?: string | null; initialPageIndex?: number;
   initialRevisionRef?: string | null;
@@ -434,6 +438,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   onSubmit(utterance: string, refs: readonly DocumentAnnotationRefDto[], modelSource: ModelSourceDto, visuals: DocumentVisualInputDto[]): Promise<void>;
 }) {
   const t = useT();
+  const { language } = usePreferences();
   const input = useRef<HTMLInputElement>(null);
   const listRequest = useRef(0);
   const activeTiming = useRef(timing);
@@ -441,8 +446,9 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const [documents, setDocuments] = useState<SourceDocumentDto[]>([]);
   const [selectedSha, setSelectedSha] = useState<string | null>(initialSourceSha);
   const [selectedRevision, setSelectedRevision] = useState<string | null>(initialRevisionRef);
-  const selectedDocumentRef = useRef({ assetSha256: selectedSha, revisionRef: selectedRevision });
-  selectedDocumentRef.current = { assetSha256: selectedSha, revisionRef: selectedRevision };
+  const [selectedRun, setSelectedRun] = useState<string | null>(runId);
+  const selectedDocumentRef = useRef({ runId: selectedRun, assetSha256: selectedSha, revisionRef: selectedRevision });
+  selectedDocumentRef.current = { runId: selectedRun, assetSha256: selectedSha, revisionRef: selectedRevision };
   const [pageIndex, setPageIndex] = useState(initialPageIndex);
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
@@ -456,10 +462,60 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   const [continuingModel, setContinuingModel] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [references, setReferences] = useState<ReferencePage[]>([]);
-  const documentRun = review?.ref.runId ?? runId;
-  const document = documents.find((item) => item.assetSha256 === selectedSha && (selectedRevision === null || item.revisionRef === selectedRevision)) ?? null;
+  const [drawingStyles, setDrawingStyles] = useState<Awaited<ReturnType<typeof studio.drawingStyles>>["styles"]>([]);
+  const [styleId, setStyleId] = useState("arch400-white");
+  const [scaleDenominator, setScaleDenominator] = useState(20);
+  const [stylesLoading, setStylesLoading] = useState(true);
+  const [stylesRetry, setStylesRetry] = useState(0);
+  const [stylesError, setStylesError] = useState<StudioApiError | null>(null);
+  const [sheetBusy, setSheetBusy] = useState(false);
+  const [sheetError, setSheetError] = useState<StudioApiError | null>(null);
+  const listRun = review?.ref.runId ?? (initialSourceSha === null ? null : runId);
+  const selectionRun = listRun ?? selectedRun;
+  const document = documents.find((item) => item.assetSha256 === selectedSha &&
+    (selectionRun === null || item.runId === selectionRun) && (selectedRevision === null || item.revisionRef === selectedRevision)) ?? null;
+  // Project-wide discovery has no model run. Page operations use the selected
+  // document's retained storage run; the empty scope never reads or writes ink.
+  const documentRun = review?.ref.runId ?? document?.runId ?? runId ?? "";
+  const initializedSheet = useRef<string | null>(null);
+  useEffect(() => {
+    if (!document) { initializedSheet.current = null; return; }
+    if (drawingStyles.length === 0) return;
+    const key = JSON.stringify([projectId, document.runId, document.assetSha256, document.revisionRef ?? null]);
+    if (initializedSheet.current === key) return;
+    initializedSheet.current = key;
+    const recipe = document.viewRecipe;
+    if (recipe?.kind !== "review-sheet") return;
+    const savedStyle = recipe.style;
+    const registered = savedStyle && typeof savedStyle === "object" && "id" in savedStyle
+      ? drawingStyles.find((style) => style.id === savedStyle.id) : undefined;
+    if (registered) setStyleId(registered.id);
+    const scale = recipe.scaleDenominator;
+    if (typeof scale === "number" && Number.isInteger(scale) && scale >= 1 && scale <= 10000) setScaleDenominator(scale);
+  }, [document, drawingStyles, projectId]);
+  const optionKey = (item: SourceDocumentDto) => listRun === null
+    ? JSON.stringify([item.runId, item.assetSha256, item.revisionRef ?? null]) : item.revisionRef ?? item.assetSha256;
   const page = document?.pages.find((item) => item.pageIndex === pageIndex) ?? null;
   const documentModelSource = document?.modelSource ?? null;
+  const drawingModelSource = documentModelSource ?? viewedModelSource;
+  const sheetScopeKey = JSON.stringify([projectId, runId, selectedSha, selectedRevision, active,
+    drawingModelSource && modelSourceKey(drawingModelSource), viewedModelSource && modelSourceKey(viewedModelSource)]);
+  const sheetScope = useRef({ key: sheetScopeKey });
+  if (sheetScope.current.key !== sheetScopeKey) sheetScope.current = { key: sheetScopeKey };
+  const hasSheetAction = onOpenGeneratedDocument !== undefined;
+  useEffect(() => { setSheetError(null); }, [sheetScopeKey]);
+  useEffect(() => {
+    if (!hasSheetAction) return;
+    let stopped = false;
+    setStylesLoading(true); setStylesError(null);
+    void studio.drawingStyles().then((result) => {
+      if (stopped) return;
+      setDrawingStyles(result.styles);
+      setStyleId((current) => result.styles.some((style) => style.id === current) ? current : result.styles[0]?.id ?? "");
+    }).catch((cause: unknown) => { if (!stopped) setStylesError(asStudioApiError(cause)); })
+      .finally(() => { if (!stopped) setStylesLoading(false); });
+    return () => { stopped = true; };
+  }, [hasSheetAction, stylesRetry]);
   const modelMatches = sameModelSource(documentModelSource, editingModelSource);
   const submitScopeKey = JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256,
     documentModelSource && modelSourceKey(documentModelSource), editingModelSource && modelSourceKey(editingModelSource)]);
@@ -488,6 +544,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   }, [selectedSha, selectedRevision, pageIndex, initialSourceSha, initialRevisionRef, initialPageIndex, missingPage, timing]);
   const draft = useDocumentAnnotations({ projectId, runId: documentRun, assetSha256: page ? selectedSha : null, pageIndex,
     revisionSha256: review?.ref.revisionSha256 ?? null, drawingRevisionRef: review ? review.ref.drawingRevisionRef ?? null : selectedRevision }, controller);
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
   useEffect(() => {
     onBeforeLeave?.(async () => {
       if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
@@ -498,28 +556,32 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     let stopped = false;
     const request = ++listRequest.current;
     setLoading(true); setError(null);
-    void studio.documents(documentRun).then((result) => {
+    void studio.documents(listRun).then((result) => {
       if (stopped || request !== listRequest.current) return;
       const available = result.documents;
       const linked = available.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
-      const generated = linked.filter((item) => item.revisionRef && item.generatedAt && Number.isFinite(Date.parse(item.generatedAt)));
-      const latestTime = Math.max(...generated.map((item) => Date.parse(item.generatedAt!)));
-      const newest = generated.filter((item) => Date.parse(item.generatedAt!) === latestTime);
+      const generated = available.filter((item) => item.generatedAt && Number.isFinite(Date.parse(item.generatedAt)));
+      const linkedGenerated = generated.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
+      const reviewChoices = linkedGenerated.length > 0 ? linkedGenerated : generated;
+      const latestTime = Math.max(...reviewChoices.map((item) => Date.parse(item.generatedAt!)));
+      const newest = reviewChoices.filter((item) => Date.parse(item.generatedAt!) === latestTime);
       const preferred = newest.length === 1 ? newest[0] : linked.length === 1 ? linked[0] : null;
       const selected = selectedDocumentRef.current;
       const keepSelection = selected.assetSha256 !== null && (selected.assetSha256 === initialSourceSha || available.some((item) =>
-        item.assetSha256 === selected.assetSha256 && (selected.revisionRef === null || item.revisionRef === selected.revisionRef)));
+        item.assetSha256 === selected.assetSha256 && (listRun !== null || selected.runId === null || item.runId === selected.runId) &&
+        (selected.revisionRef === null || item.revisionRef === selected.revisionRef)));
       setDocuments(available);
       if (!keepSelection) {
         setSelectedSha(preferred?.assetSha256 ?? null);
         setSelectedRevision(preferred?.revisionRef ?? null);
+        setSelectedRun(preferred?.runId ?? null);
       }
     }).catch((cause: unknown) => { if (!stopped && request === listRequest.current) {
       activeTiming.current?.finish("failed"); setError(asStudioApiError(cause));
     } })
       .finally(() => { if (!stopped && request === listRequest.current) setLoading(false); });
     return () => { stopped = true; };
-  }, [documentRun, initialSourceSha, sourceStageRef, editingModelSource]);
+  }, [listRun, initialSourceSha, sourceStageRef, editingModelSource]);
   const fileSha = document?.assetSha256 ?? null;
   const fileName = document?.fileName ?? null;
   useEffect(() => {
@@ -529,15 +591,16 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     const measured = parent && !parent.closed && fileSha && fileName ? startClientTiming("document_load",
       { ...parent.binding, runId: documentRun }, parent.trace,
       { asset_sha256: fileSha, request_kind: "document_bytes" }) : null;
-    if (fileSha && fileName) void studio.documentFile(documentRun, fileSha, fileName, selectedRevision, measured?.trace)
+    if (fileSha && fileName && documentRun) void studio.documentFile(documentRun, fileSha, fileName, selectedRevision, measured?.trace)
       .then((value) => { measured?.finish(stopped ? "cancelled" : "succeeded", { input_bytes: value.size }); if (!stopped) setFile(value); })
       .catch((cause: unknown) => { measured?.finish(stopped ? "cancelled" : "failed"); if (!stopped) { parent?.finish("failed"); setError(asStudioApiError(cause)); } });
     return () => { stopped = true; measured?.finish("cancelled"); };
   }, [fileSha, fileName, documentRun, selectedRevision]);
   useEffect(() => { setModelChoice(""); }, [selectedSha, documentRun]);
   const refreshComments = useCallback(async () => {
-    const result = await studio.documentComments(runId); setSubmitted(result.comments); return result.comments;
-  }, [runId]);
+    const comments = documentRun ? (await studio.documentComments(documentRun)).comments : [];
+    setSubmitted(comments); return comments;
+  }, [documentRun]);
   useEffect(() => { void refreshComments().catch((cause: unknown) => setError(asStudioApiError(cause))); }, [refreshComments]);
 
   const upload = async (value: File) => {
@@ -547,13 +610,13 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       // A list requested before this upload cannot replace the newly opened
       // source with its older contents, even if that response arrives last.
       const request = ++listRequest.current; setLoading(false); setError(null);
-      setReview(null); setDocuments((current) => [...current.filter((item) => item.assetSha256 !== result.assetSha256), result]);
-      setSelectedSha(result.assetSha256); setSelectedRevision(result.revisionRef ?? null); setPageIndex(0);
+      setReview(null); setDocuments((current) => [...current.filter((item) => optionKey(item) !== optionKey(result)), result]);
+      setSelectedSha(result.assetSha256); setSelectedRevision(result.revisionRef ?? null); setSelectedRun(result.runId); setPageIndex(0);
       // Refresh after the upload so an invalidated initial request cannot also
       // hide previously uploaded sources from the selector.
-      const refreshed = await studio.documents(runId);
+      const refreshed = await studio.documents(listRun);
       if (request === listRequest.current) {
-        setDocuments([...refreshed.documents.filter((item) => item.assetSha256 !== result.assetSha256), result]);
+        setDocuments([...refreshed.documents.filter((item) => optionKey(item) !== optionKey(result)), result]);
         setError(null);
       }
     } catch (cause) { setError(asStudioApiError(cause)); }
@@ -566,7 +629,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     try {
       if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
       const bound = await studio.bindDocumentModelSource(projectId, documentRun, document.assetSha256, chosen.modelSource);
-      setDocuments((current) => current.map((item) => item.assetSha256 === bound.assetSha256 ? bound : item));
+      setDocuments((current) => current.map((item) => optionKey(item) === optionKey(bound) ? bound : item));
       setModelChoice("");
     } catch (cause) { setError(asStudioApiError(cause)); }
     finally { setBindingModel(false); }
@@ -576,6 +639,29 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
       change();
     } catch (cause) { setError(asStudioApiError(cause)); }
+  };
+  const generateSheet = async () => {
+    const style = drawingStyles.find((item) => item.id === styleId);
+    if (!drawingModelSource || !style || sheetBusy || busy || loading || !active || !onOpenGeneratedDocument) return;
+    const scope = sheetScope.current;
+    const isCurrent = () => mounted.current && sheetScope.current === scope;
+    setSheetBusy(true); setSheetError(null);
+    try {
+      const recipe = sameModelSource(documentModelSource, drawingModelSource) ? document?.viewRecipe : null;
+      const strings = (key: string): string[] | undefined => {
+        const value = recipe?.[key];
+        return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
+      };
+      const result = await studio.drawingSheet({ projectId, modelSource: drawingModelSource, styleId: style.id, scaleDenominator,
+        hiddenObjectIds: strings("hiddenObjectIds"), outlineObjectIds: strings("outlineObjectIds"), notes: strings("notes") });
+      if (!isCurrent()) return;
+      // Save marks added while the sheet was being generated before opening it.
+      const currentDraft = latestDraft.current;
+      if (currentDraft.ready && !currentDraft.readOnly && (currentDraft.dirty || currentDraft.saving)) await currentDraft.save();
+      if (!isCurrent()) return;
+      onOpenGeneratedDocument(result);
+    } catch (cause) { if (isCurrent()) setSheetError(asStudioApiError(cause)); }
+    finally { if (mounted.current) setSheetBusy(false); }
   };
   const continueModel = async () => {
     if (!documentModelSource || continuingModel || busy || review !== null) return;
@@ -658,12 +744,12 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       <button type="button" className="btn" disabled={uploading || sending || review !== null} onClick={() => input.current?.click()}>{t(uploading ? "document.uploading" : "document.open")}</button>
       <input ref={input} className="visually-hidden" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
         aria-label={t("document.open")} onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ""; if (selected) void upload(selected); }} />
-      {documents.length > 0 && <select aria-label={t("document.source")} value={selectedRevision ?? selectedSha ?? ""} disabled={sending || review !== null}
-        onChange={(event) => { const selected = documents.find((item) => (item.revisionRef ?? item.assetSha256) === event.target.value);
-          if (selected) void switchDocumentPage(() => { setSelectedSha(selected.assetSha256); setSelectedRevision(selected.revisionRef ?? null); setPageIndex(0); setFeedback(""); }); }}>
+      {documents.length > 0 && <select aria-label={t("document.source")} value={document ? optionKey(document) : selectedRevision ?? selectedSha ?? ""} disabled={sending || review !== null}
+        onChange={(event) => { const selected = documents.find((item) => optionKey(item) === event.target.value);
+          if (selected) void switchDocumentPage(() => { setSelectedSha(selected.assetSha256); setSelectedRevision(selected.revisionRef ?? null); setSelectedRun(selected.runId); setPageIndex(0); setFeedback(""); }); }}>
         {selectedSha === null && <option value="">选择图纸</option>}
         {!document && selectedSha !== null && <option value={selectedSha} disabled>{t("document.linkUnavailable")}</option>}
-        {documents.map((item) => <option key={item.revisionRef ?? item.assetSha256} value={item.revisionRef ?? item.assetSha256}>{item.fileName}{item.revisionRef ? ` · ${item.revisionRef.split("/").at(-1)?.slice(0, 8)}` : ""}</option>)}
+        {documents.map((item) => <option key={optionKey(item)} value={optionKey(item)}>{item.fileName}{item.revisionRef ? ` · ${item.revisionRef.split("/").at(-1)?.slice(0, 8)}` : ""}</option>)}
       </select>}
       {document && <div className="document-pages">
         <button type="button" aria-label={t("document.previousPage")} disabled={sending || pageIndex <= 0 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value - 1)); }}>‹</button>
@@ -710,6 +796,40 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
           : <div className="document-empty"><p role={missingPage ? "alert" : undefined}>{t(missingPage ? "document.linkUnavailable" : loading || selectedSha ? "document.loadingPage" : "document.empty")}</p><p>{t("document.formats")}</p></div>}
       </div>
       <aside className="document-notes" aria-label={t("document.notes")}>
+        {hasSheetAction && <section className="document-drawing-styles" aria-label={t("document.drawingStyles")}>
+          <fieldset disabled={stylesLoading || sheetBusy}>
+            <legend>{t("document.drawingStyles")}</legend>
+            <div className="document-drawing-styles__cards">{drawingStyles.map((style) => <label className="document-drawing-style" key={style.id}>
+              <input type="radio" name="document-drawing-style" value={style.id} checked={styleId === style.id}
+                onChange={() => setStyleId(style.id)} />
+              <svg className="document-drawing-style__preview" viewBox={`0 0 ${56 * style.paperSizeMm[0] / style.paperSizeMm[1]} 56`} aria-hidden="true">
+                <rect x="1" y="1" width={56 * style.paperSizeMm[0] / style.paperSizeMm[1] - 2} height="54" rx="1" />
+                <path d="M9 12h20v15H9z M39 12h12v15H39z M9 34h20v9H9z" />
+                {style.previewKind === "technical" ? <path className="document-drawing-style__detail" d="M5 5h69v46H5z M60 5v46 M60 18h14 M60 27h14 M60 40h14 M7 30h25 M7 28v4 M32 28v4 M55 10v19 M53 10h4 M53 29h4" />
+                  : <path className="document-drawing-style__detail" d="M9 6h13 M39 37h10 M39 41h7 M9 49h10 M43 49h6" />}
+              </svg>
+              <span className="document-drawing-style__label"><strong>{language === "en" ? style.nameEn : style.name}</strong>
+                <span>{style.paperSizeMm.join(" × ")} mm</span></span>
+            </label>)}</div>
+          </fieldset>
+          {stylesLoading && <p role="status">{t("document.drawingStylesLoading")}</p>}
+          {drawingStyles.find((style) => style.id === styleId) && <p>{language === "en"
+            ? drawingStyles.find((style) => style.id === styleId)!.descriptionEn : drawingStyles.find((style) => style.id === styleId)!.description}</p>}
+          <div className="document-drawing-styles__scale"><label htmlFor="document-drawing-scale">{t("document.drawingScale")}</label>
+            <select id="document-drawing-scale" value={scaleDenominator} disabled={sheetBusy} onChange={(event) => setScaleDenominator(Number(event.target.value))}>
+              {[...new Set([5, 10, 20, 50, 100, 200, 500, scaleDenominator])].sort((left, right) => left - right)
+                .map((scale) => <option key={scale} value={scale}>1:{scale}</option>)}
+            </select></div>
+          <p id="document-drawing-source" className="document-drawing-styles__source">{t(!drawingModelSource ? "document.drawingNoSource"
+            : documentModelSource ? "document.drawingFromDocument" : "document.drawingFromModel")}</p>
+          <button type="button" className="btn btn--accent document-drawing-styles__generate" aria-describedby="document-drawing-source"
+            disabled={stylesLoading || !drawingStyles.some((style) => style.id === styleId) || !drawingModelSource || sheetBusy || busy || loading || !active}
+            onClick={() => void generateSheet()}>{t(sheetBusy ? "document.drawingGenerating" : "document.drawingGenerate")}</button>
+          {sheetBusy && <p role="status">{t("document.drawingGeneratingHint")}</p>}
+          {stylesError && <ErrorPanel error={stylesError} what={t("document.drawingGenerate")} />}
+          {sheetError && <p className="document-drawing-styles__error" role="alert">{sheetError.detail}</p>}
+          {stylesError && <button type="button" onClick={() => setStylesRetry((value) => value + 1)}>{t("document.drawingStylesRetry")}</button>}
+        </section>}
         <label htmlFor="document-comment">{t("document.comment")}</label>
         <textarea id="document-comment" value={review?.text ?? draft.comment} readOnly={draft.readOnly} disabled={!draft.ready || sending}
           onChange={(event) => draft.setComment(event.target.value)} placeholder={t("document.commentHint")} />
@@ -745,7 +865,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         <details className="document-submitted"><summary>{t("document.submittedNotes", { count: submitted.length })}</summary>
           {submitted.map((comment) => <article key={comment.commentRef}><p>{comment.utterance}</p>
             {comment.documentAnnotations.map((ref) => <button key={`${pageKey(ref)}:${ref.revisionSha256}`} type="button" disabled={sending}
-              onClick={() => { void switchDocumentPage(() => { setReview({ ref, text: comment.utterance }); setSelectedSha(ref.assetSha256); setSelectedRevision(ref.drawingRevisionRef ?? null); setPageIndex(ref.pageIndex); }); }}>
+              onClick={() => { void switchDocumentPage(() => { setReview({ ref, text: comment.utterance }); setSelectedSha(ref.assetSha256); setSelectedRevision(ref.drawingRevisionRef ?? null); setSelectedRun(ref.runId); setPageIndex(ref.pageIndex); }); }}>
               {t("document.openSubmittedPage", { page: ref.pageIndex + 1 })}</button>)}
           </article>)}
         </details>

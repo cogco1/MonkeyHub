@@ -153,7 +153,12 @@ def response_schema(*, strict: bool = True) -> dict[str, Any]:
     entity_variants.append(object_of({
         "entity_id": text, "schema": {"type": "string", "enum": ["Component@1"]},
         "parent_id": nullable_text, "basis_refs": strings,
-        "fields": object_of({"semantic_kind": text, "intent": text, "source_refs": strings}),
+        "fields": object_of({"semantic_kind": {
+            "type": "string",
+            "description": "One registered alias in local-id form, for example building, cover or support. "
+                           "Choose a fitting aliases entry from GET /api/semantics, not its role.* or condition.* id. "
+                           "Put the specific object description in intent.",
+        }, "intent": text, "source_refs": strings}),
     }))
     entity_variants.append(object_of({
         "entity_id": text, "schema": {"type": "string", "enum": ["Type@1"]},

@@ -356,9 +356,9 @@ class CandidateRunTests(CandidateTestCase):
         self.assertEqual(
             restarted.get(f"/api/jobs/{accepted['jobId']}").status_code, 404
         )
-        response = restarted.get(
-            f"/api/candidates/{accepted['candidateId']}"
-        )
+        with mock.patch("archflow_studio_api.application.candidate._executed_record",
+                        side_effect=AssertionError("a lost proposal has no executed parameter values to describe")):
+            response = restarted.get(f"/api/candidates/{accepted['candidateId']}")
 
         self.assertEqual(response.status_code, 200, response.text)
         candidate = response.json()
@@ -368,6 +368,58 @@ class CandidateRunTests(CandidateTestCase):
         self.assertIsNone(candidate["proposalId"])
         self.assertTrue(candidate["seatExecutionComplete"])
         self.assertTrue(candidate["receiptRef"].startswith("project://"))
+        self.assertIsNone(candidate["objects"])
+        self.assertIn("INSPECTION_NOT_FOUND", candidate["objectReadbackError"])
+
+    def test_first_candidate_reads_actual_objects_and_keeps_them_after_restart(self) -> None:
+        from archflow.adapters.occt_backend import occt_available
+        from archflow.adapters.three_dm_inspector import inspect_three_dm
+
+        if not occt_available():
+            self.skipTest("cadquery-ocp is not installed")
+
+        self.app.state.settings = replace(self.app.state.settings, cad_export="occt")
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        path = f"/api/candidates/{accepted['candidateId']}"
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 200, response.text)
+        candidate = response.json()
+        self.assertIsNone(candidate["objectReadbackError"])
+        objects = {row["name"]: row for row in candidate["objects"]}
+        preview = next(item for item in candidate["artifacts"] if item["format"] == "3dm")
+        inspection = inspect_three_dm(self.repository.layout.root / preview["relativePath"])
+        attributes = {
+            row["object_id"]: {item["key"]: item["value"] for item in row["attributes"]}
+            for row in inspection.object_user_strings
+        }
+        self.assertEqual(len(objects), len(inspection.named_object_bboxes))
+        for item in inspection.named_object_bboxes:
+            measured = objects[item["name"]]
+            metadata = attributes[item["object_id"]]
+            self.assertEqual(measured["seatId"], "seat-portico")
+            self.assertEqual(measured["componentId"], metadata["archflow:component"])
+            self.assertEqual(measured["producerOp"], metadata["archflow:producer_op"])
+            self.assertEqual((measured["lengthUnit"], measured["upAxis"]), ("meter", "Z-up"))
+            for actual, expected in zip(measured["bbox"]["min"] + measured["bbox"]["max"],
+                                        item["bbox"]["min"] + item["bbox"]["max"]):
+                self.assertAlmostEqual(actual, expected, places=5)
+
+        restarted = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID)))
+        self.addCleanup(restarted.close)
+        with mock.patch("archflow.adapters.cad_execution.execute_occt_export", side_effect=AssertionError("A retained read must not run CAD")):
+            recovered = restarted.get(path)
+        self.assertEqual(recovered.status_code, 200, recovered.text)
+        self.assertIsNone(recovered.json()["jobId"])
+        self.assertEqual(recovered.json()["objects"], candidate["objects"])
+        self.assertIsNone(recovered.json()["objectReadbackError"])
+        inspection = next((self.repository.layout.runs / accepted["candidateId"] / "records").glob("seat-3dm-inspection-*.json"))
+        inspection.unlink()
+        missing = restarted.get(path)
+        self.assertEqual(missing.status_code, 200, missing.text)
+        self.assertEqual(missing.json()["status"], "succeeded")
+        self.assertIsNone(missing.json()["objects"])
+        self.assertIn("INSPECTION_NOT_FOUND", missing.json()["objectReadbackError"])
 
     def test_restart_does_not_relabel_a_project_run_as_a_candidate(self) -> None:
         restarted = TestClient(
@@ -459,6 +511,15 @@ class CandidateRunTests(CandidateTestCase):
                 "portico): what this edit does to them is unknown, not nothing",
             ],
         )
+
+    def test_element_only_candidate_does_not_read_unused_executed_parameters(self) -> None:
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        with mock.patch("archflow_studio_api.application.candidate._executed_record",
+                        side_effect=AssertionError("an element-only closure needs no executed parameter values")):
+            response = self.client.get(f"/api/candidates/{accepted['candidateId']}")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn("entity:portico-cornice", " ".join(response.json()["honesty"]))
 
     def test_a_derived_parameter_is_refused_before_any_job_starts(self) -> None:
         """The kernel would refuse the scalar at run time; the proposal boundary refuses it first, naming the source to set."""

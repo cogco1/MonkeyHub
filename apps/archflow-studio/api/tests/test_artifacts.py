@@ -246,6 +246,30 @@ class ArtifactTests(unittest.TestCase):
         self.assertEqual(payload["skippedRuns"], [broken])
         self.assertEqual(len(payload["artifacts"]), 5)
 
+    def test_single_run_listing_reads_its_refs_once_and_byte_lookup_stays_in_that_run(self) -> None:
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.transport.errors import StudioError
+
+        other = self.repository.create_run("another-export-run")
+        retain_rhino_receipt(self.repository, other, stage_id="other-stage", file_name="copy.3dm", payload_bytes=MODEL_BYTES)
+        broken = add_unreadable_run(self.repository)
+        binding = bound_project(self.client.app.state)
+        whole = artifacts.list_artifacts(binding)
+        self.assertEqual(whole.skipped_runs, (broken,))
+        with unittest.mock.patch.object(binding, "run_ids", side_effect=AssertionError("a scoped read cannot survey other runs")), \
+                unittest.mock.patch.object(binding, "record_refs", wraps=binding.record_refs) as records:
+            single = artifacts.list_artifacts(binding, run_id=REFERENCE_RUN_ID)
+            self.assertEqual(single.artifacts, tuple(row for row in whole.artifacts if row.run_id == REFERENCE_RUN_ID))
+            self.assertEqual(single.skipped_runs, ())
+            records.assert_called_once_with(REFERENCE_RUN_ID)
+            record, data = artifacts.artifact_bytes(binding, sha256_of(MODEL_BYTES), run_id=other.run_id)
+            self.assertEqual((record.run_id, data), (other.run_id, MODEL_BYTES))
+        (self.workspaces / "cad-studio-stage" / "model.3dm").unlink()
+        with self.assertRaises(StudioError) as refused:
+            artifacts.artifact_bytes(binding, sha256_of(MODEL_BYTES), run_id=REFERENCE_RUN_ID)
+        self.assertEqual(refused.exception.code, "ARTIFACT_DIGEST_MISMATCH")
+        self.assertEqual(artifacts.artifact_bytes(binding, sha256_of(MODEL_BYTES))[0].run_id, other.run_id)
+
     def test_a_copy_in_another_runs_workspaces_does_not_count(self) -> None:
         # Content addressing is scoped to the run that claims to have produced
         # the file. A matching copy under another run is another run's business.

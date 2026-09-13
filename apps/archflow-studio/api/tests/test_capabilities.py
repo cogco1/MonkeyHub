@@ -19,11 +19,12 @@ from urllib.parse import quote
 from fastapi.testclient import TestClient
 
 from archflow.adapters.three_dm_inspector import inspect_three_dm
+from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.application import capability as capability_module
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID, make_project
+from .support import PROJECT_ID, RECORD_PAYLOAD, SEATS_PAYLOAD, make_project
 
 CAPABILITY = "candidate.modify_existing"
 SQUARE = [[0.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]]
@@ -56,6 +57,64 @@ class CapabilityIndexTestCase(unittest.TestCase):
         body = self.client.get("/api/capabilities").json()
         self.assertEqual(body["matchCount"], body["registered"])
         self.assertGreaterEqual(body["registered"], 1)
+
+    def test_empty_project_can_discover_and_execute_initial_modeling_preparation(self) -> None:
+        from archflow.state.state_record import StateRecord
+        root = self.root / "empty"
+        FilesystemProjectRepository.initialize(
+            root, project_id="empty", initial_state={"project_id": "empty", "version": 0},
+            authored_record=StateRecord(project_id="empty", run_id="authored", entities=()).to_dict(),
+        )
+        with TestClient(create_app(StudioSettings(project_dir=root, cad_export="off"))) as client:
+            matches = client.get("/api/capabilities", params={"goal": "初始化空项目"}).json()
+            self.assertIn("project.initialize_modeling", [row["capabilityId"] for row in matches["capabilities"]])
+            described = client.get("/api/capabilities/project.initialize_modeling").json()
+            self.assertFalse(described["source"]["actionable"])
+            request = described["request"]
+            result = client.request(request["method"], request["path"], json=request["body"])
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertTrue(result.json()["initialized"])
+            self.assertIsNotNone(client.get("/api/state").json()["stateDigest"])
+            self.assertFalse((root / "runs" / "studio-projection").exists())
+
+    def test_initialization_description_handles_only_missing_authored_input(self) -> None:
+        for project_id, payload, error in (
+            ("missing-input", None, "STATE_RECORD_NOT_FOUND"),
+            ("invalid-input", {"schema": "invalid"}, "STATE_RECORD_INVALID"),
+        ):
+            with self.subTest(project=project_id):
+                root = self.root / project_id
+                repository = FilesystemProjectRepository.initialize(
+                    root, project_id=project_id, initial_state={"project_id": project_id, "version": 0},
+                    authored_record=payload,
+                )
+                before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+                with TestClient(create_app(StudioSettings(project_dir=root, cad_export="off"))) as client:
+                    unchanged = client.get(f"/api/capabilities/{CAPABILITY}")
+                    self.assertEqual(unchanged.json()["code"], error)
+                    unknown_run = client.get("/api/capabilities/project.initialize_modeling",
+                                             params={"run": "missing-run"})
+                    self.assertEqual(unknown_run.status_code, 404, unknown_run.text)
+                    self.assertEqual(unknown_run.json()["code"], "RUN_NOT_FOUND")
+                    described = client.get("/api/capabilities/project.initialize_modeling")
+                    self.assertEqual(before, {p.relative_to(root): p.read_bytes()
+                                              for p in root.rglob("*") if p.is_file()})
+                    if payload is not None:
+                        self.assertEqual(described.status_code, 422, described.text)
+                        self.assertEqual(described.json()["code"], error)
+                        continue
+                    self.assertEqual(described.status_code, 200, described.text)
+                    detail = described.json()
+                    self.assertFalse(detail["source"]["actionable"])
+                    self.assertFalse(detail["source"]["exactSource"])
+                    self.assertIsNone(detail["source"]["stateDigest"])
+                    request = detail["request"]
+                    result = client.request(request["method"], request["path"], json=request["body"])
+                    self.assertEqual(result.status_code, 200, result.text)
+                    self.assertTrue(result.json()["initialized"])
+                    self.assertIsNotNone(client.get("/api/state").json()["stateDigest"])
+                    self.assertEqual(list(repository.layout.runs.iterdir()), [])
+                    self.assertEqual(repository.read_head().version, 0)
 
     def test_no_match_says_what_the_index_is_and_never_that_it_is_impossible(self) -> None:
         body = self.client.get("/api/capabilities", params={"goal": "出施工图"}).json()
@@ -118,7 +177,7 @@ class CapabilityIndexTestCase(unittest.TestCase):
                      "帮我把主体调整高度",
                      "I want to adjust the height of an existing volume"):
             body = self.client.get("/api/capabilities", params={"goal": said}).json()
-            self.assertEqual([row["capabilityId"] for row in body["capabilities"]], [CAPABILITY], said)
+            self.assertEqual(body["capabilities"][0]["capabilityId"], CAPABILITY, said)
             self.assertIsNone(body["note"], said)
             self.assertTrue(body["capabilities"][0]["matched"], f"{said}: no evidence for the match")
 
@@ -199,12 +258,23 @@ class CapabilityIndexTestCase(unittest.TestCase):
                 node = node[step]
             self.assertIn("properties", node, ref)
         run_schema = document["components"]["schemas"]["CapabilityRunRequestDto"]
-        proposal = document["components"]["schemas"]["ProposalRequestDto"]
-        self.assertTrue(set(proposal["properties"]) < set(run_schema["properties"]),
-                        "the run request is the proposal request plus keep, not a second copy")
-        self.assertEqual(set(run_schema["properties"]) - set(proposal["properties"]), {"keep"})
-        for name, shape in proposal["properties"].items():
-            self.assertEqual(run_schema["properties"][name], shape, f"{name} is inherited, not rewritten")
+        from jsonschema import Draft202012Validator
+
+        validator = Draft202012Validator({**run_schema, "components": document["components"]})
+        state_digest = self.client.get("/api/state").json()["stateDigest"]
+        numeric = {"stateDigest": state_digest, "targetComponentId": "portico",
+                   "utterance": "set module to 1.5", "keep": ["entity:portico-base"]}
+        validator.validate(numeric)
+        self.assertFalse(validator.is_valid({
+            "stateDigest": state_digest,
+            "semanticEdit": {"summary": "Change the module.", "parameters": [{"key": "module", "value": 1.5}]},
+        }), "the numeric capability must not advertise the semantic proposal alternative")
+        refused = self.client.post(f"/api/capabilities/{CAPABILITY}/run", json={
+            "stateDigest": state_digest,
+            "semanticEdit": {"summary": "Change the module.", "parameters": [{"key": "module", "value": 1.5}]},
+        })
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertEqual(refused.json()["code"], "REQUEST_INVALID")
 
     def test_an_unregistered_capability_is_refused_with_the_index(self) -> None:
         answer = self.client.get("/api/capabilities/candidate.invent_everything")
@@ -219,6 +289,54 @@ class CapabilityIndexTestCase(unittest.TestCase):
         self.assertEqual(answer.status_code, 404)
         self.assertEqual(answer.json()["code"], "TARGET_UNKNOWN")
         self.assertIn("portico", answer.json()["detail"])
+
+
+class AuthoredCapabilityTestCase(unittest.TestCase):
+    def test_described_authored_input_can_make_its_first_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / PROJECT_ID
+            repository = FilesystemProjectRepository.initialize(
+                project, project_id=PROJECT_ID, initial_state={"project_id": PROJECT_ID, "version": 0},
+                authored_record=RECORD_PAYLOAD, seat_pack=SEATS_PAYLOAD,
+            )
+            original_head = (project / "HEAD").read_bytes()
+            original_record = repository.layout.authored_record.read_bytes()
+            with TestClient(create_app(StudioSettings(cad_export="off", project_dir=project))) as client:
+                described = client.get(f"/api/capabilities/{CAPABILITY}", params={
+                    "target": "portico", "elementId": "portico-base",
+                })
+                self.assertEqual(described.status_code, 200, described.text)
+                detail = described.json()
+                source = detail["source"]
+                self.assertEqual(source["readWith"], "GET /api/state")
+                self.assertIn("omit sourceRunId", source["writeWith"])
+                self.assertNotIn(source["runId"], source["writeWith"])
+                state = client.get(source["readWith"].removeprefix("GET "))
+                self.assertEqual(state.status_code, 200, state.text)
+                self.assertEqual(state.json()["stateDigest"], source["stateDigest"])
+                self.assertFalse(source["exactSource"])
+                self.assertTrue(source["actionable"])
+                self.assertEqual(list(repository.layout.runs.iterdir()), [])
+
+                body = {**detail["request"]["body"], "utterance": "set height to 1.2"}
+                self.assertNotIn("sourceRunId", body)
+                started = client.post(detail["request"]["path"], json=body)
+                self.assertEqual(started.status_code, 202, started.text)
+                job_id = started.json()["jobId"]
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    job = client.get(f"/api/jobs/{job_id}").json()
+                    if job["status"] in {"succeeded", "failed"}:
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(job["status"], "succeeded", job)
+                result = client.get("/api/state", params={"run": job["candidateId"]})
+                self.assertEqual(result.status_code, 200, result.text)
+                base = next(e for e in result.json()["elements"] if e["elementId"] == "portico-base")
+                self.assertEqual(base["numericFields"]["height"], 1.2)
+            self.assertEqual((project / "HEAD").read_bytes(), original_head)
+            self.assertEqual(repository.layout.authored_record.read_bytes(), original_record)
+            self.assertEqual(repository.read_design_branches(), {})
 
 
 class DescribedButNotPerformedTestCase(unittest.TestCase):

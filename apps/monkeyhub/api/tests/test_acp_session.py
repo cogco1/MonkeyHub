@@ -25,7 +25,7 @@ from acp import PROTOCOL_VERSION, RequestError, run_agent
 from acp.schema import (
     AgentCapabilities, AgentMessageChunk, InitializeResponse, LoadSessionResponse,
     NewSessionResponse, PermissionOption, PromptResponse, SetSessionConfigOptionResponse,
-    SessionConfigOptionSelect, TextContentBlock, ToolCallStart, ToolCallUpdate, UsageUpdate,
+    SessionConfigOptionSelect, TextContentBlock, ToolCallProgress, ToolCallStart, ToolCallUpdate, UsageUpdate,
 )
 
 root = Path(os.environ["ACP_FIXTURE_ROOT"])
@@ -109,7 +109,21 @@ class FakeAgent:
         if text == "stall":
             await self.emit("waiting")
             await self.cancelled.wait()
-        elif text == "permission":
+        elif text in {"active-message", "active-tool", "foreign-activity"}:
+            for index in range(6):
+                if text == "active-tool":
+                    update = ToolCallProgress(session_update="tool_call_update", tool_call_id="active-tool",
+                                              status="in_progress", raw_output={"step": index})
+                else:
+                    update = AgentMessageChunk(session_update="agent_message_chunk",
+                                               content=TextContentBlock(type="text", text=f"step {index}"))
+                await self.client.session_update(
+                    session_id="another-session" if text == "foreign-activity" else session_id, update=update,
+                )
+                await asyncio.sleep(0.15)
+        elif text in {"permission", "delayed-permission"}:
+            if text == "delayed-permission":
+                await asyncio.sleep(0.3)
             result = await self.client.request_permission(
                 session_id=session_id,
                 tool_call=ToolCallUpdate(tool_call_id="call-1", title="Fixture command", kind="execute"),
@@ -120,6 +134,8 @@ class FakeAgent:
             )
             outcome = result.outcome.model_dump(by_alias=True)
             log("permission", outcome=outcome)
+            if text == "delayed-permission":
+                await asyncio.sleep(0.3)
             await self.emit(json.dumps(outcome))
         else:
             await self.client.session_update(session_id=session_id, update=ToolCallStart(
@@ -326,6 +342,57 @@ class AcpSessionTests(unittest.TestCase):
         self.assertIsNotNone(process.returncode)
         self.assertEqual([call["text"] for call in self.calls("prompt")], ["hello", "stall"])
         self.assertEqual(len(self.calls("start")), 1)
+        self.assertEqual(len(self.calls("cancel")), 1)
+        self.assertIsNone(session._turn_task)
+        self.assertIsNone(session._activity_timeout)
+
+    def test_session_messages_and_tools_renew_inactivity_timeout(self):
+        session = self.make_session()
+        self.prompt(session)
+        for text in ("active-message", "active-tool"):
+            with self.subTest(activity=text):
+                started = time.monotonic()
+                self.prompt(session, text, session_id=self.ids[0], timeout_s=0.6)
+                self.assertGreater(time.monotonic() - started, 0.6)
+                self.assertIsNone(session._turn_task)
+                self.assertIsNone(session._activity_timeout)
+        self.assertEqual(self.calls("cancel"), [])
+        self.assertEqual([call["text"] for call in self.calls("prompt")], ["hello", "active-message", "active-tool"])
+
+    def test_other_session_activity_does_not_renew_timeout(self):
+        session = self.make_session()
+        self.prompt(session)
+        process = session._process
+        with self.assertRaisesRegex(AcpSessionError, "no session activity"):
+            self.prompt(session, "foreign-activity", session_id=self.ids[0], timeout_s=0.4)
+        self.assertIsNotNone(process.returncode)
+        self.assertEqual(len(self.calls("cancel")), 1)
+        self.assertEqual([call["text"] for call in self.calls("prompt")], ["hello", "foreign-activity"])
+
+    def test_permission_request_and_response_renew_timeout(self):
+        session = self.make_session()
+        self.prompt(session)
+        started = time.monotonic()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            turn = pool.submit(self.prompt, session, "delayed-permission", session_id=self.ids[0], timeout_s=0.6)
+            self.assertTrue(self.permission_ready.wait(5))
+            time.sleep(0.4)
+            self.permission.set_result("allow")
+            turn.result(timeout=5)
+        self.assertGreater(time.monotonic() - started, 0.6)
+        self.assertEqual(self.calls("cancel"), [])
+        self.assertEqual(self.calls("permission")[0]["outcome"]["optionId"], "allow")
+
+    def test_unanswered_permission_is_still_bounded_by_inactivity(self):
+        session = self.make_session()
+        self.prompt(session)
+        process = session._process
+        with self.assertRaisesRegex(AcpSessionError, "no session activity"):
+            self.prompt(session, "permission", session_id=self.ids[0], timeout_s=0.4)
+        self.assertTrue(self.permission_ready.is_set())
+        self.assertIsNone(self.permission.result())
+        self.assertIsNotNone(process.returncode)
+        self.assertEqual(len(self.calls("cancel")), 1)
 
     def test_adapter_crash_is_reported_without_retry(self):
         session = self.make_session()

@@ -530,5 +530,171 @@ class SketchDirectGeometryTestCase(unittest.TestCase):
         self.assertEqual(self.bounds(pulled, "obj-tilted-box"), expected)
 
 
+class ProposalCheckpointTestCase(unittest.TestCase):
+    setUp = SketchNewComponentTestCase.setUp
+    digest = SketchNewComponentTestCase.digest
+    run_candidate = SketchNewComponentTestCase.run_candidate
+    bounds = SketchDirectGeometryTestCase.bounds
+
+    def edit(self, route: str, previous: dict | None = None, **body) -> dict:
+        payload = {"stateDigest": self.digest() if previous is None else previous["baseStateDigest"], **body}
+        if previous is not None:
+            payload["sourceProposalId"] = previous["proposalId"]
+        response = self.client.post("/api/proposals" + (f"/{route}" if route else ""), json=payload)
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def first(self, **body) -> dict:
+        return self.edit("sketch", componentId="portico", elementId="chain-a", profile=SQUARE,
+                         height=2, baseLevel="level-ground", **body)
+
+    def test_mixed_edit_chain_writes_only_the_final_checkpoint_and_reopens(self):
+        before_runs = set((self.project / "runs").iterdir())
+        before_models = set(self.project.rglob("*.3dm"))
+        head = self.repository.read_head()
+        first = self.first(keep=["entity:portico-base"])
+        original = self.client.get(f"/api/proposals/{first['proposalId']}").json()
+        proposal = self.edit("sketch", first, componentId="portico", elementId="chain-b",
+                             profile=SQUARE, height=1, baseDatum="chain-a-top")
+        proposal = self.edit("", proposal, targetComponentId="portico", elementId="chain-a", utterance="set height to 3")
+        proposal = self.edit("sketch", proposal, componentId="portico", elementId="chain-temp",
+                             profile=SQUARE, height=1, baseLevel="level-ground")
+        proposal = self.edit("transform", proposal, elementId="chain-temp", kind="move", translation=[5, 0, 0])
+        proposal = self.edit("push-pull", proposal, elementId="chain-temp", distance=1)
+        proposal = self.edit("transform", proposal, elementId="chain-temp", kind="copy",
+                             copyElementId="chain-copy", translation=[4, 0, 0])
+        proposal = self.edit("delete", proposal, elementId="chain-temp")
+        self.assertEqual(set((self.project / "runs").iterdir()), before_runs)
+        self.assertEqual(set(self.project.rglob("*.3dm")), before_models)
+        self.assertEqual(self.client.get(f"/api/proposals/{first['proposalId']}").json(), original)
+        self.assertEqual(proposal["sourceRunId"], first["sourceRunId"])
+        self.assertEqual(proposal["baseStateDigest"], first["baseStateDigest"])
+        self.assertIn("entity:portico-base", proposal["protected"])
+        job = self.run_candidate(proposal["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        run_id = job["candidateId"]
+        self.assertEqual(set((self.project / "runs").iterdir()) - before_runs, {self.project / "runs" / run_id})
+        models = set(self.project.rglob("*.3dm")) - before_models
+        self.assertEqual(len(models), 1, models)
+        self.assertEqual(self.bounds(run_id, "obj-chain-a"), ([0, 0, 0], [3, 2, 3]))
+        self.assertEqual(self.bounds(run_id, "obj-chain-b"), ([0, 0, 3], [3, 2, 4]))
+        self.assertEqual(self.bounds(run_id, "obj-chain-copy"), ([9, 0, 0], [12, 2, 2]))
+        self.assertEqual(self.repository.read_head(), head)
+        self.assertEqual(self.client.get("/api/design-history").json()["stages"], [])
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(cad_export="off", project_dir=self.project)))
+        self.addCleanup(self.client.close)
+        elements = {row["elementId"]: row for row in self.client.get(f"/api/state?run={run_id}").json()["elements"]}
+        self.assertTrue({"chain-a", "chain-b", "chain-copy"} <= set(elements))
+        self.assertNotIn("chain-temp", elements)
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.candidate import replay_candidate
+        from archflow_studio_api.application.projection import project_state
+
+        binding = bound_project(self.client.app.state)
+        self.assertEqual(replay_candidate(binding, run_id).digest, project_state(binding, run_id).record.digest)
+
+    def test_proposal_continuation_keeps_an_explicit_stage_selection(self):
+        from .test_working_copies import register_model
+
+        model = register_model(self.client, REFERENCE_RUN_ID, self.digest(),
+                               (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes())["modelSource"]
+        initialized = self.client.post("/api/design-stages/initialize", json={"projectId": PROJECT_ID, "modelSource": model})
+        self.assertEqual(initialized.status_code, 201, initialized.text)
+        stage_ref = initialized.json()["stageRef"]
+        first = self.first(sourceStageRef=stage_ref)
+        continued = self.edit("push-pull", first, elementId="chain-a", distance=1)
+        self.assertEqual(continued["sourceStageRef"], stage_ref)
+        self.assertEqual(continued["sourceRunId"], first["sourceRunId"])
+        self.assertEqual(continued["baseStateDigest"], first["baseStateDigest"])
+
+    def test_thirty_planned_forms_need_one_request_and_one_final_model(self):
+        before_runs = set((self.project / "runs").iterdir())
+        before_models = set(self.project.rglob("*.3dm"))
+        before_proposals = len(self.client.app.state.proposals.for_state(self.digest()))
+        response = self.client.post("/api/proposals/sketch", json={
+            "stateDigest": self.digest(), "keep": ["entity:portico-base"], "summary": "Thirty planned forms",
+            "sketches": [
+                {"componentId": "portico", "elementId": f"batch-{i}",
+                 "profile": [[x + i * 4, z] for x, z in SQUARE], "height": i / 10 + 1,
+                 "baseLevel": "level-ground"} for i in range(30)
+            ],
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(set((self.project / "runs").iterdir()), before_runs)
+        self.assertEqual(set(self.project.rglob("*.3dm")), before_models)
+        self.assertEqual(len(self.client.app.state.proposals.for_state(self.digest())), before_proposals + 1)
+        proposal = response.json()
+        self.assertEqual(proposal["change"]["summary"], "Thirty planned forms")
+        self.assertEqual(len(proposal["change"]["edits"]["entities"]), 30)
+        job = self.run_candidate(proposal["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(set((self.project / "runs").iterdir()) - before_runs,
+                         {self.project / "runs" / job["candidateId"]})
+        self.assertEqual(len(set(self.project.rglob("*.3dm")) - before_models), 1)
+        elements = self.client.get(f"/api/state?run={job['candidateId']}").json()["elements"]
+        self.assertEqual(sum(row["elementId"].startswith("batch-") for row in elements), 30)
+        self.assertEqual(self.bounds(job["candidateId"], "obj-batch-29"), ([116, 0, 0], [119, 2, 3.9]))
+
+    def test_batch_failure_retains_neither_an_executable_prefix_nor_a_run(self):
+        first = self.first()
+        before = self.client.app.state.proposals.for_state(first["baseStateDigest"])
+        before_runs = set((self.project / "runs").iterdir())
+        response = self.client.post("/api/proposals/sketch", json={
+            "stateDigest": first["baseStateDigest"], "sourceProposalId": first["proposalId"],
+            "sketches": [
+                {"componentId": "portico", "elementId": "batch-ok", "profile": SQUARE,
+                 "height": 1, "baseDatum": "chain-a-top"},
+                {"componentId": "unbuilt", "elementId": "batch-bad", "profile": SQUARE,
+                 "height": 1, "baseLevel": "level-ground"},
+            ],
+        })
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "COMPONENT_NOT_BUILT")
+        self.assertEqual(self.client.app.state.proposals.for_state(first["baseStateDigest"]), before)
+        self.assertEqual(set((self.project / "runs").iterdir()), before_runs)
+        continued = self.edit("push-pull", first, elementId="chain-a", distance=1)
+        self.assertNotIn("batch-ok", {row["entity_id"] for row in continued["change"]["edits"]["entities"]})
+
+    def test_bad_continuation_keeps_the_previous_proposal_and_exact_source(self):
+        first = self.first()
+        original = self.client.get(f"/api/proposals/{first['proposalId']}").json()
+        for extra, code in (
+            ({"sourceProposalId": "unknown"}, "PROPOSAL_NOT_FOUND"),
+            ({"projectId": "different-project"}, "PROJECT_MISMATCH"),
+            ({"sourceRunId": "different-run"}, "PROPOSAL_SOURCE_MISMATCH"),
+            ({"stateDigest": "0" * 64}, "STALE_BASE"),
+        ):
+            with self.subTest(code=code):
+                response = self.client.post("/api/proposals/push-pull", json={
+                    "stateDigest": first["baseStateDigest"], "sourceProposalId": first["proposalId"],
+                    "elementId": "chain-a", "distance": 1, **extra,
+                })
+                self.assertEqual(response.json()["code"], code, response.text)
+        self.assertEqual(self.client.get(f"/api/proposals/{first['proposalId']}").json(), original)
+        continued = self.edit("push-pull", first, elementId="chain-a", distance=1)
+        self.assertEqual(continued["sourceRunId"], first["sourceRunId"])
+
+    def test_keep_on_a_new_form_survives_later_edits_without_protecting_its_old_base(self):
+        first = self.first()
+        second = self.edit("sketch", first, componentId="portico", elementId="chain-b", profile=SQUARE,
+                           height=1, baseLevel="level-ground", keep=["entity:chain-a"])
+        protected = self.client.get(f"/api/proposals/{second['proposalId']}").json()
+        failed = self.client.post("/api/proposals/push-pull", json={
+            "stateDigest": first["baseStateDigest"], "sourceProposalId": second["proposalId"],
+            "elementId": "chain-a", "distance": 1,
+        })
+        self.assertEqual(failed.status_code, 409, failed.text)
+        self.assertEqual(failed.json()["code"], "PROPOSAL_CHAIN_CONFLICT")
+        self.assertEqual(self.client.get(f"/api/proposals/{second['proposalId']}").json(), protected)
+        self.assertEqual(second["status"], "proposed")
+        self.assertIn("entity:chain-a", second["protected"])
+        third = self.edit("push-pull", second, elementId="chain-b", distance=1)
+        self.assertIn("entity:chain-a", third["protected"])
+        job = self.run_candidate(third["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(self.bounds(job["candidateId"], "obj-chain-a"), ([0, 0, 0], [3, 2, 2]))
+
+
 if __name__ == "__main__":
     unittest.main()

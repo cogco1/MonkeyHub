@@ -159,13 +159,20 @@ def _authorization(scope: Scope) -> str:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Let a candidate that is already running finish before the process ends.
+    """Prepare native drawing libraries and drain accepted work on shutdown.
 
     A candidate run writes P036 records; killing its thread mid-run would
     leave a run directory nobody can account for. Shutting the worker down and
     waiting is the difference between a service that stops and one that stops
     cleanly.
     """
+
+    if app.state.settings.service_role != SHARED_PROJECT_ROLE:
+        # Initialize NumPy/GEOS on the server thread before sync request workers
+        # can compete with their first Windows DLL load during sheet outlining.
+        from monkeydiagram.documentation.styles import initialize_drawing_runtime
+
+        initialize_drawing_runtime()
 
     yield
     app.state.jobs.shutdown()
@@ -374,6 +381,13 @@ def main(argv: list[str] | None = None) -> None:
     if not args.managed_stdin:
         uvicorn.run(app, host=settings.bind_host, port=args.port)
         return
+    if settings.service_role != SHARED_PROJECT_ROLE:
+        # A blocking stdin reader can also stall NumPy's first Windows DLL load.
+        # Managed launches must initialize before starting that reader, while
+        # lifespan still prepares ordinary ASGI and standalone launches.
+        from monkeydiagram.documentation.styles import initialize_drawing_runtime
+
+        initialize_drawing_runtime()
     server = uvicorn.Server(uvicorn.Config(app, host=settings.bind_host, port=args.port))
     threading.Thread(
         target=_watch_managed_stdin, args=(server, app.state.jobs, sys.stdin),

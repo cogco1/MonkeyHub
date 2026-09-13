@@ -528,6 +528,40 @@ class FilesystemProjectRepository:
         repository.verify()
         return repository
 
+    def initialize_authored_inputs(
+        self,
+        *,
+        expected_head: ProjectVersionRef,
+        expected_record: Mapping[str, Any] | None,
+        authored_record: Mapping[str, Any],
+        seat_pack: Mapping[str, Any],
+    ) -> bool:
+        """Install caller-prepared initial WIP without replacing other inputs.
+
+        The caller decides whether the record is empty and what modeling means.
+        Compare the exact previous mapping and HEAD under the project lock. Seats
+        are installed first; an interrupted call can retry with the same payload
+        before the actionable authored record becomes visible. No run or issue.
+        """
+
+        with self._lock, self._head_lock:
+            if self.read_head() != expected_head or expected_head.version != 0:
+                raise StaleProjectHead("initial authored inputs require the unchanged initial HEAD")
+            path = self.layout.authored_record
+            current = _read_json(path) if path.exists() else None
+            desired = dict(authored_record)
+            if current != expected_record and current != desired:
+                raise ProjectAlreadyExists("authored input changed before initialization")
+            seats = self.layout.seat_pack
+            if seats.exists() and _read_json(seats) != dict(seat_pack):
+                raise ProjectAlreadyExists("project already declares different modeling seats")
+            if current == desired and seats.exists():
+                return False
+            if not seats.exists():
+                _write_immutable(seats, _json_bytes(dict(seat_pack)))
+            _replace_atomic(path, _json_bytes(desired))
+            return True
+
     def load_manifest(self) -> ProjectManifest:
         current = ProjectManifest.from_dict(_read_json(self.layout.manifest))
         if current != self._manifest:
@@ -835,7 +869,7 @@ class FilesystemProjectRepository:
         data = _read_bytes(path)
         if _sha256(data) != ref.sha256:
             raise ProjectIntegrityError(f"record digest mismatch: {ref.relative_path}")
-        return _read_json(path)
+        return _parse_json_document(data, path.name)
 
     def _require_design_stage(self, ref: ProjectRecordRef) -> dict[str, Any]:
         self._require_record(ref)

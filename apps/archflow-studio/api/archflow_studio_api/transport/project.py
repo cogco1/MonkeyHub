@@ -37,6 +37,17 @@ class ProjectVersionDto(BaseModel):
     state_sha256: str | None = Field(alias="stateSha256")
 
 
+class ModelingInitializeRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+
+
+class ModelingInitializeDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    project_id: str = Field(alias="projectId")
+    initialized: bool = Field(description="Initial modeling inputs were installed; no geometry, run or issued version was created.")
+
+
 class ReferenceRunDto(BaseModel):
     """The run a projection answers for, with the base it was created against."""
 

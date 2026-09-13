@@ -100,7 +100,8 @@ async function boundary(kind,details){
 }
 Object.assign(studio,{
  documents:async run=>{const projectId=metrics.scope.projectId;metrics.reads.push({kind:'list',runId:run});return {projectId,runId:run,
-  documents:[source,...otherSources].map(value=>({...structuredClone(value),projectId,runId:run}))}},
+  documents:[source,...otherSources,...(run===null?[{...source,runId:'other-document-run',fileName:'same-bytes-other-run.png'}]:[])]
+   .map(value=>({...structuredClone(value),projectId,runId:run??value.runId}))}},
  documentFile:async(run,sha)=>{
   const details={runId:run,sha};metrics.reads.push({kind:'bytes',...details});metrics.fileLoads++;
   const result=await boundary('bytes',details);
@@ -579,6 +580,29 @@ try {
     assert.equal(retry.documentVisuals[1].annotatedPngBase64, null);
     assert.equal(await page.locator(".document-error").count(), 0);
     assertVisualLimits(retry.documentVisuals);
+  });
+  await step("project-wide documents open without a reference run and retain each document's storage scope", async () => {
+    const before = await snapshot();
+    await page.evaluate(() => window.modelFixture.setScope({ projectId: "ui-project", runId: null }));
+    const originalKey = JSON.stringify([storageRun, documentSha, null]);
+    const otherKey = JSON.stringify(["other-document-run", documentSha, null]);
+    await until(() => sourceSelect().locator("option").evaluateAll((options) => options.map((option) => option.value)),
+      (values) => values.includes(originalKey) && values.includes(otherKey), "each storage run remains selectable");
+    await sourceSelect().selectOption(originalKey);
+    await page.locator('.document-viewport[data-ready="true"]').waitFor();
+    await page.locator(".document-save-state").filter({ hasText: "已保存" }).waitFor();
+    assert.equal(await page.locator(".document-error").count(), 0);
+    await sourceSelect().selectOption(otherKey);
+    await until(async () => (await snapshot()).reads.slice(before.reads.length),
+      (reads) => ["bytes", "annotations", "comments"].every((kind) => reads.some((row) => row.kind === kind && row.runId === "other-document-run")),
+      "selected document supplies its real run to file, ink and comment reads");
+    await page.locator('.document-viewport[data-ready="true"]').waitFor();
+    const after = await snapshot();
+    const reads = after.reads.slice(before.reads.length);
+    assert.ok(reads.some((row) => row.kind === "list" && row.runId === null));
+    assert.ok(reads.every((row) => row.kind === "list" || (row.runId && row.runId !== "studio-projection")));
+    assert.deepEqual(after.writes, before.writes, "discovery and selection never rewrite page annotations");
+    assert.equal(await page.locator(".document-error").count(), 0);
   });
   assert.deepEqual(errors, []);
   assert.deepEqual(apiRequests, [], "this fixture never uses a project API");

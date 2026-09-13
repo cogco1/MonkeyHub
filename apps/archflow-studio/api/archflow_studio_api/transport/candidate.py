@@ -17,8 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..adapters.harness import HARNESS_STATEMENT
 from ..application.artifacts import _text, _whole
 from ..application.candidate import CandidateRun, RelationTotals, SeatOutcome
+from ..application.compare import Shape
 from ..application.jobs import PERSISTENCE, Job
 from .artifacts import ProjectArtifactDto, artifact_dto
+from .compare import BoxDto
 from .project import ProjectVersionDto
 
 
@@ -169,6 +171,20 @@ class RelationChecksDto(BaseModel):
     )
 
 
+class CandidateObjectDto(BaseModel):
+    """A retained export inspection, in its registered CAD coordinates."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    name: str
+    seat_id: str = Field(alias="seatId")
+    component_id: str | None = Field(alias="componentId")
+    producer_op: str | None = Field(alias="producerOp")
+    bbox: BoxDto | None = Field(description="retained inspected bounds; null when no box was recorded")
+    length_unit: str | None = Field(alias="lengthUnit", description="the matching export's length unit; null when unknown")
+    up_axis: str | None = Field(alias="upAxis", description="the matching export's CAD up axis, before viewer conversion; null when unknown")
+
+
 class CandidateDto(BaseModel):
     """The wire form of ``GET /api/candidates/{id}``."""
 
@@ -207,6 +223,12 @@ class CandidateDto(BaseModel):
     seat_results: list[CandidateSeatResultDto] = Field(alias="seatResults")
     relation_checks: RelationChecksDto = Field(alias="relationChecks")
     artifacts: list[ProjectArtifactDto]
+    objects: list[CandidateObjectDto] | None = Field(
+        default=None, description="objects read from this run's retained inspections; null means unavailable, not an empty model",
+    )
+    object_readback_error: str | None = Field(
+        default=None, alias="objectReadbackError", description="why retained object inspection is missing or incomplete, without hiding the candidate",
+    )
     skipped_runs: list[str] = Field(
         alias="skippedRuns",
         description="runs whose records could not be listed while resolving "
@@ -289,7 +311,12 @@ def job_dto(job: Job) -> JobDto:
     )
 
 
-def to_dto(candidate: CandidateRun) -> CandidateDto:
+def to_dto(
+    candidate: CandidateRun,
+    *,
+    shapes: tuple[Shape, ...] | None = None,
+    object_readback_error: str | None = None,
+) -> CandidateDto:
     """Shape one candidate for the wire; every value came off its records."""
 
     return CandidateDto(
@@ -311,11 +338,29 @@ def to_dto(candidate: CandidateRun) -> CandidateDto:
         artifacts=[
             artifact_dto(record) for record in candidate.artifacts
         ],
+        objects=[_candidate_object_dto(shape, candidate) for shape in shapes] if shapes is not None else None,
+        object_readback_error=object_readback_error,
         skipped_runs=list(candidate.skipped_runs),
         wall_time_s=candidate.wall_time_s,
         timings=timings_dto(candidate),
         harness=HARNESS_STATEMENT,
         honesty=list(candidate.honesty),
+    )
+
+
+def _candidate_object_dto(shape: Shape, candidate: CandidateRun) -> CandidateObjectDto:
+    seat = next((seat for seat in candidate.seat_results if seat.seat_id == shape.seat_id), None)
+    coordinates = {
+        (artifact.length_unit, artifact.up_axis)
+        for artifact in candidate.artifacts
+        if seat is not None and seat.program_digest is not None
+        and artifact.program_digest == seat.program_digest and artifact.format == "3dm"
+    }
+    length_unit, up_axis = next(iter(coordinates)) if len(coordinates) == 1 else (None, None)
+    return CandidateObjectDto(
+        name=shape.name, seat_id=shape.seat_id, component_id=shape.component_id, producer_op=shape.producer_op,
+        bbox=BoxDto(min=shape.bbox_min, max=shape.bbox_max) if shape.bbox_min is not None and shape.bbox_max is not None else None,
+        length_unit=length_unit, up_axis=up_axis,
     )
 
 

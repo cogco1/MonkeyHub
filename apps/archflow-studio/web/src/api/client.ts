@@ -35,6 +35,8 @@ import {
   updateBoardApiBoardPut,
   readCommittedDesignHistoryApiDesignHistoryGet,
   createElevationApiDrawingsElevationsPost,
+  readDrawingStylesApiDrawingsStylesGet,
+  createSheetApiDrawingsSheetsPost,
   combineCandidatesApiCandidatesCombinePost,
   initializeCommittedDesignApiDesignStagesInitializePost,
   acceptCommittedDesignApiCandidatesCandidateIdAcceptPost,
@@ -89,6 +91,7 @@ import type {
   BoardDto, BoardExportRequestDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
   ElevationRequestDto, CombineCandidatesRequestDto,
+  DrawingStylesDto, SheetRequestDto,
   InitializeDesignStageRequestDto, AcceptDesignCandidateRequestDto, ForkDesignBranchRequestDto,
   ArtifactListDto,
   CandidateAcceptedDto,
@@ -200,6 +203,12 @@ export const studio = {
   },
   elevation(body: ElevationRequestDto, trace?: OperationTrace): Promise<SourceDocumentDto> {
     return call("POST /api/drawings/elevations", createElevationApiDrawingsElevationsPost({ body, headers: traceHeaders(trace) }));
+  },
+  drawingStyles(): Promise<DrawingStylesDto> {
+    return call("GET /api/drawings/styles", readDrawingStylesApiDrawingsStylesGet());
+  },
+  drawingSheet(body: SheetRequestDto): Promise<SourceDocumentDto> {
+    return call("POST /api/drawings/sheets", createSheetApiDrawingsSheetsPost({ body }));
   },
   combineCandidates(body: CombineCandidatesRequestDto): Promise<CandidateAcceptedDto> {
     return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ body }));

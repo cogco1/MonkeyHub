@@ -72,6 +72,16 @@ export type ApplicationSettingsDto = {
 };
 
 /**
+ * ChatArchiveRequest
+ */
+export type ChatArchiveRequest = {
+    /**
+     * Archived
+     */
+    archived: boolean;
+};
+
+/**
  * ChatCreateRequest
  */
 export type ChatCreateRequest = {
@@ -125,6 +135,10 @@ export type ChatDetail = {
      * Status
      */
     status?: 'idle' | 'running' | 'failed' | 'interrupted';
+    /**
+     * Archived
+     */
+    archived?: boolean;
     /**
      * Createdat
      */
@@ -368,6 +382,10 @@ export type ChatSummary = {
      */
     status?: 'idle' | 'running' | 'failed' | 'interrupted';
     /**
+     * Archived
+     */
+    archived?: boolean;
+    /**
      * Createdat
      */
     createdAt: string;
@@ -603,6 +621,32 @@ export type HubHealth = {
 };
 
 /**
+ * ModelingInitializeDto
+ */
+export type ModelingInitializeDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Initialized
+     *
+     * Initial modeling inputs were installed; no geometry, run or issued version was created.
+     */
+    initialized: boolean;
+};
+
+/**
+ * ModelingInitializeRequestDto
+ */
+export type ModelingInitializeRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+};
+
+/**
  * UserSettingsDto
  *
  * PUT replaces the saved preferences; omitted or null fields use defaults.
@@ -719,9 +763,23 @@ export type HealthApiHealthGetResponse = HealthApiHealthGetResponses[keyof Healt
 export type ListAppsApiAppsGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Projectdir
+         */
+        projectDir?: string | null;
+    };
     url: '/api/apps';
 };
+
+export type ListAppsApiAppsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListAppsApiAppsGetError = ListAppsApiAppsGetErrors[keyof ListAppsApiAppsGetErrors];
 
 export type ListAppsApiAppsGetResponses = {
     /**
@@ -742,7 +800,12 @@ export type StartAppApiAppsAppIdStartPostData = {
          */
         app_id: 'monkeyarch' | 'monkeydiagram' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
     };
-    query?: never;
+    query?: {
+        /**
+         * Projectdir
+         */
+        projectDir?: string | null;
+    };
     url: '/api/apps/{app_id}/start';
 };
 
@@ -780,7 +843,12 @@ export type StopAppApiAppsAppIdStopPostData = {
          */
         app_id: 'monkeyarch' | 'monkeydiagram' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
     };
-    query?: never;
+    query?: {
+        /**
+         * Projectdir
+         */
+        projectDir?: string | null;
+    };
     url: '/api/apps/{app_id}/stop';
 };
 
@@ -954,6 +1022,36 @@ export type UpdateApplicationSettingsApiSettingsAppsPutResponses = {
 
 export type UpdateApplicationSettingsApiSettingsAppsPutResponse = UpdateApplicationSettingsApiSettingsAppsPutResponses[keyof UpdateApplicationSettingsApiSettingsAppsPutResponses];
 
+export type PrepareProjectModelingApiProjectModelingPostData = {
+    body: ModelingInitializeRequestDto;
+    path?: never;
+    query?: {
+        /**
+         * Projectdir
+         */
+        projectDir?: string | null;
+    };
+    url: '/api/project/modeling';
+};
+
+export type PrepareProjectModelingApiProjectModelingPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PrepareProjectModelingApiProjectModelingPostError = PrepareProjectModelingApiProjectModelingPostErrors[keyof PrepareProjectModelingApiProjectModelingPostErrors];
+
+export type PrepareProjectModelingApiProjectModelingPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelingInitializeDto;
+};
+
+export type PrepareProjectModelingApiProjectModelingPostResponse = PrepareProjectModelingApiProjectModelingPostResponses[keyof PrepareProjectModelingApiProjectModelingPostResponses];
+
 export type ChatProvidersApiChatProvidersGetData = {
     body?: never;
     path?: never;
@@ -1053,6 +1151,10 @@ export type ChatSessionsApiChatSessionsGetData = {
          * Projectid
          */
         projectId?: string | null;
+        /**
+         * Archived
+         */
+        archived?: boolean;
     };
     url: '/api/chat/sessions';
 };
@@ -1191,6 +1293,36 @@ export type SetChatModelApiChatSessionsSessionIdModelPutResponses = {
 };
 
 export type SetChatModelApiChatSessionsSessionIdModelPutResponse = SetChatModelApiChatSessionsSessionIdModelPutResponses[keyof SetChatModelApiChatSessionsSessionIdModelPutResponses];
+
+export type SetChatArchivedApiChatSessionsSessionIdArchivePutData = {
+    body: ChatArchiveRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/archive';
+};
+
+export type SetChatArchivedApiChatSessionsSessionIdArchivePutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetChatArchivedApiChatSessionsSessionIdArchivePutError = SetChatArchivedApiChatSessionsSessionIdArchivePutErrors[keyof SetChatArchivedApiChatSessionsSessionIdArchivePutErrors];
+
+export type SetChatArchivedApiChatSessionsSessionIdArchivePutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type SetChatArchivedApiChatSessionsSessionIdArchivePutResponse = SetChatArchivedApiChatSessionsSessionIdArchivePutResponses[keyof SetChatArchivedApiChatSessionsSessionIdArchivePutResponses];
 
 export type StopChatApiChatSessionsSessionIdStopPostData = {
     body?: never;

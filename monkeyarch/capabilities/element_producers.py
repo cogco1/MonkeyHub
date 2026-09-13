@@ -65,7 +65,7 @@ class ElementProducerError(ValueError):
 def producer_signatures() -> dict[str, dict[str, Any]]:
     """The semantic authoring contracts the Studio can query and execute.
 
-    Walls with hosted apertures, prisms and bounded planar surfaces expose their
+    Walls with hosted apertures, prisms, lofts and bounded planar surfaces expose their
     authored parameters here. Other existing producers remain executable;
     they are not advertised as semantic creation tools until their authored
     parameter contract is exposed here.
@@ -119,7 +119,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     # A drawn outline pulled to a height: the same row this module has always
     # produced, now stated as an authoring contract so a person drawing on the
     # model reaches it the way an agent reaches the wall.
-    plan_point = {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+    plan_point = {"type": "array", "items": scalar, "minItems": 2, "maxItems": 2}
     vector3 = {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}
     work_plane = obj({"origin": vector3, "xAxis": vector3, "yAxis": vector3, "normal": vector3},
                      ("origin", "xAxis", "yAxis", "normal"))
@@ -141,7 +141,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         ),
         "parameters": obj({
             "profile": {"type": "array", "items": plan_point, "minItems": 3,
-                        "description": "The closed plan profile in order; the first point is not repeated."},
+                        "description": "The closed plan profile in order; the first point is not repeated. Coordinates may bind @parameters."},
             "height": {**scalar, "description": "How far the profile is pulled; optional when references.top determines it."},
             "elevation": {**scalar, "description":
                 "Metres above references.base, added to that reference's own offset; defaults to zero. "
@@ -205,7 +205,41 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "Use existing relation kinds for support, host, adjacency or clearance; proximity does not prove support.",
         ],
-    }, "prism": prism, "planar-surface": {
+    }, "prism": prism, "loft": {
+        "producer": "loft",
+        "label": "多截面形体",
+        "description": (
+            "One shape through ordered closed polygon sections, for tapered or varying-section forms. "
+            "Supply all sections together instead of separate stacked prisms. Coordinates stay bound "
+            "to the record's parameters for subsequent edits."
+        ),
+        "parameters": obj({
+            "profiles": {"type": "array", "minItems": 2, "items": {
+                "type": "array", "minItems": 3, "items": {
+                    "type": "array", "items": scalar, "minItems": 3, "maxItems": 3,
+                }}, "description": "Ordered sections of [X, Y-up, Z] points relative to the base datum; coordinates may bind @parameters."},
+            "profile_size": {"type": "integer", "minimum": 3,
+                             "description": "The same number of vertices in every section; do not repeat the first vertex."},
+            "loft_type": {"type": "string", "enum": ["straight", "normal"],
+                          "description": "straight (default) connects sections with ruled faces; normal interpolates between the sections."},
+            "profile_basis": {"type": "string", "enum": ["polyline"],
+                              "description": "Polyline sections (default); interpolated section curves are not exposed by this authoring path."},
+            "cap_ends": {"type": "boolean", "description": "True (default) caps both ends into one solid; false leaves both end sections open as a surface."},
+            "closed_profile": {"type": "boolean", "enum": [True]},
+        }),
+        "references": obj({"base": {"anyOf": [obj({"level": level_id}, ("level",)),
+                                               obj({"datum": identifier}, ("datum",))]}}),
+        "requiredParameters": ["profiles", "profile_size"],
+        "requiredReferences": ["base"],
+        "constraints": [
+            "Provide at least two simple closed polygon sections with the same vertex count and corresponding vertex order.",
+            "Each section omits the repeated closing vertex; the loft closes it without joining the first and last sections.",
+            "Section coordinates carry their height relative to the base datum; do not add a separate base offset, height or elevation.",
+            "One loft creates one object; an uncapped loft is a surface with no invented wall thickness.",
+            "Use @parameter coordinates and parameter expressions for dimensions that subsequent edits must share.",
+            "A loft publishes no horizontal top datum; do not reference <element-id>-top from another element.",
+        ],
+    }, "planar-surface": {
         "producer": "planar-surface",
         "label": "可见面",
         "description": (
@@ -248,6 +282,7 @@ def _check_signature_value(value: Any, schema: Mapping[str, Any], field_name: st
         "array": isinstance(value, (list, tuple)),
         "number": isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value),
         "integer": isinstance(value, int) and not isinstance(value, bool),
+        "boolean": isinstance(value, bool),
         "string": isinstance(value, str),
     }.get(kind, False)
     if not valid_type:
@@ -303,15 +338,21 @@ def validate_element_contract(record, element_ids: tuple[str, ...]) -> None:
             raise ElementProducerError(f"{entity_id}: semantic authoring is not available for {row.producer!r}")
         for key in signature["requiredParameters"]:
             if key not in row.params:
-                raise ElementProducerError(f"{entity_id}: the wall needs {key} from its type or instance")
+                raise ElementProducerError(f"{entity_id}: the {row.producer} needs {key} from its type or instance")
         for key in signature["requiredReferences"]:
             if key not in row.references:
-                raise ElementProducerError(f"{entity_id}: the wall needs a {key} reference")
+                raise ElementProducerError(f"{entity_id}: the {row.producer} needs a {key} reference")
         # Existing rectangular fill types and exclusion policy retain their
         # solver's contract; semantic creation does not invent either one.
         _check_signature_value({k: v for k, v in row.params.items() if k not in {"types", "respect_exclusions"}},
                                signature["parameters"], f"{entity_id}.params")
         _check_signature_value(row.references, signature["references"], f"{entity_id}.references")
+        if row.producer == "loft":
+            for section in row.params["profiles"]:
+                if len(section) != row.params["profile_size"]:
+                    raise ElementProducerError(f"{entity_id}: every loft section must contain profile_size vertices")
+                if section[0] == section[-1]:
+                    raise ElementProducerError(f"{entity_id}: loft sections must not repeat their first vertex")
     from archflow.state.state_record import project_grids_of, project_levels_of
 
     context = ProductionContext(
