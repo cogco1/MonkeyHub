@@ -26,23 +26,43 @@ function Complete-Installation([string]$Directory) {
             throw 'The desktop shortcut directory must be an existing absolute directory.'
         }
         # Same WScript.Shell shortcut mechanism as Studio's make-desktop-shortcut.ps1.
-        $link = Join-Path $desktop $(if ($desktopBuild) { 'MonkeyArch.lnk' } else { 'MonkeyHub.lnk' })
         $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($link)
-        if ((Test-Path -LiteralPath $link) -and [IO.Path]::GetFileName($shortcut.TargetPath) -ne $entryName) {
-            Write-Warning "The existing shortcut points to another application and was left alone: $link"
+        # The native package has one app shortcut; its browser launcher remains in the bundle.
+        $entries = if ($desktopBuild) {
+            @(@{ Link = 'MonkeyArch.lnk'; Entry = 'MonkeyArch.exe'; WindowStyle = 1 })
         } else {
-            $shortcut.TargetPath = $entry
+            @(@{ Link = 'MonkeyHub.lnk'; Entry = 'OPEN_MONKEYHUB.cmd'; WindowStyle = 7 })
+        }
+        foreach ($item in $entries) {
+            $link = Join-Path $desktop $item.Link
+            $shortcut = $shell.CreateShortcut($link)
+            if ((Test-Path -LiteralPath $link) -and [IO.Path]::GetFileName($shortcut.TargetPath) -ne $item.Entry) {
+                Write-Warning "The existing shortcut points to another application and was left alone: $link"
+                continue
+            }
+            $target = Join-Path $Directory $item.Entry
+            $shortcut.TargetPath = $target
+            $shortcut.Arguments = ''
             $shortcut.WorkingDirectory = $Directory
             $shortcut.Description = 'Open MonkeyHub and its local applications'
             $shortcut.IconLocation = (Join-Path $Directory 'apps\archflow-studio\assets\monkeyarch.ico') + ',0'
-            $shortcut.WindowStyle = if ($desktopBuild) { 1 } else { 7 }
+            $shortcut.WindowStyle = $item.WindowStyle
             $shortcut.Save()
             $written = $shell.CreateShortcut($link)
-            if ($written.TargetPath -ne $entry -or $written.WorkingDirectory -ne $Directory) {
+            if ($written.TargetPath -ne $target -or $written.WorkingDirectory -ne $Directory) {
                 throw "The desktop shortcut does not point to this installation: $link"
             }
             Write-Host "Desktop shortcut: $link"
+            if ($desktopBuild) {
+                $browserLink = Join-Path $desktop 'MonkeyHub.lnk'
+                if (Test-Path -LiteralPath $browserLink -PathType Leaf) {
+                    $browserTarget = $shell.CreateShortcut($browserLink).TargetPath
+                    if ([IO.Path]::GetFileName($browserTarget) -eq 'OPEN_MONKEYHUB.cmd' -and
+                        (Test-Path -LiteralPath (Join-Path ([IO.Path]::GetDirectoryName($browserTarget)) 'build-info.json') -PathType Leaf)) {
+                        Remove-Item -LiteralPath $browserLink
+                    }
+                }
+            }
         }
     }
     if ($launch) {
@@ -74,11 +94,9 @@ try {
     $required = @(
         'source-version.txt', 'build-info.json', 'OPEN_MONKEYHUB.cmd', '_runtime\python\python.exe',
         'apps\monkeyhub\run.py', 'apps\monkeyhub\launch-hub.ps1',
-        'apps\monkeyhub\web\dist\index.html', 'apps\archflow-studio\web\dist\index.html'
+        'apps\monkeyhub\web\dist\index.html', 'apps\archflow-studio\web\dist\index.html',
+        'apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml'
     )
-    if ($fabVersion) {
-        $required += @('apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml')
-    }
     if ($desktopBuild) { $required += @('MonkeyArch.exe', '_runtime\desktop-Cargo.lock') }
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {

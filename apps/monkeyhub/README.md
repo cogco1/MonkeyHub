@@ -30,7 +30,7 @@ The Hub runs the existing services and owns only the child processes it starts. 
 
 The package keeps the repository layout and includes prebuilt Hub and Studio web directories. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
 
-An integrated build includes the selected MonkeyFab source and its preparation/send dependencies in that same runtime. `build-info.json` binds both repositories' commits; the installer distinguishes packages with different Fab versions even when their ArchFlow commit is the same.
+Every build includes `apps/monkeyfab` and its preparation/send dependencies in the same runtime. One Hub source commit in `build-info.json` identifies every included application, for both desktop and browser entrypoints.
 
 The root OPEN_MONKEYHUB.cmd calls this entry:
 
@@ -54,7 +54,7 @@ Each new Codex chat keeps one adapter process between turns. Hub saves its opaqu
 
 run.py adds the source and API import paths explicitly, including for embedded Python that ignores PYTHONPATH. Its fixed --service studio and --service monitor forms call the existing service entry points; child processes use the same sys.executable.
 
-For source development, install the independent [MonkeyFab repository](https://github.com/cogco1/MonkeyFab) with its `send` extra into the Python environment used to start Hub. If that package is absent, its card reports that it is not included. Production distributions carry its selected source under `apps/monkeyfab/src`.
+For source development, run `python -m pip install -e "apps/monkeyfab[send]"` from this repository using the Python environment that starts Hub. Fab code lives in [apps/monkeyfab](../monkeyfab/README.md); Hub always calls that checkout’s CLI, and complete desktop/browser packages include it by default. No second repository or source ref is needed.
 
 An API-only development run may omit --hub-web-dir. To connect a separate local web development server, pass --web-origin http://127.0.0.1:5175 (substitute its actual port). The packaged web and API use one origin. Studio startup requires its built index.html; supplying no Studio build does not prevent Monitor from running.
 

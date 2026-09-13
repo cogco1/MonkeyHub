@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monkeyfab"
+version = "0.1.0"
+description = "Uniformly scale and split closed meshes for Bambu Lab 3D printing."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy==2.5.3",
+  "trimesh==5.1.0",
+  "manifold3d==3.5.3",
+]
+
+[project.optional-dependencies]
+send = ["bambulabs_api==2.6.6"]
+test = ["pytest>=9,<10"]
+
+[project.scripts]
+monkeyfab = "monkeyfab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

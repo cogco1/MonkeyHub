@@ -1,4 +1,4 @@
-"""Hub-to-CLI behavior; optional real runs use a caller-selected test interpreter."""
+"""Hub-to-CLI behavior, including this checkout's real fabrication module."""
 
 from contextlib import contextmanager
 import json
@@ -255,16 +255,7 @@ class FabApiTests(_FabCase):
 
 
 class FabRealCliTests(_FabCase):
-    """Opt in with MONKEYFAB_TEST_PYTHON; these tests never send to a printer."""
-
-    def setUp(self):
-        interpreter = os.environ.get("MONKEYFAB_TEST_PYTHON")
-        if not interpreter:
-            self.skipTest("Set MONKEYFAB_TEST_PYTHON to an interpreter with the real Fab package")
-        self.interpreter = Path(interpreter)
-        if not self.interpreter.is_absolute() or not self.interpreter.is_file():
-            self.fail("MONKEYFAB_TEST_PYTHON must be an existing absolute interpreter path")
-        super().setUp()
+    """Run from Hub's interpreter and source snapshot; never send to a printer."""
 
     def test_real_profiles_prepare_refuse_overwrite_and_dry_run(self):
         self.source.write_text(
@@ -273,9 +264,14 @@ class FabRealCliTests(_FabCase):
         )
         with ZipFile(self.job, "w") as archive:
             archive.writestr("Metadata/plate_1.gcode", "; disposable local validation fixture\nG28\n")
-        with patch("monkeyhub_api.fabrication.available", return_value=True), patch(
-            "monkeyhub_api.fabrication.sys.executable", str(self.interpreter),
-        ):
+        # A stale global Fab install/PYTHONPATH must not win over this checkout.
+        stale = self.root / "other install/monkeyfab"
+        stale.mkdir(parents=True)
+        (stale / "__init__.py").touch()
+        (stale / "__main__.py").write_text("raise RuntimeError('wrong Fab version')\n", encoding="utf-8")
+        with patch.dict(os.environ, {"PYTHONPATH": str(stale.parent)}):
+            rows = {row["appId"]: row for row in self.client.get("/api/apps").json()}
+            self.assertTrue(rows["monkeyfab"]["available"])
             profiles = self.client.get("/api/fab/profiles")
             self.assertEqual(profiles.status_code, 200, profiles.text)
             self.assertIn("h2s", profiles.json())

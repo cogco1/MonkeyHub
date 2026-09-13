@@ -557,6 +557,27 @@ class StateRecordTests(unittest.TestCase):
         self.assertEqual(closure, ("entity:columns-west", "entity:entablature-west", "entity:level-piano-nobile"))
         self.assertEqual(record.closure(("entity:axis-1",)), ("entity:axis-1",))                                             # nothing references the axis yet
 
+    def test_batched_closures_remain_independent_through_cycles_and_unchanged_relations(self) -> None:
+        record = _record()
+        record = replace(record, relations=(*record.relations,
+            Relation("return-to-columns", "dependency", "entablature-west", "columns-west", propagation="invalidate"),
+            Relation("axis-unaffected", "dependency", "entablature-west", "axis-1", propagation="unchanged"),
+        ))
+        groups = ((), ("entity:axis-1",), ("entity:level-piano-nobile",),
+                  ("parameter:column_diameter",), ("entity:entablature-west", "entity:entablature-west"))
+        expected = ((), ("entity:axis-1",),
+                    ("entity:columns-west", "entity:entablature-west", "entity:level-piano-nobile"),
+                    ("parameter:column_diameter", "parameter:column_height"),
+                    ("entity:columns-west", "entity:entablature-west"))
+        self.assertEqual(record.closures(groups), expected)
+        self.assertEqual(tuple(record.closure(group) for group in groups), expected)
+        self.assertEqual(record.closures(()), ())
+        changed = replace(record, relations=(*record.relations[:-1],
+            replace(record.relations[-1], propagation="revalidate"),
+        ))
+        self.assertEqual(changed.closures((("entity:entablature-west",),)),
+                         (("entity:axis-1", "entity:columns-west", "entity:entablature-west"),))
+
     def test_gaps_fail_typed(self) -> None:
         with self.assertRaises(StateRecordError):
             Entity("x", "Widget@1", {})

@@ -1,17 +1,11 @@
-name: Windows desktop
+name: Windows desktop and browser
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-    paths:
-      - 'apps/monkeyhub/desktop/**'
-      - 'apps/monkeyhub/api/**'
-      - 'apps/monkeyhub/installer/**'
-      - 'tools/package_monkeyapps.py'
-      - 'tests/test_package_monkeyapps.py'
-      - '.github/workflows/desktop.yml'
+    # Both surfaces ship from every main revision, including web-only and Monitor changes.
 
 permissions:
   contents: read

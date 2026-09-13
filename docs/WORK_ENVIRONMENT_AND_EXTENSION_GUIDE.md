@@ -463,7 +463,7 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub `appId: monkeydiagram`；Studio `?view=documents` |
 | **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；Studio `?view=board` |
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
-| **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 独立 MonkeyFab CLI；Hub `appId: monkeyfab`、`?view=fab` |
+| **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `apps/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
 **ArchFlow Studio / Studio** 指 `apps/archflow-studio/` 这个共同宿主；MonkeyArch、
 MonkeyDiagram、MonkeyBoard 是 MonkeyHub 中的建模、图纸和展示工作区。工作区名称不要求各自启动一个进程：

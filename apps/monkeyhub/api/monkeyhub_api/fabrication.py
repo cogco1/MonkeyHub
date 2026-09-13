@@ -1,6 +1,5 @@
-"""Request-scoped access to the installed MonkeyFab CLI; it owns all model output."""
+"""Request-scoped access to this Hub snapshot's Fab CLI; it owns all model output."""
 
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,8 +16,8 @@ from .models import (
 ACCESS_CODE_ENV = "MONKEYFAB_HUB_ACCESS_CODE"
 
 
-def available() -> bool:
-    return importlib.util.find_spec("monkeyfab") is not None
+def available(source_root: Path) -> bool:
+    return (source_root / "apps/monkeyfab/src/monkeyfab/__main__.py").is_file()
 
 
 class Fabrication:
@@ -26,12 +25,17 @@ class Fabrication:
         self.source_root = source_root
 
     def _run(self, arguments: list[str], *, access_code: str | None = None) -> str:
-        if not available():
+        if not available(self.source_root):
             raise HubFailure(503, "FAB_UNAVAILABLE", "MonkeyFab is not included in this Python environment. Use the integrated application package.")
         environment = os.environ.copy()
         environment.pop("BAMBU_ACCESS_CODE", None)
         environment.pop(ACCESS_CODE_ENV, None)
         environment["PYTHONUTF8"] = "1"
+        # Source launchers' sys.path changes do not reach a fresh interpreter.
+        # Always prefer the Fab code in this Hub snapshot over another install.
+        environment["PYTHONPATH"] = os.pathsep.join(filter(None, (
+            str(self.source_root / "apps/monkeyfab/src"), environment.get("PYTHONPATH"),
+        )))
         if access_code is not None:
             environment[ACCESS_CODE_ENV] = access_code
         try:

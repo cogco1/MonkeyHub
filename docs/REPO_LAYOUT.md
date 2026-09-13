@@ -1,6 +1,6 @@
-# ArchFlow、MonkeyArch、MonkeyDiagram、MonkeyMonitor：职责与文件归属
+# MonkeyHub 仓库：职责与文件归属
 
-本文定义四个实际源码包、两个 Studio Web 工作区及独立 Monitor 页面的职责。当前 owner、路径和公开接口以
+本文定义共享核心、建模、出图、Monitor 和 Fab 模块及其界面的职责。当前 owner、路径和公开接口以
 [module registry](../governance/module_registry.json) 为准；目录分离不表示所有规划能力已经实现。
 协作规则见 [AGENTS](../AGENTS.md) 与 [CONTRIBUTING](../CONTRIBUTING.md)。
 
@@ -13,6 +13,8 @@
 | **MonkeyDiagram** | 图纸与图解：平立剖、家具与节点表达、PDF／图片批注、二维内容编辑、文字尺寸、视图与图形表达、排版及导出 | 隐式改变模型空间或构件；建立第二套项目保存与发布权威 |
 | **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；独立本地页面与 CLI | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
 
+| **MonkeyFab** | 闭合网格的等比缩放、打印空间内封闭拆件、装配清单，以及已切片任务上传；源码在 `apps/monkeyfab/`，界面由 Hub 承载 | 建筑状态修改、项目持久化、切片和自动启动打印 |
+
 MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依赖的底座。
 二维图纸可以表达新的设计想法；将该想法应用到三维模型是明确的跨工作流动作。
 模型派生的轴测图、透视图和截图放到图纸中时，表达工作属于 MonkeyDiagram。
@@ -22,7 +24,7 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 
 ## 2. 当前源码目录
 
-下列四个 Python 包随同一发行包安装，两个设计 Web 工作区由同一 Studio 宿主装配。
+下列 Python 模块随同一 Hub 发行版本安装；Fab 保留独立 CLI，两个设计 Web 工作区由同一 Studio 宿主装配。
 MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适配器与之连接。
 
 ```text
@@ -37,6 +39,8 @@ MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适�
 ├─ monkeyarch/                   3D producer、solver、编译及运行编排
 ├─ monkeydiagram/                图纸投影编排、SVG 与 PNG 表达
 ├─ monkeymonitor/                用量、计价、算法建议接口及独立 web 页面
+├─ apps/monkeyfab/               制造算法、CLI、参数和测试，默认随 Hub 打包
+├─ apps/monkeyhub/               统一应用入口，承载 Fab 页面与桌面宿主
 ├─ apps/archflow-studio/         共享启动与应用装配，不承载两套领域算法
 │  ├─ api/                       HTTP、鉴权、DTO、路由及工作流装配
 │  └─ web/src/

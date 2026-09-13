@@ -108,12 +108,9 @@ class PackageWorkspaceTests(unittest.TestCase):
 
     def test_bad_roots_and_task_paths_fail_before_configuration_changes(self) -> None:
         before = self.git_config.read_bytes()
-        monkeyfab = self.root / "monkeyfab"
         for args in (
             ("--workspace-root", str(self.source / "build")),
             ("--workspace-root", str(self.workspace), "--staging-dir", str(self.source / "build")),
-            ("--workspace-root", str(self.workspace), "--cache-dir", str(monkeyfab / "cache"),
-             "--monkeyfab-source", str(monkeyfab)),
             ("--workspace-root", str(self.workspace), "--task", "../project"),
         ):
             with self.subTest(args=args), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
@@ -150,6 +147,7 @@ class PackageAdapterTests(unittest.TestCase):
             "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor",
             "apps/archflow-studio/api/archflow_studio_api", "apps/archflow-studio/assets",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
+            "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
         ):
             (self.source / directory).mkdir(parents=True)
         for relative in (
@@ -160,6 +158,8 @@ class PackageAdapterTests(unittest.TestCase):
             "governance/module_registry.json", "apps/shared-web/src/appearance.js",
             "apps/shared-web/src/i18n.js", "apps/shared-web/src/browserTranslator.js",
             "apps/shared-web/src/base.css", "tools/create_project.py", "tools/run_project.py",
+            "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
+            "apps/monkeyfab/tests/test_cli.py",
         ):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -209,6 +209,9 @@ class PackageAdapterTests(unittest.TestCase):
                          (self.hub / self.adapter_relative / "dist/index.js").read_bytes())
         self.assertEqual((self.bundle / "governance/module_registry.json").read_text(), "fixture")
         self.assertIn("governance/module_registry.json", builder.SOURCE_PATHS)
+        self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")
+        self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
+        self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
         urls = {call.args[0] for call in fetched.call_args_list}
         self.assertEqual(urls, {
             "https://raw.githubusercontent.com/nodejs/node/v24.14.0/LICENSE",
@@ -254,7 +257,7 @@ class DesktopPackageTests(unittest.TestCase):
                 self.assertEqual(inventory["frontends"][name]["files"], {asset: builder.sha256(bundle / asset)})
 
     @unittest.skipUnless(sys.platform == "win32", "Windows installer and shortcut behavior")
-    def test_desktop_install_keeps_browser_version_and_selects_native_shortcut(self):
+    def test_desktop_install_preserves_data_and_keeps_only_latest_app_shortcut(self):
         with tempfile.TemporaryDirectory(prefix="Hub install space ") as temporary:
             root = Path(temporary)
             local, shortcuts = root / "local", root / "shortcuts"
@@ -270,7 +273,8 @@ class DesktopPackageTests(unittest.TestCase):
                 bundle = root / (("desktop" if desktop else "browser") + commit[:1])
                 required = ["OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "apps/monkeyhub/run.py",
                             "apps/monkeyhub/launch-hub.ps1", "apps/monkeyhub/web/dist/index.html",
-                            "apps/archflow-studio/web/dist/index.html"]
+                            "apps/archflow-studio/web/dist/index.html",
+                            "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml"]
                 if desktop:
                     required.extend(("MonkeyArch.exe", "_runtime/desktop-Cargo.lock"))
                 for relative in required:
@@ -299,22 +303,25 @@ class DesktopPackageTests(unittest.TestCase):
                     missing = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
                     self.assertNotEqual(missing.returncode, 0)
                     self.assertIn("MonkeyArch.exe", missing.stdout + missing.stderr)
-            browser_entry = local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd"
-            desktop_entry = local / "MonkeyHub/versions" / (commit[:12] + "-desktop") / "MonkeyArch.exe"
+            self.assertTrue((local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd").is_file())
+            installed = local / "MonkeyHub/versions" / (commit[:12] + "-desktop")
+            browser_entry = installed / "OPEN_MONKEYHUB.cmd"
+            desktop_entry = installed / "MonkeyArch.exe"
             self.assertTrue(browser_entry.is_file())
             self.assertTrue(desktop_entry.is_file())
+            self.assertFalse((shortcuts / "MonkeyHub.lnk").exists())
+            self.assertTrue((shortcuts / "MonkeyArch.lnk").exists())
             inspect = root / "inspect.ps1"
             inspect.write_text("param($Directory)\n$shell = New-Object -ComObject WScript.Shell\n"
-                               "@('MonkeyHub.lnk','MonkeyArch.lnk') | ForEach-Object { "
+                               "@('MonkeyArch.lnk') | ForEach-Object { "
                                "$link = $shell.CreateShortcut((Join-Path $Directory $_)); "
                                "[PSCustomObject]@{Target=$link.TargetPath; WindowStyle=$link.WindowStyle} } "
                                "| ConvertTo-Json -Compress\n", encoding="utf-8")
             result = subprocess.run(["powershell.exe", "-NoProfile", "-File", str(inspect), str(shortcuts)],
                                     capture_output=True, text=True, timeout=15, check=True)
-            links = json.loads(result.stdout)
-            for link, expected in zip(links, (browser_entry, desktop_entry), strict=True):
-                self.assertTrue(Path(link["Target"]).samefile(expected), link)
-            self.assertEqual([link["WindowStyle"] for link in links], [7, 1])
+            link = json.loads(result.stdout)
+            self.assertTrue(Path(link["Target"]).samefile(desktop_entry), link)
+            self.assertEqual(link["WindowStyle"], 1)
 
     def test_desktop_is_built_from_snapshot_with_bound_revision_and_external_target(self):
         with tempfile.TemporaryDirectory() as temporary:

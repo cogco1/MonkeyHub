@@ -487,11 +487,12 @@ class StateRecord:
             for item in p.reads():
                 edges.append(DependencyEdge(upstream_ref=f"parameter:{item}", downstream_ref=p.ref, relation="derives",
                                             source_ref=p.source_ref or f"parameter:{p.key}", effect=DependencyEffect.REQUIRES_REVALIDATION))
+        element_ids = {e.entity_id for e in self.entities_of("Element@1")}
         for e in self.entities:
             for key, kind, target in _entity_references(e.fields):
                 if kind != "entity":
                     continue
-                effect = DependencyEffect.INVALIDATES if key in ("host", "type_ref") or target in {x.entity_id for x in self.entities_of("Element@1")} else DependencyEffect.REQUIRES_REVALIDATION
+                effect = DependencyEffect.INVALIDATES if key in ("host", "type_ref") or target in element_ids else DependencyEffect.REQUIRES_REVALIDATION
                 edges.append(DependencyEdge(upstream_ref=f"entity:{target}", downstream_ref=e.ref, relation=key, source_ref=e.ref, effect=effect))
             for path, name in parameter_bindings_of(e):
                 # an explicit "@key" binding: the parameter's value is the row's value, so a change there rebuilds the row
@@ -501,20 +502,30 @@ class StateRecord:
     def closure(self, changed_refs: tuple[str, ...]) -> tuple[str, ...]:
         """Everything downstream of ``changed_refs`` along invalidating edges (P063 semantics)."""
 
+        return self.closures((changed_refs,))[0]
+
+    def closures(self, changed_ref_groups: tuple[tuple[str, ...], ...]) -> tuple[tuple[str, ...], ...]:
+        """Independent closures over one dependency graph, in the supplied group order."""
+
+        if not changed_ref_groups:
+            return ()
         adjacency: dict[str, set[str]] = {}
         for edge in self.dependency_edges():
             if edge.effect not in (DependencyEffect.INVALIDATES, DependencyEffect.REQUIRES_REVALIDATION):
                 continue  # BLOCKS and SUPPORTS_ONLY do not propagate a change downstream
             adjacency.setdefault(edge.upstream_ref, set()).add(edge.downstream_ref)
-        seen = set(changed_refs)
-        queue = sorted(changed_refs)
-        while queue:
-            current = queue.pop(0)
-            for downstream in sorted(adjacency.get(current, ())):
-                if downstream not in seen:
-                    seen.add(downstream)
-                    queue.append(downstream)
-        return tuple(sorted(seen))
+        results: list[tuple[str, ...]] = []
+        for changed_refs in changed_ref_groups:
+            seen = set(changed_refs)
+            queue = sorted(changed_refs)
+            while queue:
+                current = queue.pop(0)
+                for downstream in sorted(adjacency.get(current, ())):
+                    if downstream not in seen:
+                        seen.add(downstream)
+                        queue.append(downstream)
+            results.append(tuple(sorted(seen)))
+        return tuple(results)
 
     # ---- identity the geometry compiler checks (P102)
     def bound_to(self, run: RunRef) -> "StateRecord":

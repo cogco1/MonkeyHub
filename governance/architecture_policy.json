@@ -10,7 +10,8 @@
     "apps/archflow-studio/api",
     "tests",
     "labs",
-    "apps/monkeyhub"
+    "apps/monkeyhub",
+    "apps/monkeyfab"
   ],
   "import_only_source_roots": [
     "labs"
@@ -204,7 +205,10 @@
     {
       "path": "monkeymonitor/store.py",
       "function": "_locked",
-      "operations": ["mkdir", "open_write"],
+      "operations": [
+        "mkdir",
+        "open_write"
+      ],
       "kind": "diagnostics",
       "owner": "monkeymonitor",
       "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
@@ -318,6 +322,17 @@
       "kind": "runtime_lock",
       "owner": "hub.shell",
       "reason": "Holds one OS file lock under the explicit nonproject Hub runtime root across CLI startup and managed worker drain; browser and desktop cannot concurrently rewrite the same Hub chats/config. The lock contains no project state and is released when the actual Hub exits."
+    },
+    {
+      "path": "apps/monkeyfab/src/monkeyfab/cli.py",
+      "function": "_prepare",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "fabrication_output",
+      "owner": "monkeyfab",
+      "reason": "Exports print-derived meshes and their assembly table only into the explicitly supplied new or empty output directory. Does not mutate input geometry or P036 project state."
     }
   ],
   "forbidden_layer_imports": [
@@ -325,7 +340,8 @@
       "source": "archflow",
       "targets": [
         "labs",
-        "monkeymonitor"
+        "monkeymonitor",
+        "monkeyfab"
       ],
       "reason": "labs/ is interest-driven exploration: a lab may import the spine, the spine may never import a lab. A lab graduates by becoming a card with an owner in the module registry, and the lab copy is retired in the same change (labs/README.md)."
     },
@@ -357,7 +373,8 @@
         "tests",
         "tools",
         "archive",
-        "monkeymonitor"
+        "monkeymonitor",
+        "monkeyfab"
       ],
       "reason": "Reusable framework code cannot import repository tooling, tests, or documentation modules. Probe imports are rejected by the dedicated probe reverse-import rule."
     },
@@ -498,7 +515,8 @@
       "targets": [
         "monkeyarch",
         "monkeydiagram",
-        "monkeymonitor"
+        "monkeymonitor",
+        "monkeyfab"
       ],
       "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
     },
@@ -512,7 +530,8 @@
         "tools",
         "probes",
         "archive",
-        "monkeymonitor"
+        "monkeymonitor",
+        "monkeyfab"
       ],
       "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies."
     },
@@ -526,7 +545,8 @@
         "tools",
         "probes",
         "archive",
-        "monkeymonitor"
+        "monkeymonitor",
+        "monkeyfab"
       ],
       "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
     },
@@ -553,9 +573,24 @@
         "monkeydiagram",
         "archflow_studio_api",
         "probes",
-        "archive"
+        "archive",
+        "monkeyfab"
       ],
       "reason": "The independent usage and pricing tool receives plain values; project and workflow execution remain with their owners."
+    },
+    {
+      "source": "apps/monkeyfab/src",
+      "targets": [
+        "archflow",
+        "monkeyarch",
+        "monkeydiagram",
+        "monkeymonitor",
+        "archflow_studio_api",
+        "monkeyhub_api",
+        "probes",
+        "archive"
+      ],
+      "reason": "Fab owns print preparation and upload-only CLI behavior; the Hub composes applications and P036 alone owns project state."
     }
   ],
   "authority_symbol_patterns": [
