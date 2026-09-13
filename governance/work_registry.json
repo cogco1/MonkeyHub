@@ -388,7 +388,9 @@
         "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedbackGeometry.ts",
         "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
-        "apps/archflow-studio/api/tests/test_boards.py"
+        "apps/archflow-studio/api/tests/test_boards.py",
+        "tests/test_package_monkeyapps.py",
+        ".github/workflows/desktop.yml"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -551,6 +553,35 @@
             "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
             "governance/work_registry.json",
             "docs/mapping/planning/P115-capability-consolidation.md"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "desktop",
+          "issue": "#21 Phase A Windows desktop host",
+          "status": "active",
+          "branch": "codex/desktop-final",
+          "worktree": "C:/Users/asus/.codex/worktrees/12ee/ARCHFLOW_V4",
+          "base_ref": "4552d2e401260f212342e0324a89108055ee1af2",
+          "contributor": "Codex task 01a0993d-4a50-7212-99d3-7ef936aadd2a",
+          "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
+          "handoff": "Replacement for PR #25, preserving its published history while correcting the final commit scope declaration. Phase A thin Windows host, native installer entry and isolated lifecycle/project reopen checks. Temporary health loss retains the live page and unsent input; UI Automation uses its own MTA. Previous head c0a2b36b passed all five native tests locally and in Windows CI plus package tests; two earlier local close timeouts were not reproduced by the bounded follow-up diagnostics and remain an observation, not a claimed root-cause fix. This branch preserves main4552d2e4 modeling, Board and Monitor work. Await exact-head CI and coordinator review. Full distribution/clean-machine and root restart acceptance remain later phases; no desktop modeling draft persistence or unsynced recovery. Isolated runtimes only.",
+          "modules": [
+            "hub.shell",
+            "tools.package_monkeyapps"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/desktop/",
+            "tools/package_monkeyapps.py",
+            "tests/test_package_monkeyapps.py",
+            ".github/workflows/desktop.yml",
+            "governance/module_registry.json",
+            "governance/work_registry.json",
+            "docs/SYSTEM_MAP.md",
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+            "apps/monkeyhub/installer/install.ps1"
           ],
           "depends_on": []
         }

@@ -2,7 +2,7 @@
 
 import argparse
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 import logging
 import os
@@ -418,6 +418,33 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     return app
 
 
+@contextmanager
+def _runtime_lease(root: Path):
+    """Keep both CLI entrypoints exclusive until the actual Hub finishes draining."""
+    root.mkdir(parents=True, exist_ok=True)
+    # Keep the same inode after release; deleting a lock file would let another
+    # process lock a replacement while a previous opener still owns the old one.
+    with (root / "hub.lock").open("a+b") as lease:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                lease.seek(0)
+                msvcrt.locking(lease.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise ValueError(f"Another Hub is using runtime directory {root}. Close it and wait for shutdown, or choose another --runtime-root.") from error
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                lease.seek(0)
+                msvcrt.locking(lease.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(lease.fileno(), fcntl.LOCK_UN)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Open the local MonkeyHub without a building project.")
     parser.add_argument("--runtime-root", type=Path)
@@ -446,25 +473,26 @@ def main(argv: list[str] | None = None) -> None:
         studio_web_dir=studio_web, web_origin=args.web_origin,
         managed_instance_id=str(args.managed_instance_id) if args.managed_instance_id else None,
     )
-    app = create_app(settings)
-    server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
-    if args.managed_stdin:
-        def watch_stdin():
-            for line in sys.stdin:
-                if line.strip() == "stop":
-                    break
-            app.state.chats.shutdown()
-            app.state.applications.begin_shutdown()
-            server.should_exit = True
-        threading.Thread(target=watch_stdin, daemon=True).start()
-    if not args.no_browser:
-        def open_when_ready():
-            while not server.started and not server.should_exit:
-                threading.Event().wait(0.1)
-            if server.started:
-                webbrowser.open(f"http://127.0.0.1:{settings.port}/")
-        threading.Thread(target=open_when_ready, daemon=True).start()
-    server.run()
+    with _runtime_lease(settings.runtime_root):
+        app = create_app(settings)
+        server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
+        if args.managed_stdin:
+            def watch_stdin():
+                for line in sys.stdin:
+                    if line.strip() == "stop":
+                        break
+                app.state.chats.shutdown()
+                app.state.applications.begin_shutdown()
+                server.should_exit = True
+            threading.Thread(target=watch_stdin, daemon=True).start()
+        if not args.no_browser:
+            def open_when_ready():
+                while not server.started and not server.should_exit:
+                    threading.Event().wait(0.1)
+                if server.started:
+                    webbrowser.open(f"http://127.0.0.1:{settings.port}/")
+            threading.Thread(target=open_when_ready, daemon=True).start()
+        server.run()
 
 
 if __name__ == "__main__":

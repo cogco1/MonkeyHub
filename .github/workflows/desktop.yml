@@ -1,0 +1,88 @@
+name: Windows desktop
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/monkeyhub/desktop/**'
+      - 'apps/monkeyhub/api/**'
+      - 'apps/monkeyhub/installer/**'
+      - 'tools/package_monkeyapps.py'
+      - 'tests/test_package_monkeyapps.py'
+      - '.github/workflows/desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Rust toolchain
+        run: rustup show
+      - uses: actions/cache/restore@v4
+        id: rust-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/monkeyhub/desktop/target
+          key: windows-desktop-release-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            windows-desktop-release-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}-
+            windows-desktop-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}
+      - name: Build native window
+        working-directory: apps/monkeyhub/desktop
+        run: cargo build --locked --release
+      - name: Keep review executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: MonkeyArch-desktop-${{ github.event.pull_request.head.sha || github.sha }}
+          path: apps/monkeyhub/desktop/target/release/MonkeyArch.exe
+          if-no-files-found: error
+      - name: Test host boundaries
+        working-directory: apps/monkeyhub/desktop
+        run: cargo test --locked --release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Runtime dependencies
+        run: >-
+          python -m pip install -e ".[cad-occt]"
+          -r apps/archflow-studio/api/requirements.txt
+          -r apps/monkeyhub/api/requirements.txt
+          httpx2
+      - name: Build existing web surfaces
+        shell: pwsh
+        run: |
+          foreach ($web in @('apps/monkeyhub/web', 'apps/archflow-studio/web')) {
+            Push-Location $web
+            npm ci --no-audit --no-fund
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            npm run build
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            Pop-Location
+          }
+      - name: Native lifecycle and isolated project restart
+        shell: pwsh
+        run: |
+          $env:MONKEYARCH_DESKTOP_EXE = Join-Path $PWD 'apps/monkeyhub/desktop/target/release/MonkeyArch.exe'
+          $env:PYTHONUTF8 = '1'
+          python -m unittest discover -s apps/monkeyhub/desktop/tests -p test_runtime.py -v
+      - name: Package and native shortcut selection
+        run: python -m unittest discover -s tests -p test_package_monkeyapps.py -v
+      - uses: actions/cache/save@v4
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/monkeyhub/desktop/target
+          key: windows-desktop-release-${{ hashFiles('apps/monkeyhub/desktop/Cargo.lock') }}-${{ github.sha }}

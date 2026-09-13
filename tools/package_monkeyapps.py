@@ -318,9 +318,35 @@ def smoke_runtime(bundle: Path) -> None:
         print("Bundled MonkeyFab H2S prepare and local send dry-run: PASS", flush=True)
 
 
+def build_desktop(source: Path, bundle: Path, commit: str, cargo: Path,
+                  environment: dict[str, str]) -> dict[str, str]:
+    """Compile the thin host from the same selected snapshot as its Hub."""
+    desktop = source / "apps/monkeyhub/desktop"
+    target = source.parent / "desktop-target"
+    build_environment = dict(environment, ARCHFLOW_SOURCE_REVISION=commit)
+    run([str(cargo), "build", "--locked", "--release", "--target-dir", str(target)],
+        cwd=desktop, environment=build_environment)
+    executable = target / "release/MonkeyArch.exe"
+    if not executable.is_file():
+        raise ValueError(f"The desktop host was not built: {executable}")
+    identity = json.loads(run([str(executable), "--version"], capture=True, environment=build_environment))
+    package_info = tomllib.loads((desktop / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+    if identity.get("sourceRevision") != commit or identity.get("version") != package_info["version"]:
+        raise ValueError("The desktop executable does not match the selected source snapshot/version.")
+    shutil.copy2(executable, bundle / "MonkeyArch.exe")
+    shutil.copy2(desktop / "Cargo.lock", bundle / "_runtime/desktop-Cargo.lock")
+    return {
+        "version": package_info["version"], "sourceCommit": commit,
+        "cargoVersion": run([str(cargo), "--version"], capture=True, environment=build_environment),
+        "cargoLockSha256": sha256(desktop / "Cargo.lock"),
+        "executableSha256": sha256(bundle / "MonkeyArch.exe"),
+    }
+
+
 def package(source_root: Path, source_ref: str, staging: Path, output: Path,
             cache: Path, node: Path, npm_cli: Path,
-            monkeyfab_source: Path | None = None, monkeyfab_ref: str | None = None) -> Path:
+            monkeyfab_source: Path | None = None, monkeyfab_ref: str | None = None,
+            *, desktop: bool = False, cargo: Path | None = None) -> Path:
     if sys.platform != "win32":
         raise ValueError("Build and verify this Windows candidate on Windows x64.")
     source_root = source_root.resolve()
@@ -336,6 +362,10 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
         fab_commit = run(["git", "rev-parse", "--verify", f"{monkeyfab_ref}^{{commit}}"],
                          cwd=monkeyfab_source, capture=True)
     version = commit[:12] + (f"-fab-{fab_commit[:12]}" if fab_commit else "")
+    if desktop:
+        if cargo is None or not cargo.is_file():
+            raise ValueError("The desktop build needs Rust/MSVC Cargo; supply --cargo or add it to PATH.")
+        version += "-desktop"
     staging.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
     build = Path(tempfile.mkdtemp(prefix=f"candidate-{commit[:12]}-", dir=staging))
@@ -344,6 +374,8 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     environment = dict(os.environ, TEMP=str(temporary), TMP=str(temporary),
                        PATH=str(node.resolve().parent) + os.pathsep + os.environ.get("PATH", ""),
                        PIP_CACHE_DIR=str(cache / "pip-cache"), npm_config_cache=str(cache / "npm-cache"))
+    if desktop:
+        environment.setdefault("CARGO_HOME", str(cache / "cargo"))
     print(f"Source: {commit}\nBuild directory: {build}", flush=True)
     snapshot = build / "source.zip"
     run(["git", "archive", "--format=zip", f"--output={snapshot}", commit, "--", *SOURCE_PATHS], cwd=source_root)
@@ -364,10 +396,12 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     collect_application(source, bundle, commit, fab_snapshot, node=node)
     prepare_runtime(source, bundle / "_runtime/python", cache, environment, fab_snapshot)
     smoke_runtime(bundle)
+    desktop_info = build_desktop(source, bundle, commit, cargo, environment) if desktop else None
     # Version + exact inputs are distribution metadata, not project records.
     (bundle / "build-info.json").write_text(json.dumps({
         "sourceCommit": commit, "target": "windows-x64", "channel": "candidate",
         **({"monkeyFabCommit": fab_commit} if fab_commit else {}),
+        **({"desktop": desktop_info} if desktop_info else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
     }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     zip_path = build / f"{bundle.name}-candidate.zip"
@@ -406,6 +440,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="overrides <workspace-root>/cache/package-monkeyapps; otherwise defaults to <staging-dir>/cache")
     parser.add_argument("--node", type=Path, default=Path(shutil.which("node") or "node.exe"))
     parser.add_argument("--npm-cli", type=Path, help="path to npm/bin/npm-cli.js; no shell or npm.cmd interpolation")
+    parser.add_argument("--desktop", action="store_true", help="build MonkeyArch.exe from the same snapshot using Rust/MSVC")
+    parser.add_argument("--cargo", type=Path, default=Path(shutil.which("cargo") or "cargo.exe"),
+                        help="Cargo executable for --desktop; build dependencies stay outside the source checkout")
     args = parser.parse_args(argv)
     npm_cli = args.npm_cli or args.node.resolve().parent / "node_modules/npm/bin/npm-cli.js"
     try:
@@ -442,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.node.is_file() or not npm_cli.is_file():
             raise ValueError("The builder needs Node and npm-cli.js; supply --node and --npm-cli.")
         package(source, args.source_ref, staging, output, cache, args.node, npm_cli,
-                args.monkeyfab_source, args.monkeyfab_ref)
+                args.monkeyfab_source, args.monkeyfab_ref, desktop=args.desktop, cargo=args.cargo)
     except (OSError, ValueError, subprocess.CalledProcessError, zipfile.BadZipFile) as error:
         parser.exit(1, f"package_monkeyapps: {error}\n")
     return 0
