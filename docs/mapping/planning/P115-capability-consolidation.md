@@ -63,7 +63,8 @@ Phase 2/3 已由 PR #20 合入。Phase 4 从 `cbf833f7` 在原 `685e` worktree �
 对象复用、同帧末次移动确认、数值覆盖、重复 Enter、Esc、等待语义解析与迟到 proposal 均覆盖。
 修复原 producer 的凸三角形侧拉越过坍塌点后反转，预览与最终计算同步检查边界。
 Web 单元 158 通过／2 fixture 跳过，projection 52、sketch API 28、producer 63 通过；
-类型、构建、OpenAPI 生成一致性及 archcheck 通过。完整交互回归与独立 PR/CI 审查继续，尚未更新运行中的应用。
+类型、构建、OpenAPI 生成一致性及 archcheck 通过。完整 22 组真实 Studio/OCCT 交互回归通过；
+[PR #22](https://github.com/cogco1/ARCHFLOW_V4/pull/22) 交协调任务独立审查并等待 exact-head CI，尚未更新运行中的应用。
 
 ### Hub 项目运行时（issue #12）
 

@@ -411,13 +411,13 @@
         {
           "id": "interaction",
           "issue": "#14 Phase 4 Push/Pull",
-          "status": "active",
+          "status": "review",
           "branch": "codex/i14-pushpull",
           "worktree": "C:/Users/asus/.codex/worktrees/685e/ARCHFLOW_V4",
           "base_ref": "cbf833f7fbac75856b9d2cf570143e39c9cbb503",
           "contributor": "Codex task 01a098b4-553a-7ff0-baa5-0e1360333293",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "PR #20 is merged. One P push/pull gesture on supported drawn faces/prisms: local normal preview, precise numeric override and one existing typed request, with cancellation/exact-source guards. Keep ModelEditPanel fallback. User requests coherent icon-only modeling tools with hover labels. Coordinator independently reviews and integrates this slice before another direct tool. Isolated fixtures and ports only.",
+          "handoff": "PR #22: local P preview, exact numeric override and one existing typed request; cancellation/exact-source guards, precision fallback and coherent icon tools with hover labels. Full 22-group Studio/OCCT browser regression, focused API/producer/Web tests, build, generated API and architecture checks pass locally. Coordinator independently reviews exact-head CI and integrates this slice before another direct tool. Isolated fixtures only; installed services remain unchanged.",
           "modules": ["studio.shell", "studio.intent", "studio.binding", "capabilities.element_producers"],
           "write_scope": [
             "monkeyarch/capabilities/element_producers.py",
