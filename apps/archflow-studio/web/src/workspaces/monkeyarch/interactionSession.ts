@@ -2,8 +2,8 @@ import { IDLE, type SketchState } from "../../features/stage/sketch";
 import type { LocalHit } from "./viewer/preselection";
 import type { DrawnShapeDto } from "../../api/generated";
 import type { PreparedPushPull } from "../../features/stage/pushPull";
-import type { PlanPoint, SketchPlane } from "../../features/stage/sketch";
-import type { SketchPreview } from "./viewer/ThreeDmViewport";
+import type { PlanPoint, SketchPlane, SnapCandidate } from "../../features/stage/sketch";
+import type { ModelSnap, SketchPreview } from "./viewer/ThreeDmViewport";
 
 export interface PushPullTarget {
   readonly elementId: string;
@@ -58,6 +58,8 @@ export interface InteractionSession {
   rotate: RotateGesture | null;
   scale: ScaleGesture | null;
   hover: LocalHit | null;
+  modelSnap: { hit: LocalHit; feature: LocalHit["mesh"]; snap: ModelSnap } | null;
+  planeSnap: SnapCandidate | null;
   pointer: { x: number; y: number } | null;
   press: { x: number; y: number; dragging: boolean } | null;
   frame: { id: number; kind: "sketch" | "hover" | "pushPull" | "move" | "rotate" | "scale"; paint: () => void } | null;
@@ -66,7 +68,7 @@ export interface InteractionSession {
 
 export function createInteractionSession(): InteractionSession {
   return {
-    sketch: IDLE, pushPull: null, move: null, rotate: null, scale: null, hover: null, pointer: null, press: null, frame: null,
+    sketch: IDLE, pushPull: null, move: null, rotate: null, scale: null, hover: null, modelSnap: null, planeSnap: null, pointer: null, press: null, frame: null,
     get phase() {
       if (this.scale) return this.scale.typed !== null ? "value-override" : this.scale.reference ? "dragging" : "armed";
       if (this.rotate) return this.rotate.typed !== null ? "value-override" : this.rotate.reference ? "dragging" : "armed";

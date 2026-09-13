@@ -70,6 +70,7 @@ import {
   candidatesOf,
   closestOnEdge,
   nearestCandidate,
+  retainSnap,
   type FeatureEdge,
   type Point3,
 } from "./featureEdges";
@@ -245,7 +246,8 @@ export interface ViewportController {
    * The point on the loaded model a pointer is really over: the end or the
    * middle of a visible edge when one is within ``radiusPx`` on screen, a
    * point along that edge when the pointer is on it, and otherwise the place
-   * the ray met the surface. Null when the ray meets nothing.
+   * the ray met the surface. A captured target survives to 1.5 times that
+   * radius, including just outside its silhouette; otherwise a miss is null.
    *
    * The edges are the model's own: a face that was triangulated to draw it
    * offers no diagonal, so nothing snaps to a line nobody can see.
@@ -912,6 +914,8 @@ export const ThreeDmViewport = forwardRef<
   const clearHover = useCallback((render = true) => {
     cancelInteractionFrame(interaction.current, "hover");
     interaction.current.hover = null;
+    interaction.current.modelSnap = null;
+    interaction.current.planeSnap = null;
     interaction.current.pointer = null;
     const runtime = runtimeRef.current;
     if (!runtime) return;
@@ -1586,52 +1590,69 @@ export const ThreeDmViewport = forwardRef<
   const snapAtHit = useCallback(
     (hit: LocalHit | null, clientX: number, clientY: number, radiusPx = 14): ModelSnap | null => {
       const runtime = runtimeRef.current;
-      if (!runtime || !hit) return null;
+      const raycaster = rayAt(clientX, clientY);
+      if (!runtime || !raycaster) return null;
       const rect = runtime.renderer.domElement.getBoundingClientRect();
       const pointer = [clientX - rect.left, clientY - rect.top] as const;
       const project = (point: Point3): readonly [number, number] | null => {
-        const carried = new Vector3(point[0], point[1], point[2]).project(runtime.camera);
-        if (carried.z > 1) return null;
+        const carried = new Vector3(...point).project(runtime.camera);
+        if (carried.z < -1 || carried.z > 1) return null;
         return [(carried.x + 1) / 2 * rect.width, (1 - carried.y) / 2 * rect.height];
       };
-      // The visible edges of the object the ray met, in world coordinates,
-      // computed once per geometry and kept with it.
-      const edges: FeatureEdge[] = [];
-      hit.object.traverse((node) => {
-        if (!(node instanceof Mesh || node instanceof Line) || !isDisplayed(node)) return;
-        const mesh = node;
-        const own = outlineEdges(mesh);
-        mesh.updateWorldMatrix(true, false);
-        for (const edge of own) {
-          const a = new Vector3(...edge.a).applyMatrix4(mesh.matrixWorld);
-          const b = new Vector3(...edge.b).applyMatrix4(mesh.matrixWorld);
-          edges.push({ a: [a.x, a.y, a.z], b: [b.x, b.y, b.z] });
-        }
-      });
-      const candidates = edges.flatMap(candidatesOf);
-      const chosen = nearestCandidate(candidates, project, pointer, radiusPx);
-      if (chosen) {
-        const edge = edges.find((edge) => {
-          const point = closestOnEdge(edge, chosen.point);
-          return Math.hypot(...point.map((value, index) => value - chosen.point[index]!)) < 1e-6;
+      const alongEdge = (edge: FeatureEdge): Vec3 => {
+        const point = new Vector3();
+        raycaster.ray.distanceSqToSegment(new Vector3(...edge.a), new Vector3(...edge.b), undefined, point);
+        return [point.x, point.y, point.z];
+      };
+      let previous = interaction.current.modelSnap;
+      if (previous && (!isDisplayed(previous.feature) ||
+        !(isUnder(previous.feature, runtime.draftRoot) || (runtime.model && isUnder(previous.feature, runtime.model))))) previous = null;
+      const held = previous?.snap.kind === "edge" && previous.snap.edge
+        ? { ...previous.snap, point: alongEdge(previous.snap.edge) } : previous?.snap ?? null;
+      let next: ModelSnap | null = null;
+      let nextFeature = hit?.mesh;
+      if (hit) {
+        // Geometry feature edges remain cached by outlineEdges. Only the
+        // currently hit object is searched; retention needs just one old target.
+        const edges: (FeatureEdge & { mesh: Mesh | Line })[] = [];
+        hit.object.traverse((mesh) => {
+          if (!(mesh instanceof Mesh || mesh instanceof Line) || !isDisplayed(mesh)) return;
+          mesh.updateWorldMatrix(true, false);
+          for (const edge of outlineEdges(mesh)) {
+            const a = new Vector3(...edge.a).applyMatrix4(mesh.matrixWorld);
+            const b = new Vector3(...edge.b).applyMatrix4(mesh.matrixWorld);
+            edges.push({ a: [a.x, a.y, a.z], b: [b.x, b.y, b.z], mesh });
+          }
         });
-        return { point: [chosen.point[0], chosen.point[1], chosen.point[2]], kind: chosen.kind, objectName: hit.objectName, edge };
+        const chosen = nearestCandidate(edges.flatMap(candidatesOf), project, pointer, radiusPx);
+        if (chosen) {
+          const edge = edges.find(edge => {
+            const point = closestOnEdge(edge, chosen.point);
+            return Math.hypot(...point.map((value, i) => value - chosen.point[i]!)) < 1e-6;
+          })!;
+          next = { point: [...chosen.point], kind: chosen.kind, objectName: hit.objectName, edge: { a: edge.a, b: edge.b } };
+          nextFeature = edge.mesh;
+        } else {
+          let distance = radiusPx;
+          for (const edge of edges) {
+            const point = alongEdge(edge), screen = project(point);
+            if (!screen) continue;
+            const d = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
+            if (d <= distance) {
+              distance = d;
+              next = { point, kind: "edge", objectName: hit.objectName, edge: { a: edge.a, b: edge.b } };
+              nextFeature = edge.mesh;
+            }
+          }
+          next ??= { point: [hit.point.x, hit.point.y, hit.point.z], kind: "surface", objectName: hit.objectName };
+        }
       }
-      // Not on a corner or a middle: the nearest visible edge, if the pointer
-      // is over one, else the surface itself.
-      const where: Point3 = [hit.point.x, hit.point.y, hit.point.z];
-      let onEdge: { point: Point3; distance: number; edge: FeatureEdge } | null = null;
-      for (const edge of edges) {
-        const point = closestOnEdge(edge, where);
-        const screen = project(point);
-        if (screen === null) continue;
-        const distance = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
-        if (distance <= radiusPx && (onEdge === null || distance < onEdge.distance)) onEdge = { point, distance, edge };
-      }
-      if (onEdge) return { point: [onEdge.point[0], onEdge.point[1], onEdge.point[2]], kind: "edge", objectName: hit.objectName, edge: onEdge.edge };
-      return { point: [where[0], where[1], where[2]], kind: "surface", objectName: hit.objectName };
+      const snap = retainSnap(held, next, project, pointer, radiusPx);
+      interaction.current.modelSnap = snap && snap.kind !== "surface"
+        ? { snap, hit: snap === held ? previous!.hit : hit!, feature: snap === held ? previous!.feature : nextFeature! } : null;
+      return snap;
     },
-    [],
+    [interaction, rayAt],
   );
 
   const snapOnModel = useCallback((x: number, y: number, radiusPx = 14) => snapAtHit(hitAt(x, y), x, y, radiusPx), [hitAt, snapAtHit]);
@@ -1643,9 +1664,13 @@ export const ThreeDmViewport = forwardRef<
       !["inactive", "hovering"].includes(session.phase) || !session.pointer) { clearHover(); return; }
     const { x, y } = session.pointer;
     const hit = hitAt(x, y);
+    // Ordinary preselection must agree with click picking. A gesture may hold
+    // a snap across empty space, but hover cannot offer an unpickable face.
     if (!hit) { clearHover(); return; }
+    if (session.modelSnap?.hit.object !== hit.object) session.modelSnap = null;
+    const snap = snapAtHit(hit, x, y);
     session.hover = hit;
-    runtime.preselection.update(hit, snapAtHit(hit, x, y));
+    runtime.preselection.update(hit, snap);
     runtime.renderer.domElement.style.cursor = "pointer";
     runtime.render();
   }, [clearHover, hitAt, interaction, snapAtHit]);

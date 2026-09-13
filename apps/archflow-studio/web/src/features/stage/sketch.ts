@@ -150,6 +150,7 @@ export interface SnapCandidate {
   readonly point: PlanPoint;
   /** What it is, so the person can be told why the pointer moved. */
   readonly kind: "endpoint" | "midpoint" | "axis";
+  readonly axis?: "x" | "y";
 }
 
 export interface SnapResult {
@@ -169,7 +170,8 @@ export function snapPoint(
     endpoints = [],
     anchor = null,
     radius,
-  }: { endpoints?: readonly PlanPoint[]; anchor?: PlanPoint | null; radius: number },
+    previous = null,
+  }: { endpoints?: readonly PlanPoint[]; anchor?: PlanPoint | null; radius: number; previous?: SnapCandidate | null },
 ): SnapResult {
   const near = (a: PlanPoint, b: PlanPoint) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const candidates: SnapCandidate[] = [];
@@ -190,8 +192,13 @@ export function snapPoint(
     // An axis lock is the weakest snap: it only straightens one coordinate.
     const dx = Math.abs(point[0] - anchor[0]);
     const dz = Math.abs(point[1] - anchor[1]);
-    if (dx <= radius && dz > radius) return { point: [anchor[0], point[1]], snapped: { point: [anchor[0], point[1]], kind: "axis" } };
-    if (dz <= radius && dx > radius) return { point: [point[0], anchor[1]], snapped: { point: [point[0], anchor[1]], kind: "axis" } };
+    const axis = previous?.kind === "axis" && previous.axis === "y" && previous.point[0] === anchor[0] && dx <= radius * 1.5 && dz > radius ? "y"
+      : previous?.kind === "axis" && previous.axis === "x" && previous.point[1] === anchor[1] && dz <= radius * 1.5 && dx > radius ? "x"
+        : dx <= radius && dz > radius ? "y" : dz <= radius && dx > radius ? "x" : null;
+    if (axis) {
+      const aligned: PlanPoint = axis === "y" ? [anchor[0], point[1]] : [point[0], anchor[1]];
+      return { point: aligned, snapped: { point: aligned, kind: "axis", axis } };
+    }
   }
   return { point, snapped: null };
 }

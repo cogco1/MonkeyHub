@@ -218,6 +218,32 @@ export interface SnapCandidate {
   readonly kind: SnapKind;
 }
 
+/** A captured target has a wider release radius than its acquisition radius.
+ * A deliberate approach to another point still wins; subpixel ties do not.
+ * For an edge the caller supplies its newly projected point, so holding an
+ * edge constrains movement along it rather than pinning an old position.
+ */
+export function retainSnap<T extends { point: Point3; kind: SnapKind | "surface" }>(
+  previous: T | null, next: T | null,
+  project: (point: Point3) => readonly [number, number] | null,
+  pointer: readonly [number, number], radiusPx: number,
+): T | null {
+  if (!previous || previous.kind === "surface") return next;
+  const distance = (target: T) => {
+    const p = project(target.point);
+    return p ? Math.hypot(p[0] - pointer[0], p[1] - pointer[1]) : Infinity;
+  };
+  const heldDistance = distance(previous);
+  if (heldDistance > radiusPx * 1.5) return next;
+  if (next && next.kind !== "surface") {
+    const rank = { endpoint: 0, midpoint: 1, edge: 2, surface: 3 };
+    const nextDistance = distance(next);
+    if (nextDistance <= radiusPx / 2 && (rank[next.kind] < rank[previous.kind]
+      || ((next.kind !== "edge" || previous.kind === "edge") && nextDistance + 3 < heldDistance))) return next;
+  }
+  return previous;
+}
+
 /** The points one visible edge offers: its ends, and its middle. */
 export function candidatesOf(edge: FeatureEdge): SnapCandidate[] {
   return [

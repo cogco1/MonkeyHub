@@ -166,7 +166,7 @@ vite = await createServer({ root: webRoot, configFile: false, logLevel: "error",
       marker = "  const interaction = useRef(createInteractionSession());";
       insert = `useEffect(() => { (window as any).__stageCommits = ((window as any).__stageCommits ?? 0) + 1; });
         (window as any).__gesture = () => ({ phase: interaction.current.sketch.phase,
-        tool: interaction.current.sketch.tool, pushPull: interaction.current.pushPull, move: interaction.current.move, rotate: interaction.current.rotate, scale: interaction.current.scale });`;
+        tool: interaction.current.sketch.tool, modelSnap: interaction.current.modelSnap?.snap ?? null, pushPull: interaction.current.pushPull, move: interaction.current.move, rotate: interaction.current.rotate, scale: interaction.current.scale });`;
     } else if (module.endsWith("/app/App.tsx")) {
       marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
       insert = `(window as any).__app = () => ({ loaded: loadedArtifact?.runId, base: projection?.referenceRun.runId,
@@ -451,7 +451,7 @@ if (authoredOnly) {
   const first=await arm(initialVertices,'uniform',true),firstFactors=[1.4,1.4,1.4],firstResult=scaled(initialVertices,first.pivot,firstFactors);
   const firstPoint=await aim(target(first,1.4));await sameVertices('preview',firstResult,'uniform positive preview');
   await sameVertices(id,initialVertices,'uniform preview preserves source');assert.equal(sent.length,writeStart);
-  const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});await page.screenshot({path:path.join(qa,'scale-preview.png')});
+  const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});await page.screenshot({path:path.join(qa,'scale-preview.png')});
   const points=await page.evaluate(points=>points.map(p=>window.__view.project(p)),[1.45,1.5,1.55,1.6].map(f=>target(first,f)));
   const reuse=await page.evaluate(async points=>{
     const refs=window.__view.previewIdentity(),commits=window.__stageCommits,overlay=document.querySelector('.stage-scale');
@@ -553,7 +553,7 @@ if (authoredOnly) {
   const firstPoint=await aim(rotated([first.reference],first.pivot,first.normal,firstAngle)[0]);
   await sameVertices('preview',firstResult,'positive Z preview');await sameVertices(id,initialVertices,'rotation preview preserves source');
   assert.ok(Math.abs((await snap()).gesture.rotate.angleDegrees-firstAngle)<1e-5);assert.equal(sent.length,writeStart);
-  const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});
+  const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});
   await page.screenshot({path:path.join(qa,'rotate-preview.png')});
   const points=await page.evaluate(points=>points.map(p=>window.__view.project(p)),[38,39,40,41].map(angle=>rotated([first.reference],first.pivot,first.normal,angle)[0]));
   const reuse=await page.evaluate(async points=>{
@@ -644,7 +644,7 @@ if (authoredOnly) {
   await movePointer(first.anchor,delta);let state=await snap();
   sameBox(state.view.preview,translated(first.box,delta),'pointer Move preview');sameBox(boxOf(state,block),first.box,'Move preview retains the source');
   assert.equal(state.index,first.before.index);assert.equal(sent.length,writeStart);
-  const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});
+  const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});
   await page.screenshot({path:path.join(qa,'move-copy-preview.png')});
   const samples=await page.evaluate(anchor=>[.1,.2,.3,.4].map(d=>window.__view.project(anchor.map((v,i)=>v+[3+d,1.5,0][i]))),first.anchor);
   const reuse=await page.evaluate(async points=>{
@@ -686,6 +686,38 @@ if (authoredOnly) {
   await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.length===1,'Copy undo');
   await page.keyboard.press('Control+y');state=await wait(s=>s.view.drafts.length===2,'Copy redo');
   assert.equal(state.view.drafts.find(object=>object.id!==block).id,copied.id,'redo must restore the same local copy identity');
+  console.log('M2b · pointer Move captures another local volume corner, holds jitter, commits precisely and undoes');
+  const snappedMove=await arm(block,'move',false,false);
+  const snapMotion=await page.evaluate(async ({id,anchor})=>{
+    const overlay=document.querySelector('.stage-move');
+    const move=p=>overlay.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,clientX:p.x,clientY:p.y,pointerId:1}));
+    let target;
+    for(const world of window.__view.vertices(id)) {
+      const screen=window.__view.project(world);move(screen);
+      const snap=window.__gesture().modelSnap;
+      if(snap?.kind==='endpoint'&&snap.objectName==='draft:'+id && Math.hypot(...snap.point.map((v,i)=>v-anchor[i]))>1e-4) {target={screen,snap};break;}
+    }
+    if(!target)return null;
+    const times=[],translations=[];
+    for(const dx of [1,-1,.5,-.5]) {
+      const started=performance.now();move({x:target.screen.x+dx,y:target.screen.y});
+      translations.push([...window.__gesture().move.translation]);
+      await new Promise(requestAnimationFrame);times.push(performance.now()-started);
+    }
+    const started=performance.now();
+    overlay.dispatchEvent(new PointerEvent('click',{bubbles:true,clientX:target.screen.x-.5,clientY:target.screen.y,pointerId:1}));
+    await new Promise(requestAnimationFrame);
+    return {target,translations,pointerToFrameMs:times,clickToFrameMs:performance.now()-started};
+  },{id:copied.id,anchor:snappedMove.anchor});
+  assert.ok(snapMotion,'the real local copy must offer a visible endpoint');
+  const snapDelta=snapMotion.target.snap.point.map((v,i)=>v-snappedMove.anchor[i]);
+  for(const actual of snapMotion.translations)assert.deepEqual(actual,snapDelta,'tiny pointer noise cannot change the held endpoint');
+  state=await wait(s=>!s.gesture.move&&s.index===snappedMove.before.index+1,'snapped Move did not complete');
+  sameBox(boxOf(state,block),translated(snappedMove.box,snapDelta),'exact snapped Move geometry');
+  assert.equal(sent.length,writeStart,'snapped gesture must remain local');
+  await page.keyboard.press('Control+z');await wait(s=>s.index===snappedMove.before.index,'snapped Move undo');
+  sameBox(boxOf(await snap(),block),snappedMove.box,'snapped Move undo geometry');
+  console.log('TIMING snapped Move (handler through next RAF, excludes GPU presentation)',JSON.stringify({pointerToFrameMs:snapMotion.pointerToFrameMs,clickToFrameMs:snapMotion.clickToFrameMs}));
   console.log('M3 · Esc discards a pointer preview and leaves local history and both objects unchanged');
   // The raised copy occludes the original top; use its genuinely visible +X face.
   const cancelled=await arm(block,'move',false,false);
@@ -853,7 +885,7 @@ assert.ok(failedReads>=3);assert.equal(candidateCalls().length,5);const retryCal
 await page.unroute('**/api/jobs/*');await button('Sync').click();await wait(s=>!s.syncBusy&&!s.error,'job reconnect did not settle',60000);
 assert.equal(candidateCalls().length,5);assert.equal(sent.length,retryCalls,'job reconnect wrote another proposal/candidate');
 console.log('TIMING local actions (automation observation, 100 ms polling maximum)',JSON.stringify(localTimings));
-const qa=path.join(tmpdir(),'monkeyarch-curves-qa');await mkdir(qa,{recursive:true});await deselect();await button('Line').hover();await delay(400);
+const qa=path.join(root,'qa');await mkdir(qa,{recursive:true});await deselect();await button('Line').hover();await delay(400);
 await page.screenshot({path:path.join(qa,'manual-sync-toolbar.png')});
 console.log('PASS manual Sync: local draw/P/delete/undo/redo zero writes; delayed Sync permits continued editing; one candidate per snapshot; exact OCCT export');
 }

@@ -11,6 +11,7 @@ import {
   curveEdges,
   candidatesOf,
   closestOnEdge,
+  retainSnap,
   distanceBetween,
   featureEdges,
   indexConnectedFaces,
@@ -232,4 +233,23 @@ test("disconnected and indexed line geometry does not invent connecting edges", 
     { a: [0, 0, 0], b: [2, 0, 0] }, { a: [4, 0, 0], b: [6, 0, 0] },
   ]);
   assert.deepEqual(curveEdges({ positions, index: [3, 1] }), [{ a: [6, 0, 0], b: [2, 0, 0] }]);
+});
+
+test("snap hysteresis retains noisy ties, releases at 21px, and permits deliberate target changes", () => {
+  const project = (p: Point3) => [p[0], p[1]] as const;
+  const a = { point: [0,0,0] as Point3, kind: "endpoint" as const };
+  const b = { point: [12,0,0] as Point3, kind: "endpoint" as const };
+  assert.equal(retainSnap(a,b,project,[6.1,0],14),a);
+  assert.equal(retainSnap(a,b,project,[5.9,0],14),a);
+  assert.equal(retainSnap(a,null,project,[-20,0],14),a);
+  assert.equal(retainSnap(a,null,project,[-22,0],14),null);
+  assert.equal(retainSnap(a,b,project,[11,0],14),b);
+  const mid = { point: [6,0,0] as Point3, kind: "midpoint" as const };
+  assert.equal(retainSnap(mid,a,project,[0,0],14),a, "a clearly approached endpoint beats a midpoint");
+  assert.equal(retainSnap(a,mid,project,[3.1,0],14),a, "a near tie cannot flicker back to a midpoint");
+  const shortEdgeMid = { point: [15,0,0] as Point3, kind: "midpoint" as const };
+  assert.equal(retainSnap(a,shortEdgeMid,project,[15,0],14),shortEdgeMid, "a deliberate approach still reaches a short edge's midpoint");
+  assert.equal(retainSnap(a,b,()=>null,[0,0],14),b, "an unprojectable target cannot remain held");
+  const edge = { point: [6,0,0] as Point3, kind: "edge" as const };
+  assert.equal(retainSnap(edge,mid,project,[6,0],14),mid);
 });
