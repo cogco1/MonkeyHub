@@ -2035,6 +2035,14 @@ class CadBackendSelectionTests(unittest.TestCase):
             _options(cad_backend="freecad")
         self.assertEqual(_options().cad_backend, "occt")
 
+    def test_backend_options_preserve_the_existing_positional_run_options(self) -> None:
+        options = RunOptions("commitment:test", None, "portfolio", "branch", 1, "decision:test", True, False,
+                             "rhino", Path("workspace"), Path("powershell.exe"), True, None)
+        self.assertEqual(options.powershell, Path("powershell.exe"))
+        self.assertTrue(options.patch_oracle)
+        self.assertIsNone(options.source_run_receipt_ref)
+        self.assertEqual(options.cad_backend_options, {})
+
     def test_the_patch_oracle_is_refused_by_name_under_occt_and_only_taken_with_rhino(self) -> None:
         """OCCT never patches: an oracle asked of it is refused naming the backend that has one, never ignored or run through Rhino unasked."""
 

@@ -274,12 +274,12 @@ class RunOptions:
     # ``patch_oracle`` is Rhino's patch check and is refused under any other backend.
     cad_backend: str = CAD_BACKEND_OCCT
     workspace_root: Path | None = None
-    cad_backend_options: Mapping[str, object] = field(default_factory=dict)
     powershell: Path | None = None
     patch_oracle: bool = False
     # An exact retained source, chosen by the caller before this run starts.
     # None keeps the first-build and legacy callers on the full path.
     source_run_receipt_ref: ProjectRecordRef | None = None
+    cad_backend_options: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.source_run_receipt_ref is not None and not isinstance(self.source_run_receipt_ref, ProjectRecordRef):
