@@ -1,17 +1,19 @@
 ## 工作归属
 
-P___ 或 P000-governance — <本次解决的问题和修改后的行为>
-
-- Issue / lane：<#issue；P###/lane，未使用 lane 的旧卡写卡号>
-- 分支 / worktree：<本 lane 的独立分支和检出>
+- GitHub Issue：#___
+- Work id / lane：<新任务填 Issue；继续既有 legacy 工作时填 `P###[/lane]`>
+- 分支 / worktree：<本任务的独立分支和检出>
 - Base ref：<本次实际基线提交；若因上游合入而更新，写该依赖>
 - Contributor / reviewer / handoff：<实际责任人、审查人和交接顺序；未指定则明说>
 - 依赖与 active overlap：<`python tools/devctl.py work` 的结果；无重叠写无，有则说明缩窄或 blocked/depends_on 顺序>
 
-<!-- 复用现有 live 工作卡；没有合适归属时才新建。有 lane 的提交 subject 写 P###/lane，
-     无 lane 的旧卡写 P###。检查采用提交当时的卡片与 lane scope，不追溯规则引入前的历史。
-     P000-governance 仅适用于 checker 已列定的规则维护路径和 README.md，不是通用越界许可。
-     工作卡和模块 canonical 标签都不代表项目 HEAD 或软件版本已经发布。 -->
+<!--
+新任务规则：GitHub Issue 是 canonical task identity，PR 是实现/review 单元。
+P/M/R 工作卡编号已冻结，不再分配 P116+ 或新的 M/R 编号；既有 legacy 卡原地收尾。
+work_registry 只负责当前 source-edit scope / 并发 / handoff，不是第二份 backlog。
+Issue-native GH-<n> 的机器 claim 正在 #60 迁移；迁移完成前，现有 archcheck 仍接受历史 P### claim。
+P000-governance 仅适用于 checker 已列定的治理维护路径，不是通用越界许可。
+-->
 
 ## 贡献许可
 
@@ -19,13 +21,15 @@ P___ 或 P000-governance — <本次解决的问题和修改后的行为>
 
 ## 写入范围
 
-- [ ] 改动落在本次工作卡的 `write_scope` 与 policy 的 `shared_write_scope`，或 `P000-governance` 的有限范围内。
-- [ ] 改动符合本 lane 的窄路径，已处理当前重叠与依赖；staged diff 只包含本次修改，保留其他 WIP。
+- [ ] 新工作已绑定 GitHub Issue；继续 legacy 工作则明确原卡/lane。
+- [ ] 需要源码并发协调时，已在 `work_registry` 登记窄 `write_scope`、branch/worktree、依赖与 handoff。
+- [ ] 改动落在本任务的 `write_scope` 与 policy 的 `shared_write_scope` 内，或属于 `P000-governance` 的有限范围。
+- [ ] staged diff 只包含本次修改，已处理当前重叠与依赖。
 - [ ] 若软件归口、公开契约或列出的测试改变，已同步现有 module registry；内部修复不要求改表。
 
-改到的路径:
+改到的路径：
 
-```
+```text
 <git diff --name-only <PR-base>...HEAD 的结果，或明确路径清单>
 ```
 
