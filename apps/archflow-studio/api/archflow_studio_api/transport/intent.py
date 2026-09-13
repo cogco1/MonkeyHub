@@ -10,7 +10,7 @@ something the record answered.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
@@ -24,6 +24,7 @@ from ..application.gestures import (
     DocumentAnnotationPage, DocumentAnnotationRef, DocumentGesture, Gesture, GestureHit,
 )
 from ..application.intent_agent import Compilation
+from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 from .artifacts import ModelSourceDto, model_source_dto
 
@@ -353,6 +354,99 @@ class IntentRequestDto(BaseModel):
     )
 
 
+class ContextPackRequestDto(BaseModel):
+    """One turn's words, plus the exact source and focus they were said about.
+
+    Nothing here is optional but the Stage: this read answers about the object
+    the caller names, and a missing or wrong name is refused rather than
+    replaced by a recent candidate, a parent or the record's first element.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    utterance: str = Field(
+        min_length=1,
+        description="the complete message the architect sent, unedited; it is "
+        "read by the same context compiler an intent uses, so a request that "
+        "names several objects keeps the wider context that reading needs",
+    )
+    project_id: str = Field(
+        alias="projectId", min_length=1,
+        description="the project the caller believes it is reading; a "
+        "different one is refused as PROJECT_MISMATCH",
+    )
+    source_run_id: str = Field(
+        alias="sourceRunId", min_length=1,
+        description="the retained run this context is read against",
+    )
+    state_digest: str = Field(
+        alias="stateDigest", pattern=STATE_DIGEST_PATTERN,
+        description="the stateDigest that run projects to; any other is "
+        "refused as STALE_BASE",
+    )
+    target_component_id: str = Field(
+        alias="targetComponentId", min_length=1,
+        description="the Component@1 the focus element belongs to, exactly",
+    )
+    element_id: str = Field(
+        alias="elementId", min_length=1,
+        description="the Element@1 in focus; it must declare "
+        "targetComponentId as its own component",
+    )
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+
+class ContextPackDto(BaseModel):
+    """What a caller would otherwise discover by reading before it can act.
+
+    It is the existing capability description, the existing compiled read
+    context and the existing preflight, composed for one named source and
+    focus. It proposes nothing: ``request`` is the template the capability
+    already reports, holding the values the record holds now.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    context_pack: Literal["ContextPack@1"] = Field(alias="contextPack", default="ContextPack@1")
+    source: CapabilitySourceDto
+    target: CapabilityTargetDto | None = Field(
+        default=None,
+        description="the focus element's numbers, as the catalog decided them; "
+        "null when the capability reads no target for it",
+    )
+    keep: KeepScopeDto | None = None
+    request: dict[str, Any] | None = Field(
+        default=None,
+        description="the capability's own next request with this project's "
+        "base and the focus element's current values already in it; a "
+        "template to edit, never an approved change. Null when the target has "
+        "no number this capability can move, or when the preflight below "
+        "already answers the request without one",
+    )
+    context_tier: str = Field(
+        alias="contextTier",
+        description="which read context the existing compiler chose for these "
+        "words: scalar, component or design",
+    )
+    escalation: list[str] = Field(
+        default_factory=list,
+        description="why the compiler widened the context, in its own reasons; "
+        "empty when a narrow numeric reading was reached",
+    )
+    context: dict[str, Any] = Field(
+        description="the facts that reading makes available, as the existing "
+        "model projection of it; it grants no edit and changes no reference",
+    )
+    preflight: dict[str, Any] | None = Field(
+        default=None,
+        description="the existing known obstacle to a numeric action — a lock, "
+        "a derived value, a shared control, a top reference — as the record "
+        "already answers it, needing no model call. Null when there is none "
+        "and for the design tier, which this preflight does not judge",
+    )
+    honesty: list[str] = Field(default_factory=list)
+
+
 class AgentReadingDto(BaseModel):
     """What the agent said and how it was obtained — the agent's, not the record's."""
 
@@ -660,6 +754,46 @@ def pending_body(pending: PendingIntent) -> dict[str, object]:
 
 def draft_body(draft: AuthoredControlDraft) -> dict[str, object]:
     return draft_dto(draft).model_dump(by_alias=True)
+
+
+TEMPLATE_NOTE = (
+    "request holds the values this element has now. It is the shape of a change, not one that was "
+    "asked for or approved: sending it unchanged would set each number to what it already is."
+)
+BLOCKED_NOTE = (
+    "the record already answers this numeric request without a model: see preflight. No executable "
+    "request is offered, because running one would go past the obstacle it names."
+)
+
+
+def context_pack_dto(
+    description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
+) -> ContextPackDto:
+    """One capability description and one compiled read context, as the pack.
+
+    The capability's own halves are taken from the description this API already
+    answers ``GET /api/capabilities/{id}`` with, so the two cannot drift. The
+    registered entry itself is left out: the caller asked what its project is,
+    not what the registry says about the capability.
+    """
+
+    detail = detail_dto(description)
+    blocked = preflight is not None
+    return ContextPackDto(
+        source=detail.source,
+        target=detail.target,
+        keep=detail.keep,
+        request=None if blocked else detail.request,
+        context_tier=context.tier,
+        escalation=list(context.escalation),
+        context=dict(model_facts),
+        preflight=None if preflight is None else dict(preflight),
+        honesty=[
+            *detail.honesty,
+            *([BLOCKED_NOTE] if blocked else []),
+            *([TEMPLATE_NOTE] if not blocked and detail.request is not None else []),
+        ],
+    )
 
 
 def agent_dto(compilation: Compilation) -> AgentReadingDto:

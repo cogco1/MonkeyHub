@@ -7,6 +7,7 @@ from pathlib import Path as _Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import unittest
@@ -25,7 +26,9 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
-from monkeyhub_api.models import AppStatus, ChatCreateRequest, ChatPostRequest, HubFailure
+from monkeyhub_api.models import (
+    AppStatus, ChatCreateRequest, ChatDesignContext, ChatPostRequest, HubFailure,
+)
 
 
 FAKE_CLI = r'''
@@ -177,6 +180,74 @@ else:
         time.sleep(20)
     if "incomplete-test" not in prompt:
         emit({"type": "turn.completed", "usage": {}})
+'''
+
+
+STALLED_EXIT = r'''
+"""Stop a turn whose prepared read is stuck in the binding checks, then exit.
+
+The whole point is the exit: nothing here may be joined on the way out, so a
+Studio that stops answering cannot keep the Hub process alive. Run as its own
+interpreter because that is the only place interpreter shutdown can be observed.
+"""
+import json, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+root, runtime, project, fake, log = (Path(value) for value in sys.argv[1:6])
+for directory in (root, root / "apps/archflow-studio/api", root / "apps/monkeyhub/api"):
+    sys.path.insert(0, str(directory))
+
+from monkeyhub_api import chat
+from monkeyhub_api.models import ChatCreateRequest, ChatDesignContext, ChatPostRequest
+
+commands = {name: (sys.executable, str(fake), str(log)) for name in ("codex", "claude")}
+store = chat.ChatStore(runtime, "http://127.0.0.1:1", commands=commands)
+session = store.create(ChatCreateRequest(projectDir=str(project), provider="codex"))
+arrived = threading.Event()
+
+
+class Handler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        if urlsplit(self.path).path == "/api/chat/sessions/" + session.id:
+            body = store.get(session.id).model_dump_json().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
+        # /api/apps and /api/health: the binding checks themselves stop
+        # answering, so the stalled read is inside the parallel check and not
+        # only on the context request after it.
+        arrived.set()
+        threading.Event().wait(600)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+server.daemon_threads = True
+threading.Thread(target=server.serve_forever, daemon=True).start()
+store.hub_url = "http://127.0.0.1:%d" % server.server_address[1]
+
+store.post(session.id, ChatPostRequest(
+    projectId=session.projectId, content="Raise it to 0.5 m.",
+    designContext=ChatDesignContext(sourceRunId="run-001", stateDigest="a" * 64,
+                                    targetComponentId="portico", elementId="portico-cornice")))
+if not arrived.wait(30):
+    print("the binding checks were never reached", flush=True)
+    sys.exit(2)
+print("stalled in binding checks", flush=True)
+store.stop(session.id)
+print("turn stopped", flush=True)
+store.shutdown()
+# The read is still waiting on a socket that will not answer. Returning from
+# here has to be enough; nothing may wait for it.
+sys.exit(0)
 '''
 
 
@@ -1649,6 +1720,336 @@ class ChatTests(unittest.TestCase):
         replies = [json.loads(row) for row in process.stdout.splitlines()]
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
         self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]}, {"studio_schema", "studio_request", "fab_request"})
+
+    # ---- a turn that names its own source and focus
+
+    PACK = {"contextPack": "ContextPack@1",
+            "source": {"projectId": "chat-project", "runId": "run-001", "stateDigest": "a" * 64,
+                       "writeWith": 'sourceRunId="run-001"'},
+            "target": {"componentId": "portico", "elementId": "portico-cornice",
+                       "editable": [{"field": "height", "value": 0.3, "unit": None}], "notEditable": []},
+            "contextTier": "design", "escalation": ["architectural_or_extended_scope"],
+            "context": {"elements": []}, "preflight": None, "honesty": []}
+
+    def selected(self, **overrides):
+        values = {"sourceRunId": "run-001", "stateDigest": "a" * 64,
+                  "targetComponentId": "portico", "elementId": "portico-cornice"}
+        return ChatDesignContext(**{**values, **overrides})
+
+    def studio(self, session, packs, refusal=None):
+        """A stand-in Hub and Studio for the one read a prepared turn makes."""
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == f"/api/chat/sessions/{session.id}":
+                return self.store.get(session.id).model_dump()
+            if path.startswith("/api/apps?"):
+                return [{"appId": "monkeyarch", "state": "running",
+                         "url": "http://127.0.0.1:8791/", "processId": 123}]
+            if path == "/api/health":
+                return {"processId": 123, "sourceRevision": "same-revision"}
+            if path == "/api/project":
+                return {"projectId": session.projectId, "projectDir": session.projectDir}
+            if path == "/api/intents/context":
+                packs.append({"method": method, "base": base, "body": body})
+                if refusal is not None:
+                    raise refusal
+                return self.PACK
+            raise AssertionError(f"a prepared turn asked for something unexpected: {method} {path}")
+
+        return request
+
+    def turns(self):
+        return [] if not self.log.exists() else self.calls()
+
+    def test_the_named_source_is_read_once_and_never_carried_into_the_next_turn(self):
+        session = self.create()
+        packs = []
+        words = "Raise portico-cornice to 0.5 m and keep portico-base as it is."
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content=words, designContext=self.selected()))
+            self.assertEqual(self.finished(session).status, "idle")
+            # The whole message travels, unedited, with exactly the named focus.
+            self.assertEqual(len(packs), 1)
+            self.assertEqual(packs[0]["method"], "POST")
+            self.assertEqual(packs[0]["base"], "http://127.0.0.1:8791")
+            self.assertEqual(packs[0]["body"], {
+                "utterance": words, "projectId": session.projectId, "sourceRunId": "run-001",
+                "stateDigest": "a" * 64, "targetComponentId": "portico",
+                "elementId": "portico-cornice"})
+            prompt = self.calls()[-1]["prompt"]
+            # The request is still the request: the pack follows it as data.
+            self.assertIn("\n\n" + words + "\n\n" + chat._CONTEXT_NOTE + "\n", prompt)
+            self.assertIn('"contextPack": "ContextPack@1"', prompt)
+            self.assertIn('"stateDigest": "' + "a" * 64, prompt)
+            # A later message that names nothing is the turn it always was.
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="and what did that change?"))
+            self.assertEqual(self.finished(session).status, "idle")
+        self.assertEqual(len(packs), 1, "a turn with no context of its own must inherit none")
+        plain = self.calls()[-1]["prompt"]
+        self.assertTrue(plain.endswith("\n\nand what did that change?"))
+        self.assertNotIn(chat._CONTEXT_NOTE, plain)
+
+    def test_a_refused_preparation_ends_the_turn_in_its_own_words_and_starts_no_cli(self):
+        session = self.create()
+        packs = []
+        before = len(self.turns())
+        refusal = HubFailure(409, "CHAT_TOOL_FAILED",
+                             "the request names state 0000, but chat-project is at abcd.")
+        with patch.object(chat, "_request_json",
+                          side_effect=self.studio(session, packs, refusal=refusal)):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="Raise it to 0.5 m.",
+                designContext=self.selected(stateDigest="0" * 64)))
+            finished = self.finished(session)
+        self.assertEqual(finished.status, "failed")
+        self.assertEqual(finished.error.code, "CHAT_TOOL_FAILED")
+        self.assertIn("is at abcd", finished.error.detail)
+        self.assertEqual(len(packs), 1, "a refusal is not retried against a guessed source")
+        self.assertEqual(len(self.turns()), before, "no provider may be started by a refused turn")
+
+    def test_a_turn_stopped_while_it_is_prepared_starts_no_cli(self):
+        session = self.create()
+        packs = []
+        before = len(self.turns())
+
+        def stop_then_answer(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == "/api/intents/context":
+                # Stopped between the preparation and the provider, which is
+                # exactly where the second cancellation check stands.
+                self.store._running[session.id].stop.set()
+            return self.studio(session, packs)(base, path, method, body, timeout, headers=headers)
+
+        with patch.object(chat, "_request_json", side_effect=stop_then_answer):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="Raise it to 0.5 m.",
+                designContext=self.selected()))
+            self.assertEqual(self.finished(session).status, "interrupted")
+        self.assertEqual(len(packs), 1)
+        self.assertEqual(len(self.turns()), before, "a stopped turn starts no provider")
+
+    def test_a_turn_already_stopped_is_never_prepared_at_all(self):
+        session = self.create()
+        running = chat._Running(design_context=self.selected())
+        running.stop.set()
+        with patch.object(chat, "_context_pack",
+                          side_effect=AssertionError("a stopped turn must not be prepared")):
+            self.store._run(session.id, "Raise it to 0.5 m.", running)
+        self.assertEqual(self.store.get(session.id).status, "interrupted")
+
+    def test_the_turns_trace_headers_do_not_outlive_its_preparation(self):
+        session = self.create()
+        session.status = "running"
+        session.messages.append(chat.ChatMessage(
+            id="turn-1", role="user", content="Raise it to 0.5 m.", createdAt=chat._now()))
+        packs = []
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == f"/api/chat/sessions/{session.id}":
+                return session.model_dump()
+            return self.studio(session, packs)(base, path, method, body, timeout, headers=headers)
+
+        with patch.object(chat, "_request_json", side_effect=request):
+            appended = chat._context_pack(self.store.hub_url, session.id, "Raise it to 0.5 m.",
+                                          self.selected(), time.monotonic() + 30)
+        self.assertIn(chat._CONTEXT_NOTE, appended)
+        # _bound_studio binds this turn's headers; nothing after it may inherit
+        # them, so a second turn cannot be correlated to the first one's span.
+        self.assertEqual(chat._trace_headers.get(), {})
+
+    # ---- a preparation that stops answering
+
+    def stalling_studio(self, session):
+        """A real loopback service that answers the bound checks, then stalls.
+
+        The turn's own urllib makes these calls, so what the preparation waits on
+        here is a socket that will not answer — the case a shorter HTTP deadline
+        cannot end, because the wait has already begun. Returns the event that
+        says the stalled read has been entered.
+        """
+
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        arrived, release, store = threading.Event(), threading.Event(), self.store
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.0"
+
+            def log_message(self, *args):
+                pass
+
+            def answer(self, payload):
+                body = json.dumps(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):
+                path = urlsplit(self.path).path
+                saved = store.get(session.id)
+                if path == f"/api/chat/sessions/{session.id}":
+                    self.answer(json.loads(saved.model_dump_json()))
+                elif path == "/api/apps":
+                    self.answer([{"appId": "monkeyarch", "state": "running",
+                                  "url": store.hub_url, "processId": 123}])
+                elif path == "/api/health":
+                    self.answer({"processId": 123, "sourceRevision": "same-revision"})
+                elif path == "/api/project":
+                    self.answer({"projectId": saved.projectId, "projectDir": saved.projectDir})
+                else:
+                    self.send_error(404)
+
+            def do_POST(self):
+                if urlsplit(self.path).path != "/api/intents/context":
+                    return self.send_error(404)
+                # Accepted, read, and then not answered.
+                arrived.set()
+                release.wait(20)
+                self.answer(ChatTests.PACK)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.store.hub_url = f"http://127.0.0.1:{server.server_address[1]}"
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.addCleanup(release.set)
+        return arrived
+
+    def test_a_stop_during_a_stalled_preparation_ends_the_turn_and_starts_no_cli(self):
+        session = self.create()
+        before = len(self.turns())
+        arrived = self.stalling_studio(session)
+        self.store.post(session.id, ChatPostRequest(
+            projectId=session.projectId, content="Raise it to 0.5 m.",
+            designContext=self.selected()))
+        self.assertTrue(arrived.wait(10), "the preparation never reached the stalled read")
+        began = time.monotonic()
+        stopped = self.store.stop(session.id)
+        elapsed = time.monotonic() - began
+        # The turn is over when it is stopped, not when the socket gives up: the
+        # answer the abandoned read may still produce belongs to nothing.
+        self.assertLess(elapsed, 5, "stop waited on the preparation instead of ending the turn")
+        self.assertEqual(stopped.status, "interrupted")
+        self.assertEqual(stopped.error.code, "CHAT_STOPPED")
+        self.assertEqual(len(self.turns()), before, "a stopped turn starts no provider")
+
+    def test_a_preparation_that_outlasts_the_turn_ends_it_at_the_turns_own_limit(self):
+        session = self.create()
+        before = len(self.turns())
+        arrived = self.stalling_studio(session)
+        self.store.timeout_s = 1.0
+        began = time.monotonic()
+        self.store.post(session.id, ChatPostRequest(
+            projectId=session.projectId, content="Raise it to 0.5 m.",
+            designContext=self.selected()))
+        self.assertTrue(arrived.wait(10), "the preparation never reached the stalled read")
+        finished = self.finished(session)
+        # One limit for the turn, so the stalled read cannot hold it open past
+        # the limit the conversation was told about.
+        self.assertLess(time.monotonic() - began, 15)
+        self.assertEqual(finished.status, "failed")
+        self.assertEqual(finished.error.code, "CHAT_TIMEOUT")
+        self.assertIn("prepared", finished.error.detail)
+        self.assertEqual(len(self.turns()), before, "a turn that ran out starts no provider")
+
+    def slow_studio(self, session, packs, seconds):
+        """The same prepared read, taking a known part of the turn to answer."""
+
+        answer = self.studio(session, packs)
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            if path == "/api/intents/context":
+                time.sleep(seconds)
+            return answer(base, path, method, body, timeout, headers=headers)
+
+        return request
+
+    def paused_turn(self, session, preparing):
+        """One real CLI turn held open until its own limit ends it, and its cost."""
+
+        packs, before = [], len(self.turns())
+        began = time.monotonic()
+        with patch.object(chat, "_request_json",
+                          side_effect=self.slow_studio(session, packs, preparing)):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="pause-test with a named source",
+                designContext=self.selected()))
+            finished = self.finished(session)
+        elapsed = time.monotonic() - began
+        self.assertEqual(len(packs), 1)
+        self.assertEqual(finished.error.code, "CHAT_TIMEOUT")
+        # The CLI really ran on what preparing left, rather than being skipped.
+        self.assertEqual(len(self.turns()), before + 1)
+        self.assertIn(chat._CONTEXT_NOTE, self.calls()[-1]["prompt"])
+        return elapsed
+
+    def test_preparing_the_context_is_taken_out_of_the_cli_turns_own_limit(self):
+        session = self.create()
+        self.store.timeout_s = 3.0
+        # The same turn twice against the real fake CLI, which holds until it is
+        # stopped: only how long preparing took differs.
+        quick = self.paused_turn(session, 0.05)
+        slow = self.paused_turn(session, 1.5)
+        # The CLI's share is what preparing left. Were the two limits separate,
+        # the slower preparation would push this turn out by its whole 1.5s.
+        self.assertLess(slow - quick, 1.0,
+                        f"the CLI was given a fresh limit beside the preparation ({quick=:.2f} {slow=:.2f})")
+
+    def test_the_acp_adapter_keeps_its_own_inactivity_interval(self):
+        from monkeyhub_api import acp_session as adapter
+
+        session = self.create()
+        self.store._sessions[session.id].transport = "acp"
+        self.store.timeout_s = 6.0
+        packs, sent = [], []
+
+        class Recorder:
+            """Stands in for the adapter only, at the boundary it is called on."""
+
+            def __init__(self, **arguments):
+                self.default_model = "fixture-model-a"
+
+            def prompt(self, text, session_id, model, on_session, timeout_s):
+                on_session("fixture/session:recorded")
+                sent.append({"prompt": text, "timeout_s": timeout_s})
+
+            def close(self):
+                pass
+
+        with patch.object(chat, "_request_json", side_effect=self.slow_studio(session, packs, 0.5)), \
+             patch.object(adapter, "CodexAcpSession", Recorder):
+            self.store.post(session.id, ChatPostRequest(
+                projectId=session.projectId, content="Raise it to 0.5 m.",
+                designContext=self.selected()))
+            self.assertEqual(self.finished(session).status, "idle")
+        self.assertEqual(len(sent), 1)
+        # This adapter's limit is an inactivity interval its own updates
+        # reschedule, so preparing must not shorten it into a turn total.
+        self.assertEqual(sent[0]["timeout_s"], self.store.timeout_s)
+        # It still receives the prepared context itself.
+        self.assertEqual(len(packs), 1)
+        self.assertIn(chat._CONTEXT_NOTE, sent[0]["prompt"])
+
+    def test_the_hub_exits_while_a_prepared_read_is_stalled_in_its_binding_checks(self):
+        script = self.root / "stalled exit.py"
+        script.write_text(STALLED_EXIT, encoding="utf-8")
+        began = time.monotonic()
+        # A separate interpreter, because what is being checked is its exit: a
+        # read nobody is waiting on must not be joined on the way out.
+        finished = subprocess.run(
+            [sys.executable, str(script), str(ROOT), str(self.root / "exit runtime"),
+             str(self.project), str(self.fake), str(self.log)],
+            capture_output=True, text=True, timeout=120,
+        )
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("stalled in binding checks", finished.stdout)
+        self.assertIn("turn stopped", finished.stdout)
+        self.assertLess(time.monotonic() - began, 60,
+                        "the stalled read held the interpreter open on the way out")
 
 
 class AcpCommandTests(unittest.TestCase):

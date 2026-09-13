@@ -226,11 +226,34 @@ class ChatArchiveRequest(BaseModel):
     archived: bool
 
 
+class ChatDesignContext(BaseModel):
+    """The exact source and focus this one message is about.
+
+    A caller that already knows which object it is talking about says so here,
+    and the turn is prepared against that. Every field but the Stage is
+    required: a partial selection would have to be completed by guessing, and a
+    guess about which object a change lands on is the one thing this must not
+    do. It selects nothing and authorises nothing — the project the turn is
+    bound to is still the conversation's own.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    sourceRunId: str = Field(min_length=1)
+    stateDigest: str = Field(min_length=1)
+    targetComponentId: str = Field(min_length=1)
+    elementId: str = Field(min_length=1)
+    sourceStageRef: str | None = Field(default=None, min_length=1)
+
+
 class ChatPostRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     content: str = Field(min_length=1)
     projectId: str = Field(min_length=1)
+    # Absent on every existing caller, and never carried over: a later message
+    # with no context of its own is prepared exactly as it was before.
+    designContext: ChatDesignContext | None = None
 
 
 class ChatPermissionRequest(BaseModel):
