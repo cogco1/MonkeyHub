@@ -402,6 +402,26 @@
       ],
       "lanes": [
         {
+          "id": "interaction",
+          "issue": "#14 Phase 1",
+          "status": "review",
+          "branch": "codex/i14-preview",
+          "worktree": "C:/Users/asus/.codex/worktrees/685e/ARCHFLOW_V4",
+          "base_ref": "bcc5fbbb1fa28d9f560cd38502c4f2aa20df9024",
+          "contributor": "Codex task 01a098b4-553a-7ff0-baa5-0e1360333293",
+          "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
+          "handoff": "First deliver reusable sketch previews and ref/RAF motion in an independent PR; coordinator reviews and integrates before the next Issue #14 phase. Isolated browser fixtures only; no running service changes.",
+          "modules": ["studio.shell", "studio.intent"],
+          "write_scope": [
+            "apps/archflow-studio/web/src/features/stage/Stage.tsx",
+            "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+            "apps/archflow-studio/web/test/sketch.browser.mjs",
+            "docs/mapping/planning/P115-capability-consolidation.md",
+            "governance/work_registry.json"
+          ],
+          "depends_on": []
+        },
+        {
           "id": "hub-runtime",
           "issue": "#12",
           "status": "review",

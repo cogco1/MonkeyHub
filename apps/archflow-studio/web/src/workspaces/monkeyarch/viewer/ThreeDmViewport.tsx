@@ -16,6 +16,7 @@ import {
   Color,
   DirectionalLight,
   DoubleSide,
+  DynamicDrawUsage,
   Float32BufferAttribute,
   GridHelper,
   Group,
@@ -816,11 +817,30 @@ export const ThreeDmViewport = forwardRef<
     (spec: SketchPreview | null) => {
       const runtime = runtimeRef.current;
       if (!runtime) return;
-      removeSketch();
-      if (spec === null || spec.profile.length < 2) return;
-      const accent = new Color(accentColour());
-      const group = new Group();
-      group.name = "archflow-sketch-preview";
+      if (spec === null) { removeSketch(); return; }
+      if (spec.profile.length < 2) {
+        if (runtime.sketch) { runtime.sketch.visible = false; runtime.render(); }
+        return;
+      }
+      // One subtree for the whole gesture, including the profile/height switch.
+      const group = runtime.sketch ?? new Group();
+      group.visible = true;
+      if (!runtime.sketch) {
+        group.name = "archflow-sketch-preview";
+        const accent = new Color(accentColour());
+        const base = new LineSegments(new BufferGeometry(), new LineBasicMaterial({
+          color: accent, depthTest: false, transparent: true, opacity: 0.95,
+        }));
+        const surface = new Mesh(new BufferGeometry(), new MeshStandardMaterial({
+          color: accent, side: DoubleSide, transparent: true, opacity: 0.18, depthWrite: false,
+        }));
+        const edges = new LineSegments(new BufferGeometry(), new LineBasicMaterial({
+          color: accent, depthTest: false, transparent: true, opacity: 0.75,
+        }));
+        base.renderOrder = edges.renderOrder = 3;
+        group.add(base, surface, edges);
+      }
+      const [base, surface, edges] = group.children as [LineSegments, Mesh, LineSegments];
       const closed = spec.profile.length > 2;
       const outline: number[] = [];
       const world = (x: number, y: number, height = 0): Vec3 => spec.plane
@@ -831,15 +851,9 @@ export const ThreeDmViewport = forwardRef<
         const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
         outline.push(...world(planX, planY), ...world(nextX, nextY));
       });
-      const base = new LineSegments(
-        new BufferGeometry().setAttribute("position", new Float32BufferAttribute(outline, 3)),
-        new LineBasicMaterial({ color: accent, depthTest: false, transparent: true, opacity: 0.95 }),
-      );
-      base.renderOrder = 3;
-      group.add(base);
+      const positions: number[] = [];
       if (closed) {
         const points = spec.profile.map(([x, y]) => new Vector2(x, y));
-        const positions: number[] = [];
         for (const triangle of ShapeUtils.triangulateShape(points, [])) {
           for (const index of triangle) positions.push(...world(...spec.profile[index]!));
           if (spec.height !== 0) for (const index of triangle) positions.push(...world(...spec.profile[index]!, spec.height));
@@ -849,29 +863,45 @@ export const ThreeDmViewport = forwardRef<
           positions.push(...world(x, y), ...world(nx, ny), ...world(nx, ny, spec.height),
             ...world(x, y), ...world(nx, ny, spec.height), ...world(x, y, spec.height));
         });
-        if (positions.length > 0) {
-          const surface = new BufferGeometry().setAttribute("position", new Float32BufferAttribute(positions, 3));
-          surface.computeVertexNormals();
-          const mesh = new Mesh(surface, new MeshStandardMaterial({ color: accent, side: DoubleSide,
-            transparent: true, opacity: 0.18, depthWrite: false }));
-          group.add(mesh);
-        }
       }
+      const raised: number[] = [];
       if (spec.height !== 0 && closed) {
-        const raised: number[] = [];
         spec.profile.forEach(([planX, planY], index) => {
           const [nextX, nextY] = spec.profile[(index + 1) % spec.profile.length]!;
           raised.push(...world(planX, planY, spec.height), ...world(nextX, nextY, spec.height));
           raised.push(...world(planX, planY), ...world(planX, planY, spec.height));
         });
-        const edges = new LineSegments(
-          new BufferGeometry().setAttribute("position", new Float32BufferAttribute(raised, 3)),
-          new LineBasicMaterial({ color: accent, depthTest: false, transparent: true, opacity: 0.75 }),
-        );
-        edges.renderOrder = 3;
-        group.add(edges);
       }
-      runtime.scene.add(group);
+      // Reserve both flat and extruded capacity. Only a larger polygon grows
+      // attributes; ordinary motion reuses the same GPU buffers and materials.
+      const capacity = Math.max(32, 2 ** Math.ceil(Math.log2(spec.profile.length)));
+      const first = world(...spec.profile[0]!);
+      const update = (object: LineSegments | Mesh, values: number[], vertices: number) => {
+        const geometry = object.geometry;
+        let attribute = geometry.getAttribute("position") as BufferAttribute | undefined;
+        if (!attribute || attribute.count < vertices) {
+          // Release old GPU buffers when capacity grows, keeping the geometry.
+          if (attribute) geometry.dispose();
+          attribute = new Float32BufferAttribute(vertices * 3, 3).setUsage(DynamicDrawUsage);
+          geometry.setAttribute("position", attribute);
+          if (object === surface) geometry.setAttribute("normal",
+            new Float32BufferAttribute(vertices * 3, 3).setUsage(DynamicDrawUsage));
+        }
+        (attribute.array as Float32Array).set(values);
+        // Padding is degenerate at the first vertex, so bounds never include
+        // stale coordinates when a polygon shrinks or a pull crosses zero.
+        for (let index = values.length / 3; index < attribute.count; index++) attribute.setXYZ(index, ...first);
+        attribute.needsUpdate = true;
+        geometry.setDrawRange(0, values.length / 3);
+        if (object === surface) geometry.computeVertexNormals();
+        geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
+        object.visible = values.length > 0;
+      };
+      update(base, outline, capacity * 2);
+      update(surface, positions, capacity * 12);
+      update(edges, raised, capacity * 4);
+      if (!runtime.sketch) runtime.scene.add(group);
       runtime.sketch = group;
       runtime.render();
     },
@@ -1639,6 +1669,13 @@ export const ThreeDmViewport = forwardRef<
       disposeGrid(grid);
       grid = buildGrid(colours);
       scene.add(grid);
+      const sketch = runtimeRef.current?.sketch;
+      if (sketch) {
+        const accent = accentColour();
+        for (const child of sketch.children as (LineSegments | Mesh)[]) {
+          (child.material as LineBasicMaterial | MeshStandardMaterial).color.set(accent);
+        }
+      }
       render();
     };
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1700,6 +1737,7 @@ export const ThreeDmViewport = forwardRef<
       restoreHighlight(runtime);
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
+      if (runtime.sketch) disposeScene(runtime.sketch);
       if (runtime.secondary) disposeSecondary(runtime.secondary);
       media.removeEventListener("change", applyTheme);
       themeObserver.disconnect();
