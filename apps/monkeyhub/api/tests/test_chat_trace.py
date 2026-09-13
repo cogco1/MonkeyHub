@@ -1,5 +1,6 @@
 """Actual CLI callbacks and HTTP headers produce content-free turn observations."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import tempfile
@@ -11,6 +12,7 @@ import test_chat
 from monkeyhub_api import chat
 from monkeyhub_api.chat_trace import HubTurnObserver
 from monkeymonitor.store import UsageLog
+from monkeymonitor.trace import build_traces
 
 
 class HubTraceTests(unittest.TestCase):
@@ -71,6 +73,32 @@ class HubTraceTests(unittest.TestCase):
         exported = json.dumps([row.to_dict() for row in rows])
         for private in ("private-response", "private-prompt", "private-command-title"):
             self.assertNotIn(private, exported)
+
+    def test_completed_tool_without_start_keeps_tool_and_prior_agent_duration_unknown(self):
+        clock = [0.0]
+        origin = datetime(2026, 9, 13, tzinfo=timezone.utc)
+        with patch("monkeyhub_api.chat_trace.perf_counter", side_effect=lambda: clock[0]), \
+             patch("monkeyhub_api.chat_trace._now", side_effect=lambda: (origin + timedelta(seconds=clock[0])).isoformat()):
+            trace = HubTurnObserver(self.store, "turn", "project", "codex", None)
+            trace.ready()
+            clock[0] = 5.0
+            trace.tool("completed-only", "studio_request", {"path": "/api/state"}, running=False)
+            clock[0] = 6.0
+            trace.finish("succeeded")
+        rows = self.rows()
+        tool = next(row for row in rows if row.phase == "tool_call")
+        self.assertEqual(tool.status, "succeeded")
+        self.assertIsNone(tool.duration_ms)
+        self.assertIsNone(tool.ended_at)
+        self.assertEqual(tool.details["wait_reason"], "missing_tool_start")
+        preceding = next(row for row in rows if row.event_id.endswith(":round:1"))
+        self.assertIsNone(preceding.duration_ms)
+        self.assertIsNone(preceding.ended_at)
+        self.assertEqual(preceding.details["provider_timing_basis"], "missing_tool_start")
+        actual = build_traces([row.to_dict() for row in rows])["traces"][0]
+        self.assertEqual(actual["summary"]["elapsed_ms"], 6000)
+        self.assertEqual(actual["summary"]["unattributed_ms"], 5000)
+        self.assertEqual(next(row for row in actual["attribution"] if row["lane"] == "agent")["duration_ms"], 1000)
 
     def test_failed_context_and_broken_store_do_not_leave_running_phase_or_raise(self):
         trace = HubTurnObserver(self.store, "turn", "project", "codex", None)

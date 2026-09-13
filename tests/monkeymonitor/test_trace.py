@@ -189,6 +189,22 @@ class TraceTests(unittest.TestCase):
         self.assertNotIn("private", json.dumps(result))
         self.assertEqual(client["details"]["input_identity"], {"program_digest": "a" * 64})
 
+    def test_cross_project_parent_and_related_links_cannot_bypass_turn_project_binding(self):
+        root = event("root", "hub_turn", 0, 2000, project_id="project-a")
+        unknown_project = event("bridge", "api_request", 100, 1500, project_id=None, parent_event_id="root")
+        for link in ("parent_event_id", "related_event_id"):
+            with self.subTest(link=link):
+                rows = [root, unknown_project,
+                        event("foreign-direct", "model_projection", 500, 900, source="studio", project_id="project-b", status="succeeded", **{link: "root"}),
+                        event("foreign-indirect", "model_projection", 1000, 1200, source="studio", project_id="project-c", status="succeeded", **{link: "bridge"})]
+                result = trace(rows)
+                self.assertEqual(len(result["traces"]), 3)
+                owner = next(item for item in result["traces"] if item["trace_id"] == "root")
+                self.assertEqual({span["event_id"] for span in owner["spans"]}, {"root", "bridge"})
+                self.assertIsNone(owner["summary"]["first_visible_ms"])
+                self.assertEqual({item["project_id"] for item in result["traces"]}, {"project-a", "project-b", "project-c"})
+                self.assertTrue(any("跨项目" in warning for warning in result["warnings"]))
+
     def test_diagnostics_count_observed_repetition_without_avoidable_claim(self):
         root = event("root", "hub_turn", 0, 4000)
         query = event("schema1", "tool_call", 0, 1000, details={"tool_name": "studio_schema", "request_kind": "schema_read", "input_identity": {"context_digest": "a" * 64}})

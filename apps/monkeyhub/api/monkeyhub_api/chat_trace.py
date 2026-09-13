@@ -60,7 +60,7 @@ class HubTurnObserver:
     def _emit(self, identifier, *, status="running", tokens=None, model_call=False, **extra):
         span = self.spans[identifier]
         row = {key: value for key, value in span.items() if key != "clock"}
-        if status != "running":
+        if status != "running" and span.get("clock") is not None:
             row.update(ended_at=_now(), duration_ms=round((perf_counter() - span["clock"]) * 1000))
         try:
             self.store.append(UsageEvent(
@@ -130,9 +130,23 @@ class HubTurnObserver:
         if identifier not in self.spans:
             details = {"tool_name": safe_name, "request_kind": request_kind, "input_bytes": _size(arguments),
                        "input_identity": {"context_digest": canonical_digest({"tool": safe_name, "arguments": arguments})}}
+            if not running and self.round_id:
+                # A completion without its start cannot partition the preceding
+                # host activity into Agent time and tool time.
+                preceding = self.spans[self.round_id]
+                preceding.update(clock=None, timing_scope="unknown")
+                preceding["details"].update(blocking=None, wait_reason="missing_tool_start",
+                                            provider_timing_basis="missing_tool_start")
             self._end_round()
-            self.tools.add(identifier)
-            self._start(identifier, "tool_call", details=details)
+            if running:
+                self.tools.add(identifier)
+                self._start(identifier, "tool_call", details=details)
+            else:
+                # started_at is only the observation point here; absent end and
+                # duration keep the actual execution interval unknown.
+                self.spans[identifier] = dict(phase="tool_call", started_at=_now(), timing_scope="unknown",
+                                             parent_event_id=self.root_id,
+                                             details={**details, "blocking": None, "wait_reason": "missing_tool_start"})
         elif identifier not in self.tools:
             return  # Replayed completed/started notifications do not reopen it.
         if not running:

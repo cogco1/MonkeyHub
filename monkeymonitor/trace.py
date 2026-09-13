@@ -124,7 +124,19 @@ def _groups(rows, now, warnings):
         if key in visited:
             return None
         for ref in (row.get("parent_event_id"), row.get("related_event_id")):
-            if ref in by_id and (group := resolve(by_id[ref], visited | {key})):
+            if ref not in by_id:
+                continue
+            project = row.get("project_id")
+            linked_project = by_id[ref].get("project_id")
+            if project and linked_project and project != linked_project:
+                warnings.append("跨项目的父阶段或关联记录未合并；该阶段保留在其自身项目。")
+                continue
+            group = resolve(by_id[ref], visited | {key})
+            if group:
+                root_project = by_id[group].get("project_id")
+                if project and root_project and project != root_project:
+                    warnings.append("跨项目的父阶段或关联记录未合并；该阶段保留在其自身项目。")
+                    continue
                 membership[key] = group
                 return group
         return None
@@ -134,7 +146,7 @@ def _groups(rows, now, warnings):
         group = resolve(row, set())
         if group is None:
             identity = row.get("turn_id") or row.get("operation_id") or row["event_id"]
-            group = f"{row['source']}:{row.get('session_id') or row.get('project_id') or 'unknown'}:{identity}"
+            group = f"{row['source']}:{row.get('project_id') or 'unknown'}:{row.get('session_id') or 'unknown'}:{identity}"
         result[group].append(row)
     return result
 
