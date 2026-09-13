@@ -448,6 +448,7 @@
             "apps/monkeyhub/api/tests/test_chat.py",
             "apps/monkeyhub/web/src/api/generated/",
             "tests/monkeymonitor/run_turn_benchmark.py",
+            "tests/monkeymonitor/benchmark_preview.mjs",
             "governance/module_registry.json",
             "governance/work_registry.json",
             "docs/SYSTEM_MAP.md"

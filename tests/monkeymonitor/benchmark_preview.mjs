@@ -83,6 +83,36 @@ try {
   previewUrl.search = new URLSearchParams({ workspace: "monkeyarch", candidate: candidateId }).toString();
   const previewRequestedAt = Date.now();
   const projectionDeadline = previewRequestedAt + 90000;
+
+  // Listen to what this page sends, and only listen: no route interception, no
+  // fulfilment, nothing authored or replayed. The renderer's own callback posts
+  // this when the model is really on screen, so a diagnostic revision the
+  // journal dropped cannot hide a render that did happen. Anything unrelated or
+  // malformed is ignored rather than guessed at.
+  let renderedEventId = null;
+  preview.on("request", (request) => {
+    if (renderedEventId || request.method() !== "POST") return;
+    let body;
+    try {
+      const url = new URL(request.url());
+      if (url.origin !== studioOrigin || url.pathname !== "/api/events/timing") return;
+      body = JSON.parse(request.postData() ?? "");
+    } catch {
+      return;
+    }
+    if (!body || typeof body !== "object") return;
+    if (body.phase !== "model_projection" || body.status !== "succeeded") return;
+    if (typeof body.eventId !== "string" || body.eventId.length === 0) return;
+    if (body.projectId !== session.projectId || body.runId !== candidateId) return;
+    // Date.parse coerces its argument, so a crafted object could run code and
+    // throw inside this listener. Only a real timestamp string is parsed.
+    if (typeof body.startedAt !== "string" || typeof body.endedAt !== "string") return;
+    const started = Date.parse(body.startedAt);
+    const ended = Date.parse(body.endedAt);
+    if (!Number.isFinite(started) || !Number.isFinite(ended) || started < previewRequestedAt || ended < started) return;
+    if (!Number.isFinite(body.durationMs) || body.durationMs < 0) return;
+    renderedEventId = body.eventId;
+  });
   await preview.goto(previewUrl.href, { waitUntil: "domcontentloaded", timeout: 45000 });
 
   stage = "wait_model_projection";
@@ -90,13 +120,20 @@ try {
   let projection;
   while (Date.now() < projectionDeadline) {
     const snapshot = await readJson(monitor, "/api/traces");
-    trace = snapshot.traces.find((row) => row.turn_id === turnId);
+    // TurnTrace@1 carries project_id; its spans carry run_id and no project of
+    // their own. Both are bound here, so neither another project's turn nor
+    // another run's render can stand in for this candidate's.
+    trace = snapshot.traces.find((row) => row.turn_id === turnId && row.project_id === session.projectId);
     projection = trace?.spans.find((span) => span.phase === "model_projection" && span.source === "studio" &&
-      span.status === "succeeded" && span.ended_at && Date.parse(span.started_at) >= previewRequestedAt);
-    if (projection) break;
+      span.status === "succeeded" && span.run_id === candidateId && span.ended_at &&
+      Date.parse(span.started_at) >= previewRequestedAt);
+    // Either the journal retained the completed projection or the bound browser
+    // said it finished; the turn's own trace is the Hub's and is still required.
+    if (trace && (projection || renderedEventId)) break;
     await delay(pollMs);
   }
-  if (!projection) refuse("MODEL_PROJECTION_TIMEOUT");
+  if (!trace) refuse("MONITOR_TRACE_MISSING");
+  if (!projection && !renderedEventId) refuse("MODEL_PROJECTION_TIMEOUT");
 
   stage = "capture_preview";
   await mkdir(outputDir, { recursive: true });
@@ -107,10 +144,17 @@ try {
   await dashboard.goto(`${monitor}/?lang=zh-CN&theme=light`, { waitUntil: "domcontentloaded", timeout: 30000 });
   await dashboard.waitForFunction((id) => Array.from(document.querySelector("#trace-select")?.options ?? []).some((option) => option.value === id), trace.trace_id, { timeout: 15000 });
   await dashboard.locator("#trace-select").selectOption(trace.trace_id);
-  await dashboard.locator(`#trace-waterfall button[data-span-id="${projection.event_id}"]`).waitFor({ state: "attached", timeout: 15000 });
+  // The projection row when the journal holds it; otherwise only that this
+  // turn's waterfall has rendered. Neither waits for a row that does not exist.
+  await dashboard.locator(projection ? `#trace-waterfall button[data-span-id="${projection.event_id}"]`
+    : "#trace-waterfall button[data-span-id]").first().waitFor({ state: "attached", timeout: 15000 });
   await dashboard.screenshot({ path: join(outputDir, "monitor.png"), fullPage: true });
 
-  console.log(JSON.stringify({ state: "succeeded", turn_id: turnId, model_projection: "succeeded",
+  // "succeeded_unrecorded": the bound browser reported the completed render and
+  // the journal has no completed revision of it. first_visible_ms below stays
+  // the persisted trace's, so a dropped record remains unknown rather than filled.
+  console.log(JSON.stringify({ state: "succeeded", turn_id: turnId,
+    model_projection: projection ? "succeeded" : "succeeded_unrecorded",
     first_visible_ms: trace.summary.first_visible_ms, verified_ms: trace.summary.verified_ms,
     candidate_readback_succeeded: trace.spans.some((span) => span.phase === "candidate_readback" && span.details?.success === true),
     validation_receipt_observed: trace.spans.some((span) => span.phase === "validation" && typeof span.details?.validator_pass === "boolean") }));
