@@ -21,7 +21,11 @@
     "governance/work_registry.json",
     "tests/",
     "apps/archflow-studio/api/tests/",
-    "docs/PROTOCOL.md"
+    "docs/PROTOCOL.md",
+    "governance/architecture_policy.json",
+    "docs/SYSTEM_MAP.md",
+    "docs/DYNAMIC_MAP.md",
+    "docs/SEMANTIC_REGISTRY.md"
   ],
   "probe_root": "probes",
   "forbidden_instance_literals": [

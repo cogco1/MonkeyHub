@@ -2,15 +2,21 @@
 
 P___ 或 P000-governance — <本次解决的问题和修改后的行为>
 
-<!-- 复用现有 live 工作卡；没有合适归属时才新建。每个提交 subject 写所属 P###，
-     未写时 checker 才读取正文。检查采用提交当时的 scope，不追溯规则引入前的历史。
+- Issue / lane：<#issue；P###/lane，未使用 lane 的旧卡写卡号>
+- 分支 / worktree：<本 lane 的独立分支和检出>
+- Base ref：<本次实际基线提交；若因上游合入而更新，写该依赖>
+- Contributor / reviewer / handoff：<实际责任人、审查人和交接顺序；未指定则明说>
+- 依赖与 active overlap：<`python tools/devctl.py work` 的结果；无重叠写无，有则说明缩窄或 blocked/depends_on 顺序>
+
+<!-- 复用现有 live 工作卡；没有合适归属时才新建。有 lane 的提交 subject 写 P###/lane，
+     无 lane 的旧卡写 P###。检查采用提交当时的卡片与 lane scope，不追溯规则引入前的历史。
      P000-governance 仅适用于 checker 已列定的规则维护路径和 README.md，不是通用越界许可。
      工作卡和模块 canonical 标签都不代表项目 HEAD 或软件版本已经发布。 -->
 
 ## 写入范围
 
 - [ ] 改动落在本次工作卡的 `write_scope` 与 policy 的 `shared_write_scope`，或 `P000-governance` 的有限范围内。
-- [ ] 已交接重叠路径，staged diff 只包含本次修改，保留其他 WIP。
+- [ ] 改动符合本 lane 的窄路径，已处理当前重叠与依赖；staged diff 只包含本次修改，保留其他 WIP。
 - [ ] 若软件归口、公开契约或列出的测试改变，已同步现有 module registry；内部修复不要求改表。
 
 改到的路径:

@@ -28,7 +28,7 @@ ArchFlow 源码接入默认从 GitHub `main` 开始，记录实际提交和对�
 - [ ] **主线负责人：给出接入版本。** 给出所选仓库的准确提交、任务和审查人。不要让新成员猜维护者本机的未提交版本。
 - [ ] **主线负责人：核对所选版本的检查结果。** ArchFlow 的 [远端工作流](../.github/workflows/verify.yml) 已包含架构检查、核心与 Studio API 测试、Web 检查及 Windows/Linux 首次接入检查；以该提交实际 Actions 结果为准。
 - [ ] **新成员与她的 Agent：独立复现。** 从 GitHub 获取代码，在自己的环境完成所选仓库的最小回路。
-- [ ] **双方：交接一个真实小任务。** 依据复现中实际遇到的问题，约定修改文件、完成动作和审查人，再开短分支。第二人复跑或审查后才算完成交接。
+- [ ] **双方：交接一个真实小任务。** 依据复现中实际遇到的问题，在现有卡下登记一个 Issue/lane、明确基线、窄路径、责任人与审查/交接对象，再使用独立 worktree 和短分支。第二人复跑或审查后才算完成交接；未指定的人选如实标明。
 
 这四项完成后，再决定新的模型功能。第一天不要求跑完整建筑、接入外部模型服务或增加通用框架。
 
@@ -71,6 +71,16 @@ git -C $ToolboxSource rev-parse HEAD
 ```
 
 已有 clone 就先查看 branch、HEAD 和 `git status --short`，不要覆盖已有工作。首次运行不切换维护者的工作区，也不将旧 3DM 或私有项目复制进源码仓库。
+
+开始已约定的代码任务时，先 `git fetch origin main`，记录约定提交，再读 Issue 并查询：
+
+```powershell
+python tools/devctl.py work
+python tools/devctl.py work P115
+python tools/devctl.py module compiled-cad-execution
+```
+
+上例查询 CAD 任务；按自己的任务更换卡号与模块，用 `work P###/lane` 查看具体 lane。用返回的精确 module id 再查契约与真实调用方，确认本 lane 的路径及当前重叠，再从记录的基线创建或复用自己的 worktree。字段、状态和交接方式见[协作流程](../CONTRIBUTING.md#登记与查看并行任务)。共享契约不够时，先让现有 owner 的上游 PR 合入 `main`，再更新依赖分支；不复制接口、不吸收另一人的 WIP，也不要求每天 rebase。
 
 ## 3. 先跑工具箱
 
@@ -232,6 +242,14 @@ npm.cmd run build
 
 新增 Skill 优先扩展真实已有条目，不复制两仓实现。研究问题和结论由成员提出；真实项目改动由项目任务确定。本清单不会自动派发新的模型算法、Skill 包或存储机制。
 
+### Blender 同事的首个 lane
+
+先读 [Issue #13](https://github.com/cogco1/ARCHFLOW_V4/issues/13) 和[公共 CAD 执行契约](../archflow/adapters/README.md#compiled-cad-execution)，用 `devctl module compiled-cad-execution` 查现有 owner。生产接入从包含 [PR #15](https://github.com/cogco1/ARCHFLOW_V4/pull/15) 的 `main` 提交开始；该 PR 合入提交为 `1e77a32a8b5ad939a86e45c0fd14f22a7c77268d`，开工时仍记录实际基线。
+
+第一个 PR 只完成一个场景闭环：接收公共请求与 exact program/project/run/base binding，在显式 speculative workspace 创建或更新场景，保存一个选定工件并读回对象及来源绑定，再返回公共结果与 Blender 自身证据。Blender 对象保留 ArchFlow 对象/语义身份；名称和自定义属性只是执行映射。验证项目 `HEAD` 不变、已有 OCCT/Rhino 行为保持，并把不支持项明确返回；不要求立即全量功能等价。
+
+这一 lane 不修改 Hub/App Server 实现。若确实缺少公共契约，记录具体缺项并先提交上游契约 PR。Phase 0 已完成真实 OCCT 执行与冷读回、受控 Rhino 契约测试；**真实 Rhino 宿主验收尚未完成**。Blender 宿主、同事独立复跑和跨 lane 交接只按实际完成情况报告。
+
 ## 6. 把这段发给她的 Agent
 
 ```text
@@ -255,7 +273,11 @@ https://github.com/cogco1/ARCHFLOW_V4/blob/main/docs/TEAM_ONBOARDING.md
 
 ```text
 任务：接入复现 / 已约定的小修改
+Issue/lane：#<issue> / P###/<lane>；仅接入复现可写不涉及修改
 源码：ArchFlow <SHA>；共享工具箱 <SHA>
+分支/检出/基线：<branch>；<worktree>；<base SHA>
+责任/审查/交接：<实际对象与顺序，未指定则明说>
+范围/依赖/重叠：<窄路径；上游任务；devctl work 的结果与处理>
 环境：系统、Python、Node（若使用 Web）
 结果：工具箱产物位置；或 candidate ID、height=2.2、HEAD 未变
 检查：实际执行的命令及结果；未执行的不写通过

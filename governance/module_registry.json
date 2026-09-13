@@ -4790,7 +4790,7 @@
         "the checked-file set for the configured roots and the single AST index per file",
         "the checks: forbidden imports including archive reverse imports, instance-answer literals, filesystem writes outside allowed functions, forbidden framework identifiers, commit soft-gate leaks, probe-boundary executables, registry owner/test/public-symbol truth and duplicate owned function bodies",
         "the Finding shape and the JSON/text report and exit code",
-        "checking overlapping live work scopes and checking each changed commit against its historical policy and card scope; explicit P000-governance permits only defined governance paths and README.md maintenance"
+        "Validating nested lane metadata and live dependencies, checking competing live card/lane path and checkout claims, and checking each commit against its historical card and lane scopes; explicit P000-governance permits only defined governance paths and README.md maintenance"
       ],
       "does_not_own": [
         "the policy content - governance/architecture_policy.json",
@@ -4827,7 +4827,8 @@
         "the file set is stable and de-duplicated, so findings are reproducible",
         "write-scope rules do not apply retroactively before their introduction; later missing or invalid policy cannot disable the check",
         "a changed commit uses its own active or ready card declaration; only the commit closing that card may use its first parent's active scope, whether the row is removed or retained as nonlive; later scope edits do not change earlier results",
-        "P000-governance does not authorize business source, arbitrary scripts or all Markdown files"
+        "P000-governance does not authorize business source, arbitrary scripts or all Markdown files",
+        "Active/review lanes replace the broad parent claim for overlap detection; changed commits name P###/lane and satisfy both lane and parent scopes plus shared surfaces. Only a lane-closing commit may reuse first-parent active/review scope"
       ],
       "status": "canonical",
       "tests": [
@@ -4844,7 +4845,8 @@
         "the readiness rule: an item is ready when no live item blocks it, and an id absent from the registry counts as finished",
         "rendering docs/DYNAMIC_MAP.md, docs/mapping/planning/INDEX.md, docs/SYSTEM_MAP.md and docs/SEMANTIC_REGISTRY.md, including the stage-ladder table generated from PHASE_LADDER",
         "Exact-id or ranked keyword module lookup with paged contract sections, dependencies, registered source paths and tests; ambiguous queries return bounded candidates",
-        "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with"
+        "Capability lookup over the same registry: exact id or goal words in either language, paged entry sections, and the sentence a no-hit answers with",
+        "Read-only work lookup by card or nested lane, showing branch/worktree/base/contributor/modules/paths/dependencies/handoff and findings from tools.archcheck"
       ],
       "does_not_own": [
         "architecture boundary enforcement - tools.archcheck",
@@ -4856,7 +4858,8 @@
         "governance/work_registry.json",
         "governance/module_registry.json",
         "module query, optional section and bounded page limit/offset",
-        "capability query by id or goal words, optional section and bounded page limit/offset"
+        "capability query by id or goal words, optional section and bounded page limit/offset",
+        "optional work card or qualified lane id and governance/architecture_policy.json"
       ],
       "outputs": [
         "docs/DYNAMIC_MAP.md",
@@ -4865,7 +4868,8 @@
         "docs/SEMANTIC_REGISTRY.md",
         "exit code",
         "Bounded plain-text or JSON module lookup on stdout, including omitted-section counts",
-        "Bounded plain-text or JSON capability lookup on stdout; no match reports the size of the index rather than a verdict"
+        "Bounded plain-text or JSON capability lookup on stdout; no match reports the size of the index rather than a verdict",
+        "Compact text or JSON work view with global metadata/overlap findings; nonzero for invalid claims or an unknown requested id"
       ],
       "public_api": [
         "load_registry",
@@ -4879,18 +4883,21 @@
         "semantics.conditions",
         "semantics.registry",
         "semantics.roles",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "tools.archcheck"
       ],
       "used_by": [],
       "invariants": [
         "the registry holds only unfinished work; a finished card is deleted along with its entry",
         "both ledgers are generated, never hand-edited",
         "the ladder table is generated from PHASE_LADDER, never hand-written, so the map cannot drift from the enum",
-        "Module lookup reads the registry only, imports no target source, and changes neither registry nor generated maps"
+        "Module lookup reads the registry only, imports no target source, and changes neither registry nor generated maps",
+        "Work lookup reads the existing registry and policy without Git/network calls, source execution, registry writes or generated-map writes"
       ],
       "status": "canonical",
       "tests": [
-        "tests/test_devctl_module.py"
+        "tests/test_devctl_module.py",
+        "tests/test_devctl_work.py"
       ],
       "notes": "Pure governance tooling; it puts its own tree on sys.path so a worktree renders itself and not whichever archflow is importable."
     },
