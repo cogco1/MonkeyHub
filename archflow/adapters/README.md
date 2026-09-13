@@ -62,6 +62,35 @@ must use the existing P036 kind contract; backend code receives no repository.
 Common tests live in `tests/test_cad_backend_contract.py`; backend-specific
 geometry and host checks remain in the existing CAD suites.
 
+## Rhino host acceptance
+
+The default common suite uses a controlled Rhino worker and inspection. To
+exercise the same contract with real geometry, explicitly enable Rhino 8 COM
+on a licensed Windows host with PowerShell:
+
+```powershell
+$env:ARCHFLOW_RHINO_ACCEPTANCE = '1'
+python -m unittest tests.test_cad_backend_contract -v
+Remove-Item Env:ARCHFLOW_RHINO_ACCEPTANCE
+```
+
+The three opt-in cases use caller-owned temporary workspaces; the conformance
+and runner cases also use disposable P036 projects. Each export starts a new
+hidden `Rhino.Application.8` host, confirms
+its new PID/path/start time before executing geometry, and independently cleans
+up only that host. Do not attach the test to an open user document. The native
+`.3dm` is cold-read after cleanup; the common binding/artifact/identity checks,
+native material assignment, changed layer/material rejection and P036 restart
+reuse run against those saved files. An exact restart must reuse the retained
+receipt and model without starting another host or changing project `HEAD`.
+
+Without the variable these three cases skip; the controlled Rhino tests still
+run. A requested real-host run fails if its host cannot execute; a skip or
+controlled fixture is not real-host acceptance. Contributor rehearsal uses
+`python -m unittest tests.test_devctl_work tests.test_archcheck_scopes -v` for
+independent simulated lanes, intentional overlap and ordered handoff. A new
+teammate must still reproduce the agreed task from their own checkout.
+
 ## Blender scene execution
 
 `get_cad_backend("blender")` implements the same request/result contract through
@@ -124,4 +153,5 @@ If Blender is not on `PATH`, assign its actual executable path to that variable.
 Without it, host tests skip while rejection tests still run; CI without a host
 does not establish Blender acceptance. Use the host suite to verify save/cold
 readback and the runner's retained receipt, restart/reuse and unchanged project
-`HEAD`. New teammate replay and real Rhino host acceptance remain separate.
+`HEAD`. New teammate replay remains separate; Rhino has its own opt-in suite
+above.
