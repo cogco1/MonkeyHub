@@ -428,35 +428,6 @@
       ],
       "lanes": [
         {
-          "id": "agent-latency",
-          "issue": "#32 explicit ContextPack and first exploration round trip",
-          "status": "active",
-          "branch": "codex/p115-agent-latency-context",
-          "worktree": "C:/Users/asus/.codex/worktrees/597e/ARCHFLOW_V4",
-          "base_ref": "344d7fbabce6f1f00e75f57a9fad46d5d691050c",
-          "contributor": "Codex task 01a09b53-017d-7fa3-99d3-10177536354e",
-          "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
-          "handoff": "Phase 0 and its nonblocking diagnostic lock correction are separately frozen in PR #47 at 344d7fbabce6f1f00e75f57a9fad46d5d691050c; its measured provider baselines remain bfbaca62. This slice reuses studio.intent context compilation and capability descriptions to prepare one read-only ContextPack before the native agent starts, only when a message explicitly supplies exact source/base/focus. Project/process/health checks and downstream proposal guards remain. The observed target is the initial capability-description tool round trip in the successful cornice benchmark. Use existing exported traces for before/after comparison; no new Monitor comparison product, cache or transaction compiler in this slice. Claude implements the bounded source edits and routine tests; Codex owns the binding design and independent review. Do not infer viewport focus or a recent candidate, and do not weaken context fallback or preservation to improve metrics. Review follow-up: the preparation is waited on through a daemon thread holding a call-local result, so a stop ends the turn at the stop, the binding checks share one remaining budget, and a stalled read blocks neither the wait nor Hub process exit; _together drops its ThreadPoolExecutor for daemon threads with the same ordered return/error contract. The CLI transports take preparation out of one total turn limit; the ACP adapter keeps its own inactivity interval unchanged and acp_session.py is untouched. PROTOCOL.md carries the new resource, the optional designContext, the two transport limit modes, and the honest statement that a design-tier pack may hold the complete record and is not a bounded or token-optimised product.",
-          "modules": ["monkeymonitor", "hub.shell", "studio.shell", "studio.intent", "studio.candidate"],
-          "write_scope": [
-            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
-            "apps/archflow-studio/api/tests/test_intents.py",
-            "apps/archflow-studio/web/src/api/generated/",
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/monkeyhub_api/models.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
-            "apps/monkeyhub/web/src/api/generated/",
-            "tests/monkeymonitor/run_turn_benchmark.py",
-            "tests/monkeymonitor/benchmark_preview.mjs",
-            "governance/module_registry.json",
-            "governance/work_registry.json",
-            "docs/SYSTEM_MAP.md",
-            "docs/PROTOCOL.md"
-          ],
-          "depends_on": []
-        },
-        {
           "id": "interaction",
           "issue": "#14 Phase 5 snap retention and continuous modeling",
           "status": "blocked",
