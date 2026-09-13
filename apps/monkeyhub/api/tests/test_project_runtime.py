@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -294,6 +295,78 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.assertIn(repeated.status_code, {202, 409}, repeated.text)
             self.assertEqual(self.read_runtime(client, runtime_id)["workers"][0]["instanceId"], worker["instanceId"])
             self.assertEqual(self.project_bytes(self.project), before)
+
+    def test_crashed_worker_can_be_explicitly_stopped_and_started_again(self):
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.read_runtime(client, runtime_id)["workers"][0]
+            before = self.project_bytes(self.project)
+            owned = client.app.state.applications.supervisor._children[original["workerId"]].process
+            os.kill(original["processId"], signal.SIGTERM)
+            owned.wait(timeout=10)
+            crashed = self.read_runtime(client, runtime_id)["workers"][0]
+            self.assertEqual(crashed["state"], "crashed")
+            self.assertEqual(crashed["desiredState"], "running")
+            for _ in range(2):
+                stopped = client.post("/api/apps/monkeydiagram/stop", params={"projectDir": str(self.project)})
+                self.assertEqual(stopped.status_code, 202, stopped.text)
+                self.assertEqual(stopped.json()["state"], "stopped")
+                snapshot = self.read_runtime(client, runtime_id)["workers"][0]
+                self.assertEqual(snapshot["state"], "stopped")
+                self.assertEqual(snapshot["desiredState"], "stopped")
+                self.assertIsNone(snapshot["processId"])
+                self.assertIsNone(snapshot["error"])
+            refused = client.post(f"/api/runtime/projects/{runtime_id}/recover", json={"projectId": self.project_id})
+            self.assertEqual(refused.status_code, 409, refused.text)
+            self.assertEqual(refused.json()["code"], "WORKER_NOT_CRASHED")
+            restarted = client.post("/api/apps/monkeyboard/start", params={"projectDir": str(self.project)})
+            self.assertEqual(restarted.status_code, 202, restarted.text)
+            self.wait_state(client, "monkeyarch", "running", project_dir=self.project)
+            ready = self.wait_runtime(client, runtime_id, lambda row: row["projection"] == "ready" and row["workers"][0]["healthy"])
+            self.assertNotEqual(ready["workers"][0]["instanceId"], original["instanceId"])
+            self.assertEqual(ready["workers"][0]["desiredState"], "running")
+            self.assertEqual(self.project_bytes(self.project), before)
+
+    def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            manager = client.app.state.runtimes
+            original = self.read_runtime(client, runtime_id)["workers"][0]
+            before = self.project_bytes(self.project)
+            state_digest = self.fixture.runner_state_digest(self.repository, self.fixture.REFERENCE_RUN_ID)
+            with patch.object(manager, "_read_retained", wraps=manager._read_retained) as scans:
+                # Let the opening wake and ready transition finish, then cover
+                # several normal status ticks with a healthy, idle real worker.
+                time.sleep(1.2)
+                idle_scans = scans.call_count
+                time.sleep(3.2)
+                self.assertEqual(scans.call_count, idle_scans, "Idle status polling rescanned retained history")
+                operation_id = str(uuid4())
+                proposed = self.proxy(client, runtime_id, "/api/proposals", "POST", operation_id=operation_id, json={
+                    "projectId": self.project_id, "stateDigest": state_digest,
+                    "sourceRunId": self.fixture.REFERENCE_RUN_ID, "targetComponentId": "portico",
+                    "elementId": "portico-base", "utterance": "set height to 2.2",
+                })
+                self.assertEqual(proposed.status_code, 201, proposed.text)
+                wait_for(lambda: scans.call_count > idle_scans,
+                         "A forwarded mutation did not promptly refresh retained state", timeout=5)
+                operation = next(row for row in self.read_runtime(client, runtime_id)["operations"]
+                                 if row["operationId"] == operation_id)
+                self.assertEqual(operation["status"], "completed")
+                cold_scans = sum(call.kwargs.get("worker") is None for call in scans.call_args_list)
+                owned = client.app.state.applications.supervisor._children[original["workerId"]].process
+                os.kill(original["processId"], signal.SIGTERM)
+                owned.wait(timeout=10)
+
+                def crash_observed():
+                    snapshot = self.read_runtime(client, runtime_id)
+                    cold_read = sum(call.kwargs.get("worker") is None for call in scans.call_args_list) > cold_scans
+                    return snapshot if snapshot["workers"][0]["state"] == "crashed" and snapshot["projection"] == "stale" and cold_read else None
+
+                crashed = wait_for(crash_observed, "Idle runtime did not promptly observe and cold-read the crashed worker", timeout=5)
+                self.assertIsNone(crashed["workers"][0]["processId"])
+                self.assertEqual(crashed["workers"][0]["instanceId"], original["instanceId"])
+                self.assertEqual(self.project_bytes(self.project), before)
 
 
 if __name__ == "__main__":

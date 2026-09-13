@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 import json
 import threading
+from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID
 
@@ -10,15 +11,19 @@ import uvicorn
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, http_json, wait_for
 from archflow.project.repository import FilesystemProjectRepository
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.main import HubServer, HubSettings, create_app
 
 
 class RuntimeSseTests(LocalHubCase):
     @contextmanager
     def serving(self):
-        app = create_app(HubSettings(runtime_root=self.runtime, port=self.hub_port), source_root=ROOT)
-        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=self.hub_port, log_level="error"))
+        web = self.root / "web"
+        web.mkdir(exist_ok=True)
+        (web / "index.html").write_text("<html>SSE shutdown fixture</html>", encoding="utf-8")
+        app = create_app(HubSettings(runtime_root=self.runtime, port=self.hub_port, studio_web_dir=web), source_root=ROOT)
+        server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=self.hub_port, log_level="error"))
         thread = threading.Thread(target=server.run, daemon=True)
+        self.server, self.server_thread = server, thread
         thread.start()
         try:
             wait_for(lambda: server.started, "isolated Hub did not start")
@@ -74,6 +79,30 @@ class RuntimeSseTests(LocalHubCase):
                 self.assertEqual({row["runtimeId"] for row in reattached["snapshot"]["projects"]},
                                  {runtime_id, second["runtimeId"]})
                 self.assertFalse(any(row.service_id == "studio" for row in app.state.applications.worker_snapshots()))
+
+    def test_normal_shutdown_ends_open_hub_and_studio_subscriptions(self):
+        project = self.root / "stream-project"
+        FilesystemProjectRepository.initialize(project, project_id=project.name,
+                                                initial_state={"project_id": project.name, "version": 0})
+        with self.serving() as app:
+            opened = http_json(self.base_url + "/api/runtime/projects/open", method="POST",
+                               payload={"projectId": project.name, "projectDir": str(project)})
+            http_json(self.base_url + "/api/apps/monkeyarch/start?" + urlencode({"projectDir": str(project)}), method="POST")
+            wait_for(lambda: any(row.healthy for row in app.state.applications.worker_snapshots(project_dir=str(project))),
+                     "managed Studio did not start")
+            before = {str(p): p.read_bytes() for p in project.rglob("*") if p.is_file()}
+            opener = build_opener(ProxyHandler({}))
+            with opener.open(self.base_url + "/api/runtime/events", timeout=10) as hub_stream, \
+                 opener.open(self.base_url + f"/api/runtime/projects/{opened['runtimeId']}/studio/api/events", timeout=10) as studio_stream:
+                self.assertEqual(self.event(hub_stream)[1]["kind"], "runtime/snapshot")
+                wait_for(lambda: bool(app.state.studio_event_sockets), "Studio stream did not attach")
+                self.server.should_exit = True
+                self.server_thread.join(timeout=8)
+                self.assertFalse(self.server_thread.is_alive(), "Open SSE subscriptions blocked normal server shutdown")
+                self.assertEqual(studio_stream.read(), b"")
+                self.assertTrue(app.state.runtimes._closing.is_set())
+                self.assertFalse(any(row.process_id for row in app.state.applications.worker_snapshots()))
+            self.assertEqual(before, {str(p): p.read_bytes() for p in project.rglob("*") if p.is_file()})
 
 
 if __name__ == "__main__":

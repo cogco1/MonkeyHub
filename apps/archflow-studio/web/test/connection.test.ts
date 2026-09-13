@@ -27,7 +27,7 @@ test("embedded API routing accepts only the actual loopback Hub parent", async (
   ]) assert.equal(embeddedHubBaseUrl(page(url!, embedded), parent), null, `${url} with ${parent}`);
 });
 
-test("generated mutations carry independent idempotency keys while retries preserve supplied keys", async (t) => {
+test("only Hub forwarding adds idempotency keys while retries preserve supplied keys", async (t) => {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
   t.after(() => vite.close());
@@ -47,6 +47,14 @@ test("generated mutations carry independent idempotency keys while retries prese
   assert.notEqual(requests[1]!.headers.get("Idempotency-Key"), requests[2]!.headers.get("Idempotency-Key"));
   assert.equal(requests[1]!.headers.get("X-Monkey-Operation"), "parent-trace");
   assert.equal(requests[3]!.headers.get("Idempotency-Key"), "same-retry");
+  for (const baseUrl of ["https://remote-studio.test", "http://127.0.0.1:18181"]) {
+    new ServerConnection(baseUrl, "fixture-token").configure();
+    await client.post({ url: "/api/proposals", body: { utterance: "set height to 4" } });
+    const request = requests.at(-1)!;
+    assert.equal(request.headers.get("Idempotency-Key"), null, "direct Studio keeps its existing CORS request headers");
+    assert.equal(request.headers.get("Authorization"), "Bearer fixture-token");
+    assert.equal(request.url, `${baseUrl}/api/proposals`);
+  }
 });
 
 test("candidate requests carry their explicit source without changing default requests", async (t) => {

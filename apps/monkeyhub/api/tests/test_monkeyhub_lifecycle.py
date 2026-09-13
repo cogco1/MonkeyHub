@@ -432,6 +432,7 @@ class HubCliLifecycleTests(LocalHubCase):
                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                     )
                     pending = None
+                    runtime_stream = None
                     try:
                         def ready():
                             self.assertIsNone(child.poll(), f"Hub exited early; see {log_path}")
@@ -442,6 +443,7 @@ class HubCliLifecycleTests(LocalHubCase):
                         health = wait_for(ready, "The isolated CLI Hub did not become ready")
                         self.assertEqual(health["managedInstanceId"], instance_id)
                         self.assertIn(child.pid, (health["processId"], health["parentProcessId"]))
+                        runtime_stream = build_opener(ProxyHandler({})).open(self.base_url + "/api/runtime/events", timeout=5)
                         http_json(self.base_url + "/api/settings/apps", method="PUT", payload=self.configuration())
                         http_json(self.base_url + "/api/apps/monkeymonitor/start", method="POST")
 
@@ -480,6 +482,8 @@ class HubCliLifecycleTests(LocalHubCase):
                         self.assertEqual(child.wait(timeout=20), 0)
                         self.assertFalse(port_open(self.monitor_port))
                     finally:
+                        if runtime_stream is not None:
+                            runtime_stream.close()
                         if pending is not None:
                             pending.close()
                         if child.stdin is not None and not child.stdin.closed:

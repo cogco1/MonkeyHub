@@ -101,7 +101,10 @@ export function embeddedHubBaseUrl(href: string, referrer: string): string | nul
 /** A key belongs to one submitted request, never to the parent's diagnostic trace. */
 async function operationFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = new Request(input, init);
-  if (request.method !== "GET" && request.method !== "HEAD" && !request.headers.has("Idempotency-Key")) {
+  const target = new URL(request.url);
+  const forwarding = target.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(target.hostname)
+    && /^\/api\/runtime\/projects\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/studio\/api(?:\/|$)/i.test(target.pathname);
+  if (forwarding && request.method !== "GET" && request.method !== "HEAD" && !request.headers.has("Idempotency-Key")) {
     request.headers.set("Idempotency-Key", crypto.randomUUID());
   }
   return globalThis.fetch(request);

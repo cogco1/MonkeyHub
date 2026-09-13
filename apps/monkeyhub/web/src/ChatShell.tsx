@@ -401,10 +401,12 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     if (!preparation) {
       const query = new URLSearchParams({ projectDir: target });
       const entry: ProjectPreparation = { apps: null, promise: (async () => {
-        const attached = await request<ProjectRuntimeDto>("/api/runtime/projects/open", { projectDir: target, projectId });
-        runtimeAttachments.current.set(target, attached);
-        const current = runtimeRef.current;
-        if (current) receiveRuntime({ ...current, projects: [...current.projects.filter((item) => item.runtimeId !== attached.runtimeId), attached] });
+        const opened = await request<ProjectRuntimeDto>("/api/runtime/projects/open", { projectDir: target, projectId });
+        // Open acknowledges attachment without a sequence. Only a versioned
+        // snapshot may update worker state or supersede an event already read.
+        receiveRuntime(await request<HubRuntimeDto>("/api/runtime"));
+        const attached = runtimeRef.current?.projects.find((item) => item.runtimeId === opened.runtimeId);
+        if (!attached) throw new Error("The project runtime is no longer attached.");
         const worker = attached.workers?.find((item) => item.serviceId === "studio");
         if (worker?.state === "crashed" || (worker?.state === "unavailable" && worker.processId)) {
           throw Object.assign(new Error("The project service needs recovery."), { failure: worker.error ?? { code: "WORKER_NEEDS_RECOVERY", detail: "The project service exited. Recover it to read saved results." } });

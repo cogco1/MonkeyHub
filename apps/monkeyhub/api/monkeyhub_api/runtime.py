@@ -33,6 +33,7 @@ _CANDIDATE_REQUEST = re.compile(
 )
 _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
+_IDLE_RETAINED_REFRESH_S = 30
 
 
 def project_key(path: str) -> str:
@@ -317,6 +318,7 @@ class ProjectRuntimeManager:
                 runtime.thread = threading.Thread(target=self._watch, args=(runtime,), daemon=True, name=f"hub-project-{project_id}")
                 runtime.thread.start()
                 self.emit("project/opened", runtime_id)
+            runtime.wake.set()
             return runtime
 
     def get(self, runtime_id: str, project_id: str | None = None) -> ProjectRuntime:
@@ -429,11 +431,25 @@ class ProjectRuntimeManager:
             self.emit("operation/committed", runtime.runtime_id)
 
     def _watch(self, runtime: ProjectRuntime):
+        next_retained_read = 0.0
         while not self._closing.is_set():
-            drained = runtime.state == "closed" and not any(row.process_id is not None for row in self.applications.worker_snapshots(project_dir=runtime.project_dir))
+            force_read = runtime.wake.is_set()
+            runtime.wake.clear()
+            workers = self.applications.worker_snapshots(project_dir=runtime.project_dir)
+            worker_states = tuple((row.instance_id, row.state, row.healthy) for row in workers)
+            drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
+            active = any(row.status in _ACTIVE for row in runtime.operations.records()) or any(
+                row.get("status") in {"queued", "running"} for row in (runtime.retained or {}).get("jobs", []))
             try:
-                self.refresh(runtime, cold=drained)
+                if drained or force_read or active or worker_states != runtime.last_workers or time.monotonic() >= next_retained_read:
+                    # Keep liveness/session reads responsive without rebuilding
+                    # unchanged retained history on every idle heartbeat. Hub
+                    # mutations wake this observer; the fallback sees changes
+                    # made through a separate Studio/project client.
+                    self.refresh(runtime, cold=drained)
+                    next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
             except (HubFailure, StudioError, OSError, ValueError) as exc:
+                next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
                     runtime.error = exc.error if isinstance(exc, HubFailure) else HubError(code="RUNTIME_READ_FAILED", detail=str(exc)[:1200])
                     runtime.projection = "stale"
@@ -450,7 +466,6 @@ class ProjectRuntimeManager:
             if drained:
                 break
             runtime.wake.wait(1)
-            runtime.wake.clear()
 
     def service(self, runtime: ProjectRuntime):
         self.get(runtime.runtime_id)
@@ -562,12 +577,17 @@ class ProjectRuntimeManager:
         self.emit("project/closed", runtime.runtime_id)
         return self.project_snapshot(runtime)
 
-    def shutdown(self):
+    def begin_shutdown(self):
         self._closing.set()
         with self._lock:
             runtimes = tuple(self._projects.values())
         for runtime in runtimes:
             runtime.wake.set()
+
+    def shutdown(self):
+        self.begin_shutdown()
+        with self._lock:
+            runtimes = tuple(self._projects.values())
         for runtime in runtimes:
             if runtime.thread:
                 runtime.thread.join(timeout=12)

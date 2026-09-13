@@ -1,5 +1,6 @@
 """Recovery reads distinguish retained results, live jobs and prepared commits."""
 
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 import threading
 from unittest.mock import patch
@@ -8,13 +9,34 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RUNNER_RUN_RECEIPT, STUDIO_CANDIDATE_WORKFLOW
 from archflow.project.refs import record_ref_from_uri
 from archflow_studio_api.application.binding import ProjectBinding, bound_project
+from archflow_studio_api.application.artifacts import ModelSource
+from archflow_studio_api.application.design_history import initialize_design_stage
 from archflow_studio_api.application.runtime import inspect_runtime
 from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.transport.errors import StudioError
 from archflow_studio_api.transport.runtime import runtime_dto
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_candidate import CandidateTestCase
 from .test_working_copies import register_model
+
+
+@contextmanager
+def no_design_projection():
+    """A status read must not build a viewer or reevaluate design viability."""
+
+    with ExitStack() as stack:
+        for target in (
+            "archflow_studio_api.application.candidate.describe",
+            "archflow_studio_api.application.candidate.project_state",
+            "archflow_studio_api.application.design_history.read_design_history",
+            "archflow_studio_api.application.design_history.project_state",
+            "archflow_studio_api.application.artifacts.project_state",
+            "archflow_studio_api.application.projection.developed_design_view",
+            "archflow_studio_api.application.candidate.execute_candidate",
+        ):
+            stack.enter_context(patch(target, side_effect=AssertionError(f"Status invoked {target}")))
+        yield
 
 
 class RuntimeTests(CandidateTestCase):
@@ -26,8 +48,8 @@ class RuntimeTests(CandidateTestCase):
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded")
         candidate = self.client.get(f"/api/candidates/{accepted['candidateId']}").json()
-        with patch("archflow.project.repository.FilesystemProjectRepository.put_json", side_effect=AssertionError("read wrote")), \
-             patch("archflow_studio_api.application.candidate.execute_candidate", side_effect=AssertionError("read ran")):
+        with no_design_projection(), \
+             patch("archflow.project.repository.FilesystemProjectRepository.put_json", side_effect=AssertionError("read wrote")):
             snapshot = self.cold(accepted["candidateId"])
         row = next(row for row in snapshot["candidates"] if row["candidateId"] == accepted["candidateId"])
         self.assertEqual(row["status"], "completed")
@@ -106,6 +128,39 @@ class RuntimeTests(CandidateTestCase):
         self.assertEqual(self.client.get("/api/runtime?limit=201").status_code, 422)
         self.assertEqual(self.client.get("/api/runtime?candidateId=../other").status_code, 422)
 
+    def test_completed_receipt_must_match_its_exact_retained_state_record(self) -> None:
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded")
+        candidate_id = accepted["candidateId"]
+        _, receipt = bound_project(self.app.state).newest_runner_receipt(candidate_id)
+        self.repository.put_json(run=self.repository.load_run(candidate_id),
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=candidate_id),
+            record_kind=RUNNER_RUN_RECEIPT, payload={**receipt, "state_record_digest": "0" * 64})
+        with no_design_projection():
+            row = self.cold(candidate_id)["candidates"][0]
+        self.assertEqual(row["status"], "needs_recovery")
+        self.assertIn("does not match the retained state record", row["error"])
+
+    def test_branch_commit_during_inspection_refuses_a_mixed_snapshot(self) -> None:
+        model_bytes = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
+        model = register_model(self.client, REFERENCE_RUN_ID, self.state_digest, model_bytes)
+        binding = bound_project(self.app.state)
+        original_run_ids = binding.run_ids
+        changed = False
+
+        def commit_before_candidate_scan():
+            nonlocal changed
+            if not changed:
+                changed = True
+                initialize_design_stage(binding, model_source=ModelSource.from_dict(model["modelSource"]))
+            return original_run_ids()
+
+        with patch.object(binding, "run_ids", side_effect=commit_before_candidate_scan):
+            with self.assertRaises(StudioError) as changed_snapshot:
+                inspect_runtime(binding)
+        self.assertEqual(changed_snapshot.exception.code, "RUNTIME_CHANGED")
+        self.assertIn("main", binding.repository.read_design_branches())
+
     def test_native_receipt_before_required_composition_is_not_a_completed_result(self) -> None:
         model_bytes = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
         source = register_model(self.client, REFERENCE_RUN_ID, self.state_digest, model_bytes)
@@ -145,13 +200,15 @@ class RuntimeTests(CandidateTestCase):
                 self.client.post(f"/api/candidates/{candidate_id}/accept", json=payload)
             except OSError:
                 pass
-        snapshot = self.cold(candidate_id)
+        with no_design_projection():
+            snapshot = self.cold(candidate_id)
         self.assertEqual(snapshot["candidates"][0]["commitStageRefs"], [])
         self.assertEqual([row["stageRef"] for row in snapshot["stages"]], [initial["stageRef"]])
         result = self.client.post(f"/api/candidates/{candidate_id}/accept", json=payload)
         self.assertEqual(result.status_code, 200, result.text)
         committed = result.json()
-        snapshot = self.cold(candidate_id)
+        with no_design_projection():
+            snapshot = self.cold(candidate_id)
         self.assertEqual(snapshot["candidates"][0]["commitStageRefs"], [committed["stageRef"]])
         stage = next(row for row in snapshot["stages"] if row["stageRef"] == committed["stageRef"])
         self.assertEqual((stage["branchId"], stage["candidateId"], stage["parentStageRef"]),

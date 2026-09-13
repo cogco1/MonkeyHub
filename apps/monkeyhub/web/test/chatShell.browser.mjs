@@ -58,6 +58,9 @@ let modelingResponseGate = Promise.resolve();
 let modelingFailure = null;
 let chatCreationFailureFor = null;
 let projectListGate = null;
+let runtimeOpenGate = null;
+let runtimeOpenCaptured = null;
+let runtimeReadGate = null;
 let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18788 };
 // The one saved preferences document: appearance and the new-conversation defaults.
 let preferences = { language: "en", theme: "light", fontScale: 1 };
@@ -89,11 +92,19 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
   if (url.pathname === "/api/settings/user") { if (method === "PUT") preferences = data(); return json(preferences); }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
-  if (url.pathname === "/api/runtime") { runtimeReads++; return json(runtimeSnapshot()); }
+  if (url.pathname === "/api/runtime") { runtimeReads++; if (runtimeReadGate) await runtimeReadGate; return json(runtimeSnapshot()); }
   if (url.pathname === "/api/runtime/projects/open") {
     const body = data(), project = projects.find((item) => item.projectDir === body.projectDir && item.projectId === body.projectId);
     assert.ok(project, "runtime attachment needs the exact project");
     if (!runtimes.has(body.projectDir)) runtimes.set(body.projectDir, { runtimeId: randomUUID(), ...body, state: "open", operations: [], retained: null, projection: "ready", clients: 1, error: null });
+    if (runtimeOpenGate) {
+      const reply = structuredClone(runtimeSnapshot().projects.find((item) => item.projectDir === body.projectDir)), gate = runtimeOpenGate;
+      runtimeOpenGate = null;
+      runtimeOpenCaptured?.(); runtimeOpenCaptured = null;
+      await gate;
+      // Reattaching an already-open runtime emits no state change.
+      return route.fulfill({ json: reply });
+    }
     return json(runtimeSnapshot().projects.find((item) => item.projectDir === body.projectDir));
   }
   if (/^\/api\/runtime\/projects\/[^/]+\/recover$/.test(url.pathname)) {
@@ -608,6 +619,37 @@ try {
   const runtimeB = runtimes.get("D:\\fixture\\B");
   runtimeB.operations = [{ operationId: "committed-operation", projectId: "B", kind: "candidate.commit", source: "studio",
     status: "completed", committed: true, resultRevision: 1, candidateId: "cand-B-final" }];
+  let releaseRuntimeOpen;
+  runtimeOpenGate = new Promise((resolve) => { releaseRuntimeOpen = resolve; });
+  const runtimeOpenReady = new Promise((resolve) => { runtimeOpenCaptured = resolve; });
+  await page.evaluate(() => {
+    const key = "monkeyhub.chat-view.v1", view = JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify({ ...view, tools: [], activeTool: null, panel: false }));
+  });
+  await Promise.all([runtimeOpenReady, page.reload()]);
+  const beforeLateOpen = writes.length;
+  let releaseRuntimeReads;
+  runtimeReadGate = new Promise((resolve) => { releaseRuntimeReads = resolve; });
+  for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) {
+    app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };
+  }
+  emitRuntime();
+  await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
+  const lateOpenReply = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/runtime/projects/open");
+  releaseRuntimeOpen();
+  await lateOpenReply;
+  // Later GET snapshots stay pending so they cannot repair an overwritten
+  // event before this assertion. Let the released response render first.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.getByRole("button", { name: "Recover project service", exact: true }).isVisible(), true,
+    "an unversioned late open response cannot hide a newer crashed SSE snapshot");
+  assert.equal(writes.length, beforeLateOpen, "a stale open reply cannot start or modify the crashed project");
+  runtimeReadGate = null; releaseRuntimeReads();
+  await page.locator(".chat-error").waitFor();
+  await page.getByRole("button", { name: "Recover project service", exact: true }).click();
+  await studioReady();
+  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await page.waitForFunction(() => document.querySelector('iframe:not([hidden])')?.src.includes("candidate=cand-B-final"));
   const beforeCrash = writes.length;
   for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) {
     app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };

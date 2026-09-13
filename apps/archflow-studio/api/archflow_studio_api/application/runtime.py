@@ -9,15 +9,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from archflow.project.record_kinds import STUDIO_CANDIDATE_WORKFLOW
-from archflow.project.refs import ProjectVersionRef, require_identifier
+from archflow.project.record_kinds import STUDIO_CANDIDATE_WORKFLOW, STUDIO_MODEL_ASSET
+from archflow.project.refs import ProjectVersionRef, record_ref_from_uri, require_identifier
 from archflow.project.repository import ProjectRepositoryError
 from archflow.state.design_portfolio import DesignBranch
 
-from .binding import ProjectBinding, record_kind
-from .candidate import describe
-from .design_history import StageView, read_design_history
-from .jobs import FAILED, QUEUED, RUNNING, SUCCEEDED, Job, JobRegistry
+from .artifacts import ModelSource, list_artifacts, require_complete_model
+from .binding import ProjectBinding, ReferenceRun, record_kind
+from .candidate import _receipt
+from .design_history import StageView, _exact_runner
+from .jobs import FAILED, QUEUED, RUNNING, Job, JobRegistry
 from ..transport.errors import StudioError
 
 
@@ -69,14 +70,41 @@ def inspect_runtime(
         require_identifier(candidate_id, "candidate_id")
     live = () if jobs is None else jobs.list()
     by_candidate = {job.candidate_id: job for job in live}
+    # Only this snapshot shares artifact reads. Byte availability still uses
+    # the artifact owner's file-identity checks on every later snapshot.
+    artifacts = {}
+
+    def artifacts_of(run_id):
+        if run_id not in artifacts:
+            artifacts[run_id] = list_artifacts(binding, run_id=run_id).artifacts
+        return artifacts[run_id]
+
     errors: list[str] = []
     branches: list[DesignBranch] = []
     stages: dict[str, StageView] = {}
-    for branch_id in binding.repository.read_design_branches():
+    branch_rows = binding.repository.read_design_branches()
+    for branch_id, branch_payload in branch_rows.items():
         try:
-            history = read_design_history(binding, branch_id)
-            branches.extend(branch for branch in history.branches if branch.branch_id == branch_id)
-            stages.update((view.ref.uri, view) for view in history.stages)
+            # Reachability proves commitment; projecting the full design and
+            # recomputing action viability is not part of a status read.
+            history = binding.design_history(branch_id)
+            verified = {}
+            for ref, stage in history:
+                if ref.uri in stages:
+                    continue
+                record_ref, record, receipt = _exact_runner(binding, stage.candidate_id, stage.runner_ref)
+                if record_ref != stage.record_ref:
+                    raise StudioError(409, "DESIGN_STAGE_SOURCE_MISMATCH", "The Stage record differs from its pinned runner source.")
+                source = ModelSource(stage.candidate_id, receipt.get("design_state_digest"), stage.model_sha256)
+                model = next((row for row in artifacts_of(stage.candidate_id) if (
+                    row.receipt_ref, row.run_id, row.design_state_digest, row.sha256, row.format,
+                ) == (stage.model_ref.uri, source.run_id, source.state_digest, source.asset_sha256, "3dm")), None)
+                if model is None or not model.available:
+                    raise StudioError(409, "DESIGN_STAGE_SOURCE_MISMATCH", "The Stage's exact retained model is unavailable.")
+                require_complete_model(model, receipt)
+                verified[ref.uri] = StageView(ref, stage, source, record.digest)
+            stages.update(verified)
+            branches.append(DesignBranch.from_dict(branch_payload))
         except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:
             errors.append(f"Branch {branch_id}: {exc}")
     run_ids = binding.run_ids()
@@ -103,17 +131,29 @@ def inspect_runtime(
             if job is not None and job.status in (QUEUED, RUNNING):
                 row = replace(row, status=job.status, error=job.error)
             else:
-                candidate = describe(binding, None, candidate_id=candidate_id,
-                                     job_id=row.job_id, proposal_id=row.proposal_id, status=SUCCEEDED)
-                row = replace(row, result_record_digest=candidate.record_digest,
-                              result_state_digest=candidate.state_digest, receipt_ref=candidate.receipt_ref)
-                if not candidate.seat_execution_complete:
+                receipt_ref, receipt = _receipt(binding, candidate_id)
+                row = replace(row, result_record_digest=receipt.get("state_record_digest"),
+                              result_state_digest=receipt.get("design_state_digest"), receipt_ref=receipt_ref.uri)
+                if not receipt.get("seat_execution_complete"):
                     row = replace(row, status="failed", error="The retained runner receipt reports incomplete seat execution.")
-                elif delta is not None and delta["result_record_digest"] != candidate.record_digest:
-                    row = replace(row, error="The retained candidate change and runner result disagree.")
                 else:
-                    # describe also refuses an unfinished composition when the
-                    # harness records a composed model as its input.
+                    _, record = binding.exact_state_record(ReferenceRun(
+                        binding.load_run(candidate_id), "runtime", receipt,
+                    ))
+                    if delta is not None and delta["result_record_digest"] != record.digest:
+                        raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The retained candidate change and runner result disagree.")
+                    workflow_ref = receipt.get("workflow_ref")
+                    if workflow_ref:
+                        workflow = binding.repository.load_json(record_ref_from_uri(workflow_ref, binding.project_id))
+                        composed_source = any(record_kind(record_ref_from_uri(ref, binding.project_id)) == STUDIO_MODEL_ASSET
+                                              for ref in workflow.get("basis_refs", ()) if ref.startswith("project://"))
+                        if composed_source and not any(
+                            model.run_id == candidate_id and model.design_state_digest == row.result_state_digest
+                            and model.representation == "composed" and model.available
+                            for model in artifacts_of(candidate_id)
+                        ):
+                            raise StudioError(404, "CANDIDATE_NOT_FOUND",
+                                              f"Candidate {candidate_id} has native results but no completed composed model for its retained source.")
                     row = replace(row, status="completed")
         except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
             if job is not None and job.status in (QUEUED, RUNNING, FAILED):
@@ -123,6 +163,8 @@ def inspect_runtime(
         row = replace(row, commit_stage_refs=tuple(ref for ref, view in stages.items()
                                                   if view.stage.candidate_id == candidate_id))
         candidates.append(row)
+    if binding.repository.read_design_branches() != branch_rows:
+        raise StudioError(409, "RUNTIME_CHANGED", "Design branches changed during runtime inspection; read the next snapshot.")
     return RuntimeSnapshot(binding.project_id, str(binding.project_dir), binding.head(), live,
                            tuple(candidates), tuple(branches), tuple(stages.values()), tuple(errors),
                            len(selected), len(run_ids) > limit)

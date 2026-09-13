@@ -170,7 +170,7 @@ class WorkerSupervisor:
         if child.desired_state == "stopped":
             if child.state == "unavailable":
                 return False
-            if code == 0:
+            if code == 0 or child.state == "stopped":
                 child.state = "stopped"
                 child.error = None
                 return False
@@ -264,6 +264,11 @@ class WorkerSupervisor:
                     child.state = "stopping"
                     child.healthy = False
                     self._send_stop(child)
+                else:
+                    # Explicitly acknowledge an already ended launch. Its old
+                    # exit code must not turn the next start into recovery.
+                    child.state = "stopped"
+                    child.error = None
 
     def begin_shutdown(self) -> None:
         with self._lock:

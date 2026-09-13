@@ -640,6 +640,11 @@ takes `{projectId, projectDir}` and attaches without starting a worker. Project 
 normalized path determines the runtime id; identical project ids in different folders never
 share a worker, operation admission or projection.
 
+Worker/session observation continues each second. Retained history is refreshed for active
+jobs/operations, mutation or attachment wakeups and worker changes; an idle runtime reuses
+its projection and checks for external project changes every 30 seconds. These reads verify
+existing receipt/source facts without rebuilding candidate previews or recalculating viability.
+
 `GET /api/runtime/events` is SSE with event name `runtime`. Each event has `serverId`,
 `sequence`, `kind`, optional `runtimeId`, and optional `snapshot`; its event id combines the
 server instance and sequence. Every attachment starts with a current full snapshot rather

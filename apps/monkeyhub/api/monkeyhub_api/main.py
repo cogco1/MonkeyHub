@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import queue
+import socket
 from urllib.parse import urlsplit
 from uuid import UUID
 import webbrowser
@@ -47,6 +48,20 @@ from .models import (
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
+
+
+class HubServer(uvicorn.Server):
+    async def shutdown(self, sockets=None):
+        # Uvicorn drains HTTP tasks before entering ASGI lifespan shutdown.
+        # End subscriptions first; admitted mutations still drain normally.
+        app = self.config.app
+        app.state.runtimes.begin_shutdown()
+        for stream_socket in tuple(app.state.studio_event_sockets):
+            try:
+                stream_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        await super().shutdown(sockets=sockets)
 
 
 @dataclass(frozen=True)
@@ -95,6 +110,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.applications = applications
     app.state.chats = chats
     app.state.runtimes = runtimes
+    app.state.studio_event_sockets = set()
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
@@ -235,7 +251,9 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                 raise HubFailure(503, status.error.code, status.error.detail)
             raise HubFailure(503, "CHAT_STUDIO_UNAVAILABLE", "The project workspace is not ready. Retry preparing this project.")
         base, binding = chat_tools._bound_studio(chats.hub_url, None, project_id=project_id, project_dir=project_dir)
-        return chat_tools._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
+        prepared = chat_tools._request_json(base, "/api/project/modeling", "POST", {"projectId": binding["projectId"]})
+        runtimes.open(project_id, project_dir)
+        return prepared
 
     @app.get("/api/chat/providers", response_model=list[ChatProvider])
     def chat_providers(refresh: bool = False):
@@ -346,16 +364,27 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         if path == "api/events" and request.method == "GET":
             # Preserve the existing Studio job stream for embedded clients.
             # The Hub's application stream above remains their runtime source.
-            from urllib.request import ProxyHandler, Request as HttpRequest, build_opener
+            from http.client import HTTPConnection
             worker = runtimes.service(runtime)
-            upstream = await asyncio.to_thread(
-                build_opener(ProxyHandler({}), chat_tools._NoRedirect()).open,
-                HttpRequest(worker.url.rstrip("/") + target,
-                            headers={"Last-Event-ID": request.headers.get("last-event-id", "")}), timeout=20)
+            address = urlsplit(worker.url)
+            connection = HTTPConnection(address.hostname, address.port, timeout=20)
+
+            def attach():
+                connection.connect()
+                stream_socket = connection.sock
+                try:
+                    connection.request("GET", target, headers={"Last-Event-ID": request.headers.get("last-event-id", "")})
+                    return connection.getresponse(), stream_socket
+                except Exception:
+                    connection.close()
+                    raise
+
+            upstream, stream_socket = await asyncio.to_thread(attach)
+            app.state.studio_event_sockets.add(stream_socket)
 
             async def chunks():
                 try:
-                    while not await request.is_disconnected():
+                    while not runtimes._closing.is_set() and not await request.is_disconnected():
                         line = await asyncio.to_thread(upstream.readline)
                         if not line:
                             break
@@ -365,8 +394,14 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                     # reconnects; no operation is admitted by this read stream.
                     return
                 finally:
+                    try:
+                        stream_socket.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
                     upstream.close()
-            return StreamingResponse(chunks(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+                    connection.close()
+                    app.state.studio_event_sockets.discard(stream_socket)
+            return StreamingResponse(chunks(), status_code=upstream.status, media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
         result = await asyncio.to_thread(runtimes.forward, runtime, target, request.method,
                                          await request.body(), dict(request.headers))
         return Response(result.body, status_code=result.status, headers=result.headers)
@@ -408,7 +443,7 @@ def main(argv: list[str] | None = None) -> None:
         managed_instance_id=str(args.managed_instance_id) if args.managed_instance_id else None,
     )
     app = create_app(settings)
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
+    server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
     if args.managed_stdin:
         def watch_stdin():
             for line in sys.stdin:
