@@ -18,7 +18,7 @@ from typing import Any, Callable
 from acp import PROTOCOL_VERSION, RequestError, connect_to_agent
 from acp.schema import (
     ClientCapabilities, Implementation, RequestPermissionResponse,
-    SessionNotification, TextContentBlock,
+    ImageContentBlock, SessionNotification, TextContentBlock,
 )
 
 
@@ -55,6 +55,7 @@ class CodexAcpSession:
         self._stderr = deque(maxlen=16)
         self._session_id: str | None = None
         self._can_load = False
+        self._can_image = False
         self._config_options: list[dict] = []
         self._default_model = default_model
         self._replaying = False
@@ -99,6 +100,8 @@ class CodexAcpSession:
         model: str | None,
         on_session: Callable[[str], None],
         timeout_s: float,
+        *,
+        images: tuple[tuple[str, str], ...] = (),
     ) -> None:
         if timeout_s <= 0:
             raise ValueError("ACP inactivity timeout must be positive.")
@@ -110,7 +113,7 @@ class CodexAcpSession:
                     raise AcpSessionError("This ACP connection has been closed.")
                 self._cancel_requested.clear()
                 future = asyncio.run_coroutine_threadsafe(
-                    self._prompt(text, session_id, model, on_session, timeout_s), self._loop,
+                    self._prompt(text, session_id, model, on_session, timeout_s, images), self._loop,
                 )
             future.result()
         finally:
@@ -142,6 +145,7 @@ class CodexAcpSession:
         if initialized.protocol_version != PROTOCOL_VERSION:
             raise AcpSessionError(f"Unsupported ACP protocol version: {initialized.protocol_version}.")
         self._can_load = bool(initialized.agent_capabilities.load_session)
+        self._can_image = bool(initialized.agent_capabilities.prompt_capabilities.image)
 
     async def _drain_stderr(self, reader) -> None:
         while chunk := await reader.read(4096):
@@ -157,7 +161,7 @@ class CodexAcpSession:
                 and not self._replaying and not self._cancel_requested.is_set()):
             timeout.reschedule(self._loop.time() + self._activity_timeout_s)
 
-    async def _prompt(self, text, session_id, model, on_session, timeout_s) -> None:
+    async def _prompt(self, text, session_id, model, on_session, timeout_s, images) -> None:
         self._turn_task = asyncio.current_task()
         try:
             # Setup is bounded too. Only activity for this negotiated session
@@ -166,6 +170,8 @@ class CodexAcpSession:
                 self._activity_timeout, self._activity_timeout_s = timeout, timeout_s
                 self._check_cancelled()
                 await self._start()
+                if images and not self._can_image:
+                    raise AcpSessionError("This ACP adapter does not support image attachments.")
                 self._check_cancelled()
                 if self._session_id is None:
                     if session_id is not None:
@@ -195,7 +201,8 @@ class CodexAcpSession:
                 await self._select_model(model)
                 self._check_cancelled()
                 response = await self._connection.prompt(
-                    session_id=self._session_id, prompt=[TextContentBlock(type="text", text=text)],
+                    session_id=self._session_id, prompt=[TextContentBlock(type="text", text=text),
+                        *(ImageContentBlock(type="image", mime_type=mime, data=data) for mime, data in images)],
                 )
                 if response.stop_reason == "cancelled":
                     raise AcpCancelled("The ACP turn was cancelled.")

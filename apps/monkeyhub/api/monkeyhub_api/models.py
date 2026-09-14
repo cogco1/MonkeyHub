@@ -149,6 +149,28 @@ class ChatPermission(BaseModel):
     options: list[ChatPermissionOption]
 
 
+class ChatAttachment(BaseModel):
+    id: str
+    name: str
+    mimeType: str
+    size: int
+
+
+class ChatAttachmentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    name: str = Field(min_length=1, max_length=255)
+    mimeType: str = Field(default="application/octet-stream", min_length=1, max_length=100)
+    data: str = Field(max_length=((20 * 1024 * 1024 + 2) // 3) * 4)
+
+    @field_validator("name")
+    @classmethod
+    def filename_only(cls, value: str) -> str:
+        if value in {".", ".."} or any(char in "/\\" or ord(char) < 32 for char in value):
+            raise ValueError("Use a filename without a directory or control characters.")
+        return value
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant", "tool"]
@@ -159,6 +181,7 @@ class ChatMessage(BaseModel):
     # open that exact run. Absent on older records and on every other message.
     candidateId: str | None = None
     permission: ChatPermission | None = None
+    attachments: list[ChatAttachment] = Field(default_factory=list)
 
 
 class ChatSummary(BaseModel):
@@ -249,8 +272,9 @@ class ChatDesignContext(BaseModel):
 class ChatPostRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
-    content: str = Field(min_length=1)
+    content: str = ""
     projectId: str = Field(min_length=1)
+    attachments: list[ChatAttachmentInput] = Field(default_factory=list, max_length=8)
     # Absent on every existing caller, and never carried over: a later message
     # with no context of its own is prepared exactly as it was before.
     designContext: ChatDesignContext | None = None

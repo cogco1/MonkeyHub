@@ -1,5 +1,6 @@
 """Real subprocess chat turns with a local fake CLI; no model or paid call."""
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -59,6 +60,7 @@ if args[:1] == ["app-server"]:
                 {"id": "fixture-model-b", "displayName": "Fixture B", "hidden": False},
                 {"id": "fixture-hidden", "displayName": "Hidden", "hidden": True}]}}), flush=True)
     sys.exit(0)
+input_message = None
 if "--input-format" in args:
     # The SDK control protocol: the model list rides on the initialize answer.
     for line in sys.stdin:
@@ -71,17 +73,21 @@ if "--input-format" in args:
                 "subtype": "success", "request_id": request.get("request_id"),
                 "response": {"models": [{"value": "fixture-claude-a", "displayName": "Fixture A"},
                                         {"value": "fixture-claude-b", "displayName": "Fixture B"}]}}}), flush=True)
-    sys.exit(0)
+        elif request.get("type") == "user":
+            input_message = request
+            break
+    if input_message is None:
+        sys.exit(0)
 if "mcp" in args and "list" in args:
     print(json.dumps([{"name": "unrelated", "enabled": True, "transport": {"type": "stdio"}},
                       {"name": "remote-unrelated", "enabled": True, "transport": {"type": "streamable_http"}}]))
     sys.exit(0)
-prompt = sys.stdin.read()
+prompt = input_message["message"]["content"][0]["text"] if input_message else sys.stdin.read()
 config_path = Path(os.environ["CODEX_HOME"]) / "config.toml"
 config = tomllib.loads(config_path.read_text(encoding="utf-8")) if config_path.is_file() else {}
 profile = config.get("profiles", {}).get(config.get("profile"), {})
 with Path(sys.argv[1]).open("a", encoding="utf-8") as log:
-    log.write(json.dumps({"args": args, "prompt": prompt, "cwd": os.getcwd(),
+    log.write(json.dumps({"args": args, "prompt": prompt, "input_message": input_message, "cwd": os.getcwd(),
         "model_provider": profile.get("model_provider", config.get("model_provider"))}) + "\n")
 def emit(value):
     print(json.dumps(value), flush=True)
@@ -327,6 +333,157 @@ class ChatTests(unittest.TestCase):
 
     def calls(self):
         return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
+
+    def test_attachment_only_message_download_and_reopen(self):
+        original = {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            session = self.create()
+            other = self.create(project=self.other)
+            data = "合成附件，供测试读取。".encode("utf-8")
+            encoded = base64.b64encode(data).decode("ascii")
+            posted = client.post(f"/api/chat/sessions/{session.id}/messages", json={
+                "projectId": session.projectId,
+                "attachments": [{"name": "参考 材料.txt", "mimeType": "text/plain", "data": encoded}],
+            })
+            self.assertEqual(posted.status_code, 202, posted.text)
+            detail = self.finished(session)
+            self.assertEqual(detail.status, "idle")
+            self.assertEqual(detail.title, "参考 材料.txt")
+            message = detail.messages[0]
+            self.assertEqual(message.content, "")
+            attachment = message.attachments[0]
+            self.assertEqual((attachment.name, attachment.size), ("参考 材料.txt", len(data)))
+            url = f"/api/chat/sessions/{session.id}/attachments/{attachment.id}"
+            response = client.get(url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content, data)
+            self.assertEqual(response.headers["content-type"], "application/octet-stream")
+            self.assertIn("attachment;", response.headers["content-disposition"])
+            self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+            self.assertEqual(client.get(f"/api/chat/sessions/{other.id}/attachments/{attachment.id}").status_code, 404)
+            self.assertNotIn(encoded, (self.runtime / "chats" / f"{session.id}.json").read_text(encoding="utf-8"))
+            metadata, path = self.store.attachment(session.id, attachment.id)
+            self.assertTrue(path.is_relative_to(self.runtime / "chats" / session.id / "attachments"))
+            references = json.loads(self.calls()[-1]["prompt"].split("Files attached to this message", 1)[1].split("\n", 1)[1])
+            self.assertEqual(references[0]["path"], str(path))
+            client.put(f"/api/chat/sessions/{session.id}/archive", json={"archived": True})
+            self.assertEqual(client.get(url).content, data)
+            reopened = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+            self.addCleanup(reopened.shutdown)
+            self.assertTrue(reopened.get(session.id).archived)
+            retained, retained_path = reopened.attachment(session.id, attachment.id)
+            self.assertEqual(retained, metadata)
+            self.assertEqual(retained_path.read_bytes(), data)
+        self.assertEqual(original, {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
+
+    def test_invalid_attachments_never_write_a_message_or_file(self):
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            session = self.create()
+            transcript = self.runtime / "chats" / f"{session.id}.json"
+            saved = transcript.read_bytes()
+            for attachment in (
+                {"name": "../escape.txt", "data": "YQ=="},
+                {"name": "C:\\escape.txt", "data": "YQ=="},
+                {"name": "file.txt", "data": "not valid base64"},
+            ):
+                with self.subTest(attachment=attachment):
+                    response = client.post(f"/api/chat/sessions/{session.id}/messages", json={
+                        "projectId": session.projectId, "attachments": [attachment],
+                    })
+                    self.assertEqual(response.status_code, 422, response.text)
+            response = client.post(f"/api/chat/sessions/{session.id}/messages", json={
+                "projectId": session.projectId, "attachments": [{"name": "a", "data": "YQ=="}] * 9,
+            })
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(transcript.read_bytes(), saved)
+            self.assertFalse((self.runtime / "chats" / session.id).exists())
+            self.assertEqual(self.store.get(session.id).messages, [])
+
+    def test_oversize_attachments_are_refused_before_persistence(self):
+        session = self.create()
+        for sizes in ((20 * 1024 * 1024 + 1,), (15 * 1024 * 1024,) * 3):
+            with self.subTest(sizes=sizes):
+                request = ChatPostRequest(projectId=session.projectId, attachments=[
+                    {"name": f"file-{index}.bin", "data": base64.b64encode(b"x" * size).decode("ascii")}
+                    for index, size in enumerate(sizes)
+                ])
+                with self.assertRaises(HubFailure) as error:
+                    self.store.post(session.id, request)
+                self.assertEqual(error.exception.error.code, "CHAT_ATTACHMENT_TOO_LARGE")
+                self.assertEqual(self.store.get(session.id).messages, [])
+                self.assertFalse((self.runtime / "chats" / session.id).exists())
+
+    def test_attachment_write_is_rolled_back_when_transcript_save_fails(self):
+        session = self.create()
+        request = ChatPostRequest(projectId=session.projectId, attachments=[{"name": "keep.txt", "data": "YQ=="}])
+        self.store.post(session.id, request)
+        retained = self.finished(session).messages[0].attachments[0]
+        _, retained_path = self.store.attachment(session.id, retained.id)
+        transcript = self.runtime / "chats" / f"{session.id}.json"
+        saved = transcript.read_bytes()
+        with patch.object(chat.os, "replace", side_effect=OSError("fixture disk failure")), self.assertRaises(OSError):
+            self.store.post(session.id, request)
+        self.assertEqual(transcript.read_bytes(), saved)
+        self.assertEqual(retained_path.read_bytes(), b"a")
+        self.assertEqual(list(retained_path.parent.iterdir()), [retained_path])
+        self.assertEqual(len(self.store.get(session.id).messages), 2)
+
+    def test_legacy_codex_images_reach_first_and_resumed_turn(self):
+        session = self.create()
+        for index in range(2):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Read the image.",
+                attachments=[{"name": "test.png", "mimeType": "image/png", "data": "cGljdHVyZQ=="}]))
+            detail = self.finished(session)
+            self.assertEqual(detail.status, "idle")
+            args = self.calls()[-1]["args"]
+            image_index = args.index("--image")
+            self.assertEqual(Path(args[image_index + 1]).read_bytes(), b"picture")
+            self.assertEqual(args[-1], "-")
+            self.assertNotIn("cGljdHVyZQ==", args)
+            if index:
+                self.assertLess(args.index("resume"), image_index)
+                self.assertEqual(args[args.index("resume") + 1], self.store._sessions[session.id].nativeSessionId)
+        self.post(session)
+        self.assertEqual(self.finished(session).status, "idle")
+        self.assertNotIn("--image", self.calls()[-1]["args"])
+        self.assertNotIn("test.png", self.calls()[-1]["prompt"])
+
+    def test_claude_attachments_use_stdin_and_preserve_resume(self):
+        for provider in ("claude", "coding-plan"):
+            with self.subTest(provider=provider), patch.dict(os.environ, {
+                "ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token",
+            }):
+                session = self.create(provider=provider)
+                native = None
+                for index in range(2):
+                    self.store.post(session.id, ChatPostRequest(projectId=session.projectId,
+                        attachments=[{"name": "view.png", "mimeType": "image/png", "data": "cGljdHVyZQ=="},
+                                     {"name": "note.pdf", "mimeType": "application/pdf", "data": "JVBERg=="}]))
+                    detail = self.finished(session)
+                    self.assertEqual(detail.status, "idle", detail.error)
+                    call = self.calls()[-1]
+                    args, envelope = call["args"], call["input_message"]
+                    self.assertEqual(args[args.index("--input-format") + 1], "stream-json")
+                    self.assertNotIn("cGljdHVyZQ==", args)
+                    self.assertNotIn(str(self.runtime), args)
+                    self.assertEqual(envelope["session_id"], self.store._sessions[session.id].nativeSessionId)
+                    self.assertIsNone(envelope["parent_tool_use_id"])
+                    blocks = envelope["message"]["content"]
+                    self.assertEqual([block["type"] for block in blocks], ["text", "image"])
+                    self.assertIn("note.pdf", blocks[0]["text"])
+                    self.assertEqual(blocks[1]["source"], {"type": "base64", "media_type": "image/png", "data": "cGljdHVyZQ=="})
+                    if index:
+                        self.assertEqual(self.store._sessions[session.id].nativeSessionId, native)
+                        self.assertEqual(args[args.index("--resume") + 1], native)
+                    native = self.store._sessions[session.id].nativeSessionId
+                self.post(session)
+                self.assertEqual(self.finished(session).status, "idle")
+                self.assertIsNone(self.calls()[-1]["input_message"])
+                self.assertNotIn("view.png", self.calls()[-1]["prompt"])
 
     def test_turn_envelope_reuses_connected_action_contract(self):
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
@@ -2013,7 +2170,7 @@ class ChatTests(unittest.TestCase):
             def __init__(self, **arguments):
                 self.default_model = "fixture-model-a"
 
-            def prompt(self, text, session_id, model, on_session, timeout_s):
+            def prompt(self, text, session_id, model, on_session, timeout_s, *, images=()):
                 on_session("fixture/session:recorded")
                 sent.append({"prompt": text, "timeout_s": timeout_s})
 

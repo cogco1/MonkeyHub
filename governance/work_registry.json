@@ -486,7 +486,18 @@
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "tests/monkeymonitor/test_web_traces.py",
             "monkeymonitor/server.py",
-            "tests/monkeymonitor/test_server.py"
+            "tests/monkeymonitor/test_server.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_session.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "apps/monkeyhub/web/src/ChatShell.css",
+            "apps/monkeyhub/web/src/api/generated/index.ts",
+            "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "governance/architecture_policy.json"
           ],
           "depends_on": []
         },

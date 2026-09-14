@@ -82,6 +82,46 @@ export type ChatArchiveRequest = {
 };
 
 /**
+ * ChatAttachment
+ */
+export type ChatAttachment = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Mimetype
+     */
+    mimeType: string;
+    /**
+     * Size
+     */
+    size: number;
+};
+
+/**
+ * ChatAttachmentInput
+ */
+export type ChatAttachmentInput = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Mimetype
+     */
+    mimeType?: string;
+    /**
+     * Data
+     */
+    data: string;
+};
+
+/**
  * ChatCreateRequest
  */
 export type ChatCreateRequest = {
@@ -218,6 +258,10 @@ export type ChatMessage = {
      */
     candidateId?: string | null;
     permission?: ChatPermission | null;
+    /**
+     * Attachments
+     */
+    attachments?: Array<ChatAttachment>;
 };
 
 /**
@@ -289,11 +333,15 @@ export type ChatPostRequest = {
     /**
      * Content
      */
-    content: string;
+    content?: string;
     /**
      * Projectid
      */
     projectId: string;
+    /**
+     * Attachments
+     */
+    attachments?: Array<ChatAttachmentInput>;
     designContext?: ChatDesignContext | null;
 };
 
@@ -1830,6 +1878,38 @@ export type PostChatApiChatSessionsSessionIdMessagesPostResponses = {
 };
 
 export type PostChatApiChatSessionsSessionIdMessagesPostResponse = PostChatApiChatSessionsSessionIdMessagesPostResponses[keyof PostChatApiChatSessionsSessionIdMessagesPostResponses];
+
+export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Attachment Id
+         */
+        attachment_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}';
+};
+
+export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetError = ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetErrors[keyof ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetErrors];
+
+export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type SetChatModelApiChatSessionsSessionIdModelPutData = {
     body: ChatModelRequest;

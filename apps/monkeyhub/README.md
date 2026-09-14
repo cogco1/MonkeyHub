@@ -28,6 +28,8 @@ The Hub runs the existing services and owns only the child processes it starts. 
 
 ## Packaged Windows entry
 
+The chat paperclip accepts files; files can also be dropped or pasted into the composer. Send text, attachments, or both. A message accepts up to 8 files, 20 MiB each and 40 MiB in total. Sent files stay with the conversation and can be downloaded after reopening or archiving it. PNG, JPEG, WebP and GIF use the native model image input; PDFs and other files are available through the CLI's file-reading tools. Attachments are reference files in the Hub runtime, not imports into a building project.
+
 The package keeps the repository layout and includes prebuilt Hub and Studio web directories. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
 
 Every build includes `apps/monkeyfab` and its preparation/send dependencies in the same runtime. One Hub source commit in `build-info.json` identifies every included application, for both desktop and browser entrypoints.
@@ -74,6 +76,7 @@ The default runtime root is LOCALAPPDATA/MonkeyHub; --runtime-root selects anoth
 | Chosen Studio project/run, workspace folder for new projects, CAD export and service ports | Same settings owner; runtime-root/config/applications.json |
 | Hub-owned child stdout/stderr | runtime-root/logs/ |
 | Chat transcripts, archive state, project associations and native CLI session ids | runtime-root/chats/; these are conversations, not building state |
+| Chat attachment bytes | runtime-root/chats/<session-id>/attachments/; transcripts retain file metadata only |
 | Optional Studio usage diagnostics read by Monitor | runtime-root/diagnostics/monkeymonitor/ |
 | Building data and retained runs | The selected project's existing ArchFlow project interfaces |
 | Print STL parts and assembly table | The new or empty absolute output directory explicitly entered in the Fab page; the independent CLI writes it |
@@ -93,6 +96,8 @@ Session summaries and details include `archived`, defaulting to false for older 
 A chat project carries the published `version` and accepted `stage` its own P036 records hold, or null when they cannot be read; a candidate is never reported there. A chat message has role `user`, `assistant` or `tool`. A `tool` message is one MCP call: its first content line is the summary and the rest are its bounded diagnostics; `candidateId` names a finished candidate when that call reported one, and is absent everywhere else, including in records written before this field existed.
 
 The actual schema is available at GET /openapi.json. Generate a client from this running schema and use a separate client instance for each service.
+
+`POST /api/chat/sessions/{id}/messages` accepts optional `attachments: [{name, mimeType, data}]`, where `data` is plain base64, and allows empty text when a file is attached. Messages return only `{id, name, mimeType, size}` attachment metadata. `GET /api/chat/sessions/{id}/attachments/{attachment_id}` downloads an attachment belonging to that conversation.
 
 | Request | Result |
 | --- | --- |

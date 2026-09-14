@@ -57,6 +57,9 @@ let permissionResponseGate = Promise.resolve(), permissionFailure = null;
 let modelingResponseGate = Promise.resolve();
 let modelingFailure = null;
 let chatCreationFailureFor = null;
+let chatMessageFailureFor = null;
+let chatMessageResponseGate = Promise.resolve();
+const uploadedAttachments = new Map();
 let projectListGate = null;
 let runtimeOpenGate = null;
 let runtimeOpenCaptured = null;
@@ -183,6 +186,13 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     message.permission = null;
     return json(session);
   }
+  const attachmentMatch = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/attachments\/([^/]+)$/);
+  if (attachmentMatch) {
+    const file = uploadedAttachments.get(attachmentMatch[2]);
+    assert.equal(file?.sessionId, attachmentMatch[1]);
+    return route.fulfill({ body: Buffer.from(file.data, "base64"), contentType: file.mimeType,
+      headers: { "Content-Disposition": `attachment; filename="${file.name}"` } });
+  }
   const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)(?:\/(messages|stop|model|archive|fail))?$/);
   if (match) {
     const session = sessions.find((item) => item.id === match[1]);
@@ -190,8 +200,15 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       assert.equal(Boolean(session.archived), false, "archived chats must be restored before sending");
       assert.equal(data().projectId, session.projectId);
       assert.equal(appsFor(session.projectDir).find((item) => item.appId === "monkeyarch").state, "running");
-      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete" });
-      session.title = session.messages[0].content; session.status = "running";
+      if (session.projectDir === chatMessageFailureFor) return json({ code: "CHAT_SEND_FAILED", detail: "Fixture upload failed. Try again." }, 503);
+      await chatMessageResponseGate;
+      const attachments = (data().attachments ?? []).map((file, index) => {
+        const id = `attachment-${session.id}-${session.messages.length}-${index}`;
+        uploadedAttachments.set(id, { ...file, sessionId: session.id });
+        return { id, name: file.name, mimeType: file.mimeType, size: Buffer.from(file.data, "base64").length };
+      });
+      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments });
+      session.title = session.messages[0].content || session.messages[0].attachments?.[0]?.name; session.status = "running";
       // What the API saves while the CLI works: one row per MCP call, a failed
       // one, and the finished candidate that call reported.
       session.messages.push({ id: `t-${session.messages.length}`, role: "tool", status: "streaming",
@@ -876,6 +893,105 @@ try {
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/chat/projects" && body.name === "provider-recovery").length, 1,
     "retrying the connection never repeats project creation");
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "provider-recovery").length, 1);
+  // Attachments stay in the selected draft until its message is sent. Every
+  // file here is synthetic; these routes never call a provider or model.
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  await page.locator("#chat-input").fill("Attachment draft A");
+  const beforeAttachmentDrafts = writes.filter(([, pathname]) => pathname.endsWith("/messages")).length;
+  const fileChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Add attachments", exact: true }).click();
+  await (await fileChooser).setFiles([
+    { name: "outline.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic outline A") },
+    { name: "remove-me.txt", mimeType: "text/plain", buffer: Buffer.from("Remove this draft file") },
+  ]);
+  await page.getByRole("button", { name: "Remove attachment: remove-me.txt", exact: true }).click();
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 1);
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
+  await page.locator("#chat-input").fill("Attachment draft B");
+  await page.locator("#chat-input").evaluate((input) => {
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "clipboard.png", { type: "image/png" }));
+    input.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }));
+  });
+  await page.locator(".chat-composer").evaluate((composer) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File(["Dropped notes B"], "notes.txt", { type: "text/plain" }));
+    composer.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await page.getByRole("button", { name: "Remove attachment: notes.txt", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft A");
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft B");
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
+  assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/messages")).length, beforeAttachmentDrafts);
+  await page.locator("#chat-input").fill("");
+  chatMessageFailureFor = "D:\\fixture\\B";
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.locator(".chat-error").filter({ hasText: "Fixture upload failed. Try again." }).waitFor();
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
+  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isEnabled(), true);
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
+  chatMessageFailureFor = null;
+  let releaseAttachmentPost;
+  chatMessageResponseGate = new Promise((resolve) => { releaseAttachmentPost = resolve; });
+  const attachmentRequest = page.waitForRequest((req) => req.method() === "POST" && new URL(req.url()).pathname.endsWith("/messages"));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const sentAttachmentRequest = await attachmentRequest;
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
+  const attachmentReply = page.waitForResponse((response) => response.request() === sentAttachmentRequest);
+  releaseAttachmentPost(); chatMessageResponseGate = Promise.resolve();
+  await attachmentReply;
+  await page.waitForFunction(() => !document.querySelector("#chat-input")?.disabled);
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
+  const attachmentPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1);
+  assert.equal(attachmentPost[2].content, "");
+  assert.equal(attachmentPost[2].projectId, "B");
+  assert.deepEqual(attachmentPost[2].attachments, [
+    { name: "clipboard.png", mimeType: "image/png", data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64") },
+    { name: "notes.txt", mimeType: "text/plain", data: Buffer.from("Dropped notes B").toString("base64") },
+  ]);
+  const savedAttachments = page.locator(".chat-attachments--saved a");
+  assert.equal(await savedAttachments.count(), 2);
+  const attachedSession = sessions.find((session) => session.title === "clipboard.png");
+  assert.equal(await savedAttachments.first().getAttribute("href"), `/api/chat/sessions/${attachedSession.id}/attachments/${attachedSession.messages[0].attachments[0].id}`);
+  const downloaded = page.waitForEvent("download");
+  await savedAttachments.first().click();
+  assert.equal((await downloaded).suggestedFilename(), "clipboard.png");
+  await page.screenshot({ path: path.join(temporary, "chat-attachments.png"), fullPage: true });
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
+  // Local validation leaves the already-selected draft untouched.
+  await page.locator('input[type="file"]').setInputFiles(Array.from({ length: 8 }, (_, index) => ({ name: `extra-${index}.txt`, mimeType: "text/plain", buffer: Buffer.from("x") })));
+  await page.locator(".chat-error").filter({ hasText: "Add up to 8 attachments per message." }).waitFor();
+  for (const [sizes, detail] of [[[20 * 1024 * 1024 + 1], "Each attachment must be 20 MiB or smaller."], [[20 * 1024 * 1024, 20 * 1024 * 1024], "Attachments must total 40 MiB or less."]]) {
+    await page.locator(".chat-composer").evaluate((composer, sizes) => {
+      const dataTransfer = new DataTransfer();
+      sizes.forEach((size, index) => dataTransfer.items.add(new File([new Uint8Array(size)], `large-${index}.bin`, { type: "application/octet-stream" })));
+      composer.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+    }, sizes);
+    await page.locator(".chat-error").filter({ hasText: detail }).waitFor();
+  }
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
   projects.splice(0); sessions.splice(0); settings.projectDir = null;

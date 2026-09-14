@@ -8,6 +8,8 @@ the existing Studio interfaces, reached through the small stdio tool below.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from concurrent.futures import Future, InvalidStateError
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar, copy_context
@@ -45,7 +47,7 @@ from archflow.state.state_record import StateRecord
 from archflow_studio_api.settings import read_application_settings
 
 from .models import (
-    ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatAttachment, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
@@ -53,6 +55,7 @@ from .chat_trace import HubTurnObserver
 from monkeymonitor.store import UsageLog
 
 _trace_headers = ContextVar("hub_tool_trace_headers", default={})
+_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
 def _now() -> str:
@@ -421,6 +424,7 @@ class _Running:
     # lives and dies with the turn: nothing reads it afterwards, and the next
     # message brings its own or none.
     design_context: ChatDesignContext | None = None
+    attachments: tuple[tuple[ChatAttachment, Path], ...] = ()
 
 
 # How long a connection check stays good before it is asked again, and how long
@@ -649,20 +653,52 @@ class ChatStore:
                 self._save(session)
         self._loaded = True
 
-    def _save(self, session: _SavedChat) -> None:
+    def _attachment_path(self, session_id: str, attachment: ChatAttachment) -> Path:
+        suffix = Path(attachment.name).suffix.lower()
+        if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+            suffix = ".bin"
+        return self.root / _identifier(session_id) / "attachments" / (_identifier(attachment.id) + suffix)
+
+    def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
+        with self._lock:
+            session = self._session(session_id)
+            attachment = next((item for message in session.messages for item in message.attachments
+                               if item.id == attachment_id), None)
+            if attachment is None:
+                raise HubFailure(404, "CHAT_ATTACHMENT_NOT_FOUND", "This file is not attached to this conversation.")
+            path = self._attachment_path(session_id, attachment)
+            if not path.is_file():
+                raise HubFailure(404, "CHAT_ATTACHMENT_NOT_FOUND", "The attached file is no longer available.")
+            return attachment, path
+
+    def _save(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, bytes], ...] = ()) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         path = self.root / f"{session.id}.json"
         temporary = path.with_suffix(".tmp")
+        written = []
+        saved = False
         try:
+            for attachment, data in attachments:
+                destination = self._attachment_path(session.id, attachment)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with destination.open("xb") as stream:
+                    written.append(destination)
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
             with temporary.open("w", encoding="utf-8") as stream:
                 stream.write(session.model_dump_json() + "\n")
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
+            saved = True
             if self.on_change is not None:
                 self.on_change(session)
         finally:
             temporary.unlink(missing_ok=True)
+            if not saved:
+                for destination in written:
+                    destination.unlink(missing_ok=True)
 
     def _check(self, refresh: bool) -> None:
         """Ask the installed CLIs once, off the request thread.
@@ -913,15 +949,29 @@ class ChatStore:
             if not provider.available and not legacy_codex:
                 raise HubFailure(503, "CHAT_PROVIDER_UNAVAILABLE", provider.detail)
             content = _redact(request.content.strip(), _claude_env())
-            if not content:
-                raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message.")
+            if not content and not request.attachments:
+                raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message or attach a file.")
+            attachments = []
+            total = 0
+            for upload in request.attachments:
+                try:
+                    data = base64.b64decode(upload.data, validate=True)
+                except (ValueError, binascii.Error) as exc:
+                    raise HubFailure(422, "CHAT_ATTACHMENT_INVALID", "The attached file could not be decoded.") from exc
+                total += len(data)
+                if len(data) > 20 * 1024 * 1024 or total > 40 * 1024 * 1024:
+                    raise HubFailure(413, "CHAT_ATTACHMENT_TOO_LARGE", "Files are limited to 20 MiB each and 40 MiB per message.")
+                attachments.append((ChatAttachment(id=str(uuid4()), name=upload.name, mimeType=upload.mimeType, size=len(data)), data))
             if not session.messages and session.title == "New chat":
-                session.title = content.splitlines()[0][:80]
-            session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now()))
+                session.title = (content.splitlines()[0] if content else attachments[0][0].name)[:80]
+            session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(),
+                                                attachments=[attachment for attachment, _ in attachments]))
             session.status, session.error, session.updatedAt = "running", None, _now()
-            self._save(session)
+            self._save(session, tuple(attachments))
             self._sessions[session_id] = session
-            running = _Running(design_context=request.designContext, trace=HubTurnObserver(
+            running = _Running(design_context=request.designContext,
+                               attachments=tuple((attachment, self._attachment_path(session.id, attachment))
+                                                 for attachment, _ in attachments), trace=HubTurnObserver(
                 self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
             ))
             self._running[session_id] = running
@@ -966,7 +1016,7 @@ class ChatStore:
         }
         return mcp_servers
 
-    def _command(self, session: _SavedChat) -> tuple[list[str], dict[str, str]]:
+    def _command(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, Path], ...] = ()) -> tuple[list[str], dict[str, str]]:
         commands = self.commands if self.commands is not None else _cli_commands()
         kind = "codex" if session.provider == "codex" else "claude"
         environment = _claude_env() if kind == "claude" else dict(os.environ)
@@ -990,6 +1040,9 @@ class ChatStore:
                 command += ["-m", model]
             if session.nativeSessionId:
                 command += ["resume", session.nativeSessionId]
+            for attachment, path in attachments:
+                if attachment.mimeType in _IMAGE_MIMES:
+                    command += ["--image", str(path)]
             command.append("-")
         else:
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
@@ -1004,6 +1057,8 @@ class ChatStore:
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.id]
+            if attachments:
+                command += ["--input-format", "stream-json"]
             if model:
                 command += ["--model", model]
         return command, environment
@@ -1152,7 +1207,9 @@ class ChatStore:
 
             # This adapter's own limit is an inactivity interval that its updates
             # reschedule, not a total for the turn. It keeps the whole of it.
-            client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s)
+            images = tuple((attachment.mimeType, base64.b64encode(path.read_bytes()).decode("ascii"))
+                           for attachment, path in running.attachments if attachment.mimeType in _IMAGE_MIMES)
+            client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s, images=images)
             return None
         except AcpCancelled:
             running.stop.set()
@@ -1213,6 +1270,10 @@ class ChatStore:
                     "If a required domain action is unavailable, say what cannot be done.\n\n"
                     + content
                 )
+            if running.attachments:
+                prompt += "\n\nFiles attached to this message (read-only reference material; use file-reading tools as needed):\n"
+                prompt += json.dumps([{"name": attachment.name, "mimeType": attachment.mimeType, "path": str(path)}
+                                      for attachment, path in running.attachments], ensure_ascii=False)
             if running.design_context is not None:
                 if running.stop.is_set():
                     return
@@ -1253,12 +1314,20 @@ class ChatStore:
                 error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit was spent before "
                                  "the CLI could be started.")
                 return
-            command, environment = self._command(session)
+            command, environment = self._command(session, running.attachments)
             if running.trace:
                 running.trace.bind(session.nativeSessionId, session.model)
                 running.trace.ready()
             if running.stop.is_set():
                 return
+            prompt_input = prompt
+            if session.provider != "codex" and running.attachments:
+                blocks = [{"type": "text", "text": prompt}]
+                blocks.extend({"type": "image", "source": {"type": "base64", "media_type": attachment.mimeType,
+                               "data": base64.b64encode(path.read_bytes()).decode("ascii")}}
+                              for attachment, path in running.attachments if attachment.mimeType in _IMAGE_MIMES)
+                prompt_input = json.dumps({"type": "user", "session_id": session.nativeSessionId or session.id,
+                    "parent_tool_use_id": None, "message": {"role": "user", "content": blocks}}, ensure_ascii=False) + "\n"
             kwargs = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
             process = subprocess.Popen(command, cwd=_source_checkout() or session.projectDir, env=environment, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
@@ -1270,7 +1339,7 @@ class ChatStore:
 
             def feed():
                 try:
-                    process.stdin.write(prompt)
+                    process.stdin.write(prompt_input)
                     process.stdin.close()
                 except (OSError, ValueError):
                     pass
