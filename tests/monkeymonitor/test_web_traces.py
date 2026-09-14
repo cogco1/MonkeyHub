@@ -116,6 +116,23 @@ try {
     assert.equal(await page.locator('#trace-evidence pre').evaluate(pre => pre.scrollTop), readingPosition.rawY,
       'live updates preserve the raw record scroll position');
   }
+  const availableTasks = await page.locator('#trace-select option').evaluateAll(options => options.map(option => option.value));
+  const readingAnchor = await candidateBranch.evaluate(element => element.getBoundingClientRect().top);
+  await page.route('**/api/traces', route => route.fulfill({ status: 503, json: { error: 'Journal busy' } }), { times: 1 });
+  await page.waitForFunction(() => !document.querySelector('#trace-notice').hidden, null, { timeout: 15000 });
+  assert.deepEqual(await page.locator('#trace-select option').evaluateAll(options => options.map(option => option.value)), availableTasks,
+    'a busy journal must retain the entire task list');
+  assert.equal(await page.locator('#trace-select').inputValue(), 'turn-root');
+  assert.equal(await provider.getAttribute('aria-pressed'), 'true');
+  assert.equal(await candidateBranch.locator('..').getAttribute('open'), '');
+  assert.equal(await candidateBranch.evaluate(element => element === document.activeElement), true);
+  assert.equal(await page.locator('#trace-evidence .trace-raw').getAttribute('open'), '');
+  assert.ok(Math.abs(await candidateBranch.evaluate(element => element.getBoundingClientRect().top) - readingAnchor) <= 1,
+    'the busy notice must not move the content being read within the viewport');
+  assert.equal(await page.locator('#trace-evidence pre').evaluate(pre => pre.scrollTop), readingPosition.rawY);
+  await page.waitForFunction(() => document.querySelector('#trace-notice').hidden, null, { timeout: 15000 });
+  assert.ok(Math.abs(await candidateBranch.evaluate(element => element.getBoundingClientRect().top) - readingAnchor) <= 1,
+    'recovery must preserve the reading position when the notice disappears');
   const output = process.env.MONITOR_WEB_QA_DIR;
   if (output) { await mkdir(output, { recursive: true }); await page.screenshot({ path: join(output, 'monitor-turn-desktop.png'), fullPage: true }); }
 
