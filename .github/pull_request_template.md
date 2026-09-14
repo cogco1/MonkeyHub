@@ -1,7 +1,7 @@
 ## 工作归属
 
 - GitHub Issue：#___
-- Work id / lane：<新任务填 Issue；继续既有 legacy 工作时填 `P###[/lane]`>
+- Work id / lane：<新任务填 `GH-<issue>[/lane]`；继续既有 legacy 工作时填 `P###[/lane]`>
 - 分支 / worktree：<本任务的独立分支和检出>
 - Base ref：<本次实际基线提交；若因上游合入而更新，写该依赖>
 - Contributor / reviewer / handoff：<实际责任人、审查人和交接顺序；未指定则明说>
@@ -11,7 +11,7 @@
 新任务规则：GitHub Issue 是 canonical task identity，PR 是实现/review 单元。
 P/M/R 工作卡编号已冻结，不再分配 P116+ 或新的 M/R 编号；既有 legacy 卡原地收尾。
 work_registry 只负责当前 source-edit scope / 并发 / handoff，不是第二份 backlog。
-Issue-native GH-<n> 的机器 claim 正在 #60 迁移；迁移完成前，现有 archcheck 仍接受历史 P### claim。
+Issue-native machine claim 使用 GH-<issue> 或 GH-<issue>/<lane>；archcheck 同时保留历史 P### claim 兼容。
 P000-governance 仅适用于 checker 已列定的治理维护路径，不是通用越界许可。
 -->
 

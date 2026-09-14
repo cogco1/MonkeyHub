@@ -9,7 +9,7 @@
 MonkeyHub 的新任务以 **GitHub Issue** 为唯一 canonical task identity；Pull Request 是实现与 review 单元。
 历史上的 R/M/P 工作卡继续有效，但编号已经冻结：已有 `R###`、`M###`、`P###` 可继续收尾，**不再创建 `P116+` 或新的 M/R 卡**。`P115` 只保留既有 capability-consolidation 工作，不再作为所有未来需求的默认容器。
 
-需要在提交或机器登记中表达 GitHub Issue 时，目标格式是 `GH-<issue-number>`；在 `archcheck` 完成兼容迁移前，既有 P 卡提交继续沿用原规则。不要为了新 Issue 发一个新的 P 编号，也不要重编号历史 commit/card。
+需要在提交或机器登记中表达 GitHub Issue 时，使用 `GH-<issue-number>`；同一 Issue 有并行 lane 时可使用 `GH-<issue-number>/<lane>`。`archcheck --changed` 对 GH work id 与既有 P 卡执行同一套历史 write-scope 校验；既有 P 卡提交继续沿用原身份，不重编号历史 commit/card。
 
 职责分工：
 
@@ -27,9 +27,9 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 
 提交前也请确认没有把雇主/学校的保密材料、私有项目数据、API key、个人数据、受限模型/数据集或未经授权的第三方代码带入仓库。第三方内容必须明确标注来源和许可。
 
-1. **先取基线，再查 Issue 与 owner。** `git fetch origin main` 后记录约定提交（如 `git rev-parse origin/main`），先读 GitHub Issue，再运行 `python tools/devctl.py work` 和 `module <目标>`。用返回的精确 module id 查契约、真实调用方及相关测试，确认当前路径重叠后再改代码。
+1. **先取基线，再查 Issue 与 owner。** `git fetch origin main` 后记录约定的提交（如 `git rev-parse origin/main`），先读 GitHub Issue，再运行 `python tools/devctl.py work` 和 `module <目标>`。用返回的精确 module id 查契约、真实调用方及相关测试，确认当前路径重叠后再改代码。
 2. **一个 Issue、短分支和独立 worktree。** 新工作先开/选 GitHub Issue；需要源码并发协调时才进入 `work_registry`。新 worktree 使用 `python tools/workspace.py create --branch codex/<issue号>-<简短名称> --base <约定提交>`；继续任务复用原检出，不共用脏 worktree，不吸收别人的 WIP。已经存在的 legacy P lane 可原地收尾，不强制迁移。
-3. **按任务的窄路径修改。** 开工前写明本次 `write_scope`；policy 的 `shared_write_scope` 仍可共享，不是运行权限。共享测试、生成视图及治理文件按 policy 处理，不自动视为生产路径冲突。现阶段历史 P lane 的提交仍按 `P###/lane` 写；Issue-native `GH-<n>` claim 由 #60 的 checker 迁移完成后启用。
+3. **按任务的窄路径修改。** 开工前写明本次 `write_scope`；policy 的 `shared_write_scope` 仍可共享，不是运行权限。共享测试、生成视图及治理文件按 policy 处理，不自动视为生产路径冲突。新 Issue 的提交使用 `GH-<n>` / `GH-<n>/<lane>`；既有 legacy P lane 继续使用 `P###/lane`。
 4. **给独立功能合适的位置。** 先查现有公开函数和调用方；新的分析或出图算法可以有独立目录或外部包，通过函数、CLI、API 或 adapter 接入。不要强迫每个功能改 core 或塞进已有大文件；不要复制已有状态、持久化或发布权威。实验与接入方式见 [`labs/README.md`](labs/README.md) 和指南第 7 节。
 5. **按数据用途保存。** 活跃项目使用显式外部项目根，持久数据经 `archflow.project` 的现有接口保存；只有明确晋升的输入和证据进入 `probes/`。用户设置、临时文件和 adapter workspace 沿各自已有边界。确实新增持久记录或受检查的写入点时，更新现有 kind 表或 policy，不为普通内部函数新增登记。
 6. **共享接口先落主线。** 已有契约足够时各任务独立实现；不足时由现有 owner 的小型上游 PR 补齐，合入 `main` 后相关分支更新基线，不在后端分支复制接口。软件归口、公开契约或列出的测试改变时同步 module registry；内部修复不用改表。DTO 改动后运行 `api:generate` 和 `api:check`，实际对外协议变化同步 [`PROTOCOL.md`](docs/PROTOCOL.md)。前端文案沿用中英文同键表。
@@ -40,13 +40,13 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 
 [`governance/work_registry.json`](governance/work_registry.json) 是**活跃源码协调表**，不是需求 backlog。一个 GitHub Issue 只有在需要声明实际源码范围、branch/worktree、并行依赖或 handoff 时才进入 registry；Issue 本身仍在 GitHub 跟踪。
 
-现有 legacy 卡可带 `lanes` 数组。每个 lane 填写：
+现有 legacy 卡可带 `lanes` 数组。Issue-native 工作也可用 `GH-<n>` 作为 registry `id`，需要并行实现时使用同样的 `lanes` 结构。每个 lane 填写：
 
 | 字段 | 填什么 |
 | --- | --- |
 | `id`、`issue` | lane 短名及对应 GitHub Issue / 约定工作项 |
 | `branch`、`worktree`、`base_ref` | 本任务分支、实际独立检出、约定基线；优先记录准确提交 |
-| `contributor`、`reviewer`、`handoff` | 实际责任人、审查人、交接对象与顺序；未指定 reviewer/handoff 写 `null`，不代填人名 |
+| `contributor`、`reviewer`、`handoff` | 实际责任人、审查人和交接对象与顺序；未指定 reviewer/handoff 写 `null`，不代填人名 |
 | `modules`、`write_scope` | 现有 module id 与本次确实要改的窄路径；模块 owner 仍是软件职责 |
 | `depends_on` | 需先完成的现有 work id / lane；没有依赖时为空数组 |
 | `status`、`blocked_reason` | `planned` / `active` / `review` / `blocked` / `done`；blocked 必须说明具体缺项 |
@@ -55,6 +55,7 @@ MonkeyHub 的第一方代码以 **AGPL-3.0-only** 发布，同时保留未来提
 
 ```powershell
 python tools/devctl.py work
+python tools/devctl.py work GH-56
 python tools/devctl.py work P115
 python tools/devctl.py work P115/team-lanes
 python tools/devctl.py work --json
@@ -64,7 +65,7 @@ python tools/devctl.py work --json
 
 `active` 与 `review` 是当前写入范围声明；`planned`、`blocked`、`done` 不占并发路径。两个当前任务声明相同非共享生产路径时，缩窄范围，或把后行工作标为 `blocked`、加入 `depends_on` 并在 `handoff` 写明先后顺序。依赖未完成的工作不能标为 active/review。上游合入后核实实际提交、更新基线和依赖，再继续；完成后释放对应 live scope，GitHub Issue/PR 仍保留历史。
 
-`archcheck --changed <base>` 仍按每次提交当时的 policy 与 work scope 检查，因此历史 P 卡不会被重编号或追溯改写。Issue-native `GH-<n>` 的机器 claim 迁移由 GitHub Issue #60 跟踪；在它落地前继续使用已有 legacy claim 通过 CI。仅规则与说明维护可明确写 `P000-governance`，准确路径由 [`tools/archcheck.py`](tools/archcheck.py) 定义。
+`archcheck --changed <base>` 按每次提交当时的 policy 与 work scope 检查，因此历史 P 卡不会被重编号或追溯改写。新 Issue 使用 `GH-<n>` / `GH-<n>/<lane>` claim；未知或格式不完整的 GH id 不会部分匹配其他 Issue。仅规则与说明维护可明确写 `P000-governance`，准确路径由 [`tools/archcheck.py`](tools/archcheck.py) 定义。
 
 ## 接着读什么
 
