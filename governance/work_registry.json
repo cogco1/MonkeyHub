@@ -3,20 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-54",
-      "stream": "runtime",
-      "status": "active",
-      "goal": "Inspect declared project formats and report read-only retained-format inventories and migration blockers.",
-      "depends_on": [],
-      "write_scope": [
-        "archflow/project/repository.py",
-        "tools/create_project.py",
-        "tests/test_project_format_migration.py",
-        "governance/module_registry.json",
-        "docs/SYSTEM_MAP.md"
-      ]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",

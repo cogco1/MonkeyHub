@@ -2180,7 +2180,9 @@
         "project-scoped design branch refs with atomic compare-and-swap under the existing process and file locking primitives; independent of canonical HEAD",
         "exact historical published state read through the retained event chain",
         "design Stage reachability and unreferenced prepared Stage reporting in verify",
-        "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization; archive callers may include all retained runs and their referenced artifacts without promoting candidates or copying runtime workspaces"
+        "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization; archive callers may include all retained runs and their referenced artifacts without promoting candidates or copying runtime workspaces",
+        "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
+        "Ephemeral retained-format inventories and migration blockers through the existing guarded transfer closure; no migration writes or second format manifest"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -2204,7 +2206,9 @@
         "ProjectArtifactRef",
         "ProjectVersionRef",
         "PreparedTransition",
-        "RecoveryReport"
+        "RecoveryReport",
+        "ProjectFormatInspection",
+        "ProjectMigrationPlan"
       ],
       "public_api": [
         "FilesystemProjectRepository",
@@ -2223,7 +2227,13 @@
         "FilesystemProjectRepository.bootstrap_transfer",
         "FilesystemProjectRepository.import_candidate_transfer",
         "FilesystemProjectRepository.pull_transfer",
-        "FilesystemProjectRepository.initialize_authored_inputs"
+        "FilesystemProjectRepository.initialize_authored_inputs",
+        "inspect_project_format",
+        "plan_project_migration",
+        "ProjectFormatInspection",
+        "ProjectMigrationPlan",
+        "RetainedFormatEntry",
+        "FilesystemProjectRepository.lock_paths"
       ],
       "depends_on": [
         "project.digests",
@@ -2258,14 +2268,16 @@
         "put_workspace_file writes an immutable binary only below the assigned run workspace and never changes HEAD",
         "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
-        "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD"
+        "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
+        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and legacy readability does not imply upgradeability"
       ],
       "status": "canonical",
       "tests": [
         "tests/test_freeze_project_stage_workflow.py",
         "tests/test_project_repository.py",
         "tests/test_record_kinds.py",
-        "tests/test_project_transfer.py"
+        "tests/test_project_transfer.py",
+        "tests/test_project_format_migration.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -5610,7 +5622,8 @@
       "purpose": "Create one explicitly located external P036 project from empty or supplied authored inputs, before any run.",
       "owns": [
         "the create-project command line: external project root and optional authored StateRecord/seat-pack input files",
-        "checking new project identity and rejecting occupied roots, foreign or bound records and malformed seats before initialization"
+        "checking new project identity and rejecting occupied roots, foreign or bound records and malformed seats before initialization",
+        "Read-only --inspect-format and --plan-migration diagnostics over an explicitly located existing project; failed closure planning returns a nonzero exit code"
       ],
       "does_not_own": [
         "project format, filesystem writes or HEAD authority (project.repository)",
@@ -5626,7 +5639,8 @@
       "outputs": [
         "new P036 project with authored inputs",
         "project path and creation summary",
-        "process exit code"
+        "process exit code",
+        "Declared format classification or retained-format inventory with migration requirements and blockers"
       ],
       "public_api": [
         "main"
@@ -5649,7 +5663,8 @@
       "status": "canonical",
       "tests": [
         "tests/test_create_project.py",
-        "apps/archflow-studio/api/tests/test_create_project.py"
+        "apps/archflow-studio/api/tests/test_create_project.py",
+        "tests/test_project_format_migration.py"
       ],
       "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer."
     },
