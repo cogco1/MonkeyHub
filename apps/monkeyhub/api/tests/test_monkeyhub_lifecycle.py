@@ -8,6 +8,7 @@ from contextlib import contextmanager, ExitStack
 from http.client import HTTPResponse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
+import inspect
 import json
 import os
 from pathlib import Path
@@ -35,7 +36,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.settings import StudioSettings, save_application_settings
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import chat as chat_tools
-from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.main import HubSettings, complete_interrupted_connection_teardown, create_app
 
 
 def project_fixture():
@@ -507,6 +508,208 @@ class HubCliLifecycleTests(LocalHubCase):
                         if child.poll() is None:
                             child.wait(timeout=30)
                 self.assertIn("Application shutdown complete.", log_path.read_text(encoding="utf-8"))
+
+    @unittest.skipUnless(sys.platform == "win32", "Only Windows closes connections through the proactor transport")
+    def test_cli_stop_finishes_when_windows_reports_a_reset_while_closing_a_connection(self):
+        # Windows answers WinError 10054 when the peer is already gone while
+        # asyncio closes an accepted connection. CPython raises that out of the
+        # teardown, skipping the detach, so the connection stays attached to
+        # asyncio.Server and uvicorn's graceful shutdown waits for it forever.
+        # sitecustomize reproduces the operating system answer without a
+        # product test hook; only this Hub's own listening port is affected.
+        injection = self.root / "reset injection"
+        injection.mkdir()
+        (injection / "sitecustomize.py").write_text(
+            "import os, socket\n"
+            "PORT = int(os.environ['HUB_RESET_PORT'])\n"
+            "_shutdown = socket.socket.shutdown\n"
+            "def shutdown(self, how):\n"
+            "    try:\n"
+            "        local = self.getsockname()\n"
+            "    except OSError:\n"
+            "        local = None\n"
+            "    if local and local[1] == PORT:\n"
+            "        raise ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host')\n"
+            "    return _shutdown(self, how)\n"
+            "socket.socket.shutdown = shutdown\n",
+            encoding="utf-8",
+        )
+        environment = os.environ.copy()
+        environment["HUB_RESET_PORT"] = str(self.hub_port)
+        environment["PYTHONPATH"] = os.pathsep.join(
+            value for value in (str(injection), environment.get("PYTHONPATH")) if value
+        )
+        log_path = self.root / "hub-reset.log"
+        with log_path.open("wb") as log:
+            child = subprocess.Popen(
+                [sys.executable, str(ROOT / "apps/monkeyhub/run.py"),
+                 "--runtime-root", str(self.runtime), "--port", str(self.hub_port),
+                 "--managed-stdin", "--managed-instance-id", str(uuid4()), "--no-browser"],
+                cwd=self.root, env=environment, stdin=subprocess.PIPE,
+                stdout=log, stderr=subprocess.STDOUT,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            try:
+                def ready():
+                    self.assertIsNone(child.poll(), f"Hub exited early; see {log_path}")
+                    try:
+                        return http_json(self.base_url + "/api/health")
+                    except OSError:
+                        return None
+                wait_for(ready, "The isolated CLI Hub did not become ready")
+                # Each finished request leaves one connection to close, and the
+                # operating system reports the reset on every one of them.
+                for _ in range(3):
+                    http_json(self.base_url + "/api/apps")
+                child.stdin.write(b"stop\n")
+                child.stdin.flush()
+                self.assertEqual(child.wait(timeout=30), 0)
+            finally:
+                if child.stdin is not None and not child.stdin.closed:
+                    child.stdin.close()
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=30)
+        output = log_path.read_text(encoding="utf-8", errors="replace")
+        # The interrupted teardown is completed, and its cause stays readable.
+        self.assertIn("ConnectionResetError", output)
+        self.assertIn("Application shutdown complete.", output)
+        self.assertFalse(port_open(self.hub_port))
+
+
+class StubSocket:
+    """Answer the two calls CPython makes while closing a connection."""
+
+    def __init__(self, *, shutdown_error=None, close_error=None):
+        self.shutdown_error, self.close_error = shutdown_error, close_error
+        self.shutdowns, self.closes, self.closed = 0, 0, False
+
+    def fileno(self):
+        return -1 if self.closed else 7
+
+    def shutdown(self, how):
+        self.shutdowns += 1
+        if self.shutdown_error is not None:
+            raise self.shutdown_error
+
+    def close(self):
+        self.closes += 1
+        if self.close_error is not None:
+            raise self.close_error
+        self.closed = True
+
+
+class StubProtocol:
+    def __init__(self, *, error=None):
+        self.error, self.notifications = error, []
+
+    def connection_lost(self, exc):
+        self.notifications.append(exc)
+        if self.error is not None:
+            raise self.error
+
+
+def stub_server(detach_takes_transport):
+    """Mirror both CPython shapes exactly; the wrong call raises TypeError."""
+    detached = []
+    if detach_takes_transport:
+        class Server:  # 3.13 discards the transport from its client set.
+            def _detach(self, transport):
+                detached.append(transport)
+    else:
+        class Server:  # 3.12 decrements its own connection count.
+            def _detach(self):
+                detached.append(None)
+    return Server(), detached
+
+
+def running_detach_takes_transport():
+    """The shape CPython itself calls whenever its own teardown completes."""
+    from asyncio.base_events import Server
+
+    return len(inspect.signature(Server._detach).parameters) > 1
+
+
+class InterruptedConnectionTeardownTests(unittest.TestCase):
+    """The repair the Hub installs on Windows, against CPython's own teardown.
+
+    Windows reports WinError 10054 when the peer is already gone, and CPython
+    then leaves the rest of its teardown unrun, so the connection stays
+    attached to asyncio.Server and uvicorn's shutdown waits for it forever.
+    The transport module carries no platform-only import, so both detach
+    shapes are exercised wherever these tests run.
+    """
+
+    def setUp(self):
+        from asyncio.proactor_events import _ProactorBasePipeTransport as Transport
+
+        self.transport_class = Transport
+        interrupted = Transport._call_connection_lost
+        self.addCleanup(setattr, Transport, "_call_connection_lost", interrupted)
+        complete_interrupted_connection_teardown()
+        self.assertIsNot(Transport._call_connection_lost, interrupted, "The repair was not installed")
+
+    def close_connection(self, *, detach_takes_transport, shutdown_error=None,
+                         close_error=None, protocol_error=None):
+        sock = StubSocket(shutdown_error=shutdown_error, close_error=close_error)
+        protocol = StubProtocol(error=protocol_error)
+        server, detached = stub_server(detach_takes_transport)
+        transport = self.transport_class.__new__(self.transport_class)
+        transport._called_connection_lost = False
+        transport._protocol, transport._sock, transport._server = protocol, sock, server
+        return transport, sock, protocol, detached
+
+    def assert_finished(self, transport, detached):
+        self.assertIsNone(transport._sock)
+        self.assertIsNone(transport._server)
+        self.assertTrue(transport._called_connection_lost)
+        self.assertEqual(len(detached), 1, detached)
+        # A repeated notification must not detach the same connection again.
+        transport._call_connection_lost(None)
+        self.assertEqual(len(detached), 1, detached)
+
+    def test_a_connection_that_closes_normally_is_torn_down_unchanged(self):
+        # CPython completes this teardown itself, so it detaches in its own shape.
+        transport, sock, protocol, detached = self.close_connection(
+            detach_takes_transport=running_detach_takes_transport())
+        transport._call_connection_lost(None)
+        self.assertEqual((sock.shutdowns, sock.closes, protocol.notifications), (1, 1, [None]))
+        self.assert_finished(transport, detached)
+
+    def test_a_refused_shutdown_finishes_the_teardown_once_and_stays_visible(self):
+        for detach_takes_transport in (False, True):
+            with self.subTest(detach_takes_transport=detach_takes_transport):
+                reset = ConnectionResetError(10054, "An existing connection was forcibly closed by the remote host")
+                transport, sock, _, detached = self.close_connection(
+                    detach_takes_transport=detach_takes_transport, shutdown_error=reset)
+                with self.assertRaises(ConnectionResetError) as raised:
+                    transport._call_connection_lost(None)
+                self.assertIs(raised.exception, reset)
+                self.assertEqual((sock.shutdowns, sock.closes), (1, 1))
+                self.assert_finished(transport, detached)
+
+    def test_a_socket_that_refuses_to_close_finishes_the_teardown_once(self):
+        for detach_takes_transport in (False, True):
+            with self.subTest(detach_takes_transport=detach_takes_transport):
+                refused = OSError(10038, "An operation was attempted on something that is not a socket")
+                transport, _, _, detached = self.close_connection(
+                    detach_takes_transport=detach_takes_transport, close_error=refused)
+                with self.assertRaises(OSError) as raised:
+                    transport._call_connection_lost(None)
+                self.assertIs(raised.exception, refused)
+                self.assert_finished(transport, detached)
+
+    def test_a_protocol_error_leaves_cpython_s_own_teardown_alone(self):
+        # CPython's finally block still completes here and detaches in its own
+        # shape, so the repair must find nothing left rather than detach twice.
+        failure = OSError("the protocol could not record the loss")
+        transport, sock, _, detached = self.close_connection(
+            detach_takes_transport=running_detach_takes_transport(), protocol_error=failure)
+        with self.assertRaises(OSError) as raised:
+            transport._call_connection_lost(None)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual((sock.shutdowns, sock.closes), (1, 1))
+        self.assert_finished(transport, detached)
 
 
 if __name__ == "__main__":
