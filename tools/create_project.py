@@ -25,19 +25,22 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
-import os
 import sys
-import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, BinaryIO, Mapping
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
+from archflow.project.repository import (
+    FilesystemProjectRepository,
+    ProjectRepositoryError,
+    _write_immutable,
+)
 from archflow.project.refs import require_identifier
 from archflow.state.state_record import StateRecord
 from tools.run_project import _seat
@@ -132,7 +135,9 @@ def _validate_archive_manifest(payload: object) -> dict[str, Any]:
     return payload
 
 
-def _read_project_archive(archive_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def _read_project_archive_source(
+    source: str | Path | BinaryIO,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Read one portable archive and rebuild the existing transfer envelope.
 
     Nothing is extracted by path. Every member is addressed by the manifest,
@@ -140,9 +145,8 @@ def _read_project_archive(archive_path: Path) -> tuple[dict[str, Any], dict[str,
     validator so normal project readers remain the final integrity authority.
     """
 
-    archive_path = Path(archive_path).resolve()
     try:
-        with zipfile.ZipFile(archive_path, "r") as archive:
+        with zipfile.ZipFile(source, "r") as archive:
             infos = archive.infolist()
             names = [info.filename for info in infos]
             if len(names) != len(set(names)):
@@ -195,11 +199,15 @@ def _read_project_archive(archive_path: Path) -> tuple[dict[str, Any], dict[str,
         raise ValueError("project archive is not a valid ZIP file") from exc
 
 
+def _read_project_archive(archive_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    return _read_project_archive_source(Path(archive_path).resolve())
+
+
 def _write_project_archive(
     repository: FilesystemProjectRepository,
     archive_path: Path,
 ) -> dict[str, Any]:
-    """Write and self-verify one snapshot archive without mutating the project."""
+    """Build, self-verify, then immutably install one noncanonical archive."""
 
     archive_path = Path(archive_path).resolve()
     project_root = repository.layout.root.resolve()
@@ -207,36 +215,31 @@ def _write_project_archive(
         raise ValueError("write the project archive outside the project directory")
     if archive_path.exists():
         raise ValueError(f"archive already exists: {archive_path}")
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
     manifest = _archive_manifest(repository)
     transfer = manifest["transfer"]
-    handle, temporary_name = tempfile.mkstemp(
-        prefix=f".{archive_path.name}.",
-        suffix=".tmp",
-        dir=archive_path.parent,
-    )
-    os.close(handle)
-    temporary = Path(temporary_name)
-    try:
-        with zipfile.ZipFile(
-            temporary,
-            "w",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=9,
-            allowZip64=True,
-        ) as archive:
-            archive.writestr(_zip_info(ARCHIVE_MANIFEST_PATH), _json_bytes(manifest))
-            for row in transfer["files"]:
-                data = repository.read_transfer_file(row["path"], row["sha256"])
-                if len(data) != row["size"] or hashlib.sha256(data).hexdigest() != row["sha256"]:
-                    raise ValueError(f"project file changed during archive export: {row['path']}")
-                archive.writestr(_zip_info(f"{ARCHIVE_PROJECT_PREFIX}{row['path']}"), data)
-        checked_manifest, checked_transfer = _read_project_archive(temporary)
-        if checked_manifest != manifest or checked_transfer["head"] != transfer["head"]:
-            raise ValueError("project archive self-verification disagreed with exported snapshot")
-        os.replace(temporary, archive_path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(
+        buffer,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=9,
+        allowZip64=True,
+    ) as archive:
+        archive.writestr(_zip_info(ARCHIVE_MANIFEST_PATH), _json_bytes(manifest))
+        for row in transfer["files"]:
+            data = repository.read_transfer_file(row["path"], row["sha256"])
+            if len(data) != row["size"] or hashlib.sha256(data).hexdigest() != row["sha256"]:
+                raise ValueError(f"project file changed during archive export: {row['path']}")
+            archive.writestr(_zip_info(f"{ARCHIVE_PROJECT_PREFIX}{row['path']}"), data)
+    archive_bytes = buffer.getvalue()
+    checked_manifest, checked_transfer = _read_project_archive_source(io.BytesIO(archive_bytes))
+    if checked_manifest != manifest or checked_transfer["head"] != transfer["head"]:
+        raise ValueError("project archive self-verification disagreed with exported snapshot")
+    # P036 remains the only generic filesystem writer. The archive is a
+    # noncanonical transport artifact, but even its final byte installation is
+    # delegated to the existing immutable writer rather than giving this CLI a
+    # second filesystem-write authority.
+    _write_immutable(archive_path, archive_bytes)
     return manifest
 
 
