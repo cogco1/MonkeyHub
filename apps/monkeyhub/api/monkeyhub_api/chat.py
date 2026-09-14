@@ -250,7 +250,15 @@ def _codex_acp_command() -> tuple[str, ...] | None:
     node = str(bundled_node) if bundled_node.is_file() else shutil.which("node")
     adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
     if node and adapter.is_file() and importlib.util.find_spec("acp") is not None:
-        return (node, str(adapter))
+        script = str(adapter)
+        # Tauri's canonical Windows source root carries a verbatim prefix.
+        # Node's JS entrypoint resolver needs the equivalent drive/UNC path.
+        if os.name == "nt":
+            if script.lower().startswith("\\\\?\\unc\\"):
+                script = "\\\\" + script[8:]
+            elif re.match(r"^\\\\\?\\[a-zA-Z]:\\", script):
+                script = script[4:]
+        return (node, script)
     return None
 
 
