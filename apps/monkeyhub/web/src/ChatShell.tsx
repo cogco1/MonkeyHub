@@ -28,6 +28,8 @@ const words = {
     folder: "项目文件夹", folderHelp: "选择已有的 ArchFlow 项目，粘贴文件夹完整路径。", folderPlaceholder: "例如 D:\\projects\\my-project",
     empty: "开始项目对话", emptyHint: "描述你想做的事。需要看模型或图纸时，在右侧打开工具。", noProject: "添加一个项目，开始对话",
     placeholder: "想在这个项目里做些什么？", send: "发送", stop: "停止", thinking: "正在处理", interrupted: "已中断", failed: "未完成",
+    attach: "添加附件", attachments: "附件", removeAttachment: "移除附件", dropFiles: "松开添加附件",
+    attachmentCount: "每条消息最多添加 8 个附件。", attachmentSize: "每个附件不能超过 20 MiB。", attachmentTotal: "附件合计不能超过 40 MiB。", attachmentRead: "无法读取附件，请重新选择。",
     working: "正在连接项目…", tools: "项目工具", hideTools: "收起工具", model: "建模", diagram: "图纸", board: "画板", fab: "制作", monitor: "用量",
     refresh: "刷新页面", browser: "项目浏览器", modelName: "模型（留空使用 CLI 默认值）", defaultModel: "CLI 默认模型", provider: "执行连接",
     toolEmpty: "项目工具", toolHint: "选择建模、图纸、画板或制作工具。",
@@ -59,6 +61,8 @@ const words = {
     folder: "Project folder", folderHelp: "Paste the full path to an existing ArchFlow project folder.", folderPlaceholder: "For example D:\\projects\\my-project",
     empty: "Start a project conversation", emptyHint: "Describe what you want to do. Open project tools on the right when you need them.", noProject: "Add a project to start a conversation",
     placeholder: "What would you like to do in this project?", send: "Send", stop: "Stop", thinking: "Working", interrupted: "Interrupted", failed: "Incomplete",
+    attach: "Add attachments", attachments: "Attachments", removeAttachment: "Remove attachment", dropFiles: "Drop to attach files",
+    attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
     working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", model: "Modeling", diagram: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
     refresh: "Reload page", browser: "Project browser", modelName: "Model (leave empty for CLI default)", defaultModel: "CLI default model", provider: "Connection",
     toolEmpty: "Project tools", toolHint: "Choose modeling, drawings, board or fabrication.",
@@ -101,6 +105,7 @@ function Icon({ name }: { name: string }) {
     plus: <path d="M12 5v14M5 12h14" />, panel: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></>,
     sidebar: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /></>, close: <path d="m6 6 12 12M6 18 18 6" />,
     send: <path d="M12 19V5m-6 6 6-6 6 6" />, stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
+    attach: <path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2m-5 11 7-7" />,
     folder: <path d="M3 6h7l2 2h9v11H3Z" />, chat: <path d="M4 4h16v13H9l-5 4Z" />,
     archive: <><path d="M4 8h16v13H4ZM3 3h18v5H3ZM9 12h6" /></>,
     restore: <><path d="M4 10a8 8 0 1 1 2 8M4 4v6h6" /></>,
@@ -132,6 +137,14 @@ const asFailure = (cause: unknown): HubError => {
   return { code: "HUB_REQUEST_FAILED", detail: cause instanceof Error ? cause.message : String(cause) };
 };
 const wait = () => new Promise((resolve) => window.setTimeout(resolve, 400));
+const fileSize = (size: number) => size < 1024 ? `${size} B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KiB` : `${(size / (1024 * 1024)).toFixed(1)} MiB`;
+const fileData = (file: File, failure: string) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
+  reader.onerror = () => reject(new Error(failure));
+  reader.onabort = () => reject(new Error(failure));
+  reader.readAsDataURL(file);
+});
 /** What this page looked like last time: the same conversation and the same frame. */
 function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
   const empty = { chatId: null, projectDir: null, sidebar: null, panel: null, panelWidth: null, tools: [], activeTool: null };
@@ -203,6 +216,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const [chatId, setChatId] = useState<string | null>(initial.chatId);
   const [chat, setChat] = useState<ChatDetail | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftAttachments, setDraftAttachments] = useState<Record<string, File[]>>({});
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -226,6 +241,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const newDialog = useRef<HTMLDialogElement>(null);
   const settingsDialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const messages = useRef<HTMLDivElement>(null);
   const actionLock = useRef(false);
   const permissionLock = useRef(false);
@@ -247,6 +263,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const recoverableOperation = projectRuntime?.operations?.find((item) => ["needs_recovery", "failed", "stale"].includes(item.status));
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
+  const attachments = draftAttachments[draftKey] ?? [];
   const running = chat?.id === chatId && chat.status === "running";
   const archived = chat?.id === chatId && chat.archived;
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
@@ -473,10 +490,20 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     }));
   }, [projectRuntime, studioWorker, projectApps, projectDir]);
 
+  const addAttachments = (files: File[]) => {
+    if (!files.length || !project || busy || archived) return;
+    const combined = [...attachments, ...files];
+    const detail = combined.length > 8 ? t.attachmentCount : files.some((file) => file.size > 20 * 1024 * 1024) ? t.attachmentSize
+      : combined.reduce((size, file) => size + file.size, 0) > 40 * 1024 * 1024 ? t.attachmentTotal : null;
+    if (detail) { setError({ code: "CHAT_ATTACHMENT_LIMIT", detail }); return; }
+    setDraftAttachments((value) => ({ ...value, [draftKey]: combined }));
+    setError(null);
+  };
+
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectDir || !draft.trim() || actionLock.current || running || archived) return;
-    const target = projectDir, content = draft.trim(), key = draftKey;
+    if (!projectDir || (!draft.trim() && !attachments.length) || actionLock.current || running || archived) return;
+    const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
     actionLock.current = true; setBusy(true); setError(null);
     try {
       let current = chat?.id === chatId ? chat : chatId ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}`) : null;
@@ -484,14 +511,17 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         const body: ChatCreateRequest = { projectDir: target, provider: defaults.provider, model: draftModel };
         current = await request<ChatDetail>("/api/chat/sessions", body);
         setDrafts((value) => ({ ...value, [current!.id]: content }));
-        setChatId(current.id); setChat(current);
+        setDraftAttachments((value) => ({ ...value, [key]: [], [current!.id]: files }));
+        if (selection.current.projectDir === target && selection.current.chatId === chatId) { setChatId(current.id); setChat(current); }
       }
       if (current.archived) { setChat(current); return; }
       await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
+      if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
       const posted = await request<ChatDetail>(`/api/chat/sessions/${current.id}/messages`, body);
-      if (selection.current.projectDir === target) { setChatId(posted.id); setChat(posted); }
+      if (selection.current.projectDir === target && (selection.current.chatId === chatId || selection.current.chatId === current.id)) { setChatId(posted.id); setChat(posted); }
       setDrafts((value) => ({ ...value, [key]: "", [posted.id]: "" }));
+      setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: [] }));
       await refresh();
       requestAnimationFrame(() => { if (messages.current) messages.current.scrollTop = messages.current.scrollHeight; });
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
@@ -687,7 +717,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
                 {message.candidateId ? <div className="chat-activity__result"><button type="button" className="chat-activity__open" title={message.candidateId} disabled={!project || Boolean(toolBusy)}
                   onClick={() => void openTool("monkeyarch", { candidate: message.candidateId! })}><Icon name="cube" /><span>{t.openCandidate}</span></button><span className="chat-muted">{t.candidateHint}</span></div> : null}
               </div>
-            : <article className={`chat-message chat-message--${message.role}`} key={message.id}><MessageText text={message.content} />{message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>)}</div>}
+            : <article className={`chat-message chat-message--${message.role}`} key={message.id}><MessageText text={message.content} />
+              {Boolean(message.attachments?.length) && <ul className="chat-attachments chat-attachments--saved" aria-label={t.attachments}>{message.attachments!.map((file) => <li key={file.id}>
+                <a href={`/api/chat/sessions/${encodeURIComponent(chat!.id)}/attachments/${encodeURIComponent(file.id)}`} download={file.name}><Icon name="file" /><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></a>
+              </li>)}</ul>}
+              {message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>)}</div>}
         {running && <div className="chat-thinking" role="status"><span className="chat-thread__dot" data-status="running" />{t.thinking}</div>}
       </div>
       <div className="chat-composer-wrap">
@@ -701,10 +735,20 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
-        </div> : <form className="chat-composer" onSubmit={(event) => void send(event)}>
+        </div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+          onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
+          onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}
+          onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
+          onPaste={(event) => { if (event.clipboardData.files.length) { event.preventDefault(); addAttachments(Array.from(event.clipboardData.files)); } }}>
+          {draggingFiles && <p className="chat-attachment-drop" role="status">{t.dropFiles}</p>}
+          {Boolean(attachments.length) && <ul className="chat-attachments" aria-label={t.attachments}>{attachments.map((file, index) => <li key={`${index}:${file.name}`}>
+            <Icon name="file" /><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span>
+            <button type="button" className="chat-icon" aria-label={`${t.removeAttachment}: ${file.name}`} disabled={busy} onClick={() => setDraftAttachments((value) => ({ ...value, [draftKey]: value[draftKey]!.filter((_, position) => position !== index) }))}><Icon name="close" /></button>
+          </li>)}</ul>}
           <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={project ? t.placeholder : t.projectRequired} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running) void send(); } }} />
-          <div className="chat-composer__bottom"><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
+          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="attach" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
@@ -716,7 +760,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             {availableProvider?.modelCatalog === "checking" && <span className="chat-connection__note">{t.modelChecking}</span>}
             {modelBusy && <span className="chat-connection__note" role="status">{t.modelSaving}</span>}
           </div>
-          {running ? <button className="chat-send" type="button" aria-label={t.stop} onClick={() => void stop()}><Icon name="stop" /></button> : <button className="chat-send" type="submit" aria-label={t.send} disabled={busy || !project || !draft.trim() || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
+          {running ? <button className="chat-send" type="button" aria-label={t.stop} onClick={() => void stop()}><Icon name="stop" /></button> : <button className="chat-send" type="submit" aria-label={t.send} disabled={busy || !project || (!draft.trim() && !attachments.length) || (!chatId && !availableProvider?.available)}><Icon name="send" /></button>}</div>
         </form>}
         {!archived && customModel !== null && <form className="chat-custom-model" onSubmit={(event) => { event.preventDefault(); const value = customModel.trim(); if (value) void chooseModel(value); else setCustomModel(null); }}>
           <label htmlFor="chat-custom-model">{t.modelCustomLabel}</label>

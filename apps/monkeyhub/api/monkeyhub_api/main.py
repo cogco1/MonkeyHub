@@ -16,11 +16,11 @@ from urllib.parse import urlsplit
 from uuid import UUID
 import webbrowser
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.requests import Request
@@ -45,6 +45,7 @@ from .models import (
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
+    ChatAttachmentContent,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -289,6 +290,17 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/chat/sessions/{session_id}/messages", response_model=ChatDetail, status_code=202)
     def post_chat(session_id: str, body: ChatPostRequest):
         return chats.post(session_id, body)
+
+    @app.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}", response_class=FileResponse)
+    def read_chat_attachment(session_id: str, attachment_id: str):
+        attachment, path = chats.attachment(session_id, attachment_id)
+        return FileResponse(path, media_type="application/octet-stream", filename=attachment.name,
+                            headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
+
+    @app.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/read", response_model=ChatAttachmentContent)
+    def read_chat_attachment_content(session_id: str, attachment_id: str, offset: int = Query(0, ge=0),
+                                     limit: int = Query(32768, ge=1, le=65536), page: int = Query(1, ge=1)):
+        return chats.read_attachment(session_id, attachment_id, offset=offset, limit=limit, page=page)
 
     @app.put("/api/chat/sessions/{session_id}/model", response_model=ChatDetail)
     def set_chat_model(session_id: str, body: ChatModelRequest):

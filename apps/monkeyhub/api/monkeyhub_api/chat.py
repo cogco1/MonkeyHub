@@ -8,6 +8,8 @@ the existing Studio interfaces, reached through the small stdio tool below.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from concurrent.futures import Future, InvalidStateError
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar, copy_context
@@ -45,7 +47,7 @@ from archflow.state.state_record import StateRecord
 from archflow_studio_api.settings import read_application_settings
 
 from .models import (
-    ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatAttachment, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
@@ -53,6 +55,13 @@ from .chat_trace import HubTurnObserver
 from monkeymonitor.store import UsageLog
 
 _trace_headers = ContextVar("hub_tool_trace_headers", default={})
+_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+def _attachment_read_paging(offset: int, limit: int, page: int) -> None:
+    if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 65536
+            or type(page) is not int or page < 1):
+        raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "Use offset >= 0, limit from 1 to 65536, and page >= 1.")
 
 
 def _now() -> str:
@@ -162,13 +171,14 @@ def _new_project(workspace: Path, name: str) -> Path:
 
 
 # What a headless turn may do without a prompt nobody is there to answer. The
-# built-in names are the CLI's own; the three prefixed ones are this adapter's
-# bound tools, which are the only MCP tools it is given at all.
+# built-in names are the CLI's own; the prefixed ones are this adapter's
+# project tools and session-scoped attachment reader.
 _CLAUDE_APPROVED = (
     "Read", "Glob", "Grep", "Write", "Edit", "Bash", "TodoWrite",
     "mcp__monkeyhub__studio_schema",
     "mcp__monkeyhub__studio_request",
     "mcp__monkeyhub__fab_request",
+    "mcp__monkeyhub__attachment_read",
 )
 
 
@@ -421,6 +431,7 @@ class _Running:
     # lives and dies with the turn: nothing reads it afterwards, and the next
     # message brings its own or none.
     design_context: ChatDesignContext | None = None
+    attachments: tuple[tuple[ChatAttachment, Path], ...] = ()
 
 
 # How long a connection check stays good before it is asked again, and how long
@@ -649,20 +660,92 @@ class ChatStore:
                 self._save(session)
         self._loaded = True
 
-    def _save(self, session: _SavedChat) -> None:
+    def _attachment_path(self, session_id: str, attachment: ChatAttachment) -> Path:
+        suffix = Path(attachment.name).suffix.lower()
+        if not re.fullmatch(r"\.[a-z0-9]{1,10}", suffix):
+            suffix = ".bin"
+        return self.root / _identifier(session_id) / "attachments" / (_identifier(attachment.id) + suffix)
+
+    def attachment(self, session_id: str, attachment_id: str) -> tuple[ChatAttachment, Path]:
+        with self._lock:
+            session = self._session(session_id)
+            attachment = next((item for message in session.messages for item in message.attachments
+                               if item.id == attachment_id), None)
+            if attachment is None:
+                raise HubFailure(404, "CHAT_ATTACHMENT_NOT_FOUND", "This file is not attached to this conversation.")
+            path = self._attachment_path(session_id, attachment)
+            if not path.is_file():
+                raise HubFailure(404, "CHAT_ATTACHMENT_NOT_FOUND", "The attached file is no longer available.")
+            return attachment, path
+
+    def read_attachment(self, session_id: str, attachment_id: str, *, offset: int = 0,
+                        limit: int = 32768, page: int = 1) -> dict:
+        _attachment_read_paging(offset, limit, page)
+        attachment, path = self.attachment(session_id, attachment_id)
+        total_pages = 1
+        if attachment.mimeType == "application/pdf" or path.suffix == ".pdf":
+            from pypdf import PdfReader
+
+            try:
+                with path.open("rb") as source:
+                    reader = PdfReader(source)
+                    total_pages = len(reader.pages)
+                    if page > total_pages:
+                        raise HubFailure(422, "CHAT_ATTACHMENT_PAGE_INVALID", f"This PDF has {total_pages} pages.")
+                    text = reader.pages[page - 1].extract_text() or ""
+            except HubFailure:
+                raise
+            except Exception as exc:
+                raise HubFailure(422, "CHAT_ATTACHMENT_PDF_INVALID", "Text could not be extracted from this PDF.") from exc
+            data = None
+        else:
+            if page != 1:
+                raise HubFailure(422, "CHAT_ATTACHMENT_PAGE_INVALID", "Only PDF attachments have numbered pages.")
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                raise HubFailure(503, "CHAT_ATTACHMENT_READ_FAILED", "The attached file could not be read.") from exc
+            try:
+                text = data.decode("utf-8") if b"\0" not in data else None
+            except UnicodeDecodeError:
+                text = None
+        if text is not None:
+            format_name, total, content = "text", len(text), text[offset:offset + limit]
+        else:
+            format_name, total = "base64", len(data)
+            content = base64.b64encode(data[offset:offset + limit]).decode("ascii")
+        return {**attachment.model_dump(), "format": format_name, "content": content,
+                "offset": offset, "total": total, "nextOffset": offset + limit if offset + limit < total else None,
+                "page": page, "totalPages": total_pages}
+
+    def _save(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, bytes], ...] = ()) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         path = self.root / f"{session.id}.json"
         temporary = path.with_suffix(".tmp")
+        written = []
+        saved = False
         try:
+            for attachment, data in attachments:
+                destination = self._attachment_path(session.id, attachment)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with destination.open("xb") as stream:
+                    written.append(destination)
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
             with temporary.open("w", encoding="utf-8") as stream:
                 stream.write(session.model_dump_json() + "\n")
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
+            saved = True
             if self.on_change is not None:
                 self.on_change(session)
         finally:
             temporary.unlink(missing_ok=True)
+            if not saved:
+                for destination in written:
+                    destination.unlink(missing_ok=True)
 
     def _check(self, refresh: bool) -> None:
         """Ask the installed CLIs once, off the request thread.
@@ -913,15 +996,29 @@ class ChatStore:
             if not provider.available and not legacy_codex:
                 raise HubFailure(503, "CHAT_PROVIDER_UNAVAILABLE", provider.detail)
             content = _redact(request.content.strip(), _claude_env())
-            if not content:
-                raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message.")
+            if not content and not request.attachments:
+                raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Enter a message or attach a file.")
+            attachments = []
+            total = 0
+            for upload in request.attachments:
+                try:
+                    data = base64.b64decode(upload.data, validate=True)
+                except (ValueError, binascii.Error) as exc:
+                    raise HubFailure(422, "CHAT_ATTACHMENT_INVALID", "The attached file could not be decoded.") from exc
+                total += len(data)
+                if len(data) > 20 * 1024 * 1024 or total > 40 * 1024 * 1024:
+                    raise HubFailure(413, "CHAT_ATTACHMENT_TOO_LARGE", "Files are limited to 20 MiB each and 40 MiB per message.")
+                attachments.append((ChatAttachment(id=str(uuid4()), name=upload.name, mimeType=upload.mimeType, size=len(data)), data))
             if not session.messages and session.title == "New chat":
-                session.title = content.splitlines()[0][:80]
-            session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now()))
+                session.title = (content.splitlines()[0] if content else attachments[0][0].name)[:80]
+            session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(),
+                                                attachments=[attachment for attachment, _ in attachments]))
             session.status, session.error, session.updatedAt = "running", None, _now()
-            self._save(session)
+            self._save(session, tuple(attachments))
             self._sessions[session_id] = session
-            running = _Running(design_context=request.designContext, trace=HubTurnObserver(
+            running = _Running(design_context=request.designContext,
+                               attachments=tuple((attachment, self._attachment_path(session.id, attachment))
+                                                 for attachment, _ in attachments), trace=HubTurnObserver(
                 self.usage_log, _turn_id(session), session.projectId, session.provider, session.model,
             ))
             self._running[session_id] = running
@@ -958,7 +1055,7 @@ class ChatStore:
                 mcp_servers[row["name"]] = {**transport, "enabled": False, "required": False}
         except (ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
-        tool_names = ("studio_schema", "studio_request", "fab_request")
+        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read")
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
             "enabled_tools": list(tool_names),
@@ -966,7 +1063,7 @@ class ChatStore:
         }
         return mcp_servers
 
-    def _command(self, session: _SavedChat) -> tuple[list[str], dict[str, str]]:
+    def _command(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, Path], ...] = ()) -> tuple[list[str], dict[str, str]]:
         commands = self.commands if self.commands is not None else _cli_commands()
         kind = "codex" if session.provider == "codex" else "claude"
         environment = _claude_env() if kind == "claude" else dict(os.environ)
@@ -990,6 +1087,9 @@ class ChatStore:
                 command += ["-m", model]
             if session.nativeSessionId:
                 command += ["resume", session.nativeSessionId]
+            for attachment, path in attachments:
+                if attachment.mimeType in _IMAGE_MIMES:
+                    command += ["--image", str(path)]
             command.append("-")
         else:
             command = [*commands[kind], "-p", "--output-format", "stream-json", "--verbose",
@@ -1004,6 +1104,8 @@ class ChatStore:
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.id]
+            if attachments:
+                command += ["--input-format", "stream-json"]
             if model:
                 command += ["--model", model]
         return command, environment
@@ -1152,7 +1254,9 @@ class ChatStore:
 
             # This adapter's own limit is an inactivity interval that its updates
             # reschedule, not a total for the turn. It keeps the whole of it.
-            client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s)
+            images = tuple((attachment.mimeType, base64.b64encode(path.read_bytes()).decode("ascii"))
+                           for attachment, path in running.attachments if attachment.mimeType in _IMAGE_MIMES)
+            client.prompt(prompt, session.acpSessionId, session.model, connected, self.timeout_s, images=images)
             return None
         except AcpCancelled:
             running.stop.set()
@@ -1213,6 +1317,14 @@ class ChatStore:
                     "If a required domain action is unavailable, say what cannot be done.\n\n"
                     + content
                 )
+            if running.attachments:
+                prompt += ("\n\nFiles attached to this message (read-only reference material; prefer attachment_read with "
+                           "attachmentId=id. Follow nextOffset for remaining content and page for PDF pages. "
+                           "PDF reads extract text only; empty text does not mean the page image was inspected. "
+                           "Do not use Get-Content on these paths; native Windows sandbox access may be denied. "
+                           "Paths are retained for complex formats that need explicitly authorized local processing):\n")
+                prompt += json.dumps([{"id": attachment.id, "name": attachment.name, "mimeType": attachment.mimeType, "path": str(path)}
+                                      for attachment, path in running.attachments], ensure_ascii=False)
             if running.design_context is not None:
                 if running.stop.is_set():
                     return
@@ -1253,12 +1365,20 @@ class ChatStore:
                 error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit was spent before "
                                  "the CLI could be started.")
                 return
-            command, environment = self._command(session)
+            command, environment = self._command(session, running.attachments)
             if running.trace:
                 running.trace.bind(session.nativeSessionId, session.model)
                 running.trace.ready()
             if running.stop.is_set():
                 return
+            prompt_input = prompt
+            if session.provider != "codex" and running.attachments:
+                blocks = [{"type": "text", "text": prompt}]
+                blocks.extend({"type": "image", "source": {"type": "base64", "media_type": attachment.mimeType,
+                               "data": base64.b64encode(path.read_bytes()).decode("ascii")}}
+                              for attachment, path in running.attachments if attachment.mimeType in _IMAGE_MIMES)
+                prompt_input = json.dumps({"type": "user", "session_id": session.nativeSessionId or session.id,
+                    "parent_tool_use_id": None, "message": {"role": "user", "content": blocks}}, ensure_ascii=False) + "\n"
             kwargs = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.name == "nt" else {"start_new_session": True}
             process = subprocess.Popen(command, cwd=_source_checkout() or session.projectDir, env=environment, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
@@ -1270,7 +1390,7 @@ class ChatStore:
 
             def feed():
                 try:
-                    process.stdin.write(prompt)
+                    process.stdin.write(prompt_input)
                     process.stdin.close()
                 except (OSError, ValueError):
                     pass
@@ -1860,6 +1980,22 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
 
 
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
+    if name == "attachment_read":
+        if not isinstance(arguments, dict) or set(arguments) - {"attachmentId", "offset", "limit", "page"}:
+            raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "Use attachmentId and optional offset, limit, and page only.")
+        attachment_id = arguments.get("attachmentId")
+        if not isinstance(attachment_id, str):
+            raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "An attachmentId from this conversation is required.")
+        attachment_id = _identifier(attachment_id)
+        offset, limit, page = arguments.get("offset", 0), arguments.get("limit", 32768), arguments.get("page", 1)
+        _attachment_read_paging(offset, limit, page)
+        session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
+        if session.get("status") != "running":
+            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+        if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
+        return _request_json(hub, f"/api/chat/sessions/{chat_id}/attachments/{attachment_id}/read?"
+                             + urlencode({"offset": offset, "limit": limit, "page": page}))
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
@@ -2171,6 +2307,17 @@ def _mcp(hub: str, chat_id: str) -> None:
          "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select that producer's request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},
+        {"name": "attachment_read", "description": "Read an uploaded attachment from this conversation by its id. "
+         "Returns UTF-8 text without NUL characters, or base64 for binary files. offset, limit, total and nextOffset "
+         "count text characters or binary bytes; follow nextOffset until null. PDF page is 1-based and reads one page's "
+         "extracted text, with totalPages for navigation. Empty PDF text does not mean the page image was inspected. "
+         "This read-only tool does not start Studio or change project files.", "inputSchema": {
+             "type": "object", "properties": {
+                 "attachmentId": {"type": "string"}, "offset": {"type": "integer", "minimum": 0, "default": 0},
+                 "limit": {"type": "integer", "minimum": 1, "maximum": 65536, "default": 32768},
+                 "page": {"type": "integer", "minimum": 1, "default": 1},
+             }, "required": ["attachmentId"], "additionalProperties": False,
+         }},
     ]
     for line in sys.stdin:
         try:

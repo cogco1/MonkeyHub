@@ -5823,7 +5823,7 @@
       "status": "canonical",
       "purpose": "Own project runtime attachments, managed workers, idempotent Studio request admission and recovery observations, alongside existing project-bound CLI conversations and local tools; P036 retains all design authority.",
       "owns": [
-        "Hub FastAPI, project/chat navigation including existing projects in the configured workspace, persistent CLI conversation transcripts with recoverable archive/restore and embedded local tool pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing page",
+        "Hub FastAPI, project/chat navigation including existing projects in the configured workspace, persistent CLI conversation transcripts and attachments with recoverable archive/restore and embedded local tool pages; successful candidate readback opens the model during the turn, and repeated opens reuse its existing page",
         "One owned Studio process per project, shared by that project's MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
@@ -5849,7 +5849,7 @@
         "Packaged or checkout source revision and built web directories",
         "Fixed application id, optional projectDir scope, and start/stop request",
         "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code",
-        "An existing complete project folder, chosen installed CLI/model and user chat message",
+        "An existing complete project folder, chosen installed CLI/model and user chat message with optional base64 file attachments (8 files, 20 MiB each, 40 MiB total)",
         "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext"
       ],
       "outputs": [
@@ -5857,7 +5857,7 @@
         "Application status and URL",
         "Owned process lifecycle and local diagnostic logs",
         "The independent Fab CLI result; geometry files stay in the caller-selected output directory",
-        "Project-bound chat transcripts and continuation of the same native CLI session under the explicit Hub runtime root",
+        "Project-bound chat transcripts, session-scoped attachment downloads and continuation of the same native CLI session under the explicit Hub runtime root",
         "Typed project/session metadata for the owned Monitor Codex source connection",
         "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures and recovery observations only, with no request bodies or canonical results"
       ],
@@ -5884,6 +5884,9 @@
         "GET /api/chat/sessions/{id}",
         "PUT /api/chat/sessions/{id}/archive",
         "POST /api/chat/sessions/{id}/messages",
+        "GET /api/chat/sessions/{id}/attachments/{attachment_id}",
+        "GET /api/chat/sessions/{id}/attachments/{attachment_id}/read",
+        "attachment_read: session-bound MCP read of uploaded text, single-page PDF text or binary chunks",
         "PUT /api/chat/sessions/{id}/model",
         "POST /api/chat/sessions/{id}/permissions/{permission_id}",
         "POST /api/chat/sessions/{id}/stop",
@@ -5915,6 +5918,7 @@
         "Printer access codes are request-local environment values, never command arguments, saved settings or error response payloads; file upload does not start printing",
         "CLI tools resolve the chat's project-specific Studio and verify process and project identity; retained design changes use existing Studio/P036 APIs, and stopping one project never interrupts another",
         "No new provider gateway or credential store; native CLI configuration owns authentication and provider routing",
+        "Chat attachment bytes stay under runtime/chats/<session>/attachments, outside the project; transcripts retain metadata only. Native images use provider image blocks or CLI image inputs; the existing MCP connection reads only the bound chat's attachments, with bounded text or binary chunks and single-page PDF text. No sandbox or filesystem permissions are widened, and later turns do not resend earlier attachment bytes",
         "A request is sent once. Waiting for its result only reads: a wait that runs out, a read that fails and a job that failed all answer with the identifiers and the reads that find them, and none of them sends the request again",
         "What is reported is what was read: a run whose candidate or comparison could not be read is never presented as a read-back candidate, and relation counts travel as the run stated them",
         "Runtime records and the admission journal are observations, not another project repository; completed candidate and Stage outcomes require existing retained proof, and a prepared unreachable Stage never proves a commit",

@@ -1,6 +1,7 @@
 """Real SDK stdio conversations with a local fake agent; no model or CAD calls."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
+import base64
 import json
 import os
 from pathlib import Path
@@ -18,13 +19,16 @@ if str(API_ROOT) not in sys.path:
 from monkeyhub_api.acp_session import AcpCancelled, AcpSessionError, CodexAcpSession
 
 
+PNG_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+
+
 FAKE_AGENT = r'''
 import asyncio, json, os, subprocess, sys
 from pathlib import Path
 from acp import PROTOCOL_VERSION, RequestError, run_agent
 from acp.schema import (
     AgentCapabilities, AgentMessageChunk, InitializeResponse, LoadSessionResponse,
-    NewSessionResponse, PermissionOption, PromptResponse, SetSessionConfigOptionResponse,
+    NewSessionResponse, PermissionOption, PromptCapabilities, PromptResponse, SetSessionConfigOptionResponse,
     SessionConfigOptionSelect, TextContentBlock, ToolCallProgress, ToolCallStart, ToolCallUpdate, UsageUpdate,
 )
 
@@ -66,9 +70,14 @@ class FakeAgent:
 
     async def initialize(self, protocol_version, client_capabilities=None, **kwargs):
         log("initialize", capabilities=client_capabilities.model_dump(by_alias=True))
+        capability = os.environ.get("ACP_IMAGE_CAPABILITY", "true")
         return InitializeResponse(
             protocol_version=PROTOCOL_VERSION,
-            agent_capabilities=AgentCapabilities(load_session=os.environ.get("ACP_NO_LOAD") != "1"),
+            agent_capabilities=AgentCapabilities(
+                load_session=os.environ.get("ACP_NO_LOAD") != "1",
+                **({"prompt_capabilities": PromptCapabilities(image=capability == "true")}
+                   if capability != "missing" else {}),
+            ),
         )
 
     async def new_session(self, cwd, mcp_servers=None, **kwargs):
@@ -101,11 +110,14 @@ class FakeAgent:
     async def prompt(self, session_id, prompt, **kwargs):
         text = prompt[0].text
         self.cancelled.clear()
-        log("prompt", sessionId=session_id, text=text, model=self.model)
+        log("prompt", sessionId=session_id, text=text, model=self.model,
+            blocks=[block.model_dump(by_alias=True, exclude_none=True) for block in prompt])
         if text == "crash":
             os._exit(17)
         if text == "error":
             raise RequestError.invalid_params({"details": "Fixture failure"})
+        if text == "image-model-error" and any(block.type == "image" for block in prompt):
+            raise RequestError.invalid_request("The current model does not support image input")
         if text == "stall":
             await self.emit("waiting")
             await self.cancelled.wait()
@@ -204,8 +216,8 @@ class AcpSessionTests(unittest.TestCase):
         self.permission_ready.set()
         return self.permission
 
-    def prompt(self, session, text="hello", model=None, session_id=None, timeout_s=10):
-        session.prompt(text, session_id, model, self.ids.append, timeout_s)
+    def prompt(self, session, text="hello", model=None, session_id=None, timeout_s=10, *, images=()):
+        session.prompt(text, session_id, model, self.ids.append, timeout_s, images=images)
 
     def calls(self, event):
         path = self.root / "calls.jsonl"
@@ -245,6 +257,45 @@ class AcpSessionTests(unittest.TestCase):
         self.assertEqual([event["update"]["content"]["text"] for event in self.updates
                           if "content" in event["update"]], ["answer: continued"])
 
+    def test_image_blocks_survive_stdio_and_resume_without_replaying_attachments(self):
+        gif = "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        images = (("image/png", PNG_IMAGE), ("image/gif", gif))
+        first = self.make_session()
+        self.prompt(first, "inspect images", "quality-model", images=images)
+        session_id = self.ids[0]
+        self.prompt(first, "plain follow-up", "quality-model", session_id)
+        first.close()
+        self.updates.clear()
+        restored = self.make_session(default_model=first.default_model)
+        self.prompt(restored, "new image after reopen", "quality-model", session_id, images=images[:1])
+
+        turns = self.calls("prompt")
+        self.assertEqual([turn["model"] for turn in turns], ["quality-model"] * 3)
+        self.assertEqual([turn["sessionId"] for turn in turns], [session_id] * 3)
+        self.assertEqual(turns[0]["pid"], turns[1]["pid"])
+        self.assertEqual(len(self.calls("new")), 1)
+        self.assertEqual([call["sessionId"] for call in self.calls("load")], [session_id])
+        self.assertEqual(turns[0]["blocks"][0], {"type": "text", "text": "inspect images"})
+        for block, (mime, encoded) in zip(turns[0]["blocks"][1:], images, strict=True):
+            self.assertEqual(block, {"type": "image", "mimeType": mime, "data": encoded})
+            self.assertEqual(base64.b64decode(block["data"], validate=True), base64.b64decode(encoded))
+        self.assertEqual(turns[1]["blocks"], [{"type": "text", "text": "plain follow-up"}])
+        self.assertEqual(turns[2]["blocks"][1:], [{"type": "image", "mimeType": "image/png", "data": PNG_IMAGE}])
+        self.assertEqual([event["update"]["content"]["text"] for event in self.updates
+                          if "content" in event["update"]], ["answer: new image after reopen"])
+
+    def test_images_require_advertised_capability_without_text_only_downgrade(self):
+        for capability in ("missing", "false"):
+            with self.subTest(capability=capability):
+                session = self.make_session(ACP_IMAGE_CAPABILITY=capability)
+                with self.assertRaisesRegex(AcpSessionError, "does not support image attachments"):
+                    self.prompt(session, "inspect image", images=(("image/png", PNG_IMAGE),))
+                session.close()
+                self.assertEqual(self.calls("new"), [])
+                self.assertEqual(self.calls("load"), [])
+                self.assertEqual(self.calls("prompt"), [])
+                self.assertEqual(self.ids, [])
+
     def test_restore_without_capability_never_falls_back_to_new(self):
         session = self.make_session(ACP_NO_LOAD="1")
         with self.assertRaisesRegex(AcpSessionError, "does not support restoring"):
@@ -280,6 +331,12 @@ class AcpSessionTests(unittest.TestCase):
         session = self.make_session()
         with self.assertRaisesRegex(AcpSessionError, "Fixture failure"):
             self.prompt(session, "error")
+
+    def test_image_model_rejection_preserves_string_error_data(self):
+        session = self.make_session()
+        with self.assertRaisesRegex(AcpSessionError, "The current model does not support image input"):
+            self.prompt(session, "image-model-error", images=(("image/png", PNG_IMAGE),))
+        self.assertEqual(len(self.calls("prompt")), 1)
 
     def test_unknown_model_fails_before_prompt_without_silent_substitution(self):
         session = self.make_session()

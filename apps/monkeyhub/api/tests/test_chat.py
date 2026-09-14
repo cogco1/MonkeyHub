@@ -1,5 +1,6 @@
 """Real subprocess chat turns with a local fake CLI; no model or paid call."""
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -59,6 +60,7 @@ if args[:1] == ["app-server"]:
                 {"id": "fixture-model-b", "displayName": "Fixture B", "hidden": False},
                 {"id": "fixture-hidden", "displayName": "Hidden", "hidden": True}]}}), flush=True)
     sys.exit(0)
+input_message = None
 if "--input-format" in args:
     # The SDK control protocol: the model list rides on the initialize answer.
     for line in sys.stdin:
@@ -71,17 +73,21 @@ if "--input-format" in args:
                 "subtype": "success", "request_id": request.get("request_id"),
                 "response": {"models": [{"value": "fixture-claude-a", "displayName": "Fixture A"},
                                         {"value": "fixture-claude-b", "displayName": "Fixture B"}]}}}), flush=True)
-    sys.exit(0)
+        elif request.get("type") == "user":
+            input_message = request
+            break
+    if input_message is None:
+        sys.exit(0)
 if "mcp" in args and "list" in args:
     print(json.dumps([{"name": "unrelated", "enabled": True, "transport": {"type": "stdio"}},
                       {"name": "remote-unrelated", "enabled": True, "transport": {"type": "streamable_http"}}]))
     sys.exit(0)
-prompt = sys.stdin.read()
+prompt = input_message["message"]["content"][0]["text"] if input_message else sys.stdin.read()
 config_path = Path(os.environ["CODEX_HOME"]) / "config.toml"
 config = tomllib.loads(config_path.read_text(encoding="utf-8")) if config_path.is_file() else {}
 profile = config.get("profiles", {}).get(config.get("profile"), {})
 with Path(sys.argv[1]).open("a", encoding="utf-8") as log:
-    log.write(json.dumps({"args": args, "prompt": prompt, "cwd": os.getcwd(),
+    log.write(json.dumps({"args": args, "prompt": prompt, "input_message": input_message, "cwd": os.getcwd(),
         "model_provider": profile.get("model_provider", config.get("model_provider"))}) + "\n")
 def emit(value):
     print(json.dumps(value), flush=True)
@@ -328,6 +334,299 @@ class ChatTests(unittest.TestCase):
     def calls(self):
         return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
 
+    def test_attachment_only_message_download_and_reopen(self):
+        original = {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()}
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            session = self.create()
+            other = self.create(project=self.other)
+            data = "合成附件，供测试读取。".encode("utf-8")
+            encoded = base64.b64encode(data).decode("ascii")
+            posted = client.post(f"/api/chat/sessions/{session.id}/messages", json={
+                "projectId": session.projectId,
+                "attachments": [{"name": "参考 材料.txt", "mimeType": "text/plain", "data": encoded}],
+            })
+            self.assertEqual(posted.status_code, 202, posted.text)
+            detail = self.finished(session)
+            self.assertEqual(detail.status, "idle")
+            self.assertEqual(detail.title, "参考 材料.txt")
+            message = detail.messages[0]
+            self.assertEqual(message.content, "")
+            attachment = message.attachments[0]
+            self.assertEqual((attachment.name, attachment.size), ("参考 材料.txt", len(data)))
+            url = f"/api/chat/sessions/{session.id}/attachments/{attachment.id}"
+            response = client.get(url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content, data)
+            self.assertEqual(response.headers["content-type"], "application/octet-stream")
+            self.assertIn("attachment;", response.headers["content-disposition"])
+            self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+            self.assertEqual(client.get(f"/api/chat/sessions/{other.id}/attachments/{attachment.id}").status_code, 404)
+            self.assertNotIn(encoded, (self.runtime / "chats" / f"{session.id}.json").read_text(encoding="utf-8"))
+            metadata, path = self.store.attachment(session.id, attachment.id)
+            self.assertTrue(path.is_relative_to(self.runtime / "chats" / session.id / "attachments"))
+            references = json.loads(self.calls()[-1]["prompt"].split("Files attached to this message", 1)[1].split("\n", 1)[1])
+            self.assertEqual(references[0]["id"], attachment.id)
+            self.assertEqual(references[0]["path"], str(path))
+            self.assertIn("prefer attachment_read", self.calls()[-1]["prompt"])
+            client.put(f"/api/chat/sessions/{session.id}/archive", json={"archived": True})
+            self.assertEqual(client.get(url).content, data)
+            reopened = chat.ChatStore(self.runtime, "http://127.0.0.1:8790", commands=self.commands)
+            self.addCleanup(reopened.shutdown)
+            self.assertTrue(reopened.get(session.id).archived)
+            retained, retained_path = reopened.attachment(session.id, attachment.id)
+            self.assertEqual(retained, metadata)
+            self.assertEqual(retained_path.read_bytes(), data)
+        self.assertEqual(original, {p.relative_to(self.project): p.read_bytes() for p in self.project.rglob("*") if p.is_file()})
+
+    def test_attachment_read_text_and_binary_pages_are_bounded_and_read_only(self):
+        session, other = self.create(), self.create(project=self.other)
+        text = "甲🙂é\n尾" * 20000
+        binary = b"\x00\xff\x80abc"
+        with patch.object(self.store, "_run"):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, attachments=[
+                {"name": "reference.txt", "data": base64.b64encode(text.encode("utf-8")).decode("ascii")},
+                {"name": "reference.bin", "data": base64.b64encode(binary).decode("ascii")},
+            ]))
+        text_file, binary_file = self.store.get(session.id).messages[0].attachments
+        before = {p.relative_to(self.root): p.read_bytes() for root in (self.project, self.other, self.runtime)
+                  for p in root.rglob("*") if p.is_file()}
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start") as start, TestClient(app, base_url=self.store.hub_url) as client:
+            start.reset_mock()
+            prefix = f"/api/chat/sessions/{session.id}/attachments/"
+            url = prefix + text_file.id + "/read"
+            offset, pieces = 0, []
+            while offset is not None:
+                response = client.get(url, params={"offset": offset, "limit": 32768})
+                self.assertEqual(response.status_code, 200, response.text)
+                result = response.json()
+                self.assertEqual((result["id"], result["name"], result["mimeType"], result["size"]),
+                                 (text_file.id, text_file.name, text_file.mimeType, text_file.size))
+                self.assertEqual((result["format"], result["offset"], result["total"], result["page"], result["totalPages"]),
+                                 ("text", offset, len(text), 1, 1))
+                self.assertLessEqual(len(result["content"]), 32768)
+                pieces.append(result["content"])
+                offset = result["nextOffset"]
+            self.assertEqual("".join(pieces), text)
+            binary_url = prefix + binary_file.id + "/read"
+            results = [client.get(binary_url, params={"offset": offset, "limit": 4}).json() for offset in (0, 4)]
+            self.assertEqual([result["format"] for result in results], ["base64", "base64"])
+            self.assertEqual([result["total"] for result in results], [len(binary)] * 2)
+            self.assertEqual([result["nextOffset"] for result in results], [4, None])
+            self.assertEqual(b"".join(base64.b64decode(result["content"]) for result in results), binary)
+            self.assertEqual(client.get(url, params={"offset": len(text) + 1}).json()["content"], "")
+            for query in ({"offset": -1}, {"offset": "bad"}, {"limit": 0}, {"limit": 65537}, {"page": 0}, {"page": 2}):
+                with self.subTest(query=query):
+                    self.assertEqual(client.get(url, params=query).status_code, 422)
+            self.assertEqual(client.get(f"/api/chat/sessions/{other.id}/attachments/{text_file.id}/read").status_code, 404)
+            self.assertEqual(client.get(prefix + str(uuid4()) + "/read").status_code, 404)
+            start.assert_not_called()
+            self.assertEqual(before, {p.relative_to(self.root): p.read_bytes() for root in (self.project, self.other, self.runtime)
+                                      for p in root.rglob("*") if p.is_file()})
+
+    def test_attachment_read_extracts_only_requested_pdf_page_and_reports_invalid_pdf(self):
+        import io
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+        writer = PdfWriter()
+        for content in ("First reference page", "Second reference page", ""):
+            page = writer.add_blank_page(width=200, height=200)
+            if content:
+                font = DictionaryObject({NameObject("/Type"): NameObject("/Font"),
+                                         NameObject("/Subtype"): NameObject("/Type1"),
+                                         NameObject("/BaseFont"): NameObject("/Helvetica")})
+                page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
+                stream = DecodedStreamObject()
+                stream.set_data(f"BT /F1 12 Tf 10 20 Td ({content}) Tj ET".encode("ascii"))
+                page[NameObject("/Contents")] = writer._add_object(stream)
+        pdf = io.BytesIO()
+        writer.write(pdf)
+        session = self.create()
+        with patch.object(self.store, "_run"):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, attachments=[
+                {"name": "reference.pdf", "mimeType": "application/pdf", "data": base64.b64encode(pdf.getvalue()).decode("ascii")},
+                {"name": "broken.pdf", "data": base64.b64encode(b"not a PDF").decode("ascii")},
+            ]))
+        attachment, broken = self.store.get(session.id).messages[0].attachments
+        _, path = self.store.attachment(session.id, attachment.id)
+        first = self.store.read_attachment(session.id, attachment.id, page=2, limit=6)
+        rest = self.store.read_attachment(session.id, attachment.id, page=2, offset=first["nextOffset"])
+        self.assertEqual((first["format"], first["page"], first["totalPages"]), ("text", 2, 3))
+        self.assertEqual(first["content"] + rest["content"], "Second reference page")
+        self.assertIsNone(rest["nextOffset"])
+        empty = self.store.read_attachment(session.id, attachment.id, page=3)
+        self.assertEqual((empty["content"], empty["total"], empty["nextOffset"]), ("", 0, None))
+        self.assertEqual(path.read_bytes(), pdf.getvalue())
+        for identifier, page, code in ((attachment.id, 4, "CHAT_ATTACHMENT_PAGE_INVALID"), (broken.id, 1, "CHAT_ATTACHMENT_PDF_INVALID")):
+            with self.subTest(identifier=identifier, page=page), self.assertRaises(HubFailure) as failure:
+                self.store.read_attachment(session.id, identifier, page=page)
+            self.assertEqual(failure.exception.error.code, code)
+
+    def test_attachment_tool_reads_only_running_chat_without_studio_or_path_arguments(self):
+        session, other = self.create(), self.create(project=self.other)
+        with patch.object(self.store, "_run"):
+            for current, data in ((session, b"local reference"), (other, b"other reference")):
+                self.store.post(current.id, ChatPostRequest(projectId=current.projectId,
+                    attachments=[{"name": "reference.txt", "data": base64.b64encode(data).decode("ascii")}]))
+        attachment = self.store.get(session.id).messages[0].attachments[0]
+        foreign = self.store.get(other.id).messages[0].attachments[0]
+        calls = []
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            self.assertEqual(base, self.store.hub_url)
+            self.assertEqual(method, "GET")
+            self.assertIsNone(body)
+            calls.append(path)
+            prefix = f"/api/chat/sessions/{session.id}"
+            if path == prefix:
+                return self.store.get(session.id).model_dump()
+            parsed = urlsplit(path)
+            self.assertTrue(parsed.path.startswith(prefix + "/attachments/"), path)
+            self.assertTrue(parsed.path.endswith("/read"), path)
+            options = {key: int(values[0]) for key, values in parse_qs(parsed.query).items()}
+            return self.store.read_attachment(session.id, parsed.path.split("/")[-2], **options)
+
+        described = next(tool for tool in _tools_of(chat) if tool["name"] == "attachment_read")
+        self.assertEqual(set(described["inputSchema"]["properties"]), {"attachmentId", "offset", "limit", "page"})
+        self.assertIn("Empty PDF text does not mean", described["description"])
+        before = {p.relative_to(self.root): p.read_bytes() for root in (self.project, self.other, self.runtime)
+                  for p in root.rglob("*") if p.is_file()}
+        with patch.object(chat, "_request_json", side_effect=request), patch.object(chat, "_bound_studio") as studio:
+            result = chat.call_tool(self.store.hub_url, session.id, "attachment_read", {"attachmentId": attachment.id, "limit": 5})
+            self.assertEqual((result["content"], result["nextOffset"]), ("local", 5))
+            with self.assertRaises(HubFailure) as cross_chat:
+                chat.call_tool(self.store.hub_url, session.id, "attachment_read", {"attachmentId": foreign.id})
+            self.assertEqual(cross_chat.exception.error.code, "CHAT_ATTACHMENT_NOT_FOUND")
+            for options in ({"path": str(self.project)}, {"chatId": other.id}, {"method": "POST"}, {"offset": -1},
+                            {"offset": True}, {"offset": 1.5}, {"limit": 0}, {"limit": 65537}, {"page": 0},
+                            {"limit": "5"}, {"attachmentId": "../reference.txt"}, {"attachmentId": 3}):
+                count = len(calls)
+                with self.subTest(options=options), self.assertRaises(HubFailure):
+                    chat.call_tool(self.store.hub_url, session.id, "attachment_read", {"attachmentId": attachment.id, **options})
+                self.assertEqual(len(calls), count)
+            with patch.object(chat, "_project", return_value=("replaced-project", session.projectDir)):
+                with self.assertRaises(HubFailure) as mismatch:
+                    chat.call_tool(self.store.hub_url, session.id, "attachment_read", {"attachmentId": attachment.id})
+                self.assertEqual(mismatch.exception.error.code, "CHAT_PROJECT_MISMATCH")
+            self.store._sessions[session.id].status = "idle"
+            with self.assertRaises(HubFailure) as stopped:
+                chat.call_tool(self.store.hub_url, session.id, "attachment_read", {"attachmentId": attachment.id})
+            self.assertEqual(stopped.exception.error.code, "CHAT_NOT_RUNNING")
+            studio.assert_not_called()
+        self.assertEqual(before, {p.relative_to(self.root): p.read_bytes() for root in (self.project, self.other, self.runtime)
+                                  for p in root.rglob("*") if p.is_file()})
+
+    def test_invalid_attachments_never_write_a_message_or_file(self):
+        with patch("monkeyhub_api.main.ChatStore", return_value=self.store):
+            app = create_app(HubSettings(runtime_root=self.runtime))
+        with patch.object(app.state.applications, "start"), TestClient(app, base_url="http://127.0.0.1:8790") as client:
+            session = self.create()
+            transcript = self.runtime / "chats" / f"{session.id}.json"
+            saved = transcript.read_bytes()
+            for attachment in (
+                {"name": "../escape.txt", "data": "YQ=="},
+                {"name": "C:\\escape.txt", "data": "YQ=="},
+                {"name": "file.txt", "data": "not valid base64"},
+            ):
+                with self.subTest(attachment=attachment):
+                    response = client.post(f"/api/chat/sessions/{session.id}/messages", json={
+                        "projectId": session.projectId, "attachments": [attachment],
+                    })
+                    self.assertEqual(response.status_code, 422, response.text)
+            response = client.post(f"/api/chat/sessions/{session.id}/messages", json={
+                "projectId": session.projectId, "attachments": [{"name": "a", "data": "YQ=="}] * 9,
+            })
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(transcript.read_bytes(), saved)
+            self.assertFalse((self.runtime / "chats" / session.id).exists())
+            self.assertEqual(self.store.get(session.id).messages, [])
+
+    def test_oversize_attachments_are_refused_before_persistence(self):
+        session = self.create()
+        for sizes in ((20 * 1024 * 1024 + 1,), (15 * 1024 * 1024,) * 3):
+            with self.subTest(sizes=sizes):
+                request = ChatPostRequest(projectId=session.projectId, attachments=[
+                    {"name": f"file-{index}.bin", "data": base64.b64encode(b"x" * size).decode("ascii")}
+                    for index, size in enumerate(sizes)
+                ])
+                with self.assertRaises(HubFailure) as error:
+                    self.store.post(session.id, request)
+                self.assertEqual(error.exception.error.code, "CHAT_ATTACHMENT_TOO_LARGE")
+                self.assertEqual(self.store.get(session.id).messages, [])
+                self.assertFalse((self.runtime / "chats" / session.id).exists())
+
+    def test_attachment_write_is_rolled_back_when_transcript_save_fails(self):
+        session = self.create()
+        request = ChatPostRequest(projectId=session.projectId, attachments=[{"name": "keep.txt", "data": "YQ=="}])
+        self.store.post(session.id, request)
+        retained = self.finished(session).messages[0].attachments[0]
+        _, retained_path = self.store.attachment(session.id, retained.id)
+        transcript = self.runtime / "chats" / f"{session.id}.json"
+        saved = transcript.read_bytes()
+        with patch.object(chat.os, "replace", side_effect=OSError("fixture disk failure")), self.assertRaises(OSError):
+            self.store.post(session.id, request)
+        self.assertEqual(transcript.read_bytes(), saved)
+        self.assertEqual(retained_path.read_bytes(), b"a")
+        self.assertEqual(list(retained_path.parent.iterdir()), [retained_path])
+        self.assertEqual(len(self.store.get(session.id).messages), 2)
+
+    def test_legacy_codex_images_reach_first_and_resumed_turn(self):
+        session = self.create()
+        for index in range(2):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Read the image.",
+                attachments=[{"name": "test.png", "mimeType": "image/png", "data": "cGljdHVyZQ=="}]))
+            detail = self.finished(session)
+            self.assertEqual(detail.status, "idle")
+            args = self.calls()[-1]["args"]
+            image_index = args.index("--image")
+            self.assertEqual(Path(args[image_index + 1]).read_bytes(), b"picture")
+            self.assertEqual(args[-1], "-")
+            self.assertNotIn("cGljdHVyZQ==", args)
+            if index:
+                self.assertLess(args.index("resume"), image_index)
+                self.assertEqual(args[args.index("resume") + 1], self.store._sessions[session.id].nativeSessionId)
+        self.post(session)
+        self.assertEqual(self.finished(session).status, "idle")
+        self.assertNotIn("--image", self.calls()[-1]["args"])
+        self.assertNotIn("test.png", self.calls()[-1]["prompt"])
+
+    def test_claude_attachments_use_stdin_and_preserve_resume(self):
+        for provider in ("claude", "coding-plan"):
+            with self.subTest(provider=provider), patch.dict(os.environ, {
+                "ANTHROPIC_BASE_URL": "https://fixture.example.invalid", "ANTHROPIC_AUTH_TOKEN": "fixture-plan-token",
+            }):
+                session = self.create(provider=provider)
+                native = None
+                for index in range(2):
+                    self.store.post(session.id, ChatPostRequest(projectId=session.projectId,
+                        attachments=[{"name": "view.png", "mimeType": "image/png", "data": "cGljdHVyZQ=="},
+                                     {"name": "note.pdf", "mimeType": "application/pdf", "data": "JVBERg=="}]))
+                    detail = self.finished(session)
+                    self.assertEqual(detail.status, "idle", detail.error)
+                    call = self.calls()[-1]
+                    args, envelope = call["args"], call["input_message"]
+                    self.assertEqual(args[args.index("--input-format") + 1], "stream-json")
+                    self.assertNotIn("cGljdHVyZQ==", args)
+                    self.assertNotIn(str(self.runtime), args)
+                    self.assertEqual(envelope["session_id"], self.store._sessions[session.id].nativeSessionId)
+                    self.assertIsNone(envelope["parent_tool_use_id"])
+                    blocks = envelope["message"]["content"]
+                    self.assertEqual([block["type"] for block in blocks], ["text", "image"])
+                    self.assertIn("note.pdf", blocks[0]["text"])
+                    self.assertEqual(blocks[1]["source"], {"type": "base64", "media_type": "image/png", "data": "cGljdHVyZQ=="})
+                    if index:
+                        self.assertEqual(self.store._sessions[session.id].nativeSessionId, native)
+                        self.assertEqual(args[args.index("--resume") + 1], native)
+                    native = self.store._sessions[session.id].nativeSessionId
+                self.post(session)
+                self.assertEqual(self.finished(session).status, "idle")
+                self.assertIsNone(self.calls()[-1]["input_message"])
+                self.assertNotIn("view.png", self.calls()[-1]["prompt"])
+
     def test_turn_envelope_reuses_connected_action_contract(self):
         tools = {tool["name"]: tool for tool in _tools_of(chat)}
         modelling = tools["studio_request"]["description"]
@@ -540,10 +839,10 @@ class ChatTests(unittest.TestCase):
         self.assertFalse(override["remote-unrelated"]["enabled"])
         self.assertTrue(override["monkeyhub"]["enabled"])
         self.assertEqual(set(override["monkeyhub"]["enabled_tools"]),
-                         {"studio_schema", "studio_request", "fab_request"})
+                         {"studio_schema", "studio_request", "fab_request", "attachment_read"})
         self.assertEqual(override["monkeyhub"]["tools"], {
             name: {"approval_mode": "approve"}
-            for name in ("studio_schema", "studio_request", "fab_request")
+            for name in ("studio_schema", "studio_request", "fab_request", "attachment_read")
         })
 
     def test_process_failure_redacts_credentials_and_keeps_user_message(self):
@@ -666,7 +965,7 @@ class ChatTests(unittest.TestCase):
         approved = claude_command[claude_command.index("--allowedTools") + 1].split(",")
         for name in ("Read", "Glob", "Grep", "Write", "Edit", "Bash"):
             self.assertIn(name, approved, name)
-        for name in ("studio_request", "studio_schema", "fab_request"):
+        for name in ("studio_request", "studio_schema", "fab_request", "attachment_read"):
             self.assertIn(f"mcp__monkeyhub__{name}", approved, name)
         self.assertEqual(claude_command[claude_command.index("--permission-mode") + 1], "dontAsk")
         self.assertNotIn("Read,Grep,Glob", claude_command)
@@ -1719,7 +2018,7 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(process.returncode, 0, process.stderr)
         replies = [json.loads(row) for row in process.stdout.splitlines()]
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
-        self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]}, {"studio_schema", "studio_request", "fab_request"})
+        self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]}, {"studio_schema", "studio_request", "fab_request", "attachment_read"})
 
     # ---- a turn that names its own source and focus
 
@@ -2013,7 +2312,7 @@ class ChatTests(unittest.TestCase):
             def __init__(self, **arguments):
                 self.default_model = "fixture-model-a"
 
-            def prompt(self, text, session_id, model, on_session, timeout_s):
+            def prompt(self, text, session_id, model, on_session, timeout_s, *, images=()):
                 on_session("fixture/session:recorded")
                 sent.append({"prompt": text, "timeout_s": timeout_s})
 

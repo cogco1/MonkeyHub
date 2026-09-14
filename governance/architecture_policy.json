@@ -235,7 +235,7 @@
       ],
       "kind": "application_conversation",
       "owner": "hub.shell",
-      "reason": "Atomically saves chat transcripts and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
+      "reason": "Saves chat attachment bytes and atomically saves their transcript metadata and native CLI session ids only under the explicit nonproject Hub runtime/chats directory; design project writes still use existing Studio/P036 interfaces."
     },
     {
       "path": "tools/workspace.py",
