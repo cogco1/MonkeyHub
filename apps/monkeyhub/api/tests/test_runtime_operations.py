@@ -383,6 +383,43 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertFalse(record.committed)
         self.assertIsNone(record.resultDigest)
 
+    def test_acceptance_is_dispatched_while_a_refresh_names_its_candidate_proposal(self):
+        # A retained refresh names the candidate's job and proposal on every
+        # operation bound to that candidate, an acceptance included. Its own
+        # path is not a proposal, so the acceptance is still dispatched once
+        # and nothing else is read from the worker on its behalf.
+        initial, candidate_id, path, payload, _ = self.acceptance()
+        accepting = OperationManager(self.fixture.PROJECT_ID)
+        runtime = ProjectRuntime("accepting-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+            accepting, ProjectBinding.open(self.settings), retained=self.snapshot(live=True))
+        manager = ProjectRuntimeManager(None, None)
+        ready = SimpleNamespace(url="http://127.0.0.1:1", instance_id="fixture-instance")
+        requests = []
+
+        def studio(base, target, method="GET", body=None, headers=None, *, timeout=10):
+            requests.append((method, target))
+            answer = self.client.request(method, target, content=body, headers=headers or {})
+            return HttpResult(answer.status_code, answer.content,
+                              {"content-type": answer.headers.get("content-type", "application/json")})
+
+        def refreshed(_runtime):
+            # The watcher's own reconcile, at the window it really occupies:
+            # after this request is admitted and before it is dispatched.
+            accepting.reconcile(self.snapshot(live=True), worker_alive=True)
+            return ready
+
+        with patch.object(manager, "service", side_effect=refreshed), \
+             patch("monkeyhub_api.runtime.request_http", side_effect=studio):
+            result = manager.forward(runtime, path, "POST", json.dumps(payload, sort_keys=True).encode(),
+                {"idempotency-key": str(uuid4()), "content-type": "application/json"})
+        self.assertEqual(requests, [("POST", path)])
+        self.assertEqual(result.status, 200, result.body)
+        self.assertEqual(result.json()["parentStageRef"], initial["stageRef"])
+        accepting.reconcile(self.snapshot(live=True), worker_alive=True)
+        record = next(row for row in accepting.records() if row.candidateId == candidate_id and row.source == "studio")
+        self.assertEqual(record.status, "completed")
+        self.assertTrue(record.committed)
+
 
 if __name__ == "__main__":
     unittest.main()
