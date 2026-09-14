@@ -10,6 +10,7 @@ import archflow_studio_api  # noqa: F401
 from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
 from archflow_studio_api.application.intent_agent import Selection, record_sheet
+from archflow_studio_api.application import intent_context
 from archflow_studio_api.application.intent_context import compile_context, expand_context, control_unit, model_context
 from archflow_studio_api.application.projection import _elements
 
@@ -374,6 +375,35 @@ class ModelContextTests(unittest.TestCase):
         self.assertEqual(public["elements"], context.sheet["elements"])
         self.assertNotIn("producerSignatures", public)
         self.assertIn("producerSignatures", context.sheet)
+
+    def test_closure_reads_each_row_once_however_wide_it_grows(self):
+        """The dependency closure widens a set of ids; the rows do not change.
+
+        A row re-read on every round is the same answer bought again, and the
+        cost of it grows with the record rather than with the slice. What the
+        closure keeps is asserted throughout this file; this asserts what it
+        stops spending to keep it.
+        """
+
+        record, sheet = fixture(shared=True)
+        rows = set()
+        reads = []
+        real = intent_context._named_refs
+
+        def counting(value, known):
+            rows.update(known)
+            reads.append(id(value))
+            return real(value, known)
+
+        intent_context._named_refs = counting
+        try:
+            context = compile_context("set window-23 width to 1.4", sheet, record=record)
+        finally:
+            intent_context._named_refs = real
+        # The slice still reaches the shared parameter's other consumer.
+        self.assertIn("entity:window-24", context.included_refs)
+        self.assertEqual(len(reads), len(set(reads)), "a row was read for its references more than once")
+        self.assertLessEqual(len(reads), len(rows))
 
 
 if __name__ == "__main__":

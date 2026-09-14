@@ -3,17 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-32",
-      "stream": "interaction",
-      "status": "active",
-      "goal": "Avoid repeat reference parsing within a context dependency closure.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
-        "apps/archflow-studio/api/tests/test_intent_context.py"
-      ]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
