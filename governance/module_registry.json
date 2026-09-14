@@ -5979,7 +5979,8 @@
         "Exact-commit source collection for Hub and its included Fab module, frontend build, locked ACP adapter and embedded Python/Node runtimes in external staging/cache",
         "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; all applications share the selected Hub source commit",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell",
-        "Optional --desktop builds and verifies MonkeyArch.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json"
+        "Optional --desktop builds and verifies MonkeyArch.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
+        "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests"
       ],
       "does_not_own": [
         "Project data, project initialization, candidate execution or formal project issue",
@@ -5994,11 +5995,13 @@
       "outputs": [
         "Windows candidate application directory with embedded Python/Node, locked ACP adapter and built web assets",
         "ZIP, checksum and source/build metadata",
-        "Read-only resolved packaging paths, or one-time personal root configuration through tools.workspace"
+        "Read-only resolved packaging paths, or one-time personal root configuration through tools.workspace",
+        "ReleaseManifest@1 and CycloneDX 1.6 SBOM beside the candidate ZIP; identical SBOM inside the bundle"
       ],
       "public_api": [
         "main",
-        "package"
+        "package",
+        "verify_release"
       ],
       "depends_on": [
         "tools.workspace",
@@ -6010,7 +6013,8 @@
         "The registered writer functions derive distribution outputs from those validated roots; this registration adds no project writer and is not a filesystem sandbox.",
         "Installation targets a fresh version directory and leaves unknown existing data intact",
         "The shared workspace setting supplies stable task staging/output and shared cache; explicit path overrides do not modify that setting",
-        "--show-paths creates no directories and --configure writes only the personal root setting; neither command builds or accesses project data"
+        "--show-paths creates no directories and --configure writes only the personal root setting; neither command builds or accesses project data",
+        "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity"
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"

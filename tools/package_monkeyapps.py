@@ -5,10 +5,19 @@ dependency and output files go to the selected external directories. Use
 --configure --workspace-root once to remember a root in personal Git config;
 later builds reuse task directories and caches there. The
 installed application uses the existing apps/monkeyhub/run.py and launch-hub.ps1.
+
+Each build finishes with release evidence beside the candidate ZIP: a CycloneDX
+SBOM read from the assembled bundle, and a ReleaseManifest@1 that views the same
+build-info.json over a closed table of the distributed files. --verify re-hashes
+those files, opens the archive to check the build-info.json and SBOM copies it
+carries against the digests the manifest binds them to, and reports every miss.
+Nothing here is signed: the manifest records candidate-unsigned, and a verified
+release proves only that the files match that manifest, never who produced it.
 """
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable, Iterator
 import hashlib
 import importlib.metadata
 import json
@@ -20,6 +29,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -28,6 +38,16 @@ PYTHON_VERSION = "3.13.15"
 PYTHON_SHA256 = "d1f04d990aee1253d8569e8e5104e30fa9f5fa830899f14843448872d936a2cf"
 PYTHON_URL = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/python-{PYTHON_VERSION}-embed-amd64.zip"
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
+# Release evidence beside the candidate. build-info.json keeps the single build
+# identity; the manifest is a derived view of it plus the closed artifact table,
+# and the SBOM is read from the assembled bundle, never from a kept list.
+RELEASE_MANIFEST_SCHEMA = "ReleaseManifest@1"
+SBOM_SPEC_VERSION = "1.6"
+SBOM_NAME = "sbom.cyclonedx.json"
+SHIPPED_IN = "monkeyhub:shippedIn"
+BUILD_INPUT = "monkeyhub:buildInput"
+PYTHON_SITE = "_runtime/python/Lib/site-packages"
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
 from tools.workspace import (
@@ -40,7 +60,7 @@ SOURCE_PATHS = (
     "apps/archflow-studio/api", "apps/archflow-studio/web",
     "apps/archflow-studio/assets", "apps/archflow-studio/launch-studio.ps1",
     "apps/monkeyhub", "apps/monkeyfab", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
-    "README.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
+    "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
     "governance/module_registry.json",
 )
 
@@ -133,6 +153,25 @@ def build_web(source: Path, node: Path, npm_cli: Path, environment: dict[str, st
             raise ValueError(f"The production frontend was not built: {web}")
 
 
+def installed_node_packages(lock_root: Path, tree: Path, label: str) -> Iterator[tuple[Path, dict]]:
+    """Yield each production package this lockfile pins, read where it is installed.
+
+    Licences and the SBOM describe the same inventory, so both read the actual
+    installed ``package.json`` rather than the lockfile's own metadata. ``tree``
+    is the assembled bundle when the packages ship as files.
+    """
+    locked = json.loads((lock_root / "package-lock.json").read_text(encoding="utf-8"))
+    for relative, metadata in sorted(locked["packages"].items()):
+        if not relative or metadata.get("dev"):
+            continue
+        dependency = tree / relative
+        if not (dependency / "package.json").is_file():
+            if metadata.get("optional"):
+                continue  # Optional native packages for another platform.
+            raise ValueError(f"Production dependency is not installed: {label}/{relative}")
+        yield dependency, json.loads((dependency / "package.json").read_text(encoding="utf-8"))
+
+
 def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str, str]) -> str:
     """Copy the production notices named by the frontend and adapter lockfiles."""
     rows = []
@@ -143,16 +182,7 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
         ("monkeyhub ACP", "apps/monkeyhub"),
     ):
         web = source / relative_root
-        locked = json.loads((web / "package-lock.json").read_text(encoding="utf-8"))
-        for relative, metadata in sorted(locked["packages"].items()):
-            if not relative or metadata.get("dev"):
-                continue
-            dependency = web / relative
-            if not (dependency / "package.json").is_file():
-                if metadata.get("optional"):
-                    continue  # Optional native packages for another platform.
-                raise ValueError(f"Production dependency is not installed: {application}/{relative}")
-            package = json.loads((dependency / "package.json").read_text(encoding="utf-8"))
+        for dependency, package in installed_node_packages(web, web, application):
             name, version = package["name"], package["version"]
             identity = (name, version)
             if identity not in copied:
@@ -241,7 +271,9 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     # from the same file the checkout does instead of an embedded copy.
     for relative in ("apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
                      "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
-                     "governance/module_registry.json",
+                     # The security-reporting route travels with the distributed bundle,
+                     # not only with a checkout of the public repository.
+                     "governance/module_registry.json", "SECURITY.md",
                      "apps/shared-web/src/appearance.js", "apps/shared-web/src/i18n.js",
                      "apps/shared-web/src/browserTranslator.js", "apps/shared-web/src/base.css",
                      "tools/create_project.py", "tools/run_project.py"):
@@ -358,6 +390,413 @@ def runtime_inventory(source: Path, bundle: Path) -> dict[str, object]:
     }
 
 
+def purl(kind: str, name: str, version: str, *, namespace: str = "",
+         qualifiers: dict[str, str] | None = None) -> str:
+    """One package-url in the canonical form of the purl specification.
+
+    Qualifier keys are sorted and their values percent-encoded apart from the
+    scheme/digest colon, as the specification's own examples are written.
+    """
+    segments = [f"pkg:{kind}"]
+    if namespace:
+        segments.append(urllib.parse.quote(namespace, safe=""))
+    segments.append(urllib.parse.quote(name, safe=""))
+    identity = "/".join(segments) + "@" + urllib.parse.quote(version, safe="")
+    if qualifiers:
+        identity += "?" + "&".join(f"{key}={urllib.parse.quote(value, safe=':')}"
+                                   for key, value in sorted(qualifiers.items()))
+    return identity
+
+
+def sbom_component(kind: str, name: str, version: str, reference: str,
+                   place: tuple[str, str], **fields: object) -> dict[str, object]:
+    """One CycloneDX component, with how the bundle relates to it.
+
+    ``place`` is ``(SHIPPED_IN, <bundle path>)`` when the component is present
+    in the bundle as files, or ``(BUILD_INPUT, <lock → output>)`` when a
+    lockfile pinned it for a build whose output ships. The second is a weaker
+    claim on purpose; see :func:`sbom_document`.
+    """
+    component: dict[str, object] = {"type": kind, "bom-ref": reference, "name": name, "version": version}
+    if reference.startswith("pkg:"):
+        component["purl"] = reference
+    component.update(fields)
+    component["properties"] = [{"name": place[0], "value": place[1]}]
+    return component
+
+
+def merged_components(components: Iterable[dict[str, object]]) -> list[dict[str, object]]:
+    """One entry per identity; a package used twice keeps both relationships."""
+    merged: dict[str, dict[str, object]] = {}
+    places: dict[str, set[tuple[str, str]]] = {}
+    for component in components:
+        reference = str(component["bom-ref"])
+        rows: list[dict[str, str]] = component["properties"]  # type: ignore[assignment]
+        places.setdefault(reference, set()).update((row["name"], row["value"]) for row in rows)
+        merged.setdefault(reference, component)
+    for reference, component in merged.items():
+        component["properties"] = [{"name": name, "value": value}
+                                   for name, value in sorted(places[reference])]
+    return [merged[reference] for reference in sorted(merged)]
+
+
+def python_components(bundle: Path) -> list[dict[str, object]]:
+    """Every distribution actually installed in the shipped Python runtime.
+
+    This is the same reading of the same site-packages that writes
+    ``_runtime/requirements-lock.txt``, so the two cannot drift apart.
+    """
+    components = []
+    for distribution in importlib.metadata.distributions(path=[str(bundle / PYTHON_SITE)]):
+        metadata = distribution.metadata
+        name, version = metadata["Name"], distribution.version
+        fields: dict[str, object] = {}
+        expression, declared = metadata.get("License-Expression"), metadata.get("License")
+        if expression:
+            # PEP 639 requires this field to be a valid SPDX expression.
+            fields["licenses"] = [{"expression": expression}]
+        elif declared and "\n" not in declared and len(declared) <= 120:
+            # Legacy free text: record it as a name, claiming no SPDX identity.
+            fields["licenses"] = [{"license": {"name": declared.strip()}}]
+        # purl's pypi rules: lowercase the name and replace _ with -; its own
+        # test data canonicalises pkg:PYPI/Django_package to django-package.
+        identity = purl("pypi", name.lower().replace("_", "-"), version)
+        components.append(sbom_component(
+            "library", name, version, identity, (SHIPPED_IN, PYTHON_SITE), **fields))
+    return components
+
+
+def node_components(source: Path, bundle: Path) -> list[dict[str, object]]:
+    """Node packages shipped as files, and those a frontend build consumed.
+
+    The adapter tree is read from the bundle itself, so those packages are
+    present as shipped files. A frontend's production dependencies are read
+    from the tree its ``dist`` was built from: the bundler decides which of
+    them reach the output, so they are recorded as build inputs.
+    """
+    components = []
+    for locked, tree, place in (
+        ("apps/monkeyhub", bundle / "apps/monkeyhub", (SHIPPED_IN, "apps/monkeyhub/node_modules")),
+        ("apps/monkeyhub/web", source / "apps/monkeyhub/web",
+         (BUILD_INPUT, "apps/monkeyhub/web/package-lock.json -> apps/monkeyhub/web/dist")),
+        ("apps/archflow-studio/web", source / "apps/archflow-studio/web",
+         (BUILD_INPUT, "apps/archflow-studio/web/package-lock.json -> apps/archflow-studio/web/dist")),
+    ):
+        for _, package in installed_node_packages(source / locked, tree, locked):
+            name, version = package["name"], package["version"]
+            namespace, _, bare = name.rpartition("/")
+            fields: dict[str, object] = {}
+            declared = package.get("license")
+            if isinstance(declared, str) and declared:
+                # npm license strings are frequently not valid SPDX expressions.
+                fields["licenses"] = [{"license": {"name": declared}}]
+            identity = purl("npm", bare, version, namespace=namespace)
+            components.append(sbom_component("library", name, version, identity, place, **fields))
+    return components
+
+
+def rust_components(bundle: Path, desktop: dict[str, str]) -> list[dict[str, object]]:
+    """The built executable, and the crates its shipped Cargo lock pins.
+
+    Cargo resolves one lock for every target, feature and build script, so a
+    locked crate is a build input rather than proof of compiled-in code. Only
+    the executable itself is recorded as shipped.
+    """
+    locked = tomllib.loads((bundle / "_runtime/desktop-Cargo.lock").read_text(encoding="utf-8"))
+    components = [sbom_component(
+        "application", "MonkeyArch.exe", desktop["version"], "monkeyhub:MonkeyArch.exe",
+        (SHIPPED_IN, "MonkeyArch.exe"),
+        hashes=[{"alg": "SHA-256", "content": desktop["executableSha256"]}])]
+    place = (BUILD_INPUT, "_runtime/desktop-Cargo.lock -> MonkeyArch.exe")
+    for crate in locked.get("package", ()):
+        if not str(crate.get("source", "")).startswith(CRATES_IO):
+            continue  # The local desktop crate ships as MonkeyArch.exe itself.
+        fields: dict[str, object] = {}
+        if isinstance(crate.get("checksum"), str):
+            fields["hashes"] = [{"alg": "SHA-256", "content": crate["checksum"]}]
+        identity = purl("cargo", crate["name"], crate["version"])
+        components.append(sbom_component(
+            "library", crate["name"], crate["version"], identity, place, **fields))
+    return components
+
+
+def sbom_document(source: Path, bundle: Path, build_info: dict, version: str) -> dict[str, object]:
+    """A CycloneDX 1.6 bill of materials for this assembled bundle.
+
+    Components are read from the bundle, or from the installed tree a shipped
+    build output was produced from, and each says which of the two it is:
+    ``monkeyhub:shippedIn`` names a bundle path that carries the component as
+    files; ``monkeyhub:buildInput`` names a lockfile that pinned it for a build
+    whose output ships, without asserting the component reached that output.
+    Runtime versions come from ``build_info``, which stays the single build
+    identity.
+
+    The document adds no build-time variation of its own -- no timestamp, no
+    serial number -- so the same resolved inventory yields the same bytes. That
+    is not a reproducibility guarantee for a source commit: several packaged
+    Python requirements are version ranges that pip resolves when the build
+    runs, and the Node version comes from the build machine, so two builds of
+    one commit can legitimately ship different contents. Reading the installed
+    tree rather than the requirement files is what keeps this document true to
+    whichever inventory was actually produced.
+    """
+    inventory = build_info["runtimeInventory"]
+    node_version = inventory["nodeVersion"]
+    components = [
+        sbom_component(
+            "application", "CPython", build_info["pythonVersion"],
+            purl("generic", "python", build_info["pythonVersion"], qualifiers={
+                "download_url": build_info["pythonUrl"],
+                "checksum": f"sha256:{build_info['pythonSha256']}"}),
+            (SHIPPED_IN, "_runtime/python"),
+            externalReferences=[{"type": "distribution", "url": build_info["pythonUrl"], "hashes": [
+                {"alg": "SHA-256", "content": build_info["pythonSha256"]}]}]),
+        sbom_component(
+            "application", "Node.js", node_version,
+            purl("generic", "node", node_version), (SHIPPED_IN, "_runtime/node/node.exe"),
+            hashes=[{"alg": "SHA-256", "content": sha256(bundle / "_runtime/node/node.exe")}],
+            externalReferences=[{"type": "distribution", "url": f"https://nodejs.org/dist/{node_version}/"}]),
+        *python_components(bundle),
+        *node_components(source, bundle),
+    ]
+    if "desktop" in build_info:
+        components.extend(rust_components(bundle, build_info["desktop"]))
+    components = merged_components(components)
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": SBOM_SPEC_VERSION,
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "application", "bom-ref": "monkeyhub", "name": "MonkeyHub", "version": version,
+                "description": "MonkeyHub Windows candidate bundle: Hub, Studio workspaces, "
+                               "MonkeyMonitor and MonkeyFab from one Hub source commit.",
+            },
+            "tools": {"components": [{"type": "application", "name": "package_monkeyapps",
+                                      "version": build_info["sourceCommit"]}]},
+            "properties": [
+                {"name": "monkeyhub:sourceCommit", "value": build_info["sourceCommit"]},
+                {"name": "monkeyhub:target", "value": build_info["target"]},
+                {"name": "monkeyhub:channel", "value": build_info["channel"]},
+                {"name": f"{SHIPPED_IN}:meaning",
+                 "value": "Bundle-relative location that carries this component as shipped files."},
+                {"name": f"{BUILD_INPUT}:meaning",
+                 "value": "A lockfile that pinned this component for the named build output. The "
+                          "component is not asserted to be present in that output: a frontend bundler "
+                          "includes only what it reaches, and one Cargo lock covers every target, "
+                          "feature and build script."},
+            ],
+        },
+        "components": components,
+        "dependencies": [{"ref": "monkeyhub", "dependsOn": [component["bom-ref"] for component in components]}],
+    }
+
+
+def artifact_facts(path: Path) -> dict[str, object]:
+    return {"path": path.name, "size": path.stat().st_size, "sha256": sha256(path)}
+
+
+def release_manifest(build_info: dict, version: str, prefix: str, build_info_path: Path,
+                     archive: Path, artifacts: Iterable[Path], sbom: Path) -> dict[str, object]:
+    """A derived view of ``build-info.json`` closed over the distributed files.
+
+    This mints no version of its own: every release fact is read from the
+    build metadata already written into the bundle. ``buildInfo`` and ``sbom``
+    name their path inside the archive as well as their digest, so
+    :func:`verify_release` can open the archive and check those copies instead
+    of only restating a hash. Nothing here is signed, and the trust block says
+    so rather than implying that a checksum establishes origin.
+    """
+    inventory = build_info["runtimeInventory"]
+    return {
+        "schema": RELEASE_MANIFEST_SCHEMA,
+        "release": {
+            "version": version,
+            "channel": build_info["channel"],
+            "target": build_info["target"],
+            "sourceCommit": build_info["sourceCommit"],
+        },
+        "trust": {
+            "status": f"{build_info['channel']}-unsigned",
+            "signed": False,
+            "signature": None,
+            "statement": "This release is not signed. The SHA-256 values below detect a changed file "
+                         "for a manifest obtained over a trusted channel; they do not establish origin. "
+                         "Do not treat this build as production-trusted.",
+        },
+        "archive": archive.name,
+        "buildInfo": {
+            "pathInArchive": f"{prefix}/{build_info_path.name}",
+            "sha256": sha256(build_info_path),
+        },
+        "build": {
+            "pythonVersion": build_info["pythonVersion"],
+            "pythonUrl": build_info["pythonUrl"],
+            "pythonSha256": build_info["pythonSha256"],
+            "nodeVersion": inventory["nodeVersion"],
+            "acpAdapter": inventory["acpAdapter"],
+            "pythonRequirements": inventory["pythonRequirements"],
+            **({"desktop": build_info["desktop"]} if "desktop" in build_info else {}),
+        },
+        "sbom": {
+            "format": "CycloneDX", "specVersion": SBOM_SPEC_VERSION,
+            "path": sbom.name, "pathInArchive": f"{prefix}/{SBOM_NAME}",
+            "sha256": sha256(sbom),
+        },
+        "artifactPrefix": prefix,
+        "artifacts": sorted((artifact_facts(path) for path in artifacts), key=lambda row: row["path"]),
+    }
+
+
+def unsafe_name(value: object) -> str | None:
+    """Why this is not one plain filename, or None when it is.
+
+    A manifest may have been written on another platform, so a separator is
+    rejected by character rather than by asking this platform to parse the
+    string: ``..\\escape`` is one harmless filename to posixpath and an escape
+    on Windows, and the reverse holds for ``../escape``.
+    """
+    if not isinstance(value, str) or not value:
+        return "must be a non-empty name"
+    if value in (".", ".."):
+        return "must not be a relative directory name"
+    if re.search(r'[\\/:*?"<>|]|[\x00-\x1f]', value):
+        return "must not contain a path separator, drive letter or reserved character"
+    if value != value.strip() or value.endswith("."):
+        return "must not have surrounding whitespace or a trailing dot"
+    return None
+
+
+def archive_digests(archive: Path, wanted: Iterable[str]) -> tuple[dict[str, str], list[str]]:
+    """SHA-256 of named members of a distributed archive, plus what went wrong."""
+    digests: dict[str, str] = {}
+    problems: list[str] = []
+    try:
+        with zipfile.ZipFile(archive) as opened:
+            for name in wanted:
+                try:
+                    entry = opened.getinfo(name)
+                except KeyError:
+                    problems.append(f"{archive.name}: does not contain {name}")
+                    continue
+                if entry.file_size > 64 * 1024 * 1024:
+                    problems.append(f"{archive.name}: {name} is {entry.file_size} bytes, too large to be release metadata")
+                    continue
+                digests[name] = hashlib.sha256(opened.read(name)).hexdigest()
+    except (OSError, zipfile.BadZipFile, RuntimeError) as error:
+        problems.append(f"{archive.name}: unreadable archive: {error}")
+    return digests, problems
+
+
+def verify_release(manifest: Path) -> list[str]:
+    """Check a release directory against its closed manifest; report every miss.
+
+    Three bindings are checked, not one. Every distributed file must match the
+    size and SHA-256 in the closed table, and nothing carrying this release's
+    name may sit beside it unlisted. The archive is then opened so that the
+    ``build-info.json`` and SBOM copies travelling inside it are hashed against
+    the digests the manifest records, and the SBOM sidecar must agree with that
+    same digest. This proves the files match this manifest. It cannot prove the
+    manifest is authentic: an unsigned manifest carries no origin, so a reader
+    who obtained it from an untrusted place learns nothing about who built it.
+    """
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"{manifest.name}: unreadable release manifest: {error}"]
+    if not isinstance(document, dict) or document.get("schema") != RELEASE_MANIFEST_SCHEMA:
+        return [f"{manifest.name}: not a {RELEASE_MANIFEST_SCHEMA} document"]
+    prefix = document.get("artifactPrefix")
+    fault = unsafe_name(prefix)
+    if fault:
+        return [f"{manifest.name}: artifactPrefix {fault}"]
+    artifacts = document.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        return [f"{manifest.name}: the manifest lists no distributed artifact"]
+    directory = manifest.parent
+    problems: list[str] = []
+    listed: dict[str, dict] = {}
+    for entry in artifacts:
+        # A downloaded manifest is untrusted input; report it, never trip over it.
+        if not isinstance(entry, dict):
+            problems.append(f"{entry!r}: an artifact entry must be an object")
+            continue
+        name = entry.get("path")
+        fault = unsafe_name(name)
+        if fault:
+            problems.append(f"{name!r}: an artifact path {fault}")
+            continue
+        name = str(name)
+        if name in listed:
+            problems.append(f"{name}: listed twice; a closed table names each file once")
+            continue
+        if not name.startswith(str(prefix)):
+            problems.append(f"{name}: does not carry the release prefix {prefix!r}, so the closed set cannot cover it")
+            continue
+        listed[name] = entry
+        artifact = directory / name
+        if not artifact.is_file():
+            problems.append(f"{name}: listed in the manifest but not present")
+            continue
+        size = artifact.stat().st_size
+        if size != entry.get("size"):
+            problems.append(f"{name}: {size} bytes on disk, manifest records {entry.get('size')}")
+        digest = sha256(artifact)
+        if digest != entry.get("sha256"):
+            problems.append(f"{name}: SHA-256 {digest} on disk, manifest records {entry.get('sha256')}")
+    # One output directory holds several releases, so the closed set is the
+    # files carrying this release's own name.
+    for path in sorted(directory.iterdir()):
+        if path.is_file() and path.name.startswith(str(prefix)) and path.name not in listed \
+                and path.name != manifest.name:
+            problems.append(f"{path.name}: distributed beside this release but absent from its closed manifest")
+    problems.extend(verify_bound_metadata(directory, document, listed))
+    return problems
+
+
+def verify_bound_metadata(directory: Path, document: dict, listed: dict[str, dict]) -> list[str]:
+    """Check the build metadata and SBOM digests the manifest claims to bind."""
+    problems: list[str] = []
+    sbom = document.get("sbom") if isinstance(document.get("sbom"), dict) else {}
+    build_info = document.get("buildInfo") if isinstance(document.get("buildInfo"), dict) else {}
+    sidecar = sbom.get("path")
+    if unsafe_name(sidecar) or str(sidecar) not in listed:
+        problems.append("the SBOM sidecar is not one of the listed artifacts")
+    elif sbom.get("sha256") != listed[str(sidecar)].get("sha256"):
+        # The artifact table and the SBOM block must not disagree about one file.
+        problems.append(f"{sidecar}: the artifact table records "
+                        f"{listed[str(sidecar)].get('sha256')} but the sbom block records {sbom.get('sha256')}")
+    archive_name = document.get("archive")
+    if unsafe_name(archive_name) or str(archive_name) not in listed:
+        return problems + ["the distributed archive is not one of the listed artifacts"]
+    archive = directory / str(archive_name)
+    if not archive.is_file():
+        return problems  # Already reported as a missing listed artifact.
+    wanted = {}
+    for label, block in (("build-info.json", build_info), ("SBOM", sbom)):
+        member = block.get("pathInArchive")
+        if not isinstance(member, str) or not member or ".." in member.split("/"):
+            problems.append(f"{label}: pathInArchive must be a path inside the archive")
+            continue
+        if not member.startswith(f"{document['artifactPrefix']}/"):
+            problems.append(f"{label}: {member} is not inside {document['artifactPrefix']}/")
+            continue
+        expected_member = f"{document['artifactPrefix']}/{SBOM_NAME if label == 'SBOM' else label}"
+        if member != expected_member:
+            problems.append(f"{label}: pathInArchive must name {expected_member}")
+            continue
+        wanted[member] = (label, block.get("sha256"))
+    if not wanted:
+        return problems
+    digests, failures = archive_digests(archive, wanted)
+    problems.extend(failures)
+    for member, (label, expected) in wanted.items():
+        if member in digests and digests[member] != expected:
+            problems.append(f"{member}: SHA-256 {digests[member]} inside {archive.name}, "
+                            f"manifest binds {label} to {expected}")
+    return problems
+
+
 def package(source_root: Path, source_ref: str, staging: Path, output: Path,
             cache: Path, node: Path, npm_cli: Path,
             *, desktop: bool = False, cargo: Path | None = None) -> Path:
@@ -394,12 +833,19 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     smoke_runtime(bundle)
     desktop_info = build_desktop(source, bundle, commit, cargo, environment) if desktop else None
     # Version + exact inputs are distribution metadata, not project records.
-    (bundle / "build-info.json").write_text(json.dumps({
+    build_info = {
         "sourceCommit": commit, "target": "windows-x64", "channel": "candidate",
         **({"desktop": desktop_info} if desktop_info else {}),
         "pythonVersion": PYTHON_VERSION, "pythonUrl": PYTHON_URL, "pythonSha256": PYTHON_SHA256,
         "runtimeInventory": runtime_inventory(source, bundle),
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    }
+    build_info_path = bundle / "build-info.json"
+    build_info_path.write_text(json.dumps(build_info, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # The bill of materials ships inside the archive and again beside it, so a
+    # reader can inspect the dependencies without unpacking the candidate.
+    (bundle / SBOM_NAME).write_text(json.dumps(
+        sbom_document(source, bundle, build_info, version), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
     zip_path = build / f"{bundle.name}-candidate.zip"
     with zipfile.ZipFile(zip_path, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(bundle.rglob("*")):
@@ -409,11 +855,23 @@ def package(source_root: Path, source_ref: str, staging: Path, output: Path,
     if shutil.disk_usage(output).free < zip_path.stat().st_size + 64 * 1024 * 1024:
         raise ValueError(f"Not enough free space for the completed ZIP in {output}; it remains at {zip_path}")
     final = output / zip_path.name
-    if final.exists():
-        raise ValueError(f"A candidate with this source name already exists; choose another output directory: {final}")
+    checksum = output / f"{final.name}.sha256"
+    sbom = output / f"{bundle.name}.cyclonedx.json"
+    manifest = output / f"{final.name}.release-manifest.json"
+    for existing in (final, checksum, sbom, manifest):
+        if existing.exists():
+            raise ValueError(f"A release with this source name already exists; choose another output directory: {existing}")
     shutil.copy2(zip_path, final)
-    (output / f"{final.name}.sha256").write_text(f"{sha256(final)}  {final.name}\n", encoding="utf-8")
-    print(f"Candidate: {final}\nBytes: {final.stat().st_size}\nUnpacked: {bundle}", flush=True)
+    checksum.write_text(f"{sha256(final)}  {final.name}\n", encoding="utf-8")
+    shutil.copy2(bundle / SBOM_NAME, sbom)
+    manifest.write_text(json.dumps(release_manifest(
+        build_info, version, bundle.name, build_info_path, final, (final, checksum, sbom), sbom),
+        ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    problems = verify_release(manifest)
+    if problems:
+        raise ValueError("The finished release does not match its own manifest: " + "; ".join(problems))
+    print(f"Candidate: {final}\nBytes: {final.stat().st_size}\nUnpacked: {bundle}\n"
+          f"Release manifest: {manifest} (trust: candidate-unsigned)\nSBOM: {sbom}", flush=True)
     return final
 
 
@@ -427,6 +885,8 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--configure", action="store_true",
                         help="save --workspace-root in personal Git config and show paths without building")
     action.add_argument("--show-paths", action="store_true", help="show resolved paths without creating directories or building")
+    action.add_argument("--verify", type=Path, metavar="RELEASE_MANIFEST",
+                        help="check the distributed files beside a ReleaseManifest@1 and exit; builds nothing")
     parser.add_argument("--task", help="task directory name; defaults to the current branch")
     parser.add_argument("--staging-dir", type=Path, help="overrides <workspace-root>/temp/package-monkeyapps/<task>")
     parser.add_argument("--output-dir", type=Path, help="overrides <workspace-root>/packages/<task>")
@@ -440,6 +900,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     npm_cli = args.npm_cli or args.node.resolve().parent / "node_modules/npm/bin/npm-cli.js"
     try:
+        if args.verify is not None:
+            problems = verify_release(args.verify.resolve())
+            for problem in problems:
+                print(problem)
+            print("Release verification: " + ("FAIL" if problems else
+                  "PASS (files match this manifest; the manifest itself is unsigned)"), flush=True)
+            return 1 if problems else 0
         source = args.source_root.resolve()
         if args.configure and args.workspace_root is None:
             raise ValueError("--configure requires --workspace-root.")

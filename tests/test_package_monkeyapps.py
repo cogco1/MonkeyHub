@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
 
 from tools import package_monkeyapps as builder
 
@@ -158,6 +159,7 @@ class PackageAdapterTests(unittest.TestCase):
             "governance/module_registry.json", "apps/shared-web/src/appearance.js",
             "apps/shared-web/src/i18n.js", "apps/shared-web/src/browserTranslator.js",
             "apps/shared-web/src/base.css", "tools/create_project.py", "tools/run_project.py",
+            "SECURITY.md",
             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
             "apps/monkeyfab/tests/test_cli.py",
         ):
@@ -209,6 +211,9 @@ class PackageAdapterTests(unittest.TestCase):
                          (self.hub / self.adapter_relative / "dist/index.js").read_bytes())
         self.assertEqual((self.bundle / "governance/module_registry.json").read_text(), "fixture")
         self.assertIn("governance/module_registry.json", builder.SOURCE_PATHS)
+        # A user holding only the ZIP can still find the security-reporting route.
+        self.assertEqual((self.bundle / "SECURITY.md").read_text(), "fixture")
+        self.assertIn("SECURITY.md", builder.SOURCE_PATHS)
         self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
@@ -357,6 +362,339 @@ class DesktopPackageTests(unittest.TestCase):
                                     root / "node.exe", root / "npm-cli.js", desktop=True, cargo=root / "missing.exe")
             self.assertFalse((root / "staging").exists())
             self.assertFalse((root / "output").exists())
+
+
+class ReleaseEvidenceTests(unittest.TestCase):
+    """Slice A of GH-58: derived manifest, shipped SBOM and mutation rejection."""
+
+    BUILD_INFO = {
+        "sourceCommit": "c" * 40, "target": "windows-x64", "channel": "candidate",
+        "pythonVersion": "3.13.15",
+        "pythonUrl": "https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip",
+        "pythonSha256": "d" * 64,
+        "runtimeInventory": {
+            "nodeVersion": "v24.14.0",
+            "pythonRequirements": {"path": "_runtime/requirements-lock.txt", "sha256": "e" * 64},
+            "acpAdapter": {"name": "@agentclientprotocol/codex-acp", "version": "1.11.0",
+                           "packageLockSha256": "f" * 64},
+            "frontends": {}, "externalDependencies": [],
+        },
+    }
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="Hub 发行证据 ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.source, self.bundle = self.root / "source", self.root / "bundle"
+        self.output = self.root / "output"
+        self.output.mkdir()
+        node = self.bundle / "_runtime/node/node.exe"
+        node.parent.mkdir(parents=True)
+        node.write_bytes(b"selected Node runtime")
+        site = self.bundle / builder.PYTHON_SITE
+        for name, version, metadata in (
+            ("rhino3dm", "8.32.1", "License-Expression: MIT\n"),
+            ("cadquery_ocp", "7.9.3.1.1", "License: LGPL-2.1-only\n"),
+        ):
+            info = site / f"{name}-{version}.dist-info"
+            info.mkdir(parents=True)
+            (info / "METADATA").write_text(
+                f"Metadata-Version: 2.4\nName: {name}\nVersion: {version}\n{metadata}", encoding="utf-8")
+        for locked, tree, packages in (
+            ("apps/monkeyhub", self.bundle / "apps/monkeyhub",
+             (("@agentclientprotocol/codex-acp", "1.11.0", "Apache-2.0"),)),
+            ("apps/monkeyhub/web", self.source / "apps/monkeyhub/web", (("react", "19.2.0", "MIT"),)),
+            ("apps/archflow-studio/web", self.source / "apps/archflow-studio/web",
+             (("react", "19.2.0", "MIT"), ("three", "0.181.0", "MIT"))),
+        ):
+            entries = {}
+            for name, version, license_id in packages:
+                relative = f"node_modules/{name}"
+                entries[relative] = {"version": version}
+                package = tree / relative
+                package.mkdir(parents=True)
+                (package / "package.json").write_text(json.dumps(
+                    {"name": name, "version": version, "license": license_id}), encoding="utf-8")
+            lock = self.source / locked / "package-lock.json"
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            lock.write_text(json.dumps({"packages": {"": {"name": locked}, **entries}}), encoding="utf-8")
+
+    def sbom(self, build_info: dict | None = None) -> dict:
+        return builder.sbom_document(
+            self.source, self.bundle, build_info or dict(self.BUILD_INFO), "cccccccccccc")
+
+    PREFIX = "MonkeyHub-cccccccccccc-windows-x64"
+
+    def released(self, build_info: dict | None = None, *,
+                 archived_sbom: str | None = None, archived_info: str | None = None) -> Path:
+        """Write one finished release directory the way package() does.
+
+        The archive really carries build-info.json and the SBOM, so the digest
+        bindings can be exercised; the overrides let a test ship a different
+        copy inside the ZIP than the manifest binds.
+        """
+        build_info = build_info or dict(self.BUILD_INFO)
+        info = self.bundle / "build-info.json"
+        info.write_text(json.dumps(build_info), encoding="utf-8")
+        sbom_text = json.dumps(self.sbom(build_info))
+        (self.bundle / builder.SBOM_NAME).write_text(sbom_text, encoding="utf-8")
+        sbom = self.output / f"{self.PREFIX}.cyclonedx.json"
+        sbom.write_text(sbom_text, encoding="utf-8")
+        archive = self.output / f"{self.PREFIX}-candidate.zip"
+        with zipfile.ZipFile(archive, "w") as opened:
+            opened.writestr(f"{self.PREFIX}/build-info.json",
+                            archived_info if archived_info is not None else info.read_text(encoding="utf-8"))
+            opened.writestr(f"{self.PREFIX}/{builder.SBOM_NAME}",
+                            archived_sbom if archived_sbom is not None else sbom_text)
+            opened.writestr(f"{self.PREFIX}/OPEN_MONKEYHUB.cmd", "fixture")
+        checksum = self.output / f"{archive.name}.sha256"
+        checksum.write_text(f"{builder.sha256(archive)}  {archive.name}\n", encoding="utf-8")
+        manifest = self.output / f"{archive.name}.release-manifest.json"
+        manifest.write_text(json.dumps(builder.release_manifest(
+            build_info, "cccccccccccc", self.PREFIX, info, archive,
+            (archive, checksum, sbom), sbom)), encoding="utf-8")
+        return manifest
+
+    def test_sbom_inventories_the_python_node_and_rust_contents_actually_shipped(self) -> None:
+        build_info = dict(self.BUILD_INFO, desktop={
+            "version": "0.1.0", "sourceCommit": "c" * 40, "cargoVersion": "cargo fixture",
+            "cargoLockSha256": "a" * 64, "executableSha256": "b" * 64})
+        lock = self.bundle / "_runtime/desktop-Cargo.lock"
+        lock.write_text('version = 4\n\n[[package]]\nname = "monkeyarch-desktop"\nversion = "0.1.0"\n\n'
+                        '[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
+                        f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
+        document = self.sbom(build_info)
+        self.assertEqual(document["bomFormat"], "CycloneDX")
+        self.assertEqual(document["specVersion"], "1.6")
+        components = {component["bom-ref"]: component for component in document["components"]}
+        # Python: read from the shipped site-packages, not from a kept list.
+        self.assertIn("pkg:pypi/rhino3dm@8.32.1", components)
+        self.assertEqual(components["pkg:pypi/rhino3dm@8.32.1"]["licenses"], [{"expression": "MIT"}])
+        self.assertIn("pkg:pypi/cadquery-ocp@7.9.3.1.1", components)  # purl normalises _ to -
+        self.assertEqual(components["pkg:pypi/cadquery-ocp@7.9.3.1.1"]["licenses"],
+                         [{"license": {"name": "LGPL-2.1-only"}}])
+        # Node: the adapter ships as files; a frontend package is a build input,
+        # because the bundler decides what actually reaches dist.
+        adapter = components["pkg:npm/%40agentclientprotocol/codex-acp@1.11.0"]
+        self.assertEqual(adapter["properties"], [{"name": builder.SHIPPED_IN,
+                                                  "value": "apps/monkeyhub/node_modules"}])
+        self.assertEqual(components["pkg:npm/react@19.2.0"]["properties"], [
+            {"name": builder.BUILD_INPUT,
+             "value": "apps/archflow-studio/web/package-lock.json -> apps/archflow-studio/web/dist"},
+            {"name": builder.BUILD_INPUT,
+             "value": "apps/monkeyhub/web/package-lock.json -> apps/monkeyhub/web/dist"},
+        ])
+        # Rust: crates.io entries only, as build inputs; one lock covers every
+        # target and build script, so compiled-in presence is not established.
+        self.assertIn("pkg:cargo/tauri@2.11.5", components)
+        self.assertEqual(components["pkg:cargo/tauri@2.11.5"]["hashes"],
+                         [{"alg": "SHA-256", "content": "9" * 64}])
+        self.assertEqual(components["pkg:cargo/tauri@2.11.5"]["properties"], [
+            {"name": builder.BUILD_INPUT, "value": "_runtime/desktop-Cargo.lock -> MonkeyArch.exe"}])
+        self.assertNotIn("pkg:cargo/monkeyarch-desktop@0.1.0", components)
+        # Only the executable itself is claimed as shipped.
+        self.assertEqual(components["monkeyhub:MonkeyArch.exe"]["properties"],
+                         [{"name": builder.SHIPPED_IN, "value": "MonkeyArch.exe"}])
+        self.assertEqual(components["monkeyhub:MonkeyArch.exe"]["hashes"],
+                         [{"alg": "SHA-256", "content": "b" * 64}])
+        meanings = {row["name"] for row in document["metadata"]["properties"]}
+        self.assertIn(f"{builder.BUILD_INPUT}:meaning", meanings)
+        # Runtimes: versions come from build-info, the shipped file supplies its hash.
+        self.assertEqual(components[builder.purl("generic", "node", "v24.14.0")]["hashes"],
+                         [{"alg": "SHA-256", "content": builder.sha256(self.bundle / "_runtime/node/node.exe")}])
+        graph = document["dependencies"][0]
+        self.assertEqual(graph["ref"], "monkeyhub")
+        self.assertEqual(sorted(graph["dependsOn"]), sorted(components))
+        self.assertEqual(document["metadata"]["component"]["version"], "cccccccccccc")
+        # The document adds no variation of its own, so one inventory yields one
+        # set of bytes. That is not a claim about two builds of one commit.
+        self.assertNotIn("serialNumber", document)
+        self.assertNotIn("timestamp", document["metadata"])
+        self.assertEqual(json.dumps(self.sbom(build_info)), json.dumps(document))
+
+    def test_pypi_purls_follow_the_official_purl_normalisation(self) -> None:
+        # purl-spec tests/types/pypi-test.json canonicalises this exact input.
+        self.assertEqual(builder.purl("pypi", "Django_package".lower().replace("_", "-"), "1.11.1.dev1"),
+                         "pkg:pypi/django-package@1.11.1.dev1")
+        # A dot in a package name is preserved; only distribution filenames
+        # replace it, and this purl names the package.
+        self.assertEqual(builder.purl("pypi", "zope.interface", "7.2"), "pkg:pypi/zope.interface@7.2")
+
+    def test_sbom_reports_a_production_dependency_missing_from_the_bundle(self) -> None:
+        shutil.rmtree(self.bundle / "apps/monkeyhub/node_modules/@agentclientprotocol/codex-acp")
+        with self.assertRaisesRegex(ValueError, "Production dependency is not installed"):
+            self.sbom()
+
+    def test_manifest_derives_every_release_fact_from_build_info(self) -> None:
+        changed = dict(self.BUILD_INFO, pythonVersion="3.13.99", channel="beta")
+        changed["runtimeInventory"] = dict(self.BUILD_INFO["runtimeInventory"], nodeVersion="v26.0.0")
+        manifest = json.loads(self.released(changed).read_text(encoding="utf-8"))
+        self.assertEqual(manifest["schema"], "ReleaseManifest@1")
+        self.assertEqual(manifest["release"]["sourceCommit"], "c" * 40)
+        self.assertEqual(manifest["release"]["channel"], "beta")
+        self.assertEqual(manifest["build"]["pythonVersion"], "3.13.99")
+        self.assertEqual(manifest["build"]["nodeVersion"], "v26.0.0")
+        self.assertEqual(manifest["build"]["acpAdapter"], self.BUILD_INFO["runtimeInventory"]["acpAdapter"])
+        # The manifest binds the build metadata it views instead of restating it,
+        # and names where that copy travels so verification can go and read it.
+        info = self.bundle / "build-info.json"
+        self.assertEqual(manifest["buildInfo"]["sha256"], builder.sha256(info))
+        self.assertEqual(manifest["buildInfo"]["pathInArchive"], f"{self.PREFIX}/build-info.json")
+        self.assertEqual(manifest["sbom"]["pathInArchive"], f"{self.PREFIX}/{builder.SBOM_NAME}")
+        self.assertEqual(manifest["archive"], f"{self.PREFIX}-candidate.zip")
+
+    def test_unsigned_candidate_is_marked_rather_than_trusted_by_its_checksum(self) -> None:
+        manifest = json.loads(self.released().read_text(encoding="utf-8"))
+        self.assertEqual(manifest["trust"]["status"], "candidate-unsigned")
+        self.assertIs(manifest["trust"]["signed"], False)
+        self.assertIsNone(manifest["trust"]["signature"])
+        self.assertIn("do not establish origin", manifest["trust"]["statement"].lower())
+        self.assertEqual(manifest["sbom"]["format"], "CycloneDX")
+        self.assertEqual(manifest["sbom"]["specVersion"], "1.6")
+
+    def test_verification_rejects_mutated_missing_and_unlisted_release_files(self) -> None:
+        manifest = self.released()
+        self.assertEqual(builder.verify_release(manifest), [])
+        archive = self.output / f"{self.PREFIX}-candidate.zip"
+        original = archive.read_bytes()
+        archive.write_bytes(original.replace(b"fixture", b"tampere"))  # same length
+        problems = builder.verify_release(manifest)
+        self.assertTrue(any(archive.name in problem and "SHA-256" in problem for problem in problems), problems)
+        archive.write_bytes(original + b"extra")
+        self.assertTrue(any("bytes on disk" in problem for problem in builder.verify_release(manifest)))
+        archive.write_bytes(original)
+        self.assertEqual(builder.verify_release(manifest), [])
+        sbom = self.output / f"{self.PREFIX}.cyclonedx.json"
+        text = sbom.read_text(encoding="utf-8")
+        sbom.unlink()
+        self.assertTrue(any("not present" in problem for problem in builder.verify_release(manifest)))
+        sbom.write_text(text, encoding="utf-8")
+        # A file smuggled into this release's own set is not silently accepted.
+        (self.output / f"{self.PREFIX}-setup.exe").write_bytes(b"unlisted installer")
+        problems = builder.verify_release(manifest)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("absent from its closed manifest", problems[0])
+
+    def test_verification_checks_the_build_info_copy_inside_the_archive(self) -> None:
+        """The manifest claims to bind build-info.json, so it must read it."""
+        manifest = self.released(archived_info=json.dumps(
+            dict(self.BUILD_INFO, sourceCommit="0" * 40)))
+        problems = builder.verify_release(manifest)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(f"{self.PREFIX}/build-info.json", problems[0])
+        self.assertIn("manifest binds build-info.json to", problems[0])
+        # Removing it from the archive is reported, not passed over in silence.
+        archive = self.output / f"{self.PREFIX}-candidate.zip"
+        clean = self.released()
+        with zipfile.ZipFile(archive, "w") as opened:
+            opened.writestr(f"{self.PREFIX}/{builder.SBOM_NAME}",
+                            (self.output / f"{self.PREFIX}.cyclonedx.json").read_text(encoding="utf-8"))
+        problems = builder.verify_release(clean)
+        self.assertTrue(any("does not contain" in problem and "build-info.json" in problem
+                            for problem in problems), problems)
+
+    def test_verification_checks_the_bundled_sbom_against_the_sidecar_digest(self) -> None:
+        manifest = self.released(archived_sbom='{"bomFormat":"CycloneDX","specVersion":"1.6"}')
+        problems = builder.verify_release(manifest)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(f"{self.PREFIX}/{builder.SBOM_NAME}", problems[0])
+        self.assertIn("manifest binds SBOM to", problems[0])
+
+    def test_verification_rejects_a_manifest_whose_sbom_digest_contradicts_its_table(self) -> None:
+        manifest = self.released()
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+        document["sbom"]["sha256"] = "0" * 64
+        manifest.write_text(json.dumps(document), encoding="utf-8")
+        problems = builder.verify_release(manifest)
+        self.assertTrue(any("the artifact table records" in problem for problem in problems), problems)
+
+    def test_verification_rejects_a_corrupt_archive_without_crashing(self) -> None:
+        manifest = self.released()
+        (self.output / f"{self.PREFIX}-candidate.zip").write_bytes(b"not a zip at all")
+        problems = builder.verify_release(manifest)
+        self.assertTrue(any("SHA-256" in problem for problem in problems), problems)
+        # The listed digest already failed; opening it must still not raise.
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+        for entry in document["artifacts"]:
+            if entry["path"].endswith(".zip"):
+                entry["size"] = len(b"not a zip at all")
+                entry["sha256"] = builder.sha256(self.output / f"{self.PREFIX}-candidate.zip")
+        manifest.write_text(json.dumps(document), encoding="utf-8")
+        self.assertTrue(any("unreadable archive" in problem
+                            for problem in builder.verify_release(manifest)))
+
+    def test_build_info_binding_cannot_be_redirected_to_the_sbom(self) -> None:
+        manifest = self.released()
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+        document["buildInfo"] = dict(document["sbom"])
+        manifest.write_text(json.dumps(document), encoding="utf-8")
+        self.assertTrue(any("build-info.json: pathInArchive must name" in problem
+                            for problem in builder.verify_release(manifest)))
+
+    def test_verification_reports_a_malformed_manifest_instead_of_failing(self) -> None:
+        manifest = self.output / f"{self.PREFIX}-broken.release-manifest.json"
+        good = json.loads(self.released().read_text(encoding="utf-8"))
+        for document, expected in (
+            ("{ not json", "unreadable"),
+            (json.dumps({"schema": "Something@2"}), "not a ReleaseManifest@1"),
+            (json.dumps({"schema": "ReleaseManifest@1", "artifactPrefix": self.PREFIX}),
+             "lists no distributed artifact"),
+            (json.dumps({**good, "artifactPrefix": "../escape"}), "artifactPrefix must not contain"),
+            (json.dumps({**good, "artifactPrefix": None}), "artifactPrefix must be a non-empty name"),
+            (json.dumps({**good, "artifacts": ["../secrets"]}), "must be an object"),
+            # A separator is rejected by character, so a Windows escape is caught
+            # on Linux and a POSIX one on Windows.
+            (json.dumps({**good, "artifacts": [{"path": f"{self.PREFIX}\\..\\escape"}]}),
+             "must not contain a path separator"),
+            (json.dumps({**good, "artifacts": [{"path": f"{self.PREFIX}/../escape"}]}),
+             "must not contain a path separator"),
+            (json.dumps({**good, "artifacts": [{"path": ".."}]}), "must not be a relative directory"),
+            (json.dumps({**good, "artifacts": [{"path": "elsewhere.zip"}]}),
+             "does not carry the release prefix"),
+            (json.dumps({**good, "artifacts": good["artifacts"] + [good["artifacts"][0]]}),
+             "listed twice"),
+            (json.dumps({**good, "archive": f"{self.PREFIX}-absent.zip"}),
+             "distributed archive is not one of the listed artifacts"),
+            (json.dumps({**good, "sbom": {**good["sbom"], "pathInArchive": "../outside"}}),
+             "pathInArchive must be a path inside the archive"),
+            (json.dumps({**good, "buildInfo": {**good["buildInfo"], "pathInArchive": "other/build-info.json"}}),
+             f"is not inside {self.PREFIX}/"),
+        ):
+            with self.subTest(expected=expected):
+                manifest.write_text(document, encoding="utf-8")
+                problems = builder.verify_release(manifest)
+                self.assertTrue(any(expected in problem for problem in problems), problems)
+        manifest.unlink()
+
+    def test_verify_command_reports_failure_without_building(self) -> None:
+        manifest = self.released()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(builder.main(["--verify", str(manifest)]), 0)
+        self.assertIn("PASS", output.getvalue())
+        self.assertIn("unsigned", output.getvalue())
+        (self.output / "MonkeyHub-cccccccccccc-windows-x64-candidate.zip").write_bytes(b"replaced")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(builder.main(["--verify", str(manifest)]), 1)
+        self.assertIn("FAIL", output.getvalue())
+
+    def test_generated_sbom_validates_against_the_official_cyclonedx_schema(self) -> None:
+        """Optional proof against the published schema.
+
+        Run with CYCLONEDX_SCHEMA pointing at the official bom-1.6.schema.json
+        from https://github.com/CycloneDX/specification/tree/master/schema.
+        """
+        schema_path = os.environ.get("CYCLONEDX_SCHEMA")
+        if not schema_path or not Path(schema_path).is_file():
+            self.skipTest("set CYCLONEDX_SCHEMA to the official bom-1.6.schema.json")
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema is not installed")
+        schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+        schema.pop("$schema", None)  # spdx.schema.json is fetched over the network otherwise
+        jsonschema.Draft7Validator(schema).validate(self.sbom())
 
 
 if __name__ == "__main__":
