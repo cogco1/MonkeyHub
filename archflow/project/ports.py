@@ -118,6 +118,7 @@ class ProjectTransferStore(Protocol):
         self, *, run_id: str | None = None,
         known_files: Mapping[str, str] | None = None,
         include_contents: bool = True,
+        include_all_runs: bool = False,
     ) -> dict[str, Any]: ...
 
     def read_transfer_file(self, path: str, sha256: str) -> bytes: ...
