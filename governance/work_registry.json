@@ -3,16 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-46",
-      "stream": "interaction",
-      "status": "active",
-      "goal": "Verify Board return preserves real unsynced local geometry.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs"
-      ]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",

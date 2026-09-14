@@ -2,8 +2,10 @@
  *
  * The real Connected -> Board -> App path against an isolated Studio project: a
  * real double click on the real canvas, the real DocumentCanvas on the exact
- * page, real saved annotations, and the same board afterwards. No scene
- * injection, no second editor, no model or agent request.
+ * page, real saved annotations, and the same board afterwards. Refused board and
+ * page writes, doubled returns, a second task and a real local drawing cover
+ * what the return must not take away. No scene injection, no second editor, no
+ * model or agent request.
  */
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -36,10 +38,12 @@ try {
 import base64, json, sys
 from pathlib import Path
 import archflow
-from tests.support import make_project
+from tests.support import make_empty_project
 from tests.test_documents import two_page_pdf
 assert Path(archflow.__file__).resolve() == Path(sys.argv[2], "archflow/__init__.py").resolve(), archflow.__file__
-make_project(Path(sys.argv[1]))
+# Authored building description, no run and no retained model: the same starting
+# point the model-sync test draws on, so a local drawing here needs no export.
+make_empty_project(Path(sys.argv[1]))
 print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
 `, root, repoRoot], { cwd: apiRoot, encoding: "utf8", env: pythonEnv });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
@@ -164,9 +168,15 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   // Adding a page fits it on screen; zoom in on it and select it there.
   await page.locator(".excalidraw .zoom-in-button").click();
   await page.locator(".excalidraw .zoom-in-button").click();
+  // Adding the page fitted it on screen, but hiding the documents panel widened
+  // the canvas under it, so find the page rather than assume it is centred.
   const canvasBox = await page.locator(".monkeyboard-canvas").boundingBox();
-  const centre = [canvasBox.x + canvasBox.width / 2, canvasBox.y + canvasBox.height / 2];
-  await page.mouse.click(...centre);
+  let centre = null;
+  for (const across of [0.5, 0.42, 0.58, 0.34, 0.66]) {
+    centre = [canvasBox.x + canvasBox.width * across, canvasBox.y + canvasBox.height / 2];
+    await page.mouse.click(...centre);
+    if (/board-pages\.pdf · 2\/2/.test(await footer())) break;
+  }
   await page.locator(".monkeyboard-context").waitFor();
   assert.match(await footer(), /board-pages\.pdf · 2\/2/, "Clicking the placed page must select that exact page");
   const placedZoom = await zoomText();
@@ -371,10 +381,70 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
     "Returning in place must not unmount another task's view");
   assert.equal(await page.locator("[data-studio-task]").count(), 2);
 
+  // A page opened from the board, then modelling in the same tab. The drawing
+  // lives only in this page until it is synced, so a request to go back to the
+  // board must not take it away with the view.
+  await page.goto(`${origin}/?view=board&lang=en`, { waitUntil: "domcontentloaded" });
+  await page.locator(".monkeyboard-initializing").waitFor({ state: "hidden" });
+  await page.locator(".monkeyboard-canvas canvas").first().waitFor();
+  // A fresh load fits the whole board again, and it now carries the mark drawn
+  // above, so the page sits somewhere else on screen than it did before.
+  const reloadedBox = await page.locator(".monkeyboard-canvas").boundingBox();
+  for (const fraction of [0.3, 0.7, 0.5, 0.4, 0.6, 0.35, 0.65]) {
+    placedPoint = [reloadedBox.x + reloadedBox.width * fraction, reloadedBox.y + reloadedBox.height / 2];
+    await page.mouse.click(...placedPoint);
+    if (await page.locator(".monkeyboard-context").isVisible()) break;
+  }
+  await page.locator(".monkeyboard-context").waitFor();
+  const modellingPage = (await footer()).match(/board-pages\.pdf · (\d)\/2/);
+  assert.ok(modellingPage, `A placed page was not selected: ${await footer()}`);
+  await page.mouse.dblclick(...placedPoint);
+  await page.locator(".document-header").waitFor();
+  await page.getByRole("button", { name: "MonkeyArch · 3D", exact: true }).click();
+  const viewport = page.locator(".viewport-canvas");
+  await viewport.waitFor();
+  const viewportBox = await viewport.boundingBox();
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  // The ground plane, wherever this project's camera put it; the idle card sits
+  // in the middle of the viewport and is not part of it.
+  const sketchValue = page.locator(".sketch-entry__value input");
+  for (const [across, down] of [[0.22, 0.78], [0.78, 0.78], [0.22, 0.26], [0.78, 0.26], [0.5, 0.88]]) {
+    await page.mouse.click(viewportBox.x + viewportBox.width * across, viewportBox.y + viewportBox.height * down);
+    if (await sketchValue.count() > 0) break;
+  }
+  await sketchValue.waitFor();
+  await sketchValue.fill("3"); await sketchValue.press("Enter");
+  await sketchValue.fill("2"); await sketchValue.press("Enter");
+  const unsyncedStatus = page.locator(".model-tools__sync-status", { hasText: "Unsynced" });
+  await unsyncedStatus.waitFor();
+
+  const unsyncedTab = await Promise.all([
+    context.waitForEvent("page"),
+    page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click(),
+  ]).then(([popup]) => popup);
+  await unsyncedTab.waitForURL((url) => url.searchParams.get("view") === "board", { timeout: 30_000 });
+  await unsyncedTab.close();
+  assert.equal(new URL(page.url()).searchParams.get("view"), "documents",
+    "A board request must not unmount a page holding unsynced local geometry");
+  await unsyncedStatus.waitFor();
+  assert.equal(await page.locator(".viewport-canvas").count(), 1, "The drawing's own view is still here");
+  assert.equal(await page.getByRole("button", { name: "Undo model", exact: true }).isEnabled(), true);
+
+  // Undone back to what the project already has, the ordinary return works again.
+  await page.getByRole("button", { name: "Undo model", exact: true }).click();
+  await unsyncedStatus.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
+  await page.locator(".monkeyboard-canvas canvas").first().waitFor();
+  assert.equal(context.pages().length, 1, "A synced page returns in this tab");
+  assert.equal(new URL(page.url()).searchParams.get("view"), "board");
+  await page.locator(".monkeyboard-context").waitFor();
+  assert.match(await footer(), new RegExp(`board-pages\\.pdf · ${modellingPage[1]}/2`),
+    "…to the same board page it left");
+
   assert.deepEqual(requests.filter((request) => /\/api\/(intents|proposals|jobs|model-annotations|candidates)/.test(request.path)), [],
     "Opening and leaving a page must never enter a model or agent path");
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: "board double click opens the exact registered page in the existing document editor, keeps its saved marks and source binding, and returns to the same board viewport and selection without reloading the tab, embedded in a host rail and standalone",
+  console.log(JSON.stringify({ passed: "board double click opens the exact registered page in the existing document editor, keeps its saved marks and source binding, and returns to the same board viewport and selection without reloading the tab, embedded in a host rail and standalone; refused board and page writes keep the operator and their marks where they are; a doubled return writes the page once; another task or unsynced local geometry keeps the board entry on its separate tab",
     requests: requests.length }));
 } catch (error) {
   console.error(`FAILED: ${error?.stack ?? error}`);
