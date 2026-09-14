@@ -14,7 +14,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .codex import bound_codex_sources, iter_codex_events
 from .pricing import RateCard, load_rates, quote
-from .store import UsageLog
+from .store import BUSY_NOTICE, UsageLog
 from .trace import build_traces
 from .usage import TokenUsage
 
@@ -106,6 +106,10 @@ class MonitorData:
                 events, warnings = self.store.read()
             except (OSError, UnicodeError):
                 warnings.append("Studio 用量文件暂时不可读。")
+            if BUSY_NOTICE in warnings:
+                # A contended read is unavailable, not an empty new snapshot.
+                # Let clients retain their last successful view and retry.
+                raise BlockingIOError(BUSY_NOTICE)
         paths, projects = self._bound_sources(warnings)
         try:
             events.extend(iter_codex_events((*self.codex_sessions, *paths), warnings=warnings,
@@ -238,18 +242,22 @@ class MonitorHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/health":
             self._send(self.health)
-        elif path == "/api/events":
-            self._send(self.data.snapshot())
-        elif path == "/api/traces":
-            self._send(self.data.traces())
-        elif path == "/api/traces/export":
-            query = parse_qs(urlsplit(self.path).query)
-            if set(query) != {"trace_id"} or len(query["trace_id"]) != 1:
-                self._send({"error": "Expected one trace_id"}, 400)
+        elif path in {"/api/events", "/api/traces", "/api/traces/export"}:
+            if path == "/api/traces/export":
+                query = parse_qs(urlsplit(self.path).query)
+                if set(query) != {"trace_id"} or len(query["trace_id"]) != 1:
+                    self._send({"error": "Expected one trace_id"}, 400)
+                    return
+            try:
+                result = self.data.snapshot() if path == "/api/events" else self.data.traces()
+            except BlockingIOError as exc:
+                self._send({"error": str(exc)}, 503)
                 return
-            result = self.data.traces()
-            trace = next((row for row in result["traces"] if row["trace_id"] == query["trace_id"][0]), None)
-            self._send(trace if trace else {"error": "Trace not found"}, 200 if trace else 404, download=trace is not None)
+            if path == "/api/traces/export":
+                trace = next((row for row in result["traces"] if row["trace_id"] == query["trace_id"][0]), None)
+                self._send(trace if trace else {"error": "Trace not found"}, 200 if trace else 404, download=trace is not None)
+            else:
+                self._send(result)
         elif path == "/api/sources/codex":
             self._send(self.data.codex_sources())
         elif path == "/api/rates":

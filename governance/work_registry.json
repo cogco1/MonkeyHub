@@ -484,7 +484,9 @@
             "governance/module_registry.json",
             "docs/SYSTEM_MAP.md",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "tests/monkeymonitor/test_web_traces.py"
+            "tests/monkeymonitor/test_web_traces.py",
+            "monkeymonitor/server.py",
+            "tests/monkeymonitor/test_server.py"
           ],
           "depends_on": []
         },

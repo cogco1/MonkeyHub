@@ -26,7 +26,7 @@ from monkeymonitor.__main__ import main
 from monkeymonitor.server import MonitorData, make_server
 from monkeymonitor.store import UsageLog
 from monkeymonitor.usage import TokenUsage, UsageEvent
-from .test_core import counts, session_rows, token_row
+from .test_core import JournalHolder, counts, session_rows, stored, token_row
 
 
 class MonitorServerTests(unittest.TestCase):
@@ -70,6 +70,24 @@ class MonitorServerTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             self.request("/api/quote", payload)
         self.assertEqual(error.exception.code, 400)
+
+    def test_busy_journal_is_unavailable_not_an_empty_successful_snapshot(self):
+        store = UsageLog(self.data_dir)
+        store.append(stored("retained", "hub_turn"))
+        trace_id = self.request("/api/traces")["traces"][0]["trace_id"]
+        holder = JournalHolder(self, self.data_dir)
+        try:
+            for path in ("/api/events", "/api/traces", f"/api/traces/export?trace_id={trace_id}"):
+                with self.subTest(path=path), self.assertRaises(HTTPError) as error:
+                    self.request(path)
+                self.assertEqual(error.exception.code, 503)
+                self.assertTrue(json.load(error.exception)["error"])
+            self.assertEqual(self.request("/api/health")["status"], "ok")
+            self.assertTrue(holder.holding())
+        finally:
+            holder.release()
+        self.assertEqual(self.request("/api/events")["events"][0]["event_id"], "retained")
+        self.assertEqual(self.request("/api/traces/export?trace_id=" + trace_id)["trace_id"], trace_id)
 
     def test_diagnostics_compare_inputs_without_inventing_avoidable_retries_or_mutable_poll_duplicates(self):
         store = UsageLog(self.data_dir)
