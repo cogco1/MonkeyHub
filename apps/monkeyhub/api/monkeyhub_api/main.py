@@ -51,21 +51,6 @@ from .models import (
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
 
 
-def _windows_runtime_root(value: str, *, windows: bool | None = None) -> str:
-    """Use the ordinary Win32 spelling for a short verbatim runtime root."""
-    if windows is None:
-        windows = os.name == "nt"
-    if not windows:
-        return value
-    lower = value.lower()
-    ordinary = value
-    if lower.startswith("\\\\?\\unc\\"):
-        ordinary = "\\\\" + value[8:]
-    elif value.startswith("\\\\?\\") and len(value) >= 7 and value[4].isalpha() and value[5] == ":" and value[6] in "\\/":
-        ordinary = value[4:]
-    return ordinary if ordinary != value and len(ordinary) < 240 else value
-
-
 class HubServer(uvicorn.Server):
     async def shutdown(self, sockets=None):
         # Uvicorn drains HTTP tasks before entering ASGI lifespan shutdown.
@@ -490,8 +475,6 @@ def main(argv: list[str] | None = None) -> None:
         if not local_appdata or not Path(local_appdata).is_absolute():
             parser.error("set --runtime-root to an absolute nonproject directory")
         runtime_root = Path(local_appdata) / "MonkeyHub"
-    else:
-        runtime_root = Path(_windows_runtime_root(str(runtime_root)))
     hub_web = args.hub_web_dir
     if hub_web is None and (SOURCE_ROOT / "apps/monkeyhub/web/dist/index.html").is_file():
         hub_web = SOURCE_ROOT / "apps/monkeyhub/web/dist"

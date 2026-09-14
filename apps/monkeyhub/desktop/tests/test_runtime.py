@@ -331,6 +331,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.opened_bytes = None
         save_application_settings(self.runtime, ApplicationSettingsDto(
             projectDir=str(self.project), referenceRun=self.fixture.REFERENCE_RUN_ID,
+            workspaceDir=str(self.root / "projects"),
             cadExport="off", studioPort=self.studio_port, monitorPort=self.monitor_port,
         ))
         self.saved_settings = (self.runtime / "config/applications.json").read_bytes()
@@ -553,6 +554,42 @@ $pattern.Current.Value | ConvertTo-Json -Compress
             self.fail(f"Owned chat UI Automation timed out: {error.stderr!r}")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout.strip())
+
+    def test_retained_chat_and_settings_are_visible_before_first_write(self):
+        from monkeyhub_api.chat import ChatStore, _SavedChat
+        from monkeyhub_api.models import ChatMessage
+
+        timestamp = "2026-01-01T00:00:00+00:00"
+        saved = _SavedChat(
+            id=str(uuid4()), projectId=self.fixture.PROJECT_ID, projectDir=str(self.project),
+            title="Synthetic retained chat", provider="codex", status="idle",
+            createdAt=timestamp, updatedAt=timestamp,
+            messages=[ChatMessage(id="retained-message", role="user",
+                                  content="Synthetic retained state.", createdAt=timestamp)],
+        )
+        ChatStore(self.runtime, "http://127.0.0.1:1", commands={})._save(saved)
+        chat_path = self.runtime / "chats" / f"{saved.id}.json"
+        saved_chat = chat_path.read_bytes()
+
+        self.launch()
+        self.ready()
+        # First state reads: no HTTP chat creation or settings save may precede them.
+        sessions = request(self.url + "api/chat/sessions")
+        settings = request(self.url + "api/settings/apps")
+        self.assertEqual([row["id"] for row in sessions], [saved.id])
+        self.assertEqual(settings["projectDir"], str(self.project))
+        self.assertEqual(settings["workspaceDir"], str(self.root / "projects"))
+        detail = request(self.url + f"api/chat/sessions/{saved.id}")
+        self.assertEqual(detail["messages"], [message.model_dump() for message in saved.messages])
+        self.assertEqual(chat_path.read_bytes(), saved_chat)
+        self.assertEqual((self.runtime / "config/applications.json").read_bytes(), self.saved_settings)
+        self.assertNotRegex(self.log_text(), r'"(?:POST|PUT|PATCH) /api/(?:chat|settings)')
+
+        self.native.close_window(self.shell.pid)
+        self.shell.wait(timeout=30)
+        self.assertEqual(self.shell.returncode, 0)
+        self.drained()
+        self.assertEqual(chat_path.read_bytes(), saved_chat)
 
     def test_temporary_health_loss_preserves_unsubmitted_draft_without_navigation(self):
         self.launch()

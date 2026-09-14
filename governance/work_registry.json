@@ -453,6 +453,7 @@
             ".github/workflows/desktop.yml",
             "apps/monkeyhub/installer/install.ps1",
             "apps/monkeyhub/desktop/README.md",
+            "apps/monkeyhub/desktop/tests/test_runtime.py",
             "tests/test_package_monkeyapps.py",
             "docs/mapping/planning/P115-capability-consolidation.md",
             "governance/work_registry.json",

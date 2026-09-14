@@ -16,7 +16,7 @@ from test_acp_session import FAKE_AGENT, PNG_IMAGE
 from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api import chat
-from monkeyhub_api.main import HubSettings, _windows_runtime_root, create_app
+from monkeyhub_api.main import HubSettings, create_app
 from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest
 
 
@@ -56,20 +56,6 @@ class FakeAgent(BaseAgent):
 
 asyncio.run(main())
 '''
-
-
-class RuntimeRootTests(unittest.TestCase):
-    def test_short_windows_verbatim_paths_use_equivalent_ordinary_spelling(self):
-        self.assertEqual(_windows_runtime_root(r"\\?\E:\MonkeyHub 数据", windows=True), r"E:\MonkeyHub 数据")
-        self.assertEqual(_windows_runtime_root(r"\\?\UNC\server\share\MonkeyHub", windows=True), r"\\server\share\MonkeyHub")
-        self.assertEqual(_windows_runtime_root(r"E:\MonkeyHub 数据", windows=True), r"E:\MonkeyHub 数据")
-        self.assertEqual(_windows_runtime_root(r"\\server\share\MonkeyHub", windows=True), r"\\server\share\MonkeyHub")
-
-    def test_device_long_and_non_windows_paths_are_not_rewritten(self):
-        self.assertEqual(_windows_runtime_root(r"\\.\PIPE\MonkeyHub", windows=True), r"\\.\PIPE\MonkeyHub")
-        long_path = "\\\\?\\E:\\" + ("deep\\" * 60) + "MonkeyHub"
-        self.assertEqual(_windows_runtime_root(long_path, windows=True), long_path)
-        self.assertEqual(_windows_runtime_root(r"\\?\E:\MonkeyHub 数据", windows=False), r"\\?\E:\MonkeyHub 数据")
 
 
 @unittest.skipUnless(os.name == "nt", "Windows desktop source paths")
