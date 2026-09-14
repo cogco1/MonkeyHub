@@ -4,19 +4,23 @@ import base64
 import copy
 import hashlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.inputs import load_program_sheet_file, write_program_sheet_file
 from archflow.project.record_kinds import (
-    DESIGN_STAGE, PROMOTION_DECISION, SEAT_OCCT_EXECUTION, STATE_RECORD,
+    DESIGN_STAGE, DRAWING_PROJECTION_RECEIPT, PROMOTION_DECISION, SEAT_OCCT_EXECUTION,
+    STATE_RECORD, STUDIO_SOURCE_DOCUMENT,
 )
 from archflow.project.repository import (
     FilesystemProjectRepository, ProjectAlreadyExists, ProjectIntegrityError,
     StaleDesignBranch, StaleProjectHead,
 )
+from archflow.state.state_record import StateRecord
 
 
 class ProjectTransferTests(unittest.TestCase):
@@ -107,6 +111,100 @@ class ProjectTransferTests(unittest.TestCase):
         with self.assertRaises(ProjectAlreadyExists):
             FilesystemProjectRepository.bootstrap_transfer(local.layout.root, transfer,
                                                            expected_project_id="building")
+
+    def test_unbound_authored_input_preserves_bytes_and_follows_nested_run_refs(self):
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                payload = StateRecord(project_id="building", run_id="authored", entities=()).to_dict()
+                if nested:
+                    run = self.shared.create_run("authored-dependency")
+                    payload["source"] = run.to_dict()
+                data = json.dumps(payload).encode("utf-8")
+                self.shared.layout.authored_record.write_bytes(data)
+                transfer = self.shared.export_transfer()
+                self.assertNotIn("authored", transfer["run_ids"])
+                self.assertEqual("authored-dependency" in transfer["run_ids"], nested)
+                restored = FilesystemProjectRepository.bootstrap_transfer(
+                    self.root / f"authored-{nested}", transfer, expected_project_id="building",
+                )
+                self.assertEqual(restored.layout.authored_record.read_bytes(), data)
+
+        payload["source"]["run_id"] = "missing-retained-run"
+        self.shared.layout.authored_record.write_text(json.dumps(payload), encoding="utf-8")
+        with self.assertRaisesRegex(ProjectIntegrityError, "run.json"):
+            self.shared.export_transfer()
+
+        foreign = StateRecord(project_id="other-building", run_id="authored", entities=()).to_dict()
+        self.shared.layout.authored_record.write_text(json.dumps(foreign), encoding="utf-8")
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_PROJECT_MISMATCH"):
+            self.shared.export_transfer()
+
+    def test_complete_snapshot_retains_unattached_runs_without_workspace_noise(self):
+        candidate = self.stage(self.shared, "unaccepted")
+        noise = self.shared.layout.run("unaccepted").workspaces / "credentials.txt"
+        noise.write_bytes(b"synthetic runtime secret; must not travel")
+        self.assertNotIn("unaccepted", self.shared.export_transfer()["run_ids"])
+        transfer = self.shared.export_transfer(include_all_runs=True)
+        self.assertIn("unaccepted", transfer["run_ids"])
+        self.assertNotIn(noise.relative_to(self.shared.layout.root).as_posix(),
+                         {row["path"] for row in transfer["files"]})
+        restored = FilesystemProjectRepository.bootstrap_transfer(
+            self.root / "complete", transfer, expected_project_id="building",
+        )
+        self.assertEqual(restored.read_head(), self.shared.read_head())
+        self.assertEqual(restored.read_design_branches(), self.shared.read_design_branches())
+        self.assertEqual(restored.load_json(candidate), self.shared.load_json(candidate))
+        for row in transfer["files"]:
+            self.assertEqual((restored.layout.root / row["path"]).read_bytes(),
+                             (self.shared.layout.root / row["path"]).read_bytes())
+        self.assertFalse((restored.layout.root / noise.relative_to(self.shared.layout.root)).exists())
+
+    def test_snapshot_restores_authored_program_sheet_through_normal_reader(self):
+        sheet = {"schema": "ProgramSheet@1", "project_id": "building", "spaces": []}
+        written = write_program_sheet_file(self.shared, sheet)
+        data = written.path.read_bytes()
+        path = written.path.relative_to(self.shared.layout.root).as_posix()
+        self.assertEqual(self.shared.read_transfer_file(path, written.sha256), data)
+        restored = FilesystemProjectRepository.bootstrap_transfer(
+            self.root / "program", self.shared.export_transfer(include_all_runs=True),
+            expected_project_id="building",
+        )
+        read = load_program_sheet_file(restored)
+        self.assertEqual(read.payload, sheet)
+        self.assertEqual(read.path.read_bytes(), data)
+
+    def test_generated_document_follows_drawing_receipt_without_an_uploaded_object(self):
+        source = self.shared.load_run("source")
+        drawing = self.shared.create_run("drawing")
+        data = b"retained synthetic drawing PNG"
+        png = self.shared.put_workspace_file(
+            run=drawing, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=drawing.run_id),
+            artifact_id="elevation", workspace_relative_path="documentation/elevation.png",
+            media_type="image/png", source=io.BytesIO(data),
+        )
+        receipt = self.shared.put_json(
+            run=drawing, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=drawing.run_id),
+            record_kind=DRAWING_PROJECTION_RECEIPT,
+            payload={"schema": "DrawingProjectionReceipt@1", "artifacts": {"png": {
+                "relative_path": png.relative_path, "sha256": png.sha256, "media_type": png.media_type,
+            }}},
+        )
+        document = self.shared.put_json(
+            run=source, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=source.run_id),
+            record_kind=STUDIO_SOURCE_DOCUMENT,
+            payload={"schema": "StudioSourceDocument@1", "project_id": "building", "run_id": source.run_id,
+                     "asset_sha256": png.sha256, "revisionRef": receipt.uri},
+        )
+        object_path = f"objects/sha256/{png.sha256[:2]}/{png.sha256}"
+        self.assertFalse((self.shared.layout.root / object_path).exists())
+        for run_id in (None, source.run_id):
+            transfer = self.shared.export_transfer(run_id=run_id)
+            self.assertIn(png.relative_path, {row["path"] for row in transfer["files"]})
+            self.assertNotIn(object_path, {row["path"] for row in transfer["files"]})
+        restored = self.clone("drawing-copy")
+        self.assertEqual(restored.load_json(document), self.shared.load_json(document))
+        self.assertEqual(restored.load_json(receipt), self.shared.load_json(receipt))
+        self.assertEqual(restored.read_transfer_file(png.relative_path, png.sha256), data)
 
     def test_two_local_roots_upload_pull_continue_and_keep_local_work(self):
         a, b = self.clone("a"), self.clone("b")

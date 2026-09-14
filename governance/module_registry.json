@@ -2180,7 +2180,7 @@
         "project-scoped design branch refs with atomic compare-and-swap under the existing process and file locking primitives; independent of canonical HEAD",
         "exact historical published state read through the retained event chain",
         "design Stage reachability and unreferenced prepared Stage reporting in verify",
-        "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization"
+        "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization; archive callers may include all retained runs and their referenced artifacts without promoting candidates or copying runtime workspaces"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
