@@ -75,7 +75,8 @@ def _transfer_path(value: str) -> str:
     ):
         raise ProjectIntegrityError("TRANSFER_PATH_INVALID: unsafe project path")
     allowed = value in ("project.json", "HEAD", "design/branches.json",
-                        "input/runner/state-record.json", "input/runner/seats.json")
+                        "input/runner/state-record.json", "input/runner/seats.json",
+                        "input/runner/program-sheet.json")
     if not allowed and path.parts[0] not in ("canonical", "events", "objects", "runs"):
         raise ProjectIntegrityError("TRANSFER_PATH_INVALID: unassigned project area")
     if any(part.endswith(".lock") for part in path.parts):
@@ -1223,13 +1224,18 @@ class FilesystemProjectRepository:
         self, *, run_id: str | None = None,
         known_files: Mapping[str, str] | None = None,
         include_contents: bool = True,
+        include_all_runs: bool = False,
     ) -> dict[str, Any]:
         """Read a retained design snapshot or one candidate and its dependencies.
 
         This is a transport value, not a new project format. All identities and
         file bytes are the existing P036 ones. Only receipt-named workspace
         artifacts travel; speculative scripts, logs and recovery files do not.
+        Archives may include all retained runs, including project documents,
+        boards and unaccepted candidates; ordinary synchronization stays scoped.
         """
+        if include_all_runs and run_id is not None:
+            raise ValueError("all retained runs require a project snapshot")
         with self._lock, self._head_lock, self._design_lock:
             report = self.verify()
             branches = self.read_design_branches() if run_id is None else {}
@@ -1278,14 +1284,26 @@ class FilesystemProjectRepository:
 
             def references(value: Any, current_run: str | None) -> None:
                 if isinstance(value, Mapping):
+                    # Uploaded source documents name their object by digest.
+                    # Generated drawings instead link a receipt via revisionRef;
+                    # the recursive project URI traversal retains its artifacts.
+                    if value.get("schema") == "StudioSourceDocument@1":
+                        if value.get("project_id") != self._manifest.project_id:
+                            raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign document")
+                        if value.get("revisionRef") is None:
+                            digest = value["asset_sha256"]
+                            artifact(f"objects/sha256/{digest[:2]}/{digest}", digest, current_run)
                     if "relative_path" in value and "sha256" in value:
                         if value.get("project_id", self._manifest.project_id) != self._manifest.project_id:
                             raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign artifact")
                         artifact(value["relative_path"], value["sha256"], current_run)
+                    # An authored record can name a run without being bound to
+                    # one. A retained RunRef always has a non-null base.
                     if {"run_id", "project_id", "base"}.issubset(value):
                         if value["project_id"] != self._manifest.project_id:
                             raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign run")
-                        add_run(value["run_id"])
+                        if value["base"] is not None:
+                            add_run(value["run_id"])
                     native = value.get("artifact_relative_path")
                     inspection = value.get("inspection")
                     if native and isinstance(inspection, Mapping) and inspection.get("file_sha256"):
@@ -1326,9 +1344,13 @@ class FilesystemProjectRepository:
                 if self.layout.design_branches.exists():
                     add("design/branches.json")
                 references(branches, None)
-                for path in ("input/runner/state-record.json", "input/runner/seats.json"):
+                for path in ("input/runner/state-record.json", "input/runner/seats.json",
+                             "input/runner/program-sheet.json"):
                     if (self.layout.root / path).is_file():
                         add(path)
+                if include_all_runs:
+                    for manifest in sorted(self.layout.runs.glob("*/run.json")):
+                        add_run(manifest.parent.name)
             else:
                 add_run(run_id)
             while pending:
@@ -1383,7 +1405,8 @@ class FilesystemProjectRepository:
             raise ProjectIntegrityError("TRANSFER_PATH_INVALID: target escapes project root")
         parts = PurePosixPath(path).parts
         metadata = path in ("project.json", "HEAD", "design/branches.json",
-                            "input/runner/state-record.json", "input/runner/seats.json")
+                            "input/runner/state-record.json", "input/runner/seats.json",
+                            "input/runner/program-sheet.json")
         run_id = parts[1] if parts[0] == "runs" and len(parts) >= 3 else None
         run_manifest = run_id is not None and len(parts) == 3 and parts[2] == "run.json"
         record_area = (parts[0] in ("canonical", "events") and len(parts) == 2) or (
@@ -1415,6 +1438,12 @@ class FilesystemProjectRepository:
         """Find an object's ref, or a native artifact's exact run-local receipt."""
         def matches(value: Any) -> bool:
             if isinstance(value, Mapping):
+                if (value.get("schema") == "StudioSourceDocument@1"
+                        and value.get("revisionRef") is None
+                        and value.get("project_id") == self._manifest.project_id
+                        and value.get("asset_sha256") == digest
+                        and path == f"objects/sha256/{digest[:2]}/{digest}"):
+                    return True
                 relative = value.get("relative_path")
                 if value.get("sha256") == digest and isinstance(relative, str):
                     if relative == path:
@@ -1491,7 +1520,7 @@ class FilesystemProjectRepository:
             parts = PurePosixPath(path).parts
             if path.endswith(".json") and path not in (
                 "project.json", "design/branches.json", "input/runner/state-record.json",
-                "input/runner/seats.json",
+                "input/runner/seats.json", "input/runner/program-sheet.json",
             ) and not (parts[0] == "runs" and len(parts) == 3 and parts[2] == "run.json"):
                 try:
                     _, named_digest = parse_record_file_name(parts[-1])
@@ -1514,7 +1543,10 @@ class FilesystemProjectRepository:
             staged = cls.open(root)
             if staged.load_manifest().project_id != expected_project_id:
                 raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: manifest")
-            checked = staged.export_transfer(run_id=transfer["root_run_id"], include_contents=False)
+            checked = staged.export_transfer(
+                run_id=transfer["root_run_id"], include_contents=False,
+                include_all_runs=transfer["mode"] == "snapshot",
+            )
             for key in keys - {"contents", "files"}:
                 if checked[key] != transfer[key]:
                     raise ProjectIntegrityError(f"TRANSFER_INVALID: {key} differs from retained content")
