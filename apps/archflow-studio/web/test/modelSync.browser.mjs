@@ -267,8 +267,7 @@ http.on("request", (request,response)=>{
   request.pipe(proxy);
 });
 await new Promise(resolve=>http.listen(0,'127.0.0.1',resolve));
-const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
-  'C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs').href);
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : 'playwright');
 browser=await chromium.launch({headless:true,channel:'chrome'});
 const context=await browser.newContext({viewport:{width:1440,height:1000},locale:'en-US'});
 await context.addInitScript(()=>{

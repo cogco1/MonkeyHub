@@ -9,8 +9,8 @@ prints one line saying which of them failed.
 Example::
 
     py -3.12 tools/issue_project.py \
-      --project D:\\...\\villa-rotonda-reconstruction \
-      --run runner-003 --decided-by kaiwen --note "stage 1 sign-off"
+      --project D:\\MonkeyHubRuntime\\workspace\\projects\\villa-rotonda-reconstruction \
+      --run runner-003 --decided-by architect-a --note "stage 1 sign-off"
 
 ``decided_by`` and ``note`` are printed here and are not retained: the
 ``PromotionDecision@1`` the repository demands has a frozen key set, and adding

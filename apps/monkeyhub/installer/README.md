@@ -67,7 +67,7 @@ Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.p
 构建机需要 Git、Python 3.12+（含 pip）和 Node.js 24/npm；这些工具不是安装后的运行依赖。
 
 ```powershell
-python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提交> --staging-dir 'E:\MonkeyHubBuild\构建' --output-dir 'D:\MonkeyHub候选包'
+python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提交> --staging-dir 'D:\ExampleRuntime\temp\package' --output-dir 'D:\ExampleRuntime\packages'
 ```
 
 构建器从同一个 Hub 提交收集 `apps/monkeyfab/`，默认安装其基础与 `send` 依赖，

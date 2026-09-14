@@ -144,7 +144,7 @@ ArchFlow 的开源立场是允许他人检验和改变设计方法及其软件�
 
 ## 首个实验定义：连续改稿中的任务状态
 
-2026-09-07 工作定义，2026-09-08 补充正式比较与独立复核协议，供作者审定后启动；本轮只整理协议，尚未开展本节所定义的比较实验。上述 H1–H3 保留为研究候选；当前 CAADRIA 依据是作者保留的[摘要](<D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/workspace/academic/01_论文写作/CAADRIA_2027/ABSTRACT_zh.md>)，其主张围绕设计推导史、嵌套的操作性马尔可夫状态及义务传播，不能被楼梯联动或局部修复取代。摘要中的初步结果也不自动成为本实验样本，摘要保留状态不代表已经投稿。
+2026-09-07 工作定义，2026-09-08 补充正式比较与独立复核协议，供作者审定后启动；本轮只整理协议，尚未开展本节所定义的比较实验。上述 H1–H3 保留为研究候选。
 
 ### 问题、方法与证据范围
 
@@ -154,7 +154,7 @@ ArchFlow 的开源立场是允许他人检验和改变设计方法及其软件�
 
 ### 已核输入与最小任务序列
 
-项目定位为 `villa-rotonda-reconstruction`，本机[项目目录](<D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/workspace/projects/villa-rotonda-reconstruction/>)仅用于找到以下保留输入；复现依赖输入内容及版本，不能只依赖本机路径或 run ID。
+项目定位为 `villa-rotonda-reconstruction`，其保留输入存于作者的本地项目目录，未随公开仓库发布；下表给出相对定位，复现依赖输入内容及版本，不能只依赖本机路径或 run ID。
 
 | 已核材料 | 精确定位与含义 |
 | --- | --- |
@@ -176,7 +176,7 @@ ArchFlow 的开源立场是允许他人检验和改变设计方法及其软件�
 | 3 | 保存并重新读取步骤 2 的结果，再缩窄当前宽度 10% | `12.00 × 0.90 = 10.80 m`；仍保留其余条件。建议步骤，尚未执行 |
 | 反例 | 在步骤 2 的独立分支，同时要求宽度保持 12.00 m 且改为 13.00 m | 应明确指出冲突并保持此前结果可恢复；不静默覆盖保留项。这是正确的未执行，不算生成完成。不得混入成功序列继续累计 |
 
-2026-09-07 工程接入已完成步骤 0–1；步骤 2–3 和反例仍供作者采纳后扩展。每次工程重复均从 A03 建立独立的 P036 项目副本，不连续累加修改。它们是同一确定性任务的重复，不是多个建筑样本。详见[结果说明](<C:/Users/asus/Documents/Codex/2026-09-06/huaguoshan-toolbox/outputs/villa-repetition-20260907/20260907_EXP-VILLA-WIDTH_结果说明.md>)、[全部尝试对比表](<C:/Users/asus/Documents/Codex/2026-09-06/huaguoshan-toolbox/outputs/villa-repetition-20260907/20260907_EXP-VILLA-WIDTH_运行对比.csv>)和[复跑指南](<D:/huaguoshan-digital-infrastructure/examples/archflow-villa/README.md>)。
+2026-09-07 工程接入已完成步骤 0–1；步骤 2–3 和反例仍供作者采纳后扩展。每次工程重复均从 A03 建立独立的 P036 项目副本，不连续累加修改。它们是同一确定性任务的重复，不是多个建筑样本。该批次的结果说明与全部尝试对比表保留在工具箱运行输出中，未随本仓库发布；复跑步骤见共享工具箱的[复跑指南](https://github.com/cogco1/huaguoshan-digital-infrastructure/blob/main/examples/archflow-villa/README.md)。
 
 对比表记录了旧脚本的一次接口使用失败，以及修复后同一脚本快照的三次成功。旧失败与新版本分别报告，不合并为同一冻结条件的成功率。三次 `run_operator` 调用至返回耗时分别为 14.73、13.48、16.20 秒，包含候选编译与导出，不含副本准备、额外 STEP 读回评价或自然语言交互。外部 ArchFlow 源码为带 WIP 的 `a5871564`，未随 HGR 快照归档，完整科研复现条件尚未满足。
 
@@ -255,7 +255,7 @@ ArchFlow 条件使用待检验的状态编译、继承及执行方法；基线�
 
 ### 给现有工具箱的最小接入
 
-复用 [hgr.runner.execute](<D:/huaguoshan-digital-infrastructure/src/hgr/runner.py>) 和 [hgr.projections](<D:/huaguoshan-digital-infrastructure/src/hgr/projections.py>) 的 `compare`、`figures`、`report`，不创建另一份研究状态或通用 benchmark 平台。研究 workspace 中现有实验 manifest 引用本节定义，绑定操作者、问题/假设、原始输入及版本、命令 argv、seed、parameters、指标名和工件；本地工程试跑设 `effect=local`、`model_provider=null`。
+复用共享工具箱的 [hgr.runner.execute](https://github.com/cogco1/huaguoshan-digital-infrastructure/blob/main/src/hgr/runner.py) 和 [hgr.projections](https://github.com/cogco1/huaguoshan-digital-infrastructure/blob/main/src/hgr/projections.py) 的 `compare`、`figures`、`report`，不创建另一份研究状态或通用 benchmark 平台。研究 workspace 中现有实验 manifest 引用本节定义，绑定操作者、问题/假设、原始输入及版本、命令 argv、seed、parameters、指标名和工件；本地工程试跑设 `effect=local`、`model_provider=null`。
 
 子进程沿用 `HGR_OUTPUT_DIR`、`HGR_SEED`、`HGR_PARAMETERS_JSON`，输出实际测得的有限数值到 `metrics.json`，逐项观察和工件引用放在已有输出机制中。未测的 token、人工介入和不适用项在观察记录中记为未测或 `null`，不进入仅接受有限数值的指标表，不能填零。候选几何仍由 [Studio 的生产候选入口](../apps/archflow-studio/api/archflow_studio_api/application/candidate.py) 经 P036 写入明确指定的试跑 run；HGR 保存研究测量与引用，不获得正式设计写入权。旧工件重读与重新执行分别命名，重读耗时不冒充生成耗时。`figures` 当前只处理成功 run，必须结合 `compare` 保留的全部状态报告失败分母，不能用成功图表代替全样本结果。
 

@@ -213,5 +213,40 @@ class WorkLookupTests(unittest.TestCase):
         self.assertEqual(self._bytes(), before)
 
 
+    def test_github_work_without_a_card_is_read_only_and_renders_issue_links(self):
+        self.data["items"].append({
+            "id": "GH-56", "status": "active", "goal": "Portable project archives",
+            "depends_on": [], "write_scope": ["tools/archive_fixture.py"],
+        })
+        self._save()
+        before = self._bytes()
+        code, result = self._json("GH-56")
+        self.assertEqual(code, 0)
+        self.assertEqual(result["items"][0]["id"], "GH-56")
+        dynamic, planning = devctl.render(devctl.load_registry())
+        for rendered in (dynamic, planning):
+            self.assertIn("[GH-56](https://github.com/cogco1/MonkeyHub/issues/56)", rendered)
+            self.assertNotIn("mapping/planning/https:", rendered)
+        self.assertIn("[P114](mapping/planning/P114-fixture.md)", dynamic)
+        self.assertEqual(self._bytes(), before)
+
+    def test_github_lane_does_not_require_a_parent_card(self):
+        self.data["items"][0]["id"] = "GH-78"
+        del self.data["items"][0]["card"]
+        self._save()
+        code, result = self._json("GH-78/b-blender")
+        self.assertEqual(code, 0)
+        self.assertEqual(result["items"][0]["id"], "GH-78/b-blender")
+        self.assertIsNone(result["items"][0]["card"])
+
+    def test_missing_legacy_cards_and_malformed_issue_ids_still_fail(self):
+        del self.data["items"][0]["card"]
+        for work_id in ("P115", "GH-056", "GH-0"):
+            self.data["items"][0]["id"] = work_id
+            self._save()
+            with self.assertRaisesRegex(SystemExit, "missing card"):
+                devctl.load_registry()
+
+
 if __name__ == "__main__":
     unittest.main()

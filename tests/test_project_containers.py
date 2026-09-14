@@ -106,18 +106,18 @@ class ProjectContainersTests(unittest.TestCase):
 
     def test_an_absent_slot_is_empty_not_a_refusal(self) -> None:
         self.assertEqual(work_in_progress(self.repository), ())
-        self.assertEqual(work_in_progress(self.repository, author="kaiwen"), ())
+        self.assertEqual(work_in_progress(self.repository, author="architect-a"), ())
 
     def test_a_named_author_reads_that_author_s_slot(self) -> None:
         self.author_record(
-            self.layout.resolve_relative("input/kaiwen/state-record.json"),
+            self.layout.resolve_relative("input/architect-a/state-record.json"),
             {"schema": "x"},
         )
         self.assertEqual(work_in_progress(self.repository), ())
-        containers = work_in_progress(self.repository, author="kaiwen")
+        containers = work_in_progress(self.repository, author="architect-a")
         self.assertEqual(len(containers), 1)
-        self.assertEqual(containers[0].author, "kaiwen")
-        self.assertIn("kaiwen", containers[0].note)
+        self.assertEqual(containers[0].author, "architect-a")
+        self.assertIn("architect-a", containers[0].note)
 
     def test_the_note_carries_the_digest_of_the_authored_bytes(self) -> None:
         import hashlib

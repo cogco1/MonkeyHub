@@ -14,7 +14,7 @@ const pageIndex = Number(pageText);
 assert.ok(runId && sourceSha && pageText !== null, "the link must name its run, source and zero-based page");
 assert.match(sourceSha, /^[a-f0-9]{64}$/);
 assert.ok(Number.isSafeInteger(pageIndex) && pageIndex >= 0, "documentPage must be a non-negative integer");
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 const passed = [];
 const attemptedWrites = [];

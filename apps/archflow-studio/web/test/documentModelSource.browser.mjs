@@ -5,7 +5,7 @@ import { createServer } from "vite";
 // The real DocumentCanvas with contract-shaped, in-memory ports. This checks
 // UI binding and callback behavior; backend ownership is covered by its tests.
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "e".repeat(64) };
 const storageRun = "document-storage-R";

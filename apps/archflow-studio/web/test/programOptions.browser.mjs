@@ -261,8 +261,7 @@ try {
   const port = String(http.address().port);
   assert.ok(!forbiddenPorts.has(port));
   const uiOrigin = `http://127.0.0.1:${port}`;
-  const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
-    "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   const context = await browser.newContext({ viewport: { width: 1920, height: 1200 }, locale: "en-US" });
   const preferenceKey = "archflow-studio.user-preferences";

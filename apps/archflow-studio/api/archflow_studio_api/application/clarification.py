@@ -566,7 +566,7 @@ class PendingIntent:
     def advance_key(self) -> tuple[object, ...]:
         """What has to change for a reply to count as progress.
 
-        Kaiwen's five ways to advance, as one comparable value: the target, the
+        The five ways to advance, as one comparable value: the target, the
         element, the slots still missing and the candidates still on the table.
         Two consecutive rounds with the same key are the loop, and the loop is
         what this module exists to end.

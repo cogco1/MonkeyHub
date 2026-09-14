@@ -8,7 +8,7 @@ import { createServer } from "vite";
 // Real Canvas, SDK and PDF rendering; synthetic documents and HTTP responses.
 // No real project, model process or retained document is changed by this test.
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const screenshots = await mkdtemp(join(tmpdir(), "archflow-drawing-styles-"));
 const modelA = { runId: "model-A", stateDigest: "a".repeat(64), assetSha256: "b".repeat(64) };
 const modelB = { runId: "model-B", stateDigest: "c".repeat(64), assetSha256: "e".repeat(64) };

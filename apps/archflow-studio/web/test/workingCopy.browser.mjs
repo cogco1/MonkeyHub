@@ -117,8 +117,7 @@ const drawingBaseline = drawingRun?.pages.find((page) => page.assetSha256 === dr
 assert.ok(drawingSource && drawingBaseline?.revisionSha256, "The old run must retain the specified L6 drawing and its saved first page");
 assert.equal(drawingSource.modelSource ?? null, null, "L6 must start without a linked model");
 
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
-  "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 let vite;
 let browser;
 let page;

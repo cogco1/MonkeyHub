@@ -52,12 +52,10 @@ still explicit; this is not permission to issue an unchecked project version.
 - [ ] The Studio drops the "unavailable" label and the empty-facts construction in the same change.
 - [ ] Tests beside the reducer and validation engine; `python tools/archcheck.py` green.
 
-## CAADRIA-linked execution scope — 2026-09-08
+## Execution scope — 2026-09-08
 
-This card is **blocked, not started**, pending the concrete inputs described below. The paper review assigns this gap 22% of
-its relative remediation priority; the weight is neither effort nor acceptance
-probability and does not reorder unrelated product work. This update authorizes
-planning only, not implementation or a new experiment.
+This card is **blocked, not started**, pending the concrete inputs described below.
+This update authorizes planning only, not implementation or a new experiment.
 
 - **Owners:** `state.record` owns the design content and consumer views;
   `state.model` owns the receiving canonical validation value;
@@ -85,8 +83,8 @@ planning only, not implementation or a new experiment.
   unchecked and must not discharge the requirement. Include a positive case, a
   violated case, a missing-measurement case and an exact-base mismatch. A supplied
   evidence-reference string alone is not the satisfaction test.
-- **Dependencies:** P094's author first fixes the task, exact source/candidate pair,
-  allowed changes, preserved conditions and intended claim. The 10% independent
+- **Dependencies:** the author first fixes the task, exact source/candidate pair,
+  allowed changes, preserved conditions and intended claim. An independent
   geometry review can supply the same requirement's measurement through existing
   owners. Interface inspection and protocol preparation can proceed in parallel;
   implementation is selected only after this scope is concrete. P108/P111 candidate
