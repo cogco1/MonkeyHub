@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
+import inspect
 import logging
 import os
 from pathlib import Path
@@ -49,6 +50,51 @@ from .models import (
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
+
+
+def complete_interrupted_connection_teardown() -> None:
+    """A connection the proactor transport cannot close must not stay attached.
+
+    CPython shuts the socket down inside the `finally` of
+    `_call_connection_lost`. Windows answers WinError 10054 when the peer is
+    already gone, and that error leaves the rest of that block unrun: the
+    socket stays open and the connection stays attached to `asyncio.Server`.
+    `Server.wait_closed()` then waits for it forever, so uvicorn logs
+    `Shutting down`, never reaches the ASGI lifespan shutdown and never exits,
+    leaving the desktop host waiting on a stop it already requested. Finish
+    the skipped teardown exactly once and re-raise the operating system's
+    error, so nothing is detached twice and nothing is hidden.
+    """
+    from asyncio.proactor_events import _ProactorBasePipeTransport as Transport
+
+    interrupted = Transport._call_connection_lost
+    if getattr(interrupted, "_completes_teardown", False):
+        return
+
+    def _call_connection_lost(self, exc):
+        try:
+            interrupted(self, exc)
+        except OSError:
+            # Take each field before using it, so this teardown stays single
+            # use however far CPython's own block reached before it raised.
+            closing, self._sock = self._sock, None
+            server, self._server = self._server, None
+            self._called_connection_lost = True
+            if closing is not None:
+                try:
+                    closing.close()
+                except OSError:
+                    pass
+            if server is not None:
+                # 3.12 detaches a counted connection; 3.13 discards the transport.
+                if inspect.signature(server._detach).parameters:
+                    server._detach(self)
+                else:
+                    server._detach()
+            raise
+
+    _call_connection_lost._completes_teardown = True
+    Transport._call_connection_lost = _call_connection_lost
 
 
 class HubServer(uvicorn.Server):
@@ -484,6 +530,8 @@ def main(argv: list[str] | None = None) -> None:
         studio_web_dir=studio_web, web_origin=args.web_origin,
         managed_instance_id=str(args.managed_instance_id) if args.managed_instance_id else None,
     )
+    if sys.platform == "win32":
+        complete_interrupted_connection_teardown()
     with _runtime_lease(settings.runtime_root):
         app = create_app(settings)
         server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=settings.port))
