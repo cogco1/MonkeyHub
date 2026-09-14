@@ -3,6 +3,21 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-58",
+      "stream": "runtime",
+      "status": "active",
+      "goal": "Build and verify unsigned candidate release metadata and dependency inventory through the existing packaging owner.",
+      "depends_on": [],
+      "write_scope": [
+        "tools/package_monkeyapps.py",
+        "tests/test_package_monkeyapps.py",
+        "apps/monkeyhub/installer/README.md",
+        "SECURITY.md",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
