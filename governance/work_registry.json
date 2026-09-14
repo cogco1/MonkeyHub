@@ -365,8 +365,6 @@
         "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
         "apps/archflow-studio/web/src/features/stage/ModelEditPanel.css",
         "docs/VILLA_DEMO_SCRIPT.md",
-        "docs/TEAM_MEETING_AGENDA.md",
-        "docs/TEAM_MEETING_DECK.pptx",
         "apps/archflow-studio/api/tests/test_health.py",
         "apps/archflow-studio/api/tests/test_artifacts.py",
         "apps/archflow-studio/api/tests/test_sse.py",
@@ -416,7 +414,7 @@
         "2026-09-08: align the existing rule sources and contributor instructions; reuse the verified historical-commit scope checker from the source release. Module ownership, current work, runtime authority and installable versions remain distinct. No new registry or plugin loader.",
         "2026-09-08 product boundary: MonkeyArch is the 3D modeling/spatial-revision workflow; MonkeyDiagram is the peer drawing/diagram workflow covering the existing drawing work, markup, graphic composition, layout and exports. Reuse existing owners and ArchFlow project infrastructure; the names do not create new packages or persistence authority.",
         "2026-09-08 long-term separation: REPO_LAYOUT defines distinct archflow shared-core, monkeyarch modeling and monkeydiagram drawing namespaces plus peer Web workspaces. Current code paths are not yet migrated. Move one real consumer chain at a time, updating existing owner paths/imports/package checks rather than adding duplicate owners or a new project store. The frozen v0.1.0 candidate remains unchanged.",
-        "2026-09-08 migration execution: user authorized the remaining evening for physical migration. Work occurs in an isolated source worktree captured from current D:/ARCHFLOW_V4; the frozen v0.1.0 candidate stays unchanged. P115 coordinates the Python, Web and integration lanes; feature follow-ups wait for the migrated baseline.",
+        "2026-09-08 migration execution: user authorized the remaining evening for physical migration. Work occurs in an isolated source worktree captured from the current main checkout; the frozen v0.1.0 candidate stays unchanged. P115 coordinates the Python, Web and integration lanes; feature follow-ups wait for the migrated baseline.",
         "2026-09-08 completed migration: 12 modeling modules and 2 drawing modules moved to their workflow packages; 16 Web files moved into peer workspaces. Four compiled values remain with the shared geometry contract. Existing project data formats and HTTP API are unchanged. Validation: modeling 396, drawings 16, metrics 20, architecture tests 30; API 620 passed/4 environment skips with 209 subtests; Web 72 passed/2 fixture skips, 2 isolated browser consumers, build, generated API and installed-wheel imports passed. Remaining broader consolidation items are not declared delivered.",
         "2026-09-09: user accepted STAGE_BRANCH_CANDIDATE_PLAN and authorized implementation with adjustments. Normal A/B is one Exploration on the current Branch; generation must display before acceptance. Work is active in the current source checkout; no real project migration or active application restart is included.",
         "2026-09-09 implementation and review fixes complete: persistent Stage/Branch CAS and cold candidate replay; candidate previews; exact-source elevation revisions; within-seat producer/CAD reuse; isolated queue scopes and independent candidate combination. Stage views pin the exact model and source runner across later canonical/run records. Drawing annotations and submitted requests retain their exact revision even when later drawings share PNG bytes. API/OCCT regressions, 41 isolated browser scenarios, affected Web unit tests, build, generated client and archcheck passed. Real project migration, active-service restart and remote push are outside this completed local change; architectural task acceptance and other P115 items remain open.",
@@ -436,7 +434,7 @@
           "issue": "#21 desktop and browser version parity",
           "status": "active",
           "branch": "codex/fab-in-hub",
-          "worktree": "D:/ARCHFLOW_RUNTIME/workspace/worktrees/codex-fab-in-hub",
+          "worktree": "workspace/worktrees/codex-fab-in-hub",
           "base_ref": "a035e07e9e4395ac7db9699d6219b8159e14d03a",
           "contributor": "Codex coordinator",
           "reviewer": "Repository owner",
@@ -509,7 +507,7 @@
           "issue": "#14 Phase 5 snap retention and continuous modeling",
           "status": "blocked",
           "branch": "codex/issue14-snap-retention",
-          "worktree": "C:/Users/asus/.codex/worktrees/48ca/ARCHFLOW_V4",
+          "worktree": "agent-worktrees/48ca/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex task 01a09b53-473e-7042-953b-9fd060e7744f",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
@@ -530,7 +528,7 @@
           "issue": "#13 remaining host and contributor acceptance",
           "status": "blocked",
           "branch": "codex/issue-13-acceptance",
-          "worktree": "C:/Users/asus/.codex/worktrees/7ae0/ARCHFLOW_V4",
+          "worktree": "agent-worktrees/7ae0/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex task 01a09b54-4676-7443-b60b-652f6d1e4a8d",
           "reviewer": "Coordinating task 01a07a9b-1a50-7081-9e08-1b86961d799e",
@@ -551,7 +549,7 @@
           "issue": "#23 acceptance follow-up",
           "status": "blocked",
           "branch": "codex/board-acceptance",
-          "worktree": "C:/Users/asus/.codex/worktrees/bb66/ARCHFLOW_V4",
+          "worktree": "agent-worktrees/bb66/ARCHFLOW_V4",
           "base_ref": "293756cf6b10a49bff303c3d37f60dac0e9c2754",
           "contributor": "Codex Board task",
           "reviewer": "Codex coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e",
@@ -567,33 +565,6 @@
           "depends_on": [],
           "blocked_reason": "Awaiting a new-user blind walkthrough of the Board reference-to-model-feedback workflow."
         }
-      ]
-    },
-    {
-      "id": "P094",
-      "stream": "planning",
-      "status": "blocked",
-      "goal": "Prepare the CAADRIA 2027 full paper from the author-designated current Chinese abstract and retained records: Chinese working draft first, then an English manuscript in the applicable official template. The author selects the contribution and empirical scope; every quantitative claim resolves to its retained source. Paper work is currently paused.",
-      "depends_on": [
-        "P062",
-        "P063",
-        "P090",
-        "P093"
-      ],
-      "write_scope": [
-        "docs/mapping/",
-        "governance/work_registry.json"
-      ],
-      "card": "docs/mapping/planning/P094-caadria-2027-manuscript.md",
-      "acceptance": [
-        "The Chinese working draft aligns with the author-designated current abstract and marks each intended claim as delivered, to-record, to-run or to-decide.",
-        "PAPER_CONTRACT.md and OUTLINE.md reflect the author-confirmed contribution and empirical scope; historical repair-locality framing is revisited only within that scope.",
-        "The author confirms the comparison and episode set before new experiments or substantive claims are added.",
-        "Every manuscript number resolves to a retained record; the existing source mapping is updated with the draft.",
-        "The author-confirmed figure and table set has traceable sources; anonymisation, actual AI-use disclosure and manual citation verification are complete before submission."
-      ],
-      "notes": [
-        "2026-09-08 rule alignment: Paused by the user while functional work proceeds; the designated academic workspace remains the manuscript entry. Resume only when the user resumes paper work."
       ]
     },
     {
@@ -784,7 +755,7 @@
         "This card replaces the earlier all-in-one acceptance bundle. P108/P110 retain their own obligations; no architectural check or formal-issue boundary is waived by permitting a local trial.",
         "The user selected whole-stair usability and revision as the next capability direction. Its bounded task and owner mapping are in docs/ARCHITECTURE.md; the proposed benchmark is in docs/RESEARCH_POSITIONING.md. This card does not expand to implement it.",
         "Internal simplification progress is maintained only in P115 C03/C09/C10. These items do not block P111 trial; preserve real validation and retained-data readers.",
-        "Development order lives in docs/ARCHITECTURE.md, not this delivery card. P094 research is currently paused; reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks.",
+        "Development order lives in docs/ARCHITECTURE.md, not this delivery card. Reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks.",
         "2026-09-06: write_scope narrowed to the ledgers only — the implementation is delivered; problems found in the trial go to the owning card, not this one.",
         "2026-09-08 rule alignment: Implementation and isolated verification are complete. The remaining live-page trial awaits a restored page and a new specific edit; do not replay the completed request."
       ]
@@ -844,6 +815,67 @@
       "notes": [
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
+      ]
+    },
+    {
+      "id": "GH-78",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Keep private material and retired code outside the public working tree; retain local originals and public contracts.",
+      "depends_on": [],
+      "write_scope": [
+        "archive/",
+        ".gitignore",
+        "AGENTS.md",
+        "apps/archflow-studio/README.md",
+        "apps/archflow-studio/api/archflow_studio_api/application/clarification.py",
+        "apps/archflow-studio/web/test/annotate.browser.mjs",
+        "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
+        "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
+        "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+        "apps/archflow-studio/web/test/candidatePreview.browser.mjs",
+        "apps/archflow-studio/web/test/documentCanvas.browser.mjs",
+        "apps/archflow-studio/web/test/documentLink.browser.mjs",
+        "apps/archflow-studio/web/test/documentModelSource.browser.mjs",
+        "apps/archflow-studio/web/test/documentShortcuts.browser.mjs",
+        "apps/archflow-studio/web/test/documentTextLayer.browser.mjs",
+        "apps/archflow-studio/web/test/drawingStyles.browser.mjs",
+        "apps/archflow-studio/web/test/eventStream.browser.mjs",
+        "apps/archflow-studio/web/test/intentViewSource.browser.mjs",
+        "apps/archflow-studio/web/test/modelSync.browser.mjs",
+        "apps/archflow-studio/web/test/programOptions.browser.mjs",
+        "apps/archflow-studio/web/test/settingsPanel.browser.mjs",
+        "apps/archflow-studio/web/test/sketch.browser.mjs",
+        "apps/archflow-studio/web/test/taskSidebar.browser.mjs",
+        "apps/archflow-studio/web/test/versionNotifications.browser.mjs",
+        "apps/archflow-studio/web/test/workModelExport.browser.mjs",
+        "apps/archflow-studio/web/test/workingCopy.browser.mjs",
+        "apps/monkeyhub/installer/README.md",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "docs/ARCHITECTURE.md",
+        "docs/CANONICAL_SPINE.md",
+        "docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/RESEARCH_POSITIONING.md",
+        "docs/TEAM_MEETING_AGENDA.md",
+        "docs/TEAM_MEETING_DECK.pptx",
+        "docs/VILLA_DEMO_SCRIPT.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "docs/claude-worktree/2026-09-03-p108-chat-shell-design.md",
+        "docs/mapping/planning/INDEX.md",
+        "docs/mapping/planning/P094-caadria-2027-manuscript.md",
+        "docs/mapping/planning/P110-canonical-state-projection.md",
+        "docs/mapping/planning/P115-capability-consolidation.md",
+        "governance/module_registry.json",
+        "governance/work_registry.json",
+        "tests/test_archcheck_scopes.py",
+        "tests/test_issue_project.py",
+        "tests/test_project_containers.py",
+        "tools/issue_project.py"
+      ],
+      "card": "docs/REPO_LAYOUT.md",
+      "acceptance": [
+        "Private originals retained locally; public references and existing validation remain usable."
       ]
     }
   ]
