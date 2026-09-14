@@ -1,6 +1,6 @@
 # One spine
 
-**Status:** historical consolidation decision, made 2026-09-03 with Kaiwen.
+**Status:** historical consolidation decision, made 2026-09-03 with the repository owner.
 The record-driven production spine is now described in [ARCHITECTURE.md](ARCHITECTURE.md).
 The survey, verdicts and execution order below record the migration plan at that time;
 they are not instructions to rerun it. Current ownership and remaining work are in
@@ -61,7 +61,7 @@ code with no lane, no probe and no spine consumer; Git keeps it.
 | Parthenon | `tools/run_parthenon_*.py`, `parthenon_stage4_*.py`, `refine_parthenon_stage4_visual_regions.py`, `run_parthenon_stage4_visual_rag.py`, `state_tree_viewer.py` | ARCHIVE as `archive/monuments/` | untyped op dicts, direct rhino3dm and the Z-up frame leave the tree with it |
 | Design controller (P042–P060) | `archflow/runtime/design_controller.py` and its loops (`hierarchical_search`, `architectural_revision`, `repair_loop`, `staged_build`, `player_control`, `operational_transition`, `walking_skeleton`, `primary_architect`, `development_controller`), `commit/` in-memory store and committer, `workspace/manager.py`, `event_log.py`, `skills/`, `capabilities/experts.py`, `adapters/cli_retrieval.py`, `interaction/` | ARCHIVE as `archive/controller/` | no production caller today; the second write path goes with it |
 | Sandbox / voxel / Minecraft (P026/P027/P030) | `realization/`, `adapters/{minecraft_mcp,fake_voxel,sandbox_render,site_observation}.py`, `runtime/{world_recovery,environment_feedback,terrain_adaptation}.py`, `validation/{usability,use_scenarios,spatial}.py` | ARCHIVE as `archive/sandbox/` | probes p026/p027/p030 stay as data |
-| Experiments and research (P062/P063, web precedent, basis index) | `evaluation/`, `research/`, `tools/run_experiment.py`, `run_assignment.py`, `run_decision_research.py`, `run_web_precedent.py`, `run_basis_*.py`, `tools/projects/web_precedent` | ARCHIVE as `archive/research/` unless P094 names a reader it needs on the spine before execution | the paper reads retained records; the readers run from the archive |
+| Experiments and research (P062/P063, web precedent, basis index) | `evaluation/`, `research/`, `tools/run_experiment.py`, `run_assignment.py`, `run_decision_research.py`, `run_web_precedent.py`, `run_basis_*.py`, `tools/projects/web_precedent` | ARCHIVE as `archive/research/` unless a research card names a reader it needs on the spine before execution | research reads retained records; the readers run from the archive |
 | V3 legacy diagnostic (P013) | `adapters/v3_legacy_cli.py`, `capabilities/v3_diagnostic.py` | ARCHIVE as `archive/v3/` | probes p013 stay as data |
 
 Lane membership is decided mechanically at execution time: a module belongs to the spine when
@@ -98,8 +98,8 @@ is assigned to the lane whose entry points reach it; what nothing reaches is DEL
 
 P066 and P069 close as superseded by this spec (their retained records stay readable from
 `archive/monuments/`). P105 and P106 become the only way a monument re-enters: as a State
-Record replayed through the spine. P094 reads retained records; it names, before execution,
-any reader it needs kept on the spine. P104, P107 and P110 are spine work and stand.
+Record replayed through the spine. Research cards read retained records; each names, before
+execution, any reader it needs kept on the spine. P104, P107 and P110 are spine work and stand.
 
 ## 3. The archive
 
@@ -145,7 +145,7 @@ else.
 
 0. Wait for the sessions landing on `main` to finish; tag `pre-spine` at that commit.
 1. Remove re-export-only package `__init__` imports so reachability is computable; compute
-   the spine closure and the lane assignment; review the move list with Kaiwen.
+   the spine closure and the lane assignment; review the move list with the repository owner.
 2. Create `archive/` and move the lanes, tests included; rewrite imports; run the spine suite
    and each lane's suite from the archive once.
 3. Delete the DELETE list.
@@ -154,4 +154,4 @@ else.
 5. Write `governance/module_registry.json`, add the three `archcheck` rules, rewrite
    `docs/ARCHITECTURE.md`, close and open the cards in §2.3.
 
-Every step commits with explicit paths; nothing is pushed without Kaiwen's word.
+Every step commits with explicit paths; nothing is pushed without the repository owner's word.

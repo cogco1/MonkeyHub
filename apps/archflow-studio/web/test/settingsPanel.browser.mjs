@@ -69,8 +69,7 @@ test("user settings use the existing panel without changing the running model or
   const address = http.address();
   assert.ok(address !== null && typeof address !== "string");
   const origin = `http://127.0.0.1:${address.port}`;
-  const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
-    "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
   t.after(async () => {
     await browser.close();

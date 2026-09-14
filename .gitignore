@@ -20,3 +20,11 @@ apps/archflow-studio/web/Python/
 apps/monkeyhub/node_modules/
 .claude/
 !.claude/launch.json
+
+# Retired lanes and local private material are kept outside the public tree.
+archive/
+private/
+originals/
+*.bundle
+docs/TEAM_MEETING_DECK.pptx
+docs/claude-worktree/

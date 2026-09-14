@@ -46,7 +46,7 @@ The host has two programs:
   request and response shapes in `web/src/api/generated/` are the server's own schema,
   regenerated and diffed by `npm run api:check`.
 
-  The shell is two surfaces and a drawer. The ruling behind it (Kaiwen, 2026-09-03): the
+  The shell is two surfaces and a drawer. The ruling behind it (2026-09-03): the
   shell serves demo first and daily work second; conclusions stay on screen, evidence lives
   one click away in a drawer that never abridges. Below 900 px the two columns become one,
   with the model on top and the conversation below. A **conversation** column
@@ -619,7 +619,7 @@ project moved under you" in the transcript.
 
 - **P110** — CanonicalState projection. Why `effectiveChecks` is narrower than `validators`
   (section 4).
-- Kernel-card candidates relayed to Kaiwen from this slice, fixed nowhere in passing: typed
+- Kernel-card candidates relayed to the repository owner from this slice, fixed nowhere in passing: typed
   `ParameterBinding` values; `runner-run-receipt` not carrying its own `receipt_ref` (the
   record it is in is the only thing a caller can name it with); non-ASCII path segments
   rejected by `require_project_relative_path`.
@@ -659,6 +659,8 @@ smoke against a **temporary copy** of a project with export on: bind → choose 
 preview its export under the `CANDIDATE` chip → read the review-readiness card → send an abstract
 sentence and get a question card → open the evidence drawer; then the light theme and the
 900 px fold.
+
+Optional browser smoke scripts (`web/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts need a running Studio and are separate from `npm test`.
 
 ## Local Runtime and shared project collaboration
 

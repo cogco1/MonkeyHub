@@ -195,7 +195,7 @@ class IssueProjectTests(unittest.TestCase):
         receipt = issue_run(
             self.repository,
             run_id=run.run_id,
-            decided_by="kaiwen",
+            decided_by="architect-a",
             note="stage 1 sign-off",
         )
 
@@ -228,10 +228,10 @@ class IssueProjectTests(unittest.TestCase):
 
     def test_the_same_run_cannot_be_issued_twice(self) -> None:
         run, _ = self.closed_run("runner-001")
-        issue_run(self.repository, run_id=run.run_id, decided_by="kaiwen")
+        issue_run(self.repository, run_id=run.run_id, decided_by="architect-a")
 
         with self.assertRaises(StaleBase) as refused:
-            issue_run(self.repository, run_id=run.run_id, decided_by="kaiwen")
+            issue_run(self.repository, run_id=run.run_id, decided_by="architect-a")
 
         self.assertIn("version 0", str(refused.exception))
         self.assertEqual(self.repository.read_head().version, 1)
@@ -240,7 +240,7 @@ class IssueProjectTests(unittest.TestCase):
         run, _ = self.closed_run("runner-001", with_closure=False)
 
         with self.assertRaises(NoSatisfiedClosure) as refused:
-            issue_run(self.repository, run_id=run.run_id, decided_by="kaiwen")
+            issue_run(self.repository, run_id=run.run_id, decided_by="architect-a")
 
         self.assertIn("retains no stage closure", str(refused.exception))
         self.assertEqual(self.repository.read_head().version, 0)
@@ -258,7 +258,7 @@ class IssueProjectTests(unittest.TestCase):
         )
 
         with self.assertRaises(NoSatisfiedClosure) as refused:
-            issue_run(self.repository, run_id=run.run_id, decided_by="kaiwen")
+            issue_run(self.repository, run_id=run.run_id, decided_by="architect-a")
 
         self.assertIn("check_failed", str(refused.exception))
         self.assertEqual(self.repository.read_head().version, 0)
@@ -268,7 +268,7 @@ class IssueProjectTests(unittest.TestCase):
         run, _ = self.closed_run("runner-001", with_binding=False)
 
         with self.assertRaises(NoSatisfiedClosure) as refused:
-            issue_run(self.repository, run_id=run.run_id, decided_by="kaiwen")
+            issue_run(self.repository, run_id=run.run_id, decided_by="architect-a")
 
         self.assertIn("no stage exit binding", str(refused.exception))
         self.assertEqual(self.repository.read_head().version, 0)
@@ -277,7 +277,7 @@ class IssueProjectTests(unittest.TestCase):
         run, _ = self.closed_run("runner-001", seats_complete=False)
 
         with self.assertRaises(RunNotComplete) as refused:
-            issue_run(self.repository, run_id=run.run_id, decided_by="kaiwen")
+            issue_run(self.repository, run_id=run.run_id, decided_by="architect-a")
 
         self.assertIn("every seat executed", str(refused.exception))
         self.assertEqual(self.repository.read_head().version, 0)
@@ -296,7 +296,7 @@ class IssueProjectTests(unittest.TestCase):
                     "--run",
                     run.run_id,
                     "--decided-by",
-                    "kaiwen",
+                    "architect-a",
                     "--note",
                     "stage 1 sign-off",
                 ]
@@ -306,7 +306,7 @@ class IssueProjectTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("published: issue 1 (was issue 0)", printed)
         self.assertIn(refs["closure"], printed)
-        self.assertIn("kaiwen", printed)
+        self.assertIn("architect-a", printed)
         self.assertIn("stage 1 sign-off", printed)
 
     def test_the_command_exits_one_with_the_typed_reason(self) -> None:
@@ -321,7 +321,7 @@ class IssueProjectTests(unittest.TestCase):
                     "--run",
                     run.run_id,
                     "--decided-by",
-                    "kaiwen",
+                    "architect-a",
                 ]
             )
 

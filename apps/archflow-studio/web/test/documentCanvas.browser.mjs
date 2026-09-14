@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 
@@ -7,9 +9,12 @@ import { randomUUID } from "node:crypto";
 // Every ink edit targets a unique uploaded PDF; existing sources are never annotated.
 const appUrl = process.env.DOCUMENT_APP_URL ?? "http://127.0.0.1:5187";
 const apiUrl = process.env.DOCUMENT_API_URL ?? "http://127.0.0.1:60616";
-const fixtureRoot = process.env.DOCUMENT_FIXTURES ?? "C:/Users/asus/AppData/Local/Temp/archflow-document-integration-20260908";
-const screenshotPath = process.env.DOCUMENT_SCREENSHOT ?? "C:/Users/asus/.codex/workspaces/document-canvas-20260908/document-page-2.png";
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+// The disposable fixture directory holds two-page-crop-rotation.pdf, reference.png
+// and reference-exif.jpg; it lives outside the repository, so it must be supplied.
+const fixtureRoot = process.env.DOCUMENT_FIXTURES;
+assert.ok(fixtureRoot, "DOCUMENT_FIXTURES must point at the disposable document fixture directory.");
+const screenshotPath = process.env.DOCUMENT_SCREENSHOT ?? join(tmpdir(), "archflow-document-canvas", "document-page-2.png");
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const nonce = randomUUID();
 const runId = "run-001";
 const boundProject = await (await fetch(`${appUrl}/api/project`)).json();

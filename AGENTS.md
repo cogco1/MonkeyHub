@@ -1,6 +1,6 @@
 # ArchFlow V4 project rules
 
-These rules are specific to `D:\ARCHFLOW_V4` and supplement the global Codex
+These rules are specific to this repository and supplement the global Codex
 instructions.
 
 ## Long-term direction
@@ -98,7 +98,7 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
 
 If a new artifact, state, trace, cache, screenshot, export or recovery record
 does not have one unambiguous destination in the project layout, stop before
-writing it and ask Kevin to decide its ownership.
+writing it and ask the repository owner to decide its ownership.
 
 ## Rule sources and independent modules
 

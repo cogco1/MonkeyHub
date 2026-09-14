@@ -96,8 +96,7 @@ test("Studio events keep one connection and deliver only accepted frames to the 
   await new Promise((resolve) => { http.listen(0, "127.0.0.1", resolve); });
   const address = http.address();
   assert.ok(address !== null && typeof address !== "string");
-  const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
-    "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   const context = await browser.newContext();
   const page = await context.newPage();

@@ -247,10 +247,10 @@ class LaneOverlapTests(unittest.TestCase):
                 self.assertEqual(["LANE_CHECKOUT"], [item.code for item in findings])
                 for text in ("P115/cad-contract", "P115/hub-runtime", field):
                     self.assertIn(text, findings[0].message)
-        for path in (r"c:\users\asus\dev\repo", "C:/Users/asus/dev/other/../repo/"):
+        for path in (r"c:\users\developer\dev\repo", "C:/Users/developer/dev/other/../repo/"):
             with self.subTest(windows_path=path):
                 findings = self.findings(
-                    _lane("cad-contract", "active", "archflow/adapters/", worktree="C:/Users/asus/dev/repo"),
+                    _lane("cad-contract", "active", "archflow/adapters/", worktree="C:/Users/developer/dev/repo"),
                     _lane("hub-runtime", "review", "apps/monkeyhub/api/", worktree=path),
                 )
                 self.assertEqual(["LANE_CHECKOUT"], [item.code for item in findings])

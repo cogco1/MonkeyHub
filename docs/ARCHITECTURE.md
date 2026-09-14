@@ -196,7 +196,7 @@ the architect changes that decision; ask about a real conflict, not an internal 
    The current short demo defers complex passage and ornament details so that a
    recognizable building candidate and a visible stair-width revision can be tried.
    P104 and P106 retired unbuilt with the
-   monument lane on 2026-09-05. Research under P094 proceeds separately.
+   monument lane on 2026-09-05.
 
 The [benchmark proposal](RESEARCH_POSITIONING.md) evaluates task completion,
 relationship errors, repair and handover cost. Separate executing supplied rules,

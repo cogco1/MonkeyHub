@@ -167,10 +167,10 @@ Hub 启动时自动准备 Monitor；新建、连接或切换项目后调用 `POS
 
 [`tools/workspace.py`](../tools/workspace.py) 和 [`tools/package_monkeyapps.py`](../tools/package_monkeyapps.py)
 共用个人 Git 设置 `archflow.package.workspace-root`；沿用原有键名，避免多一份工作区配置。
-首次安装或明确更换根目录时配置一次，例如本机已有的 `D:/ARCHFLOW_RUNTIME`：
+首次安装或明确更换根目录时配置一次。下面的绝对路径只是示例，按本机实际位置替换：
 
 ```powershell
-python tools/workspace.py configure --root D:/ARCHFLOW_RUNTIME
+python tools/workspace.py configure --root D:/MonkeyHubRuntime
 ```
 
 之后从已有源码检出运行固定入口：
@@ -317,9 +317,8 @@ python tools/package_monkeyapps.py --source-ref HEAD
 | Web 同步和构建产物 | `apps/archflow-studio/web/.generated/`、`dist/` | 可重建 |
 
 **旧规则的分层修正。**
-工作区的 [`GENERATION_RECORD_SPEC.md`](<file:///D:/PROJECTS/01_ACTIVE_当前项目/ARCHFLOW CAADRIA 2027/V4_RUNTIME/GENERATION_RECORD_SPEC.md>)
-（`D:\PROJECTS\01_ACTIVE_当前项目\ARCHFLOW CAADRIA 2027\V4_RUNTIME\GENERATION_RECORD_SPEC.md`，已随论文材料移出仓库）第八节原本把“预览模型、截图、审查包”统一
-路由到 `V4_RUNTIME/output/`。那是 2026-08-30 的跨项目交付/过手规则，粒度不足以表达后来增加的
+早期工作区的 `GENERATION_RECORD_SPEC.md`（不在本仓库内）第八节原本把“预览模型、截图、审查包”统一
+路由到该工作区的 `output/`。那是 2026-08-30 的跨项目交付/过手规则，粒度不足以表达后来增加的
 project-bound Studio capture；该表现已按当前项目存储、protocol、registry 和 API 工作树实现拆分为：
 
 - 能明确归属于一个已有 run 的过程截图，进入该 run 的 `workspaces/studio-captures/`；

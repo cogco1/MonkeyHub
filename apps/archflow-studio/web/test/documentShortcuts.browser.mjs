@@ -20,7 +20,7 @@ assert.equal((await response.json()).projectId, projectId, "App binding must mat
 const nonce = randomUUID();
 const fileName = `document-shortcuts-${nonce}.pdf`;
 const fileBytes = Buffer.concat([await readFile(process.env.DOCUMENT_FIXTURE_PDF), Buffer.from(`\n% document-shortcuts-${nonce}\n`)]);
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 const context = await browser.newContext({ viewport: { width: 1700, height: 1100 }, deviceScaleFactor: 1 });
 const page = await context.newPage();

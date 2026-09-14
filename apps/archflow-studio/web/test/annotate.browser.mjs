@@ -6,7 +6,7 @@ import { createServer } from "vite";
 // An isolated canvas fixture: no model files, application state, or API calls.
 // Performance numbers measure this fixed workload, not a complex 3DM scene.
 const root = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "").replaceAll("\\", "/");
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const baselineId = `${root.replaceAll("\\", "/")}/src/features/stage/__baselineAnnotate.tsx`;
 const fixture = `
 import React, {useState, useRef} from 'react';

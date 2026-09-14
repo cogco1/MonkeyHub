@@ -148,8 +148,7 @@ test("the shipped export control and versions panel answer for the model on scre
   await new Promise((done) => { http.listen(0, "127.0.0.1", done); });
   const address = http.address();
   assert.ok(address !== null && typeof address !== "string");
-  const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ??
-    "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+  const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
   browser = await chromium.launch({ headless: true, channel: "chrome" });
   const page = await (await browser.newContext()).newPage();
   const errors = [];

@@ -5,7 +5,7 @@ import { createServer } from "vite";
 // A standalone consumer of the real layer, with an in-memory parent history.
 // It starts its own ephemeral server and never connects to a project API.
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
-const { chromium } = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE ?? "C:/Users/asus/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs").href);
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
 const fixture = `
 import React, {useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
