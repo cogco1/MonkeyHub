@@ -3,6 +3,17 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-12",
+      "stream": "runtime",
+      "status": "active",
+      "goal": "Integrate reviewed candidate acceptance routing repair.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
