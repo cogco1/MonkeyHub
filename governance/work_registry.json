@@ -3,6 +3,27 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-46",
+      "stream": "interaction",
+      "status": "active",
+      "goal": "Integrate exact Board document-page open and return.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/web/src/app/App.tsx",
+        "apps/archflow-studio/web/src/app/Connected.tsx",
+        "apps/archflow-studio/web/src/app/TaskWorkspace.tsx",
+        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardNavigation.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardScene.ts",
+        "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs",
+        "apps/archflow-studio/web/test/boardNavigation.test.ts",
+        "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
+        "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
