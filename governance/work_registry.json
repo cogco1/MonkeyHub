@@ -828,6 +828,20 @@
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
       ]
+    },
+    {
+      "id": "GH-78",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Keep the public-tree cleanup compatible with Issue-native work registration introduced on main.",
+      "depends_on": [],
+      "write_scope": [
+        "tools/devctl.py",
+        "tests/test_devctl_work.py",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md",
+        "governance/work_registry.json"
+      ]
     }
   ]
 }
