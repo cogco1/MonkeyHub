@@ -125,6 +125,7 @@ export function Stage({
   documentView,
   documentTiming,
   onDocumentView,
+  onReturnToBoard,
   documentAnnotationsController,
   onDocumentBeforeLeave,
   drawing,
@@ -206,6 +207,8 @@ export function Stage({
   documentView: DocumentViewContext;
   documentTiming?: ClientTimingSpan;
   onDocumentView(next: DocumentViewContext): void;
+  /** Present while this tab is showing a page opened from its own board. */
+  onReturnToBoard?(): void;
   documentAnnotationsController: ReturnType<typeof createDocumentAnnotationsController>;
   onDocumentBeforeLeave(save: (() => Promise<void>) | null): void;
   drawing?: { busy: boolean; available: boolean; error: StudioApiError | null; dismissError(): void; generate(view: ElevationRequestDto["view"]): void };
@@ -1059,17 +1062,20 @@ export function Stage({
     <section className="stage" data-footer={!embedded || developerMode} aria-label={t("stage.ariaLabel")}
       onPointerDownCapture={() => modelKeysRef.current?.onInteraction?.()}
       onKeyDownCapture={() => modelKeysRef.current?.onInteraction?.()}>
-      {(!embedded || picked !== null) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")} data-embedded={String(embedded)}>
+      {(!embedded || picked !== null || onReturnToBoard) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")} data-embedded={String(embedded)}>
         {/* A host page carries these entries in its own rail; this page would
-            only repeat them, and its board entry would leave the host. */}
+            only repeat them, and its board entry would leave the host. A page
+            opened from this tab's own board is the exception: only this tab can
+            put that board back, so its entry stays even when embedded. */}
         {!embedded && <>
         <button type="button" aria-pressed={!documentOpen} onClick={() => onDocumentView({ ...documentView, open: false })}>{t("workspace.monkeyarch")}</button>
-        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); onDocumentView({ ...documentView, mounted: true, open: true }); }}>{t("workspace.monkeydiagram")}</button>
-        <button type="button" onClick={() => {
+        <button type="button" aria-pressed={documentOpen} onClick={() => { setAnnotationCancel((value) => value + 1); onDocumentView({ ...documentView, mounted: true, open: true }); }}>{t("workspace.monkeydiagram")}</button></>}
+        {(!embedded || onReturnToBoard) && <button type="button" onClick={() => {
+          if (onReturnToBoard) { onReturnToBoard(); return; }
           const target = new URL(window.location.href);
           target.searchParams.set("view", "board");
           window.open(target.href, "_blank", "noopener");
-        }}>{t("workspace.monkeyboard")}</button></>}
+        }}>{t("workspace.monkeyboard")}</button>}
         {picked && (
           <div
             className="picked"

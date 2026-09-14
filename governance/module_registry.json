@@ -3747,7 +3747,8 @@
         "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts",
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
         "mapping one explicitly selected drawing and its board marks to page coordinates, then handing its exact saved annotations and user feedback to the existing Studio intent workflow",
-        "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents"
+        "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
+        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -3807,7 +3808,9 @@
         "apps/archflow-studio/web/test/boardFeedback.test.ts",
         "apps/archflow-studio/web/test/boardIntentHandoff.browser.mjs",
         "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
-        "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs"
+        "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
+        "apps/archflow-studio/web/test/boardNavigation.test.ts",
+        "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },

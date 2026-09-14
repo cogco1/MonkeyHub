@@ -100,6 +100,11 @@ interface LocalModelSession {
   error: string | null;
 }
 
+/** Local geometry the project has not been given yet; it lives only in this page. */
+function unsynced(session: LocalModelSession): boolean {
+  return session.pending !== null || !snapshotsEquivalent(currentDraft(session.history), session.synced);
+}
+
 import type { FinishedSketch } from "../features/stage/sketch";
 import {
   ProgramPanel,
@@ -225,10 +230,12 @@ interface HomeArtifacts extends HomeModel {
   readonly referenceRunId: string;
 }
 
-export default function App({ server, initialDocumentIntent, initialRunId, task, active = true }: {
+export default function App({ server, initialDocumentIntent, initialRunId, task, active = true, onReturnToBoard }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   /** The exact run this page was opened on, such as a candidate named by the host. */
   initialRunId?: string | null;
+  /** Go back to the board this tab opened its page from, once the page is saved. */
+  onReturnToBoard?: () => void;
   task?: import("./tasks").StudioTaskHandle; active?: boolean;
 }) {
   const t = useT();
@@ -263,6 +270,20 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const [documentController] = useState(createDocumentAnnotationsController);
   const documentSaveRef = useRef<(() => Promise<void>) | null>(null);
   const bindDocumentSave = useCallback((save: (() => Promise<void>) | null) => { documentSaveRef.current = save; }, []);
+  // The page's own marks are written before the board is shown again; a refused
+  // save keeps the operator in the editor with the error, and on this page.
+  // One leave at a time: a second click while the page is being written would
+  // show the board before the first save answered.
+  const leavingToBoard = useRef(false);
+  const leaveToBoard = useCallback(() => {
+    if (!onReturnToBoard || leavingToBoard.current) return;
+    leavingToBoard.current = true;
+    void (async () => {
+      try { await documentSaveRef.current?.(); onReturnToBoard(); }
+      catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
+      finally { leavingToBoard.current = false; }
+    })();
+  }, [onReturnToBoard]);
   const [documentView, setDocumentView] = useState<DocumentViewContext>(() => {
     const query = new URLSearchParams(window.location.search);
     const open = query.get("view") === "documents";
@@ -684,6 +705,14 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   // local work; neither export discovery nor another preview may replace it.
   localEditingRef.current = localModel !== null && (localModel.history.index > 0 ||
     localModel.pending !== null || !snapshotsEquivalent(draftSnapshot!, localModel.synced));
+  // Every editing base opened in this page, not only the one on screen: going
+  // back to the board unmounts them all. Each session mutation is followed by
+  // refreshLocalModel, so this is recomputed whenever one of them changes.
+  const unsyncedLocalModel = [...localModels.current.values()].some(unsynced);
+  // While this page holds unsynced geometry the board entry keeps its separate
+  // tab: that reaches the same board and discards nothing. Syncing the model,
+  // or never leaving the page, restores the in-place return.
+  const returnToBoard = onReturnToBoard && !unsyncedLocalModel ? leaveToBoard : undefined;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
   const ensureLocalModel = useCallback((): LocalModelSession => {
     if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));
@@ -3045,6 +3074,9 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             onClick={() => setDocumentView((current) => ({ ...current, open: true }))}>
             {t("workspace.monkeydiagram")}
           </button>}
+          {returnToBoard && <button type="button" className="btn" onClick={returnToBoard}>
+            {t("workspace.monkeyboard")}
+          </button>}
         </div>
       </div>
     );
@@ -3237,7 +3269,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
               directTool, busy: modelNavigationBusy, error: directError,
               interactionBlocked: modelNavigationBusy,
               onInteraction: () => { modelInteractionEpoch.current += 1; },
-              sync: { dirty: !!localModel && (!!localModel.pending || !snapshotsEquivalent(currentDraft(localModel.history), localModel.synced)),
+              sync: { dirty: !!localModel && unsynced(localModel),
                 busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
@@ -3260,6 +3292,7 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}
+            onReturnToBoard={returnToBoard}
             documentTiming={drawingDisplayTiming ?? undefined}
             drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
               dismissError: () => setDrawingError(null), generate: (view) => { void generateElevation(view); } } : undefined}

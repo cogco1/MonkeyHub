@@ -473,6 +473,12 @@ MonkeyDiagram、MonkeyBoard 是 MonkeyHub 中的建模、图纸和展示工作�
 启动与 Agent 接入由 Hub 提供；MonkeyArch 是工作区名称。
 ArchFlow 保持底层技术与源码名称，Studio 保持实现名称；普通使用流程只介绍 Hub、项目和工作区。
 
+在 MonkeyBoard 中双击一页已登记图纸，会在**同一个标签页内**打开现有的图纸编辑器
+（`?view=documents` 加该页的 run / asset / revision / page 参数），批注与来源绑定沿用原有 owner；
+编辑器里的 MonkeyBoard 入口先写回该页批注再返回，恢复离开时的画板视角与选中。
+这条往返只改写当前标签页的地址，不重新加载 Studio，也不触碰 Hub 中其他工作区页面
+（MonkeyArch 未同步的模型草稿保持不变）。图纸能力仍归 `monkeydiagram/`，Board 不再复制一套编辑器。
+
 设计历史统一使用以下用语，详细动作与存储约定见
 [Stage / Branch / Candidate 方案](STAGE_BRANCH_CANDIDATE_PLAN.md)：
 
