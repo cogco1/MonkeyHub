@@ -3,6 +3,8 @@
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -51,6 +53,47 @@ class FakeAgent(BaseAgent):
 
 asyncio.run(main())
 '''
+
+
+@unittest.skipUnless(os.name == "nt", "Windows desktop source paths")
+class AcpCommandTests(unittest.TestCase):
+    def test_adapter_entrypoint_preserves_drive_and_unc_locations(self):
+        for root, expected in (
+            (r"\\?\E:\MonkeyHub 安装", r"E:\MonkeyHub 安装"),
+            (r"\\?\UNC\server\share\MonkeyHub", r"\\server\share\MonkeyHub"),
+            (r"E:\MonkeyHub 安装", r"E:\MonkeyHub 安装"),
+            (r"\\server\share\MonkeyHub", r"\\server\share\MonkeyHub"),
+        ):
+            with self.subTest(root=root):
+                source = Path(root) / "apps/monkeyhub/api/monkeyhub_api/chat.py"
+                with patch.object(chat.Path, "resolve", return_value=source), \
+                     patch.object(chat.Path, "is_file", return_value=True), \
+                     patch.object(chat.importlib.util, "find_spec", return_value=object()):
+                    command = chat._codex_acp_command()
+                self.assertEqual(command, (
+                    str(Path(root) / "_runtime/node/node.exe"),
+                    str(Path(expected) / "apps/monkeyhub/node_modules/@agentclientprotocol/codex-acp/dist/index.js"),
+                ))
+
+    @unittest.skipUnless(shutil.which("node"), "Node is required for entrypoint resolution")
+    def test_node_loads_adapter_from_verbatim_desktop_source(self):
+        with tempfile.TemporaryDirectory(prefix="Hub ACP 入口 ") as directory:
+            root = Path(directory).resolve()
+            hub = root / "apps/monkeyhub"
+            source = hub / "api/monkeyhub_api/chat.py"
+            source.parent.mkdir(parents=True)
+            source.touch()
+            adapter = hub / "node_modules/@agentclientprotocol/codex-acp/dist/index.js"
+            adapter.parent.mkdir(parents=True)
+            adapter.write_text("console.log('adapter entrypoint loaded');", encoding="utf-8")
+            with patch.object(chat, "__file__", "\\\\?\\" + str(source)):
+                command = chat._codex_acp_command()
+            self.assertIsNotNone(command)
+            checked = subprocess.run([command[0], "--check", command[1]], capture_output=True, text=True, timeout=10)
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            loaded = subprocess.run(command, capture_output=True, text=True, timeout=10)
+            self.assertEqual(loaded.returncode, 0, loaded.stderr)
+            self.assertEqual(loaded.stdout.strip(), "adapter entrypoint loaded")
 
 
 class AcpChatTests(unittest.TestCase):

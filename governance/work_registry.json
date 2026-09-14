@@ -473,6 +473,8 @@
             "apps/archflow-studio/api/tests/test_catalog.py",
             "apps/monkeyhub/api/monkeyhub_api/workers.py",
             "apps/monkeyhub/api/monkeyhub_api/main.py",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
             "apps/monkeyhub/api/monkeyhub_api/runtime.py",
             "apps/monkeyhub/api/tests/test_workers.py",
             "apps/monkeyhub/api/tests/test_project_runtime.py",
