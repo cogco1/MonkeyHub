@@ -7,8 +7,9 @@ the same path.
 
 With ``--changed <base>`` it checks one branch instead, using each commit's
 policy and work registry from Git. Once the scope rule exists in a parent,
-a commit declares its card (``P###``), or ``P###/lane`` for a card with lanes,
-in the subject or body. It may write only that claim's scope plus shared ledgers.
+a commit declares its work item in the subject or body. Legacy ``P###`` /
+``P###/lane`` claims remain valid, while new work may use ``GH-<issue>`` or
+``GH-<issue>/lane``. It may write only that claim's scope plus shared ledgers.
 ``P000-governance`` permits only governance files and README.md maintenance.
 This is the mode CI runs on a pull request; it does not impose a new rule on
 the commits that preceded or introduced that rule.
@@ -638,7 +639,13 @@ def check_registry(root: Path, policy: dict[str, Any]) -> Iterator[PolicyFinding
 WORK_REGISTRY = "governance/work_registry.json"
 ARCHITECTURE_POLICY = "governance/architecture_policy.json"
 LIVE_SCOPE_STATUSES = frozenset({"active", "ready"})
-CARD_ID = re.compile(r"\b(?:P000-governance(?![\w-])|P\d{3}(?!\d)(?:/[a-z0-9][a-z0-9_-]*)?)")
+CARD_ID = re.compile(
+    r"\b(?:"
+    r"P000-governance(?![\w-])"
+    r"|P\d{3}(?!\d)(?:/[a-z0-9][a-z0-9_-]*)?"
+    r"|GH-[1-9]\d*(?:/[a-z0-9][a-z0-9_-]*)?(?![\w/-])"
+    r")"
+)
 LANE_STATUSES = frozenset({"planned", "active", "review", "blocked", "done"})
 LIVE_LANE_STATUSES = frozenset({"active", "review"})
 # Governance paths a commit may touch without naming a card. Everything else
@@ -835,13 +842,13 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _commit_card(message: str) -> str | None:
-    """A card or explicit governance marker in the subject, else in the body.
+    """A work claim or explicit governance marker in the subject, else body.
 
-    The subject wins because a body says things about other cards -- what this
-    change unblocks, which card a finding belongs to -- and a commit would
-    otherwise be filed under whichever card it mentioned last. Within one part
+    The subject wins because a body says things about other work -- what this
+    change unblocks, which item a finding belongs to -- and a commit would
+    otherwise be filed under whichever claim it mentioned last. Within one part
     of the message the last id still wins, so a subject or a body naming its
-    card twice is unambiguous.
+    claim twice is unambiguous.
     """
 
     subject = message.splitlines()[0] if message.strip() else ""
@@ -971,7 +978,7 @@ def check_changed_scopes(
             allowed = shared + list(UNCARDED_WRITE_SCOPE)
             code = "SCOPE_UNDECLARED"
             named = (
-                f"commit {revision[:8]} names no card"
+                f"commit {revision[:8]} names no work item"
                 if card_id is None
                 else f"commit {revision[:8]} names {card_id}, which has no scope at that commit"
             )
@@ -1052,9 +1059,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--changed",
         metavar="BASE",
         help=(
-            "Check commits in BASE..HEAD against their historical card scopes, "
-            "after the rule first exists in a parent. A commit names P### or "
-            "P000-governance in its subject, else in its body."
+            "Check commits in BASE..HEAD against their historical work scopes, "
+            "after the rule first exists in a parent. A commit names GH-<issue>, "
+            "legacy P###, or P000-governance in its subject, else in its body."
         ),
     )
     return parser
