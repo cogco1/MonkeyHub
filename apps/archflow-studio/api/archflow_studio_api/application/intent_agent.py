@@ -725,9 +725,14 @@ def _parse_answer(
 # ---- providers -------------------------------------------------------------
 
 
-def _context_budget(message, context, rules, schema, *, model, budget_tokens, image_count, provider=CODEX):
-    """Partition the sent text once; contributors diagnose, never add to the total."""
-    sent_sheet = model_context(context)
+def _context_budget(message, context, rules, schema, *, sent_sheet, model, budget_tokens, image_count, provider=CODEX):
+    """Partition the sent text once; contributors diagnose, never add to the total.
+
+    ``sent_sheet`` is the projection this round will actually send, built by the
+    caller so that the text measured here and the text sent below are the same
+    object rather than two constructions that have to be trusted to agree.
+    """
+
     encode = lambda value: json.dumps(value, ensure_ascii=False, sort_keys=True)
     # Partition the actual serialized sheet, including keys and punctuation;
     # independently re-serializing section dictionaries changes the byte count.
@@ -786,7 +791,13 @@ def _compile_context_request(compiler, *, message, selection, projection, operat
                           "you may change. Return a typed semanticEdit, not a scalar utterance. "
                           "New members must declare references or relationships connecting them to these "
                           "targets. Other elements, shared controls and supplemental references are read-only.")
+        # One projection per round, for the two readers that need the same one:
+        # the budget partition measures exactly the text the request then sends.
+        # expand_context returns a new context at the foot of this loop, so a
+        # supplement or retry builds its own here and never reuses this one.
+        sent_sheet = model_context(context)
         budget = _context_budget(message, context, rules, strict_schema,
+                                 sent_sheet=sent_sheet,
                                  model=compiler.binding.model_id,
                                  budget_tokens=compiler.context_budget_tokens,
                                  image_count=len(_document_images(selection.document_visuals)[1]),
@@ -806,6 +817,7 @@ def _compile_context_request(compiler, *, message, selection, projection, operat
                 message=message, selection=selection, projection=projection,
                 operation_observer=spans.append, context=context, schema=strict_schema,
                 answer_schema=schema, rules=rules, full_sheet=full_sheet,
+                sent_sheet=sent_sheet,
             )
             receipt = result.receipt
         except BaseException as exc:
@@ -998,9 +1010,8 @@ class CodexCompiler:
                                         projection=projection, operation_observer=operation_observer)
 
     def _compile_once(self, *, message, selection, projection, operation_observer,
-                      context, schema, answer_schema, rules, full_sheet) -> Compilation:
-        sheet = model_context(context)
-        prompt = rules + "\n\n" + _prompt(message, sheet)
+                      context, schema, answer_schema, rules, full_sheet, sent_sheet) -> Compilation:
+        prompt = rules + "\n\n" + _prompt(message, sent_sheet)
         prompt_sha = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         images = _document_images(selection.document_visuals)[1]
         image_bytes = sum(map(len, images))
@@ -1008,7 +1019,7 @@ class CodexCompiler:
             message=message,
             selection=selection,
             projection=projection,
-            sheet=sheet,
+            sheet=sent_sheet,
             schema=schema,
         )
         with tempfile.TemporaryDirectory(prefix="archflow-intent-") as tmp:
@@ -1421,9 +1432,8 @@ class AnthropicCompiler:
                                         projection=projection, operation_observer=operation_observer)
 
     def _compile_once(self, *, message, selection, projection, operation_observer,
-                      context, schema, answer_schema, rules, full_sheet) -> Compilation:
-        sheet = model_context(context)
-        user = _prompt(message, sheet)
+                      context, schema, answer_schema, rules, full_sheet, sent_sheet) -> Compilation:
+        user = _prompt(message, sent_sheet)
         system = rules + "\n\nJSON schema of the only acceptable answer:\n" + json.dumps(schema)
         images = _document_images(selection.document_visuals)[1]
         image_bytes = sum(map(len, images))
@@ -1443,7 +1453,7 @@ class AnthropicCompiler:
             message=message,
             selection=selection,
             projection=projection,
-            sheet=sheet,
+            sheet=sent_sheet,
             schema=schema,
         )
         started = time.perf_counter()
