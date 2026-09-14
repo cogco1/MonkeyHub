@@ -253,26 +253,41 @@ def _slice(sheet: Mapping[str, Any], seeds: set[str], record: StateRecord, *, ch
         name: [deepcopy(row) for row in sheet[name] if not isinstance(row, Mapping)]
         for name in ("obligations", "preferences", "constraints") if name in sheet
     }
+    # What each row names is fixed for this slice: the rows are the caller's
+    # own and the closure below only grows a set of ids, never rewrites a row.
+    # So each row is read for its references once instead of once per round as
+    # the set widens — same rows, same references, same result. Relations,
+    # readings and duties are offered to every round, so reading those up front
+    # costs nothing extra; the rest is read when the closure first reaches it,
+    # which keeps a small slice of a large record small work.
+    row_refs: dict[str, set[str]] = {}
+
+    def refs_of(ref: str) -> set[str]:
+        found = row_refs.get(ref)
+        if found is None:
+            found = row_refs[ref] = _named_refs(rows[ref][1], rows)
+        return found
+
+    linked = [(ref, name, refs_of(ref) - {ref}) for ref, (name, _) in rows.items()
+              if name in {"relationships", "readings"}]
+    global_refs = []
+    for name, row in globals_:
+        own_ref = "obligation:" + row["obligation_id"] if name == "obligations" else None
+        refs = refs_of(own_ref) if own_ref in rows else _named_refs(row, rows)
+        global_refs.append((name, row, refs - {own_ref}, own_ref))
     while True:
         previous = set(included)
         for ref in tuple(included):
             included.update(upstream.get(ref, ()))
             if ref in rows:
-                name, row = rows[ref]
                 # Canonical edges supply references/bindings; these additional
                 # links retain reading targets, semantic keep refs and lineage.
-                included.update(_named_refs(row, rows))
-        for ref, (name, row) in rows.items():
-            if name not in {"relationships", "readings"}:
-                continue
-            refs = _named_refs(row, rows) - {ref}
+                included.update(refs_of(ref))
+        for ref, name, refs in linked:
             if refs.intersection(included) or (name == "readings" and not refs):
                 included.add(ref)
                 included.update(refs)
-        for name, row in globals_:
-            refs = _named_refs(row, rows)
-            own_ref = "obligation:" + row["obligation_id"] if name == "obligations" else None
-            refs.discard(own_ref)
+        for name, row, refs, own_ref in global_refs:
             if not refs or refs.intersection(included) or own_ref in included:
                 if row not in retained_global[name]:
                     retained_global[name].append(row)

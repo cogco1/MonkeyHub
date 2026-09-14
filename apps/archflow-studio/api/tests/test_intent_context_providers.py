@@ -350,6 +350,73 @@ class ContextProviderTests(unittest.TestCase):
                 self.assertEqual(len(provider.calls), 1)
         self.assertEqual(len(observed), 2)
 
+    @contextmanager
+    def recorded_projections(self):
+        """Every model-facing projection built during one request, in order."""
+        builds = []
+        real = intent_agent.model_context
+
+        def recording(context):
+            built = real(context)
+            builds.append({"expansion_count": context.expansion_count,
+                           "included": context.included_refs, "sheet": built})
+            return built
+
+        with patch.object(intent_agent, "model_context", side_effect=recording):
+            yield builds
+
+    def test_one_round_builds_the_sent_projection_once(self):
+        """The budget and the request read one projection, not two of their own.
+
+        Building it twice is the same answer bought twice, and it leaves the
+        measured text and the sent text agreeing only by construction.
+        """
+
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, [scalar_answer()]) as provider:
+                with self.recorded_projections() as builds:
+                    result = self.invoke(provider)
+                self.assertEqual(result.status, "compiled")
+                self.assertEqual(len(provider.calls), 1)
+                self.assertEqual(len(builds), 1)
+                self.assertEqual(self.sheet(provider.calls[0]), builds[0]["sheet"])
+
+    def test_every_supplement_round_sends_the_projection_that_round_built(self):
+        """A supplement must not be answered from the round before it."""
+
+        answers = [supplement("entity:remote-wall"), supplement("entity:window-24"), scalar_answer()]
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, answers) as provider:
+                with self.recorded_projections() as builds:
+                    result = self.invoke(provider)
+                self.assertEqual(result.status, "compiled")
+                self.assertEqual(len(provider.calls), 3)
+                # One projection per provider round, and each from its own
+                # expanded context rather than the one the last round used.
+                self.assertEqual(len(builds), 3)
+                self.assertEqual([build["expansion_count"] for build in builds], [0, 1, 2])
+                self.assertEqual(len({build["included"] for build in builds}), 3)
+                for call, build in zip(provider.calls, builds):
+                    self.assertEqual(self.sheet(call), build["sheet"])
+                # The widening is the supplement's, and it only ever moves forward.
+                self.assertNotIn("remote-wall", json.dumps(builds[0]["sheet"]))
+                self.assertIn("remote-wall", json.dumps(builds[1]["sheet"]))
+                self.assertIn("window-24", json.dumps(builds[2]["sheet"]))
+                for earlier, later in zip(builds, builds[1:]):
+                    self.assertLess(set(earlier["included"]), set(later["included"]))
+
+    def test_budget_blocked_round_builds_no_projection_the_provider_never_sees(self):
+        """A refused round still builds exactly one, and sends none."""
+
+        for name in PROVIDERS:
+            with self.subTest(provider=name), self.provider(name, []) as provider:
+                provider.compiler.context_budget_tokens = 1
+                with self.recorded_projections() as builds:
+                    result = self.invoke(provider)
+                self.assertEqual(result.status, "unsupported")
+                self.assertEqual(provider.calls, [])
+                self.assertEqual(len(builds), 1)
+
     def test_known_locked_or_shared_control_stops_before_any_provider_call(self):
         for name in PROVIDERS:
             for blocker in ("locked", "shared"):
