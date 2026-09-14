@@ -91,13 +91,77 @@ try {
   const exported = JSON.parse(await readFile(await download.path(), 'utf8'));
   assert.equal(exported.trace_id, 'turn-root'); assert.equal(exported.spans.some(span => span.event_id === 'geometry'), true);
   assert.equal(exported.spans.filter(span => span.phase === 'api_request').length, 2);
+  const candidateBranch = page.locator('#trace-tree summary[data-branch-id="candidate"]');
+  await candidateBranch.focus(); await page.keyboard.press('Enter');
+  assert.equal(await candidateBranch.locator('..').getAttribute('open'), '');
+  const readingPosition = await page.evaluate(() => {
+    const pre = document.querySelector('#trace-evidence pre');
+    const overflowing = pre.scrollHeight > pre.clientHeight;
+    if (overflowing) pre.scrollTop = Math.min(160, pre.scrollHeight - pre.clientHeight);
+    return { windowY: scrollY, rawY: pre.scrollTop, overflowing };
+  });
+  assert.ok(readingPosition.windowY > 0, 'the reader is below the top of the page');
   await appendFile(process.env.MONITOR_TEST_LOG, process.env.MONITOR_TEST_UPDATE + '\n', 'utf8');
-  await page.waitForFunction(() => document.querySelector('#trace-summary [data-metric="总历时"] dd').textContent === '14 s', { timeout: 15000 });
+  await page.waitForFunction(() => document.querySelector('#trace-summary [data-metric="总历时"] dd').textContent === '14 s'
+    && document.querySelector('#trace-tree li[data-span-id="late-stage"]'), null, { timeout: 15000 });
   assert.equal(await page.locator('#trace-select').inputValue(), 'turn-root');
   assert.equal(await provider.getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('#trace-evidence .trace-raw').getAttribute('open'), '');
+  assert.equal(await candidateBranch.locator('..').getAttribute('open'), '', 'the expanded branch survives a live update');
+  assert.equal(await candidateBranch.evaluate(element => element === document.activeElement), true,
+    'live updates preserve keyboard focus on the branch being read');
+  assert.ok(Math.abs(await page.evaluate(() => scrollY) - readingPosition.windowY) <= 1,
+    'live updates preserve the window scroll position');
+  if (readingPosition.overflowing) {
+    assert.equal(await page.locator('#trace-evidence pre').evaluate(pre => pre.scrollTop), readingPosition.rawY,
+      'live updates preserve the raw record scroll position');
+  }
   const output = process.env.MONITOR_WEB_QA_DIR;
   if (output) { await mkdir(output, { recursive: true }); await page.screenshot({ path: join(output, 'monitor-turn-desktop.png'), fullPage: true }); }
+
+  const beforeRoot = await (await page.request.get(process.env.MONITOR_TEST_URL + '/api/traces')).json();
+  const orphanTrace = beforeRoot.traces.find(trace => trace.spans.some(span => span.event_id === 'orphan-model'));
+  assert.ok(orphanTrace, 'spans are viewable before their Hub turn root is recorded');
+  assert.notEqual(orphanTrace.trace_id, 'late-root');
+  assert.equal(beforeRoot.traces[0].trace_id, 'unknown-root', 'another, newer task remains first');
+  await page.locator('#trace-select').selectOption(orphanTrace.trace_id);
+  const orphanModel = page.locator('#trace-waterfall button[data-span-id="orphan-model"]');
+  await orphanModel.click();
+  await page.locator('#trace-evidence .trace-raw > summary').click();
+  assert.equal(await orphanModel.getAttribute('aria-pressed'), 'true');
+  await appendFile(process.env.MONITOR_TEST_LOG, process.env.MONITOR_TEST_LATE_ROOT + '\n', 'utf8');
+  await page.waitForFunction(() => document.querySelector('#trace-select option[value="late-root"]'), null, { timeout: 15000 });
+  assert.equal(await page.locator('#trace-select').inputValue(), 'late-root',
+    'a late Hub root keeps the selected task instead of selecting the newest task');
+  assert.equal(await page.locator('#trace-select option').first().getAttribute('value'), 'unknown-root');
+  assert.equal(await orphanModel.getAttribute('aria-pressed'), 'true', 'the selected span survives a change of trace id');
+  assert.equal(await page.locator('#trace-evidence .trace-raw').getAttribute('open'), '');
+  assert.equal(JSON.parse(await page.locator('#trace-evidence pre').textContent()).event_id, 'orphan-model');
+
+  await page.route('**/api/traces', async route => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    assert.ok(payload.traces.some(trace => trace.trace_id === 'late-root'));
+    await route.fulfill({ response, json: { ...payload, traces: payload.traces.filter(trace => trace.trace_id !== 'late-root') } });
+  }, { times: 1 });
+  await page.waitForFunction(() => !document.querySelector('#trace-notice').hidden
+    || document.querySelector('#trace-select').value !== 'late-root', null, { timeout: 15000 });
+  assert.equal(await page.locator('#trace-select').inputValue(), 'late-root',
+    'a successful response missing the selected task must not select another task');
+  assert.equal(await page.locator('#trace-content').isVisible(), true);
+  assert.equal(await orphanModel.getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#trace-evidence .trace-raw').getAttribute('open'), '');
+  assert.equal(JSON.parse(await page.locator('#trace-evidence pre').textContent()).event_id, 'orphan-model');
+  assert.equal(await page.locator('#trace-summary [data-metric="总历时"] dd').textContent(), '12 s');
+  assert.equal(await page.locator('#trace-notice').isVisible(), true);
+  assert.match(await page.locator('#trace-notice').textContent(), /absent.*last loaded snapshot/i);
+  await appendFile(process.env.MONITOR_TEST_LOG, process.env.MONITOR_TEST_RESTORED_ROOT + '\n', 'utf8');
+  await page.waitForFunction(() => document.querySelector('#trace-select').value === 'late-root'
+    && document.querySelector('#trace-summary [data-metric="总历时"] dd').textContent === '16 s'
+    && document.querySelector('#trace-notice').hidden, null, { timeout: 15000 });
+  assert.equal(await orphanModel.getAttribute('aria-pressed'), 'true', 'the restored task continues to update the viewed span');
+  assert.equal(await page.locator('#trace-evidence .trace-raw').getAttribute('open'), '');
+
   await page.locator('#trace-select').selectOption('unknown-root');
   assert.equal(await page.locator('#trace-summary [data-metric="Token 用量"] dd').textContent(), '—');
   assert.equal(await page.locator('#trace-summary [data-metric="模型轮次"] dd').textContent(), '—');
@@ -164,18 +228,30 @@ class MonitorTraceWebTests(unittest.TestCase):
                        span("preview", "model_install", 10000, 1000, source="studio", blocking=False),
                        span("visible", "first_visible", 11000, 0, source="studio", blocking=False),
                        replace(base, event_id="unknown-root", turn_id="unknown-turn", project_id="unknown-project", session_id="unknown-session",
-                               started_at=(origin - timedelta(minutes=1)).isoformat(), ended_at=(origin - timedelta(seconds=48)).isoformat())]
+                               started_at=(origin + timedelta(minutes=1)).isoformat(), ended_at=(origin + timedelta(seconds=72)).isoformat())]
             records.append(replace(records[-1], event_id="unmeasured-activity", phase="provider_round", parent_event_id="unknown-root"))
             records.append(replace(records[-1], event_id="native-token-record", source="codex", phase="agent", model_call=True,
                                    timing_scope="unknown", duration_ms=None, ended_at=None, tokens=TokenUsage(input_tokens=77)))
+            orphan_start = origin - timedelta(seconds=30)
+            late_root = replace(base, event_id="late-root", project_id="orphan-project", session_id="orphan-session", turn_id="orphan-turn",
+                                started_at=orphan_start.isoformat(), ended_at=(orphan_start + timedelta(seconds=12)).isoformat())
+            orphan_model = replace(model, event_id="orphan-model", parent_event_id="late-root", project_id=late_root.project_id,
+                                   session_id=late_root.session_id, turn_id=late_root.turn_id,
+                                   started_at=(orphan_start + timedelta(seconds=1)).isoformat(), ended_at=(orphan_start + timedelta(seconds=4)).isoformat())
+            orphan_tool = replace(late_root, event_id="orphan-tool", phase="tool_call", timing_scope="service", parent_event_id="orphan-model",
+                                  started_at=(orphan_start + timedelta(seconds=4)).isoformat(), ended_at=(orphan_start + timedelta(seconds=5)).isoformat(), duration_ms=1000)
+            records.extend([orphan_model, orphan_tool])
             for record in records:
                 store.append(record)
-            updated = replace(base, duration_ms=14000, ended_at=(origin + timedelta(seconds=14)).isoformat())
+            updated = [replace(base, duration_ms=14000, ended_at=(origin + timedelta(seconds=14)).isoformat()),
+                       span("late-stage", "context_build", 12000, 1000)]
             server = make_server(MonitorData(root / "usage"), 0)
             thread = Thread(target=server.serve_forever, daemon=True); thread.start()
             script = root / "check.mjs"; script.write_text(BROWSER_CHECK, encoding="utf-8")
             env = {**os.environ, "PLAYWRIGHT_MODULE": str(playwright), "MONITOR_TEST_URL": f"http://127.0.0.1:{server.server_port}",
-                   "MONITOR_TEST_LOG": str(store.path), "MONITOR_TEST_UPDATE": json.dumps(updated.to_dict())}
+                   "MONITOR_TEST_LOG": str(store.path), "MONITOR_TEST_UPDATE": "\n".join(json.dumps(row.to_dict()) for row in updated),
+                   "MONITOR_TEST_LATE_ROOT": json.dumps(late_root.to_dict()),
+                   "MONITOR_TEST_RESTORED_ROOT": json.dumps(replace(late_root, duration_ms=16000, ended_at=(orphan_start + timedelta(seconds=16)).isoformat()).to_dict())}
             try:
                 result = subprocess.run([node, str(script)], env=env, capture_output=True, text=True, encoding="utf-8", timeout=90)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
