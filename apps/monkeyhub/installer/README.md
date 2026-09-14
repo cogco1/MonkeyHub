@@ -78,6 +78,52 @@ python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提�
 样件和结果留在外部临时目录，不连接打印机。`_runtime/requirements-lock.txt` 保存实际安装版本；原 wheel 许可及 metadata 保留。
 前端生产依赖的原始 LICENSE 也随构建保留。额外的上游许可和来源见 `apps/monkeyhub/installer/third-party/`。
 
+## 发行证据与校验
+
+每次构建在输出目录里除候选 ZIP 和 `.sha256` 外，另外生成两份证据文件：
+
+- `<候选名>.cyclonedx.json`：CycloneDX 1.6 软件物料清单（SBOM），同一份也随包放在 ZIP 内的
+  `sbom.cyclonedx.json`。内容从装配完成的包实际读取，不是手写清单。每个构件用两种属性之一
+  说明它与本包的关系，两者强度不同：
+  - `monkeyhub:shippedIn`：该构件以文件形式在包内的位置。包括内置 Python 的 site-packages
+    实际安装的发行包、包内 `apps/monkeyhub/node_modules`、内置 Python/Node 运行时，
+    以及 `MonkeyArch.exe` 本身。
+  - `monkeyhub:buildInput`：某个 lock 文件为指定构建产物钉住的依赖，**不断言该构件确实进入
+    了那个产物**。前端生产依赖由打包器决定哪些真正进入 `dist`；一份 `Cargo.lock` 覆盖所有
+    目标平台、feature 和 build script。把它们写成「已编译进二进制」是没有证据的说法。
+
+  文档本身不含时间戳和序列号，因此同一份实际清单每次生成的字节一致。这不等于「同一个源码提交
+  必然产出同样的包」：打包的部分 Python 依赖是版本区间（如 `fastapi>=0.141,<1`、
+  `Pillow>=12.3,<13`），由构建时的 pip 解析；Node 版本来自构建机。正因如此，SBOM 读的是
+  实际安装树，而不是依赖声明。
+- `<候选名>-candidate.zip.release-manifest.json`：`ReleaseManifest@1`。它是包内
+  `build-info.json` 的派生视图，不另立一套版本来源：发行版本、通道、目标平台、源码提交、
+  Python/Node/ACP/桌面版本全部从 `build-info.json` 读出。清单列出本次分发每个文件的
+  `{path, size, sha256}` 构成封闭集合，并记录 `build-info.json` 与 SBOM 在 ZIP 内的路径
+  和摘要，供校验实际打开压缩包核对。
+
+校验已下载的发行目录：
+
+```powershell
+python tools/package_monkeyapps.py --verify '<候选名>-candidate.zip.release-manifest.json'
+```
+
+校验做三件事，逐条报错并以非零退出：分发文件的大小与 SHA-256 必须与封闭表一致；本次发行前缀下
+不得出现未列入清单的文件；打开 ZIP 读出其中的 `build-info.json` 与 `sbom.cyclonedx.json`，
+核对清单声明绑定的摘要，同时要求随包 SBOM 与外置 SBOM 摘要一致。清单自相矛盾（表内摘要与
+`sbom` 块不一致）、路径越界或重复列项都会被拒绝，压缩包损坏时报错而不是抛异常。
+构建结束时构建器本身也跑一次同样的校验。
+
+SBOM 可用官方工具独立验证，例如 `cyclonedx-cli validate --input-file <文件>`；
+仓库测试在设置 `CYCLONEDX_SCHEMA` 指向官方 `bom-1.6.schema.json` 时会用该 schema 校验生成结果。
+
+**校验和不是签名。** 当前所有构建的 `trust.status` 都是 `candidate-unsigned`，清单里明确写出
+`"signed": false`。校验通过只证明手里的文件与**这份清单**一致，不能证明来源：能替换 ZIP 的人
+同样能替换旁边的清单。只有当清单本身来自你已经信任的渠道时，校验才有意义。签名、以及签名失败
+即终止安装的验证路径尚未实现（Issue #58 下一步）。安全报告途径见随包的 `SECURITY.md`，
+或仓库根目录的 [SECURITY.md](https://github.com/cogco1/MonkeyHub/blob/main/SECURITY.md)：
+目前没有私密上报渠道，也没有安全响应承诺。
+
 ## 候选验收边界
 
 候选包本身不代表已在第二台干净 Windows 机器或第二位使用者处验收。
