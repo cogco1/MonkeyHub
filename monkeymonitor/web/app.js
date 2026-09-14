@@ -357,6 +357,7 @@ Object.assign(english, {
   "未记录完整时间范围的阶段仍列在活动树中。": "Stages without a complete time range remain in the activity tree.", "原始记录（已脱敏）": "Raw record (sanitized)",
   "起点": "Start offset", "阶段历时": "Stage duration", "关联记录": "Linked evidence", "未归因时间": "Unattributed time", "已知 Token 小计": "Known token subtotal",
   "实时更新": "Live updates", "已暂停更新": "Updates paused", "任务读取失败，保留上次记录。": "Turn refresh failed. Keeping the last loaded records.", "暂时无法读取任务记录。": "Turn records are unavailable.",
+  "当前任务不在最新记录中，保留上次读取结果。": "This task is absent from the latest records. Keeping its last loaded snapshot.",
   "Trace 下载失败，请重试。": "Trace download failed. Try again.", "价格未核实": "Price unavailable", "没有已记录的诊断信号。": "No diagnostic signals recorded.",
   "关键路径需要完整的阻塞时段记录。": "The critical path needs recorded blocking intervals.", "父阶段缺失": "Parent stage unavailable", "未关联父阶段": "Unlinked parent stage",
   "用量记录数：{count}；其中 {missing} 条不完整。": "Usage records: {count}; {missing} are incomplete.",
@@ -912,6 +913,8 @@ for (const attribute of ["aria-label", "placeholder"]) {
     for (const [key, value] of [["状态", traceStatus(span.status)], ["模型", span.model && span.model !== "none" ? span.model : t("未记录")], ["起点", traceDuration(span.offset_ms)], ["阶段历时", traceDuration(span.duration_ms)], ["费用 / 等值", tracePriceText(span.price)]]) metadata.append(traceStat(key, value));
     const binding = node("p", "field-help", [traceLaneLabels[span.lane] || span.lane, span.blocking === true ? t("阻塞") : span.blocking === false ? t("后台") : t("阻塞属性未知")].filter(Boolean).join(" · "));
     const previousRaw = $("trace-evidence").querySelector(".trace-raw");
+    const previousScroll = previousRaw?.dataset.spanId === span.event_id ? previousRaw.querySelector("pre") : null;
+    const rawScroll = [previousScroll?.scrollLeft || 0, previousScroll?.scrollTop || 0];
     const raw = node("details", "trace-raw"); raw.dataset.spanId = span.event_id; raw.open = previousRaw?.dataset.spanId === span.event_id && previousRaw.open; raw.append(node("summary", "", t("原始记录（已脱敏）")), node("pre", "", JSON.stringify(span, null, 2)));
     const links = node("dl", "trace-bindings");
     for (const key of ["operation_id", "proposal_id", "candidate_id", "run_id", "source_ref"]) {
@@ -919,6 +922,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
       if (typeof value === "string" && value) { const item = node("div"); item.append(node("dt", "", key), node("dd", "", value)); links.append(item); }
     }
     $("trace-evidence").replaceChildren(title, binding, metadata, links, raw);
+    raw.querySelector("pre").scrollTo(...rawScroll);
     if (focus) { $("trace-evidence-title").tabIndex = -1; $("trace-evidence-title").focus({ preventScroll: true }); $("trace-evidence-panel").scrollIntoView({ block: "nearest", behavior: "auto" }); }
   }
   function renderTraceWaterfall(trace) {
@@ -967,6 +971,13 @@ for (const attribute of ["aria-label", "placeholder"]) {
     $("trace-critical-note").textContent = [pathNote, `${t("未归因时间")} ${traceDuration(path?.unattributed_ms ?? trace.summary?.unattributed_ms)}`].join(" · ");
   }
   function renderTraceTree(trace) {
+    // Read the visible state before replacing nodes; a pending toggle event
+    // may not have updated the sets yet when a poll finishes.
+    for (const summary of $("trace-tree").querySelectorAll("summary[data-branch-id]")) {
+      const id = summary.dataset.branchId;
+      if (summary.parentElement.open) { traces.open.add(id); traces.closed.delete(id); }
+      else { traces.open.delete(id); traces.closed.add(id); }
+    }
     const spans = visibleTraceSpans(trace); const byId = new Map((trace.spans || []).map((span) => [span.event_id, span])); const visibleIds = new Set(spans.map((span) => span.event_id)); const children = new Map(); const visited = new Set();
     function visibleParent(span) {
       let parent = span.parent_event_id; const seen = new Set([span.event_id]);
@@ -1031,6 +1042,7 @@ for (const attribute of ["aria-label", "placeholder"]) {
     $("trace-coverage").replaceChildren(fragment);
   }
   function renderTrace(force = false) {
+    const scroll = [window.scrollX, window.scrollY];
     renderTraceSelectors(); const trace = selectedTrace();
     $("trace-content").hidden = !trace; $("trace-empty").hidden = Boolean(trace);
     if (!trace) { traces.signature = ""; return; }
@@ -1052,15 +1064,28 @@ for (const attribute of ["aria-label", "placeholder"]) {
     if (focusedSpan) { const container = focusedTree ? $("trace-tree") : $("trace-waterfall"); [...container.querySelectorAll("button[data-span-id]")].find((button) => button.dataset.spanId === focusedSpan)?.focus({ preventScroll: true }); }
     if (focusedBranch) [...$("trace-tree").querySelectorAll("summary[data-branch-id]")].find((summary) => summary.dataset.branchId === focusedBranch)?.focus({ preventScroll: true });
     if (focusedRaw) $("trace-evidence").querySelector(".trace-raw > summary")?.focus({ preventScroll: true });
+    if (!force) window.scrollTo(...scroll);
   }
   async function refreshTraces() {
     if (traces.loading || document.visibilityState === "hidden") return;
     traces.loading = true;
     try {
       const payload = await request("/api/traces"); if (!Array.isArray(payload.traces)) throw new Error("invalid_traces");
-      traces.items = payload.traces.filter((trace) => trace && typeof trace.trace_id === "string" && Array.isArray(trace.spans)).sort((a, b) => (Date.parse(b.started_at) || 0) - (Date.parse(a.started_at) || 0));
+      const previous = selectedTrace();
+      const items = payload.traces.filter((trace) => trace && typeof trace.trace_id === "string" && Array.isArray(trace.spans)).sort((a, b) => (Date.parse(b.started_at) || 0) - (Date.parse(a.started_at) || 0));
+      let missingSelection = false;
+      if (previous && !items.some((trace) => trace.trace_id === previous.trace_id)) {
+        // A late parent can move the same events under a new trace id. Follow
+        // only an unambiguous exact event match within this project/session.
+        const ids = new Set(previous.spans.map((span) => span.event_id));
+        const matches = items.filter((trace) => trace.project_id === previous.project_id && trace.session_id === previous.session_id && trace.spans.some((span) => ids.has(span.event_id)));
+        if (matches.length === 1) traces.selected = matches[0].trace_id;
+        else { items.push(previous); missingSelection = true; }
+      }
+      traces.items = items;
       traces.warnings = Array.isArray(payload.warnings) ? payload.warnings.filter((warning) => typeof warning === "string") : [];
-      traces.loaded = true; renderTrace(); $("trace-notice").hidden = true;
+      traces.loaded = true; renderTrace();
+      text("trace-notice", "当前任务不在最新记录中，保留上次读取结果。"); $("trace-notice").hidden = !missingSelection;
       text("trace-live", `${t("实时更新")} · ${new Date().toLocaleTimeString(locale, { hour12: false })}`);
     } catch {
       text("trace-notice", traces.loaded ? "任务读取失败，保留上次记录。" : "暂时无法读取任务记录。"); $("trace-notice").hidden = false;
