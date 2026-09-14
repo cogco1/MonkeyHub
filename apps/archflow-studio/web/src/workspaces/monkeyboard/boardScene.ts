@@ -113,6 +113,16 @@ export function documentUrl(currentUrl: string, source: PageSource): string {
   return url.href;
 }
 
+/** The way back from a page this tab opened: the board, no longer addressing that page. */
+export function boardUrl(currentUrl: string): string {
+  const url = new URL(currentUrl);
+  url.searchParams.set("view", "board");
+  for (const key of ["documentRun", "documentSource", "documentPage", "documentRevision"]) {
+    url.searchParams.delete(key);
+  }
+  return url.href;
+}
+
 /** The original file bytes are preserved; only a missing browser MIME label is repaired. */
 export function documentMime(file: Pick<File, "name" | "type">): SourceDocumentDto["mimeType"] | null {
   if (file.type === "application/pdf" || file.type === "image/png" || file.type === "image/jpeg") return file.type;

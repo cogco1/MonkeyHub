@@ -10,8 +10,10 @@ import { createTaskStore, type StudioTask } from "./tasks";
 import "./TaskWorkspace.css";
 
 /** Independent task views on the one project actually bound to this Studio server. */
-export function TaskWorkspace({ server, initialDocumentIntent }: {
+export function TaskWorkspace({ server, initialDocumentIntent, onReturnToBoard }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
+  /** Present while this tab is showing a page it opened from its own board. */
+  onReturnToBoard?: () => void;
 }) {
   const t = useT();
   const [store] = useState(() => {
@@ -27,6 +29,7 @@ export function TaskWorkspace({ server, initialDocumentIntent }: {
   const [name, setName] = useState("");
   const visited = useRef(new Set<string>());
   const documentTask = useRef<string | null>(null);
+  const visitOwner = useRef<string | null>(null);
   const initialized = useRef(false);
   useEffect(() => {
     let live = true;
@@ -55,6 +58,14 @@ export function TaskWorkspace({ server, initialDocumentIntent }: {
   const currentTasks = snapshot.tasks.filter((task) => task.projectId === project?.projectId);
   // Resume read-only candidate polling, never replay model requests after reload.
   currentTasks.filter((task) => !task.archived && store.status(task.id) === "running").forEach((task) => visited.current.add(task.id));
+  // Going back to the board unmounts every task view here, not only the one that
+  // opened the page. So the in-place return belongs to the task that opened it,
+  // and only while that task is the only one open. Otherwise the board entry
+  // keeps its existing separate tab, which reaches the same board and discards
+  // no other task's unsynced model work.
+  if (onReturnToBoard && visitOwner.current === null && active) visitOwner.current = active.id;
+  const returnToBoard = onReturnToBoard && active?.id === visitOwner.current && visited.current.size === 1
+    ? onReturnToBoard : undefined;
   const newTask = () => { if (project) store.create(project.projectId, t("tasks.new"), active?.view.base); };
   const row = (task: StudioTask) => <li key={task.id} className="task-row" data-active={task.id === active?.id}>
     {renaming === task.id ? <form onSubmit={(event) => { event.preventDefault(); store.rename(task.id, name); setRenaming(null); }}>
@@ -104,6 +115,7 @@ export function TaskWorkspace({ server, initialDocumentIntent }: {
       {currentTasks.filter((task) => visited.current.has(task.id)).map((task) => <div key={task.id}
         data-studio-task={task.id} className="task-workspace__view" hidden={task.id !== active?.id} inert={task.id !== active?.id}>
         <App server={server} task={store.handle(task.id)} active={task.id === active?.id}
+          onReturnToBoard={task.id === active?.id ? returnToBoard : undefined}
           initialDocumentIntent={task.id === documentTask.current ? initialDocumentIntent : undefined} />
       </div>)}
     </div>
