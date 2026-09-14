@@ -3,18 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-56",
-      "stream": "project-data",
-      "status": "active",
-      "goal": "Export and restore portable MonkeyHub project archives through existing P036 retained project truth; replay the reviewed #71 implementation without expanding P115.",
-      "depends_on": [],
-      "write_scope": [
-        "archflow/project/ports.py",
-        "archflow/project/repository.py",
-        "tools/create_project.py"
-      ]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
