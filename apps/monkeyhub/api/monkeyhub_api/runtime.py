@@ -33,6 +33,7 @@ _CANDIDATE_REQUEST = re.compile(
     r"^/api/(proposals/[^/]+/candidate|candidates/combine|capabilities/[^/]+/run|options/[^/]+/select|program)$"
 )
 _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
+_PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
 _IDLE_RETAINED_REFRESH_S = 30
 
@@ -186,7 +187,7 @@ class OperationManager:
             accepted = _ACCEPT_REQUEST.fullmatch(route) if method == "POST" else None
             if accepted:
                 candidate = accepted.group(1)
-            proposal = re.fullmatch(r"/api/proposals/([^/]+)/candidate", route)
+            proposal = _PROPOSAL_CANDIDATE.fullmatch(route)
             record = OperationRecord(
                 operationId=operation_id, projectId=self.project_id, kind=f"{method} {route}",
                 source=source, status="committing" if accepted else "executing",
@@ -607,7 +608,10 @@ class ProjectRuntimeManager:
                     raise HubFailure(409, "OPERATION_RETAINED", f"Operation already has retained run {candidate_id}. Read its candidate/runtime status; no work was replayed.")
                 forwarded["X-Monkey-Candidate"] = candidate_id
                 forwarded["X-Monkey-Worker"] = worker.instance_id
-            if admission and admission.record.proposalId:
+            # The requested route decides this, not the record: a retained
+            # refresh also names the candidate's proposal on the acceptance
+            # bound to it, and an acceptance path is no proposal to re-read.
+            if admission and method == "POST" and _PROPOSAL_CANDIDATE.fullmatch(parsed.path):
                 proposal_read = request_http(worker.url, parsed.path.removesuffix("/candidate"), timeout=10)
                 if proposal_read.status >= 400:
                     payload = proposal_read.json()
