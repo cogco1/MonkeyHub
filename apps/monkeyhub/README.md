@@ -28,7 +28,7 @@ The Hub runs the existing services and owns only the child processes it starts. 
 
 ## Packaged Windows entry
 
-The chat paperclip accepts files; files can also be dropped or pasted into the composer. Send text, attachments, or both. A message accepts up to 8 files, 20 MiB each and 40 MiB in total. Sent files stay with the conversation and can be downloaded after reopening or archiving it. PNG, JPEG, WebP and GIF use the native model image input; PDFs and other files are available through the CLI's file-reading tools. Attachments are reference files in the Hub runtime, not imports into a building project.
+The chat paperclip accepts files; files can also be dropped or pasted into the composer. Send text, attachments, or both. A message accepts up to 8 files, 20 MiB each and 40 MiB in total. Sent files stay with the conversation and can be downloaded after reopening or archiving it. PNG, JPEG, WebP and GIF use the native model image input. The connected `attachment_read` tool reads this chat's files without opening the Windows sandbox to the runtime directory: text in chunks, PDF text one page at a time, and other binary files as base64 chunks. Empty PDF text does not establish that a scanned page or drawing was visually inspected. Attachments are reference files in the Hub runtime, not imports into a building project.
 
 The package keeps the repository layout and includes prebuilt Hub and Studio web directories. The installer supplies an embedded Python with the API, CAD and PDF dependencies already installed. No Git or npm command is needed to run that package.
 
@@ -98,6 +98,8 @@ A chat project carries the published `version` and accepted `stage` its own P036
 The actual schema is available at GET /openapi.json. Generate a client from this running schema and use a separate client instance for each service.
 
 `POST /api/chat/sessions/{id}/messages` accepts optional `attachments: [{name, mimeType, data}]`, where `data` is plain base64, and allows empty text when a file is attached. Messages return only `{id, name, mimeType, size}` attachment metadata. `GET /api/chat/sessions/{id}/attachments/{attachment_id}` downloads an attachment belonging to that conversation.
+
+`GET /api/chat/sessions/{id}/attachments/{attachment_id}/read` accepts `offset` (default 0), `limit` (default 32768, maximum 65536), and `page` (default 1). It returns attachment metadata, `format`, `content`, `offset`, `total`, `nextOffset`, `page` and `totalPages`. Offsets count characters for UTF-8/PDF text and bytes for binary content; `nextOffset: null` marks the end. MCP `attachment_read` accepts `attachmentId` and those paging options, with the conversation fixed by its existing connection.
 
 | Request | Result |
 | --- | --- |

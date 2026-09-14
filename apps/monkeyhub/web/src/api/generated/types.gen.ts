@@ -104,6 +104,56 @@ export type ChatAttachment = {
 };
 
 /**
+ * ChatAttachmentContent
+ */
+export type ChatAttachmentContent = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Mimetype
+     */
+    mimeType: string;
+    /**
+     * Size
+     */
+    size: number;
+    /**
+     * Format
+     */
+    format: 'text' | 'base64';
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Offset
+     */
+    offset: number;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Nextoffset
+     */
+    nextOffset: number | null;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Totalpages
+     */
+    totalPages: number;
+};
+
+/**
  * ChatAttachmentInput
  */
 export type ChatAttachmentInput = {
@@ -1910,6 +1960,53 @@ export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGet
      */
     200: unknown;
 };
+
+export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Attachment Id
+         */
+        attachment_id: string;
+    };
+    query?: {
+        /**
+         * Offset
+         */
+        offset?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+        /**
+         * Page
+         */
+        page?: number;
+    };
+    url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}/read';
+};
+
+export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetError = ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors[keyof ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetErrors];
+
+export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatAttachmentContent;
+};
+
+export type ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponse = ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses[keyof ReadChatAttachmentContentApiChatSessionsSessionIdAttachmentsAttachmentIdReadGetResponses];
 
 export type SetChatModelApiChatSessionsSessionIdModelPutData = {
     body: ChatModelRequest;

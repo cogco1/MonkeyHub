@@ -116,6 +116,8 @@ class FakeAgent:
             os._exit(17)
         if text == "error":
             raise RequestError.invalid_params({"details": "Fixture failure"})
+        if text == "image-model-error" and any(block.type == "image" for block in prompt):
+            raise RequestError.invalid_request("The current model does not support image input")
         if text == "stall":
             await self.emit("waiting")
             await self.cancelled.wait()
@@ -329,6 +331,12 @@ class AcpSessionTests(unittest.TestCase):
         session = self.make_session()
         with self.assertRaisesRegex(AcpSessionError, "Fixture failure"):
             self.prompt(session, "error")
+
+    def test_image_model_rejection_preserves_string_error_data(self):
+        session = self.make_session()
+        with self.assertRaisesRegex(AcpSessionError, "The current model does not support image input"):
+            self.prompt(session, "image-model-error", images=(("image/png", PNG_IMAGE),))
+        self.assertEqual(len(self.calls("prompt")), 1)
 
     def test_unknown_model_fails_before_prompt_without_silent_substitution(self):
         session = self.make_session()

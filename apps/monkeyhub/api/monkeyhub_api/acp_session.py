@@ -224,8 +224,8 @@ class CodexAcpSession:
             if isinstance(exc, AcpSessionError):
                 raise
             message = str(exc)
-            if isinstance(exc, RequestError) and isinstance(exc.data, dict):
-                reason = exc.data.get("details")
+            if isinstance(exc, RequestError):
+                reason = exc.data.get("details") if isinstance(exc.data, dict) else exc.data
                 if isinstance(reason, str) and reason:
                     message += f": {reason}"
             detail = "".join(self._stderr).strip()[-2000:]

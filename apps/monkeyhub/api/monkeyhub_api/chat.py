@@ -58,6 +58,12 @@ _trace_headers = ContextVar("hub_tool_trace_headers", default={})
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
+def _attachment_read_paging(offset: int, limit: int, page: int) -> None:
+    if (type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 65536
+            or type(page) is not int or page < 1):
+        raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "Use offset >= 0, limit from 1 to 65536, and page >= 1.")
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -165,13 +171,14 @@ def _new_project(workspace: Path, name: str) -> Path:
 
 
 # What a headless turn may do without a prompt nobody is there to answer. The
-# built-in names are the CLI's own; the three prefixed ones are this adapter's
-# bound tools, which are the only MCP tools it is given at all.
+# built-in names are the CLI's own; the prefixed ones are this adapter's
+# project tools and session-scoped attachment reader.
 _CLAUDE_APPROVED = (
     "Read", "Glob", "Grep", "Write", "Edit", "Bash", "TodoWrite",
     "mcp__monkeyhub__studio_schema",
     "mcp__monkeyhub__studio_request",
     "mcp__monkeyhub__fab_request",
+    "mcp__monkeyhub__attachment_read",
 )
 
 
@@ -671,6 +678,46 @@ class ChatStore:
                 raise HubFailure(404, "CHAT_ATTACHMENT_NOT_FOUND", "The attached file is no longer available.")
             return attachment, path
 
+    def read_attachment(self, session_id: str, attachment_id: str, *, offset: int = 0,
+                        limit: int = 32768, page: int = 1) -> dict:
+        _attachment_read_paging(offset, limit, page)
+        attachment, path = self.attachment(session_id, attachment_id)
+        total_pages = 1
+        if attachment.mimeType == "application/pdf" or path.suffix == ".pdf":
+            from pypdf import PdfReader
+
+            try:
+                with path.open("rb") as source:
+                    reader = PdfReader(source)
+                    total_pages = len(reader.pages)
+                    if page > total_pages:
+                        raise HubFailure(422, "CHAT_ATTACHMENT_PAGE_INVALID", f"This PDF has {total_pages} pages.")
+                    text = reader.pages[page - 1].extract_text() or ""
+            except HubFailure:
+                raise
+            except Exception as exc:
+                raise HubFailure(422, "CHAT_ATTACHMENT_PDF_INVALID", "Text could not be extracted from this PDF.") from exc
+            data = None
+        else:
+            if page != 1:
+                raise HubFailure(422, "CHAT_ATTACHMENT_PAGE_INVALID", "Only PDF attachments have numbered pages.")
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                raise HubFailure(503, "CHAT_ATTACHMENT_READ_FAILED", "The attached file could not be read.") from exc
+            try:
+                text = data.decode("utf-8") if b"\0" not in data else None
+            except UnicodeDecodeError:
+                text = None
+        if text is not None:
+            format_name, total, content = "text", len(text), text[offset:offset + limit]
+        else:
+            format_name, total = "base64", len(data)
+            content = base64.b64encode(data[offset:offset + limit]).decode("ascii")
+        return {**attachment.model_dump(), "format": format_name, "content": content,
+                "offset": offset, "total": total, "nextOffset": offset + limit if offset + limit < total else None,
+                "page": page, "totalPages": total_pages}
+
     def _save(self, session: _SavedChat, attachments: tuple[tuple[ChatAttachment, bytes], ...] = ()) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         path = self.root / f"{session.id}.json"
@@ -1008,7 +1055,7 @@ class ChatStore:
                 mcp_servers[row["name"]] = {**transport, "enabled": False, "required": False}
         except (ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
-        tool_names = ("studio_schema", "studio_request", "fab_request")
+        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read")
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
             "enabled_tools": list(tool_names),
@@ -1271,8 +1318,12 @@ class ChatStore:
                     + content
                 )
             if running.attachments:
-                prompt += "\n\nFiles attached to this message (read-only reference material; use file-reading tools as needed):\n"
-                prompt += json.dumps([{"name": attachment.name, "mimeType": attachment.mimeType, "path": str(path)}
+                prompt += ("\n\nFiles attached to this message (read-only reference material; prefer attachment_read with "
+                           "attachmentId=id. Follow nextOffset for remaining content and page for PDF pages. "
+                           "PDF reads extract text only; empty text does not mean the page image was inspected. "
+                           "Do not use Get-Content on these paths; native Windows sandbox access may be denied. "
+                           "Paths are retained for complex formats that need explicitly authorized local processing):\n")
+                prompt += json.dumps([{"id": attachment.id, "name": attachment.name, "mimeType": attachment.mimeType, "path": str(path)}
                                       for attachment, path in running.attachments], ensure_ascii=False)
             if running.design_context is not None:
                 if running.stop.is_set():
@@ -1929,6 +1980,22 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
 
 
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
+    if name == "attachment_read":
+        if not isinstance(arguments, dict) or set(arguments) - {"attachmentId", "offset", "limit", "page"}:
+            raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "Use attachmentId and optional offset, limit, and page only.")
+        attachment_id = arguments.get("attachmentId")
+        if not isinstance(attachment_id, str):
+            raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "An attachmentId from this conversation is required.")
+        attachment_id = _identifier(attachment_id)
+        offset, limit, page = arguments.get("offset", 0), arguments.get("limit", 32768), arguments.get("page", 1)
+        _attachment_read_paging(offset, limit, page)
+        session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
+        if session.get("status") != "running":
+            raise HubFailure(409, "CHAT_NOT_RUNNING", "This chat is no longer running.")
+        if _project(session["projectDir"]) != (session["projectId"], session["projectDir"]):
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
+        return _request_json(hub, f"/api/chat/sessions/{chat_id}/attachments/{attachment_id}/read?"
+                             + urlencode({"offset": offset, "limit": limit, "page": page}))
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
@@ -2240,6 +2307,17 @@ def _mcp(hub: str, chat_id: str) -> None:
          "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select that producer's request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},
+        {"name": "attachment_read", "description": "Read an uploaded attachment from this conversation by its id. "
+         "Returns UTF-8 text without NUL characters, or base64 for binary files. offset, limit, total and nextOffset "
+         "count text characters or binary bytes; follow nextOffset until null. PDF page is 1-based and reads one page's "
+         "extracted text, with totalPages for navigation. Empty PDF text does not mean the page image was inspected. "
+         "This read-only tool does not start Studio or change project files.", "inputSchema": {
+             "type": "object", "properties": {
+                 "attachmentId": {"type": "string"}, "offset": {"type": "integer", "minimum": 0, "default": 0},
+                 "limit": {"type": "integer", "minimum": 1, "maximum": 65536, "default": 32768},
+                 "page": {"type": "integer", "minimum": 1, "default": 1},
+             }, "required": ["attachmentId"], "additionalProperties": False,
+         }},
     ]
     for line in sys.stdin:
         try:

@@ -156,6 +156,16 @@ class ChatAttachment(BaseModel):
     size: int
 
 
+class ChatAttachmentContent(ChatAttachment):
+    format: Literal["text", "base64"]
+    content: str
+    offset: int
+    total: int
+    nextOffset: int | None
+    page: int
+    totalPages: int
+
+
 class ChatAttachmentInput(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
