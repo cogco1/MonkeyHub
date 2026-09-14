@@ -20,7 +20,8 @@ import { asStudioApiError } from "../api/client";
 import { connection, type ServerIdentity } from "../api/connection";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
-import { documentUrl } from "../workspaces/monkeyboard/boardScene";
+import type { BoardDocumentOpen, BoardViewState } from "../workspaces/monkeyboard/boardNavigation";
+import { boardUrl, documentUrl, type PageSource } from "../workspaces/monkeyboard/boardScene";
 import { TaskWorkspace } from "./TaskWorkspace";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
@@ -43,15 +44,38 @@ const Board = lazy(async () => {
   return import("../workspaces/monkeyboard/Board");
 });
 
+/** The registered page this tab opened from its board, and the board to come back to. */
+type BoardVisit = { page: PageSource; view: BoardViewState };
+
 export function Connected() {
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | null>(null);
+  const [board, setBoard] = useState(() => new URLSearchParams(window.location.search).get("view") === "board");
+  const [visit, setVisit] = useState<BoardVisit | null>(null);
   const t = useT();
 
   const submitBoardFeedback = useCallback((request: BoardDesignRequest) => {
     window.history.replaceState(null, "", documentUrl(window.location.href, request.source));
     document.title = "MonkeyArch";
+    // Feedback continues in the conversation; it is not a page visit to return from.
+    setVisit(null);
     setDocumentIntent(request);
+    setBoard(false);
+  }, []);
+
+  // One document, two surfaces: the page opens where the board already is, so
+  // nothing else this operator has open is reloaded on the way there or back.
+  const openBoardDocument = useCallback(({ source, view }: BoardDocumentOpen) => {
+    window.history.replaceState(null, "", documentUrl(window.location.href, source));
+    document.title = "MonkeyArch";
+    setVisit({ page: source, view });
+    setBoard(false);
+  }, []);
+
+  const returnToBoard = useCallback(() => {
+    window.history.replaceState(null, "", boardUrl(window.location.href));
+    document.title = "MonkeyBoard";
+    setBoard(true);
   }, []);
 
   const probe = useCallback(() => {
@@ -107,12 +131,16 @@ export function Connected() {
     );
   }
 
-  return new URLSearchParams(window.location.search).get("view") === "board"
-    ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}><Board onSubmit={submitBoardFeedback} /></Suspense>
+  return board
+    ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
+        <Board onSubmit={submitBoardFeedback} onOpenDocument={openBoardDocument} restoreView={visit?.view ?? null} />
+      </Suspense>
     : new URLSearchParams(window.location.search).get("embedded") === "tool"
       // An embedding page may name the exact candidate run to open, so that a
       // conversation's own result is never read as the reference run.
       ? <App server={server.value} initialDocumentIntent={documentIntent ?? undefined}
+             onReturnToBoard={visit === null ? undefined : returnToBoard}
              initialRunId={new URLSearchParams(window.location.search).get("candidate")} />
-      : <TaskWorkspace server={server.value} initialDocumentIntent={documentIntent ?? undefined} />;
+      : <TaskWorkspace server={server.value} initialDocumentIntent={documentIntent ?? undefined}
+                       onReturnToBoard={visit === null ? undefined : returnToBoard} />;
 }

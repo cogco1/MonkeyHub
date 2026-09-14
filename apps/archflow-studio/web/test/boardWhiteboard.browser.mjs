@@ -113,7 +113,13 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
       entry.status = answer.statusCode;
       response.writeHead(answer.statusCode, answer.headers); answer.pipe(response);
     });
-    proxied.on("error", (error) => { if (!closing) errors.push(error.message); response.writeHead(502).end(); });
+    // A proxy failure after the answer began must not replace the real failure
+    // with an unhandled header error during teardown.
+    proxied.on("error", (error) => {
+      if (!closing) errors.push(error.message);
+      if (!response.headersSent) response.writeHead(502);
+      response.end();
+    });
     request.pipe(proxied);
   });
   await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));

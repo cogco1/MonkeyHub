@@ -150,6 +150,13 @@ try {
         documentReads += 1;
         return await route.fulfill({ json: { projectId, runId: oldDocument.runId, documents } });
       }
+      // A placed page is drawn as its own editor saved it; no page here is marked.
+      if (request.method() === "GET" && url.pathname === "/api/document-annotations") {
+        return await route.fulfill({ json: { projectId, runId: url.searchParams.get("runId"),
+          assetSha256: url.searchParams.get("assetSha256"), pageIndex: Number(url.searchParams.get("pageIndex")),
+          drawingRevisionRef: url.searchParams.get("drawingRevisionRef"), revisionSha256: null,
+          annotations: [], comment: "" } });
+      }
       if (request.method() === "GET" && url.pathname.startsWith("/api/documents/")) {
         fileReads.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         assert.equal(url.searchParams.get("runId"), oldDocument.runId);
