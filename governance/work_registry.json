@@ -412,7 +412,8 @@
         "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
         "apps/archflow-studio/api/tests/test_catalog.py",
         "tests/monkeymonitor/test_web_traces.py",
-        "SECURITY.md"
+        "SECURITY.md",
+        "apps/archflow-studio/api/tests/test_documents.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -516,7 +517,15 @@
             "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
             "governance/architecture_policy.json",
-            "SECURITY.md"
+            "SECURITY.md",
+            "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+            "apps/archflow-studio/api/tests/test_documents.py",
+            "apps/archflow-studio/web/src/api/client.ts",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/board.css",
+            "apps/archflow-studio/web/test/boardReplacement.browser.mjs"
           ],
           "depends_on": []
         },
