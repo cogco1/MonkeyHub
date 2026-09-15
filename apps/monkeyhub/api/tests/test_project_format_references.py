@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import tempfile
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from monkeyhub_api.project_format_references import (
     analyze_project_version_references,
     collect_project_version_references,
 )
+from tools.create_project import main as create_project_main
 
 
 def test_collector_requires_exact_project_version_shape() -> None:
@@ -106,14 +109,18 @@ def _legacy_project(root: Path, project_id: str = "legacy") -> FilesystemProject
     return repository
 
 
+def _fingerprint(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): _sha256(path.read_bytes())
+        for path in root.rglob("*") if path.is_file()
+    }
+
+
 def test_legacy_scan_maps_head_and_event_refs_without_writing_project() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         repository = _legacy_project(Path(temporary) / "legacy")
         root = repository.layout.root
-        before = {
-            path.relative_to(root).as_posix(): _sha256(path.read_bytes())
-            for path in root.rglob("*") if path.is_file()
-        }
+        before = _fingerprint(root)
         report = analyze_project_version_references(root)
         assert report.project_id == "legacy"
         assert report.source_format_version == 1
@@ -122,11 +129,27 @@ def test_legacy_scan_maps_head_and_event_refs_without_writing_project() -> None:
         assert ("HEAD", "/current") in locations
         assert any(file.startswith("events/") and pointer == "/to"
                    for file, pointer in locations)
-        after = {
-            path.relative_to(root).as_posix(): _sha256(path.read_bytes())
-            for path in root.rglob("*") if path.is_file()
-        }
-        assert after == before
+        assert _fingerprint(root) == before
+
+
+def test_plan_migration_command_prints_legacy_reference_locations_without_writing() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        repository = _legacy_project(Path(temporary) / "legacy")
+        root = repository.layout.root
+        before = _fingerprint(root)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = create_project_main(["--project", str(root), "--plan-migration"])
+        text = output.getvalue()
+
+        assert result == 0
+        assert "Legacy ProjectVersionRef scan:" in text
+        assert "[project.repository] HEAD/current -> version 0" in text
+        assert "[project.repository] events/" in text
+        assert "/to -> version 0" in text
+        assert "Location evidence only:" in text
+        assert "owner-unconfirmed retained payloads" in text
+        assert _fingerprint(root) == before
 
 
 def test_scan_refuses_current_project_as_not_applicable(tmp_path: Path) -> None:
