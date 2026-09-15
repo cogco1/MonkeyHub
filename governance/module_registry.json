@@ -3768,7 +3768,8 @@
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
         "mapping one explicitly selected edit drawing and its board marks to page coordinates, then handing its exact saved annotations, user feedback and up to three explicitly connected reference pages to the existing Studio intent workflow",
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
-        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work"
+        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
+        "converting the closed shapes inside a calibrated sketch frame into existing sketch proposals; the frame carries the only scene-to-metres affine"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -3794,7 +3795,9 @@
         "save_board",
         "export_board_pages",
         "web: createBoardFeedback",
-        "web: prepareBoardDesignRequest"
+        "web: prepareBoardDesignRequest",
+        "web: sketchActionsFromFrame",
+        "web: calibrateSketchFrame"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -3831,7 +3834,8 @@
         "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
         "apps/archflow-studio/web/test/boardNavigation.test.ts",
         "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs",
-        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts"
+        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts",
+        "apps/archflow-studio/web/test/boardSketch.test.ts"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -5696,10 +5700,15 @@
         "Portable TokenUsage and UsageEvent diagnostic values, with unknown counters preserved",
         "Explicit-source Codex token event normalization and duplicate/counter-discontinuity handling",
         "Caller-selected per-million-token RateCard and disjoint-bucket USD estimates",
-        "UsageLog segmented JSONL persistence with cross-process locking, bounded rotation and crash-safe whole-line publication; optional diagnostic data only, never project state",
-        "Loopback Monitor HTTP API and CLI over those values; the API is an internal/diagnostic service and does not own a product shell",
-        "TurnTrace@1 read model over the same UsageLog: Hub/Agent/Studio/CAD/Client spans, blocking annotations, safe diagnostics and filtered export with explicit observed/unobserved coverage",
-        "Algorithm/AlgorithmContext/AlgorithmRecommendation boundary and FirstAvailablePolicy baseline"
+        "Pure Algorithm selection interface and FirstAvailablePolicy baseline over caller-owned actions and budgets",
+        "Loopback MonkeyMonitor diagnostic API and CLI, and optional usage.jsonl diagnostic append/read under a caller-supplied noncanonical data directory",
+        "Optional managed stdin lifecycle and additive health identity for a Hub-owned CLI process; stop/EOF stops listening and waits for active request threads",
+        "Explicitly selected Codex task/child-source families and known turn intervals; distinct model-call, service, client-wait and agent-turn timing views",
+        "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities",
+        "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage",
+        "Automatic numeric usage from explicitly Hub-bound Codex session identities, resolved through the local read-only Codex index and verified against session metadata",
+        "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export",
+        "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation"
       ],
       "does_not_own": [
         "Architectural evaluation, geometry, candidate execution or formal design acceptance",
@@ -5751,8 +5760,7 @@
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
         "monkeymonitor/__main__.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
-        "apps/monkeyhub/web/src/MonitorPage.tsx",
-        "apps/monkeyhub/web/src/monitorData.ts"
+        "apps/monkeyhub/web/src/MonitorPage.tsx"
       ],
       "invariants": [
         "No prompts, responses, tool contents or credentials are exported in usage events",
@@ -5760,7 +5768,7 @@
         "Core and workflow packages do not import Monitor; the host composes it",
         "Only the explicitly supplied diagnostics directory is writable; project state is untouched",
         "The algorithm chooses only a caller-provided action within stated estimates or stops",
-        "Standalone report and API-only serve remain available; both read the same UsageLog/Codex sources as the Hub-owned page.",
+        "Standalone report and API-only serve remain available; both read the same UsageLog/Codex sources as the Hub-owned page",
         "Only explicitly selected Codex paths are read; lineage uses recorded session/parent ids, repeated source snapshots count once and token event gaps never become model duration",
         "Non-model phases carry unknown token counters; nested geometry duration is not added to the candidate interval and human review time is not service duration",
         "Interaction wall time comes only from an explicit client root; active waits and between-action time remain separate and overlapping child durations are never summed into a total; repeated inputs alone do not prove an avoidable retry or eligible provider cache",
@@ -5791,11 +5799,7 @@
         "monkeymonitor/store.py",
         "monkeymonitor/server.py",
         "monkeymonitor/trace.py",
-        "monkeymonitor/__main__.py",
-        "apps/monkeyhub/web/src/MonitorPage.tsx",
-        "apps/monkeyhub/web/src/MonitorPage.css",
-        "apps/monkeyhub/web/src/monitorData.ts",
-        "apps/monkeyhub/web/test/monitorData.test.ts"
+        "monkeymonitor/__main__.py"
       ]
     },
     {
