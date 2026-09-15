@@ -1,8 +1,11 @@
 # ArchFlow Studio
 
-Users enter through **MonkeyHub** and choose Modeling, Drawings or Presentation.
-MonkeyArch is the modeling workspace; Studio is their shared implementation host.
-The standalone launch commands below are for source development and focused diagnostics.
+Users enter through **MonkeyHub**; MonkeyHub is the application. This directory holds two
+things. `api/` is the **Project Runtime** — the project-scoped backend MonkeyHub starts once
+per open project; its contract is [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md).
+`web/` is the legacy Studio browser shell and the MonkeyArch, MonkeyDiagram and MonkeyBoard
+workspaces, which are being folded into the MonkeyHub frontend (#127); it takes no new
+product-level behaviour. The direct-start commands below are for development and focused diagnostics.
 See the [unified Hub entry](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
 
 For scoped model requests, advisory context budgets and the offline size benchmark,

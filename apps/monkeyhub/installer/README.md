@@ -63,7 +63,7 @@ Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.p
 
 安装流程是本轮新增的分发工作；仓库原有启动器继续负责进程，项目存储继续由 ArchFlow 管理。
 `tools/package_monkeyapps.py` 只从指定 Git 提交导出白名单源码、构建 Web 成品、安装完整 Windows wheels
-并生成候选 ZIP。它不会把 working tree、runtime.json、凭据、用户项目或 node_modules 打入成品。
+并生成候选 ZIP。它不会把 working tree、凭据、用户项目或 node_modules 打入成品；用户运行配置只保存在 Hub 运行根目录的 `config/` 下，从不进入源码树。
 构建机需要 Git、Python 3.12+（含 pip）和 Node.js 24/npm；这些工具不是安装后的运行依赖。
 
 ```powershell
