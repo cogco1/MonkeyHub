@@ -143,9 +143,48 @@ class MonitorData:
         except (OSError, ValueError, TypeError, KeyError):
             rates = ()
             snapshot["warnings"].append("费率目录不可读；没有历史费率快照的费用保持未知。")
-        result = build_traces(snapshot["events"], rates=rates)
+        result = _trace_contract(build_traces(snapshot["events"], rates=rates))
         result["warnings"] = snapshot["warnings"] + result["warnings"]
         return result
+
+
+def _trace_contract(result: dict) -> dict:
+    """Expose stable span identity and observation coverage without a second store.
+
+    UsageLog remains the only retained diagnostic source.  Legacy event ids stay
+    in the response; span ids are aliases so Hub, Studio, CAD and client views can
+    share one contract.  Missing lanes are explicitly unobserved rather than zero.
+    """
+    lane_ids = ("agent", "hub", "studio", "cad", "client")
+    for trace in result.get("traces", ()):
+        trace_id = trace.get("trace_id")
+        spans = trace.get("spans") or []
+        for span in spans:
+            span["trace_id"] = trace_id
+            span["span_id"] = span.get("event_id")
+            span["parent_span_id"] = span.get("parent_event_id")
+
+        summary = trace.get("summary") or {}
+        critical = trace.get("critical_path") or {}
+        elapsed = summary.get("elapsed_ms")
+        observed = critical.get("duration_ms")
+        ratio = None
+        if isinstance(elapsed, (int, float)) and elapsed >= 0 and isinstance(observed, (int, float)) and observed >= 0:
+            ratio = 1.0 if elapsed == 0 else round(max(0.0, min(1.0, observed / elapsed)), 4)
+        observed_lanes = {span.get("lane") for span in spans if span.get("lane")}
+        dropped = any("跳过过诊断观测" in str(warning) for warning in trace.get("warnings", ()))
+        tool_rounds = summary.get("tool_rounds") or 0
+        trace["coverage"] = {
+            "basis": critical.get("basis", "unavailable"),
+            "observed_blocking_ms": observed,
+            "blocking_ratio": ratio,
+            "tool_events": "observed" if tool_rounds else ("incomplete" if dropped else "observed-none"),
+            "lanes": [
+                {"lane": lane, "status": "observed" if lane in observed_lanes else "unobserved"}
+                for lane in lane_ids
+            ],
+        }
+    return result
 
 
 def _diagnose_operations(rows: list[dict]) -> list[dict]:
