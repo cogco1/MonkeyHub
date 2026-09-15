@@ -693,6 +693,18 @@
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
       ]
+    },
+    {
+      "id": "GH-54",
+      "stream": "project-data",
+      "status": "active",
+      "goal": "First real format migration: migrate a format-1 project into a new format-2 directory from a staging copy, rewriting only the envelope, run bases and the authored state-record base; preserve and list everything else; the planner reports preserved kinds instead of blocking on them.",
+      "depends_on": [],
+      "write_scope": [
+        "archflow/project/repository.py",
+        "archflow/state/state_record.py",
+        "tools/create_project.py"
+      ]
     }
   ]
 }
