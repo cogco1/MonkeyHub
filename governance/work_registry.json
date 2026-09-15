@@ -693,16 +693,6 @@
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
       ]
-    },
-    {
-      "id": "GH-56",
-      "stream": "project-data",
-      "status": "active",
-      "goal": "Candidate continuation on a restored project: prove a restored run continues with an exact base, and re-root the retained source-export model path under the running repository so a restored project never reads the original machine's workspace.",
-      "depends_on": [],
-      "write_scope": [
-        "monkeyarch/runtime/project_runner.py"
-      ]
     }
   ]
 }

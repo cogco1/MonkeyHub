@@ -2360,7 +2360,7 @@
         "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
         "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
         "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id",
-        "optional exact source runner receipt for cross-run producer and CAD reuse before execution, including unchanged elements inside a changed seat"
+        "optional exact source runner receipt for cross-run producer and CAD reuse before execution, including unchanged elements inside a changed seat; the retained source model is located under the running repository's own run workspace, never by the retained absolute path"
       ],
       "does_not_own": [
         "producing geometry - capabilities.element_producers",
