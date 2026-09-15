@@ -487,6 +487,7 @@
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "tests/monkeymonitor/test_web_traces.py",
             "monkeymonitor/server.py",
+            "monkeymonitor/trace.py",
             "tests/monkeymonitor/test_server.py",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/monkeyhub_api/models.py",
