@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,22 @@ class SaveStudyRequestDto(BaseModel):
     expected_previous_ref: str | None = Field(default=None, alias="expectedPreviousRef")
 
 
+class StudyRevisionRequestDto(BaseModel):
+    """One exact retained Study revision; comparison never guesses a current head."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    study_id: str = Field(alias="studyId", pattern=IDENTIFIER_PATTERN)
+    ledger_ref: str = Field(alias="ledgerRef", min_length=1)
+
+
+class CompareStudiesRequestDto(BaseModel):
+    """A bounded exact-revision comparison inside one bound project."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    project_id: str = Field(alias="projectId", min_length=1)
+    studies: list[StudyRevisionRequestDto] = Field(min_length=2, max_length=6)
+
+
 class StudyViewDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
     project_id: str = Field(alias="projectId")
@@ -61,6 +77,20 @@ class StudyViewDto(BaseModel):
     # a revision retained before the method was stamped: still inspectable,
     # still not a current-method result.
     derivation_method: str | None = Field(alias="derivationMethod")
+    canonical_state_changed: bool = Field(alias="canonicalStateChanged")
+
+
+class StudyComparisonDto(BaseModel):
+    """Read-only comparison projection; it is neither a Study ledger nor design truth."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    schema_: Literal["StudyComparison@1"] = Field(alias="schema")
+    project_id: str = Field(alias="projectId")
+    method: Literal["aspect-correct-composition-compare@1"]
+    metric_frame: Literal["page-aspect-correct-long-edge@1"] = Field(alias="metricFrame")
+    studies: list[dict[str, Any]]
+    shared_topology: list[dict[str, Any]] = Field(alias="sharedTopology")
+    pairwise: list[dict[str, Any]]
     canonical_state_changed: bool = Field(alias="canonicalStateChanged")
 
 
@@ -95,3 +125,9 @@ def study_dto(view: StudyView) -> StudyViewDto:
         "derivationMethod": payload.get("derivation_method"),
         "canonicalStateChanged": payload["canonical_state_changed"],
     })
+
+
+def study_comparison_dto(comparison: Mapping[str, Any]) -> StudyComparisonDto:
+    """Camel-case a deterministic comparison without changing its evidence."""
+
+    return StudyComparisonDto.model_validate(_camelize(dict(comparison)))
