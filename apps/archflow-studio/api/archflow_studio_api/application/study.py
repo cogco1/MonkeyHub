@@ -5,7 +5,8 @@ small set of trace-evidence primitives in normalized page coordinates.
 Measurements, relations, the CompositionGraph, hypotheses and counterfactual
 judgements are deterministic projections of confirmed traces. A saved revision
 is an archival snapshot of the method that produced it: cold reads validate its
-exact source and evidence but never reinterpret retained derivations with today's
+exact source, its evidence and the agreement between its own retained relations,
+receipts and evidence, but never reinterpret retained derivations with today's
 rules. A correction runs the current method and records that method on the new
 revision.
 
@@ -560,8 +561,23 @@ def _graph(
         for item in _confirmed(evidence)
     ]
     nodes.sort(key=lambda item: item["evidence_id"])
+    node_ids = {node["evidence_id"] for node in nodes}
     edges = [dict(row) for row in relations]
     edges.sort(key=lambda item: item["relation_id"])
+    for edge in edges:
+        # An edge is a statement about two traces this graph carries. A
+        # retained endpoint naming a trace that is absent, or one the same
+        # revision kept proposed or rejected, describes a composition this
+        # archive does not hold: serving it would publish a graph whose own
+        # edges contradict its nodes. Refusing here is not re-judging the old
+        # method's conclusions — it is declining to reconstruct a graph the
+        # retained evidence cannot support.
+        for end in ("subject_evidence_id", "object_evidence_id"):
+            if edge.get(end) not in node_ids:
+                raise ValueError(
+                    f"relation {edge['relation_id']!r} names {edge.get(end)!r}, "
+                    "which is not a confirmed trace of this revision",
+                )
     body = {
         "schema": "CompositionGraph@1",
         "nodes": nodes,
@@ -1066,6 +1082,34 @@ def _current_ref(
     return heads[0]
 
 
+def _receipts_bound_to(payload: Mapping[str, Any], graph_digest: str) -> None:
+    """Refuse a retained finding whose own receipt names another graph.
+
+    A reasoning receipt states which composition the finding was read off. It
+    is checked against the graph rebuilt from this revision's own retained
+    evidence and relations, not against today's rules or thresholds: what the
+    old method concluded stands, but it may not be served under a graph digest
+    it never bound itself to.
+    """
+
+    for field in ("measurements", "relations", "hypotheses", "counterfactuals"):
+        for row in payload[field]:
+            if "reasoning_receipt" not in row:
+                # Revisions retained before findings carried a receipt stay
+                # readable; no stamp is invented on their behalf.
+                continue
+            receipt = row["reasoning_receipt"]
+            if (
+                not isinstance(receipt, Mapping)
+                or receipt.get("graph_digest") != graph_digest
+            ):
+                raise StudioError(
+                    409,
+                    "STUDY_LEDGER_INVALID",
+                    "A retained Study finding carries a reasoning receipt bound to another composition graph.",
+                )
+
+
 def read_study(
     binding: ProjectBinding,
     study_id: str,
@@ -1101,6 +1145,7 @@ def read_study(
             "STUDY_LEDGER_INVALID",
             "The retained Study relation snapshot cannot form its CompositionGraph.",
         ) from exc
+    _receipts_bound_to(payload, graph["graph_digest"])
     return StudyView(ref, payload, graph)
 
 

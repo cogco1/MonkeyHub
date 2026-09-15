@@ -421,6 +421,65 @@ class StudyTests(unittest.TestCase):
                 self.assertEqual(answer.json()["code"], "STUDY_LEDGER_INVALID")
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_a_retained_revision_that_disagrees_with_itself_is_refused_not_served(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        binding = bound_project(self.client.app.state)
+        template = binding.repository.load_json(
+            record_ref_from_uri(first.json()["ledgerRef"], PROJECT_ID)
+        )
+
+        def relation(object_evidence_id: str) -> dict:
+            return {
+                "relation_id": f"contains:envelope:{object_evidence_id}",
+                "kind": "contains",
+                "subject_evidence_id": "envelope",
+                "object_evidence_id": object_evidence_id,
+                "method": "normalized-bounds-relation@1",
+            }
+
+        # A cold read replays what an older method concluded, but the graph it
+        # reconstructs must be one this archive actually holds. An edge whose
+        # endpoint was never traced, or was kept unconfirmed by the same
+        # revision, has no node to stand on; and a receipt naming another
+        # composition cannot be served beside this revision's graph digest.
+        zeroed = [
+            {**row, "reasoning_receipt": {**row["reasoning_receipt"], "graph_digest": "0" * 64}}
+            for row in template["hypotheses"]
+        ]
+        self.assertTrue(zeroed)
+        for study_id, fields in (
+            (
+                "relation-to-absent-trace",
+                {"relations": [*template["relations"], relation("never-traced")]},
+            ),
+            (
+                "relation-to-unconfirmed-trace",
+                {"relations": [*template["relations"], relation("unconfirmed-mass")]},
+            ),
+            ("receipt-names-another-graph", {"hypotheses": zeroed}),
+        ):
+            with self.subTest(study_id=study_id):
+                ledger_ref = self.retain_variant(template, study_id, **fields)
+                answer = self.client.get(f"/api/studies/{study_id}")
+                self.assertEqual(answer.status_code, 409, answer.text)
+                self.assertEqual(answer.json()["code"], "STUDY_LEDGER_INVALID")
+                named = self.client.get(
+                    f"/api/studies/{study_id}", params={"ledgerRef": ledger_ref}
+                )
+                self.assertEqual(named.status_code, 409, named.text)
+                self.assertEqual(named.json()["code"], "STUDY_LEDGER_INVALID")
+
+        # The same retained rows, left as they were written, still read back.
+        intact = self.retain_variant(template, "intact-house")
+        answer = self.client.get("/api/studies/intact-house")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["ledgerRef"], intact)
+        self.assertEqual(
+            answer.json()["hypotheses"], first.json()["hypotheses"]
+        )
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_every_answer_says_which_method_produced_the_findings_it_carries(self) -> None:
         first = self.save()
         self.assertEqual(first.status_code, 201, first.text)
