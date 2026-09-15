@@ -5813,7 +5813,7 @@
         "One owned Studio process per project, shared by that project's MonkeyArch, MonkeyDiagram and MonkeyBoard, and one independent Monitor process",
         "The built-in Fab page invokes the installed independent MonkeyFab CLI for profiles, preparation and upload; no separate long-running Fab service",
         "Loopback origin boundary, app start serialization, actual source/instance/process health verification, owned stdin shutdown and application logs under the explicit nonproject runtime root",
-        "Hub CLI and thin Windows entry point, with shared Studio launcher tray, logs and child monitoring",
+        "Hub CLI, the browser-mode Windows launcher (launch-hub.ps1: launch window, port lock, health-verified owned child, tray, logs) and the desktop window; both production entries start only the Hub",
         "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
         "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
         "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio",
@@ -5912,7 +5912,8 @@
         "An operation id cannot bind a different request; duplicate requests and worker recovery do not replay mutations. Hub cold startup restores admitted request signatures and reconstructs outcomes from P036; journal write failure prevents dispatch, and requests that never reached durable admission remain outside recovery",
         "A Hub-assigned candidate run identity is bound to the managed Studio instance before submission; any existing retained run prevents executing that identity again",
         "Desktop exposes no arbitrary WebView command bridge, never adopts a port occupant, and waits for its owned Hub to drain; installation assets and disposable WebView cache are separate from P036 project data",
-        "The actual Hub CLI holds runtime/hub.lock until server and owned workers finish draining; browser and desktop entrypoints cannot concurrently load/save the same Hub runtime directory"
+        "The actual Hub CLI holds runtime/hub.lock until server and owned workers finish draining; browser and desktop entrypoints cannot concurrently load/save the same Hub runtime directory",
+        "Every production Studio and Monitor process is created, monitored and stopped by this Hub; Studio keeps no launcher, configuration file or tray of its own, and a development start is an explicit --project-dir (scripts/dev/run-project-runtime.ps1)"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",

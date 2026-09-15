@@ -15,33 +15,6 @@
       ]
     },
     {
-      "id": "GH-126",
-      "stream": "hub",
-      "status": "active",
-      "goal": "MonkeyHub is the sole production entrypoint: fold the launch shell into launch-hub.ps1, retire the standalone Studio launcher, runtime.json, shortcut and .bat, keep an explicit --project-dir development start, and cover the Hub's Studio child environment with a Hub test.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/launch-hub.ps1",
-        "apps/monkeyhub/README.md",
-        "apps/monkeyhub/api/tests/test_launch_hub.py",
-        "apps/monkeyhub/api/tests/test_applications.py",
-        "apps/monkeyhub/installer/install.ps1",
-        "apps/archflow-studio/launch-studio.ps1",
-        "apps/archflow-studio/OPEN_MONKEYARCH.bat",
-        "apps/archflow-studio/make-desktop-shortcut.ps1",
-        "apps/archflow-studio/runtime.example.json",
-        "apps/archflow-studio/README.md",
-        "scripts/dev/",
-        "tools/package_monkeyapps.py",
-        ".claude/launch.json",
-        ".gitignore",
-        "README.md",
-        "docs/TEAM_ONBOARDING.md",
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
-        "archflow/project/README.md"
-      ]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
@@ -51,8 +24,6 @@
         "OPEN_MONKEYHUB.cmd",
         "apps/monkeyhub/",
         "apps/shared-web/",
-        "apps/archflow-studio/OPEN_MONKEYARCH.bat",
-        "apps/archflow-studio/make-desktop-shortcut.ps1",
         "tools/package_monkeyapps.py",
         "tools/workspace.py",
         "CONTRIBUTING.md",
@@ -125,9 +96,6 @@
         "apps/archflow-studio/api/tests/test_settings.py",
         "apps/archflow-studio/api/tests/test_validation.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
-        "apps/archflow-studio/launch-studio.ps1",
-        "apps/archflow-studio/runtime.example.json",
-        "apps/archflow-studio/runtime.json",
         "apps/archflow-studio/web/public/nurbsFallback.worker.js",
         "apps/archflow-studio/web/scripts/sync-rhino3dm.mjs",
         "apps/archflow-studio/web/src/api/client.ts",
@@ -703,7 +671,6 @@
         "apps/archflow-studio/api/archflow_studio_api/protocol.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
         "apps/archflow-studio/api/tests/test_settings.py",
-        "apps/archflow-studio/launch-studio.ps1",
         "apps/archflow-studio/web/src/features/settings/",
         "governance/architecture_policy.json",
         "docs/PROTOCOL.md",
@@ -718,7 +685,8 @@
       ],
       "notes": [
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
-        "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
+        "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes.",
+        "2026-09-15: the standalone launcher and its runtime.json bridge retired with #126; the Hub injects intentProvider/intentModel/intentTimeoutS into the Studio child environment (applications.py, covered by apps/monkeyhub/api/tests/test_applications.py)."
       ]
     }
   ]

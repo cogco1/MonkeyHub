@@ -169,6 +169,13 @@ beside its first real consumer; extract a shared abstraction only when real
 consumers need it. Do not invent a retirement or a parallel framework to satisfy
 a slogan.
 
+"Independently runnable" is not "independent product entry". A service may start by
+itself for tests and development — the project runtime on an explicit `--project-dir`
+(`scripts/dev/run-project-runtime.ps1`), Monitor, a renderer, a CAD bridge — but in
+production each has exactly one lifecycle owner, and for every Monkey application that
+owner is MonkeyHub. Do not add a second launcher, configuration file, tray icon or
+shortcut for a service the Hub already starts, monitors and stops.
+
 Keep tests of observable behavior, geometry, persistence/restart, exact-base,
 external effects and retained-data compatibility. Delete assertions that only
 freeze unused internal packaging with that packaging; do not delete a boundary

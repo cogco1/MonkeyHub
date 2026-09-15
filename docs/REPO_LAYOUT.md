@@ -50,6 +50,7 @@ MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适�
 │     │  ├─ monkeyarch/         3D 工作区、专用交互与组件
 │     │  └─ monkeydiagram/      图纸工作区、专用交互与组件
 │     └─ features/              两边实际复用的设置、会话等组件
+├─ scripts/dev/                  仅供开发的薄启动脚本（显式 --project-dir）；生产入口只有 MonkeyHub
 ├─ tools/                       对应既有能力的 CLI 与治理命令
 ├─ tests/                       行为和边界测试；随真实迁移同步 imports
 ├─ probes/                      明确晋升的项目输入与回归证据
