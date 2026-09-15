@@ -3,27 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-56",
-      "stream": "project-data",
-      "status": "active",
-      "goal": "Restore referenced workspace JSON as artifacts without weakening retained record validation.",
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/56",
-      "branch": "codex/56-workspace-json-reviewed",
-      "worktree": "codex-56-workspace-json-reviewed",
-      "base_ref": "c4dbd5f08490808a0aa5aaaf2096dbeee2c390a4",
-      "contributor": "Codex coordinator and Claude",
-      "reviewer": null,
-      "handoff": null,
-      "modules": [
-        "project.repository"
-      ],
-      "depends_on": [],
-      "write_scope": [
-        "archflow/project/repository.py",
-        "tests/test_project_transfer.py"
-      ]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
