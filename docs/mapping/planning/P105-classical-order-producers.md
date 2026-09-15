@@ -1,13 +1,13 @@
 # P105 — The producers the monuments are written in
 
-**Status:** ready (not started)
+**Status:** blocked (not started; remaining work follows the live work registry)
 **Lane:** productization and componentization
 **Depends on:** P100 (references and derivations), P102 (the State Record)
 **Retires:** the classical-order and solid-of-revolution vocabulary as *operation kinds invented inside a
 per-building tool*. After this card that vocabulary exists once, as producers reading references, and the
-per-building emitters are not its callers: P106 retired unbuilt on 2026-09-05, and the monument lane still
-under `archive/` is to leave with the pending external archive batch `20260905_repo_archive-lanes` (the 3B
-move, not yet executed), so a monument re-enters only as a State Record these producers can run.
+per-building emitters are not its callers: P106 retired unbuilt on 2026-09-05, and the monument lane is
+retained in the local archive outside the public checkout. A monument re-enters only as a State Record
+these producers can run; the historical archive move is not pending implementation work.
 
 ## Why
 
