@@ -785,6 +785,23 @@ def _source_from_receipt(repository, run, request, backend, payload, model=None)
     return CadExecutionSource(program, source_model, artifact.sha256)
 
 
+def _retained_source_model(repository, source: _SourceSeat, payload) -> Path:
+    """The source export's model file, located under the repository running now.
+
+    ``cad.model`` was retained as an absolute path of the machine that ran the
+    source. A restored project must never read the original machine's files,
+    so only the file name is taken from that string; the directory is the
+    source run's own stage workspace inside this repository.
+    """
+
+    stage_id = payload["identity"]["binding"]["stage_id"]
+    workspace = cad_workspace_path(Path(repository.layout.run(source.run.run_id).workspaces), stage_id)
+    name = str(source.cad["model"]).replace("\\", "/").rsplit("/", 1)[-1]
+    if not name:
+        raise CadExecutionError("source model path has no file name")
+    return workspace / name
+
+
 def _source_export(repository, source, request, backend, *, diagnostics):
     details = diagnostics
     details.update(scope="source_export_cache", cache_status="miss", cache_reason="source_not_selected", cache_checks={})
@@ -799,7 +816,8 @@ def _source_export(repository, source, request, backend, *, diagnostics):
             details.update(cache_status="refused", cache_reason="source_record_binding_changed", cache_checks={"binding": "changed"})
             return None
         payload = repository.load_json(ref)
-        execution_source = _source_from_receipt(repository, source.run, request, backend, payload, Path(source.cad["model"]))
+        execution_source = _source_from_receipt(repository, source.run, request, backend, payload,
+                                                _retained_source_model(repository, source, payload))
         if execution_source.program.program_digest != source.program.program_digest:
             raise CadExecutionError("source program changed")
         details.update(cache_status="hit", cache_reason="verified_source_export", cache_checks={"binding": "same", "artifact": "same"},
