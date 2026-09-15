@@ -162,9 +162,13 @@ def _proportions(
         basis = boxes[basis_id]
         basis_name = f"largest-envelope:{basis_id}"
     else:
+        # Coordinates are already expressed in long-edge units. Dividing by
+        # the source page's short edge here would reintroduce the very aspect
+        # ratio the comparison projection removed. With no confirmed envelope,
+        # report size/position directly against the long-edge unit frame.
         basis_id = None
-        basis = study_application._Box(0.0, 0.0, metric_scale[0], metric_scale[1])
-        basis_name = "source-page"
+        basis = study_application._Box(0.0, 0.0, 1.0, 1.0)
+        basis_name = "source-page-long-edge"
 
     by_kind: dict[str, list[Mapping[str, Any]]] = {}
     for row in confirmed:
