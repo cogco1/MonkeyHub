@@ -27,4 +27,7 @@ private/
 originals/
 *.bundle
 docs/TEAM_MEETING_DECK.pptx
+docs/TEAM_MEETING_AGENDA.md
+docs/RESEARCH_POSITIONING.md
+docs/mapping/planning/P094-*.md
 docs/claude-worktree/
