@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ..application.artifacts import (
     ArtifactListing,
     ArtifactRecord,
+    DocumentWorkCopy,
     ModelSource,
     SourceDocument,
     ViewportCapture,
@@ -138,6 +139,57 @@ class RhinoWorkExportRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     run_id: str = Field(alias="runId")
+
+
+class DocumentWorkCopyRequestDto(BaseModel):
+    """Which exact registered page is being made editable.
+
+    The digest in the path names the bytes; these name the one registration
+    they belong to. ``revisionRef`` is part of that identity, not a filter: a
+    null selects the registration that carries none, so a plain upload and a
+    retained drawing revision sharing a run and digest are never confused. No
+    server path is accepted here or anywhere.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    run_id: str = Field(alias="runId", min_length=1)
+    revision_ref: str | None = Field(alias="revisionRef", default=None, min_length=1)
+
+
+class DocumentWorkCopyDto(BaseModel):
+    """One registered image page's editable file, and the page it answers for."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    project_id: str = Field(alias="projectId")
+    run_id: str = Field(alias="runId")
+    asset_sha256: str = Field(alias="assetSha256")
+    revision_ref: str | None = Field(alias="revisionRef", default=None)
+    page_index: int = Field(alias="pageIndex", ge=0)
+    file_name: str = Field(alias="fileName")
+    mime_type: Literal["image/png", "image/jpeg"] = Field(alias="mimeType")
+    relative_path: str = Field(
+        alias="relativePath",
+        description="where the editable copy lives, project-relative; display "
+        "only — this machine's absolute path never crosses the boundary and no "
+        "request may send a path back",
+    )
+    head_run_id: str = Field(alias="headRunId")
+    head_asset_sha256: str = Field(alias="headAssetSha256")
+    head_revision_ref: str | None = Field(alias="headRevisionRef", default=None)
+    head_page_index: int = Field(alias="headPageIndex", ge=0)
+
+
+def work_copy_dto(copy: DocumentWorkCopy) -> DocumentWorkCopyDto:
+    return DocumentWorkCopyDto(
+        project_id=copy.project_id, run_id=copy.run_id, asset_sha256=copy.asset_sha256,
+        revision_ref=copy.revision_ref, page_index=copy.page_index, file_name=copy.file_name,
+        mime_type=copy.mime_type, relative_path=copy.relative_path, head_run_id=copy.head_run_id,
+        head_asset_sha256=copy.head_asset_sha256, head_revision_ref=copy.head_revision_ref,
+        head_page_index=copy.head_page_index,
+    )
 
 
 class ArtifactListDto(BaseModel):

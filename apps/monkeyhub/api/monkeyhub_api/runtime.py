@@ -4,9 +4,9 @@ No operation is replayed by a watcher or by recovery. A lost HTTP response is
 reconciled against retained results; absence of proof remains visible.
 """
 
-import base64
 from dataclasses import dataclass, field
 from http.client import HTTPException
+import base64
 import hashlib
 import json
 import os
@@ -19,16 +19,12 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 from archflow_studio_api.application.artifacts import (
-    DocumentPageReplacement,
-    SourceDocument,
-    document_bytes,
-    list_documents,
-    save_document,
+    DocumentWorkCopy,
+    list_document_work_copies,
 )
 from archflow_studio_api.application.binding import ProjectBinding
-from archflow_studio_api.application.boards import read_board
 from archflow_studio_api.application.events import StudioEvents
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.errors import StudioError
@@ -45,8 +41,13 @@ _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
 _IDLE_RETAINED_REFRESH_S = 30
-_BOARD_WORK_MEDIA = {"image/png": ".png", "image/jpeg": ".jpg"}
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+# How long a work copy's last write must predate the read that hashed it before
+# an unchanged stat sample is believed without reading again. Filesystem
+# timestamps are coarse: two rewrites inside one clock tick share an
+# ``st_mtime_ns``, so a same-size rewrite landing in the tick the digest was
+# taken in would otherwise be invisible. Beyond this margin it cannot be, and a
+# settled copy stops being read on every heartbeat.
+_WORK_COPY_SETTLED_NS = 2_000_000_000
 
 
 def project_key(path: str) -> str:
@@ -347,18 +348,23 @@ class OperationManager:
                 if row.record.candidateId and row.record.status in _ACTIVE | {"needs_recovery"}))
 
 
-@dataclass(frozen=True, slots=True)
-class _BoardWorkBinding:
-    key: str
-    path: Path
-    document: SourceDocument
-
-
 @dataclass
-class _BoardWorkObservation:
+class _WorkCopyObservation:
+    """What this process has seen of one explicitly opened work copy.
+
+    ``observed_sha256`` is the only thing that decides whether the file moved:
+    a page replaced through some other client does not make an untouched copy
+    an edit, and an edit back to bytes the project already registered is still
+    an edit. ``failure`` keeps the last refusal for that copy visible until it
+    registers something or stops being bound; it is per copy, so one unreadable
+    file never speaks for the project.
+    """
+
+    copy: DocumentWorkCopy
     sample: tuple[int, int] | None = None
-    hashed_sample: tuple[int, int] | None = None
-    registered_sha256: str | None = None
+    hashed_at_ns: int | None = None
+    observed_sha256: str | None = None
+    failure: HubError | None = None
 
 
 @dataclass
@@ -379,7 +385,13 @@ class ProjectRuntime:
     last_workers: tuple = ()
     last_snapshot: dict | None = None
     projection_key: tuple | None = None
-    board_work: dict[str, _BoardWorkObservation] = field(default_factory=dict)
+    # Keyed by the copy's origin page identity, which never moves. Runtime
+    # lifetime only: the copies themselves are the project's, and which ones
+    # exist is derived from it, never remembered here.
+    work_copies: dict[tuple[str, str, str | None, int], _WorkCopyObservation] = field(default_factory=dict)
+    # A project whose documents will not list at all. Separate from ``error``
+    # because it is not a fact about the retained projection.
+    work_copy_error: HubError | None = None
 
 
 class ProjectRuntimeManager:
@@ -455,9 +467,15 @@ class ProjectRuntimeManager:
                     if row.projectId == runtime.project_id and project_key(row.projectDir) == project_key(runtime.project_dir)]
         workers = [worker_dto(row) for row in self.applications.worker_snapshots(project_dir=runtime.project_dir)]
         with runtime.lock:
+            # A refused work-copy edit is reported through the runtime's one
+            # error surface, behind anything wrong with the project itself and
+            # one at a time: the point is that the architect learns their save
+            # did not land, not that every copy gets its own channel.
+            failure = runtime.error or runtime.work_copy_error or next(
+                (row.failure for row in tuple(runtime.work_copies.values()) if row.failure is not None), None)
             return ProjectRuntimeDto(runtimeId=runtime.runtime_id, projectId=runtime.project_id, projectDir=runtime.project_dir,
                 state=runtime.state, workers=workers, operations=runtime.operations.records(), sessions=sessions,
-                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=runtime.error)
+                retained=runtime.retained, projection=runtime.projection, clients=self._clients, error=failure)
 
     def snapshot(self) -> HubRuntimeDto:
         with self._lock:
@@ -541,144 +559,170 @@ class ProjectRuntimeManager:
             self.emit("operation/committed", runtime.runtime_id)
 
     @staticmethod
-    def _page_identity(value) -> tuple[str, str, str | None, int] | None:
-        if not isinstance(value, dict):
-            return None
-        run_id, digest = value.get("runId"), value.get("assetSha256")
-        revision, page_index = value.get("revisionRef"), value.get("pageIndex")
-        if (not isinstance(run_id, str) or not run_id or not isinstance(digest, str)
-                or not _SHA256.fullmatch(digest) or (revision is not None and not isinstance(revision, str))
-                or not isinstance(page_index, int) or isinstance(page_index, bool) or page_index < 0):
-            return None
-        return run_id, digest, revision, page_index
+    def _work_copy_key(copy: DocumentWorkCopy) -> tuple[str, str, str | None, int]:
+        return copy.run_id, copy.asset_sha256, copy.revision_ref, copy.page_index
 
-    def _board_work_bindings(self, runtime: ProjectRuntime) -> tuple[_BoardWorkBinding, ...]:
-        """Resolve only explicit image pages already placed on this project's Board.
+    def bind_work_copies(self, runtime: ProjectRuntime) -> dict[tuple[str, str, str | None, int], str]:
+        """Re-derive which of this project's registered pages have an editable file.
 
-        Registered P036 bytes stay immutable. Each placed image gets one Hub-owned
-        mutable working copy whose stable identity follows the page's replacement
-        chain. Producer/provider discovery is deliberately absent: no directory is
-        scanned and no filename is guessed.
+        The project is the only record of that: a registered single-page image
+        names exactly one possible copy path and a row exists only when that
+        file is there. So a copy opened before this process started is bound on
+        the first pass, and one the architect deleted stops being observed. No
+        directory is scanned, no name is guessed and nothing is materialised —
+        a copy exists because somebody asked the Studio for it.
         """
-        documents = list_documents(runtime.binding)
-        pages = {}
-        forward = {}
-        reverse: dict[tuple[str, str, str | None, int], tuple[str, str, str | None, int] | None] = {}
-        for document in documents:
-            for page in document.pages:
-                pages[(document.run_id, document.asset_sha256, document.revision_ref, page.page_index)] = document
-            for replacement in document.replaces_pages:
-                old = (replacement.run_id, replacement.asset_sha256, replacement.revision_ref, replacement.page_index)
-                new = (document.run_id, document.asset_sha256, document.revision_ref, replacement.new_page_index)
-                if old in forward and forward[old] != new:
-                    continue
-                forward[old] = new
-                reverse[new] = old if new not in reverse else None
-        board = read_board(runtime.binding)
-        work_root = self.applications.runtime_root / "runtime" / "board-artifacts" / runtime.runtime_id
-        result: dict[str, _BoardWorkBinding] = {}
-        for element in board.elements:
-            if element.get("type") != "image" or element.get("isDeleted") is True:
-                continue
-            custom = element.get("customData")
-            identity = self._page_identity(custom.get("sourceDocument") if isinstance(custom, dict) else None)
-            if identity is None or identity not in pages:
-                continue
-            seen = set()
-            while identity in forward and identity not in seen:
-                seen.add(identity)
-                identity = forward[identity]
-            document = pages.get(identity)
-            if document is None or document.mime_type not in _BOARD_WORK_MEDIA or len(document.pages) != 1 or identity[3] != 0:
-                continue
-            root = identity
-            seen.clear()
-            while root in reverse and reverse[root] is not None and root not in seen:
-                seen.add(root)
-                root = reverse[root]
-            key = hashlib.sha256(json.dumps(root, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
-            path = work_root / f"{key}{_BOARD_WORK_MEDIA[document.mime_type]}"
-            if not path.exists():
-                try:
-                    _, data = document_bytes(runtime.binding, document.run_id, document.asset_sha256, document.revision_ref)
-                    work_root.mkdir(parents=True, exist_ok=True)
-                    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-                    try:
-                        with temporary.open("xb") as stream:
-                            stream.write(data)
-                            stream.flush()
-                            os.fsync(stream.fileno())
-                        try:
-                            os.link(temporary, path)
-                        except FileExistsError:
-                            pass
-                    finally:
-                        temporary.unlink(missing_ok=True)
-                except (StudioError, OSError):
-                    continue
-            result[key] = _BoardWorkBinding(key, path, document)
-        return tuple(result.values())
 
-    def board_work_paths(self, runtime: ProjectRuntime) -> dict[str, str]:
-        """Expose current explicit working paths to runtime integrations/tests."""
-        return {row.key: str(row.path) for row in self._board_work_bindings(runtime)}
+        copies = {self._work_copy_key(copy): copy for copy in list_document_work_copies(runtime.binding)}
+        for key in tuple(runtime.work_copies):
+            if key not in copies:
+                del runtime.work_copies[key]
+        for key, copy in copies.items():
+            observed = runtime.work_copies.get(key)
+            if observed is None:
+                runtime.work_copies[key] = _WorkCopyObservation(copy)
+            else:
+                observed.copy = copy
+        return {key: str(copy.path) for key, copy in copies.items()}
 
-    def _refresh_board_work(self, runtime: ProjectRuntime) -> int:
-        bindings = self._board_work_bindings(runtime)
-        current_keys = {row.key for row in bindings}
-        for key in tuple(runtime.board_work):
-            if key not in current_keys:
-                del runtime.board_work[key]
-        updated = 0
-        for row in bindings:
-            observation = runtime.board_work.setdefault(
-                row.key, _BoardWorkObservation(registered_sha256=row.document.asset_sha256)
-            )
-            if observation.registered_sha256 != row.document.asset_sha256:
-                observation.registered_sha256 = row.document.asset_sha256
-                observation.sample = None
-                observation.hashed_sample = None
+    def _stable_work_copy_bytes(self, observed: _WorkCopyObservation) -> bytes | None:
+        """The copy's settled contents, or ``None`` while it is still moving.
+
+        A producer's save is not atomic on every path. The same
+        ``(size, mtime_ns)`` has to be seen twice before the file is read, the
+        sample is taken again after reading, and a digest is only trusted once
+        the last write is older than the timestamp granularity that could hide
+        a rewrite inside it. Half-written bytes therefore reach neither the
+        project nor the user as an error.
+        """
+
+        path = observed.copy.path
+        try:
+            before = path.stat()
+        except FileNotFoundError:
+            # A transient missing file is what an atomic save/rename looks
+            # like from here, not a deletion. Binding decides what exists.
+            return None
+        sample = (before.st_size, before.st_mtime_ns)
+        if (observed.hashed_at_ns is not None and observed.sample == sample
+                and before.st_mtime_ns + _WORK_COPY_SETTLED_NS <= observed.hashed_at_ns):
+            return None
+        if observed.sample != sample:
+            observed.sample, observed.hashed_at_ns = sample, None
+            return None
+        try:
+            data = path.read_bytes()
+            after = path.stat()
+        except FileNotFoundError:
+            return None
+        if (after.st_size, after.st_mtime_ns) != sample:
+            observed.sample, observed.hashed_at_ns = (after.st_size, after.st_mtime_ns), None
+            return None
+        observed.hashed_at_ns = time.time_ns()
+        return data
+
+    def _observe_work_copies(self, runtime: ProjectRuntime) -> int:
+        """Register what each settled work copy actually changed to, or say why not.
+
+        Three cases are kept apart on purpose. Bytes this process has not seen
+        move are nothing, even when the page they answer for was replaced by
+        some other client — an untouched copy must never roll the Board back.
+        Bytes that moved to what the project already says are equally nothing.
+        Anything else moved, including an undo to an earlier registration, and
+        is offered to the document owner: it either becomes the next registered
+        revision or its refusal is carried to the user, per copy, unchanged.
+        """
+
+        registered = 0
+        for key, observed in tuple(runtime.work_copies.items()):
             try:
-                before = row.path.stat()
-            except OSError:
+                data = self._stable_work_copy_bytes(observed)
+            except OSError as exc:
+                observed.failure = HubError(code="WORK_COPY_READ_FAILED",
+                    detail=f"{observed.copy.file_name}: {exc}"[:1200])
                 continue
-            sample = before.st_size, before.st_mtime_ns
-            if observation.sample != sample:
-                observation.sample = sample
-                observation.hashed_sample = None
-                continue
-            if observation.hashed_sample == sample:
-                continue
-            try:
-                data = row.path.read_bytes()
-                after = row.path.stat()
-            except OSError:
-                continue
-            if (after.st_size, after.st_mtime_ns) != sample:
-                observation.sample = after.st_size, after.st_mtime_ns
-                observation.hashed_sample = None
+            if data is None:
                 continue
             digest = hashlib.sha256(data).hexdigest()
-            observation.hashed_sample = sample
-            if digest == row.document.asset_sha256:
+            baseline = observed.observed_sha256
+            if digest == baseline:
+                if observed.failure and observed.failure.code == "WORK_COPY_READ_FAILED":
+                    observed.failure = None
                 continue
-            replacement = DocumentPageReplacement(
-                row.document.run_id, row.document.asset_sha256,
-                row.document.revision_ref, 0, 0,
-            )
+            # The head can have moved since the last binding pass; aim this
+            # replacement at the page the project answers for right now.
             try:
-                saved = save_document(
-                    runtime.binding, None, row.document.file_name, row.document.mime_type,
-                    base64.b64encode(data).decode("ascii"), None, (replacement,),
-                )
-            except StudioError:
-                # Partial/corrupt/incompatible writes never replace the last
-                # registered image. A later stat change retries from scratch.
+                copy = next((row for row in list_document_work_copies(runtime.binding)
+                             if self._work_copy_key(row) == key), None)
+            except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
+                observed.hashed_at_ns = None
+                observed.failure = HubError(code="WORK_COPY_READ_FAILED",
+                    detail=f"{observed.copy.file_name}: {exc}"[:1200])
                 continue
-            observation.registered_sha256 = saved.asset_sha256
-            updated += 1
+            if copy is None:
+                continue
+            observed.copy = copy
+            observed.observed_sha256 = digest
+            if digest == copy.head_asset_sha256:
+                # The copy agrees with the page again. Whatever was refused
+                # before is no longer waiting on anything, so it stops being
+                # reported without anything having been registered.
+                observed.failure = None
+                continue
+            if baseline is None and digest in copy.known_sha256:
+                # With no prior observation, old untouched bytes and an offline
+                # undo cannot be distinguished. Keep the registered page and
+                # expose the disagreement instead of silently losing the edit.
+                observed.failure = HubError(code="WORK_COPY_RESTART_CONFLICT", detail=(
+                    f"{copy.file_name}: The work copy matches an earlier page version. "
+                    "Hub cannot tell whether it was left unchanged or reverted while closed. "
+                    "The current registered page is still shown; review the copy before editing again."
+                )[:1200])
+                continue
+            try:
+                if digest in copy.known_sha256:
+                    raise StudioError(409, "DOCUMENT_REVISION_ALREADY_REGISTERED",
+                        "These bytes are already a registered revision of this page. "
+                        "Returning to that version cannot be registered as a new revision; "
+                        "the current registered page is still shown.")
+                # Board uploads and observed edits must share Studio's document
+                # writer. Calling save_document in this Hub process would use
+                # a separate lock and could create two successors of one page.
+                self.service(runtime)
+                result = self.forward(runtime, "/api/documents", "POST", json.dumps({
+                    "projectId": runtime.project_id, "runId": None,
+                    "fileName": copy.file_name, "mimeType": copy.mime_type,
+                    "contentBase64": base64.b64encode(data).decode("ascii"),
+                    "replacesPages": [{"runId": copy.head_run_id,
+                        "assetSha256": copy.head_asset_sha256, "revisionRef": copy.head_revision_ref,
+                        "pageIndex": copy.head_page_index, "newPageIndex": 0}],
+                }).encode("utf-8"), {"content-type": "application/json"})
+                if result.status >= 400:
+                    error = result.json()
+                    raise StudioError(result.status, error.get("code", "DOCUMENT_WORK_COPY_FAILED"),
+                                      error.get("detail", "The edited page was not registered."))
+            except HubFailure as exc:
+                if exc.error.code == "WORKER_UNAVAILABLE":
+                    # No request was sent; the file stays pending until Studio
+                    # is ready. A dispatched request with a lost reply is never retried.
+                    observed.observed_sha256 = baseline
+                    observed.hashed_at_ns = None
+                observed.failure = HubError(code=f"WORK_COPY_{exc.error.code}",
+                    detail=f"{copy.file_name}: {exc.error.detail}"[:1200])
+                continue
+            except StudioError as exc:
+                # An edit that cannot be registered is reported, not dropped:
+                # the previously registered page stays the Board's preview and
+                # this copy carries the reason until it registers something
+                # else. One digest, one report — a re-save of the same bytes
+                # does not repeat it.
+                observed.failure = HubError(code=f"WORK_COPY_{exc.code}",
+                                            detail=f"{copy.file_name}: {exc.detail}"[:1200])
+                continue
+            observed.failure = None
+            registered += 1
             self.emit("artifact/updated", runtime.runtime_id)
-        return updated
+        return registered
 
     def _watch(self, runtime: ProjectRuntime):
         next_retained_read = 0.0
@@ -690,20 +734,38 @@ class ProjectRuntimeManager:
             drained = runtime.state == "closed" and not any(row.process_id is not None for row in workers)
             active = any(row.status in _ACTIVE for row in runtime.operations.records()) or any(
                 row.get("status") in {"queued", "running"} for row in (runtime.retained or {}).get("jobs", []))
+            due = (drained or force_read or active or worker_states != runtime.last_workers
+                   or time.monotonic() >= next_retained_read)
             try:
-                if drained or force_read or active or worker_states != runtime.last_workers or time.monotonic() >= next_retained_read:
+                if due:
                     # Keep liveness/session reads responsive without rebuilding
                     # unchanged retained history on every idle heartbeat. Hub
                     # mutations wake this observer; the fallback sees changes
                     # made through a separate Studio/project client.
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
-                self._refresh_board_work(runtime)
             except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
                     runtime.error = exc.error if isinstance(exc, HubFailure) else HubError(code="RUNTIME_READ_FAILED", detail=str(exc)[:1200])
                     runtime.projection = "stale"
+            # Work copies are an explicit opt-in beside the project, not part
+            # of its retained projection. A document listing that will not read
+            # or a file that will not open therefore says nothing about whether
+            # the project is stale, and never delays the next retained read.
+            try:
+                if due:
+                    # Which copies exist is re-derived on the retained cadence;
+                    # their bytes are watched every heartbeat, which costs one
+                    # stat each once a copy has settled.
+                    self.bind_work_copies(runtime)
+                self._observe_work_copies(runtime)
+            except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:
+                with runtime.lock:
+                    runtime.work_copy_error = HubError(code="WORK_COPY_READ_FAILED", detail=str(exc)[:1200])
+            else:
+                with runtime.lock:
+                    runtime.work_copy_error = None
             with self._lock:
                 chat_changed = project_key(runtime.project_dir) in self._chat_changed
                 self._chat_changed.discard(project_key(runtime.project_dir))
