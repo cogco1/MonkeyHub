@@ -416,11 +416,13 @@ export const studio = {
   },
 
   /**
-   * Give this registered single-page image an editable copy on disk, and say where.
+   * Give this registered document an editable copy on disk, and say where.
    *
-   * Explicitly asked for, never made by watching a project. Asking twice answers
-   * with the copy already there, edits intact. What comes back names the page it
-   * answers for and a project-relative path, never this machine's.
+   * Explicitly asked for, never made by watching a project. One file stands for
+   * the whole document; asking twice answers with the copy already there, edits
+   * intact. What comes back names the document it answers for and a
+   * project-relative path, never this machine's. A document no single file can
+   * stand for is refused, and the refusal says why.
    */
   createDocumentWorkCopy(projectId: string, runId: string, assetSha256: string, revisionRef?: string | null): Promise<DocumentWorkCopyDto> {
     return call(

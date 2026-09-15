@@ -53,7 +53,7 @@ const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-d
 let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
-// The explicit editable copy of one registered single-page image.
+// The explicit editable copy of one whole registered document.
 let workCopy, workCopyRefusal;
 const workCopies = [];
 const oldSource = pageSource(oldDocument, 1);
@@ -141,10 +141,10 @@ try {
   uploadedReplacement = { ...sourceDocument(uploadBytes, "UI updated.pdf", 2, "ui-drawing-revision"),
     replacesPages: [{ ...pageSource(replacement, 0), newPageIndex: 1 }] };
   workCopy = { projectId, runId: replacement.runId, assetSha256: replacement.assetSha256,
-    revisionRef: replacement.revisionRef, pageIndex: 0, fileName: replacement.fileName, mimeType: "image/png",
+    revisionRef: replacement.revisionRef, fileName: replacement.fileName, mimeType: "image/png",
     relativePath: `runs/${replacement.runId}/workspaces/studio-documents/work/${replacement.assetSha256}/${replacement.fileName}`,
     headRunId: replacement.runId, headAssetSha256: replacement.assetSha256,
-    headRevisionRef: replacement.revisionRef, headPageIndex: 0, refusal: null };
+    headRevisionRef: replacement.revisionRef, refusal: null };
   // The old two-page PDF had one of its pages replaced on its own, so the
   // document owner has no single file that can stand for it.
   workCopyRefusal = "Pages of this document are answered for by different documents now, "
