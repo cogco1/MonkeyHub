@@ -1530,8 +1530,17 @@ class FilesystemProjectRepository:
         return data
 
     def _transfer_artifact_referenced(self, path: str, digest: str, run_id: str | None) -> bool:
-        """Find an object's ref, or a native artifact's exact run-local receipt."""
-        def matches(value: Any) -> bool:
+        """Find an object's ref, or a retained receipt naming this artifact.
+
+        A native CAD receipt names only a workspace-local export, so that loose
+        filename match stays inside the run owning the bytes. A complete
+        project-relative reference is already unambiguous and export follows it
+        across runs, so one retained run may hold an artifact that only another
+        retained run's receipt names. Both forms still require the recorded
+        digest, this project, and an already admissible workspace or object
+        path; the owning run is searched first so the common read stops there.
+        """
+        def matches(value: Any, local: bool) -> bool:
             if isinstance(value, Mapping):
                 if (value.get("schema") == "StudioSourceDocument@1"
                         and value.get("revisionRef") is None
@@ -1543,20 +1552,23 @@ class FilesystemProjectRepository:
                 if value.get("sha256") == digest and isinstance(relative, str):
                     if relative == path:
                         return value.get("project_id", self._manifest.project_id) == self._manifest.project_id
-                    if run_id is not None and not relative.startswith(("runs/", "objects/")):
+                    if local and not relative.startswith(("runs/", "objects/")):
                         if PurePosixPath(relative.replace("\\", "/")).name == PurePosixPath(path).name:
                             return True
                 inspection = value.get("inspection")
                 native = value.get("artifact_relative_path")
-                if run_id is not None and isinstance(inspection, Mapping) and isinstance(native, str):
+                if local and isinstance(inspection, Mapping) and isinstance(native, str):
                     if inspection.get("file_sha256") == digest and PurePosixPath(native.replace("\\", "/")).name == PurePosixPath(path).name:
                         return True
-                return any(matches(item) for item in value.values())
+                return any(matches(item, local) for item in value.values())
             if isinstance(value, (list, tuple)):
-                return any(matches(item) for item in value)
+                return any(matches(item, local) for item in value)
             return value == f"project://{self._manifest.project_id}/{path}"
 
-        roots = [self.layout.run(run_id).root] if run_id else sorted(self.layout.runs.iterdir())
+        owner = self.layout.run(run_id).root if run_id else None
+        roots = ([owner] if owner is not None else []) + [
+            root for root in sorted(self.layout.runs.iterdir()) if root != owner
+        ]
         for root in roots:
             for area in ("records", "reviews", "candidates", "branches"):
                 if not (root / area).is_dir():
@@ -1569,7 +1581,7 @@ class FilesystemProjectRepository:
                     data = _read_bytes(record)
                     if _sha256(data) != record_digest:
                         raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {record.name}")
-                    if matches(_parse_json_document(data, record.name)):
+                    if matches(_parse_json_document(data, record.name), root == owner):
                         return True
         return False
 
@@ -1613,7 +1625,14 @@ class FilesystemProjectRepository:
             if type(row["size"]) is not int or len(data) != row["size"] or _sha256(data) != row["sha256"]:
                 raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path}")
             parts = PurePosixPath(path).parts
-            if path.endswith(".json") and path not in (
+            # A run's workspace holds native exports, and some of those exports
+            # are themselves JSON. They are artifacts, not records: the sender
+            # only admits one a retained receipt names, and ``read_transfer_file``
+            # already serves it by area and digest. The content-addressed record
+            # filename is required of records, canonical state and events alone,
+            # so applying it here too would refuse an archive this code wrote.
+            workspace = parts[0] == "runs" and len(parts) >= 4 and parts[2] == "workspaces"
+            if path.endswith(".json") and not workspace and path not in (
                 "project.json", "design/branches.json", "input/runner/state-record.json",
                 "input/runner/seats.json", "input/runner/program-sheet.json",
             ) and not (parts[0] == "runs" and len(parts) == 3 and parts[2] == "run.json"):

@@ -5,13 +5,23 @@ import { findSource, imageSource, type PageSource } from "./boardScene";
 type Point = [number, number];
 type ErrorCode = "BOARD_FEEDBACK_SOURCE_REQUIRED" | "BOARD_FEEDBACK_SOURCE_AMBIGUOUS"
   | "BOARD_FEEDBACK_SOURCE_UNAVAILABLE" | "BOARD_FEEDBACK_UNSUPPORTED"
-  | "BOARD_FEEDBACK_OUTSIDE_PAGE" | "BOARD_FEEDBACK_INVALID_GEOMETRY";
+  | "BOARD_FEEDBACK_OUTSIDE_PAGE" | "BOARD_FEEDBACK_INVALID_GEOMETRY"
+  | "BOARD_FEEDBACK_REFERENCE_UNLINKED" | "BOARD_FEEDBACK_REFERENCE_MARKED";
 
 export class BoardFeedbackGeometryError extends Error {
   constructor(readonly code: ErrorCode, message: string) {
     super(message);
     this.name = "BoardFeedbackGeometryError";
   }
+}
+
+export interface BoardFeedbackReference {
+  image: ExcalidrawImageElement;
+  document: SourceDocumentDto;
+  page: DocumentPageDto;
+  source: PageSource;
+  /** Human-readable purpose retained beside the transient reference visual. */
+  referenceNote: string;
 }
 
 export interface BoardFeedbackSelection {
@@ -22,6 +32,12 @@ export interface BoardFeedbackSelection {
   annotations: DocumentGestureDto[];
   annotationGroups: string[];
   selectedText: string;
+  /**
+   * Extra registered pages explicitly connected to the edit source on Board.
+   * They are visual evidence only: no model target or canonical geometry is
+   * inferred from them. Optional for callers built before concept references.
+   */
+  references?: readonly BoardFeedbackReference[];
 }
 
 function fail(code: ErrorCode, message: string): never {
@@ -88,11 +104,33 @@ function rectanglePoints(element: ExcalidrawElement): Point[] {
   return points;
 }
 
+function bindingElementId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const id = (value as { elementId?: unknown }).elementId;
+  return typeof id === "string" && id ? id : null;
+}
+
+function connectorBindings(element: ExcalidrawElement): readonly [string, string] | null {
+  if (element.type !== "line" && element.type !== "arrow") return null;
+  const row = element as ExcalidrawElement & { startBinding?: unknown; endBinding?: unknown };
+  const start = bindingElementId(row.startBinding), end = bindingElementId(row.endBinding);
+  return start && end ? [start, end] : null;
+}
+
 /**
  * Transfer an explicit selection only. Frame membership and bound labels are
  * expanded; visual proximity never chooses a drawing or silently adds marks.
  * Geometry is page-local after undoing the Board image transform. Page metadata
  * already includes PDF rotation/CropBox and image EXIF orientation.
+ *
+ * A concept selection may contain additional registered images. The edit target
+ * is explicit: a model-linked page whose own selected frame contains the target
+ * mark wins; otherwise there must be exactly one selected model-linked page.
+ * Every extra page must also be joined to that edit source (or one of its own
+ * selected marks) by an explicit Excalidraw connector binding. Those pages are
+ * reference visuals even when they themselves have a model binding; every
+ * connector that touches one stays Board evidence and is never saved as page
+ * ink, and a reference's own marks are refused rather than moved to the edit page.
  */
 export function createBoardFeedback(
   elements: readonly ExcalidrawElement[],
@@ -120,12 +158,35 @@ export function createBoardFeedback(
   const chosen = visible.filter((element) => selected.has(element.id));
   const images = chosen.filter((element): element is ExcalidrawImageElement => element.type === "image");
   if (images.length === 0) fail("BOARD_FEEDBACK_SOURCE_REQUIRED", "Select one registered source image, or its frame, together with the marks to send.");
-  if (images.length !== 1) fail("BOARD_FEEDBACK_SOURCE_AMBIGUOUS", "Select only one source image. Feedback cannot guess which drawing or revision to change.");
-  const image = images[0];
-  const source = imageSource(image);
-  const document = source && findSource(documents, source);
-  const page = document?.pages.find((item) => item.pageIndex === source?.pageIndex);
-  if (!source || !document || !page) fail("BOARD_FEEDBACK_SOURCE_UNAVAILABLE", "The selected image no longer resolves to its registered source page and drawing revision.");
+
+  const imageRows = images.map((candidate) => {
+    const candidateSource = imageSource(candidate);
+    const candidateDocument = candidateSource && findSource(documents, candidateSource);
+    const candidatePage = candidateDocument?.pages.find((item) => item.pageIndex === candidateSource?.pageIndex);
+    if (!candidateSource || !candidateDocument || !candidatePage) {
+      fail("BOARD_FEEDBACK_SOURCE_UNAVAILABLE", "A selected image no longer resolves to its registered source page and drawing revision.");
+    }
+    return { image: candidate, source: candidateSource, document: candidateDocument, page: candidatePage };
+  });
+  const boundRows = imageRows.filter((row) => row.document.modelSource != null);
+  const markedRows = boundRows.filter((row) => row.image.frameId != null && chosen.some((element) =>
+    element.frameId === row.image.frameId && element.type !== "image" && element.type !== "frame"
+      && element.type !== "text" && connectorBindings(element) === null));
+  const target = imageRows.length === 1 ? imageRows[0]
+    : markedRows.length === 1 ? markedRows[0]
+      : boundRows.length === 1 ? boundRows[0] : null;
+  if (!target) {
+    // Marks on more than one model-linked page is a different mistake from no
+    // mark at all: only the edit page receives them, whichever page that is.
+    if (markedRows.length > 1) {
+      fail("BOARD_FEEDBACK_REFERENCE_MARKED", "Keep your marks on the one drawing you want changed. The other selected drawings travel as visual reference and carry no marks.");
+    }
+    fail("BOARD_FEEDBACK_SOURCE_AMBIGUOUS", "Select one model-linked edit drawing and place the target mark inside its own frame before adding explicitly connected reference images.");
+  }
+  const { image, source, document, page } = target;
+  const referenceRows = imageRows.filter((row) => row.image.id !== image.id);
+  if (referenceRows.length > 3) fail("BOARD_FEEDBACK_UNSUPPORTED", "Select at most three reference pages with one edit drawing.");
+
   checkedGeometry(image);
   if (image.crop != null) fail("BOARD_FEEDBACK_UNSUPPORTED", "Cropped Board images are not supported for feedback yet. Restore the full source image first.");
   if (image.width <= 0 || image.height <= 0 || !Array.isArray(image.scale)
@@ -133,6 +194,82 @@ export function createBoardFeedback(
     || ![page.width, page.height].every((value) => Number.isFinite(value) && value > 0)) {
     fail("BOARD_FEEDBACK_INVALID_GEOMETRY", "The source page has invalid dimensions or image scale.");
   }
+
+  for (const reference of referenceRows) {
+    checkedGeometry(reference.image);
+    if (reference.image.crop != null || reference.image.angle !== 0 || !Array.isArray(reference.image.scale)
+      || reference.image.scale.length !== 2 || reference.image.scale[0] !== 1 || reference.image.scale[1] !== 1) {
+      fail("BOARD_FEEDBACK_UNSUPPORTED", "A concept reference must show its complete registered page without crop, rotation or flip before it is sent as visual evidence.");
+    }
+  }
+
+  const referenceByEndpoint = new Map<string, typeof referenceRows[number]>();
+  const referenceFrameIds = new Set<string>();
+  for (const reference of referenceRows) {
+    referenceByEndpoint.set(reference.image.id, reference);
+    // A frame shared with the edit page identifies neither page, so it never
+    // stands in for the reference: its marks stay the edit page's own.
+    if (reference.image.frameId && reference.image.frameId !== image.frameId) {
+      referenceByEndpoint.set(reference.image.frameId, reference);
+      referenceFrameIds.add(reference.image.frameId);
+    }
+  }
+  const targetEndpoints = new Set<string>([image.id]);
+  if (image.frameId) targetEndpoints.add(image.frameId);
+  // A connector may bind to the circle/outline that marks the target rather
+  // than to the image itself. Only a mark that belongs to the edit page anchors
+  // a relationship: a mark sitting in another page's frame, and a connector
+  // bound at both ends, never stand in for the edit drawing.
+  for (const element of chosen) {
+    if (element.type === "image" || element.type === "frame" || element.type === "text") continue;
+    if (element.frameId != null && element.frameId !== image.frameId) continue;
+    if (connectorBindings(element) !== null) continue;
+    targetEndpoints.add(element.id);
+  }
+
+  const relationConnectorIds = new Set<string>();
+  const relationDirections = new Map<string, Set<"target-to-reference" | "reference-to-target">>();
+  for (const element of chosen) {
+    const bindings = connectorBindings(element);
+    if (!bindings) continue;
+    const [start, end] = bindings;
+    const endReference = referenceByEndpoint.get(end);
+    const startReference = referenceByEndpoint.get(start);
+    // Any connector touching a selected reference page is Board relationship
+    // evidence, never edit-page ink, even when it joins two references and so
+    // qualifies neither of them.
+    if (!startReference && !endReference) continue;
+    relationConnectorIds.add(element.id);
+    const record = (reference: typeof referenceRows[number], direction: "target-to-reference" | "reference-to-target") => {
+      const directions = relationDirections.get(reference.image.id) ?? new Set<typeof direction>();
+      directions.add(direction); relationDirections.set(reference.image.id, directions);
+    };
+    if (targetEndpoints.has(start) && endReference) record(endReference, "target-to-reference");
+    if (startReference && targetEndpoints.has(end)) record(startReference, "reference-to-target");
+  }
+  // A page added to the board carries its own frame, so selecting a reference by
+  // that frame pulls its ink in too. Only the edit page receives annotations, so
+  // say that instead of converting the reference's marks against another page.
+  for (const element of chosen) {
+    if (element.type === "image" || element.type === "frame" || element.type === "text") continue;
+    if (relationConnectorIds.has(element.id) || element.frameId == null) continue;
+    if (referenceFrameIds.has(element.frameId)) {
+      fail("BOARD_FEEDBACK_REFERENCE_MARKED", "Marks drawn on a reference page cannot travel with the edit drawing. Select the reference image itself, or save those marks on that page so they arrive in its own ink.");
+    }
+  }
+  const references: BoardFeedbackReference[] = referenceRows.map((reference) => {
+    const directions = relationDirections.get(reference.image.id);
+    if (!directions?.size) {
+      fail("BOARD_FEEDBACK_REFERENCE_UNLINKED", "Each selected concept reference needs an explicit selected connector to the edit drawing or one of its selected target marks.");
+    }
+    const direction = directions.size > 1 ? "in both directions" : directions.has("target-to-reference")
+      ? "from the edit target toward this reference" : "from this reference toward the edit target";
+    return {
+      ...reference,
+      referenceNote: `An explicit selected Board connector runs ${direction}. Use this page as visual design reference only; it is not a second edit target.`,
+    };
+  });
+
   const center: Point = [image.x + image.width / 2, image.y + image.height / 2];
   const pagePoint = (world: Point): Point => {
     const [x, y] = rotate(world, center, -image.angle);
@@ -140,7 +277,10 @@ export function createBoardFeedback(
       0.5 + (y - center[1]) / image.height * image.scale[1]];
   };
   const annotations: DocumentGestureDto[] = [];
-  const annotationGroups: string[] = [];
+  // If a connector used to be ordinary page ink and is now promoted to a
+  // Board relationship, remove its old board-owned group from the edit page.
+  const annotationGroups: string[] = [...relationConnectorIds].map((id) =>
+    `board:${encodeURIComponent(image.id)}:${encodeURIComponent(id)}`);
   // Native frame/bound-label selection is already expanded and deduplicated by id.
   // Board reading order is independent of scene stacking and selection-click order.
   // Text supplies intent, so it need not sit inside the page like geometric ink.
@@ -150,7 +290,8 @@ export function createBoardFeedback(
     .sort((left, right) => left.y - right.y || left.x - right.x || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
     .map((element) => (element.originalText ?? element.text).trim()).filter(Boolean).join("\n\n");
   for (const element of chosen) {
-    if (element.id === image.id || element.type === "frame" || element.type === "text") continue;
+    if (images.some((candidate) => candidate.id === element.id) || relationConnectorIds.has(element.id)
+      || element.type === "frame" || element.type === "text") continue;
     if (!["ellipse", "rectangle", "line", "arrow", "freedraw"].includes(element.type)) {
       fail("BOARD_FEEDBACK_UNSUPPORTED", `Selected ${element.type} elements are not supported for feedback.`);
     }
@@ -216,5 +357,5 @@ export function createBoardFeedback(
     }
   }
   if (annotations.length > 2000) fail("BOARD_FEEDBACK_UNSUPPORTED", "Select fewer marks; one page supports at most 2000 annotations.");
-  return { image, document, page, source, annotations, annotationGroups, selectedText };
+  return { image, document, page, source, annotations, annotationGroups, selectedText, references };
 }
