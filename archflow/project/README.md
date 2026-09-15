@@ -73,8 +73,9 @@ Other project areas appear as the operations that own them run. Older projects
 need not have every empty directory; repository reopen checks their retained state.
 There is no separate workspace manifest: a suggested layout is
 `<workspace_root>/projects/<project_id>`, and callers supply the roots explicitly.
-Studio's [configuration template](../../apps/archflow-studio/runtime.example.json)
-selects one project; it does not manage the surrounding workspace, cache or temp roots.
+MonkeyHub's application settings select one project per Studio instance, and the
+development start `scripts/dev/run-project-runtime.ps1` takes `-ProjectDir` explicitly;
+neither manages the surrounding workspace, cache or temp roots.
 
 Canonical crash order is:
 

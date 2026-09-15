@@ -40,7 +40,15 @@ The root OPEN_MONKEYHUB.cmd calls this entry:
 .\apps\monkeyhub\launch-hub.ps1 -Python "$PWD\_runtime\python\python.exe" -RuntimeRoot "$env:LOCALAPPDATA\MonkeyHub" -HubWebDir "$PWD\apps\monkeyhub\web\dist" -StudioWebDir "$PWD\apps\archflow-studio\web\dist" -HideConsole
 ```
 
-The wrapper reuses the Studio launcher's splash, tray, logs and monitoring. Quit MonkeyHub requests normal shutdown and waits for its applications; accepted candidate jobs finish and event streams close. It does not force-close a busy application or stop a process found on an occupied port.
+`launch-hub.ps1` is the browser-mode launcher and, with the desktop window, one of the two
+production entries — both start only the Hub. It shows a launch window while the Hub comes up,
+verifies the Hub's source revision and instance identity on `/api/health`, opens the browser,
+and leaves a tray icon whose **Quit MonkeyHub** requests normal shutdown and waits for the
+applications: accepted candidate jobs finish and event streams close. It does not force-close a
+busy application or stop a process found on an occupied port. Its logs are under
+`<runtime root>/logs`. Every Studio and Monitor process is started, monitored and stopped by the
+Hub itself; Studio has no launcher, configuration file or tray of its own (a development start
+on an explicit project is `scripts/dev/run-project-runtime.ps1`).
 
 ## Python entry and development
 
