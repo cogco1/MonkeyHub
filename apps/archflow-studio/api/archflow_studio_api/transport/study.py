@@ -54,6 +54,13 @@ class StudyViewDto(BaseModel):
     composition_graph: dict[str, Any] = Field(alias="compositionGraph")
     hypotheses: list[dict[str, Any]]
     counterfactuals: list[dict[str, Any]]
+    # Which method produced the retained measurements, relations, hypotheses and
+    # counterfactuals above. A cold read replays them instead of re-deriving
+    # them, so without this a consumer would read an old revision's archived
+    # findings as though the current method had just validated them. Null means
+    # a revision retained before the method was stamped: still inspectable,
+    # still not a current-method result.
+    derivation_method: str | None = Field(alias="derivationMethod")
     canonical_state_changed: bool = Field(alias="canonicalStateChanged")
 
 
@@ -85,5 +92,6 @@ def study_dto(view: StudyView) -> StudyViewDto:
         "compositionGraph": _camelize(view.composition_graph),
         "hypotheses": _camelize(payload["hypotheses"]),
         "counterfactuals": _camelize(payload["counterfactuals"]),
+        "derivationMethod": payload.get("derivation_method"),
         "canonicalStateChanged": payload["canonical_state_changed"],
     })

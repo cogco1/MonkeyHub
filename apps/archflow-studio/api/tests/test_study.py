@@ -382,6 +382,73 @@ class StudyTests(unittest.TestCase):
             study_application._hypotheses = exact_hypotheses
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def retain_variant(self, template: dict, study_id: str, **fields) -> str:
+        """Retain a ledger this API would never write, to read it back."""
+
+        binding = bound_project(self.client.app.state)
+        run_id = f"study-{study_id}"
+        payload = {**template, "study_id": study_id, "run_id": run_id, "previous_ref": None}
+        payload.update(fields)
+        run = binding.repository.create_run(run_id)
+        return binding.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+            record_kind=RESEARCH_EVIDENCE_LEDGER,
+            payload=payload,
+        ).uri
+
+    def test_a_corrupt_retained_finding_names_its_ledger_instead_of_failing_as_a_server_error(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        binding = bound_project(self.client.app.state)
+        template = binding.repository.load_json(
+            record_ref_from_uri(first.json()["ledgerRef"], PROJECT_ID)
+        )
+
+        # Replaying a snapshot means nothing re-judges what an older method
+        # concluded, but a retained finding is still a row of fields. A corrupt
+        # row has to name the ledger that cannot be read here, where the record
+        # is known, rather than reaching the wire contract and failing there as
+        # an unexplained server error.
+        for field in ("measurements", "relations", "hypotheses", "counterfactuals", "evidence"):
+            with self.subTest(field=field):
+                study_id = f"corrupt-{field}"
+                self.retain_variant(
+                    template, study_id, **{field: ["not a retained row"]}
+                )
+                answer = self.client.get(f"/api/studies/{study_id}")
+                self.assertEqual(answer.status_code, 409, answer.text)
+                self.assertEqual(answer.json()["code"], "STUDY_LEDGER_INVALID")
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_every_answer_says_which_method_produced_the_findings_it_carries(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(
+            first.json()["derivationMethod"],
+            study_application.CURRENT_DERIVATION_METHOD,
+        )
+
+        # A cold read replays the retained findings instead of deriving them
+        # again, so the answer has to say which method produced them. A ledger
+        # retained before the method was stamped is still readable and must not
+        # borrow today's name for its archived conclusions.
+        binding = bound_project(self.client.app.state)
+        template = dict(binding.repository.load_json(
+            record_ref_from_uri(first.json()["ledgerRef"], PROJECT_ID)
+        ))
+        source = dict(template["source"])
+        source.pop("document_ref")
+        template.pop("derivation_method")
+        self.retain_variant(template, "unstamped-house", source=source)
+
+        archived = self.client.get("/api/studies/unstamped-house")
+        self.assertEqual(archived.status_code, 200, archived.text)
+        self.assertIsNone(archived.json()["derivationMethod"])
+        self.assertEqual(
+            archived.json()["hypotheses"], first.json()["hypotheses"]
+        )
+
     def test_a_ledger_reference_naming_no_retained_record_is_answered_not_crashed(self) -> None:
         first = self.save()
         self.assertEqual(first.status_code, 201, first.text)

@@ -375,6 +375,12 @@ def _evidence(
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in rows:
+        if not isinstance(raw, Mapping):
+            raise StudioError(
+                422,
+                "STUDY_EVIDENCE_INVALID",
+                "Every trace is an object of evidence fields.",
+            )
         evidence_id = raw.get("evidence_id")
         kind = raw.get("kind")
         status = raw.get("status", "proposed")
@@ -998,7 +1004,14 @@ def _load_payload(
             "The retained Study evidence is not canonical.",
         )
     for field in ("measurements", "relations", "hypotheses", "counterfactuals"):
-        if not isinstance(payload.get(field), list):
+        rows = payload.get(field)
+        # Shape only: what an older method concluded is not re-judged here, but
+        # a retained finding is still a row of fields. Without this a corrupt
+        # row reaches the wire contract and fails there as an unexplained 500
+        # instead of naming the ledger that cannot be read.
+        if not isinstance(rows, list) or not all(
+            isinstance(row, Mapping) for row in rows
+        ):
             raise StudioError(
                 409,
                 "STUDY_LEDGER_INVALID",
