@@ -110,8 +110,10 @@ SUPPORTED_FORMAT_VERSIONS: tuple[int, ...] = (
 )
 
 # What ``project.json`` says this build can do with a directory. There is no
-# ``upgradeable``: a supported legacy format is readable, and claiming it can
-# be upgraded would need a migrator that does not exist yet.
+# ``upgradeable`` status: a supported legacy format 1 is readable in place and
+# is upgraded only through ``migrate_project_format``, which writes a new
+# format-2 directory and never rewrites the source, so upgradeability is a
+# property of that operation rather than a fourth thing a directory declares.
 PROJECT_FORMAT_CURRENT = "current"
 PROJECT_FORMAT_SUPPORTED_LEGACY = "supported_legacy"
 PROJECT_FORMAT_TOO_NEW = "too_new"
@@ -178,6 +180,7 @@ class ProjectMigrationPlan:
     retained_bytes: int
     orphan_paths: tuple[str, ...]
     required_transformations: tuple[str, ...]
+    preserved: tuple[str, ...]
     blockers: tuple[str, ...]
 
 
@@ -2234,9 +2237,9 @@ def plan_project_migration(
     has, and the inventory is the complete retained closure the existing
     transfer export walks, including every run, authored input and source
     artifact. The inventory reports each retained kind, its declared schema and
-    whether the record-kind table still holds it; it does not parse payloads, so
-    which references a migration must rewrite stays a question for each
-    record's typed owner and is reported as a blocker.
+    whether the record-kind table still holds it; it does not parse payloads.
+    Records the migration does not own are preserved and listed; blockers
+    remain only for a closure this build cannot read completely.
 
     Reading that closure goes through the repository's own guarded export, which
     acquires the advisory HEAD and design locks; acquiring one creates its file.
@@ -2265,6 +2268,7 @@ def plan_project_migration(
             retained_bytes=0,
             orphan_paths=(),
             required_transformations=(),
+            preserved=(),
             blockers=blockers,
         )
 
@@ -2368,7 +2372,8 @@ def plan_project_migration(
     }
     if source == target_format_version:
         return ProjectMigrationPlan(
-            migration_required=False, required_transformations=(), blockers=(),
+            migration_required=False, required_transformations=(),
+            preserved=(), blockers=(),
             **common,
         )
 
@@ -2400,28 +2405,21 @@ def plan_project_migration(
             f"byte-for-byte"
         )
 
-    blockers = [
-        f"no project-format migrator is implemented for {source} -> "
-        f"{target_format_version}; this build reads format {source} unchanged, and "
-        f"rewriting it needs an exact typed mapping for every retained "
-        f"project-version identity, so this project stays supported legacy",
-        f"this plan reports retained kinds and their declared schemas; it does not "
-        f"parse record payloads, so which references inside the {counts['record']} "
-        f"retained record(s) a migration would rewrite is unanalyzed here and each "
-        f"record's typed owner has to state it",
-    ]
-    for (kind, schema), count in sorted(
-        unknown.items(), key=lambda item: (item[0][0], item[0][1] or ""),
-    ):
-        blockers.append(
-            f"retained record kind {kind!r} ({count} record(s), schema "
-            f"{schema or 'undeclared'}) is not in the current record-kind table, so "
-            f"this build has no typed owner that can say what a migration does with it"
+    preserved = [
+        f"retained record kind {kind!r} ({count} record(s), schema "
+        f"{schema or 'undeclared'}) is not in the current record-kind table; the "
+        f"migration preserves it byte for byte and lists any project-version "
+        f"identity it embeds in the migration receipt"
+        for (kind, schema), count in sorted(
+            unknown.items(), key=lambda item: (item[0][0], item[0][1] or ""),
         )
+    ]
+    blockers: list[str] = []
 
     return ProjectMigrationPlan(
         migration_required=True,
         required_transformations=tuple(transformations),
+        preserved=tuple(preserved),
         blockers=tuple(blockers),
         **common,
     )
