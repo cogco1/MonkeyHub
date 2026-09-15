@@ -133,10 +133,10 @@ Git 源码仓 / worktree
 
 活跃项目与 `probes/` 使用同一种 P036 项目格式；它们只因是否被明确提升进 Git 而不同，
 不得为外部项目再建第二个数据库或写入器。通用说明见
-[`archflow/project/README.md`](../archflow/project/README.md)。Studio 的共享配置模板是
-[`runtime.example.json`](../apps/archflow-studio/runtime.example.json)；填写后的配置保存在外部 Runtime，
-或保存为已被 Git 忽略的 `apps/archflow-studio/runtime.json`。它选择单个 `project_dir`，
-不管理源码 worktree 或打包目录。开发工具通过下述一次配置取得这些目录，Studio 的项目选择仍沿用自己的配置。
+[`archflow/project/README.md`](../archflow/project/README.md)。项目的选择属于 MonkeyHub：Hub 的应用设置（`<runtime root>/config/applications.json`）为每个 Studio
+实例指定单个 `project_dir`、CAD 后端与参考 run，启动 Studio 子进程时注入环境变量；Studio 自身没有
+与之并行的持久配置。开发时直接启动用 `scripts/dev/run-project-runtime.ps1 -ProjectDir <项目目录>`，
+项目目录必须显式给出。开发工具通过下述一次配置取得工作区、缓存与临时目录。
 
 缓存和临时根不是项目记录。能被删除而不改变设计含义的内容才可以进入那里；证据、模型、
 验收回执和恢复所需数据不能借 `temp` 绕过项目存储。
@@ -670,56 +670,39 @@ Program 和建模候选需要相应的完整设计输入与执行分工，PDF �
 
 ### 8.4 启动前后端
 
-#### 使用自己的启动配置
+#### 通过 MonkeyHub 启动
 
-首次安装按 8.2 完成，项目按 8.3 创建。将共享模板复制到自己的 Runtime，并填写项目和 Python 路径。
-在已设置 `$SourceRoot`、`$RuntimeRoot`、`$ProjectDir`、`$Python` 的 PowerShell 中执行一次：
-
-```powershell
-$RuntimeConfig = Join-Path $RuntimeRoot 'config\studio.json'
-if (Test-Path -LiteralPath $RuntimeConfig) { throw '配置已存在，请编辑自己的配置或另选文件名。' }
-New-Item -ItemType Directory -Force -Path (Split-Path $RuntimeConfig) | Out-Null
-Copy-Item -LiteralPath "$SourceRoot\apps\archflow-studio\runtime.example.json" -Destination $RuntimeConfig
-$config = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding UTF8 | ConvertFrom-Json
-$config.project_dir = $ProjectDir
-$config.python = $Python
-$config.api_port = 18080
-$config.web_port = 15174
-$config | ConvertTo-Json | Set-Content -LiteralPath $RuntimeConfig -Encoding UTF8
-```
-
-模板默认 `intent_provider = deterministic`、`cad_export = off`。若需要生成几何产物，先安装
-`.[cad-occt]`，再将 `cad_export` 改为 `occt`。也可将填写后的配置保存在
-`apps/archflow-studio/runtime.json`，让默认启动器直接读取；该本机文件已被 Git 忽略。
-已有配置继续保留，不用模板覆盖。外部 `config/studio.json` 与本机 `runtime.json` 使用同一种格式。
-从仍跟踪 `runtime.json` 的旧 clone 升级时，先将本机配置复制到外部 Runtime 的 `config/`，
-再通过 `-RuntimeConfig` 使用它；随后 pull 本次取消跟踪的提交，避免配置随 Git 删除而丢失。
-
-`python` 填虚拟环境中 `python.exe` 的完整路径，路径含空格也可直接写入；若需要附加简单参数，
-写成 `"完整路径\python.exe" -I`。原来的 `py -3.12` 与省略该字段时的默认行为保留，
-但这两种方式选择系统 Python，不会自动选择自己的 venv。
-
-以后从同一组路径启动：
+生产入口只有 MonkeyHub：安装包的桌面窗口，或源码根目录的 `OPEN_MONKEYHUB.cmd`。源码开发用
+`apps/monkeyhub/launch-hub.ps1`（见 [Hub 说明](../apps/monkeyhub/README.md)）：
 
 ```powershell
-$config = Get-Content -LiteralPath $RuntimeConfig -Raw -Encoding UTF8 | ConvertFrom-Json
-$env:ARCHFLOW_STUDIO_MODE = 'local'
-$env:ARCHFLOW_STUDIO_API_URL = "http://127.0.0.1:$($config.api_port)"
-powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File "$SourceRoot\apps\archflow-studio\launch-studio.ps1" -RuntimeConfig $RuntimeConfig
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkeyhub\launch-hub.ps1" -Python $Python -RuntimeRoot "$RuntimeRoot\hub" -HubWebDir "$SourceRoot\apps\monkeyhub\web\dist" -StudioWebDir "$SourceRoot\apps\archflow-studio\web\dist"
 ```
 
-前端代理地址需与配置的 `api_port` 一致；当前启动器不会替自定义端口设置该环境变量。
-使用 Windows PowerShell 5.1 启动；`-ExecutionPolicy Bypass` 仅作用于这次进程。
-需要暂不打开浏览器时加 `-NoBrowser`，它仍会启动应用窗口和两个服务。结束时通过托盘的
-`Quit MonkeyArch` 关闭这次启动的服务。不要与下面手动启动方式同时运行同一组端口。
+两个 `dist` 目录来自 `npm --prefix apps/monkeyhub/web run build` 与
+`npm --prefix apps/archflow-studio/web run build`。Hub 启动后在其设置里选择 8.3 创建的项目、CAD 后端
+（默认 `occt`，需要 `.[cad-occt]`；未安装时选 `off`）和参考 run；意图 provider、模型与超时来自 Hub 的
+用户偏好。每个项目的 Studio 进程由 Hub 创建、监控和关闭；退出走托盘的 `Quit MonkeyHub`。
+不要与下面的手动方式同时使用同一组端口。
 
 真实模型首轮试用前，项目负责人需提供允许共享的完整项目副本，包含设计输入、选定 run 的记录及其引用的
-模型文件，并说明源码版本、run 和材料使用范围；`project_dir` 改为这份副本的路径，`reference_run`
+模型文件，并说明源码版本、run 和材料使用范围；项目路径改为这份副本的路径，参考 run
 填选定的 run。单独一份 3DM 不等于可继续修改的完整项目，合成项目的空视口也不作为建筑功能验收。
 
-本轮已用临时项目和真实临时 venv 验证外部配置读取、含空格/带引号的 Python 路径、参数传递和
-Python 子进程启动；保留了 `py -3.12` 的兼容检查。测试没有运行启动器窗口、前后端服务或浏览器。
-新队友完整启动、真实模型与远端环境仍需实际试用。
+#### 开发时直接启动项目运行时
+
+改一个工作区 UI、跑 API smoke、Playwright 或 fixture 回归时，不必经过 Hub → 项目 → 子进程 → iframe：
+
+```powershell
+$env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
+$env:ARCHFLOW_STUDIO_INTENT_PROVIDER = 'deterministic'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\scripts\dev\run-project-runtime.ps1" -ProjectDir $ProjectDir -Python $Python -Port 18080
+```
+
+这个脚本只做一件事：要求显式 `-ProjectDir`，把源码根与 `apps/archflow-studio/api` 放进 `PYTHONPATH`，
+前台运行 `archflow_studio_api.main`，Ctrl+C 结束。它没有配置文件、没有默认项目、没有启动窗口和托盘，
+也不管理任何生命周期；其余设置全部是 API 本来就读取的 `ARCHFLOW_STUDIO_*` 环境变量。
+“可独立运行”不等于“独立产品入口”：生产环境里 Studio 的生命周期只属于 MonkeyHub。
 
 #### 手动联调
 
@@ -748,7 +731,7 @@ npm.cmd run dev -- --port 15174
 代理地址，不停止别人的服务。新建空项目没有导出模型，空视口是预期结果；通过上述建模准备入口后可创建首个候选。
 完成后在两个终端分别按 Ctrl+C。
 
-首次路径全部使用进程环境变量。密钥不写源码、runtime.json 或 PR；以后选用模型 provider 时由成员
+首次路径全部使用进程环境变量。密钥不写源码、配置文件或 PR；以后选用模型 provider 时由成员
 按 Studio 指南配置自己的凭据。真实项目必须由其负责人明确提供可共享的项目副本与选定 run，
 不复制维护者的整个 Runtime。运行候选会写入绑定项目的 runs，试用始终绑定自己的副本。
 

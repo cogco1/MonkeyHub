@@ -170,7 +170,7 @@ $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
 npm.cmd run dev -- --port 15174
 ```
 
-打开 `http://127.0.0.1:15174`。端口已占用时改用空闲端口并同步代理地址，不停止别人的服务。首次采用手动入口，不调用仓库中带维护者本机路径的 `runtime.json`。结束时在两个终端按 Ctrl+C。
+打开 `http://127.0.0.1:15174`。端口已占用时改用空闲端口并同步代理地址，不停止别人的服务。首次采用手动入口；生产入口是 MonkeyHub，开发时也可用 `scripts/dev/run-project-runtime.ps1 -ProjectDir <项目目录>` 直接启动。结束时在两个终端按 Ctrl+C。
 
 ### 从 Web 代理完成候选回路
 

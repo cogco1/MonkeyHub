@@ -151,12 +151,20 @@ authored State Record and seat pack using `--state-record` and `--seats-file`; t
 existing work, use its complete project directory and selected run. Initialization
 alone creates no model or run.
 
-Copy [runtime.example.json](apps/archflow-studio/runtime.example.json) to your own
-configuration, fill in `project_dir` and your Python executable, and pass that path to
-`launch-studio.ps1 -RuntimeConfig`. A local `apps/archflow-studio/runtime.json` is also
-supported and ignored by Git. The template uses the deterministic provider and disables
-CAD export, so opening the project requires neither an API key nor Rhino.
-See the [Studio guide](apps/archflow-studio/README.md) for interaction and export options.
+Open the project through **MonkeyHub** — the desktop package or `OPEN_MONKEYHUB.cmd` — which
+is the only production entry: it starts one Studio process per project with the project, CAD
+backend and reference run from its application settings and your saved preferences, and
+monitors and stops what it started. For development and tests, start the project runtime on an
+explicit project by itself:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runtime.ps1 -ProjectDir 'D:\ArchFlowRuntime\workspace\projects\my-project'
+```
+
+That development start has no configuration file and no default project; the CAD backend and
+intent provider are the `ARCHFLOW_STUDIO_*` environment variables the API reads (defaults:
+OCCT export and the deterministic provider, so opening a project needs neither an API key nor
+Rhino). See the [Studio guide](apps/archflow-studio/README.md) for interaction and export options.
 
 ## Project data
 

@@ -1,18 +1,19 @@
 {
   "version": "0.0.1",
+  "_note": "Internal development only. MonkeyHub is the sole production launcher (OPEN_MONKEYHUB.cmd, the desktop package). These profiles start services on an explicit project for smoke runs and UI work; the project comes from ARCHFLOW_STUDIO_PROJECT_DIR, else from the Hub's own application settings.",
   "configurations": [
     {
-      "name": "studio-api-smoke",
+      "name": "studio-api-dev",
       "runtimeExecutable": "py",
       "runtimeArgs": [
         "-3.12",
         "-c",
-        "import sys; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; main()"
+        "import os, sys; from pathlib import Path; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; from archflow_studio_api.settings import read_application_settings; project = os.environ.get('ARCHFLOW_STUDIO_PROJECT_DIR') or read_application_settings(Path(os.environ['LOCALAPPDATA']) / 'MonkeyHub').project_dir or sys.exit('Set ARCHFLOW_STUDIO_PROJECT_DIR, or choose a project in MonkeyHub once (LOCALAPPDATA/MonkeyHub/config/applications.json).'); main(['--project-dir', str(project), '--port', '8000'])"
       ],
       "port": 8000
     },
     {
-      "name": "studio-web",
+      "name": "studio-web-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
@@ -23,36 +24,24 @@
       "port": 5174
     },
     {
-      "name": "archflow-studio",
-      "runtimeExecutable": "powershell",
-      "runtimeArgs": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "apps/archflow-studio/launch-studio.ps1",
-        "-NoBrowser"
-      ],
-      "port": 5174
-    },
-    {
-      "name": "studio-api-villa",
+      "name": "studio-api-smoke",
       "runtimeExecutable": "py",
       "runtimeArgs": [
         "-3.12",
         "-c",
-        "import sys; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; main(['--port', '8014'])"
+        "import os, sys; from pathlib import Path; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; from archflow_studio_api.settings import read_application_settings; project = os.environ.get('ARCHFLOW_STUDIO_PROJECT_DIR') or read_application_settings(Path(os.environ['LOCALAPPDATA']) / 'MonkeyHub').project_dir or sys.exit('Set ARCHFLOW_STUDIO_PROJECT_DIR, or choose a project in MonkeyHub once (LOCALAPPDATA/MonkeyHub/config/applications.json).'); main(['--project-dir', str(project), '--port', '8001', '--web-dir', 'apps/archflow-studio/web/dist'])"
       ],
-      "port": 8014
+      "port": 8001
     },
     {
-      "name": "studio-web-villa",
-      "runtimeExecutable": "cmd",
+      "name": "monkeyhub-dev",
+      "runtimeExecutable": "py",
       "runtimeArgs": [
-        "/c",
-        "set ARCHFLOW_STUDIO_API_URL=http://127.0.0.1:8014&& npm --prefix apps/archflow-studio/web run dev -- --port 5184 --strictPort"
+        "-3.12",
+        "-c",
+        "import os, runpy, sys; sys.argv = ['apps/monkeyhub/run.py', '--runtime-root', os.path.join(os.environ['LOCALAPPDATA'], 'MonkeyHub-dev'), '--port', '8790', '--hub-web-dir', 'apps/monkeyhub/web/dist', '--studio-web-dir', 'apps/archflow-studio/web/dist', '--no-browser']; runpy.run_path(sys.argv[0], run_name='__main__')"
       ],
-      "port": 5184
+      "port": 8790
     }
   ]
 }

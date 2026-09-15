@@ -385,7 +385,7 @@ function Complete-Installation([string]$Directory) {
         if (-not [IO.Path]::IsPathRooted($desktop) -or -not (Test-Path -LiteralPath $desktop -PathType Container)) {
             throw 'The desktop shortcut directory must be an existing absolute directory.'
         }
-        # Same WScript.Shell shortcut mechanism as Studio's make-desktop-shortcut.ps1.
+        # WScript.Shell writes the shortcut; the launch surface itself is launch-hub.ps1 or the desktop window.
         $shell = New-Object -ComObject WScript.Shell
         # The native package has one app shortcut; its browser launcher remains in the bundle.
         $entries = if ($desktopBuild) {
