@@ -816,6 +816,21 @@
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
       ]
+    },
+    {
+      "id": "GH-46",
+      "stream": "interaction",
+      "status": "active",
+      "goal": "Carry explicit Board conceptual reference relationships into the existing exact model-linked design handoff without inferring targets from proximity or creating a second editing authority.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedbackGeometry.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedback.ts",
+        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
+      ]
     }
   ]
 }
