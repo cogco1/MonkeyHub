@@ -19,7 +19,7 @@ from starlette.requests import Request
 
 from ..transport.proposal import EpisodeDto, episode_dto
 from ..application.binding import bound_project
-from ..application.authentication import authenticated_actor
+from ..application.authentication import ActorAttribution, request_attribution
 from ..application.synchronization import accept_shared_candidate, fork_shared_branch
 from ..transport.errors import StudioError
 from ..application.monitoring import candidate_event_id
@@ -47,9 +47,10 @@ from .proposals import _require_bound_project
 router = APIRouter(tags=["episodes"])
 
 
-def _accepted_by(request: Request) -> str:
-    actor = authenticated_actor(request)
-    return actor.actor_id if actor else "studio:explicit-user-action"
+def _attribution(request: Request) -> ActorAttribution:
+    """Who is accepting, from the request boundary rather than from its body."""
+
+    return request_attribution(request)
 
 
 @router.get("/design-history", response_model=DesignHistoryDto, response_model_by_alias=True)
@@ -68,7 +69,7 @@ def initialize_committed_design(request: Request, payload: InitializeDesignStage
         "stage_save", project_id=binding.project_id, run_id=source.run_id,
     ) as operation:
         saved = initialize_design_stage(binding, model_source=source, branch_id=payload.branch_id, label=payload.label,
-                                        accepted_by=_accepted_by(request))
+                                        accepted_by=_attribution(request).actor_id)
         operation["source_ref"] = saved.stage.model_ref.uri
     return stage_dto(saved)
 
@@ -86,7 +87,7 @@ def accept_committed_design(request: Request, candidate_id: str, payload: Accept
     ):
         saved = accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
                                         expected_head=expected_head, events=request.app.state.events, label=payload.label,
-                                        accepted_by=_accepted_by(request))
+                                        attribution=_attribution(request))
     return stage_dto(saved)
 
 

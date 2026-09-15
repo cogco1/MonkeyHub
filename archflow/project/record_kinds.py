@@ -109,6 +109,7 @@ STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
 DESIGN_STAGE = "design-stage"
 STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
 STUDIO_BOARD_SCENE = "studio-board-scene"
+AUDIT_EVENT = "audit-event"
 
 # ---- read by the spine, written by nobody on it
 
@@ -147,6 +148,15 @@ _TABLE: tuple[RecordKind, ...] = (
         "DesignStage@1",
         PersistenceArea.RUN_REVIEW.value,
         "an explicitly accepted immutable design state and its parent, retained in the actual model run; not formal issue",
+    ),
+    RecordKind(
+        AUDIT_EVENT,
+        "AuditEvent@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "who authorized one authoritative retained decision and through which "
+        "surface, bound to the exact base, subject and result the decision "
+        "already retains; the decision and its result stay in their own "
+        "records, and this adds no authority and replays nothing",
     ),
     RecordKind(
         STUDIO_CANDIDATE_DELTA,
