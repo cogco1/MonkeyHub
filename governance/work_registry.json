@@ -3,6 +3,33 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-78",
+      "stream": "governance",
+      "status": "active",
+      "goal": "Remove remaining private research material and correct current public archive references.",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/78",
+      "branch": "codex/audit-public-cleanup",
+      "worktree": "codex-audit-public-cleanup",
+      "base_ref": "c4dbd5f08490808a0aa5aaaf2096dbeee2c390a4",
+      "contributor": "Codex coordinator",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "tools.archcheck"
+      ],
+      "depends_on": [],
+      "write_scope": [
+        ".gitignore",
+        "docs/RESEARCH_POSITIONING.md",
+        "docs/ARCHITECTURE.md",
+        "docs/VISION.md",
+        "docs/mapping/planning/P105-classical-order-producers.md",
+        "docs/mapping/planning/P111-continuing-design-cycle.md",
+        "governance/architecture_policy.json",
+        "tests/test_spine_suite_is_the_spines.py"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
