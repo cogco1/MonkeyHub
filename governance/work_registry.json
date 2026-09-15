@@ -442,7 +442,30 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": []
+      "lanes": [
+        {
+          "id": "monitor-hub-ui",
+          "status": "active",
+          "issue": "#128",
+          "branch": "codex/128-monitor-into-hub",
+          "worktree": "connector/codex-128-monitor-into-hub",
+          "base_ref": "cfb7fc378c760dfd66be08b20285353b4b48d29c",
+          "contributor": "gpt-5.6-sol",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell",
+            "monkeymonitor"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/",
+            "docs/REPO_LAYOUT.md",
+            "monkeymonitor/",
+            "tests/monkeymonitor/"
+          ],
+          "depends_on": []
+        }
+      ]
     },
     {
       "id": "P105",
