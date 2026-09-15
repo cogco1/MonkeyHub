@@ -352,11 +352,22 @@ export function sketchActionsFromFrame(elements: readonly ExcalidrawElement[], f
   return { sketches, skipped };
 }
 
+/** What was left on the board, in the words the proposal itself can carry. */
+const SKIPPED_WORD: Record<SketchSkipReason, string> = {
+  open: "open", unsupported: "not geometry", degenerate: "too small", tooManyPoints: "too many points",
+  selfTouching: "self-touching", selfIntersecting: "self-crossing", outsideFrame: "outside the frame",
+  roundRotated: "rotated and round",
+};
+
 export function sketchSummary(frameName: string, conversion: SketchConversion, data: SketchFrameData, boardRevisionSha256: string | null): string {
   // A coarse scale rounds to "0 board units" once one unit is two metres wide.
   const units = data.metresPerUnit ? 1 / data.metresPerUnit : 0;
   const scale = units >= 10 ? String(Math.round(units)) : units.toFixed(1);
-  const text = `Board sketch «${frameName}»: ${conversion.sketches.length} footprint(s) on level ${data.levelId}, 1 m = ${scale} board units, board ${boardRevisionSha256?.slice(0, 12) ?? "unsaved"}`;
+  // The board is left the moment this is sent, so what it would have said about
+  // the shapes it kept has to travel with the proposal instead.
+  const reasons = [...new Set(conversion.skipped.map((row) => SKIPPED_WORD[row.reason]))].join(", ");
+  const left = conversion.skipped.length === 0 ? "" : `, ${conversion.skipped.length} left on the board (${reasons})`;
+  const text = `Board sketch «${frameName}»: ${conversion.sketches.length} footprint(s) on level ${data.levelId}, 1 m = ${scale} board units${left}, board ${boardRevisionSha256?.slice(0, 12) ?? "unsaved"}`;
   // The record counts characters, and half a surrogate pair is not one.
   const characters = Array.from(text);
   return characters.length <= 240 ? text : `${characters.slice(0, 239).join("")}…`;

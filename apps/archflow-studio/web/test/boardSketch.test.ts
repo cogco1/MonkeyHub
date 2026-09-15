@@ -254,4 +254,10 @@ test("the summary names frame, count, level, scale and board revision", () => {
   const summary = sketch.sketchSummary("Sketch 1", conversion, frameData(), "a".repeat(64));
   assert.ok(summary.includes("Sketch 1") && summary.includes("1 ") && summary.includes("ground") && summary.includes("aaaaaaaaaaaa"));
   assert.ok(summary.length <= 240);
+  // The board is left the moment a sketch is sent, so the proposal is the only
+  // place that can still say what stayed behind.
+  const withSkips = sketch.sketchSummary("Sketch 1",
+    sketch.sketchActionsFromFrame([frame(), rect, inFrame("arrow", "a1", { points: [[0, 0], [10, 0]] })], frame()),
+    frameData(), null);
+  assert.ok(withSkips.includes("1 left on the board (not geometry)"), withSkips);
 });
