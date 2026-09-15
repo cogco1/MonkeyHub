@@ -3,12 +3,132 @@ param(
     [switch]$Interactive,
     [switch]$CreateDesktopShortcut,
     [string]$DesktopDirectory,
-    [switch]$OpenHub
+    [switch]$OpenHub,
+    [switch]$VerifyReleaseManifest,
+    [string]$ReleaseManifest,
+    [string]$ReleaseSignature,
+    [string]$ExpectedPublisherThumbprint,
+    [switch]$RequireTrustedPublisherChain,
+    [switch]$ReleaseSignatureSelfTest
 )
 
 # Copies one fixed candidate. Its selected host owns process lifecycle.
 # ASCII source keeps this script readable by Windows PowerShell 5.1 without a BOM.
 $ErrorActionPreference = 'Stop'
+
+function Normalize-CertificateThumbprint([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+    $normalized = ($Value -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
+    if ($normalized -notmatch '^[0-9A-F]{40,128}$') {
+        throw 'Certificate thumbprint must be hexadecimal.'
+    }
+    return $normalized
+}
+
+function Import-PkcsAssembly {
+    try {
+        Add-Type -AssemblyName System.Security.Cryptography.Pkcs -ErrorAction Stop
+    } catch {
+        # Windows PowerShell 5.1 exposes SignedCms through System.Security.
+        Add-Type -AssemblyName System.Security -ErrorAction Stop
+    }
+}
+
+function Test-ReleaseManifestSignature(
+    [string]$ManifestPath,
+    [string]$SignaturePath,
+    [string]$ExpectedThumbprint,
+    [switch]$RequireTrustedChain
+) {
+    Import-PkcsAssembly
+    $manifest = (Resolve-Path -LiteralPath $ManifestPath -ErrorAction Stop).Path
+    $signature = (Resolve-Path -LiteralPath $SignaturePath -ErrorAction Stop).Path
+    $expected = Normalize-CertificateThumbprint $ExpectedThumbprint
+    if (-not $expected) { throw 'Expected publisher thumbprint is required.' }
+
+    $content = [IO.File]::ReadAllBytes($manifest)
+    $contentInfo = [System.Security.Cryptography.Pkcs.ContentInfo]::new($content)
+    $cms = [System.Security.Cryptography.Pkcs.SignedCms]::new($contentInfo, $true)
+    try {
+        $cms.Decode([IO.File]::ReadAllBytes($signature))
+        # true checks the cryptographic signature only; false additionally builds
+        # the certificate chain. Production trust should request the latter.
+        $cms.CheckSignature(-not $RequireTrustedChain.IsPresent)
+    } catch {
+        throw "Release signature verification failed: $($_.Exception.Message)"
+    }
+    if ($cms.SignerInfos.Count -ne 1 -or $null -eq $cms.SignerInfos[0].Certificate) {
+        throw "Expected exactly one embedded release signer; found $($cms.SignerInfos.Count)."
+    }
+    $actual = Normalize-CertificateThumbprint $cms.SignerInfos[0].Certificate.Thumbprint
+    if ($actual -ne $expected) {
+        throw "Release signer thumbprint $actual does not match expected publisher $expected."
+    }
+
+    [ordered]@{
+        schema = 'ReleaseSignatureEvidence@1'
+        manifest = [IO.Path]::GetFileName($manifest)
+        signature = [IO.Path]::GetFileName($signature)
+        manifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+        signatureSha256 = (Get-FileHash -LiteralPath $signature -Algorithm SHA256).Hash.ToLowerInvariant()
+        signerThumbprint = $actual
+        chainValidation = if ($RequireTrustedChain) { 'required' } else { 'signature-only' }
+    }
+}
+
+function Invoke-ReleaseSignatureSelfTest {
+    Import-PkcsAssembly
+    $temporary = Join-Path ([IO.Path]::GetTempPath()) ('MonkeyHub-signature-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporary | Out-Null
+    try {
+        $manifest = Join-Path $temporary 'release-manifest.json'
+        $signature = "$manifest.p7s"
+        $utf8 = New-Object Text.UTF8Encoding($false)
+        [IO.File]::WriteAllText($manifest, '{"schema":"ReleaseManifest@1","trust":{"status":"signature-spike"}}', $utf8)
+
+        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+        try {
+            $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+                'CN=MonkeyHub release-signature self-test',
+                $rsa,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+            )
+            $certificate = $request.CreateSelfSigned(
+                [DateTimeOffset]::UtcNow.AddMinutes(-1),
+                [DateTimeOffset]::UtcNow.AddDays(1)
+            )
+            try {
+                $contentInfo = [System.Security.Cryptography.Pkcs.ContentInfo]::new([IO.File]::ReadAllBytes($manifest))
+                $cms = [System.Security.Cryptography.Pkcs.SignedCms]::new($contentInfo, $true)
+                $signer = [System.Security.Cryptography.Pkcs.CmsSigner]::new($certificate)
+                $signer.IncludeOption = [System.Security.Cryptography.X509Certificates.X509IncludeOption]::EndCertOnly
+                $cms.ComputeSignature($signer)
+                [IO.File]::WriteAllBytes($signature, $cms.Encode())
+
+                $evidence = Test-ReleaseManifestSignature $manifest $signature $certificate.Thumbprint
+                Add-Content -LiteralPath $manifest -Value ' ' -NoNewline
+                $acceptedTamper = $false
+                try {
+                    Test-ReleaseManifestSignature $manifest $signature $certificate.Thumbprint | Out-Null
+                    $acceptedTamper = $true
+                } catch {
+                    # Expected: the original detached signature cannot authenticate changed bytes.
+                }
+                if ($acceptedTamper) {
+                    throw 'A changed ReleaseManifest was accepted with the original detached signature.'
+                }
+                return $evidence
+            } finally {
+                $certificate.Dispose()
+            }
+        } finally {
+            $rsa.Dispose()
+        }
+    } finally {
+        Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 
 function Complete-Installation([string]$Directory) {
     $entry = Join-Path $Directory $entryName
@@ -72,6 +192,21 @@ function Complete-Installation([string]$Directory) {
 }
 
 try {
+    if ($ReleaseSignatureSelfTest) {
+        Invoke-ReleaseSignatureSelfTest | ConvertTo-Json -Depth 4
+        exit 0
+    }
+    if ($VerifyReleaseManifest) {
+        if (-not $ReleaseManifest -or -not $ReleaseSignature -or -not $ExpectedPublisherThumbprint) {
+            throw 'ReleaseManifest, ReleaseSignature and ExpectedPublisherThumbprint are required for signature verification.'
+        }
+        Test-ReleaseManifestSignature $ReleaseManifest $ReleaseSignature $ExpectedPublisherThumbprint -RequireTrustedChain:$RequireTrustedPublisherChain.IsPresent |
+            ConvertTo-Json -Depth 4
+        exit 0
+    }
+    if ($ReleaseManifest -or $ReleaseSignature -or $ExpectedPublisherThumbprint -or $RequireTrustedPublisherChain) {
+        throw 'Release signature inputs require -VerifyReleaseManifest.'
+    }
     if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitOperatingSystem) {
         throw 'This candidate requires Windows x64.'
     }
