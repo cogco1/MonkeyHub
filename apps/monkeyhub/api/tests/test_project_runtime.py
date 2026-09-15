@@ -448,7 +448,19 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             documents = self.proxy(client, runtime_id, "/api/documents").json()["documents"]
             self.assertEqual([document["assetSha256"] for document in documents], [original["assetSha256"]])
 
-    def test_a_page_replaced_elsewhere_reports_the_copy_instead_of_dropping_it(self):
+    def replaces_page(self, document, page_index=0, new_page_index=0):
+        return [{"runId": document["runId"], "assetSha256": document["assetSha256"],
+                 "revisionRef": document["revisionRef"],
+                 "pageIndex": page_index, "newPageIndex": new_page_index}]
+
+    def looked_again(self, observed):
+        """Wait for one observation pass that actually read the copy's bytes."""
+
+        observed.hashed_at_ns = None
+        wait_for(lambda: True if observed.hashed_at_ns is not None else None,
+                 "The work copy was not looked at again", timeout=20)
+
+    def test_a_page_replaced_elsewhere_reports_the_copy_only_once_it_is_edited(self):
         first = self.pdf_bytes((400, 300), (300, 400), title="first")
         second = self.pdf_bytes((400, 300), (300, 400), title="second")
         with self.hub(studio_web=self.web) as client:
@@ -461,18 +473,55 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             # The Board replaces page 1 on its own, the way its dialog does.
             self.upload_document(client, runtime_id, self.png_bytes("red", size=(300, 400)),
                                  "page-two.png", "image/png",
-                                 replaces=[{"runId": original["runId"], "assetSha256": original["assetSha256"],
-                                            "revisionRef": original["revisionRef"],
-                                            "pageIndex": 1, "newPageIndex": 0}])
+                                 replaces=self.replaces_page(original, 1, 0))
             count = len(self.proxy(client, runtime_id, "/api/documents").json()["documents"])
-            # The copy is still watched, its file is still there, and the next
-            # save is reported rather than silently thrown away.
+            observed = next(iter(runtime.work_copies.values()))
+            # Nobody edited anything. A document that moved on without this copy
+            # is the row's news, not the project's error, so the error surface
+            # stays free for something a person can actually act on.
+            self.looked_again(observed)
+            self.assertIsNone(observed.failure)
+            self.assertIsNone(self.read_runtime(client, runtime_id)["error"])
+            self.assertIn("different documents", observed.copy.refusal)
+            # Saving is news. It is reported, the file is left exactly as it
+            # was saved, and nothing is registered behind the architect's back.
             work.write_bytes(second)
             row = self.wait_runtime_error(client, runtime_id, "WORK_COPY_NOT_EDITABLE")
             self.assertEqual(row["projection"], "ready")
             self.assertEqual(work.read_bytes(), second)
             self.assertEqual(list(manager.bind_work_copies(runtime).values()), [str(work)])
             self.assertEqual(len(self.proxy(client, runtime_id, "/api/documents").json()["documents"]), count)
+
+    def test_an_edit_refused_while_the_document_moved_registers_once_it_can(self):
+        first = self.pdf_bytes((400, 300), title="first")
+        edited = self.pdf_bytes((400, 300), title="edited")
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
+            _, work = self.open_work_copy(client, runtime_id, original)
+            # Another client answers for this page with a three-page file, so
+            # no single file stands for the document any more.
+            three = self.upload_document(client, runtime_id,
+                                         self.pdf_bytes((400, 300), (300, 400), (400, 300), title="three"),
+                                         "spread.pdf", "application/pdf",
+                                         replaces=self.replaces_page(original))
+            # The architect saves inside that window.
+            work.write_bytes(edited)
+            self.wait_runtime_error(client, runtime_id, "WORK_COPY_NOT_EDITABLE")
+            self.assertEqual(work.read_bytes(), edited)
+            # The page becomes a one-page document again and the refusal goes.
+            again = self.upload_document(client, runtime_id, self.pdf_bytes((400, 300), title="again"),
+                                         "plan.pdf", "application/pdf",
+                                         replaces=self.replaces_page(three))
+            # The edit that was waiting is registered, not swallowed.
+            replacement = self.wait_document_replacement(client, runtime_id, again["assetSha256"])
+            self.assertEqual(replacement["mimeType"], "application/pdf")
+            self.assertEqual([(page["pageIndex"], page["newPageIndex"])
+                              for page in replacement["replacesPages"]], [(0, 0)])
+            bytes_back = self.proxy(client, runtime_id, f"/api/documents/{replacement['assetSha256']}/bytes",
+                                    params={"runId": replacement["runId"]})
+            self.assertEqual(bytes_back.content, edited)
+            self.wait_runtime(client, runtime_id, lambda row: row["error"] is None)
 
     def test_cold_hub_preserves_admission_identity_for_two_projects_without_retained_runs(self):
         other_id, other_project = self.make_parallel_project()

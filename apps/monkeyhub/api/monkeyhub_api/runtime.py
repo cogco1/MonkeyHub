@@ -388,7 +388,7 @@ class ProjectRuntime:
     # Keyed by the copy's origin page identity, which never moves. Runtime
     # lifetime only: the copies themselves are the project's, and which ones
     # exist is derived from it, never remembered here.
-    work_copies: dict[tuple[str, str, str | None, int], _WorkCopyObservation] = field(default_factory=dict)
+    work_copies: dict[tuple[str, str, str | None], _WorkCopyObservation] = field(default_factory=dict)
     # A project whose documents will not list at all. Separate from ``error``
     # because it is not a fact about the retained projection.
     work_copy_error: HubError | None = None
@@ -559,10 +559,10 @@ class ProjectRuntimeManager:
             self.emit("operation/committed", runtime.runtime_id)
 
     @staticmethod
-    def _work_copy_key(copy: DocumentWorkCopy) -> tuple[str, str, str | None, int]:
-        return copy.run_id, copy.asset_sha256, copy.revision_ref, copy.page_index
+    def _work_copy_key(copy: DocumentWorkCopy) -> tuple[str, str, str | None]:
+        return copy.run_id, copy.asset_sha256, copy.revision_ref
 
-    def bind_work_copies(self, runtime: ProjectRuntime) -> dict[tuple[str, str, str | None, int], str]:
+    def bind_work_copies(self, runtime: ProjectRuntime) -> dict[tuple[str, str, str | None], str]:
         """Re-derive which of this project's registered documents have an editable file.
 
         The project is the only record of that: a registered document names
@@ -582,6 +582,12 @@ class ProjectRuntimeManager:
             if observed is None:
                 runtime.work_copies[key] = _WorkCopyObservation(copy)
             else:
+                if copy.refusal != observed.copy.refusal:
+                    # A settled file is not read again while its sample holds.
+                    # Whether the owner will take these bytes has just changed,
+                    # so the next pass has to look: an edit refused while the
+                    # document was someone else's is still waiting to register.
+                    observed.hashed_at_ns = None
                 observed.copy = copy
         return {key: str(copy.path) for key, copy in copies.items()}
 
@@ -632,22 +638,16 @@ class ProjectRuntimeManager:
         is offered to the document owner: it either becomes the next registered
         revision or its refusal is carried to the user, per copy, unchanged.
 
-        A copy the document owner no longer considers editable is reported and
-        left alone. Its file is still on disk and still holds someone's work, so
-        dropping it silently would throw away every save made from here on.
+        A copy the document owner no longer considers editable is never dropped:
+        its file is still on disk and still holds someone's work, so unwatching
+        it would throw away every save made from here on. It is reported only
+        when its bytes have actually moved — an untouched copy whose document
+        was replaced elsewhere is news the row carries, not a project error —
+        and a refused edit keeps its place in the queue until the refusal goes.
         """
 
         registered = 0
         for key, observed in tuple(runtime.work_copies.items()):
-            # Binding re-derived this row from the project a moment ago, so the
-            # answer is current without reading anything. Nothing is offered for
-            # a copy the owner will not take, and nothing is forgotten either.
-            if observed.copy.refusal is not None:
-                observed.failure = HubError(code="WORK_COPY_NOT_EDITABLE",
-                    detail=f"{observed.copy.file_name}: {observed.copy.refusal}"[:1200])
-                continue
-            if observed.failure and observed.failure.code == "WORK_COPY_NOT_EDITABLE":
-                observed.failure = None
             try:
                 data = self._stable_work_copy_bytes(observed)
             except OSError as exc:
@@ -659,11 +659,16 @@ class ProjectRuntimeManager:
             digest = hashlib.sha256(data).hexdigest()
             baseline = observed.observed_sha256
             if digest == baseline:
-                if observed.failure and observed.failure.code == "WORK_COPY_READ_FAILED":
+                # Nothing has moved since the last look, so neither a read that
+                # failed nor a refusal is waiting on anything any more.
+                if observed.failure and observed.failure.code in {
+                        "WORK_COPY_READ_FAILED", "WORK_COPY_NOT_EDITABLE"}:
                     observed.failure = None
                 continue
-            # The head can have moved since the last binding pass; aim this
-            # replacement at the page the project answers for right now.
+            # Binding re-derives these rows, but only on a due pass, so the row
+            # this observation carries can be a whole idle interval old. The
+            # derivation below is what makes the answer current: aim at the
+            # document the project answers for right now, or say why it cannot.
             try:
                 copy = next((row for row in list_document_work_copies(runtime.binding)
                              if self._work_copy_key(row) == key), None)
@@ -675,11 +680,20 @@ class ProjectRuntimeManager:
             if copy is None:
                 continue
             observed.copy = copy
-            observed.observed_sha256 = digest
             if copy.refusal is not None:
+                if baseline is None and digest in copy.known_sha256:
+                    # Untouched since it was seeded. The document it answered
+                    # for moved on without it, which is not this copy's news to
+                    # report: the row carries the reason, and nothing is stale.
+                    observed.failure = None
+                    continue
+                # These bytes are an edit the owner will not take. Say so, and
+                # leave the baseline alone: when the refusal goes away the same
+                # edit is still waiting to be offered, not silently swallowed.
                 observed.failure = HubError(code="WORK_COPY_NOT_EDITABLE",
                     detail=f"{copy.file_name}: {copy.refusal}"[:1200])
                 continue
+            observed.observed_sha256 = digest
             if digest == copy.head_asset_sha256:
                 # The copy agrees with the document again. Whatever was refused
                 # before is no longer waiting on anything, so it stops being
