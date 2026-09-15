@@ -72,7 +72,8 @@ def _safe_details(details):
     counts = {"first_token_ms", "model_inference_ms", "input_bytes", "output_bytes", "retry_attempt", "http_status"}
     for key in codes & details.keys():
         safe[key] = _code(details[key])
-    for key in (counts | {"blocking", "success", "validator_pass", "escalation", "input_equivalent"}) & details.keys():
+    for key in (counts | {"blocking", "success", "validator_pass", "escalation", "input_equivalent",
+                          "missing_observations"}) & details.keys():
         safe[key] = details[key]
     if details.get("context_budget"):
         safe["context_budget"] = details["context_budget"]

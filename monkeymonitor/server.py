@@ -148,14 +148,21 @@ class MonitorData:
         return result
 
 
+def _measured(value) -> bool:
+    """A recorded millisecond count, not an unknown and not a flag."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def _trace_contract(result: dict) -> dict:
     """Expose stable span identity and observation coverage without a second store.
 
     UsageLog remains the only retained diagnostic source.  Legacy event ids stay
     in the response; span ids are aliases so Hub, Studio, CAD and client views can
     share one contract.  Missing lanes are explicitly unobserved rather than zero.
+    Coverage reports what the producer measured; it never turns an absent
+    measurement into full coverage.
     """
-    lane_ids = ("agent", "hub", "studio", "cad", "client")
+    lanes = [lane["id"] for lane in result.get("lanes", ())]
     for trace in result.get("traces", ()):
         trace_id = trace.get("trace_id")
         spans = trace.get("spans") or []
@@ -167,22 +174,38 @@ def _trace_contract(result: dict) -> dict:
         summary = trace.get("summary") or {}
         critical = trace.get("critical_path") or {}
         elapsed = summary.get("elapsed_ms")
-        observed = critical.get("duration_ms")
+        # The producer's own blocking total for the root interval. The critical
+        # path keeps only the part it could attribute to a single span, so the
+        # two are reported under separate names and never substituted.
+        observed = summary.get("blocking_ms")
+        timeline = summary.get("timeline_ms")
         ratio = None
-        if isinstance(elapsed, (int, float)) and elapsed >= 0 and isinstance(observed, (int, float)) and observed >= 0:
-            ratio = 1.0 if elapsed == 0 else round(max(0.0, min(1.0, observed / elapsed)), 4)
+        if _measured(elapsed) and elapsed > 0 and _measured(observed) and observed >= 0:
+            ratio = round(max(0.0, min(1.0, observed / elapsed)), 4)
+        # Associated phases past the root interval are outside the ratio's base;
+        # how much of that tail was blocking is not measured inside the window.
+        outside = max(0, timeline - elapsed) if _measured(elapsed) and _measured(timeline) else None
         observed_lanes = {span.get("lane") for span in spans if span.get("lane")}
-        dropped = any("跳过过诊断观测" in str(warning) for warning in trace.get("warnings", ()))
+        # The sticky drop notice rides the next stored event, so recorded tool
+        # rounds do not establish that every tool observation survived.
+        dropped = any((span.get("details") or {}).get("missing_observations") for span in spans)
         tool_rounds = summary.get("tool_rounds") or 0
         trace["coverage"] = {
             "basis": critical.get("basis", "unavailable"),
+            "root_elapsed_ms": elapsed,
             "observed_blocking_ms": observed,
+            "attributed_blocking_ms": critical.get("duration_ms"),
+            "unattributed_ms": critical.get("unattributed_ms"),
             "blocking_ratio": ratio,
-            "tool_events": "observed" if tool_rounds else ("incomplete" if dropped else "observed-none"),
+            "ratio_basis": "root_interval" if ratio is not None else "unavailable",
+            "outside_root_ms": outside,
+            "tool_events": "incomplete" if dropped else ("observed" if tool_rounds else "observed-none"),
             "lanes": [
                 {"lane": lane, "status": "observed" if lane in observed_lanes else "unobserved"}
-                for lane in lane_ids
+                for lane in lanes
             ],
+            "note": "阻塞比例只以请求根区间为基数；根区间之外的关联阶段计入 outside_root_ms，其中的阻塞时长未观测。"
+                    "attributed_blocking_ms 仅是能唯一归因到单个阶段的子集，不是全部已观测阻塞。",
         }
     return result
 
