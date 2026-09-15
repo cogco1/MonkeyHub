@@ -4,14 +4,17 @@ import { connection, type ServerIdentity } from "../api/connection";
 import type { ProjectBindingDto } from "../api/generated";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
+import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { createTaskStore, type StudioTask } from "./tasks";
 import "./TaskWorkspace.css";
 
 /** Independent task views on the one project actually bound to this Studio server. */
-export function TaskWorkspace({ server, initialDocumentIntent, onReturnToBoard }: {
+export function TaskWorkspace({ server, initialDocumentIntent, initialSketchRequest, onReturnToBoard }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
+  /** One calibrated board sketch frame, which opens in a task of its own. */
+  initialSketchRequest?: BoardSketchRequest;
   /** Present while this tab is showing a page it opened from its own board. */
   onReturnToBoard?: () => void;
 }) {
@@ -29,6 +32,7 @@ export function TaskWorkspace({ server, initialDocumentIntent, onReturnToBoard }
   const [name, setName] = useState("");
   const visited = useRef(new Set<string>());
   const documentTask = useRef<string | null>(null);
+  const sketchTask = useRef<string | null>(null);
   const visitOwner = useRef<string | null>(null);
   const initialized = useRef(false);
   useEffect(() => {
@@ -47,11 +51,17 @@ export function TaskWorkspace({ server, initialDocumentIntent, onReturnToBoard }
       });
       return;
     }
+    // A sketch names no run: it is proposed against whatever this project's
+    // current editing base is, in its own task so nothing else is disturbed.
+    if (initialSketchRequest) {
+      sketchTask.current = store.create(project.projectId, t("tasks.new"));
+      return;
+    }
     const selected = saved.tasks.find((task) => task.id === saved.activeTaskId && task.projectId === project.projectId && !task.archived)
       ?? saved.tasks.find((task) => task.projectId === project.projectId && !task.archived);
     if (selected) store.select(selected.id, project.projectId);
     else store.create(project.projectId, t("tasks.new"));
-  }, [project, store, initialDocumentIntent, t]);
+  }, [project, store, initialDocumentIntent, initialSketchRequest, t]);
 
   const active = snapshot.tasks.find((task) => task.id === snapshot.activeTaskId && !task.archived && task.projectId === project?.projectId);
   if (active) visited.current.add(active.id);
@@ -116,7 +126,8 @@ export function TaskWorkspace({ server, initialDocumentIntent, onReturnToBoard }
         data-studio-task={task.id} className="task-workspace__view" hidden={task.id !== active?.id} inert={task.id !== active?.id}>
         <App server={server} task={store.handle(task.id)} active={task.id === active?.id}
           onReturnToBoard={task.id === active?.id ? returnToBoard : undefined}
-          initialDocumentIntent={task.id === documentTask.current ? initialDocumentIntent : undefined} />
+          initialDocumentIntent={task.id === documentTask.current ? initialDocumentIntent : undefined}
+          initialSketchRequest={task.id === sketchTask.current ? initialSketchRequest : undefined} />
       </div>)}
     </div>
   </div>;

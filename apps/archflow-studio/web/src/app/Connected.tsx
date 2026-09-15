@@ -150,8 +150,10 @@ export function Connected() {
       // An embedding page may name the exact candidate run to open, so that a
       // conversation's own result is never read as the reference run.
       ? <App server={server.value} initialDocumentIntent={documentIntent ?? undefined}
+             initialSketchRequest={sketchIntent ?? undefined}
              onReturnToBoard={visit === null ? undefined : returnToBoard}
              initialRunId={new URLSearchParams(window.location.search).get("candidate")} />
       : <TaskWorkspace server={server.value} initialDocumentIntent={documentIntent ?? undefined}
+                       initialSketchRequest={sketchIntent ?? undefined}
                        onReturnToBoard={visit === null ? undefined : returnToBoard} />;
 }

@@ -62,6 +62,7 @@ import { createModelAnnotationsController, useModelAnnotations } from "../worksp
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
+import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import {
   canonicalRunSourceLabel,
   canonicalSourceLabel,
@@ -230,8 +231,10 @@ interface HomeArtifacts extends HomeModel {
   readonly referenceRunId: string;
 }
 
-export default function App({ server, initialDocumentIntent, initialRunId, task, active = true, onReturnToBoard }: {
+export default function App({ server, initialDocumentIntent, initialSketchRequest, initialRunId, task, active = true, onReturnToBoard }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
+  /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
+  initialSketchRequest?: BoardSketchRequest;
   /** The exact run this page was opened on, such as a candidate named by the host. */
   initialRunId?: string | null;
   /** Go back to the board this tab opened its page from, once the page is saved. */
@@ -258,6 +261,8 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
   const documentIntentStarted = useRef(false);
   const documentIntentSubmitted = useRef(false);
+  const sketchSubmitted = useRef(false);
+  const sketchPrepared = useRef(false);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
   const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
   const designHistoryEnabled = server.capabilities.includes("design-history");
@@ -2311,6 +2316,47 @@ export default function App({ server, initialDocumentIntent, initialRunId, task,
     },
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
+
+  // A board sketch is submitted exactly once, through the routes a typed sketch
+  // already uses: no board geometry is truth until the exact-base candidate has
+  // run. An unmodelled project is prepared first, because a project with no
+  // state digest has nothing a proposal could be based on.
+  useEffect(() => {
+    if (!initialSketchRequest || sketchSubmitted.current || session.status !== "ready" || changingBase || proposalBusy) return;
+    if (project === null || project.projectId !== initialSketchRequest.projectId) return;
+    const sketchStateDigest = projection?.stateDigest ?? null;
+    if (sketchStateDigest === null) {
+      if (sketchPrepared.current) return;
+      sketchPrepared.current = true;
+      append({ kind: "system", ...systemText([{ kind: "prose", text: t("board.sketch.preparing") }]) });
+      void studio.prepareModeling(project.projectId).then(() => reload()).catch((cause) => {
+        sketchSubmitted.current = true;
+        append({ kind: "refusal", error: asStudioApiError(cause), what: t("board.sketch.what") });
+      });
+      return;
+    }
+    sketchSubmitted.current = true;
+    const componentId = projection?.elements[0]?.componentId ?? "model";
+    append({ kind: "you", text: t("board.sketch.you", { summary: initialSketchRequest.summary }) });
+    setProposalBusy(true);
+    void (async () => {
+      try {
+        const proposal = await studio.sketchBatch({
+          projectId: project.projectId, stateDigest: sketchStateDigest, sourceRunId: sourceRunId ?? undefined, keep: [],
+          summary: initialSketchRequest.summary,
+          sketches: initialSketchRequest.sketches.map((row) => ({ ...row, componentId })),
+        });
+        append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+        selectSemanticTarget(proposal.target.componentId, proposal.target.elementId);
+        await runCandidate(proposal.proposalId);
+      } catch (cause) {
+        const error = asStudioApiError(cause);
+        recoverFromStaleBase(error);
+        append({ kind: "refusal", error, what: t("board.sketch.what") });
+      } finally { setProposalBusy(false); }
+    })();
+  }, [append, changingBase, initialSketchRequest, project, projection, proposalBusy, recoverFromStaleBase, reload,
+      runCandidate, selectSemanticTarget, session.status, sourceRunId, t]);
 
   // Completed gestures update local geometry and history synchronously. Only
   // the explicit Sync action below crosses the proposal/candidate boundary.
