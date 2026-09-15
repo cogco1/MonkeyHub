@@ -54,7 +54,7 @@ let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
 // The explicit editable copy of one registered single-page image.
-let workCopy;
+let workCopy, workCopyRefusal;
 const workCopies = [];
 const oldSource = pageSource(oldDocument, 1);
 const seeds = [
@@ -144,7 +144,11 @@ try {
     revisionRef: replacement.revisionRef, pageIndex: 0, fileName: replacement.fileName, mimeType: "image/png",
     relativePath: `runs/${replacement.runId}/workspaces/studio-documents/work/${replacement.assetSha256}/${replacement.fileName}`,
     headRunId: replacement.runId, headAssetSha256: replacement.assetSha256,
-    headRevisionRef: replacement.revisionRef, headPageIndex: 0 };
+    headRevisionRef: replacement.revisionRef, headPageIndex: 0, refusal: null };
+  // The old two-page PDF had one of its pages replaced on its own, so the
+  // document owner has no single file that can stand for it.
+  workCopyRefusal = "Pages of this document are answered for by different documents now, "
+    + "so no single file can stand for it.";
   page.on("pageerror", (error) => failures.push(error.stack ?? error.message));
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request(), url = new URL(request.url());
@@ -183,6 +187,10 @@ try {
       }
       if (request.method() === "POST" && url.pathname.endsWith("/work-copy")) {
         workCopies.push({ path: url.pathname, body: structuredClone(request.postDataJSON()) });
+        if (url.pathname.includes(oldDocument.assetSha256)) {
+          return await route.fulfill({ status: 422,
+            json: { code: "DOCUMENT_NOT_EDITABLE", detail: workCopyRefusal } });
+        }
         return await route.fulfill({ status: 201, json: workCopy });
       }
       if (request.method() === "POST" && url.pathname === "/api/documents") {
@@ -380,19 +388,27 @@ try {
   // works for this cropped, unbound image whose marks cannot enter feedback.
   await page.getByRole("button", { name: "Project documents", exact: true }).click();
   const originalCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: oldDocument.fileName, exact: true }) });
-  // An editable copy is offered for one registered single-page image, and for
-  // nothing else: a two-page PDF has no single page to hand to an image editor.
+  // An editable copy is offered for every registered document. Which of them
+  // can actually have one is the document owner's answer, and its refusal is
+  // shown as it is rather than guessed at here.
   const workCopyName = "Get editable copy";
-  assert.equal(await originalCard.getByRole("button", { name: workCopyName, exact: true }).isDisabled(), true,
-    "A multi-page PDF cannot be given an editable image copy");
+  const originalWorkCopy = originalCard.getByRole("button", { name: workCopyName, exact: true });
+  assert.equal(await originalWorkCopy.isEnabled(), true,
+    "Every registered document offers to be asked for an editable copy");
+  await originalWorkCopy.click();
+  const refusalNotice = page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: "no single file" });
+  await refusalNotice.waitFor();
+  assert.match(await refusalNotice.innerText(), /different documents/,
+    "The document owner's refusal reaches the operator unchanged");
+  await refusalNotice.getByRole("button", { name: "Dismiss", exact: true }).click();
   const replacementCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: replacement.fileName, exact: true }) });
   const workCopyButton = replacementCard.getByRole("button", { name: workCopyName, exact: true });
   assert.equal(await workCopyButton.isEnabled(), true, "A registered single-page PNG can be given an editable copy");
   await workCopyButton.click();
   const workCopyNotice = page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: workCopy.relativePath });
   await workCopyNotice.waitFor();
-  assert.equal(workCopies.length, 1, "One click asks for one work copy");
-  assert.deepEqual(workCopies[0], { path: `/api/documents/${replacement.assetSha256}/work-copy`,
+  assert.equal(workCopies.length, 2, "Each click asks for exactly one work copy");
+  assert.deepEqual(workCopies[1], { path: `/api/documents/${replacement.assetSha256}/work-copy`,
     body: { projectId, runId: replacement.runId, revisionRef: replacement.revisionRef } },
     "The work copy names the exact registration, and sends no path");
   assert.match(await workCopyNotice.innerText(), new RegExp(workCopy.relativePath.replaceAll(".", "\\.")),
