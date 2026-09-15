@@ -35,6 +35,12 @@ from archflow.project.record_kinds import (
     is_registered,
     require_registered,
 )
+from archflow.project.version_refs import (
+    locations as _declared_locations,
+    register as _register_version_refs,
+    restate as _restate_declared,
+    structural_locations as _structural_locations,
+)
 from archflow.project.refs import (
     ProjectArtifactRef,
     ProjectRecordRef,
@@ -72,7 +78,12 @@ class PromotionAuthorityError(ProjectRepositoryError):
 
 
 def _transfer_path(value: str) -> str:
-    """Retained native export names may contain @; never accept host paths."""
+    """Retained native export names may contain @; never accept host paths.
+
+    ``exports`` is a project-owned root a retained reference may name, so the
+    closure can follow a typed edge into it. It is never walked: only a file
+    some retained record actually references travels.
+    """
     if not isinstance(value, str) or not value or "\\" in value or ":" in value:
         raise ProjectIntegrityError("TRANSFER_PATH_INVALID: expected a project-relative path")
     path = PurePosixPath(value)
@@ -84,7 +95,9 @@ def _transfer_path(value: str) -> str:
     allowed = value in ("project.json", "HEAD", "design/branches.json",
                         "input/runner/state-record.json", "input/runner/seats.json",
                         "input/runner/program-sheet.json")
-    if not allowed and path.parts[0] not in ("canonical", "events", "objects", "runs"):
+    if not allowed and path.parts[0] not in (
+        "canonical", "events", "exports", "objects", "runs",
+    ):
         raise ProjectIntegrityError("TRANSFER_PATH_INVALID: unassigned project area")
     if any(part.endswith(".lock") for part in path.parts):
         raise ProjectIntegrityError("TRANSFER_PATH_INVALID: locks are not project content")
@@ -704,6 +717,15 @@ def legacy_version_identities(
 # format-2 event states for itself: everything else an older event carried is
 # carried through rather than dropped.
 MIGRATION_RUN_ID = "format-migration"
+# The planner groups undeclared identities by kind so a project carrying many
+# reads as a list of contracts to declare; the migration repeats the same
+# detection per record, because the person adding a declaration needs the
+# record and the pointer. This sentence is how one recognises the other's.
+UNDECLARED_IDENTITY_BLOCKER = "migration needs a handler"
+# The run manifest is this module's own retained record, and it names the
+# canonical version the run is based on in one place.
+VERSION_REF_POINTERS = {"ProjectRun@1": ("/base",)}
+_register_version_refs(VERSION_REF_POINTERS)
 _MIGRATED_EVENT_KEYS = frozenset({
     "schema", "project_id", "event_type", "decision", "run_id",
     "from", "from_snapshot", "to", "to_snapshot", "previous_event",
@@ -738,6 +760,153 @@ def _contains_path(outer: Path, inner: Path) -> bool:
     outer_parts, inner_parts = parts(outer), parts(inner)
     return inner_parts[: len(outer_parts)] == outer_parts
 
+_RECORD_REF_KEYS = frozenset({"relative_path", "sha256", "media_type"})
+_RECORD_AREAS = ("records", "reviews", "candidates", "branches")
+_CASCADE_PASSES = 64
+
+
+@dataclass(slots=True)
+class _RecordCascade:
+    """Retained records restated to a fixed point, and what moved with them."""
+
+    payloads: dict[str, dict[str, Any]]
+    renames: dict[str, str]
+    restated: list[str]
+    blockers: list[str]
+
+
+def _is_record_path(relative: str) -> bool:
+    parts = PurePosixPath(relative).parts
+    if len(parts) < 4 or parts[0] != "runs" or parts[2] not in _RECORD_AREAS:
+        return False
+    try:
+        parse_record_file_name(parts[-1])
+    except ValueError:
+        return False
+    return True
+
+
+def _rewrite_references(
+    payload: Any,
+    project_id: str,
+    renames: Mapping[str, str],
+    digests: Mapping[str, str],
+) -> Any:
+    """Move every reference that names a record which moved.
+
+    A record is named three ways: as the exact ``ProjectRecordRef`` mapping, as
+    a ``project://`` URI, and - where its owner declares one - as a content
+    digest. All three move together or the migrated project names a file that
+    is not there.
+    """
+
+    if isinstance(payload, Mapping):
+        if _RECORD_REF_KEYS <= set(payload) <= (_RECORD_REF_KEYS | {"project_id"}):
+            relative = payload.get("relative_path")
+            if isinstance(relative, str) and relative in renames:
+                moved = renames[relative]
+                return {
+                    **{
+                        key: _rewrite_references(value, project_id, renames, digests)
+                        for key, value in payload.items()
+                    },
+                    "relative_path": moved,
+                    "sha256": parse_record_file_name(PurePosixPath(moved).name)[1],
+                }
+        return {
+            key: _rewrite_references(value, project_id, renames, digests)
+            for key, value in payload.items()
+        }
+    if isinstance(payload, list):
+        return [_rewrite_references(item, project_id, renames, digests) for item in payload]
+    if isinstance(payload, str):
+        if payload in digests:
+            return digests[payload]
+        prefix = f"project://{project_id}/"
+        if payload.startswith(prefix):
+            relative = payload[len(prefix):]
+            if relative in renames:
+                return prefix + renames[relative]
+    return payload
+
+
+def _cascade_records(
+    payloads: Mapping[str, dict[str, Any]],
+    *,
+    project_id: str,
+    mapping: Mapping[str, str],
+    legacy_digests: Mapping[str, int],
+) -> _RecordCascade:
+    """Restate every declared version identity and follow the rename to a fixed point.
+
+    Restating a content-addressed record changes its bytes, so its file name
+    changes and everything naming it has to move too; moving those changes
+    them in turn. The record graph is acyclic because a record can only name
+    one that already existed, so repeating the pass converges - but it is
+    capped, and a project that does not settle is refused rather than written.
+
+    A record carrying a known legacy identity at a location no owner declares
+    is a blocker: this build cannot say what restating it would mean.
+    """
+
+    current = {path: dict(payload) for path, payload in payloads.items()}
+    blockers: list[str] = []
+    for path in sorted(current):
+        payload = current[path]
+        schema = payload.get("schema")
+        declared = {
+            pointer for pointer, _, _ in _declared_locations(payload)
+        } | set(_structural_locations(payload))
+        for row in legacy_version_identities(payload, legacy_digests):
+            if row.json_pointer in declared:
+                continue
+            blockers.append(
+                f"record {path} ({schema if isinstance(schema, str) else 'undeclared schema'}) "
+                f"carries a project-version identity at {row.json_pointer} that no owner "
+                f"in this build restates; {UNDECLARED_IDENTITY_BLOCKER}"
+            )
+    if blockers:
+        return _RecordCascade(current, {}, [], blockers)
+
+    renames: dict[str, str] = {}
+    digests: dict[str, str] = {}
+    restated: set[str] = set()
+    for _ in range(_CASCADE_PASSES):
+        changed = False
+        for path in sorted(current):
+            payload = current[path]
+            updated = _rewrite_references(
+                _restate_declared(payload, mapping), project_id, renames, digests,
+            )
+            if updated == payload:
+                continue
+            # ``current`` stays keyed by the path the record came from, so
+            # one entry per record records where it has moved to so far.
+            changed = True
+            current[path] = updated
+            restated.add(path)
+            if _is_record_path(path):
+                kind, _ = parse_record_file_name(PurePosixPath(path).name)
+                renames[path] = (
+                    PurePosixPath(path).parent
+                    / record_file_name(kind, _sha256(_json_bytes(updated)))
+                ).as_posix()
+        if not changed:
+            return _RecordCascade(
+                {renames.get(path, path): payload for path, payload in current.items()},
+                renames,
+                sorted(restated),
+                [],
+            )
+    return _RecordCascade(
+        current, renames, sorted(restated),
+        [
+            f"restating this project's records did not settle within "
+            f"{_CASCADE_PASSES} passes; its retained references may name each other "
+            f"in a cycle this build cannot resolve"
+        ],
+    )
+
 
 def _copy_retained_closure(
     staging: Path,
@@ -745,92 +914,70 @@ def _copy_retained_closure(
     legacy: FilesystemProjectRepository,
     mapping: Mapping[str, str],
     legacy_digests: Mapping[str, int],
+    cascade: _RecordCascade,
 ) -> _CopiedClosure:
-    """Copy everything the envelope does not own, restating only owned bases.
+    """Write everything the envelope does not own into the target.
 
-    Run manifests and the authored state record are restated by their owners.
+    The cascade has already restated every declared version identity and moved
+    every reference that names a record which changed; this writes the result,
+    copies the opaque bytes unchanged, and records what it could not survey.
     Retained ``canonical``/``events`` records the published chain does not
     reach - what a promotion interrupted before its HEAD swap leaves behind -
-    are content-addressed, so they are carried over unchanged and named in the
-    receipt rather than silently dropped. Everything else is copied byte for
-    byte and surveyed for the project-version identities it still embeds.
+    are content-addressed, so they are carried over and named in the receipt
+    rather than silently dropped.
     """
-
-    from archflow.state.state_record import rewrite_base_digest
 
     report = _CopiedClosure([], 0, [], [], [], [])
     orphans = set(legacy.verify().orphan_paths)
     locks = {path.relative_to(staging).as_posix() for path in legacy.lock_paths()}
+    written = {
+        path: _json_bytes(payload) for path, payload in cascade.payloads.items()
+    }
+    moved = set(cascade.renames)
     for path in sorted(item for item in staging.rglob("*") if item.is_file()):
         relative = path.relative_to(staging).as_posix()
         if relative in ("project.json", "HEAD") or relative in locks:
             continue
         if _TEMPORARY_NAME.match(PurePosixPath(relative).name):
             continue
-        destination = target_root / path.relative_to(staging)
         data = _read_bytes(path)
         category, _, _ = _retained_category(relative)
         if relative.startswith(("canonical/", "events/")):
             if relative in orphans:
-                _write_immutable(destination, data)
+                _write_immutable(target_root / relative, data)
                 report.orphans.append(relative)
             continue
-        if category == "run_manifest":
-            run = legacy.load_run(PurePosixPath(relative).parts[1])
-            restated = RunRef(
-                run.project_id,
-                run.run_id,
-                ProjectVersionRef(
-                    run.project_id,
-                    run.base.version,
-                    mapping[run.base.require_digest()],
-                ),
-            )
-            _write_immutable(destination, _json_bytes({
-                "schema": "ProjectRun@1",
-                "project_id": restated.project_id,
-                "run_id": restated.run_id,
-                "base": restated.base.to_dict(),
-            }))
-            report.rewritten.append(relative)
-            continue
-        payload: object = None
         if category == "artifact":
             # Digest-identified bytes are opaque. A legacy digest written
             # inside one is neither read nor rewritten; the file is named so
             # the receipt does not read its silence as absence.
             if _legacy_digest_in_bytes(data, legacy_digests):
                 report.unscanned_binaries.append(relative)
-        elif relative.endswith(".json"):
-            try:
-                payload = json.loads(data.decode("utf-8-sig"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            _write_immutable(target_root / relative, data)
+            report.preserved_files += 1
+            continue
+        if relative in report.undecodable:  # pragma: no cover - defensive
+            continue
+        destination = cascade.renames.get(relative, relative)
+        payload = cascade.payloads.get(destination)
+        if payload is None:
+            if relative.endswith(".json"):
                 report.undecodable.append(relative)
-                payload = None
-        if relative == AUTHORED_RECORD_PATH and isinstance(payload, Mapping):
-            base = payload.get("base")
-            if (
-                isinstance(base, Mapping)
-                and set(base) == _VERSION_REF_KEYS
-                and base.get("state_sha256") not in mapping
-            ):
-                raise ProjectIntegrityError(
-                    "MIGRATION_AUTHORED_BASE_UNKNOWN: the authored state record is "
-                    "based on a version this project does not publish, so no owner "
-                    "can restate it"
-                )
-            restated_payload = rewrite_base_digest(payload, mapping)
-            if restated_payload != payload:
-                data = _json_bytes(restated_payload)
-                report.rewritten.append(relative)
+            _write_immutable(target_root / relative, data)
+            report.preserved_files += 1
+            continue
         for row in legacy_version_identities(payload, legacy_digests):
             report.embedded.append((
-                relative, row.json_pointer, row.shape,
+                destination, row.json_pointer, row.shape,
                 legacy_digests[row.state_sha256], row.state_sha256,
             ))
-        _write_immutable(destination, data)
-        if relative not in report.rewritten:
+        _write_immutable(target_root / destination, written[destination])
+        if written[destination] == data and relative == destination:
             report.preserved_files += 1
+        else:
+            report.rewritten.append(
+                destination if relative not in moved else f"{relative} -> {destination}"
+            )
     return report
 
 
@@ -1752,7 +1899,9 @@ class FilesystemProjectRepository:
             def artifact(path: str, digest: str, current_run: str | None) -> None:
                 # Native CAD receipts name a workspace-local export. P036
                 # artifact refs instead carry a complete project-relative path.
-                if path.startswith(("runs/", "objects/", "canonical/", "events/")):
+                if path.startswith(
+                    ("runs/", "objects/", "canonical/", "events/", "exports/")
+                ):
                     add(path, digest)
                     return
                 if current_run is None:
@@ -2012,13 +2161,16 @@ class FilesystemProjectRepository:
             if type(row["size"]) is not int or len(data) != row["size"] or _sha256(data) != row["sha256"]:
                 raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path}")
             parts = PurePosixPath(path).parts
-            # A run's workspace holds native exports, and some of those exports
-            # are themselves JSON. They are artifacts, not records: the sender
-            # only admits one a retained receipt names, and ``read_transfer_file``
-            # already serves it by area and digest. The content-addressed record
-            # filename is required of records, canonical state and events alone,
-            # so applying it here too would refuse an archive this code wrote.
-            workspace = parts[0] == "runs" and len(parts) >= 4 and parts[2] == "workspaces"
+            # A run's workspace and the project's exports hold native exports,
+            # and some of those are themselves JSON. They are artifacts, not
+            # records: the sender only admits one a retained receipt names, and
+            # ``read_transfer_file`` already serves it by area and digest. The
+            # content-addressed record filename is required of records,
+            # canonical state and events alone, so applying it here too would
+            # refuse an archive this code wrote.
+            workspace = parts[0] == "exports" or (
+                parts[0] == "runs" and len(parts) >= 4 and parts[2] == "workspaces"
+            )
             if path.endswith(".json") and not workspace and path not in (
                 "project.json", "design/branches.json", "input/runner/state-record.json",
                 "input/runner/seats.json", "input/runner/program-sheet.json",
@@ -2182,9 +2334,15 @@ class FilesystemProjectRepository:
                     lock.parent.mkdir(parents=True, exist_ok=True)
                     lock.touch(exist_ok=True)
                 plan = plan_project_migration(staging)
-                if not plan.planned or plan.blockers:
+                # An undeclared identity is re-detected below, per record and
+                # per pointer; every other refusal is final here.
+                refusals = [
+                    blocker for blocker in plan.blockers
+                    if UNDECLARED_IDENTITY_BLOCKER not in blocker
+                ]
+                if not plan.planned or refusals:
                     raise ProjectIntegrityError(
-                        "MIGRATION_BLOCKED: " + "; ".join(plan.blockers)
+                        "MIGRATION_BLOCKED: " + "; ".join(refusals or plan.blockers)
                     )
                 if not plan.migration_required:
                     raise ProjectIntegrityError(
@@ -2198,6 +2356,10 @@ class FilesystemProjectRepository:
                     )
 
                 lineage = legacy._legacy_lineage()
+                project_files = {
+                    item.relative_to(staging).as_posix(): item
+                    for item in staging.rglob("*") if item.is_file()
+                }
                 # Everything the envelope needs is computed before the target
                 # exists: a state that cannot be digested must not leave a
                 # half-written directory that inspects as current at v0.
@@ -2210,6 +2372,55 @@ class FilesystemProjectRepository:
                     semantic.append(_semantic_state_sha256(
                         state, field=f"migrated state v{ref.version}",
                     ))
+
+                mapping = {
+                    ref.require_digest(): digest
+                    for (ref, _, _), digest in zip(lineage, semantic)
+                }
+                legacy_digests = {
+                    ref.require_digest(): ref.version for ref, _, _ in lineage
+                }
+                # Records are restated and moved to a fixed point before a
+                # single target byte exists: an event names a decision receipt,
+                # so the envelope cannot be written until the receipt's final
+                # name is known, and an undeclared identity must refuse here.
+                undecodable: list[str] = []
+                payloads: dict[str, dict[str, Any]] = {}
+                for relative, item in sorted(project_files.items()):
+                    if (
+                        relative in ("project.json", "HEAD")
+                        or relative.startswith(("canonical/", "events/"))
+                        or not relative.endswith(".json")
+                        or _retained_category(relative)[0] == "artifact"
+                        or _TEMPORARY_NAME.match(PurePosixPath(relative).name)
+                    ):
+                        continue
+                    try:
+                        payloads[relative] = json.loads(
+                            _read_bytes(item).decode("utf-8-sig")
+                        )
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        undecodable.append(relative)
+                cascade = _cascade_records(
+                    payloads, project_id=project_id,
+                    mapping=mapping, legacy_digests=legacy_digests,
+                )
+                if cascade.blockers:
+                    raise ProjectIntegrityError(
+                        "MIGRATION_BLOCKED: " + "; ".join(cascade.blockers)
+                    )
+                authored = payloads.get(AUTHORED_RECORD_PATH)
+                if authored is not None:
+                    stranded = [
+                        digest for _, _, digest in _declared_locations(authored)
+                        if digest not in mapping and digest not in set(mapping.values())
+                    ]
+                    if stranded:
+                        raise ProjectIntegrityError(
+                            "MIGRATION_AUTHORED_BASE_UNKNOWN: the authored state record "
+                            "is based on a version this project does not publish, so no "
+                            "owner can restate it"
+                        )
 
                 target = cls.initialize(
                     target_root, project_id=project_id, initial_state=lineage[0][2],
@@ -2235,7 +2446,10 @@ class FilesystemProjectRepository:
                             event_type=event.get("event_type"),
                             decision=event.get("decision"),
                             run_id=event.get("run_id"),
-                            decision_receipt=event.get("decision_receipt"),
+                            decision_receipt=_rewrite_references(
+                                event.get("decision_receipt"), project_id,
+                                cascade.renames, {},
+                            ),
                             carried=carried,
                         )
                         published = target.compare_and_swap(
@@ -2252,11 +2466,10 @@ class FilesystemProjectRepository:
                             (legacy_ref.version, legacy_ref.require_digest(), digest)
                         )
 
-                mapping = {legacy: new for _, legacy, new in versions}
-                legacy_digests = {legacy: version for version, legacy, _ in versions}
                 report = _copy_retained_closure(
-                    staging, target_root, legacy, mapping, legacy_digests,
+                    staging, target_root, legacy, mapping, legacy_digests, cascade,
                 )
+                report.undecodable.extend(undecodable)
 
                 migrated = cls.open(target_root)
                 migrated.verify()
@@ -2938,6 +3151,9 @@ def plan_project_migration(
 
     grouped: dict[tuple[str, str, str | None, bool | None], list[int]] = {}
     unknown: dict[tuple[str, str | None], int] = {}
+    # kind -> (record count, one example "<path><pointer>")
+    undeclared: dict[str, tuple[int, str]] = {}
+    head_digests: dict[str, int] = {}
     try:
         transfer = repository.export_transfer(
             include_contents=False, include_all_runs=True,
@@ -2955,6 +3171,17 @@ def plan_project_migration(
                 schema = declared if isinstance(declared, str) else None
                 if registered is False:
                     unknown[(kind, schema)] = unknown.get((kind, schema), 0) + 1
+                if category in ("record", "run_manifest", "authored_input", "design"):
+                    covered = {
+                        pointer for pointer, _, _ in _declared_locations(payload)
+                    } | set(_structural_locations(payload))
+                    for row in embedded_version_identities(payload):
+                        if row.json_pointer in covered or row.state_sha256 is None:
+                            continue
+                        count, example = undeclared.get(kind, (0, ""))
+                        undeclared[kind] = (
+                            count + 1, example or f"{path}{row.json_pointer}",
+                        )
             totals = grouped.setdefault((category, kind, schema, registered), [0, 0])
             totals[0] += 1
             totals[1] += size
@@ -3038,6 +3265,15 @@ def plan_project_migration(
             f"byte-for-byte"
         )
 
+    # A location no owner declares is where a migration would have to guess.
+    # Grouped by kind with a count and one example, so a project carrying many
+    # of them reads as a list of contracts to declare, not a wall of paths.
+    blockers = [
+        f"retained kind {kind!r}: {count} record(s) carry a project-version "
+        f"identity at a location no owner in this build restates "
+        f"(for example {example}); {UNDECLARED_IDENTITY_BLOCKER}"
+        for kind, (count, example) in sorted(undeclared.items())
+    ]
     preserved = [
         f"retained record kind {kind!r} ({count} record(s), schema "
         f"{schema or 'undeclared'}) is not in the current record-kind table; the "
@@ -3046,8 +3282,8 @@ def plan_project_migration(
         for (kind, schema), count in sorted(
             unknown.items(), key=lambda item: (item[0][0], item[0][1] or ""),
         )
+        if kind not in undeclared
     ]
-    blockers: list[str] = []
 
     return ProjectMigrationPlan(
         migration_required=True,

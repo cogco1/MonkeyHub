@@ -203,6 +203,7 @@ def _stage_index(value: object, field: str = "stage_index") -> int:
 
 from archflow.contracts.fields import text as _text
 from archflow.contracts.fields import mapping
+from archflow.project.version_refs import register as _register_version_refs
 
 
 # ---------------------------------------------------------------- the stage-exit record
@@ -1537,3 +1538,13 @@ __all__ = [
     "require_stage_exit_binding",
     "require_stage_run_envelope",
 ]
+
+
+# A stage envelope and its exit binding both restate the run's canonical base
+# as a full reference; the composite closure carries none of its own.
+VERSION_REF_POINTERS = {
+    "StageRunEnvelope@1": ("/base",),
+    "StageExitBinding@1": ("/base",),
+}
+
+_register_version_refs(VERSION_REF_POINTERS)
