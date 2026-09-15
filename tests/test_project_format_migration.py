@@ -200,23 +200,28 @@ class ProjectFormatPlannerTests(unittest.TestCase):
 
     def install_historical_record(
         self, repository: FilesystemProjectRepository, kind: str,
-    ) -> None:
+        *, embeds_base: bool = True, note: str = "historical",
+    ) -> Path:
         """Write a retained record whose kind this build no longer registers.
 
         Archived lanes left records like this behind; ``put_json`` refuses to
-        write one now, but readers must keep them and a planner must not drop
-        them silently.
+        write one now, but readers must keep them. Whether such a record
+        *embeds a project-version identity* is the whole question a migration
+        has to answer, so the fixture can write either kind.
         """
 
-        data = _json_bytes({
+        payload = {
             "schema": "RetiredLaneNote@1",
             "project_id": repository.layout.project_id,
-            "base": repository.read_head().to_dict(),
-        })
-        _write_immutable(
-            repository.layout.run("extra").records / record_file_name(kind, _sha256(data)),
-            data,
-        )
+            "note": note,
+        }
+        if embeds_base:
+            payload["base"] = repository.read_head().to_dict()
+        data = _json_bytes(payload)
+        path = (repository.layout.run("extra").records
+                / record_file_name(kind, _sha256(data)))
+        _write_immutable(path, data)
+        return path
 
     def corrupt_a_retained_record(self, repository: FilesystemProjectRepository) -> None:
         """Make one retained record disagree with the digest in its file name."""
@@ -425,7 +430,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
     def test_unknown_retained_record_is_preserved_and_listed(self) -> None:
         repository = self.legacy_project()
         root = repository.layout.root
-        self.install_historical_record(repository, "retired-lane-note")
+        self.install_historical_record(repository, "retired-lane-note", embeds_base=False)
         before = self.fingerprint(root)
 
         plan = plan_project_migration(root)
@@ -459,7 +464,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
 
     def test_unknown_kind_with_declared_and_missing_schema_remains_readable(self) -> None:
         repository = self.legacy_project()
-        self.install_historical_record(repository, "retired-lane-note")
+        self.install_historical_record(repository, "retired-lane-note", embeds_base=False)
         data = _json_bytes({"note": "historical record without a schema field"})
         _write_immutable(
             repository.layout.run("extra").records
@@ -606,21 +611,110 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertEqual(migrated.load_run("first").base,
                          ProjectVersionRef("history-building", 1, result.versions[1][2]))
 
-    def test_migration_preserves_unknown_records_and_lists_their_embedded_references(self) -> None:
+    def test_an_unregistered_record_holding_a_legacy_identity_blocks_the_migration(self) -> None:
+        """No owner can say what restating it means, so nothing is written."""
+
         repository = self.legacy_project()
-        self.install_historical_record(repository, "retired-lane-note")
+        note = self.install_historical_record(repository, "retired-lane-note")
         source = repository.layout.root
-        note = next(source.joinpath("runs", "extra", "records").glob("retired-lane-note-*.json"))
         target = self.root / "migrated" / "legacy-building"
+
+        # The planner names it too, grouped by kind with one example location.
+        plan = plan_project_migration(source)
+        self.assertEqual(len(plan.blockers), 1, plan.blockers)
+        self.assertIn("retired-lane-note", plan.blockers[0])
+        self.assertIn("1 record(s)", plan.blockers[0])
+        self.assertIn("/base", plan.blockers[0])
+        self.assertEqual(plan.preserved, ())
+
+        with self.assertRaises(ProjectIntegrityError) as raised:
+            FilesystemProjectRepository.migrate_project_format(source, target)
+
+        message = str(raised.exception)
+        self.assertIn("MIGRATION_BLOCKED", message)
+        self.assertIn(note.relative_to(source).as_posix(), message)
+        self.assertIn("RetiredLaneNote@1", message)
+        self.assertIn("/base", message)
+        self.assertIn("no owner in this build restates", message)
+        self.assertFalse(target.exists())
+
+    def test_a_record_whose_kind_is_registered_but_whose_location_is_not_blocks(self) -> None:
+        """Registration is not a declaration: the pointer has to be declared."""
+
+        repository = self.legacy_project()
+        source = repository.layout.root
+        head = repository.read_head()
+        # A real StateRecord@1 declares /base and nothing else, so a second
+        # identity somewhere else in the same record has no owner.
+        data = _json_bytes({
+            "schema": "StateRecord@1",
+            "base": head.to_dict(),
+            "superseded": head.to_dict(),
+        })
+        _write_immutable(
+            repository.layout.run("extra").records
+            / record_file_name(STATE_RECORD, _sha256(data)), data,
+        )
+        target = self.root / "migrated" / "legacy-building"
+
+        with self.assertRaises(ProjectIntegrityError) as raised:
+            FilesystemProjectRepository.migrate_project_format(source, target)
+
+        message = str(raised.exception)
+        self.assertIn("MIGRATION_BLOCKED", message)
+        self.assertIn("/superseded", message)
+        self.assertNotIn("/base that no owner", message)
+        self.assertFalse(target.exists())
+
+    def test_restating_a_record_moves_every_reference_that_names_it(self) -> None:
+        """Two levels: the branch names a stage, the stage names a state record."""
+
+        repository = self.legacy_project()
+        source = repository.layout.root
+        before = {
+            path.relative_to(source).as_posix()
+            for path in source.rglob("*") if path.is_file()
+        }
+        target = self.root / "migrated" / "legacy-building"
+
         result = FilesystemProjectRepository.migrate_project_format(source, target)
-        self.assertEqual((target / note.relative_to(source)).read_bytes(), note.read_bytes())
-        legacy_head = repository.read_head()
-        self.assertIn((note.relative_to(source).as_posix(), "/base", "version_ref",
-                       legacy_head.version, legacy_head.state_sha256),
-                      result.embedded_legacy_references)
-        # The records the fixture's stages retain embed the run's base too.
-        self.assertTrue(any(path.startswith("runs/first/records/")
-                            for path, _, _, _, _ in result.embedded_legacy_references))
+
+        migrated = FilesystemProjectRepository.open(target)
+        # The state record moved because its run base was restated; the design
+        # stage that names it moved with it; the branch that names the stage
+        # was rewritten to follow. verify() resolves the whole chain.
+        migrated.verify()
+        moved = {row for row in result.rewritten if " -> " in row}
+        self.assertTrue(
+            any("state-record-" in row for row in moved), sorted(result.rewritten),
+        )
+        self.assertTrue(
+            any("design-stage-" in row for row in moved), sorted(result.rewritten),
+        )
+        self.assertIn("design/branches.json", result.rewritten)
+        after = {
+            path.relative_to(target).as_posix()
+            for path in target.rglob("*") if path.is_file()
+        }
+        # Every retained record that moved left no copy at its old name.
+        for row in moved:
+            old, new = row.split(" -> ")
+            self.assertIn(old, before)
+            self.assertNotIn(old, after)
+            self.assertIn(new, after)
+        self.assertEqual(result.embedded_legacy_references, ())
+        # Nothing still names a version by its legacy digest, except the
+        # migration receipt, whose whole job is to state the identity map.
+        legacy = {legacy for _, legacy, _ in result.versions}
+        receipt = result.receipt.relative_path
+        for path in sorted(target.rglob("*.json")):
+            if path.match("runs/*/workspaces/*"):
+                continue
+            if path.relative_to(target).as_posix() == receipt:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for digest in legacy:
+                self.assertNotIn(digest, text, path.relative_to(target).as_posix())
 
     def test_migration_rewrites_the_authored_state_record_base(self) -> None:
         root = self.legacy_envelope("authored-building")
@@ -803,7 +897,9 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertIn("MIGRATION_AUTHORED_BASE_UNKNOWN", str(raised.exception))
         self.assertFalse(target.exists())
 
-    def test_the_receipt_lists_the_two_key_and_flat_digest_shapes(self) -> None:
+    def test_the_two_key_and_flat_digest_shapes_are_found_and_blocked(self) -> None:
+        """A scan that knew only the exact mapping would migrate past these."""
+
         repository = self.legacy_project()
         source = repository.layout.root
         head = repository.read_head()
@@ -818,15 +914,13 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         _write_immutable(note, data)
         target = self.root / "migrated" / "legacy-building"
 
-        result = FilesystemProjectRepository.migrate_project_format(source, target)
+        with self.assertRaises(ProjectIntegrityError) as raised:
+            FilesystemProjectRepository.migrate_project_format(source, target)
 
-        relative = note.relative_to(source).as_posix()
-        listed = {
-            (path, pointer, shape)
-            for path, pointer, shape, _, _ in result.embedded_legacy_references
-        }
-        self.assertIn((relative, "/branch", "version_digest"), listed)
-        self.assertIn((relative, "/metadata/base_state_sha256", "digest_field"), listed)
+        message = str(raised.exception)
+        self.assertIn("/branch", message)
+        self.assertIn("/metadata/base_state_sha256", message)
+        self.assertFalse(target.exists())
 
     def test_migration_ignores_interrupted_writer_leftovers(self) -> None:
         repository = self.legacy_project()
@@ -852,21 +946,26 @@ class ProjectFormatPlannerTests(unittest.TestCase):
 
         result = FilesystemProjectRepository.migrate_project_format(source, target)
 
-        # This fixture's authored record states no base, so only the two run
-        # manifests name a version an owner has to restate.
-        self.assertEqual(
-            sorted(result.rewritten), ["runs/extra/run.json", "runs/first/run.json"],
-        )
-        # Everything the source retains except the envelope, the two advisory
-        # locks and the interrupted writer's leftover is copied byte for byte.
+        # The two run manifests are restated in place; the records whose run
+        # base moved are renamed, and what names them is rewritten to follow.
+        renamed = {row for row in result.rewritten if " -> " in row}
+        in_place = sorted(set(result.rewritten) - renamed)
+        self.assertEqual(in_place, [
+            "design/branches.json", "runs/extra/run.json", "runs/first/run.json",
+        ])
+        self.assertEqual(len(renamed), 4, sorted(renamed))
+        # Everything else the source retains, except the envelope, the two
+        # advisory locks and the interrupted writer's leftover, is copied byte
+        # for byte to the same name.
         copied = {
             path.relative_to(source).as_posix()
             for path in sorted(source.rglob("*")) if path.is_file()
         }
         skipped = {"project.json", "HEAD", "HEAD.lock", "design/branches.lock",
                    leftover.relative_to(source).as_posix()}
+        touched = set(in_place) | {row.split(" -> ")[0] for row in renamed}
         expected = {
-            name for name in copied - skipped - set(result.rewritten)
+            name for name in copied - skipped - touched
             if not name.startswith(("canonical/", "events/"))
         }
         self.assertEqual(result.preserved_files, len(expected))
@@ -876,18 +975,6 @@ class ProjectFormatPlannerTests(unittest.TestCase):
             )
         self.assertEqual(result.orphans, ())
         self.assertEqual(result.undecodable, ())
-        # The scan the dry run prints and the receipt agree, location for location.
-        scanned = {
-            (row.file, row.json_path)
-            for row in _scan_legacy_version_references(
-                plan_project_migration(source)
-            ).references
-        }
-        listed = {(path, pointer) for path, pointer, _, _, _ in result.embedded_legacy_references}
-        self.assertTrue(listed <= scanned, listed - scanned)
-        self.assertTrue(
-            all(name.startswith(("runs/", "input/", "design/")) for name, _ in listed)
-        )
 
     def test_the_receipt_record_survives_export_and_restore(self) -> None:
         repository = self.legacy_project()
@@ -940,7 +1027,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
     def test_cli_plans_a_legacy_project_without_offering_an_upgrade(self) -> None:
         repository = self.legacy_project()
         root = repository.layout.root
-        self.install_historical_record(repository, "retired-lane-note")
+        self.install_historical_record(repository, "retired-lane-note", embeds_base=False)
         before = self.fingerprint(root)
 
         result, output = self.invoke(root, "--plan-migration")

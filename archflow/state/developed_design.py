@@ -26,6 +26,7 @@ from archflow.contracts.fields import (
     refs as _refs,
     text as _text,
 )
+from archflow.project.version_refs import register as _register_version_refs
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -1512,3 +1513,9 @@ class DevelopedDesignState:
                 else None
             ),
         )
+
+
+# The developed-design state names the canonical version it develops.
+VERSION_REF_POINTERS = {"DevelopedDesignState@1": ("/base",)}
+
+_register_version_refs(VERSION_REF_POINTERS)

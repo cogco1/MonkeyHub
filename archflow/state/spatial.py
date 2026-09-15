@@ -29,6 +29,7 @@ from archflow.contracts.fields import (
     refs as _refs,
     text as _text,
 )
+from archflow.project.version_refs import register as _register_version_refs
 
 
 FootprintCell = tuple[int, int]
@@ -1400,3 +1401,14 @@ class SchematicOptionSet:
                 SchematicOption.from_dict(item) for item in options
             ),
         )
+
+
+# Where the spatial records keep the canonical version they were produced
+# against. Both state a full reference at ``/base``; the branch each belongs to
+# keeps the two-field form, which is the only other spelling this module writes.
+VERSION_REF_POINTERS = {
+    "SpatialOptionProposal@2": ("/base", "/branch/base"),
+    "SchematicOptionSet@1": ("/base", "/branch/base"),
+}
+
+_register_version_refs(VERSION_REF_POINTERS)

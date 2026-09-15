@@ -75,6 +75,7 @@ from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifie
 from archflow.state.geometry_program import CompiledGeometryProgram
 from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
+from archflow.project.version_refs import register as _register_version_refs
 
 
 _MAX_PROCESS_TEXT = 2_000
@@ -4277,3 +4278,18 @@ __all__ = [
     "patch_composed_three_dm",
     "verify_rhino_export_readback",
 ]
+
+
+# A CAD execution receipt keeps the canonical base twice: once as the split
+# scalar pair the exported file's own metadata carries, and once as the exact
+# reference in the binding the receipt was produced from.
+VERSION_REF_POINTERS = {
+    schema: ("/metadata/base_version+base_state_sha256", "/binding/base")
+    for schema in (
+        "RhinoCadExecutionReceipt@4",
+        "OcctExecutionReceipt@1",
+        "BlenderExecutionReceipt@1",
+    )
+}
+
+_register_version_refs(VERSION_REF_POINTERS)

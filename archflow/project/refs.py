@@ -410,3 +410,11 @@ def record_ref_from_uri(uri: str, project_id: str) -> ProjectRecordRef:
         sha256=sha256,
         media_type="application/json",
     )
+
+
+# A ``RunRef`` names the canonical version its run is based on, and travels
+# inside other records rather than as a record of its own. Declaring the shape
+# once covers every payload that embeds one.
+from archflow.project.version_refs import register_structural  # noqa: E402
+
+register_structural(("project_id", "run_id", "base"), "base")

@@ -54,6 +54,7 @@ from archflow.state.spatial import (
     SpatialZone,
 )
 from archflow.state.stage_workflow import DesignPhase
+from archflow.project.version_refs import register as _register_version_refs
 
 # The one phase this module names, and the only thing it is for:
 # ``StateRecord.state_digest``. A record states no stage (ADR-007 rule 1),
@@ -1769,3 +1770,12 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
                          zones=({"zone_id": "record-zone", "program_node_refs": ["program-node:record"], "level_ids": ["record"], "volume_ids": ["block"]},),
                          connections=(), components=tuple(design_components), footprint_cells=((0, 0),), assumption_refs=("assumption:state-record-view",))
     return bootstrap_developed_state(pack, run=run, portfolio_id=portfolio_id, branch_id=branch_id, selection_decision_ref=selection_decision_ref, phase=phase)
+
+
+# A ``StateRecord@1`` names the canonical version it is bound to in exactly one
+# place. ``digest`` deliberately excludes ``base``, so restating it leaves this
+# record's content identity unchanged; ``state_digest`` is the binding identity
+# and does move with it.
+VERSION_REF_POINTERS = {"StateRecord@1": ("/base",)}
+
+_register_version_refs(VERSION_REF_POINTERS)
