@@ -153,9 +153,14 @@ def _proportions(
         row["evidence_id"]: study_application._box(row["geometry"]["points"])
         for row in confirmed
     }
+
+    def geometry_order(row: Mapping[str, Any]) -> tuple[float, float, float, str]:
+        box = boxes[row["evidence_id"]]
+        return (-box.area, box.cx, box.cy, row["evidence_id"])
+
     envelopes = sorted(
         (row for row in confirmed if row["kind"] == "envelope"),
-        key=lambda row: (-boxes[row["evidence_id"]].area, row["evidence_id"]),
+        key=geometry_order,
     )
     if envelopes:
         basis_id = envelopes[0]["evidence_id"]
@@ -176,10 +181,10 @@ def _proportions(
 
     slots: list[dict[str, Any]] = []
     for kind in sorted(by_kind):
-        ranked = sorted(
-            by_kind[kind],
-            key=lambda row: (-boxes[row["evidence_id"]].area, row["evidence_id"]),
-        )
+        # IDs are provenance, not correspondence. Area first gives a stable
+        # role ranking; equal-size traces are paired by position before the id
+        # is used as a final deterministic tie-break for identical geometry.
+        ranked = sorted(by_kind[kind], key=geometry_order)
         for index, row in enumerate(ranked, start=1):
             box = boxes[row["evidence_id"]]
             slots.append({
