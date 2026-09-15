@@ -26,6 +26,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from tools.create_project import _restore_project_archive, _write_project_archive
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
+from .test_cad_export import NEEDS_OCCT, no_process, no_rhino
 
 JOB_DEADLINE = 180.0
 
@@ -145,3 +146,110 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
             {p.name for p in (restored_root / "runs").iterdir()} - {REFERENCE_RUN_ID, run_a, run_b},
             set(),
         )
+
+
+def runner_receipt(project_root: Path, run_id: str) -> dict:
+    paths = sorted((project_root / "runs" / run_id / "records").glob("runner-run-receipt-*.json"))
+    assert len(paths) == 1, paths
+    return json.loads(paths[0].read_text(encoding="utf-8"))
+
+
+def exact_step_path(project_root: Path, run_id: str, file_name: str) -> Path:
+    matches = sorted((project_root / "runs" / run_id / "workspaces").glob(f"cad-*/{file_name}"))
+    assert len(matches) == 1, matches
+    return matches[0]
+
+
+@NEEDS_OCCT
+class RestoredContinuationWithOcctTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="restored-occt-"))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository, _ = make_project(self.root / "source")
+        self.source = self.root / "source" / PROJECT_ID
+        rhino = no_rhino()
+        rhino.start()
+        self.addCleanup(rhino.stop)
+
+    def client(self, project_dir: Path) -> TestClient:
+        client = TestClient(create_app(StudioSettings(project_dir=project_dir)))
+        self.addCleanup(client.close)
+        return client
+
+    def test_continuation_reuses_the_source_export_on_the_source_project(self) -> None:
+        """Precondition: A -> B on the untouched source reuses A's exact export."""
+
+        with self.client(self.source) as client, no_process():
+            _, job_a = continue_candidate(
+                client, source_run_id=None, utterance="set height to 2.2", element_id="portico-base"
+            )
+            self.assertEqual(job_a["status"], "succeeded", job_a)
+            _, job_b = continue_candidate(
+                client,
+                source_run_id=job_a["candidateId"],
+                utterance="set height to 0.5",
+                element_id="portico-cornice",
+            )
+            self.assertEqual(job_b["status"], "succeeded", job_b)
+        seat = runner_receipt(self.source, job_b["candidateId"])["seat_results"][0]
+        self.assertTrue(seat["cad"].get("reused_object_ids"), seat["cad"])
+        self.assertIn("source_execution_ref", seat["cad"])
+
+    def test_a_restored_project_reuses_its_own_copy_and_never_the_source(self) -> None:
+        with self.client(self.source) as client, no_process():
+            _, job_a = continue_candidate(
+                client, source_run_id=None, utterance="set height to 2.2", element_id="portico-base"
+            )
+        self.assertEqual(job_a["status"], "succeeded", job_a)
+        run_a = job_a["candidateId"]
+        seat_a = runner_receipt(self.source, run_a)["seat_results"][0]
+        exact_name = Path(str(seat_a["cad"]["model"]).replace("\\", "/")).name
+        archive = self.root / f"{PROJECT_ID}.monkeyhub.zip"
+        _write_project_archive(FilesystemProjectRepository.open(self.source), archive)
+
+        restored_root = self.root / "restored" / PROJECT_ID
+        _restore_project_archive(restored_root, archive)
+        # The source project stays where it was, but its exact STEP is gone:
+        # anything that still reads the retained absolute path fails loudly.
+        exact_step_path(self.source, run_a, exact_name).unlink()
+        self.assertTrue(exact_step_path(restored_root, run_a, exact_name).is_file())
+
+        with self.client(restored_root) as client, no_process():
+            _, job_b = continue_candidate(
+                client,
+                source_run_id=run_a,
+                utterance="set height to 0.5",
+                element_id="portico-cornice",
+            )
+        self.assertEqual(job_b["status"], "succeeded", job_b)
+        seat_b = runner_receipt(restored_root, job_b["candidateId"])["seat_results"][0]
+        self.assertTrue(seat_b["cad"].get("reused_object_ids"), seat_b["cad"])
+        self.assertEqual(seat_b["cad"]["source_execution_ref"], seat_a["cad"]["execution_ref"])
+        # B's retained model path names the restored root, never the source.
+        self.assertTrue(Path(seat_b["cad"]["model"]).is_relative_to(restored_root), seat_b["cad"]["model"])
+
+    def test_a_restored_project_continues_after_the_source_is_deleted(self) -> None:
+        with self.client(self.source) as client, no_process():
+            _, job_a = continue_candidate(
+                client, source_run_id=None, utterance="set height to 2.2", element_id="portico-base"
+            )
+        self.assertEqual(job_a["status"], "succeeded", job_a)
+        run_a = job_a["candidateId"]
+        archive = self.root / f"{PROJECT_ID}.monkeyhub.zip"
+        _write_project_archive(FilesystemProjectRepository.open(self.source), archive)
+        shutil.rmtree(self.root / "source")
+        restored_root = self.root / "restored" / PROJECT_ID
+        _restore_project_archive(restored_root, archive)
+        with self.client(restored_root) as client, no_process():
+            _, job_b = continue_candidate(
+                client,
+                source_run_id=run_a,
+                utterance="set height to 0.5",
+                element_id="portico-cornice",
+            )
+            self.assertEqual(job_b["status"], "succeeded", job_b)
+            candidate_b = client.get(f"/api/candidates/{job_b['candidateId']}").json()
+            exact_b = [row for row in candidate_b["artifacts"] if row["representation"] == "exact"]
+            self.assertEqual(len(exact_b), 1, candidate_b["artifacts"])
+        seat_b = runner_receipt(restored_root, job_b["candidateId"])["seat_results"][0]
+        self.assertTrue(seat_b["cad"].get("reused_object_ids"), seat_b["cad"])
