@@ -24,6 +24,7 @@ from . import (
     runtime,
     settings,
     state,
+    study,
     synchronization,
     validation,
 )
@@ -40,6 +41,7 @@ router.include_router(program.router)
 router.include_router(artifacts.router)
 router.include_router(boards.router)
 router.include_router(drawings.router)
+router.include_router(study.router)
 router.include_router(pick.router)
 router.include_router(proposals.router)
 router.include_router(intents.router)
