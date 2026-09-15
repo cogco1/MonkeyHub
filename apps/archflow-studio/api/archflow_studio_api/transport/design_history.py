@@ -6,11 +6,30 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from archflow.state.design_portfolio import DesignBranch
 
-from ..application.design_history import DesignHistory, StageView
+from ..application.design_history import AcceptanceEvidence, DesignHistory, StageView
 from .artifacts import ModelSourceDto, model_source_dto
 
 
 IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"
+
+
+class AcceptanceEvidenceDto(BaseModel):
+    """The retained acceptance evidence of one Stage, or absent where none is.
+
+    ``acceptedBy`` remains the actor id on the public wire. New retained Stages
+    may use an opaque internal acceptance principal so the exact winning origin
+    can be recovered after a crash; that principal is never exposed here.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+    event_id: str = Field(alias="eventId")
+    occurred_at: str = Field(alias="occurredAt")
+    action: str
+    status: str
+    actor_id: str = Field(alias="actorId")
+    authenticated: bool
+    origin: str
+    audit_ref: str = Field(alias="auditRef")
 
 
 class DesignStageDto(BaseModel):
@@ -23,6 +42,9 @@ class DesignStageDto(BaseModel):
     model_source: ModelSourceDto = Field(alias="modelSource")
     record_digest: str = Field(alias="recordDigest")
     accepted_by: str = Field(alias="acceptedBy")
+    # Null for a Stage committed before acceptance evidence was retained: the
+    # older record stays readable and says nothing it cannot prove.
+    acceptance: AcceptanceEvidenceDto | None = Field(default=None)
 
 
 class DesignBranchDto(BaseModel):
@@ -65,13 +87,30 @@ class ForkDesignBranchRequestDto(BaseModel):
     stage_ref: str = Field(alias="stageRef", min_length=1)
 
 
+def acceptance_dto(evidence: AcceptanceEvidence | None) -> AcceptanceEvidenceDto | None:
+    if evidence is None:
+        return None
+    return AcceptanceEvidenceDto(
+        event_id=evidence.event_id, occurred_at=evidence.occurred_at,
+        action=evidence.action, status=evidence.status, actor_id=evidence.actor_id,
+        authenticated=evidence.authenticated, origin=evidence.origin,
+        audit_ref=evidence.audit_ref.uri,
+    )
+
+
 def stage_dto(view: StageView) -> DesignStageDto:
+    accepted_by = (
+        view.acceptance_attribution.actor_id
+        if view.acceptance_attribution is not None
+        else view.stage.accepted_by
+    )
     return DesignStageDto(
         stage_ref=view.ref.uri,
         parent_stage_ref=None if view.stage.parent_stage is None else view.stage.parent_stage.uri,
         branch_id=view.stage.branch_id, label=view.stage.label,
         candidate_id=view.stage.candidate_id, model_source=model_source_dto(view.model_source),
-        record_digest=view.record_digest, accepted_by=view.stage.accepted_by,
+        record_digest=view.record_digest, accepted_by=accepted_by,
+        acceptance=acceptance_dto(view.acceptance),
     )
 
 

@@ -156,51 +156,113 @@ class ProjectBinding:
 
         return self.repository.read_head()
 
-    def design_history(self, branch_id: str) -> tuple[tuple[ProjectRecordRef, DesignStage], ...]:
-        """The committed ancestors of one branch, oldest first."""
+    def design_history(
+        self, branch_id: str
+    ) -> tuple[tuple[ProjectRecordRef, DesignStage], ...]:
+        """The committed ancestors of one branch, oldest first.
+
+        ``acceptance_attribution`` is an application-level audit extension of
+        the retained ``DesignStage@1`` envelope. It is intentionally not part
+        of the pure portfolio value: ``accepted_by`` remains the actor id and
+        the acceptance application validates the extension when it needs it.
+        """
+
         branches = self.repository.read_design_branches()
         if branch_id not in branches:
-            raise StudioError(404, "DESIGN_BRANCH_NOT_FOUND", f"Design branch {branch_id!r} does not exist.")
+            raise StudioError(
+                404,
+                "DESIGN_BRANCH_NOT_FOUND",
+                f"Design branch {branch_id!r} does not exist.",
+            )
         branch = DesignBranch.from_dict(branches[branch_id])
         ref: ProjectRecordRef | None = branch.head_stage
         history: list[tuple[ProjectRecordRef, DesignStage]] = []
         seen: set[ProjectRecordRef] = set()
         while ref is not None:
             if ref in seen:
-                raise StudioError(409, "DESIGN_HISTORY_INVALID", "The committed design history contains a cycle.")
+                raise StudioError(
+                    409,
+                    "DESIGN_HISTORY_INVALID",
+                    "The committed design history contains a cycle.",
+                )
             seen.add(ref)
             payload = self.repository.load_json(ref)
-            if record_kind(ref) != DESIGN_STAGE or payload.get("schema") != "DesignStage@1":
-                raise StudioError(409, "DESIGN_HISTORY_INVALID", "The design history names an invalid stage record.")
-            stage = DesignStage.from_dict({key: value for key, value in payload.items() if key != "schema"})
+            if (
+                record_kind(ref) != DESIGN_STAGE
+                or payload.get("schema") != "DesignStage@1"
+            ):
+                raise StudioError(
+                    409,
+                    "DESIGN_HISTORY_INVALID",
+                    "The design history names an invalid stage record.",
+                )
+            stage = DesignStage.from_dict(
+                {
+                    key: value
+                    for key, value in payload.items()
+                    if key not in {"schema", "acceptance_attribution"}
+                }
+            )
             if stage.project_id != self.project_id:
-                raise StudioError(409, "DESIGN_HISTORY_INVALID", "The stage belongs to another project.")
+                raise StudioError(
+                    409,
+                    "DESIGN_HISTORY_INVALID",
+                    "The stage belongs to another project.",
+                )
             history.append((ref, stage))
             ref = stage.parent_stage
         if branch.fork_stage not in seen:
-            raise StudioError(409, "DESIGN_HISTORY_INVALID", "The branch history does not reach its fork stage.")
+            raise StudioError(
+                409,
+                "DESIGN_HISTORY_INVALID",
+                "The branch history does not reach its fork stage.",
+            )
         return tuple(reversed(history))
 
     def design_stage(self, ref: ProjectRecordRef) -> DesignStage:
         """Resolve a committed node; a prepared but unreferenced record is not one."""
         if ref.project_id != self.project_id:
-            raise StudioError(409, "DESIGN_STAGE_MISMATCH", "The stage belongs to another project.")
+            raise StudioError(
+                409,
+                "DESIGN_STAGE_MISMATCH",
+                "The stage belongs to another project.",
+            )
         for branch_id in self.repository.read_design_branches():
             for retained_ref, stage in self.design_history(branch_id):
                 if retained_ref == ref:
                     return stage
-        raise StudioError(404, "DESIGN_STAGE_NOT_FOUND", "This stage is not part of committed design history.")
+        raise StudioError(
+            404,
+            "DESIGN_STAGE_NOT_FOUND",
+            "This stage is not part of committed design history.",
+        )
 
     def candidate_delta(self, run_id: str) -> dict[str, Any] | None:
         """One actual run's retained change, without inventing legacy deltas."""
-        refs = [ref for ref in self.record_refs(run_id) if record_kind(ref) == STUDIO_CANDIDATE_DELTA]
+        refs = [
+            ref
+            for ref in self.record_refs(run_id)
+            if record_kind(ref) == STUDIO_CANDIDATE_DELTA
+        ]
         if not refs:
             return None
         if len(refs) != 1:
-            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "This candidate has competing retained changes.")
+            raise StudioError(
+                409,
+                "CANDIDATE_DELTA_INVALID",
+                "This candidate has competing retained changes.",
+            )
         payload = self.repository.load_json(refs[0])
-        if payload.get("schema") != "StudioCandidateDelta@1" or payload.get("project_id") != self.project_id or payload.get("run_id") != run_id:
-            raise StudioError(409, "CANDIDATE_DELTA_INVALID", "The retained change has a different project or run binding.")
+        if (
+            payload.get("schema") != "StudioCandidateDelta@1"
+            or payload.get("project_id") != self.project_id
+            or payload.get("run_id") != run_id
+        ):
+            raise StudioError(
+                409,
+                "CANDIDATE_DELTA_INVALID",
+                "The retained change has a different project or run binding.",
+            )
         return payload
 
     def run_ids(self) -> tuple[str, ...]:
@@ -236,7 +298,8 @@ class ProjectBinding:
         return self.repository.list_json(
             run=self.load_run(run_id),
             destination=PersistenceDestination(
-                PersistenceArea.RUN_RECORD, run_id=run_id
+                PersistenceArea.RUN_RECORD,
+                run_id=run_id,
             ),
         )
 
@@ -302,7 +365,9 @@ class ProjectBinding:
                 f"state_record_ref is not a record in this project: {error_sentence(exc)}",
             ) from exc
         expected_parent = PurePosixPath(
-            "runs", reference.run.run_id, "records"
+            "runs",
+            reference.run.run_id,
+            "records",
         )
         path = PurePosixPath(ref.relative_path)
         if path.parent != expected_parent or record_kind(ref) != STATE_RECORD:
@@ -330,7 +395,10 @@ class ProjectBinding:
                 "the retained state record's run or canonical base differs from the run manifest",
             )
         claimed_digest = receipt.get("state_record_digest")
-        if not isinstance(claimed_digest, str) or claimed_digest != record.digest:
+        if (
+            not isinstance(claimed_digest, str)
+            or claimed_digest != record.digest
+        ):
             raise _reference_state_not_exact(
                 reference,
                 "state_record_digest does not match the retained state record",
@@ -360,7 +428,12 @@ class ProjectBinding:
         is skipped and named, and the projection says how many were skipped.
         """
 
-        newest: tuple[float, str, ProjectRecordRef, Mapping[str, Any]] | None = None
+        newest: tuple[
+            float,
+            str,
+            ProjectRecordRef,
+            Mapping[str, Any],
+        ] | None = None
         skipped: list[str] = []
         for run_id in self.run_ids():
             before = newest
@@ -386,7 +459,11 @@ class ProjectBinding:
                 newest = before
                 skipped.append(run_id)
                 continue
-        chosen = None if newest is None else (newest[1], newest[2], newest[3])
+        chosen = (
+            None
+            if newest is None
+            else (newest[1], newest[2], newest[3])
+        )
         return chosen, tuple(skipped)
 
     def reference_run(self, run_id: str | None = None) -> ReferenceRun:
@@ -398,9 +475,15 @@ class ProjectBinding:
             return self._chosen(self.load_run(run_id), "query", run_id)
         branches = self.repository.read_design_branches()
         if "main" in branches:
-            head_ref = ProjectRecordRef.from_dict(branches["main"]["head_stage"])
+            head_ref = ProjectRecordRef.from_dict(
+                branches["main"]["head_stage"]
+            )
             stage = self.design_stage(head_ref)
-            return ReferenceRun(self.load_run(stage.candidate_id), "rule", self.repository.load_json(stage.runner_ref))
+            return ReferenceRun(
+                self.load_run(stage.candidate_id),
+                "rule",
+                self.repository.load_json(stage.runner_ref),
+            )
         configured = self.settings.reference_run
         if configured is not None:
             try:
@@ -431,7 +514,12 @@ class ProjectBinding:
             workflow_unresolved=self._workflow_unresolved(chosen[2]),
         )
 
-    def _chosen(self, run: RunRef, source: str, run_id: str) -> ReferenceRun:
+    def _chosen(
+        self,
+        run: RunRef,
+        source: str,
+        run_id: str,
+    ) -> ReferenceRun:
         """A run the caller named, with whatever receipt it happens to hold.
 
         A run that loads and whose records the repository then refuses is a
@@ -461,7 +549,9 @@ class ProjectBinding:
             receipt,
             skipped_runs=self._survey()[1],
             workflow_unresolved=(
-                False if receipt is None else self._workflow_unresolved(receipt)
+                False
+                if receipt is None
+                else self._workflow_unresolved(receipt)
             ),
         )
 
@@ -541,7 +631,11 @@ class ProjectBinding:
             if payload.get("schema") != STAGE_ENVELOPE_SCHEMA:
                 continue
             stage = payload.get("stage")
-            phase = stage.get("phase") if isinstance(stage, Mapping) else None
+            phase = (
+                stage.get("phase")
+                if isinstance(stage, Mapping)
+                else None
+            )
             if isinstance(phase, str):
                 found.append(phase)
         return found[0] if len(found) == 1 else None
@@ -574,8 +668,16 @@ class ProjectBinding:
                 if payload.get("workflow_id") in HARNESS_WORKFLOW_IDS:
                     continue
                 stages = payload.get("stages")
-                first = stages[0] if isinstance(stages, list) and stages else None
-                phase = first.get("phase") if isinstance(first, Mapping) else None
+                first = (
+                    stages[0]
+                    if isinstance(stages, list) and stages
+                    else None
+                )
+                phase = (
+                    first.get("phase")
+                    if isinstance(first, Mapping)
+                    else None
+                )
                 if isinstance(phase, str):
                     phases.add(phase)
         return next(iter(phases)) if len(phases) == 1 else None
@@ -615,16 +717,30 @@ def initialize_modeling(binding: ProjectBinding) -> bool:
     declares a modeling root and zero datum, not geometry or a design decision.
     """
 
-    from archflow.project.inputs import AuthoredRecordInvalid, AuthoredRecordMissing, load_authored_record
+    from archflow.project.inputs import (
+        AuthoredRecordInvalid,
+        AuthoredRecordMissing,
+        load_authored_record,
+    )
     from ..adapters.harness import HARNESS_PHASE
 
     repository = binding.repository
     head = repository.read_head()
     # Connecting an existing design must never reset it, even if its authored
     # file is missing or stale relative to a retained candidate or Stage.
-    if head.version != 0 or repository.read_design_branches() or any(
-        record_kind(ref) in {STATE_RECORD, RUNNER_RUN_RECEIPT, STUDIO_CANDIDATE_DELTA}
-        for run_id in binding.run_ids() for ref in binding.record_refs(run_id)
+    if (
+        head.version != 0
+        or repository.read_design_branches()
+        or any(
+            record_kind(ref)
+            in {
+                STATE_RECORD,
+                RUNNER_RUN_RECEIPT,
+                STUDIO_CANDIDATE_DELTA,
+            }
+            for run_id in binding.run_ids()
+            for ref in binding.record_refs(run_id)
+        )
     ):
         return False
     try:
@@ -634,43 +750,75 @@ def initialize_modeling(binding: ProjectBinding) -> bool:
     except AuthoredRecordInvalid as exc:
         raise StudioError(422, "STATE_RECORD_INVALID", str(exc)) from exc
     if current is not None:
-        empty = StateRecord(project_id=binding.project_id, run_id=current.run_id, entities=())
+        empty = StateRecord(
+            project_id=binding.project_id,
+            run_id=current.run_id,
+            entities=(),
+        )
         if current.to_dict() != empty.to_dict():
             return False
     evidence = "input:monkeyarch-modeling-setup"
     record = StateRecord(
-        project_id=binding.project_id, run_id="authored",
+        project_id=binding.project_id,
+        run_id="authored",
         entities=(
-            Entity("model", "Component@1", fields={
-                "semantic_kind": "building", "intent": "Root for candidate modeling",
-                "source_refs": [evidence],
-            }),
-            Entity("ground", "Level@1", fields={
-                "role": "ground", "elevation": 0.0,
-            }, basis_refs=(evidence,)),
+            Entity(
+                "model",
+                "Component@1",
+                fields={
+                    "semantic_kind": "building",
+                    "intent": "Root for candidate modeling",
+                    "source_refs": [evidence],
+                },
+            ),
+            Entity(
+                "ground",
+                "Level@1",
+                fields={
+                    "role": "ground",
+                    "elevation": 0.0,
+                },
+                basis_refs=(evidence,),
+            ),
         ),
-        evidence_refs=(evidence,), option={"option_id": "modeling"},
+        evidence_refs=(evidence,),
+        option={"option_id": "modeling"},
     )
     seats = {
-        "schema": "RunnerSeats@1", "commitment_ref": "commitment:monkeyarch-candidate-modeling",
-        "branch_id": "runner-v1", "seats": [{
-            "seat_id": "modeler", "disciplines": ["structure_support"],
-            "phases": [HARNESS_PHASE.value], "owned_component_ids": ["model"],
-            "consumes": [], "reviewer": False,
-        }],
+        "schema": "RunnerSeats@1",
+        "commitment_ref": "commitment:monkeyarch-candidate-modeling",
+        "branch_id": "runner-v1",
+        "seats": [
+            {
+                "seat_id": "modeler",
+                "disciplines": ["structure_support"],
+                "phases": [HARNESS_PHASE.value],
+                "owned_component_ids": ["model"],
+                "consumes": [],
+                "reviewer": False,
+            }
+        ],
     }
     try:
         return repository.initialize_authored_inputs(
             expected_head=head,
-            expected_record=None if current is None else current.to_dict(),
-            authored_record=record.to_dict(), seat_pack=seats,
+            expected_record=(
+                None if current is None else current.to_dict()
+            ),
+            authored_record=record.to_dict(),
+            seat_pack=seats,
         )
     except ProjectRepositoryError as exc:
-        raise StudioError(409, "MODELING_INITIALIZATION_CONFLICT", str(exc)) from exc
+        raise StudioError(
+            409,
+            "MODELING_INITIALIZATION_CONFLICT",
+            str(exc),
+        ) from exc
 
 
 def _reference_state_not_exact(
-    reference: ReferenceRun, detail: str
+    reference: ReferenceRun,
+    detail: str,
 ) -> StudioError:
     return StudioError(
         409,
