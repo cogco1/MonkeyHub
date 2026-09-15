@@ -6207,6 +6207,63 @@
         "apps/monkeyfab/tests/test_send.py"
       ],
       "notes": "User-requested repository consolidation. Import the existing MonkeyFab implementation at 6128f99c8fbcc5db41539a225386a6495fa6c5ab; retain its CLI and algorithm ownership. No current core, modeling or drawing owner provides print preparation, so this registers the existing capability instead of adding another implementation."
+    },
+    {
+      "module_id": "studio.study",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+      "purpose": "Experimental API for retaining and inspecting corrected precedent-page trace evidence; its geometric rules are research proposals awaiting method and compatibility review.",
+      "owns": [
+        "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
+        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
+        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence"
+      ],
+      "does_not_own": [
+        "source document import and byte identity (studio.artifacts)",
+        "Board scenes (studio.board), model proposal execution or canonical design state",
+        "image-model tracing, a user-facing Study workspace or validated architectural research methods"
+      ],
+      "inputs": [
+        "ProjectBinding",
+        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref"
+      ],
+      "outputs": [
+        "StudyView with retained EvidenceLedger@1 and its CompositionGraph@1 reconstructed from that revision's retained evidence and relations",
+        "StudyViewDto"
+      ],
+      "public_api": [
+        "POST /api/studies",
+        "GET /api/studies/{study_id}",
+        "save_study",
+        "read_study"
+      ],
+      "depends_on": [
+        "studio.artifacts",
+        "studio.binding",
+        "contracts.canonical",
+        "project.ports",
+        "project.repository",
+        "project.refs",
+        "project.record_kinds"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py"
+      ],
+      "invariants": [
+        "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
+        "only confirmed traces contribute geometric relations; proposed and rejected evidence stays inspectable",
+        "stale corrections and competing retained revision heads are refused",
+        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered"
+      ],
+      "status": "provisional",
+      "source_paths": [
+        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_study.py"
+      ],
+      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Source revision pinning, retained-method compatibility and retained-revision self-consistency are now resolved: a revision pins the exact StudioSourceDocument record, an older revision is replayed rather than re-derived, and a read refuses a retained relation whose endpoint is not a confirmed trace of that same revision, or a retained reasoning receipt bound to another composition graph. What remains open: two competing retained heads block default head selection and corrections with no reconciliation route, while a revision named by ledgerRef remains readable; and an archived revision stays readable only while the current evidence validator still accepts its exact retained rows. Page metric normalization and the unvalidated similarity thresholds remain the author's research decision; no architectural method is endorsed by this registration."
     }
   ]
 }

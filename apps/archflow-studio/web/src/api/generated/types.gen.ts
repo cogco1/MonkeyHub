@@ -5043,6 +5043,29 @@ export type RuntimeDto = {
 };
 
 /**
+ * SaveStudyRequestDto
+ */
+export type SaveStudyRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Studyid
+     */
+    studyId: string;
+    source: StudySourceRequestDto;
+    /**
+     * Evidence
+     */
+    evidence: Array<TraceEvidenceRequestDto>;
+    /**
+     * Expectedpreviousref
+     */
+    expectedPreviousRef?: string | null;
+};
+
+/**
  * ScopeOptionDto
  *
  * One reading of how far a change reaches, and exactly what it covers.
@@ -6857,6 +6880,104 @@ export type StudioHealth = {
 };
 
 /**
+ * StudySourceRequestDto
+ */
+export type StudySourceRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+};
+
+/**
+ * StudyViewDto
+ */
+export type StudyViewDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Ledgerref
+     */
+    ledgerRef: string;
+    /**
+     * Previousref
+     */
+    previousRef: string | null;
+    /**
+     * Source
+     */
+    source: {
+        [key: string]: unknown;
+    };
+    /**
+     * Evidence
+     */
+    evidence: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Measurements
+     */
+    measurements: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Relations
+     */
+    relations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Compositiongraph
+     */
+    compositionGraph: {
+        [key: string]: unknown;
+    };
+    /**
+     * Hypotheses
+     */
+    hypotheses: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Counterfactuals
+     */
+    counterfactuals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Derivationmethod
+     */
+    derivationMethod: string | null;
+    /**
+     * Canonicalstatechanged
+     */
+    canonicalStateChanged: boolean;
+};
+
+/**
  * SynchronizationDto
  */
 export type SynchronizationDto = {
@@ -6902,6 +7023,39 @@ export type TimingsDto = {
      * Exports
      */
     exports: Array<ExportTimingDto>;
+};
+
+/**
+ * TraceEvidenceRequestDto
+ */
+export type TraceEvidenceRequestDto = {
+    /**
+     * Evidenceid
+     */
+    evidenceId: string;
+    /**
+     * Kind
+     */
+    kind: 'envelope' | 'mass' | 'void' | 'floor_plate';
+    /**
+     * Points
+     */
+    points: Array<[
+        number,
+        number
+    ]>;
+    /**
+     * Status
+     */
+    status?: 'proposed' | 'confirmed' | 'rejected';
+    /**
+     * Confidence
+     */
+    confidence?: number;
+    /**
+     * Origin
+     */
+    origin?: 'machine' | 'user' | 'imported';
 };
 
 /**
@@ -8641,6 +8795,86 @@ export type CreateElevationApiDrawingsElevationsPostResponses = {
 };
 
 export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationApiDrawingsElevationsPostResponses[keyof CreateElevationApiDrawingsElevationsPostResponses];
+
+export type RetainStudyApiStudiesPostData = {
+    body: SaveStudyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/studies';
+};
+
+export type RetainStudyApiStudiesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetainStudyApiStudiesPostError = RetainStudyApiStudiesPostErrors[keyof RetainStudyApiStudiesPostErrors];
+
+export type RetainStudyApiStudiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: StudyViewDto;
+};
+
+export type RetainStudyApiStudiesPostResponse = RetainStudyApiStudiesPostResponses[keyof RetainStudyApiStudiesPostResponses];
+
+export type ReopenStudyApiStudiesStudyIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Study Id
+         */
+        study_id: string;
+    };
+    query?: {
+        /**
+         * Ledgerref
+         */
+        ledgerRef?: string | null;
+    };
+    url: '/api/studies/{study_id}';
+};
+
+export type ReopenStudyApiStudiesStudyIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReopenStudyApiStudiesStudyIdGetError = ReopenStudyApiStudiesStudyIdGetErrors[keyof ReopenStudyApiStudiesStudyIdGetErrors];
+
+export type ReopenStudyApiStudiesStudyIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: StudyViewDto;
+};
+
+export type ReopenStudyApiStudiesStudyIdGetResponse = ReopenStudyApiStudiesStudyIdGetResponses[keyof ReopenStudyApiStudiesStudyIdGetResponses];
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;

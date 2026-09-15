@@ -18,6 +18,18 @@
       ]
     },
     {
+      "id": "GH-73",
+      "stream": "study",
+      "status": "active",
+      "goal": "Retain exact precedent-page trace evidence, deterministic composition reasoning and falsifiable counterfactuals without creating a second design truth or writing canonical design state.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
