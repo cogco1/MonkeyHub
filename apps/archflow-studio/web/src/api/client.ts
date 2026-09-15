@@ -69,6 +69,7 @@ import {
   readProjectsApiProjectsGet,
   createDeleteProposalApiProposalsDeletePost,
   createSketchProposalApiProposalsSketchPost,
+  prepareModelingApiProjectModelingPost,
   createTransformProposalApiProposalsTransformPost,
   createPushPullProposalApiProposalsPushPullPost,
   readProposalApiProposalsProposalIdGet,
@@ -129,6 +130,8 @@ import type {
   ProjectArtifactDto,
   ProjectListDto,
   ProposalDto,
+  ModelingInitializeDto,
+  SketchBatchRequestDto,
   SketchPrismRequestDto,
   TransformElementRequestDto,
   PushPullRequestDto,
@@ -515,6 +518,16 @@ export const studio = {
   /** One finished drawing action, as the proposal it already is. */
   sketch(body: SketchPrismRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ body }));
+  },
+
+  /** Several finished drawing actions as one proposal; later items may reference earlier ones. */
+  sketchBatch(body: SketchBatchRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ body }));
+  },
+
+  /** Prepare an empty project for its first sketch (idempotent; seeds component `model` and level `ground`). */
+  prepareModeling(projectId: string): Promise<ModelingInitializeDto> {
+    return call("POST /api/project/modeling", prepareModelingApiProjectModelingPost({ body: { projectId } }));
   },
 
   transform(body: TransformElementRequestDto): Promise<ProposalDto> {

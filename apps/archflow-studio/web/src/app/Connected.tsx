@@ -21,6 +21,7 @@ import { connection, type ServerIdentity } from "../api/connection";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardDocumentOpen, BoardViewState } from "../workspaces/monkeyboard/boardNavigation";
+import { conversationUrl, type BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import { boardUrl, documentUrl, type PageSource } from "../workspaces/monkeyboard/boardScene";
 import { TaskWorkspace } from "./TaskWorkspace";
 import App from "./App";
@@ -50,8 +51,12 @@ type BoardVisit = { page: PageSource; view: BoardViewState };
 export function Connected() {
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | null>(null);
+  const [sketchIntent, setSketchIntent] = useState<BoardSketchRequest | null>(null);
   const [board, setBoard] = useState(() => new URLSearchParams(window.location.search).get("view") === "board");
   const [visit, setVisit] = useState<BoardVisit | null>(null);
+  // A sketch is not a page visit, but it is a departure from the board, and the
+  // way back has to stay open: a refused sketch is corrected on the board.
+  const [sketchVisit, setSketchVisit] = useState(false);
   const t = useT();
 
   const submitBoardFeedback = useCallback((request: BoardDesignRequest) => {
@@ -59,7 +64,24 @@ export function Connected() {
     document.title = "MonkeyArch";
     // Feedback continues in the conversation; it is not a page visit to return from.
     setVisit(null);
+    // One hand-off at a time: an earlier one that survived its journey would
+    // otherwise decide where this one is opened, and swallow it.
+    setSketchIntent(null);
+    setSketchVisit(false);
     setDocumentIntent(request);
+    setBoard(false);
+  }, []);
+
+  // A calibrated sketch frame continues in the conversation, exactly as design
+  // feedback does: the board keeps its marks and nothing on it is mutated.
+  const submitBoardSketch = useCallback((request: BoardSketchRequest) => {
+    // A reload must land on the answer, not back on the board that asked.
+    window.history.replaceState(null, "", conversationUrl(window.location.href));
+    document.title = "MonkeyArch";
+    setVisit(null);
+    setSketchVisit(true);
+    setDocumentIntent(null);
+    setSketchIntent(request);
     setBoard(false);
   }, []);
 
@@ -75,6 +97,11 @@ export function Connected() {
   const returnToBoard = useCallback(() => {
     window.history.replaceState(null, "", boardUrl(window.location.href));
     document.title = "MonkeyBoard";
+    // A hand-off already made is never replayed by the task view that mounts
+    // next; going back is for correcting the drawing, not resending it.
+    setSketchIntent(null);
+    setSketchVisit(false);
+    setDocumentIntent(null);
     setBoard(true);
   }, []);
 
@@ -133,14 +160,16 @@ export function Connected() {
 
   return board
     ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-        <Board onSubmit={submitBoardFeedback} onOpenDocument={openBoardDocument} restoreView={visit?.view ?? null} />
+        <Board onSubmit={submitBoardFeedback} onSketch={submitBoardSketch} onOpenDocument={openBoardDocument} restoreView={visit?.view ?? null} />
       </Suspense>
     : new URLSearchParams(window.location.search).get("embedded") === "tool"
       // An embedding page may name the exact candidate run to open, so that a
       // conversation's own result is never read as the reference run.
       ? <App server={server.value} initialDocumentIntent={documentIntent ?? undefined}
-             onReturnToBoard={visit === null ? undefined : returnToBoard}
+             initialSketchRequest={sketchIntent ?? undefined}
+             onReturnToBoard={visit === null && !sketchVisit ? undefined : returnToBoard}
              initialRunId={new URLSearchParams(window.location.search).get("candidate")} />
       : <TaskWorkspace server={server.value} initialDocumentIntent={documentIntent ?? undefined}
-                       onReturnToBoard={visit === null ? undefined : returnToBoard} />;
+                       initialSketchRequest={sketchIntent ?? undefined}
+                       onReturnToBoard={visit === null && !sketchVisit ? undefined : returnToBoard} />;
 }

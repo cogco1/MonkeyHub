@@ -3769,7 +3769,8 @@
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
         "mapping one explicitly selected edit drawing and its board marks to page coordinates, then handing its exact saved annotations, user feedback and up to three explicitly connected reference pages to the existing Studio intent workflow",
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
-        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work"
+        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
+        "converting the closed shapes inside a calibrated sketch frame into existing sketch proposals; the frame carries the only scene-to-metres affine"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -3795,7 +3796,9 @@
         "save_board",
         "export_board_pages",
         "web: createBoardFeedback",
-        "web: prepareBoardDesignRequest"
+        "web: prepareBoardDesignRequest",
+        "web: sketchActionsFromFrame",
+        "web: calibrateSketchFrame"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -3832,7 +3835,8 @@
         "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
         "apps/archflow-studio/web/test/boardNavigation.test.ts",
         "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs",
-        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts"
+        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts",
+        "apps/archflow-studio/web/test/boardSketch.test.ts"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
