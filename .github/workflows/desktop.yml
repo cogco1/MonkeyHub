@@ -37,16 +37,29 @@ jobs:
           from pathlib import Path
           path = Path('/tmp/patch_gh73.py')
           text = path.read_text(encoding='utf-8')
-          marker = 'The retained Study derivation method id is invalid.'
-          position = text.index(marker)
-          start = text.rfind('replace_once(', 0, position)
-          end = text.find('\n\nreplace_once(', position)
-          if start < 0 or end < 0:
-              raise SystemExit('could not isolate optional derivation-method validation patch')
-          text = text[:start] + text[end + 2:]
+          for marker in (
+              'The retained Study derivation method id is invalid.',
+              '_source_payload_matches(previous_payload["source"], source)',
+          ):
+              position = text.index(marker)
+              start = text.rfind('replace_once(', 0, position)
+              end = text.find('\n\nreplace_once(', position)
+              if start < 0 or end < 0:
+                  raise SystemExit(f'could not isolate optional patch block: {marker}')
+              text = text[:start] + text[end + 2:]
           path.write_text(text, encoding='utf-8')
           PY
           python /tmp/patch_gh73.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('apps/archflow-studio/api/archflow_studio_api/application/study.py')
+          text = path.read_text(encoding='utf-8')
+          old = '            if previous_payload["source"] != source.to_dict():'
+          new = '            if not _source_payload_matches(previous_payload["source"], source):'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one source immutability comparison, got {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
