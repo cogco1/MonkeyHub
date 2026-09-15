@@ -141,6 +141,106 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $build = Get-ChildItem -LiteralPath "$root/staging" -Directory | Select-Object -First 1
           "PACKAGE_BUILD=$($build.FullName)" >> $env:GITHUB_ENV
+      - name: Normalize release version across package evidence
+        if: env.MONKEYHUB_RELEASE_PUSH == 'true'
+        shell: pwsh
+        env:
+          # This script is written into RUNNER_TEMP, so sys.path[0] is that temp
+          # directory and the checkout is not importable. The release evidence is
+          # derived by the packaging owner, so put the checkout on the path.
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'mhp'
+          $script = Join-Path $root 'normalize-release.py'
+          @'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import zipfile
+
+          from tools import package_monkeyapps as builder
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "mhp"
+          build = Path(os.environ["PACKAGE_BUILD"])
+          source = build / "source"
+          output = root / "output"
+          version = os.environ["MONKEYHUB_RELEASE_VERSION"]
+          source_sha = os.environ["MONKEYHUB_SOURCE_SHA"]
+
+          bundles = [path for path in build.iterdir()
+                     if path.is_dir() and path.name.startswith("MonkeyHub-")
+                     and path.name.endswith("-windows-x64")]
+          if len(bundles) != 1:
+              raise SystemExit(f"Expected exactly one assembled MonkeyHub bundle, found: {bundles}")
+          bundle = bundles[0]
+          target_bundle = build / f"MonkeyHub-{version}-windows-x64"
+          if target_bundle.exists() and target_bundle != bundle:
+              raise SystemExit(f"Versioned bundle already exists: {target_bundle}")
+          if bundle != target_bundle:
+              bundle.rename(target_bundle)
+              bundle = target_bundle
+
+          build_info_path = bundle / "build-info.json"
+          build_info = json.loads(build_info_path.read_text(encoding="utf-8"))
+          if build_info.get("sourceCommit") != source_sha:
+              raise SystemExit("build-info sourceCommit does not match the exact release source")
+          desktop = build_info.get("desktop") or {}
+          if desktop.get("version") != version:
+              raise SystemExit("desktop version does not match the promoted release version")
+          build_info["releaseVersion"] = version
+          build_info_path.write_text(json.dumps(build_info, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          sbom_document = builder.sbom_document(source, bundle, build_info, version)
+          bundle_sbom = bundle / builder.SBOM_NAME
+          bundle_sbom.write_text(json.dumps(sbom_document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          zip_path = build / f"{bundle.name}-candidate.zip"
+          if zip_path.exists():
+              raise SystemExit(f"Versioned archive already exists in staging: {zip_path}")
+          with zipfile.ZipFile(zip_path, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+              for path in sorted(bundle.rglob("*")):
+                  if path.is_file():
+                      archive.write(path, (Path(bundle.name) / path.relative_to(bundle)).as_posix())
+
+          for path in output.iterdir():
+              if path.is_file():
+                  path.unlink()
+          final = output / zip_path.name
+          checksum = output / f"{final.name}.sha256"
+          sbom = output / f"{bundle.name}.cyclonedx.json"
+          manifest = output / f"{final.name}.release-manifest.json"
+          shutil.copy2(zip_path, final)
+          checksum.write_text(f"{builder.sha256(final)}  {final.name}\n", encoding="utf-8")
+          shutil.copy2(bundle_sbom, sbom)
+          manifest_document = builder.release_manifest(
+              build_info, version, bundle.name, build_info_path, final,
+              (final, checksum, sbom), sbom,
+          )
+          manifest.write_text(json.dumps(manifest_document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          problems = builder.verify_release(manifest)
+          if problems:
+              raise SystemExit("Normalized release failed verification: " + "; ".join(problems))
+          if manifest_document["release"]["version"] != version:
+              raise SystemExit("ReleaseManifest version does not match promoted release")
+          if manifest_document["artifactPrefix"] != bundle.name:
+              raise SystemExit("ReleaseManifest artifactPrefix does not match versioned bundle")
+          if sbom_document["metadata"]["component"]["version"] != version:
+              raise SystemExit("SBOM component version does not match promoted release")
+          expected = {
+              final.name,
+              checksum.name,
+              sbom.name,
+              manifest.name,
+          }
+          actual = {path.name for path in output.iterdir() if path.is_file()}
+          if actual != expected:
+              raise SystemExit(f"Release directory is not a closed four-file set: {sorted(actual)}")
+          print(f"Normalized release {version}: {final.name}")
+          '@ | Set-Content -LiteralPath $script -Encoding utf8
+          python $script
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify release desktop version
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
         shell: pwsh
@@ -336,6 +436,21 @@ jobs:
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'output'
           $tag = "v$env:MONKEYHUB_RELEASE_VERSION"
+          $manifest = Get-ChildItem -LiteralPath "$root" -Filter '*.release-manifest.json'
+          if (@($manifest).Count -ne 1) { throw 'Expected exactly one release manifest.' }
+          python tools/package_monkeyapps.py --verify $manifest.FullName
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $document = Get-Content -LiteralPath $manifest.FullName -Raw | ConvertFrom-Json
+          if ($document.release.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
+            throw 'ReleaseManifest version differs from the GitHub release version.'
+          }
+          if ($document.release.sourceCommit -ne $env:MONKEYHUB_SOURCE_SHA) {
+            throw 'ReleaseManifest source commit differs from the exact packaged source.'
+          }
+          $assets = @(Get-ChildItem -LiteralPath "$root" -File)
+          if ($assets.Count -ne 4) { throw "Expected exactly four release assets, found $($assets.Count)." }
+
+
           $tagRows = @(git ls-remote --tags origin "refs/tags/$tag")
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $remoteTag = ($tagRows -join "`n").Trim()
@@ -349,22 +464,42 @@ jobs:
             git push origin "refs/tags/$tag"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
+
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "$tag already has a GitHub Release; leaving it unchanged."
+            $published = Join-Path $root 'published-release'
+            New-Item -ItemType Directory -Path $published -Force | Out-Null
+            gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $published
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $local = @{}
+            foreach ($file in $assets) {
+              $local[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+            $remote = @{}
+            foreach ($file in Get-ChildItem -LiteralPath $published -File) {
+              $remote[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+            if ($local.Count -ne $remote.Count) {
+              throw "$tag already exists with a different asset count."
+            }
+            foreach ($name in $local.Keys) {
+              if (-not $remote.ContainsKey($name) -or $remote[$name] -ne $local[$name]) {
+                throw "$tag already exists but asset $name is missing or has different bytes."
+              }
+            }
+            Write-Host "$tag already exists with byte-identical assets; treating rerun as idempotent success."
             exit 0
           }
-          $assets = Get-ChildItem -LiteralPath $root -File | ForEach-Object { $_.FullName }
-          if (-not $assets) { throw 'No release assets were produced.' }
+          $assetPaths = $assets | ForEach-Object { $_.FullName }
           $notes = @"
           Automated Windows candidate release.
 
           - Version: $tag
-          - Source: $env:MONKEYHUB_SOURCE_SHA
-          - Base promoted from: ${{ github.sha }}
+          - Release source: $env:MONKEYHUB_SOURCE_SHA
+          - Promoted main/base commit: ${{ github.sha }}
           - Trust: candidate-unsigned
-          - Includes ReleaseManifest@1, SHA-256 sidecar, and CycloneDX 1.6 SBOM.
+          - Package ZIP, ReleaseManifest@1, CycloneDX SBOM, and MonkeyArch.exe report one release version.
           - This is a prerelease for clean-machine acceptance; it is not a signed production release.
           "@
-          gh release create $tag $assets --repo $env:GITHUB_REPOSITORY --prerelease --title "MonkeyHub $tag · Windows candidate" --notes $notes
+          gh release create $tag $assetPaths --repo $env:GITHUB_REPOSITORY --prerelease --title "MonkeyHub $tag · Windows candidate" --notes $notes
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
