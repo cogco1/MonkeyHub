@@ -159,7 +159,7 @@ class DocumentWorkCopyRequestDto(BaseModel):
 
 
 class DocumentWorkCopyDto(BaseModel):
-    """One registered image page's editable file, and the page it answers for."""
+    """One registered document's editable file, and the pages it answers for."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
@@ -168,8 +168,9 @@ class DocumentWorkCopyDto(BaseModel):
     asset_sha256: str = Field(alias="assetSha256")
     revision_ref: str | None = Field(alias="revisionRef", default=None)
     page_index: int = Field(alias="pageIndex", ge=0)
+    page_count: int = Field(alias="pageCount", ge=1)
     file_name: str = Field(alias="fileName")
-    mime_type: Literal["image/png", "image/jpeg"] = Field(alias="mimeType")
+    mime_type: Literal["image/png", "image/jpeg", "application/pdf"] = Field(alias="mimeType")
     relative_path: str = Field(
         alias="relativePath",
         description="where the editable copy lives, project-relative; display "
@@ -185,7 +186,8 @@ class DocumentWorkCopyDto(BaseModel):
 def work_copy_dto(copy: DocumentWorkCopy) -> DocumentWorkCopyDto:
     return DocumentWorkCopyDto(
         project_id=copy.project_id, run_id=copy.run_id, asset_sha256=copy.asset_sha256,
-        revision_ref=copy.revision_ref, page_index=copy.page_index, file_name=copy.file_name,
+        revision_ref=copy.revision_ref, page_index=copy.page_index, page_count=copy.page_count,
+        file_name=copy.file_name,
         mime_type=copy.mime_type, relative_path=copy.relative_path, head_run_id=copy.head_run_id,
         head_asset_sha256=copy.head_asset_sha256, head_revision_ref=copy.head_revision_ref,
         head_page_index=copy.head_page_index,

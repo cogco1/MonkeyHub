@@ -2147,7 +2147,7 @@ export type DocumentVisualInputDto = {
 /**
  * DocumentWorkCopyDto
  *
- * One registered image page's editable file, and the page it answers for.
+ * One registered document's editable file, and the pages it answers for.
  */
 export type DocumentWorkCopyDto = {
     /**
@@ -2171,13 +2171,17 @@ export type DocumentWorkCopyDto = {
      */
     pageIndex: number;
     /**
+     * Pagecount
+     */
+    pageCount: number;
+    /**
      * Filename
      */
     fileName: string;
     /**
      * Mimetype
      */
-    mimeType: 'image/png' | 'image/jpeg';
+    mimeType: 'image/png' | 'image/jpeg' | 'application/pdf';
     /**
      * Relativepath
      *

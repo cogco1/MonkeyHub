@@ -348,9 +348,9 @@ class SourceDocumentTests(unittest.TestCase):
 
     def test_work_copy_names_one_exact_registration_and_refuses_the_rest(self) -> None:
         image = self.upload(image_bytes(), "plan.png", "image/png").json()
-        pdf = self.upload(two_page_pdf()).json()
-        self.assertEqual(self.work_copy(pdf).status_code, 422)
-        self.assertEqual(self.work_copy(pdf).json()["code"], "DOCUMENT_NOT_EDITABLE")
+        # A second registration is present throughout: none of the refusals
+        # below may be answered by simply finding the other document.
+        self.upload(two_page_pdf())
         # A revisionRef is part of the identity, not a filter: naming one this
         # registration does not carry selects nothing rather than the newest
         # other registration of the same bytes.
@@ -435,6 +435,98 @@ class SourceDocumentTests(unittest.TestCase):
         self.assertEqual(opened.json()["code"], "DOCUMENT_NOT_EDITABLE")
         work_root = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents" / "work"
         self.assertFalse(work_root.exists())
+
+    @staticmethod
+    def pdf_pages(*sizes: tuple[float, float], title: str = "plan") -> bytes:
+        """A PDF with the given page sizes whose bytes change with ``title``."""
+
+        writer = PdfWriter()
+        for width, height in sizes:
+            writer.add_blank_page(width=width, height=height)
+        writer.add_metadata({"/Title": title})
+        output = BytesIO()
+        writer.write(output)
+        return output.getvalue()
+
+    @staticmethod
+    def portrait_png(color: str = "red") -> bytes:
+        """A 3:4 PNG: the visible ratio of the second page used below."""
+
+        output = BytesIO()
+        Image.new("RGB", (300, 400), color).save(output, format="PNG")
+        return output.getvalue()
+
+    def test_pdf_work_copy_covers_the_whole_document(self) -> None:
+        first = self.pdf_pages((400, 300), (300, 400), title="first")
+        original = self.upload(first, "plan.pdf").json()
+        self.assertEqual(original["pageCount"], 2)
+        response = self.work_copy(original)
+        self.assertEqual(response.status_code, 201, response.text)
+        copy = response.json()
+        self.assertEqual((copy["mimeType"], copy["pageCount"], copy["pageIndex"]),
+                         ("application/pdf", 2, 0))
+        self.assertEqual(copy["relativePath"],
+                         f"runs/{REFERENCE_RUN_ID}/workspaces/studio-documents/work/{original['assetSha256']}/plan.pdf")
+        path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
+        self.assertEqual(path.read_bytes(), first)
+        # Asking again answers with the same copy, untouched.
+        edited = self.pdf_pages((400, 300), (300, 400), title="edited")
+        path.write_bytes(edited)
+        again = self.work_copy(original).json()
+        self.assertEqual(again["relativePath"], copy["relativePath"])
+        self.assertEqual(path.read_bytes(), edited)
+
+    def test_non_portable_pdf_name_gets_a_pdf_segment(self) -> None:
+        original = self.upload(self.pdf_pages((400, 300)), "研究图纸.pdf").json()
+        copy = self.work_copy(original).json()
+        self.assertTrue(copy["relativePath"].endswith(f"/{original['assetSha256'][:32]}.pdf"), copy["relativePath"])
+        self.assertTrue((self.repository.layout.root / Path(*copy["relativePath"].split("/"))).is_file())
+
+    def test_a_pdf_whose_page_was_replaced_individually_is_not_editable(self) -> None:
+        original = self.upload(self.pdf_pages((400, 300), (300, 400))).json()
+        # Replace page 1 alone with an image of the same visible aspect ratio.
+        replacement = self.upload(self.portrait_png(), "page-two.png", "image/png", run_id=None,
+                                  replacesPages=[replacement_page(original, 1, 0)])
+        self.assertEqual(replacement.status_code, 201, replacement.text)
+        response = self.work_copy(original)
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "DOCUMENT_NOT_EDITABLE")
+        # A document whose pages no longer travel together is watched nowhere.
+        self.assertEqual(list_document_work_copies(bound_project(self.client.app.state)), ())
+        work_root = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents" / "work"
+        self.assertFalse(work_root.exists())
+
+    def test_pdf_work_copy_registration_replaces_every_page(self) -> None:
+        original = self.upload(self.pdf_pages((400, 300), (300, 400), title="first"), "plan.pdf").json()
+        copy = self.work_copy(original).json()
+        edited = self.pdf_pages((400, 300), (300, 400), title="second")
+        registered = self.upload(edited, "plan.pdf", run_id=None,
+                                 replacesPages=[replacement_page(original, 0, 0), replacement_page(original, 1, 1)])
+        self.assertEqual(registered.status_code, 201, registered.text)
+        document = registered.json()
+        self.assertEqual(sorted((page["pageIndex"], page["newPageIndex"]) for page in document["replacesPages"]),
+                         [(0, 0), (1, 1)])
+        # The copy keeps its own identity and now answers for the new document,
+        # page for page.
+        head = self.work_copy(original).json()
+        self.assertEqual(head["relativePath"], copy["relativePath"])
+        self.assertEqual((head["headAssetSha256"], head["headPageIndex"], head["pageCount"]),
+                         (document["assetSha256"], 0, 2))
+
+    def test_a_replacement_answering_for_several_pages_must_answer_for_all_of_them(self) -> None:
+        original = self.upload(self.pdf_pages((400, 300), (300, 400), title="first"), "plan.pdf").json()
+        grown = self.pdf_pages((400, 300), (300, 400), (400, 300), title="three")
+        response = self.upload(grown, "plan.pdf", run_id=None,
+                               replacesPages=[replacement_page(original, 0, 0), replacement_page(original, 1, 1)])
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "DOCUMENT_REPLACEMENT_INVALID")
+        self.assertEqual([row["assetSha256"] for row in self.client.get("/api/documents").json()["documents"]],
+                         [original["assetSha256"]])
+        # One page answered for on its own may still come from any page of a
+        # longer file: that is the Board's own replacement dialog.
+        picked = self.upload(self.pdf_pages((400, 300), (300, 400)), "picked.pdf", run_id=None,
+                             replacesPages=[replacement_page(original, 1, 1)])
+        self.assertEqual(picked.status_code, 201, picked.text)
 
     def test_unregistered_digest_cannot_read_an_object_and_tampering_is_named(self) -> None:
         document = self.upload(image_bytes(), "a.png", "image/png").json()
