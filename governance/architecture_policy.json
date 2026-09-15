@@ -391,7 +391,7 @@
       "targets": [
         "archive"
       ],
-      "reason": "The spine suite is the spine's. A test that needs an archived lane's code is that lane's test and lives in archive/tests/, where it still runs against the spine."
+      "reason": "The public spine suite must not depend on retired lane code. Retired source and its tests are kept outside the public checkout; the import guard prevents reintroducing that dependency."
     },
     {
       "source": "archflow/contracts",
