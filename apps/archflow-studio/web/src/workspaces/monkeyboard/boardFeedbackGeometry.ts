@@ -14,6 +14,15 @@ export class BoardFeedbackGeometryError extends Error {
   }
 }
 
+export interface BoardFeedbackReference {
+  image: ExcalidrawImageElement;
+  document: SourceDocumentDto;
+  page: DocumentPageDto;
+  source: PageSource;
+  /** Human-readable purpose retained beside the transient reference visual. */
+  referenceNote: string;
+}
+
 export interface BoardFeedbackSelection {
   image: ExcalidrawImageElement;
   document: SourceDocumentDto;
@@ -22,6 +31,12 @@ export interface BoardFeedbackSelection {
   annotations: DocumentGestureDto[];
   annotationGroups: string[];
   selectedText: string;
+  /**
+   * Extra registered pages explicitly connected to the edit source on Board.
+   * They are visual evidence only: no model target or canonical geometry is
+   * inferred from them. Optional for callers built before concept references.
+   */
+  references?: readonly BoardFeedbackReference[];
 }
 
 function fail(code: ErrorCode, message: string): never {
@@ -88,11 +103,30 @@ function rectanglePoints(element: ExcalidrawElement): Point[] {
   return points;
 }
 
+function bindingElementId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const id = (value as { elementId?: unknown }).elementId;
+  return typeof id === "string" && id ? id : null;
+}
+
+function connectorBindings(element: ExcalidrawElement): readonly [string, string] | null {
+  if (element.type !== "line" && element.type !== "arrow") return null;
+  const row = element as ExcalidrawElement & { startBinding?: unknown; endBinding?: unknown };
+  const start = bindingElementId(row.startBinding), end = bindingElementId(row.endBinding);
+  return start && end ? [start, end] : null;
+}
+
 /**
  * Transfer an explicit selection only. Frame membership and bound labels are
  * expanded; visual proximity never chooses a drawing or silently adds marks.
  * Geometry is page-local after undoing the Board image transform. Page metadata
  * already includes PDF rotation/CropBox and image EXIF orientation.
+ *
+ * A concept selection may contain additional registered images, but only when
+ * exactly one selected image has a declared model source and every extra image
+ * is joined to that edit source (or one of its selected marks) by an explicit
+ * Excalidraw connector binding. Those pages become reference visuals; the
+ * connector itself stays Board evidence and is not mis-saved as page ink.
  */
 export function createBoardFeedback(
   elements: readonly ExcalidrawElement[],
@@ -120,12 +154,25 @@ export function createBoardFeedback(
   const chosen = visible.filter((element) => selected.has(element.id));
   const images = chosen.filter((element): element is ExcalidrawImageElement => element.type === "image");
   if (images.length === 0) fail("BOARD_FEEDBACK_SOURCE_REQUIRED", "Select one registered source image, or its frame, together with the marks to send.");
-  if (images.length !== 1) fail("BOARD_FEEDBACK_SOURCE_AMBIGUOUS", "Select only one source image. Feedback cannot guess which drawing or revision to change.");
-  const image = images[0];
-  const source = imageSource(image);
-  const document = source && findSource(documents, source);
-  const page = document?.pages.find((item) => item.pageIndex === source?.pageIndex);
-  if (!source || !document || !page) fail("BOARD_FEEDBACK_SOURCE_UNAVAILABLE", "The selected image no longer resolves to its registered source page and drawing revision.");
+
+  const imageRows = images.map((candidate) => {
+    const candidateSource = imageSource(candidate);
+    const candidateDocument = candidateSource && findSource(documents, candidateSource);
+    const candidatePage = candidateDocument?.pages.find((item) => item.pageIndex === candidateSource?.pageIndex);
+    if (!candidateSource || !candidateDocument || !candidatePage) {
+      fail("BOARD_FEEDBACK_SOURCE_UNAVAILABLE", "A selected image no longer resolves to its registered source page and drawing revision.");
+    }
+    return { image: candidate, source: candidateSource, document: candidateDocument, page: candidatePage };
+  });
+  const boundRows = imageRows.filter((row) => row.document.modelSource != null);
+  const target = imageRows.length === 1 ? imageRows[0] : boundRows.length === 1 ? boundRows[0] : null;
+  if (!target) {
+    fail("BOARD_FEEDBACK_SOURCE_AMBIGUOUS", "Select one model-linked edit drawing plus explicitly connected reference images. Feedback cannot guess between multiple edit sources.");
+  }
+  const { image, source, document, page } = target;
+  const referenceRows = imageRows.filter((row) => row.image.id !== image.id);
+  if (referenceRows.length > 3) fail("BOARD_FEEDBACK_UNSUPPORTED", "Select at most three reference pages with one edit drawing.");
+
   checkedGeometry(image);
   if (image.crop != null) fail("BOARD_FEEDBACK_UNSUPPORTED", "Cropped Board images are not supported for feedback yet. Restore the full source image first.");
   if (image.width <= 0 || image.height <= 0 || !Array.isArray(image.scale)
@@ -133,6 +180,61 @@ export function createBoardFeedback(
     || ![page.width, page.height].every((value) => Number.isFinite(value) && value > 0)) {
     fail("BOARD_FEEDBACK_INVALID_GEOMETRY", "The source page has invalid dimensions or image scale.");
   }
+
+  for (const reference of referenceRows) {
+    checkedGeometry(reference.image);
+    if (reference.image.crop != null || reference.image.angle !== 0 || !Array.isArray(reference.image.scale)
+      || reference.image.scale.length !== 2 || reference.image.scale[0] !== 1 || reference.image.scale[1] !== 1) {
+      fail("BOARD_FEEDBACK_UNSUPPORTED", "A concept reference must show its complete registered page without crop, rotation or flip before it is sent as visual evidence.");
+    }
+  }
+
+  const referenceByEndpoint = new Map<string, typeof referenceRows[number]>();
+  for (const reference of referenceRows) {
+    referenceByEndpoint.set(reference.image.id, reference);
+    if (reference.image.frameId) referenceByEndpoint.set(reference.image.frameId, reference);
+  }
+  const targetEndpoints = new Set<string>([image.id]);
+  if (image.frameId) targetEndpoints.add(image.frameId);
+  // A connector may bind to the circle/outline that marks the target rather
+  // than to the image itself. It is still explicit: the later page conversion
+  // must prove that selected mark lies on the exact edit page.
+  for (const element of chosen) {
+    if (element.type !== "image" && element.type !== "frame" && element.type !== "text") targetEndpoints.add(element.id);
+  }
+
+  const relationConnectorIds = new Set<string>();
+  const relationDirections = new Map<string, Set<"target-to-reference" | "reference-to-target">>();
+  for (const element of chosen) {
+    const bindings = connectorBindings(element);
+    if (!bindings) continue;
+    const [start, end] = bindings;
+    const endReference = referenceByEndpoint.get(end);
+    const startReference = referenceByEndpoint.get(start);
+    if (targetEndpoints.has(start) && endReference) {
+      relationConnectorIds.add(element.id);
+      const directions = relationDirections.get(endReference.image.id) ?? new Set();
+      directions.add("target-to-reference"); relationDirections.set(endReference.image.id, directions);
+    }
+    if (startReference && targetEndpoints.has(end)) {
+      relationConnectorIds.add(element.id);
+      const directions = relationDirections.get(startReference.image.id) ?? new Set();
+      directions.add("reference-to-target"); relationDirections.set(startReference.image.id, directions);
+    }
+  }
+  const references: BoardFeedbackReference[] = referenceRows.map((reference) => {
+    const directions = relationDirections.get(reference.image.id);
+    if (!directions?.size) {
+      fail("BOARD_FEEDBACK_UNSUPPORTED", "Each selected concept reference needs an explicit selected connector to the edit drawing or one of its selected target marks.");
+    }
+    const direction = directions.size > 1 ? "in both directions" : directions.has("target-to-reference")
+      ? "from the edit target toward this reference" : "from this reference toward the edit target";
+    return {
+      ...reference,
+      referenceNote: `An explicit selected Board connector runs ${direction}. Use this page as visual design reference only; it is not a second edit target.`,
+    };
+  });
+
   const center: Point = [image.x + image.width / 2, image.y + image.height / 2];
   const pagePoint = (world: Point): Point => {
     const [x, y] = rotate(world, center, -image.angle);
@@ -140,7 +242,10 @@ export function createBoardFeedback(
       0.5 + (y - center[1]) / image.height * image.scale[1]];
   };
   const annotations: DocumentGestureDto[] = [];
-  const annotationGroups: string[] = [];
+  // If a connector used to be ordinary page ink and is now promoted to a
+  // Board relationship, remove its old board-owned group from the edit page.
+  const annotationGroups: string[] = [...relationConnectorIds].map((id) =>
+    `board:${encodeURIComponent(image.id)}:${encodeURIComponent(id)}`);
   // Native frame/bound-label selection is already expanded and deduplicated by id.
   // Board reading order is independent of scene stacking and selection-click order.
   // Text supplies intent, so it need not sit inside the page like geometric ink.
@@ -150,7 +255,8 @@ export function createBoardFeedback(
     .sort((left, right) => left.y - right.y || left.x - right.x || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
     .map((element) => (element.originalText ?? element.text).trim()).filter(Boolean).join("\n\n");
   for (const element of chosen) {
-    if (element.id === image.id || element.type === "frame" || element.type === "text") continue;
+    if (images.some((candidate) => candidate.id === element.id) || relationConnectorIds.has(element.id)
+      || element.type === "frame" || element.type === "text") continue;
     if (!["ellipse", "rectangle", "line", "arrow", "freedraw"].includes(element.type)) {
       fail("BOARD_FEEDBACK_UNSUPPORTED", `Selected ${element.type} elements are not supported for feedback.`);
     }
@@ -216,5 +322,5 @@ export function createBoardFeedback(
     }
   }
   if (annotations.length > 2000) fail("BOARD_FEEDBACK_UNSUPPORTED", "Select fewer marks; one page supports at most 2000 annotations.");
-  return { image, document, page, source, annotations, annotationGroups, selectedText };
+  return { image, document, page, source, annotations, annotationGroups, selectedText, references };
 }
