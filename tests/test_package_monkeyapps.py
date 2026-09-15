@@ -154,7 +154,7 @@ class PackageAdapterTests(unittest.TestCase):
         for relative in (
             "apps/monkeyhub/installer/third-party/README.md", "apps/monkeyhub/installer/README.md",
             "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
-            "apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
+            "apps/monkeyhub/run.py",
             "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
             "governance/module_registry.json", "apps/shared-web/src/appearance.js",
             "apps/shared-web/src/i18n.js", "apps/shared-web/src/browserTranslator.js",
