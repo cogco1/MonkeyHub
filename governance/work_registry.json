@@ -814,29 +814,6 @@
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes.",
         "2026-09-15: the standalone launcher and its runtime.json bridge retired with #126; the Hub injects intentProvider/intentModel/intentTimeoutS into the Studio child environment (applications.py, covered by apps/monkeyhub/api/tests/test_applications.py)."
       ]
-    },
-    {
-      "id": "GH-54",
-      "stream": "project-data",
-      "status": "active",
-      "goal": "Format-1 to format-2 migration with an owner-declared cascade: each record schema's owner declares where it keeps a project-version identity, the migrator restates those pointers and re-hashes to a fixed point so every reference moves with the record, an identity no owner declares blocks the migration, and the transfer closure follows typed reference edges into exports/ without ever packing that directory wholesale.",
-      "depends_on": [],
-      "write_scope": [
-        "archflow/project/version_refs.py",
-        "archflow/project/repository.py",
-        "archflow/project/record_kinds.py",
-        "archflow/project/refs.py",
-        "archflow/project/issue.py",
-        "archflow/state/state_record.py",
-        "archflow/state/spatial.py",
-        "archflow/state/stage_workflow.py",
-        "archflow/state/design_portfolio.py",
-        "archflow/state/developed_design.py",
-        "archflow/state/geometry_program.py",
-        "archflow/state/operational_state.py",
-        "archflow/adapters/cad_execution.py",
-        "tools/create_project.py"
-      ]
     }
   ]
 }
