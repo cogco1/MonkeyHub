@@ -74,6 +74,18 @@
       "reason": "Atomically saves only request signatures, exact project binding and recovery observations at runtime/operations/<runtimeId>.json under the caller-supplied nonproject Hub runtime root. No request body or canonical result is stored; P036 alone proves project outcomes."
     },
     {
+      "path": "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+      "function": "_board_work_bindings",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "unlink"
+      ],
+      "kind": "application_working_copy",
+      "owner": "hub.shell",
+      "reason": "Creates only immutable-source-seeded mutable Board image working copies below runtime/board-artifacts/<runtimeId> in the explicit nonproject Hub runtime root. Existing files are never overwritten while binding; validated changed bytes become new project document revisions only through P036's existing save_document/repository owner."
+    },
+    {
       "path": "apps/archflow-studio/api/archflow_studio_api/settings.py",
       "function": "_save_local_settings",
       "operations": [

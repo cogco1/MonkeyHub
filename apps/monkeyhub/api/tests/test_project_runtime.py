@@ -103,6 +103,134 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def project_bytes(project):
         return {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*") if path.is_file()}
 
+    @staticmethod
+    def png_bytes(color):
+        from io import BytesIO
+        from PIL import Image
+
+        output = BytesIO()
+        Image.new("RGB", (40, 20), color=color).save(output, format="PNG")
+        return output.getvalue()
+
+    def register_board_image(self, client, runtime_id, data):
+        uploaded = self.proxy(client, runtime_id, "/api/documents", "POST", json={
+            "projectId": self.project_id,
+            "fileName": "live-plan.png",
+            "mimeType": "image/png",
+            "contentBase64": base64.b64encode(data).decode("ascii"),
+        })
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        document = uploaded.json()
+        board = self.proxy(client, runtime_id, "/api/board", "PUT", json={
+            "projectId": self.project_id,
+            "baseRevisionSha256": None,
+            "title": "Live refresh",
+            "elements": [{
+                "id": "live-plan-image",
+                "type": "image",
+                "fileId": "live-plan-file",
+                "customData": {"sourceDocument": {
+                    "runId": document["runId"],
+                    "assetSha256": document["assetSha256"],
+                    "revisionRef": document["revisionRef"],
+                    "pageIndex": 0,
+                }},
+            }],
+            "seenDocuments": [],
+        })
+        self.assertEqual(board.status_code, 200, board.text)
+        return document
+
+    def wait_document_replacement(self, client, runtime_id, old_asset):
+        def read():
+            response = self.proxy(client, runtime_id, "/api/documents")
+            self.assertEqual(response.status_code, 200, response.text)
+            for document in response.json()["documents"]:
+                if any(page["assetSha256"] == old_asset for page in document["replacesPages"]):
+                    return document
+            return None
+        return wait_for(read, "Board work image did not become a registered replacement", timeout=15)
+
+    def test_board_bound_work_image_registers_stable_replacement_without_moving_head(self):
+        first = self.png_bytes("white")
+        second = self.png_bytes("black")
+        third = self.png_bytes("gray")
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.register_board_image(client, runtime_id, first)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            paths = wait_for(lambda: manager.board_work_paths(runtime) or None,
+                             "Board work binding was not created", timeout=5)
+            self.assertEqual(len(paths), 1)
+            work = Path(next(iter(paths.values())))
+            self.assertEqual(work.read_bytes(), first)
+            head = FilesystemProjectRepository.open(self.project).read_head()
+
+            # A producer may save through a partial write. The watcher waits for
+            # the same size/mtime twice and only registers complete valid bytes.
+            split = len(second) // 2
+            with work.open("wb") as stream:
+                stream.write(second[:split])
+                stream.flush(); os.fsync(stream.fileno())
+                time.sleep(0.1)
+                stream.write(second[split:])
+                stream.flush(); os.fsync(stream.fileno())
+            replacement = self.wait_document_replacement(client, runtime_id, original["assetSha256"])
+            self.assertNotEqual(replacement["assetSha256"], original["assetSha256"])
+            self.assertIsNone(replacement["revisionRef"])
+            self.assertIsNone(replacement["modelSource"])
+            self.assertIsNone(replacement["sourceStageRef"])
+            self.assertEqual(FilesystemProjectRepository.open(self.project).read_head(), head)
+            old_bytes = self.proxy(client, runtime_id, f"/api/documents/{original['assetSha256']}/bytes",
+                                   params={"runId": original["runId"]})
+            new_bytes = self.proxy(client, runtime_id, f"/api/documents/{replacement['assetSha256']}/bytes",
+                                   params={"runId": replacement["runId"]})
+            self.assertEqual(old_bytes.status_code, 200, old_bytes.text)
+            self.assertEqual(new_bytes.status_code, 200, new_bytes.text)
+            self.assertEqual(old_bytes.content, first)
+            self.assertEqual(new_bytes.content, second)
+            self.assertTrue(any(row["kind"] == "artifact/updated" and row["runtimeId"] == runtime_id
+                                for row in manager.events.replay()))
+
+            count = len(self.proxy(client, runtime_id, "/api/documents").json()["documents"])
+            work.write_bytes(b"not a png")
+            time.sleep(2.4)
+            self.assertEqual(len(self.proxy(client, runtime_id, "/api/documents").json()["documents"]), count)
+            work.write_bytes(third)
+            latest = self.wait_document_replacement(client, runtime_id, replacement["assetSha256"])
+            self.assertNotEqual(latest["assetSha256"], replacement["assetSha256"])
+            self.assertEqual(manager.board_work_paths(runtime), paths)
+            self.assertEqual(FilesystemProjectRepository.open(self.project).read_head(), head)
+
+    def test_board_work_edit_made_while_hub_is_down_is_registered_after_restart(self):
+        first = self.png_bytes("white")
+        second = self.png_bytes("navy")
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.register_board_image(client, runtime_id, first)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            paths = wait_for(lambda: manager.board_work_paths(runtime) or None,
+                             "Board work binding was not created", timeout=5)
+            work = Path(next(iter(paths.values())))
+            self.assertEqual(work.read_bytes(), first)
+            head = FilesystemProjectRepository.open(self.project).read_head()
+        # The explicit mutable work copy survives the Hub process. Editing it
+        # before the next runtime attaches must not be mistaken for a baseline.
+        work.write_bytes(second)
+        with self.hub(studio_web=self.web) as client:
+            reopened = self.open_project(client)
+            self.assertEqual(reopened, runtime_id)
+            replacement = self.wait_document_replacement(client, reopened, original["assetSha256"])
+            self.assertEqual(Path(next(iter(client.app.state.runtimes.board_work_paths(
+                client.app.state.runtimes.get(reopened)).values()))), work)
+            self.assertEqual(FilesystemProjectRepository.open(self.project).read_head(), head)
+            served = self.proxy(client, reopened, f"/api/documents/{replacement['assetSha256']}/bytes",
+                                params={"runId": replacement["runId"]})
+            self.assertEqual(served.status_code, 200, served.text)
+            self.assertEqual(served.content, second)
+
     def test_cold_hub_preserves_admission_identity_for_two_projects_without_retained_runs(self):
         other_id, other_project = self.make_parallel_project()
         operation_id = str(uuid4())

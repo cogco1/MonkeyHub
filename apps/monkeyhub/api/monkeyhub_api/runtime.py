@@ -4,6 +4,7 @@ No operation is replayed by a watcher or by recovery. A lost HTTP response is
 reconciled against retained results; absence of proof remains visible.
 """
 
+import base64
 from dataclasses import dataclass, field
 from http.client import HTTPException
 import hashlib
@@ -19,7 +20,15 @@ from urllib.request import ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.application.artifacts import (
+    DocumentPageReplacement,
+    SourceDocument,
+    document_bytes,
+    list_documents,
+    save_document,
+)
 from archflow_studio_api.application.binding import ProjectBinding
+from archflow_studio_api.application.boards import read_board
 from archflow_studio_api.application.events import StudioEvents
 from archflow_studio_api.settings import StudioSettings
 from archflow_studio_api.transport.errors import StudioError
@@ -36,6 +45,8 @@ _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
 _IDLE_RETAINED_REFRESH_S = 30
+_BOARD_WORK_MEDIA = {"image/png": ".png", "image/jpeg": ".jpg"}
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 def project_key(path: str) -> str:
@@ -336,6 +347,20 @@ class OperationManager:
                 if row.record.candidateId and row.record.status in _ACTIVE | {"needs_recovery"}))
 
 
+@dataclass(frozen=True, slots=True)
+class _BoardWorkBinding:
+    key: str
+    path: Path
+    document: SourceDocument
+
+
+@dataclass
+class _BoardWorkObservation:
+    sample: tuple[int, int] | None = None
+    hashed_sample: tuple[int, int] | None = None
+    registered_sha256: str | None = None
+
+
 @dataclass
 class ProjectRuntime:
     runtime_id: str
@@ -354,6 +379,7 @@ class ProjectRuntime:
     last_workers: tuple = ()
     last_snapshot: dict | None = None
     projection_key: tuple | None = None
+    board_work: dict[str, _BoardWorkObservation] = field(default_factory=dict)
 
 
 class ProjectRuntimeManager:
@@ -514,6 +540,146 @@ class ProjectRuntimeManager:
         if previous is not None and previous.get("branches") != retained.get("branches"):
             self.emit("operation/committed", runtime.runtime_id)
 
+    @staticmethod
+    def _page_identity(value) -> tuple[str, str, str | None, int] | None:
+        if not isinstance(value, dict):
+            return None
+        run_id, digest = value.get("runId"), value.get("assetSha256")
+        revision, page_index = value.get("revisionRef"), value.get("pageIndex")
+        if (not isinstance(run_id, str) or not run_id or not isinstance(digest, str)
+                or not _SHA256.fullmatch(digest) or (revision is not None and not isinstance(revision, str))
+                or not isinstance(page_index, int) or isinstance(page_index, bool) or page_index < 0):
+            return None
+        return run_id, digest, revision, page_index
+
+    def _board_work_bindings(self, runtime: ProjectRuntime) -> tuple[_BoardWorkBinding, ...]:
+        """Resolve only explicit image pages already placed on this project's Board.
+
+        Registered P036 bytes stay immutable. Each placed image gets one Hub-owned
+        mutable working copy whose stable identity follows the page's replacement
+        chain. Producer/provider discovery is deliberately absent: no directory is
+        scanned and no filename is guessed.
+        """
+        documents = list_documents(runtime.binding)
+        pages = {}
+        forward = {}
+        reverse: dict[tuple[str, str, str | None, int], tuple[str, str, str | None, int] | None] = {}
+        for document in documents:
+            for page in document.pages:
+                pages[(document.run_id, document.asset_sha256, document.revision_ref, page.page_index)] = document
+            for replacement in document.replaces_pages:
+                old = (replacement.run_id, replacement.asset_sha256, replacement.revision_ref, replacement.page_index)
+                new = (document.run_id, document.asset_sha256, document.revision_ref, replacement.new_page_index)
+                if old in forward and forward[old] != new:
+                    continue
+                forward[old] = new
+                reverse[new] = old if new not in reverse else None
+        board = read_board(runtime.binding)
+        work_root = self.applications.runtime_root / "runtime" / "board-artifacts" / runtime.runtime_id
+        result: dict[str, _BoardWorkBinding] = {}
+        for element in board.elements:
+            if element.get("type") != "image" or element.get("isDeleted") is True:
+                continue
+            custom = element.get("customData")
+            identity = self._page_identity(custom.get("sourceDocument") if isinstance(custom, dict) else None)
+            if identity is None or identity not in pages:
+                continue
+            seen = set()
+            while identity in forward and identity not in seen:
+                seen.add(identity)
+                identity = forward[identity]
+            document = pages.get(identity)
+            if document is None or document.mime_type not in _BOARD_WORK_MEDIA or len(document.pages) != 1 or identity[3] != 0:
+                continue
+            root = identity
+            seen.clear()
+            while root in reverse and reverse[root] is not None and root not in seen:
+                seen.add(root)
+                root = reverse[root]
+            key = hashlib.sha256(json.dumps(root, separators=(",", ":"), ensure_ascii=False).encode("utf-8")).hexdigest()
+            path = work_root / f"{key}{_BOARD_WORK_MEDIA[document.mime_type]}"
+            if not path.exists():
+                try:
+                    _, data = document_bytes(runtime.binding, document.run_id, document.asset_sha256, document.revision_ref)
+                    work_root.mkdir(parents=True, exist_ok=True)
+                    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+                    try:
+                        with temporary.open("xb") as stream:
+                            stream.write(data)
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                        try:
+                            os.link(temporary, path)
+                        except FileExistsError:
+                            pass
+                    finally:
+                        temporary.unlink(missing_ok=True)
+                except (StudioError, OSError):
+                    continue
+            result[key] = _BoardWorkBinding(key, path, document)
+        return tuple(result.values())
+
+    def board_work_paths(self, runtime: ProjectRuntime) -> dict[str, str]:
+        """Expose current explicit working paths to runtime integrations/tests."""
+        return {row.key: str(row.path) for row in self._board_work_bindings(runtime)}
+
+    def _refresh_board_work(self, runtime: ProjectRuntime) -> int:
+        bindings = self._board_work_bindings(runtime)
+        current_keys = {row.key for row in bindings}
+        for key in tuple(runtime.board_work):
+            if key not in current_keys:
+                del runtime.board_work[key]
+        updated = 0
+        for row in bindings:
+            observation = runtime.board_work.setdefault(
+                row.key, _BoardWorkObservation(registered_sha256=row.document.asset_sha256)
+            )
+            if observation.registered_sha256 != row.document.asset_sha256:
+                observation.registered_sha256 = row.document.asset_sha256
+                observation.sample = None
+                observation.hashed_sample = None
+            try:
+                before = row.path.stat()
+            except OSError:
+                continue
+            sample = before.st_size, before.st_mtime_ns
+            if observation.sample != sample:
+                observation.sample = sample
+                observation.hashed_sample = None
+                continue
+            if observation.hashed_sample == sample:
+                continue
+            try:
+                data = row.path.read_bytes()
+                after = row.path.stat()
+            except OSError:
+                continue
+            if (after.st_size, after.st_mtime_ns) != sample:
+                observation.sample = after.st_size, after.st_mtime_ns
+                observation.hashed_sample = None
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            observation.hashed_sample = sample
+            if digest == row.document.asset_sha256:
+                continue
+            replacement = DocumentPageReplacement(
+                row.document.run_id, row.document.asset_sha256,
+                row.document.revision_ref, 0, 0,
+            )
+            try:
+                saved = save_document(
+                    runtime.binding, None, row.document.file_name, row.document.mime_type,
+                    base64.b64encode(data).decode("ascii"), None, (replacement,),
+                )
+            except StudioError:
+                # Partial/corrupt/incompatible writes never replace the last
+                # registered image. A later stat change retries from scratch.
+                continue
+            observation.registered_sha256 = saved.asset_sha256
+            updated += 1
+            self.emit("artifact/updated", runtime.runtime_id)
+        return updated
+
     def _watch(self, runtime: ProjectRuntime):
         next_retained_read = 0.0
         while not self._closing.is_set():
@@ -532,6 +698,7 @@ class ProjectRuntimeManager:
                     # made through a separate Studio/project client.
                     self.refresh(runtime, cold=drained)
                     next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
+                self._refresh_board_work(runtime)
             except (HubFailure, StudioError, OSError, HTTPException, ValueError) as exc:
                 next_retained_read = time.monotonic() + _IDLE_RETAINED_REFRESH_S
                 with runtime.lock:
