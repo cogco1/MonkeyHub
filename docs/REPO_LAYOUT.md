@@ -11,7 +11,7 @@
 | **ArchFlow** | 共享项目身份、文件与记录保存、版本引用、建筑事实与语义契约、真实共用的计算和外部工具接口、正式 issue | 具体建模方法、图纸布局、某一工作流的界面与交互 |
 | **MonkeyArch** | 3D 建模与空间修改：任务解释、构件与空间构造、模型候选、几何编译、关系检查、模型检查与续改 | 图纸字形、笔迹、二维图形、版面及图纸集组织 |
 | **MonkeyDiagram** | 图纸与图解：平立剖、家具与节点表达、PDF／图片批注、二维内容编辑、文字尺寸、视图与图形表达、排版及导出 | 隐式改变模型空间或构件；建立第二套项目保存与发布权威 |
-| **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；独立本地页面与 CLI | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
+| **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；保留独立 API／CLI owner，产品界面由 MonkeyHub 的 Usage 页面承载 | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
 
 | **MonkeyFab** | 闭合网格的等比缩放、打印空间内封闭拆件、装配清单，以及已切片任务上传；源码在 `apps/monkeyfab/`，界面由 Hub 承载 | 建筑状态修改、项目持久化、切片和自动启动打印 |
 
@@ -25,7 +25,7 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 ## 2. 当前源码目录
 
 下列 Python 模块随同一 Hub 发行版本安装；Fab 保留独立 CLI，两个设计 Web 工作区由同一 Studio 宿主装配。
-MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适配器与之连接。
+MonkeyMonitor 的记录、trace、计价和 API／CLI 保留在自己的目录中；Hub 监督其内部 worker 并承载唯一的 Usage 产品页面。
 
 ```text
 <source-root>/
@@ -38,9 +38,9 @@ MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适�
 │  └─ adapters/                  两条工作流实际共用的技术适配
 ├─ monkeyarch/                   3D producer、solver、编译及运行编排
 ├─ monkeydiagram/                图纸投影编排、SVG 与 PNG 表达
-├─ monkeymonitor/                用量、计价、算法建议接口及独立 web 页面
+├─ monkeymonitor/                用量、trace、计价、算法建议及 API／CLI；无独立产品 Web 壳
 ├─ apps/monkeyfab/               制造算法、CLI、参数和测试，默认随 Hub 打包
-├─ apps/monkeyhub/               统一应用入口，承载 Fab 页面与桌面宿主
+├─ apps/monkeyhub/               统一应用入口，承载 Usage、Fab 页面与桌面宿主
 ├─ apps/archflow-studio/         共享启动与应用装配，不承载两套领域算法
 │  ├─ api/                       HTTP、鉴权、DTO、路由及工作流装配
 │  └─ web/src/
@@ -85,11 +85,11 @@ API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方�
 MonkeyArch 工作区    → monkeyarch    → archflow
 MonkeyDiagram 工作区 → monkeydiagram → archflow
                      共同宿主负责装配
-MonkeyMonitor 独立页 → monkeymonitor ← Studio 元数据适配器
+MonkeyHub Usage 页面 → monkeymonitor API / UsageLog
 ```
 
 - ArchFlow 不导入两个工作流的内部代码；底座所需领域行为通过已有或实际需要的明确接口传入。
-- MonkeyMonitor 不导入建筑核心或设计工作流；它读取用量值，返回估价与动作建议，由宿主决定执行。
+- MonkeyMonitor 不导入建筑核心或设计工作流；它读取用量值、构建 trace、返回估价与动作建议，由 Hub 决定如何呈现与执行。Monitor 的内部 API worker 不是第二个产品壳。
 - 两个工作流不直接导入对方内部模块。模型到图纸传递明确的模型来源与视图输入；图纸要求改模型时，
   通过 MonkeyArch 的公开动作提交。必要的新接口与首个真实消费者一起形成。
 - MonkeyDiagram 保存自己的图纸修订；查看某个模型不会悄悄替换图纸的来源。更新产生新图，旧图与批注仍可追溯。
@@ -105,7 +105,7 @@ MonkeyMonitor 独立页 → monkeymonitor ← Studio 元数据适配器
 | 测试 | Python、API、Web 现有测试目录；合成 fixture 可以随测试提交。真实项目输入只有明确晋升后进入 `probes/`。 |
 | 应用图标、字体、模板资源 | 实际运行需要的资源随相应应用或工作区提交；项目生成的图纸不是应用资源。 |
 | 构建、日志、缓存、临时检查输出 | 配置的外部 runtime/cache/temp 或现有忽略目录；没有完成交接的源码和唯一回归不能作为可丢缓存删除。 |
-| MonkeyMonitor 用量日志 | 显式指定的外部诊断目录内 `usage.jsonl`；不含提示词或项目内容，不成为 P036 资产或新的项目权威。详见 [运行与算法方案](../monkeymonitor/README.md)。 |
+| MonkeyMonitor 用量日志 | 显式指定的外部诊断目录内 `usage.jsonl`；不含提示词或项目内容，不成为 P036 资产或新的项目权威。详见 [MonkeyMonitor](../monkeymonitor/README.md)。 |
 | 软件 release | 准确 Git 提交对应的源码／构建包及发行说明；软件版本独立于协议版本、记录 schema 和项目 HEAD。 |
 
 工作卡跟踪活跃任务，架构方案解释边界与取舍；完成工作从 live registry 退出，结果保留在 Git。
