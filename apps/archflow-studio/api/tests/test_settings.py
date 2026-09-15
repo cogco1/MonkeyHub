@@ -60,6 +60,16 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(create.call_args.args[0].bind_host, "127.0.0.1")
             self.assertEqual(serve.call_args.kwargs["host"], "127.0.0.1")
 
+    def test_cli_project_dir_binds_the_explicit_project_over_the_environment(self) -> None:
+        with patch.dict(os.environ, {
+            "ARCHFLOW_STUDIO_PROJECT_DIR": "inherited-project",
+        }, clear=True), patch("archflow_studio_api.main.create_app") as create, patch(
+            "archflow_studio_api.main.uvicorn.run"
+        ) as serve:
+            main(["--project-dir", "explicit-project", "--port", "18001"])
+            self.assertEqual(create.call_args.args[0].project_dir, Path("explicit-project"))
+            self.assertEqual(serve.call_args.kwargs["port"], 18001)
+
     def test_missing_project_dir_refuses_and_names_the_variable(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ARCHFLOW_STUDIO_PROJECT_DIR", None)
