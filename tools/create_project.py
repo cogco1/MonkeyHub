@@ -22,6 +22,12 @@ require, without writing anything::
     python tools/create_project.py --project D:/work/projects/my-project --inspect-format
     python tools/create_project.py --project D:/work/projects/my-project --plan-migration
 
+Migrate a format-1 project forward into a new empty directory named by the
+project id. The source is never written; the migrated copy carries a receipt::
+
+    python tools/create_project.py --project D:/work/projects/my-project \
+        --migrate-format --into D:/migrated/my-project
+
 The directory name is the project id, as required by Studio's existing binding.
 Archive transport wraps the existing P036 transfer closure; it does not create a
 second project format or make ZIP contents authoritative over normal readers.
@@ -51,11 +57,13 @@ from archflow.project.repository import (
     FilesystemProjectRepository,
     PROJECT_FORMAT_CURRENT,
     PROJECT_FORMAT_SUPPORTED_LEGACY,
+    ProjectFormatMigration,
     ProjectIntegrityError,
     ProjectMigrationPlan,
     ProjectRepositoryError,
     inspect_project_format,
     plan_project_migration,
+    _json_bytes,
     _retained_category,
     _write_immutable,
 )
@@ -563,6 +571,30 @@ def _print_migration_plan(
     print("No file in the project was created or changed.")
 
 
+def _write_migration_receipt(result: ProjectFormatMigration) -> Path:
+    """The migration's own account, beside the project it produced, outside its closure."""
+
+    semantic_of = {version: semantic for version, _, semantic in result.versions}
+    payload = {
+        "schema": "ProjectFormatMigration@1",
+        "project_id": result.project_id,
+        "source_format_version": result.source_format_version,
+        "target_format_version": result.target_format_version,
+        "versions": [{"version": version, "legacy_state_sha256": legacy, "state_sha256": semantic}
+                     for version, legacy, semantic in result.versions],
+        "rewritten": list(result.rewritten),
+        "preserved_files": result.preserved_files,
+        "embedded_legacy_references": [
+            {"path": path, "pointer": pointer, "version": version, "legacy_state_sha256": legacy,
+             "state_sha256": semantic_of.get(version)}
+            for path, pointer, version, legacy in result.embedded_legacy_references
+        ],
+    }
+    path = result.target_root / "migration" / "format-1-to-2.json"
+    _write_immutable(path, _json_bytes(payload))
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, type=Path, help="external project directory; its name is the project id")
@@ -573,6 +605,8 @@ def main(argv: list[str] | None = None) -> int:
     archive_mode.add_argument("--restore-archive", type=Path, help="restore a portable project archive into --project")
     archive_mode.add_argument("--inspect-format", action="store_true", help="report the project format this directory declares; writes nothing")
     archive_mode.add_argument("--plan-migration", action="store_true", help="dry-run report of the retained closure and what a format migration would require; writes nothing")
+    archive_mode.add_argument("--migrate-format", action="store_true", help="migrate a format-1 project into a new format-2 directory named by --into; the source is never written")
+    parser.add_argument("--into", type=Path, help="empty target directory for --migrate-format; its name must be the project id")
     args = parser.parse_args(argv)
     try:
         root = args.project.resolve()
@@ -606,6 +640,30 @@ def main(argv: list[str] | None = None) -> int:
             # A supported legacy project with no migrator is still a complete
             # diagnostic only when its exact legacy-reference scan also completes.
             return 0 if plan.planned and reference_scan_error is None else 2
+        if args.migrate_format:
+            try:
+                if args.state_record or args.seats_file:
+                    raise ValueError("a migration cannot be combined with authored initialization inputs")
+                if args.into is None:
+                    raise ValueError("--migrate-format needs --into <empty target directory>")
+                target = args.into.resolve()
+                if target.is_relative_to(REPO):
+                    raise ValueError("choose a target directory outside the source repository")
+                result = FilesystemProjectRepository.migrate_project_format(root, target)
+            except (OSError, ValueError, ProjectRepositoryError) as exc:
+                # A refusal is this command's answer, exactly as it is for
+                # --plan-migration: reported on the stream the report uses,
+                # with the same nonzero status.
+                print(f"create_project: {exc}")
+                return 2
+            receipt_path = _write_migration_receipt(result)
+            print(result.target_root)
+            print(f"migrated format {result.source_format_version} -> {result.target_format_version}: "
+                  f"{len(result.versions)} version(s), {len(result.rewritten)} rewritten file(s), "
+                  f"{result.preserved_files} preserved file(s), "
+                  f"{len(result.embedded_legacy_references)} retained record reference(s) still legacy-shaped")
+            print(f"receipt: {receipt_path}")
+            return 0
         if args.export_archive or args.restore_archive:
             if args.state_record or args.seats_file:
                 raise ValueError("archive export/restore cannot be combined with authored initialization inputs")
