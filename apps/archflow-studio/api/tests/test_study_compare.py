@@ -212,6 +212,34 @@ class StudyComparisonTests(unittest.TestCase):
         self.assertEqual(pair["rightOnlyTopology"], [])
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_same_node_kinds_with_different_relation_topology_are_not_the_same_family(self) -> None:
+        size = (120, 80)
+        document_a = self.upload(*size, "white")
+        document_b = self.upload(*size, "black")
+        envelope = self.metric_rect(*size, "envelope", "envelope", (0.08, 0.08, 0.70, 0.56))
+        nested = [
+            envelope,
+            self.metric_rect(*size, "void", "void", (0.30, 0.20, 0.42, 0.36)),
+        ]
+        detached = [
+            envelope,
+            self.metric_rect(*size, "void", "void", (0.76, 0.20, 0.88, 0.36)),
+        ]
+        study_a = self.save("nested-void", document_a, nested)
+        study_b = self.save("detached-void", document_b, detached)
+
+        answer = self.compare(study_a, study_b)
+        self.assertEqual(answer.status_code, 200, answer.text)
+        pair = answer.json()["pairwise"][0]
+        self.assertLess(pair["topologySimilarity"], 1.0)
+        left_only = {row["fact"]: row["count"] for row in pair["leftOnlyTopology"]}
+        self.assertEqual(left_only["edge:contains:envelope:void"], 1)
+        self.assertNotIn(
+            "edge:contains:envelope:void",
+            {row["fact"] for row in pair["rightOnlyTopology"]},
+        )
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_comparison_reads_named_archived_revision_and_stays_out_of_openapi(self) -> None:
         size = (120, 80)
         document_a = self.upload(*size, "purple")
