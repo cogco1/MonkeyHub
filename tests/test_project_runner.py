@@ -1964,6 +1964,48 @@ class IncrementalSourceRunTests(unittest.TestCase):
         self.assertEqual(round_receipt["reused_element_ids"], [])
         self.assertTrue(second["seat_execution_complete"])
 
+    def test_retained_source_model_is_read_from_this_repository_not_its_recorded_path(self) -> None:
+        """A restored project reuses its own copy: only the file name of the retained path is believed.
+
+        ``cad.model`` is retained as an absolute path of the machine that ran
+        the source. Here that path is rewritten to a directory that does not
+        exist — what a restored project always sees — and the continuation
+        still has to find the source export in this repository's own run
+        workspace and reuse its shapes.
+        """
+
+        record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
+        project = _ExportProject(self, record)
+        first = self.run_source(project, record, "run-1")
+        payload = project.repository.load_json(record_ref_from_uri(first["receipt_ref"], "demo"))
+        elsewhere = Path(tempfile.gettempdir()).resolve() / "gh56-elsewhere"
+        moved = 0
+        for seat in payload["seat_results"]:
+            cad = seat.get("cad")
+            if not cad or not cad.get("model"):
+                continue
+            recorded = Path(cad["model"])
+            self.assertTrue(recorded.is_file(), recorded)
+            cad["model"] = str(elsewhere / recorded.parent.name / recorded.name)
+            moved += 1
+        self.assertEqual(moved, 1, payload["seat_results"])
+        self.assertFalse(elsewhere.exists(), elsewhere)
+        source_ref = project.repository.put_json(
+            run=project.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=project.run.run_id),
+            record_kind="runner-run-receipt", payload=payload)
+
+        spans = []
+        second = self.run_source(project, self.taller(record), "run-2", {"receipt_ref": source_ref.uri},
+                                 operation_observer=spans.append)
+        self.assertTrue(second["seat_execution_complete"], second["seat_results"])
+        lookup = next(event["details"] for event in spans if event["phase"] == "source_export_lookup")
+        self.assertEqual(lookup["cache_status"], "hit", lookup)
+        self.assertEqual(lookup["cache_reason"], "verified_source_export", lookup)
+        seat = second["seat_results"][0]
+        self.assertEqual(seat["cad"]["path"], "incremental")
+        self.assertIn("obj-wall-south-cut", seat["cad"]["reused_object_ids"])
+        self.assertFalse(elsewhere.exists(), elsewhere)
+
     def test_changed_source_step_is_never_reused_under_its_old_receipt(self) -> None:
         record = _record(elements=("wall-south",), extra_entities=(_prism_row(),))
         project = _ExportProject(self, record)
