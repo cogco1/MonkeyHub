@@ -15,6 +15,33 @@
       ]
     },
     {
+      "id": "GH-126",
+      "stream": "hub",
+      "status": "active",
+      "goal": "MonkeyHub is the sole production entrypoint: fold the launch shell into launch-hub.ps1, retire the standalone Studio launcher, runtime.json, shortcut and .bat, keep an explicit --project-dir development start, and cover the Hub's Studio child environment with a Hub test.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/launch-hub.ps1",
+        "apps/monkeyhub/README.md",
+        "apps/monkeyhub/api/tests/test_launch_hub.py",
+        "apps/monkeyhub/api/tests/test_applications.py",
+        "apps/monkeyhub/installer/install.ps1",
+        "apps/archflow-studio/launch-studio.ps1",
+        "apps/archflow-studio/OPEN_MONKEYARCH.bat",
+        "apps/archflow-studio/make-desktop-shortcut.ps1",
+        "apps/archflow-studio/runtime.example.json",
+        "apps/archflow-studio/README.md",
+        "scripts/dev/",
+        "tools/package_monkeyapps.py",
+        ".claude/launch.json",
+        ".gitignore",
+        "README.md",
+        "docs/TEAM_ONBOARDING.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "archflow/project/README.md"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
