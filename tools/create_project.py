@@ -16,9 +16,17 @@ Restore that archive into a fresh project directory::
     python tools/create_project.py --project D:/restored/my-project \
         --restore-archive D:/backups/my-project.monkeyhub.zip
 
+Report what format a retained project declares, or what migrating it would
+require, without writing anything::
+
+    python tools/create_project.py --project D:/work/projects/my-project --inspect-format
+    python tools/create_project.py --project D:/work/projects/my-project --plan-migration
+
 The directory name is the project id, as required by Studio's existing binding.
 Archive transport wraps the existing P036 transfer closure; it does not create a
 second project format or make ZIP contents authoritative over normal readers.
+The format report is the same kind of read-only view: it reads project.json and
+the retained closure through normal readers and never rewrites a project.
 """
 from __future__ import annotations
 
@@ -38,7 +46,12 @@ if str(REPO) not in sys.path:
 
 from archflow.project.repository import (
     FilesystemProjectRepository,
+    PROJECT_FORMAT_CURRENT,
+    PROJECT_FORMAT_SUPPORTED_LEGACY,
+    ProjectMigrationPlan,
     ProjectRepositoryError,
+    inspect_project_format,
+    plan_project_migration,
     _write_immutable,
 )
 from archflow.project.refs import require_identifier
@@ -264,6 +277,53 @@ def _restore_project_archive(
     return repository, manifest
 
 
+def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
+    """Print one dry run: what is retained, what a migration would have to do."""
+
+    inspection = plan.inspection
+    print(inspection.root)
+    declared = (
+        "no readable format" if inspection.format_version is None
+        else f"format {inspection.format_version}"
+    )
+    print(f"{inspection.status} ({declared}): {inspection.detail}.")
+    if plan.head is not None:
+        print(
+            f"Verified project {plan.project_id} at version {plan.head.version} "
+            f"through its own format-{inspection.format_version} reader."
+        )
+    if plan.inventory:
+        print(
+            f"Retained closure: {plan.retained_files} files, {plan.retained_bytes} bytes, "
+            f"{len(plan.run_ids)} run(s)."
+        )
+        for entry in plan.inventory:
+            unknown = " UNREGISTERED" if entry.registered is False else ""
+            print(
+                f"  {entry.category:<15} {entry.kind:<34} "
+                f"{entry.schema or '-':<26} {entry.count:>4} file(s){unknown}"
+            )
+        if plan.orphan_paths:
+            print(f"  orphan records not reachable from HEAD: {len(plan.orphan_paths)}")
+    for title, lines in (
+        ("Required transformations", plan.required_transformations),
+        ("Blockers", plan.blockers),
+    ):
+        if lines:
+            print(f"{title}:")
+            for line in lines:
+                print(f"  - {line}")
+    if plan.migration_required:
+        print(
+            "Back up before any migration is attempted: "
+            f"python tools/create_project.py --project {inspection.root} "
+            "--export-archive <archive.zip>"
+        )
+    if not plan.planned:
+        print("The retained closure was not inventoried; see the blockers above.")
+    print("No file in the project was created or changed.")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, type=Path, help="external project directory; its name is the project id")
@@ -272,12 +332,31 @@ def main(argv: list[str] | None = None) -> int:
     archive_mode = parser.add_mutually_exclusive_group()
     archive_mode.add_argument("--export-archive", type=Path, help="write the retained project snapshot as a portable ZIP archive")
     archive_mode.add_argument("--restore-archive", type=Path, help="restore a portable project archive into --project")
+    archive_mode.add_argument("--inspect-format", action="store_true", help="report the project format this directory declares; writes nothing")
+    archive_mode.add_argument("--plan-migration", action="store_true", help="dry-run report of the retained closure and what a format migration would require; writes nothing")
     args = parser.parse_args(argv)
     try:
         root = args.project.resolve()
         if root.is_relative_to(REPO):
             raise ValueError("choose a project directory outside the source repository")
         require_identifier(root.name, "project_id")
+        if args.inspect_format or args.plan_migration:
+            if args.state_record or args.seats_file:
+                raise ValueError("a format report cannot be combined with authored initialization inputs")
+            if args.inspect_format:
+                inspection = inspect_project_format(root)
+                print(inspection.root)
+                print(f"{inspection.status}: {inspection.detail}.")
+                # A readable format is a successful report even when the
+                # project itself still needs work; anything else failed closed.
+                return 0 if inspection.status in (
+                    PROJECT_FORMAT_CURRENT, PROJECT_FORMAT_SUPPORTED_LEGACY,
+                ) else 2
+            plan = plan_project_migration(root)
+            _print_migration_plan(plan)
+            # A supported legacy project with no migrator is still a complete
+            # diagnostic; a project that could not be inventoried is not.
+            return 0 if plan.planned else 2
         if args.export_archive or args.restore_archive:
             if args.state_record or args.seats_file:
                 raise ValueError("archive export/restore cannot be combined with authored initialization inputs")

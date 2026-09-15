@@ -27,7 +27,11 @@ from archflow.project.digests import project_state_sha256
 from archflow.project.layout import ProjectLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import DESIGN_STAGE, require_registered
+from archflow.project.record_kinds import (
+    DESIGN_STAGE,
+    is_registered,
+    require_registered,
+)
 from archflow.project.refs import (
     ProjectArtifactRef,
     ProjectRecordRef,
@@ -100,6 +104,81 @@ class RecoveryReport:
 
 LEGACY_FORMAT_VERSION = 1
 CURRENT_FORMAT_VERSION = 2
+SUPPORTED_FORMAT_VERSIONS: tuple[int, ...] = (
+    LEGACY_FORMAT_VERSION,
+    CURRENT_FORMAT_VERSION,
+)
+
+# What ``project.json`` says this build can do with a directory. There is no
+# ``upgradeable``: a supported legacy format is readable, and claiming it can
+# be upgraded would need a migrator that does not exist yet.
+PROJECT_FORMAT_CURRENT = "current"
+PROJECT_FORMAT_SUPPORTED_LEGACY = "supported_legacy"
+PROJECT_FORMAT_TOO_NEW = "too_new"
+PROJECT_FORMAT_INVALID = "invalid"
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectFormatInspection:
+    """What one directory's ``project.json`` declares, read and nothing more.
+
+    ``project.json`` is the only authority here. This reads no HEAD, opens no
+    project and writes nothing, so a too-new or malformed project can be named
+    instead of only raising on open.
+    """
+
+    root: Path
+    status: str
+    format_version: int | None
+    project_id: str | None
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedFormatEntry:
+    """One row of the retained closure grouped by what governs its format.
+
+    ``category`` says which authority owns the file: ``envelope`` for the
+    project-format structures ``project.json`` versions, ``record`` for the
+    content-addressed run records the record-kind table names, ``run_manifest``
+    and ``design`` for the stable project structures, ``authored_input`` for
+    work in progress, and ``artifact`` for digest-identified bytes. ``schema``
+    is the literal the payload declares, and ``registered`` says whether the
+    record-kind table still holds this kind, or is ``None`` where record-kind
+    registration does not apply. Nothing here interprets a payload's contents.
+    """
+
+    category: str
+    kind: str
+    schema: str | None
+    registered: bool | None
+    count: int
+    bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectMigrationPlan:
+    """An ephemeral dry run: what a migration would have to touch, and why not.
+
+    This is a plain value, not a second retained manifest. ``planned`` says the
+    retained closure was read and inventoried; when it is false the plan is a
+    refusal and ``blockers`` says why. A caller may act only when
+    ``migration_required`` is true and ``blockers`` is empty.
+    """
+
+    inspection: ProjectFormatInspection
+    target_format_version: int
+    planned: bool
+    migration_required: bool
+    project_id: str | None
+    head: ProjectVersionRef | None
+    run_ids: tuple[str, ...]
+    inventory: tuple[RetainedFormatEntry, ...]
+    retained_files: int
+    retained_bytes: int
+    orphan_paths: tuple[str, ...]
+    required_transformations: tuple[str, ...]
+    blockers: tuple[str, ...]
 
 
 _LOCK_INDEX_GUARD = threading.Lock()
@@ -136,6 +215,12 @@ class _HeadFileLock:
         self._path = path
         self._handle: BinaryIO | None = None
         self._depth = 0
+
+    @property
+    def path(self) -> Path:
+        """Where this lock lives. ``__enter__`` creates it if it is absent."""
+
+        return self._path
 
     def _try_acquire(self, handle: BinaryIO) -> bool:
         try:
@@ -1220,6 +1305,16 @@ class FilesystemProjectRepository:
             )
             return next_ref
 
+    def lock_paths(self) -> tuple[Path, ...]:
+        """The advisory lock files this repository's guarded reads acquire.
+
+        ``export_transfer`` reads the closure under the HEAD and design locks,
+        and acquiring one creates its file if it is absent. A caller that must
+        not change the project at all can check these first and refuse.
+        """
+
+        return (self._head_lock.path, self._design_lock.path)
+
     def export_transfer(
         self, *, run_id: str | None = None,
         known_files: Mapping[str, str] | None = None,
@@ -1999,3 +2094,315 @@ class FilesystemProjectRepository:
         }
         if payload != expected:
             raise ProjectIntegrityError("run manifest changed or base drifted")
+
+
+# ---- read-only project-format inspection and dry-run migration planning
+#
+# ``project.json.format_version`` is the one global project-format authority;
+# each retained record keeps its own ``schema`` where that record is (ADR-004).
+# Both entry points are read-only and neither interprets a record payload
+# beyond the ``schema`` literal it declares: what a migration must do with a
+# record's references is that record's typed owner's answer, not a parser's.
+
+
+def inspect_project_format(root: Path) -> ProjectFormatInspection:
+    """Classify a directory's declared project format without opening it.
+
+    ``current`` and ``supported_legacy`` are the formats this build reads;
+    ``too_new`` fails closed with what this build supports, and ``invalid``
+    names a directory whose ``project.json`` is missing or drifted. Only
+    ``project.json`` is read, and no file is created or changed.
+    """
+
+    resolved = Path(root).resolve(strict=False)
+
+    def answer(
+        status: str,
+        version: int | None,
+        project_id: str | None,
+        detail: str,
+    ) -> ProjectFormatInspection:
+        return ProjectFormatInspection(
+            root=resolved,
+            status=status,
+            format_version=version,
+            project_id=project_id,
+            detail=detail,
+        )
+
+    try:
+        payload = _read_json(resolved / "project.json")
+    except ProjectIntegrityError as exc:
+        return answer(
+            PROJECT_FORMAT_INVALID, None, None,
+            f"project.json is missing or unreadable: {exc}",
+        )
+    try:
+        manifest = ProjectManifest.from_dict(payload)
+    except (ProjectManifestError, TypeError, ValueError) as exc:
+        return answer(
+            PROJECT_FORMAT_INVALID, None, None,
+            f"project.json is not a valid project manifest: {exc}",
+        )
+    supported = ", ".join(str(version) for version in SUPPORTED_FORMAT_VERSIONS)
+    version = manifest.format_version
+    if version == CURRENT_FORMAT_VERSION:
+        return answer(
+            PROJECT_FORMAT_CURRENT, version, manifest.project_id,
+            f"project format {version} is current",
+        )
+    if version in SUPPORTED_FORMAT_VERSIONS:
+        return answer(
+            PROJECT_FORMAT_SUPPORTED_LEGACY, version, manifest.project_id,
+            f"project format {version} is supported legacy; this build reads it "
+            f"unchanged and never rewrites it in place",
+        )
+    if version > CURRENT_FORMAT_VERSION:
+        return answer(
+            PROJECT_FORMAT_TOO_NEW, version, manifest.project_id,
+            f"project format {version} was written by a newer build; this build "
+            f"supports {supported}. Open it with the build that wrote it; a "
+            f"project format is never downgraded",
+        )
+    return answer(
+        PROJECT_FORMAT_INVALID, version, manifest.project_id,
+        f"project format {version} is not one of {supported}",
+    )
+
+
+def _retained_category(path: str) -> tuple[str, str, bool | None]:
+    """Which authority governs one retained path, and its kind and registration.
+
+    Artifact bytes are identified by digest and carry no project schema, so the
+    planner never opens them; every other retained file is JSON whose declared
+    ``schema`` the inventory reports.
+    """
+
+    if path in ("project.json", "HEAD"):
+        return "envelope", path, None
+    if path == "design/branches.json":
+        return "design", path, None
+    if path.startswith("input/"):
+        return "authored_input", path, None
+    parts = PurePosixPath(path).parts
+    if parts[0] == "canonical":
+        return "envelope", "canonical/snapshot", None
+    if parts[0] == "events":
+        return "envelope", "events/event", None
+    if parts[0] == "objects":
+        return "artifact", "objects/sha256", None
+    if parts[0] == "runs" and len(parts) >= 3:
+        if len(parts) == 3 and parts[2] == "run.json":
+            return "run_manifest", "runs/run.json", None
+        if parts[2] == "workspaces":
+            return "artifact", "runs/workspaces", None
+        try:
+            kind, _ = parse_record_file_name(parts[-1])
+        except ValueError:
+            return "artifact", f"runs/{parts[2]}", None
+        return "record", kind, is_registered(kind)
+    return "artifact", parts[0], None
+
+
+def plan_project_migration(
+    root: Path,
+    *,
+    target_format_version: int = CURRENT_FORMAT_VERSION,
+) -> ProjectMigrationPlan:
+    """Report what migrating one retained project would require. Writes nothing.
+
+    The project is opened and verified with the reader its own format already
+    has, and the inventory is the complete retained closure the existing
+    transfer export walks, including every run, authored input and source
+    artifact. The inventory reports each retained kind, its declared schema and
+    whether the record-kind table still holds it; it does not parse payloads, so
+    which references a migration must rewrite stays a question for each
+    record's typed owner and is reported as a blocker.
+
+    Reading that closure goes through the repository's own guarded export, which
+    acquires the advisory HEAD and design locks; acquiring one creates its file.
+    A project missing those lock files therefore cannot be inventoried without
+    changing it, and this refuses instead, naming the exact paths.
+    """
+
+    supported = ", ".join(str(version) for version in SUPPORTED_FORMAT_VERSIONS)
+    if target_format_version not in SUPPORTED_FORMAT_VERSIONS:
+        raise ValueError(
+            f"target project format {target_format_version} is not one of {supported}"
+        )
+    inspection = inspect_project_format(root)
+
+    def refused(*blockers: str) -> ProjectMigrationPlan:
+        return ProjectMigrationPlan(
+            inspection=inspection,
+            target_format_version=target_format_version,
+            planned=False,
+            migration_required=False,
+            project_id=inspection.project_id,
+            head=None,
+            run_ids=(),
+            inventory=(),
+            retained_files=0,
+            retained_bytes=0,
+            orphan_paths=(),
+            required_transformations=(),
+            blockers=blockers,
+        )
+
+    if inspection.status in (PROJECT_FORMAT_INVALID, PROJECT_FORMAT_TOO_NEW):
+        return refused(inspection.detail)
+    source = inspection.format_version
+    if source is None:  # pragma: no cover - a supported status carries its version
+        return refused(inspection.detail)
+    if source > target_format_version:
+        return refused(
+            f"a project format migration is forward-only; this project is format "
+            f"{source} and the requested target is {target_format_version}"
+        )
+
+    try:
+        repository = FilesystemProjectRepository.open(inspection.root)
+    except ProjectRepositoryError as exc:
+        return refused(
+            f"the project does not open and verify through its own format-{source} "
+            f"reader, so its retained closure cannot be planned: {exc}"
+        )
+    absent = [path for path in repository.lock_paths() if not path.exists()]
+    if absent:
+        return refused(
+            "the retained closure is read through the repository's guarded export, "
+            "which acquires the advisory lock(s) "
+            + ", ".join(
+                path.relative_to(inspection.root).as_posix() for path in absent
+            )
+            + "; this project does not have them yet and acquiring a lock creates "
+            "its file, so inventorying this project would change it. The format "
+            "above was read without opening the project; inventory a project whose "
+            "own owner has already opened it for writing"
+        )
+
+    grouped: dict[tuple[str, str, str | None, bool | None], list[int]] = {}
+    unknown: dict[tuple[str, str | None], int] = {}
+    try:
+        transfer = repository.export_transfer(
+            include_contents=False, include_all_runs=True,
+        )
+        report = repository.verify()
+        for row in transfer["files"]:
+            path, digest, size = row["path"], row["sha256"], row["size"]
+            category, kind, registered = _retained_category(path)
+            schema: str | None = None
+            if category != "artifact":
+                payload = _parse_json_document(
+                    repository.read_transfer_file(path, digest), path,
+                )
+                declared = payload.get("schema")
+                schema = declared if isinstance(declared, str) else None
+                if registered is False:
+                    unknown[(kind, schema)] = unknown.get((kind, schema), 0) + 1
+            totals = grouped.setdefault((category, kind, schema, registered), [0, 0])
+            totals[0] += 1
+            totals[1] += size
+    except ProjectRepositoryError as exc:
+        # A record or manifest that changed mid-scan leaves a partial reading.
+        # Report that the project cannot be planned rather than presenting an
+        # incomplete inventory as the complete retained closure.
+        return refused(
+            f"the retained closure could not be read completely, so no inventory "
+            f"of this project is reported: {exc}"
+        )
+
+    inventory = tuple(
+        RetainedFormatEntry(
+            category=category,
+            kind=kind,
+            schema=schema,
+            registered=registered,
+            count=count,
+            bytes=size,
+        )
+        for (category, kind, schema, registered), (count, size) in sorted(
+            grouped.items(),
+            key=lambda item: (item[0][0], item[0][1], item[0][2] or ""),
+        )
+    )
+    counts = {
+        name: sum(entry.count for entry in inventory if match(entry))
+        for name, match in (
+            ("artifact", lambda entry: entry.category == "artifact"),
+            ("record", lambda entry: entry.category == "record"),
+            ("snapshot", lambda entry: entry.kind == "canonical/snapshot"),
+            ("event", lambda entry: entry.kind == "events/event"),
+        )
+    }
+    common = {
+        "inspection": inspection,
+        "target_format_version": target_format_version,
+        "planned": True,
+        "project_id": repository.load_manifest().project_id,
+        "head": report.head,
+        "run_ids": tuple(transfer["run_ids"]),
+        "inventory": inventory,
+        "retained_files": len(transfer["files"]),
+        "retained_bytes": sum(entry.bytes for entry in inventory),
+        "orphan_paths": report.orphan_paths,
+    }
+    if source == target_format_version:
+        return ProjectMigrationPlan(
+            migration_required=False, required_transformations=(), blockers=(),
+            **common,
+        )
+
+    transformations = [
+        f"project.json format_version {source} -> {target_format_version}",
+        f"HEAD ProjectHead@{source} -> ProjectHead@{target_format_version}",
+    ]
+    if counts["snapshot"]:
+        transformations.append(
+            f"{counts['snapshot']} canonical snapshot(s) CanonicalSnapshot@{source} -> "
+            f"@{target_format_version}, whose state_sha256 becomes the semantic state "
+            f"digest instead of the snapshot-file digest"
+        )
+    if counts["event"]:
+        transformations.append(
+            f"{counts['event']} retained event(s) ProjectEvent@{source} -> "
+            f"@{target_format_version}, which must name from_snapshot/to_snapshot"
+        )
+    if counts["record"]:
+        transformations.append(
+            f"each of the {counts['record']} retained record(s) listed above must be "
+            f"restated by its own typed owner wherever it declares a project-version "
+            f"identity or names a content-addressed record, and re-hashed if its "
+            f"payload changes"
+        )
+    if counts["artifact"]:
+        transformations.append(
+            f"preserve {counts['artifact']} retained binary/source artifact(s) "
+            f"byte-for-byte"
+        )
+
+    blockers = [
+        f"no project-format migrator is implemented for {source} -> "
+        f"{target_format_version}; this build reads format {source} unchanged, and "
+        f"rewriting it needs an exact typed mapping for every retained "
+        f"project-version identity, so this project stays supported legacy",
+        f"this plan reports retained kinds and their declared schemas; it does not "
+        f"parse record payloads, so which references inside the {counts['record']} "
+        f"retained record(s) a migration would rewrite is unanalyzed here and each "
+        f"record's typed owner has to state it",
+    ]
+    for (kind, schema), count in sorted(
+        unknown.items(), key=lambda item: (item[0][0], item[0][1] or ""),
+    ):
+        blockers.append(
+            f"retained record kind {kind!r} ({count} record(s), schema "
+            f"{schema or 'undeclared'}) is not in the current record-kind table, so "
+            f"this build has no typed owner that can say what a migration does with it"
+        )
+
+    return ProjectMigrationPlan(
+        migration_required=True,
+        required_transformations=tuple(transformations),
+        blockers=tuple(blockers),
+        **common,
+    )
