@@ -5,10 +5,10 @@
 
 Phase: Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.
 
-- active: P115, GH-46
+- active: P115
 - ready: none
 - blocked: P105, P108, P110, P111, P113, P114
-- next: continue active work: P115, GH-46
+- next: continue active work: P115
 
 ## Live work
 
@@ -21,4 +21,3 @@ Phase: Namespace migration and local Stage/Branch/Candidate implementation are c
 | P111 | blocked | Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial is blocked pending the current page and a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies. | [P111](mapping/planning/P111-continuing-design-cycle.md) |
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](mapping/planning/P113-evidence-ledger.md) |
 | P114 | blocked | User settings the launcher can read: GET/PUT /api/settings/user (language, theme, fontScale, model defaults) backed by %APPDATA%\MonkeyArch\settings.json in local mode only (remote mode neither declares the user-settings capability nor serves it), the launcher translating that file into environment variables at start, and the settings panel's save wired to the PUT with a user source badge. No remote multi-user. | [P114](mapping/planning/P114-user-settings-bridge.md) |
-| GH-46 | active | Carry explicit Board conceptual reference relationships into the existing exact model-linked design handoff without inferring targets from proximity or creating a second editing authority. | [GH-46](https://github.com/cogco1/MonkeyHub/issues/46) |
