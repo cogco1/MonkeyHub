@@ -17,7 +17,12 @@ from archflow.state.design_portfolio import DesignBranch
 from .artifacts import ModelSource, list_artifacts, require_complete_model
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .candidate import _receipt
-from .design_history import StageView, _exact_runner, read_acceptance
+from .design_history import (
+    StageView,
+    _exact_runner,
+    _retained_acceptance_attribution,
+    read_acceptance,
+)
 from .jobs import FAILED, QUEUED, RUNNING, Job, JobRegistry
 from ..transport.errors import StudioError
 
@@ -102,8 +107,15 @@ def inspect_runtime(
                 if model is None or not model.available:
                     raise StudioError(409, "DESIGN_STAGE_SOURCE_MISMATCH", "The Stage's exact retained model is unavailable.")
                 require_complete_model(model, receipt)
+                # The recovery view reads the same evidence under the same
+                # check: the Stage's own retained attribution is what says an
+                # event beside it is its acceptance.
+                attribution = _retained_acceptance_attribution(binding, ref, stage)
                 verified[ref.uri] = StageView(ref, stage, source, record.digest,
-                                              read_acceptance(binding, ref, stage))
+                                              read_acceptance(binding, ref, stage,
+                                                              record_digest=record.digest,
+                                                              attribution=attribution),
+                                              attribution)
             stages.update(verified)
             branches.append(DesignBranch.from_dict(branch_payload))
         except (StudioError, ProjectRepositoryError, OSError, ValueError) as exc:

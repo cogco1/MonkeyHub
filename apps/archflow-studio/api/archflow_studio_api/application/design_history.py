@@ -12,7 +12,10 @@ authentication state and surface without changing portfolio semantics. One
 winner after a crash, even when the retry arrives through another surface.
 
 A Stage accepted before this evidence existed reads back with no acceptance
-evidence, which is what it is, rather than an actor invented for it.
+evidence, which is what it is, rather than an actor invented for it. An event
+that does not agree with the committed Stage in every fact, or that no retained
+attribution vouches for, is refused on the read rather than displayed as an
+acceptance the Stage cannot confirm.
 """
 
 from __future__ import annotations
@@ -283,6 +286,7 @@ def read_stage(binding: ProjectBinding, ref: ProjectRecordRef) -> StageView:
         binding,
         ref,
         stage,
+        record_digest=record.digest,
         attribution=attribution,
     )
     return StageView(
@@ -373,13 +377,21 @@ def _evidence_from(
     payload: Mapping[str, Any],
     ref: ProjectRecordRef,
 ) -> AcceptanceEvidence:
+    """Read one payload already proven to be this Stage's own event.
+
+    Every field is taken as it was retained. ``authenticatedActor`` in
+    particular is not coerced: a value that is not the retained bool is a
+    refusal in ``read_acceptance``, never an authentication this reader
+    invents by calling ``bool()`` on it.
+    """
+
     return AcceptanceEvidence(
         event_id=payload["eventId"],
         occurred_at=payload["occurredAt"],
         action=payload["action"],
         status=payload["status"],
         actor_id=payload["actorId"],
-        authenticated=bool(payload["authenticatedActor"]),
+        authenticated=payload["authenticatedActor"],
         origin=payload["origin"],
         audit_ref=ref,
     )
@@ -424,15 +436,56 @@ def _retain_acceptance(
     return _evidence_from(payload, ref)
 
 
+def _disagreements(
+    payload: Mapping[str, Any],
+    expected: Mapping[str, Any],
+) -> tuple[str, ...]:
+    """The field names two acceptance payloads differ on, without their values."""
+
+    return tuple(sorted(
+        set(payload).symmetric_difference(expected)
+        | {
+            key
+            for key in set(payload) & set(expected)
+            if payload[key] != expected[key]
+        }
+    ))
+
+
 def read_acceptance(
     binding: ProjectBinding,
     stage_ref: ProjectRecordRef,
     stage: DesignStage,
     *,
-    attribution: RetainedAcceptanceAttribution | None = None,
+    record_digest: str,
+    attribution: RetainedAcceptanceAttribution | None,
 ) -> AcceptanceEvidence | None:
-    """The retained acceptance evidence for one committed Stage, if it has any."""
+    """The retained acceptance evidence for one committed Stage, if it has any.
 
+    An event found beside the Stage is only that Stage's evidence when it is
+    exactly the event this Stage's own acceptance would have written: the same
+    project, candidate, branch, base Stage, result Stage and result record
+    digest, the same ``design.accepted``/``succeeded`` outcome, and the same
+    actor, time, event id, origin and authentication state the committed Stage
+    retained. That is one comparison against ``_acceptance_payload``, the
+    writer's own shape, so the reader cannot drift away from what is written.
+
+    A Stage that retained no attribution vouches for no event: it reads back
+    with none, and an event that turns up beside it is refused rather than
+    displayed as the acceptance nothing on the Stage can confirm.
+    """
+
+    expected = (
+        None
+        if attribution is None
+        else _acceptance_payload(
+            binding,
+            stage=stage,
+            stage_ref=stage_ref,
+            attribution=attribution,
+            record_digest=record_digest,
+        )
+    )
     run = binding.load_run(stage.candidate_id)
     found: list[AcceptanceEvidence] = []
     for ref in binding.repository.list_json(
@@ -450,14 +503,30 @@ def read_acceptance(
             or payload.get("resultStageRef") != stage_ref.uri
         ):
             continue
-        if (
-            payload.get("projectId") != binding.project_id
-            or payload.get("candidateId") != stage.candidate_id
-        ):
+        if expected is None:
             raise StudioError(
                 409,
                 "ACCEPTANCE_EVIDENCE_MISMATCH",
-                "The acceptance evidence names another project or candidate.",
+                "This committed Stage retained no acceptance attribution, and the "
+                "acceptance evidence beside it cannot be confirmed as its own.",
+            )
+        # ``1 == True`` in Python, so equality alone would let an integer pass
+        # as the retained authentication state and read back as authenticated.
+        if type(payload.get("authenticatedActor")) is not bool:
+            raise StudioError(
+                409,
+                "ACCEPTANCE_EVIDENCE_MISMATCH",
+                "The acceptance evidence does not state its authentication as a "
+                "retained true or false.",
+            )
+        differing = _disagreements(payload, expected)
+        if differing:
+            raise StudioError(
+                409,
+                "ACCEPTANCE_EVIDENCE_MISMATCH",
+                "The acceptance evidence disagrees with the committed Stage on: "
+                + ", ".join(differing)
+                + ".",
             )
         found.append(_evidence_from(payload, ref))
     if len(found) > 1:
@@ -466,26 +535,7 @@ def read_acceptance(
             "ACCEPTANCE_EVIDENCE_CONFLICT",
             "This committed Stage has competing acceptance evidence.",
         )
-    evidence = found[0] if found else None
-    if evidence is not None and attribution is not None and (
-        evidence.event_id,
-        evidence.occurred_at,
-        evidence.actor_id,
-        evidence.authenticated,
-        evidence.origin,
-    ) != (
-        attribution.event_id,
-        attribution.occurred_at,
-        attribution.actor_id,
-        attribution.authenticated,
-        attribution.origin,
-    ):
-        raise StudioError(
-            409,
-            "ACCEPTANCE_EVIDENCE_MISMATCH",
-            "The acceptance evidence disagrees with the committed Stage attribution.",
-        )
-    return evidence
+    return found[0] if found else None
 
 
 def _ensure_acceptance(

@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import AUDIT_EVENT
 from archflow_studio_api.application.binding import bound_project, record_kind
+from archflow_studio_api.application.design_history import AUDIT_EVENT_SCHEMA
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -246,6 +247,157 @@ class AcceptanceAuditTests(DesignHistoryFixture):
             [_, cold_stage] = self.history(client=restarted)["stages"]
             self.assertEqual(cold_stage["acceptance"]["origin"], "studio")
             self.assertEqual(cold_stage["acceptance"]["eventId"], event_id)
+
+    # ---- evidence that does not agree with the Stage it claims
+
+    def accepted_with_evidence(self) -> tuple[dict, dict, dict]:
+        """One authenticated acceptance, and the event it actually retained."""
+
+        initial = self.initialize()
+        candidate = self.candidate_from(initial)
+        accepted = self.accept_as(REVIEWER_TOKEN, candidate, initial, self.authenticated())
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        [event] = self.audit_events()
+        return initial, accepted.json(), event
+
+    def substituted_evidence(self, audit_ref: str, payload: dict):
+        """Read one event as ``payload`` without writing anything into the project.
+
+        The retained record keeps its exact bytes: only this read sees the
+        substitute, so a refusal is the reader's own work rather than a repair
+        of a file the test damaged.
+        """
+
+        binding = bound_project(self.client.app.state)
+        retained = binding.repository.load_json
+        frozen = dict(payload)
+
+        def load(ref):
+            return dict(frozen) if ref.uri == audit_ref else retained(ref)
+
+        return patch.object(binding.repository, "load_json", side_effect=load)
+
+    def refusal_of(self, audit_ref: str, payload: dict):
+        with self.substituted_evidence(audit_ref, payload):
+            return self.client.get("/api/design-history", params={"branchId": "main"})
+
+    def test_evidence_disagreeing_with_the_committed_stage_is_refused(self) -> None:
+        initial, stage, event = self.accepted_with_evidence()
+        audit_ref = stage["acceptance"]["auditRef"]
+        for field, wrong in (
+            ("projectId", "other-project"),
+            ("candidateId", initial["candidateId"]),
+            ("branchId", "alternative"),
+            ("baseStageRef", stage["stageRef"]),
+            ("baseStageRef", None),
+            ("resultRecordDigest", "0" * 64),
+            ("action", "design.rejected"),
+            ("status", "failed"),
+            ("actorId", "designer"),
+            ("eventId", "aud-000000000000"),
+            ("occurredAt", "2000-01-01T00:00:00+00:00"),
+            ("origin", "hub"),
+            ("authenticatedActor", False),
+        ):
+            with self.subTest(field=field, wrong=wrong):
+                refused = self.refusal_of(audit_ref, {**event, field: wrong})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "ACCEPTANCE_EVIDENCE_MISMATCH")
+
+    def test_a_truthy_string_is_not_an_authenticated_actor(self) -> None:
+        """``authenticatedActor`` is the retained bool, never a value coerced to one."""
+
+        _, stage, event = self.accepted_with_evidence()
+        for wrong in ("false", "true", 1, "1"):
+            with self.subTest(authenticated=wrong):
+                refused = self.refusal_of(
+                    stage["acceptance"]["auditRef"], {**event, "authenticatedActor": wrong},
+                )
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "ACCEPTANCE_EVIDENCE_MISMATCH")
+
+    def test_evidence_with_unexpected_or_absent_facts_is_refused(self) -> None:
+        _, stage, event = self.accepted_with_evidence()
+        audit_ref = stage["acceptance"]["auditRef"]
+        for name, payload in (
+            ("extra field", {**event, "acceptedOnBehalfOf": "reviewer"}),
+            ("absent digest", {k: v for k, v in event.items() if k != "resultRecordDigest"}),
+            ("absent branch", {k: v for k, v in event.items() if k != "branchId"}),
+        ):
+            with self.subTest(payload=name):
+                refused = self.refusal_of(audit_ref, payload)
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "ACCEPTANCE_EVIDENCE_MISMATCH")
+
+    def test_a_forged_event_does_not_give_a_legacy_stage_an_actor(self) -> None:
+        """A Stage that retained no attribution vouches for no event at all.
+
+        The initial Stage is the real thing this protects: it is committed
+        without the winner extension, so nothing on it can say that an event
+        found beside it is the one its acceptance produced.
+        """
+
+        initial = self.initialize()
+        binding = bound_project(self.client.app.state)
+        run = binding.load_run(initial["candidateId"])
+        binding.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=run.run_id),
+            record_kind=AUDIT_EVENT,
+            payload={
+                "schema": AUDIT_EVENT_SCHEMA, "eventId": "aud-f0rged00000",
+                "occurredAt": "2026-01-01T00:00:00+00:00", "action": "design.accepted",
+                "status": "succeeded", "projectId": PROJECT_ID,
+                "actorId": initial["acceptedBy"], "authenticatedActor": True,
+                "origin": "studio", "branchId": "main",
+                "candidateId": initial["candidateId"], "baseStageRef": None,
+                "resultStageRef": initial["stageRef"],
+                "resultRecordDigest": initial["recordDigest"],
+            },
+        )
+        refused = self.client.get("/api/design-history", params={"branchId": "main"})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "ACCEPTANCE_EVIDENCE_MISMATCH")
+
+    def test_the_recovery_view_reports_wrong_evidence_rather_than_showing_it(self) -> None:
+        _, stage, event = self.accepted_with_evidence()
+        with self.substituted_evidence(
+            stage["acceptance"]["auditRef"], {**event, "branchId": "alternative"},
+        ):
+            status = self.client.get("/api/runtime")
+        self.assertEqual(status.status_code, 200, status.text)
+        body = status.json()
+        self.assertEqual([row["stageRef"] for row in body["stages"]], [])
+        self.assertTrue(
+            any("acceptance evidence" in error for error in body["errors"]), body["errors"],
+        )
+
+    def test_the_local_boundary_actor_reads_back_through_the_checked_reader(self) -> None:
+        """The unauthenticated principal keeps its exact prefixed id and False."""
+
+        initial = self.initialize()
+        candidate = self.candidate_from(initial)
+        accepted = self.accept(candidate, initial)
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        with TestClient(create_app(self.settings)) as restarted:
+            [legacy, stage] = self.history(client=restarted)["stages"]
+            self.assertIsNone(legacy["acceptance"])
+            self.assertEqual(legacy["acceptedBy"], "studio:explicit-user-action")
+            self.assertEqual(stage["acceptedBy"], "studio:explicit-user-action")
+            self.assertEqual(
+                {key: stage["acceptance"][key] for key in
+                 ("action", "status", "actorId", "authenticated", "origin")},
+                {"action": "design.accepted", "status": "succeeded",
+                 "actorId": "studio:explicit-user-action", "authenticated": False,
+                 "origin": "studio"},
+            )
+            status = restarted.get("/api/runtime")
+            self.assertEqual(status.json()["errors"], [])
+            self.assertEqual(
+                [row["acceptance"]["actorId"] for row in status.json()["stages"]
+                 if row["stageRef"] == stage["stageRef"]],
+                ["studio:explicit-user-action"],
+            )
 
     # ---- the refusals that write nothing
 
