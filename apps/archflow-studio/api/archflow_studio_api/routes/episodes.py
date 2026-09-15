@@ -85,9 +85,22 @@ def accept_committed_design(request: Request, candidate_id: str, payload: Accept
         "stage_save", project_id=binding.project_id, run_id=candidate_id, source_ref=expected_head.uri,
         related_event_id=candidate_event_id(binding.project_id, candidate_id),
     ):
-        saved = accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
-                                        expected_head=expected_head, events=request.app.state.events, label=payload.label,
-                                        attribution=_attribution(request))
+        try:
+            saved = accept_design_candidate(binding, candidate_id=candidate_id, branch_id=payload.branch_id,
+                                            expected_head=expected_head, events=request.app.state.events, label=payload.label,
+                                            attribution=_attribution(request))
+        except StudioError as exc:
+            # A repository I/O failure before the branch CAS remains an
+            # infrastructure interruption, not a committed design failure.
+            # ``accept_design_candidate`` first reconciles the branch and only
+            # emits DESIGN_BRANCH_COMMIT_FAILED when no reachable winner exists.
+            # Preserve the older boundary contract so Hub recovery can mark the
+            # operation ``needs_recovery`` instead of treating a prepared Stage
+            # as committed. A lost reply *after* CAS never reaches this branch:
+            # it is recovered from reachable history and returns normally.
+            if exc.code == "DESIGN_BRANCH_COMMIT_FAILED" and isinstance(exc.__cause__, OSError):
+                raise exc.__cause__
+            raise
     return stage_dto(saved)
 
 
