@@ -6,13 +6,15 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 import tempfile
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+from pathlib import PurePath
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO
 from uuid import uuid4
@@ -29,6 +31,7 @@ from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     DESIGN_STAGE,
+    PROJECT_FORMAT_MIGRATION,
     is_registered,
     require_registered,
 )
@@ -186,16 +189,17 @@ class ProjectMigrationPlan:
 
 @dataclass(frozen=True, slots=True)
 class ProjectFormatMigration:
-    """What one completed forward migration wrote, and what it could not restate.
+    """What one completed forward migration wrote, and what it did not restate.
 
     ``versions`` is the exact identity map the migration used: one row per
     published version, its legacy snapshot-file digest and the semantic digest
     that names the same state in the target. ``rewritten`` names the few
-    project-relative files whose owner restated a base digest; every other
-    retained file was copied byte for byte and counted in ``preserved_files``.
-    ``embedded_legacy_references`` lists each place a preserved file still
-    carries a legacy project-version identity, so the receipt states what the
-    migration deliberately did not touch instead of guessing at it.
+    project-relative files whose owner restated a base; every other retained
+    file was copied byte for byte. ``embedded_legacy_references`` lists each
+    place a copied file still carries a legacy project-version identity, and
+    ``unscanned_binaries``/``undecodable`` name the files whose contents this
+    could not survey, so the receipt states the limits of its own account
+    instead of reading silence as absence.
     """
 
     source_root: Path
@@ -203,11 +207,59 @@ class ProjectFormatMigration:
     project_id: str
     source_format_version: int
     target_format_version: int
+    source_head_sha256: str
     versions: tuple[tuple[int, str, str], ...]
     rewritten: tuple[str, ...]
     preserved_files: int
-    embedded_legacy_references: tuple[tuple[str, str, int, str], ...]
+    orphans: tuple[str, ...]
+    unscanned_binaries: tuple[str, ...]
+    undecodable: tuple[str, ...]
+    embedded_legacy_references: tuple[tuple[str, str, str, int, str], ...]
+    receipt: ProjectRecordRef | None
 
+    def to_dict(self) -> dict[str, Any]:
+        """The retained ``ProjectFormatMigration@1`` payload this becomes."""
+
+        semantic = {version: new for version, _, new in self.versions}
+        return {
+            "schema": "ProjectFormatMigration@1",
+            "project_id": self.project_id,
+            "source_format_version": self.source_format_version,
+            "target_format_version": self.target_format_version,
+            "source_head_sha256": self.source_head_sha256,
+            "versions": [
+                {"version": version, "legacy_state_sha256": legacy, "state_sha256": new}
+                for version, legacy, new in self.versions
+            ],
+            "rewritten": list(self.rewritten),
+            "preserved_files": self.preserved_files,
+            "orphans": list(self.orphans),
+            "unscanned_binaries": list(self.unscanned_binaries),
+            "undecodable": list(self.undecodable),
+            "embedded_legacy_references": [
+                {
+                    "path": path,
+                    "pointer": pointer,
+                    "shape": shape,
+                    "version": version,
+                    "legacy_state_sha256": legacy,
+                    "state_sha256": semantic.get(version),
+                }
+                for path, pointer, shape, version, legacy in self.embedded_legacy_references
+            ],
+        }
+
+
+@dataclass(slots=True)
+class _CopiedClosure:
+    """What the byte-for-byte pass did with everything the envelope does not own."""
+
+    rewritten: list[str]
+    preserved_files: int
+    orphans: list[str]
+    unscanned_binaries: list[str]
+    undecodable: list[str]
+    embedded: list[tuple[str, str, str, int, str]]
 
 _LOCK_INDEX_GUARD = threading.Lock()
 _PROJECT_LOCKS: dict[str, threading.RLock] = {}
@@ -518,38 +570,274 @@ def _record_from_dict(
 
 
 _VERSION_REF_KEYS = frozenset({"project_id", "version", "state_sha256"})
+_VERSION_DIGEST_KEYS = frozenset({"version", "state_sha256"})
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
+# The three shapes a retained payload uses to name a published project version.
+# ``version_ref`` is the exact ``ProjectVersionRef`` mapping; ``version_digest``
+# is the two-field form a design branch retains (state.spatial); ``digest_field``
+# is a flat string field such as a CAD receipt's ``base_state_sha256``. Every
+# reader of retained payloads uses this one walker, so the dry run and the
+# migration receipt cannot disagree about what a project still embeds.
+VERSION_REF = "version_ref"
+VERSION_DIGEST = "version_digest"
+DIGEST_FIELD = "digest_field"
 
 
-def _legacy_refs_in(
-    payload: object,
-    legacy_digests: Mapping[str, int],
-    pointer: str = "",
-) -> list[tuple[str, int, str]]:
-    """Every exact ``ProjectVersionRef`` mapping in ``payload`` whose digest is a known legacy snapshot digest.
+@dataclass(frozen=True, slots=True)
+class EmbeddedVersionIdentity:
+    """One location in a retained payload that names a project version.
 
-    Returns ``(json_pointer, version, legacy_digest)`` rows. Only mappings with
-    exactly the three reference keys count; a matched mapping is not descended.
-    ``legacy_digests`` maps each legacy digest to its version so a reference
-    whose version disagrees with its digest is reported by its digest, never
-    silently trusted.
+    ``detail`` is ``None`` when every field read; otherwise it says what did
+    not, and the readable parts are still carried. A location is reported, not
+    interpreted: whether it must be restated is its owner's question.
     """
 
-    found: list[tuple[str, int, str]] = []
+    json_pointer: str
+    shape: str
+    project_id: str | None
+    version: int | None
+    state_sha256: str | None
+    detail: str | None
+
+
+def _digest_or_none(value: object) -> str | None:
+    if (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in _HEX_DIGITS for character in value.lower())
+    ):
+        return value
+    return None
+
+
+def _version_or_none(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _identity_row(
+    payload: Mapping[str, Any], pointer: str, shape: str,
+) -> EmbeddedVersionIdentity:
+    raw_project = payload.get("project_id") if shape == VERSION_REF else None
+    project_id = raw_project if isinstance(raw_project, str) and raw_project else None
+    version = _version_or_none(payload.get("version"))
+    digest = _digest_or_none(payload.get("state_sha256"))
+    problems: list[str] = []
+    if shape == VERSION_REF and project_id is None:
+        problems.append("project_id is not a non-empty string")
+    if version is None:
+        problems.append("version is not a non-negative integer")
+    if digest is None:
+        problems.append("state_sha256 is not a 64-character lowercase sha-256")
+    return EmbeddedVersionIdentity(
+        json_pointer=pointer or "/",
+        shape=shape,
+        project_id=project_id,
+        version=version,
+        state_sha256=digest,
+        detail="; ".join(problems) or None,
+    )
+
+
+def embedded_version_identities(
+    payload: object, pointer: str = "",
+) -> list[EmbeddedVersionIdentity]:
+    """Every place ``payload`` names a published project version, in order.
+
+    Matched mappings are not descended, so a reference's own fields are never
+    reported twice. A string field whose name contains ``state_sha256`` is
+    reported as a flat digest: CAD receipts and stage envelopes retain a base
+    that way, and a scan that only knew the mapping shape would call a project
+    fully surveyed while those digests sat unlisted.
+    """
+
+    found: list[EmbeddedVersionIdentity] = []
     if isinstance(payload, Mapping):
-        digest = payload.get("state_sha256")
-        if (
-            set(payload) == _VERSION_REF_KEYS
-            and isinstance(digest, str)
-            and digest in legacy_digests
-        ):
-            return [(pointer or "/", legacy_digests[digest], digest)]
+        keys = set(payload)
+        if keys == _VERSION_REF_KEYS:
+            return [_identity_row(payload, pointer, VERSION_REF)]
+        if keys == _VERSION_DIGEST_KEYS:
+            return [_identity_row(payload, pointer, VERSION_DIGEST)]
         for key, value in payload.items():
-            escaped = str(key).replace("~", "~0").replace("/", "~1")
-            found.extend(_legacy_refs_in(value, legacy_digests, f"{pointer}/{escaped}"))
+            name = str(key)
+            escaped = name.replace("~", "~0").replace("/", "~1")
+            child = f"{pointer}/{escaped}"
+            if "state_sha256" in name and isinstance(value, str):
+                found.append(EmbeddedVersionIdentity(
+                    json_pointer=child,
+                    shape=DIGEST_FIELD,
+                    project_id=None,
+                    version=_version_or_none(payload.get("base_version"))
+                    if name == "base_state_sha256" else None,
+                    state_sha256=_digest_or_none(value),
+                    detail=None if _digest_or_none(value)
+                    else "state_sha256 is not a 64-character lowercase sha-256",
+                ))
+                continue
+            found.extend(embedded_version_identities(value, child))
     elif isinstance(payload, list):
         for index, value in enumerate(payload):
-            found.extend(_legacy_refs_in(value, legacy_digests, f"{pointer}/{index}"))
+            found.extend(embedded_version_identities(value, f"{pointer}/{index}"))
     return found
+
+
+def legacy_version_identities(
+    payload: object, legacy_digests: Mapping[str, int],
+) -> list[EmbeddedVersionIdentity]:
+    """The subset of :func:`embedded_version_identities` naming a known legacy version.
+
+    ``legacy_digests`` maps a legacy snapshot-file digest to its version. A row
+    is selected by its digest alone: a reference whose declared version
+    disagrees with the version that digest belongs to is still reported, by its
+    digest, and never silently trusted.
+    """
+
+    return [
+        row for row in embedded_version_identities(payload)
+        if row.state_sha256 is not None and row.state_sha256 in legacy_digests
+    ]
+
+
+# The run the migration files its own receipt in, and the event keys a
+# format-2 event states for itself: everything else an older event carried is
+# carried through rather than dropped.
+MIGRATION_RUN_ID = "format-migration"
+_MIGRATED_EVENT_KEYS = frozenset({
+    "schema", "project_id", "event_type", "decision", "run_id",
+    "from", "from_snapshot", "to", "to_snapshot", "previous_event",
+    "decision_receipt",
+})
+# ``_write_immutable``/``_replace_atomic`` leave these behind if a writer dies.
+_TEMPORARY_NAME = re.compile(r"^\..+\.[0-9a-f]{32}\.tmp$")
+
+
+def _migration_source(root: Path) -> Path:
+    """The source project directory, or a typed refusal naming it."""
+
+    try:
+        return Path(root).resolve(strict=True)
+    except OSError as exc:
+        raise ProjectIntegrityError(
+            f"MIGRATION_NOT_APPLICABLE: the source directory cannot be read: {exc}"
+        ) from exc
+
+
+def _contains_path(outer: Path, inner: Path) -> bool:
+    """Whether ``inner`` is ``outer`` or lies inside it, comparably on Windows."""
+
+    def parts(path: Path) -> list[str]:
+        text = str(path)
+        for prefix in ("\\\\?\\UNC\\", "\\\\?\\"):
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+                break
+        return [os.path.normcase(part) for part in PurePath(text).parts]
+
+    outer_parts, inner_parts = parts(outer), parts(inner)
+    return inner_parts[: len(outer_parts)] == outer_parts
+
+
+def _copy_retained_closure(
+    staging: Path,
+    target_root: Path,
+    legacy: FilesystemProjectRepository,
+    mapping: Mapping[str, str],
+    legacy_digests: Mapping[str, int],
+) -> _CopiedClosure:
+    """Copy everything the envelope does not own, restating only owned bases.
+
+    Run manifests and the authored state record are restated by their owners.
+    Retained ``canonical``/``events`` records the published chain does not
+    reach - what a promotion interrupted before its HEAD swap leaves behind -
+    are content-addressed, so they are carried over unchanged and named in the
+    receipt rather than silently dropped. Everything else is copied byte for
+    byte and surveyed for the project-version identities it still embeds.
+    """
+
+    from archflow.state.state_record import rewrite_base_digest
+
+    report = _CopiedClosure([], 0, [], [], [], [])
+    orphans = set(legacy.verify().orphan_paths)
+    locks = {path.relative_to(staging).as_posix() for path in legacy.lock_paths()}
+    for path in sorted(item for item in staging.rglob("*") if item.is_file()):
+        relative = path.relative_to(staging).as_posix()
+        if relative in ("project.json", "HEAD") or relative in locks:
+            continue
+        if _TEMPORARY_NAME.match(PurePosixPath(relative).name):
+            continue
+        destination = target_root / path.relative_to(staging)
+        data = _read_bytes(path)
+        category, _, _ = _retained_category(relative)
+        if relative.startswith(("canonical/", "events/")):
+            if relative in orphans:
+                _write_immutable(destination, data)
+                report.orphans.append(relative)
+            continue
+        if category == "run_manifest":
+            run = legacy.load_run(PurePosixPath(relative).parts[1])
+            restated = RunRef(
+                run.project_id,
+                run.run_id,
+                ProjectVersionRef(
+                    run.project_id,
+                    run.base.version,
+                    mapping[run.base.require_digest()],
+                ),
+            )
+            _write_immutable(destination, _json_bytes({
+                "schema": "ProjectRun@1",
+                "project_id": restated.project_id,
+                "run_id": restated.run_id,
+                "base": restated.base.to_dict(),
+            }))
+            report.rewritten.append(relative)
+            continue
+        payload: object = None
+        if category == "artifact":
+            # Digest-identified bytes are opaque. A legacy digest written
+            # inside one is neither read nor rewritten; the file is named so
+            # the receipt does not read its silence as absence.
+            if _legacy_digest_in_bytes(data, legacy_digests):
+                report.unscanned_binaries.append(relative)
+        elif relative.endswith(".json"):
+            try:
+                payload = json.loads(data.decode("utf-8-sig"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                report.undecodable.append(relative)
+                payload = None
+        if relative == AUTHORED_RECORD_PATH and isinstance(payload, Mapping):
+            base = payload.get("base")
+            if (
+                isinstance(base, Mapping)
+                and set(base) == _VERSION_REF_KEYS
+                and base.get("state_sha256") not in mapping
+            ):
+                raise ProjectIntegrityError(
+                    "MIGRATION_AUTHORED_BASE_UNKNOWN: the authored state record is "
+                    "based on a version this project does not publish, so no owner "
+                    "can restate it"
+                )
+            restated_payload = rewrite_base_digest(payload, mapping)
+            if restated_payload != payload:
+                data = _json_bytes(restated_payload)
+                report.rewritten.append(relative)
+        for row in legacy_version_identities(payload, legacy_digests):
+            report.embedded.append((
+                relative, row.json_pointer, row.shape,
+                legacy_digests[row.state_sha256], row.state_sha256,
+            ))
+        _write_immutable(destination, data)
+        if relative not in report.rewritten:
+            report.preserved_files += 1
+    return report
+
+
+def _legacy_digest_in_bytes(data: bytes, legacy_digests: Mapping[str, int]) -> bool:
+    """Whether opaque bytes contain a known legacy digest as plain ASCII."""
+
+    return any(digest.encode("ascii") in data for digest in legacy_digests)
 
 
 class FilesystemProjectRepository:
@@ -1194,52 +1482,88 @@ class FilesystemProjectRepository:
                 "decision_receipt": _record_dict(decision_receipt),
             }
         else:
-            _require_semantic_state_identity(
-                replacement_payload,
-                project_id=run.project_id,
-                version=next_version,
-                field="replacement state",
+            return self._write_transition(
+                previous=expected,
+                previous_snapshot=current_snapshot,
+                previous_event=previous_event,
+                state=replacement_payload,
+                event_type="candidate.promoted",
+                decision="accepted",
+                run_id=run.run_id,
+                decision_receipt=_record_dict(decision_receipt),
             )
-            state_sha256 = _semantic_state_sha256(
-                replacement_payload,
-                field="replacement state",
-            )
-            snapshot = self._put_internal_json(
-                self.layout.canonical,
-                f"state-v{next_version:06d}",
-                {
-                    "schema": "CanonicalSnapshot@2",
-                    "project_id": run.project_id,
-                    "version": next_version,
-                    "state_sha256": state_sha256,
-                    "parent": expected.to_dict(),
-                    "state": replacement_payload,
-                },
-            )
-            replacement = ProjectVersionRef(
-                run.project_id,
-                next_version,
-                state_sha256,
-            )
-            event_payload = {
-                "schema": "ProjectEvent@2",
-                "project_id": run.project_id,
-                "event_type": "candidate.promoted",
-                "decision": "accepted",
-                "run_id": run.run_id,
-                "from": expected.to_dict(),
-                "from_snapshot": _record_dict(current_snapshot),
-                "to": replacement.to_dict(),
-                "to_snapshot": _record_dict(snapshot),
-                "previous_event": _record_dict(previous_event),
-                "decision_receipt": _record_dict(decision_receipt),
-            }
         event = self._put_internal_json(
             self.layout.events,
             f"event-v{next_version:06d}",
             event_payload,
         )
         return PreparedTransition(expected, event, snapshot)
+
+    def _write_transition(
+        self,
+        *,
+        previous: ProjectVersionRef,
+        previous_snapshot: ProjectRecordRef,
+        previous_event: ProjectRecordRef,
+        state: Mapping[str, Any],
+        event_type: Any,
+        decision: Any,
+        run_id: Any,
+        decision_receipt: Any,
+        carried: Mapping[str, Any] | None = None,
+    ) -> PreparedTransition:
+        """Write one format-2 snapshot and the event that reaches it. HEAD is untouched.
+
+        The only place a ``CanonicalSnapshot@2``/``ProjectEvent@2`` pair is
+        composed, so a promotion and a format migration cannot drift into two
+        spellings of the same transition. ``carried`` seeds the event with keys
+        an older event already held; the keys this format owns are written over
+        them, so a foreign field survives a migration instead of being dropped.
+        """
+
+        version = previous.version + 1
+        payload = dict(state)
+        _require_semantic_state_identity(
+            payload,
+            project_id=self._manifest.project_id,
+            version=version,
+            field=f"state v{version}",
+        )
+        state_sha256 = _semantic_state_sha256(payload, field=f"state v{version}")
+        snapshot = self._put_internal_json(
+            self.layout.canonical,
+            f"state-v{version:06d}",
+            {
+                "schema": "CanonicalSnapshot@2",
+                "project_id": self._manifest.project_id,
+                "version": version,
+                "state_sha256": state_sha256,
+                "parent": previous.to_dict(),
+                "state": payload,
+            },
+        )
+        replacement = ProjectVersionRef(
+            self._manifest.project_id, version, state_sha256,
+        )
+        event = self._put_internal_json(
+            self.layout.events,
+            f"event-v{version:06d}",
+            {
+                **(dict(carried) if carried else {}),
+                "schema": "ProjectEvent@2",
+                "project_id": self._manifest.project_id,
+                "event_type": event_type,
+                "decision": decision,
+                "run_id": run_id,
+                "from": previous.to_dict(),
+                "from_snapshot": _record_dict(previous_snapshot),
+                "to": replacement.to_dict(),
+                "to_snapshot": _record_dict(snapshot),
+                "previous_event": _record_dict(previous_event),
+                "decision_receipt": decision_receipt,
+            },
+        )
+        return PreparedTransition(previous, event, snapshot)
 
     def compare_and_swap(
         self,
@@ -1779,22 +2103,22 @@ class FilesystemProjectRepository:
         cls,
         source_root: Path,
         target_root: Path,
-        *,
-        target_format_version: int = CURRENT_FORMAT_VERSION,
     ) -> ProjectFormatMigration:
-        """Write a format-``target`` copy of a format-1 project into an empty directory.
+        """Write a format-2 copy of a format-1 project into an empty directory.
 
         The source is never written, not even its advisory lock files: it is
-        copied whole into a disposable staging directory, and that copy is what
-        is opened, planned and read. The target envelope is written by this
-        build's own writers; run manifests and the authored state record have
-        their base digest restated by their owners; everything else is copied
-        byte for byte and any project-version identity it still embeds is
-        listed, not rewritten. The result is opened, verified and re-exported
-        before it is returned.
+        copied into a disposable staging directory beside the target, and that
+        copy is what is opened, planned and read. Every version's identity is
+        computed before the first target byte is written; the envelope is then
+        written by this build's own transition writer and each HEAD move goes
+        through ``compare_and_swap``. Run manifests and the authored state
+        record have their base restated by their owners; everything else is
+        copied byte for byte and the project-version identities it still
+        embeds are listed, not rewritten. If anything fails, the directory this
+        created is removed, so a retry starts from the same empty target.
         """
 
-        source_root = Path(source_root).resolve(strict=True)
+        source_root = _migration_source(source_root)
         target_root = Path(target_root).resolve(strict=False)
         inspection = inspect_project_format(source_root)
         if (
@@ -1803,10 +2127,6 @@ class FilesystemProjectRepository:
         ):
             raise ProjectIntegrityError(
                 f"MIGRATION_NOT_APPLICABLE: {inspection.status}: {inspection.detail}"
-            )
-        if target_format_version != CURRENT_FORMAT_VERSION:
-            raise ProjectIntegrityError(
-                "MIGRATION_TARGET_UNSUPPORTED: only the current format can be the target"
             )
         project_id = inspection.project_id
         if project_id is None or target_root.name != project_id:
@@ -1817,177 +2137,213 @@ class FilesystemProjectRepository:
             raise ProjectIntegrityError(
                 "MIGRATION_TARGET_USED: the target directory already contains files"
             )
-        if target_root.is_relative_to(source_root) or source_root.is_relative_to(target_root):
+        if _contains_path(source_root, target_root) or _contains_path(target_root, source_root):
             raise ProjectIntegrityError(
                 "MIGRATION_TARGET_NESTED: source and target may not contain each other"
             )
+        # A junction is not a symlink to ``Path.is_symlink``, and ``copytree``
+        # would inline whatever it points at. This is the same pre-check the
+        # archive restore makes about its own destination.
         for path in source_root.rglob("*"):
-            if path.is_symlink():
+            if (
+                path.is_symlink()
+                or path.is_junction()
+                or not path.resolve().is_relative_to(source_root)
+            ):
                 raise ProjectIntegrityError(
-                    f"MIGRATION_SOURCE_REDIRECTED: {path.relative_to(source_root).as_posix()}"
+                    f"MIGRATION_SOURCE_REDIRECTED: "
+                    f"{path.relative_to(source_root).as_posix()}"
                 )
 
-        with tempfile.TemporaryDirectory(prefix="archflow-migrate-") as temporary:
-            staging = Path(temporary) / project_id
-            shutil.copytree(source_root, staging, symlinks=False)
-            legacy = cls.open(staging)
-            for lock in legacy.lock_paths():
-                lock.parent.mkdir(parents=True, exist_ok=True)
-                lock.touch(exist_ok=True)
-            plan = plan_project_migration(staging, target_format_version=target_format_version)
-            if not plan.planned or plan.blockers:
-                raise ProjectIntegrityError("MIGRATION_BLOCKED: " + "; ".join(plan.blockers))
-            if not plan.migration_required:
-                raise ProjectIntegrityError(
-                    "MIGRATION_NOT_REQUIRED: the project is already at the target format"
+        target_existed = target_root.exists()
+        created: Path | None = None
+        # Staging lives beside the target, on the target's volume: the copy is
+        # the migration's working set, not something to leave in the system
+        # temporary directory, and a hard link in the target cannot cross a
+        # volume boundary that staging silently introduced.
+        target_root.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with tempfile.TemporaryDirectory(
+                prefix=".archflow-migrate-", dir=target_root.parent,
+            ) as temporary:
+                staging = Path(temporary) / project_id
+                shutil.copytree(
+                    source_root, staging, symlinks=False,
+                    ignore=shutil.ignore_patterns("*.tmp"),
                 )
+                if _read_bytes(source_root / "HEAD") != _read_bytes(staging / "HEAD"):
+                    raise ProjectIntegrityError(
+                        "MIGRATION_SOURCE_MOVED: the source published a new version "
+                        "while it was being copied; nothing was written"
+                    )
+                source_head_sha256 = _sha256(_read_bytes(staging / "HEAD"))
+                legacy = cls.open(staging)
+                for lock in legacy.lock_paths():
+                    lock.parent.mkdir(parents=True, exist_ok=True)
+                    lock.touch(exist_ok=True)
+                plan = plan_project_migration(staging)
+                if not plan.planned or plan.blockers:
+                    raise ProjectIntegrityError(
+                        "MIGRATION_BLOCKED: " + "; ".join(plan.blockers)
+                    )
+                if not plan.migration_required:
+                    raise ProjectIntegrityError(
+                        "MIGRATION_NOT_REQUIRED: the project is already at the target format"
+                    )
+                if MIGRATION_RUN_ID in plan.run_ids:
+                    raise ProjectIntegrityError(
+                        f"MIGRATION_RECEIPT_RUN_TAKEN: the project already retains a run "
+                        f"named {MIGRATION_RUN_ID!r}, which is where the migration files "
+                        f"its own receipt"
+                    )
 
-            # Walk published history back from HEAD, then forward.
-            current, _, event_ref = legacy._read_head_document()
-            lineage: list[tuple[ProjectVersionRef, dict[str, Any]]] = []
-            while True:
-                event = legacy.load_json(event_ref)
-                lineage.append((current, event))
-                parent = event.get("from")
-                if parent is None:
-                    break
-                current = _version_from_dict(parent, field="event from")
-                event_ref = _record_from_dict(
-                    event.get("previous_event"), project_id=project_id, field="previous_event",
-                )
-            lineage.reverse()
-            states = [legacy.load_version_state(ref) for ref, _ in lineage]
-            if [ref.version for ref, _ in lineage] != list(range(len(lineage))):
-                raise ProjectIntegrityError(
-                    "MIGRATION_LINEAGE: published versions are not contiguous from 0"
-                )
-
-            # Target envelope: v0 through initialize, later versions through the v2 writers.
-            target = cls.initialize(target_root, project_id=project_id, initial_state=states[0])
-            mapping: dict[str, str] = {
-                lineage[0][0].require_digest(): target.read_head().require_digest()
-            }
-            versions: list[tuple[int, str, str]] = [
-                (0, lineage[0][0].require_digest(), target.read_head().require_digest())
-            ]
-            with target._lock, target._head_lock:
-                for (legacy_ref, event), state in zip(lineage[1:], states[1:]):
-                    previous = target.read_head()
-                    _, previous_snapshot, previous_event = target._read_head_document()
-                    version = legacy_ref.version
+                lineage = legacy._legacy_lineage()
+                # Everything the envelope needs is computed before the target
+                # exists: a state that cannot be digested must not leave a
+                # half-written directory that inspects as current at v0.
+                semantic: list[str] = []
+                for ref, _, state in lineage:
                     _require_semantic_state_identity(
-                        state, project_id=project_id, version=version,
-                        field=f"migrated state v{version}",
+                        state, project_id=project_id, version=ref.version,
+                        field=f"migrated state v{ref.version}",
                     )
-                    digest = _semantic_state_sha256(state, field=f"migrated state v{version}")
-                    snapshot = target._put_internal_json(
-                        target.layout.canonical,
-                        f"state-v{version:06d}",
-                        {
-                            "schema": "CanonicalSnapshot@2",
-                            "project_id": project_id,
-                            "version": version,
-                            "state_sha256": digest,
-                            "parent": previous.to_dict(),
-                            "state": state,
-                        },
-                    )
-                    replacement = ProjectVersionRef(project_id, version, digest)
-                    written = target._put_internal_json(
-                        target.layout.events,
-                        f"event-v{version:06d}",
-                        {
-                            "schema": "ProjectEvent@2",
-                            "project_id": project_id,
-                            "event_type": event.get("event_type"),
-                            "decision": event.get("decision"),
-                            "run_id": event.get("run_id"),
-                            "from": previous.to_dict(),
-                            "from_snapshot": _record_dict(previous_snapshot),
-                            "to": replacement.to_dict(),
-                            "to_snapshot": _record_dict(snapshot),
-                            "previous_event": _record_dict(previous_event),
-                            "decision_receipt": event.get("decision_receipt"),
-                        },
-                    )
-                    _replace_atomic(
-                        target.layout.head,
-                        _json_bytes(target._head_payload(replacement, snapshot, written)),
-                    )
-                    mapping[legacy_ref.require_digest()] = digest
-                    versions.append((version, legacy_ref.require_digest(), digest))
+                    semantic.append(_semantic_state_sha256(
+                        state, field=f"migrated state v{ref.version}",
+                    ))
 
-            # Everything else: owners restate their base; the rest is copied byte for byte.
-            legacy_digests = {legacy_digest: version for version, legacy_digest, _ in versions}
-            rewritten: list[str] = []
-            preserved = 0
-            embedded: list[tuple[str, str, int, str]] = []
-            skip_prefixes = ("canonical/", "events/")
-            for path in sorted(p for p in staging.rglob("*") if p.is_file()):
-                relative = path.relative_to(staging).as_posix()
-                if (
-                    relative in ("project.json", "HEAD")
-                    or relative.startswith(skip_prefixes)
-                    or relative.endswith(".lock")
-                ):
-                    continue
-                data = _read_bytes(path)
-                parts = relative.split("/")
-                if len(parts) == 3 and parts[0] == "runs" and parts[2] == "run.json":
-                    payload = _parse_json_document(data, relative)
-                    base = payload.get("base") or {}
-                    if base.get("state_sha256") not in mapping:
-                        raise ProjectIntegrityError(
-                            f"MIGRATION_RUN_BASE: {relative} names an unknown legacy version"
+                target = cls.initialize(
+                    target_root, project_id=project_id, initial_state=lineage[0][2],
+                )
+                created = target_root if not target_existed else None
+                versions: list[tuple[int, str, str]] = [
+                    (0, lineage[0][0].require_digest(), target.read_head().require_digest())
+                ]
+                with target._lock, target._head_lock:
+                    for (legacy_ref, event, state), digest in zip(lineage[1:], semantic[1:]):
+                        previous, previous_snapshot, previous_event = (
+                            target._read_head_document()
                         )
-                    payload["base"] = {**base, "state_sha256": mapping[base["state_sha256"]]}
-                    _write_immutable(target_root / path.relative_to(staging), _json_bytes(payload))
-                    rewritten.append(relative)
-                    continue
-                if relative == AUTHORED_RECORD_PATH:
-                    # The record owner states where its version identity lives;
-                    # the project layer does not read a state record otherwise.
-                    from archflow.state.state_record import rewrite_base_digest
-
-                    payload = _parse_json_document(data, relative)
-                    restated = rewrite_base_digest(payload, mapping)
-                    if restated != payload:
-                        _write_immutable(
-                            target_root / path.relative_to(staging), _json_bytes(restated),
+                        carried = {
+                            key: value for key, value in event.items()
+                            if key not in _MIGRATED_EVENT_KEYS
+                        }
+                        prepared = target._write_transition(
+                            previous=previous,
+                            previous_snapshot=previous_snapshot,
+                            previous_event=previous_event,
+                            state=state,
+                            event_type=event.get("event_type"),
+                            decision=event.get("decision"),
+                            run_id=event.get("run_id"),
+                            decision_receipt=event.get("decision_receipt"),
+                            carried=carried,
                         )
-                        rewritten.append(relative)
-                        continue
-                if relative.endswith(".json"):
-                    try:
-                        payload = json.loads(data.decode("utf-8"))
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        payload = None
-                    for pointer, version, legacy_digest in _legacy_refs_in(payload, legacy_digests):
-                        embedded.append((relative, pointer, version, legacy_digest))
-                _write_immutable(target_root / path.relative_to(staging), data)
-                preserved += 1
+                        published = target.compare_and_swap(
+                            expected=previous,
+                            event=prepared.event,
+                            replacement=prepared.replacement,
+                        )
+                        if published.require_digest() != digest:
+                            raise ProjectIntegrityError(
+                                f"MIGRATION_VERIFY: published v{published.version} does "
+                                f"not carry the digest its state was validated with"
+                            )
+                        versions.append(
+                            (legacy_ref.version, legacy_ref.require_digest(), digest)
+                        )
 
-        migrated = cls.open(target_root)
-        migrated.verify()
-        closure = migrated.export_transfer(include_contents=False, include_all_runs=True)
-        if closure["format_version"] != target_format_version:
-            raise ProjectIntegrityError(
-                "MIGRATION_VERIFY: the migrated closure does not report the target format"
+                mapping = {legacy: new for _, legacy, new in versions}
+                legacy_digests = {legacy: version for version, legacy, _ in versions}
+                report = _copy_retained_closure(
+                    staging, target_root, legacy, mapping, legacy_digests,
+                )
+
+                migrated = cls.open(target_root)
+                migrated.verify()
+                closure = migrated.export_transfer(
+                    include_contents=False, include_all_runs=True,
+                )
+                if closure["format_version"] != CURRENT_FORMAT_VERSION:
+                    raise ProjectIntegrityError(
+                        "MIGRATION_VERIFY: the migrated closure does not report the target format"
+                    )
+                if plan_project_migration(target_root).migration_required:
+                    raise ProjectIntegrityError(
+                        "MIGRATION_VERIFY: the migrated project still requires migration"
+                    )
+                result = ProjectFormatMigration(
+                    source_root=source_root,
+                    target_root=target_root,
+                    project_id=project_id,
+                    source_format_version=LEGACY_FORMAT_VERSION,
+                    target_format_version=CURRENT_FORMAT_VERSION,
+                    source_head_sha256=source_head_sha256,
+                    versions=tuple(versions),
+                    rewritten=tuple(report.rewritten),
+                    preserved_files=report.preserved_files,
+                    orphans=tuple(report.orphans),
+                    unscanned_binaries=tuple(report.unscanned_binaries),
+                    undecodable=tuple(report.undecodable),
+                    embedded_legacy_references=tuple(report.embedded),
+                    receipt=None,
+                )
+                # Last, and only once the migrated project verifies: the
+                # migration files its own account as a retained record, through
+                # the repository's own writer, inside the closure it produced.
+                return replace(result, receipt=migrated._file_migration_receipt(result))
+        except BaseException as exc:
+            if created is not None and created.exists():
+                shutil.rmtree(created, ignore_errors=True)
+            if isinstance(exc, ProjectRepositoryError):
+                raise
+            if isinstance(exc, (OSError, ValueError, KeyError, TypeError)):
+                raise ProjectIntegrityError(f"MIGRATION_FAILED: {exc}") from exc
+            raise
+
+    def _legacy_lineage(self) -> list[tuple[ProjectVersionRef, dict[str, Any], dict[str, Any]]]:
+        """Published history oldest-first: (version, its event, its state).
+
+        One backward walk reads each snapshot exactly once, so a long history
+        costs one pass rather than one full replay per version.
+        """
+
+        current, snapshot_ref, event_ref = self._read_head_document()
+        walked: list[tuple[ProjectVersionRef, dict[str, Any], dict[str, Any]]] = []
+        while True:
+            event = self.load_json(event_ref)
+            snapshot = self._verify_snapshot(snapshot_ref, current)
+            state = snapshot.get("state")
+            if not isinstance(state, dict):
+                raise ProjectIntegrityError("canonical snapshot state is not an object")
+            walked.append((current, event, state))
+            parent = event.get("from")
+            if parent is None:
+                break
+            current = _version_from_dict(parent, field="event from")
+            snapshot_ref = self._canonical_ref_for_version(current)
+            event_ref = _record_from_dict(
+                event.get("previous_event"),
+                project_id=self._manifest.project_id,
+                field="previous_event",
             )
-        if plan_project_migration(target_root).migration_required:
+        walked.reverse()
+        if [ref.version for ref, _, _ in walked] != list(range(len(walked))):
             raise ProjectIntegrityError(
-                "MIGRATION_VERIFY: the migrated project still requires migration"
+                "MIGRATION_LINEAGE: published versions are not contiguous from 0"
             )
-        return ProjectFormatMigration(
-            source_root=source_root,
-            target_root=target_root,
-            project_id=project_id,
-            source_format_version=LEGACY_FORMAT_VERSION,
-            target_format_version=target_format_version,
-            versions=tuple(versions),
-            rewritten=tuple(rewritten),
-            preserved_files=preserved,
-            embedded_legacy_references=tuple(embedded),
+        return walked
+
+    def _file_migration_receipt(self, result: ProjectFormatMigration) -> ProjectRecordRef:
+        """Retain the migration's own account inside the project it produced."""
+
+        run = self.create_run(MIGRATION_RUN_ID)
+        return self.put_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_RECORD, run_id=MIGRATION_RUN_ID,
+            ),
+            record_kind=PROJECT_FORMAT_MIGRATION,
+            payload=result.to_dict(),
         )
 
     def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None:
@@ -2670,10 +3026,11 @@ def plan_project_migration(
         )
     if counts["record"]:
         transformations.append(
-            f"each of the {counts['record']} retained record(s) listed above must be "
-            f"restated by its own typed owner wherever it declares a project-version "
-            f"identity or names a content-addressed record, and re-hashed if its "
-            f"payload changes"
+            f"each of the {counts['record']} retained record(s) listed above is "
+            f"restated at the project-version pointers its schema's owner declares, "
+            f"re-hashed when its payload changes, and every retained reference that "
+            f"names it is moved with it; a record carrying a legacy identity no owner "
+            f"declares blocks the migration instead of being guessed at"
         )
     if counts["artifact"]:
         transformations.append(
