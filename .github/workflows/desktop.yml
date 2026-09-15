@@ -4,14 +4,14 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: windows-desktop-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  patch73:
+  verify73:
     runs-on: ubuntu-latest
     steps:
       - name: Check out pull-request head
@@ -19,50 +19,20 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
-
-      - name: Apply staged GH-73 patch
-        shell: bash
-        run: |
-          if grep -q 'CURRENT_DERIVATION_METHOD = "StudyDerivation@1"' apps/archflow-studio/api/archflow_studio_api/application/study.py; then
-            echo "GH-73 compatibility patch already present"
-            exit 0
-          fi
-          awk '
-            /^          python - <<.PY.$/ {capture=1; next}
-            /^          PY$/ {capture=0; exit}
-            capture {sub(/^          /, ""); print}
-          ' .github/workflows/verify.yml > /tmp/patch_gh73.py
-          test -s /tmp/patch_gh73.py
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('/tmp/patch_gh73.py')
-          text = path.read_text(encoding='utf-8')
-          for marker in (
-              'The retained Study derivation method id is invalid.',
-              '_source_payload_matches(previous_payload["source"], source)',
-          ):
-              position = text.index(marker)
-              start = text.rfind('replace_once(', 0, position)
-              end = text.find('\n\nreplace_once(', position)
-              if start < 0 or end < 0:
-                  raise SystemExit(f'could not isolate optional patch block: {marker}')
-              text = text[:start] + text[end + 2:]
-          path.write_text(text, encoding='utf-8')
-          PY
-          python /tmp/patch_gh73.py
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('apps/archflow-studio/api/archflow_studio_api/application/study.py')
-          text = path.read_text(encoding='utf-8')
-          old = '            if previous_payload["source"] != source.to_dict():'
-          new = '            if not _source_payload_matches(previous_payload["source"], source):'
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one source immutability comparison, got {text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/archflow-studio/api/archflow_studio_api/application/study.py apps/archflow-studio/api/tests/test_study.py
-          git commit -m "GH-73: pin Study sources and preserve archived derivations"
-          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            apps/archflow-studio/api/requirements.txt
+      - name: Install Study dependencies
+        run: python -m pip install -e . -r apps/archflow-studio/api/requirements.txt httpx2 pytest
+      - name: Study archive compatibility tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest apps/archflow-studio/api/tests/test_study.py -q
+      - name: Architecture firewall
+        run: python tools/archcheck.py
+      - name: Diff whitespace smoke
+        run: git diff --check origin/codex/73-study-evidence-substrate...HEAD
