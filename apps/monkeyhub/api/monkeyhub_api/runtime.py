@@ -622,7 +622,7 @@ class ProjectRuntimeManager:
         return data
 
     def _observe_work_copies(self, runtime: ProjectRuntime) -> int:
-        """Register what each settled work copy actually changed to, or say why not.
+        """Register what each settled work copy changed to, page for page, or say why not.
 
         Three cases are kept apart on purpose. Bytes this process has not seen
         move are nothing, even when the page they answer for was replaced by
@@ -693,9 +693,12 @@ class ProjectRuntimeManager:
                     "projectId": runtime.project_id, "runId": None,
                     "fileName": copy.file_name, "mimeType": copy.mime_type,
                     "contentBase64": base64.b64encode(data).decode("ascii"),
+                    # The copy is one file standing for the whole document, so
+                    # it answers for every page of it: page i replaces page i.
                     "replacesPages": [{"runId": copy.head_run_id,
                         "assetSha256": copy.head_asset_sha256, "revisionRef": copy.head_revision_ref,
-                        "pageIndex": copy.head_page_index, "newPageIndex": 0}],
+                        "pageIndex": copy.head_page_index + page, "newPageIndex": page}
+                        for page in range(copy.page_count)],
                 }).encode("utf-8"), {"content-type": "application/json"})
                 if result.status >= 400:
                     error = result.json()

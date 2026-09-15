@@ -112,16 +112,33 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         Image.new("RGB", size, color=color).save(output, format="PNG")
         return output.getvalue()
 
-    def upload_image(self, client, runtime_id, data, *, replaces=None):
-        body = {"projectId": self.project_id, "fileName": "live-plan.png", "mimeType": "image/png",
+    def upload_document(self, client, runtime_id, data, file_name, mime_type, *, replaces=None):
+        body = {"projectId": self.project_id, "fileName": file_name, "mimeType": mime_type,
                 "contentBase64": base64.b64encode(data).decode("ascii")}
         if replaces is not None:
             body["runId"] = None
-            body["replacesPages"] = [{"runId": replaces["runId"], "assetSha256": replaces["assetSha256"],
-                                      "revisionRef": replaces["revisionRef"], "pageIndex": 0, "newPageIndex": 0}]
+            body["replacesPages"] = replaces
         uploaded = self.proxy(client, runtime_id, "/api/documents", "POST", json=body)
         self.assertEqual(uploaded.status_code, 201, uploaded.text)
         return uploaded.json()
+
+    def upload_image(self, client, runtime_id, data, *, replaces=None):
+        pages = None if replaces is None else [{"runId": replaces["runId"], "assetSha256": replaces["assetSha256"],
+                                                "revisionRef": replaces["revisionRef"], "pageIndex": 0, "newPageIndex": 0}]
+        return self.upload_document(client, runtime_id, data, "live-plan.png", "image/png", replaces=pages)
+
+    @staticmethod
+    def pdf_bytes(*sizes, title="plan"):
+        from io import BytesIO
+        from pypdf import PdfWriter
+
+        writer = PdfWriter()
+        for width, height in sizes:
+            writer.add_blank_page(width=width, height=height)
+        writer.add_metadata({"/Title": title})
+        output = BytesIO()
+        writer.write(output)
+        return output.getvalue()
 
     def open_work_copy(self, client, runtime_id, document):
         """Ask the Studio for this page's editable file, the way the Board does."""
@@ -394,6 +411,39 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             row = self.wait_runtime_error(client, runtime_id, "WORK_COPY_DOCUMENT_REPLACEMENT_INVALID")
             self.assertEqual(row["projection"], "ready")
             self.assertEqual(len(self.proxy(client, runtime_id, "/api/documents").json()["documents"]), 1)
+
+    def test_pdf_work_copy_edit_registers_every_page_without_moving_head(self):
+        first = self.pdf_bytes((400, 300), (300, 400), title="first")
+        second = self.pdf_bytes((400, 300), (300, 400), title="second")
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            copy, work = self.open_work_copy(client, runtime_id, original)
+            self.assertEqual(copy["pageCount"], 2)
+            self.assertEqual(work.read_bytes(), first)
+            self.assertEqual(list(manager.bind_work_copies(runtime).values()), [str(work)])
+            head = FilesystemProjectRepository.open(self.project).read_head()
+            work.write_bytes(second)
+            replacement = self.wait_document_replacement(client, runtime_id, original["assetSha256"])
+            self.assertEqual(replacement["mimeType"], "application/pdf")
+            self.assertEqual(sorted((page["pageIndex"], page["newPageIndex"])
+                                    for page in replacement["replacesPages"]), [(0, 0), (1, 1)])
+            self.assertEqual(FilesystemProjectRepository.open(self.project).read_head(), head)
+            row = self.wait_runtime(client, runtime_id, lambda row: row["error"] is None)
+            self.assertIsNone(row["error"])
+
+    def test_pdf_work_copy_with_a_changed_page_count_is_refused_visibly(self):
+        first = self.pdf_bytes((400, 300), (300, 400), title="first")
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
+            _, work = self.open_work_copy(client, runtime_id, original)
+            work.write_bytes(self.pdf_bytes((400, 300), (300, 400), (400, 300), title="three"))
+            self.wait_runtime_error(client, runtime_id, "WORK_COPY_DOCUMENT_REPLACEMENT_INVALID")
+            documents = self.proxy(client, runtime_id, "/api/documents").json()["documents"]
+            self.assertEqual([document["assetSha256"] for document in documents], [original["assetSha256"]])
 
     def test_cold_hub_preserves_admission_identity_for_two_projects_without_retained_runs(self):
         other_id, other_project = self.make_parallel_project()
