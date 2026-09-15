@@ -1,11 +1,9 @@
 """The spine suite tests the spine, and nothing in it reaches into ``archive``.
 
-A test that needs an archived lane's code is that lane's test: it lives in
-``archive/tests/``, where it still runs against the spine, because the archive
-may import the spine and never the other way round (ADR-001, archive/README.md).
-Keeping such a test under ``tests/`` made the spine suite depend on lanes the
-spine retired, and the record-kind table then had to skip it for writing kinds
-the spine repository refuses.
+Retired lane source and its tests are kept in a local archive outside the public
+checkout. Keeping tests that depend on that source under ``tests/`` would make a
+public clone depend on unavailable code. The guard remains useful if an old
+import is accidentally reintroduced (ADR-001).
 
 This walks every module of the spine suite and fails on the first ``archive``
 import, function-local ones included. ``tools/archcheck.py`` carries the same
@@ -51,7 +49,7 @@ class SpineSuiteBoundaryTests(unittest.TestCase):
         self.assertEqual(
             [],
             offenders,
-            "a test that needs archived lane code belongs in archive/tests/",
+            "the public spine suite must not depend on locally archived lane code",
         )
 
     def test_the_walk_reads_the_suite_it_claims_to_read(self) -> None:
