@@ -190,11 +190,11 @@ class StudyComparisonTests(unittest.TestCase):
         envelope = (0.08, 0.08, 0.88, 0.56)
         compact = [
             self.metric_rect(*size, "envelope", "envelope", envelope),
-            self.metric_rect(*size, "void", "void", (0.38, 0.22, 0.50, 0.38)),
+            self.metric_rect(*size, "void", "void", (0.38, 0.20, 0.50, 0.36)),
         ]
         expanded = [
             self.metric_rect(*size, "envelope", "envelope", envelope),
-            self.metric_rect(*size, "void", "void", (0.33, 0.20, 0.55, 0.40)),
+            self.metric_rect(*size, "void", "void", (0.33, 0.18, 0.55, 0.38)),
         ]
         study_a = self.save("compact-void", document_a, compact)
         study_b = self.save("expanded-void", document_b, expanded)
