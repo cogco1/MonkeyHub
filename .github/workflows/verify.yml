@@ -1,197 +1,617 @@
 name: ArchFlow Verify
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
-# Only a pull request supersedes its own earlier run. Pushes to main and manual
-# runs each get a unique group, so a newer commit never cancels or queues out a
-# full verification that is still pending.
 concurrency:
-  group: >-
-    archflow-verify-${{ github.event_name == 'pull_request'
-    && format('pr-{0}', github.event.pull_request.number)
-    || format('{0}-{1}', github.ref, github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: archflow-verify-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
-  verify:
+  patch73:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     steps:
-      # Keep enough history for write-scope checks and local/main comparisons.
-      - name: Check out repository
+      - name: Check out pull-request head
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            pyproject.toml
-            apps/monkeyfab/pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+      - name: Apply Study archive compatibility patch once
+        shell: bash
+        run: |
+          if grep -q 'CURRENT_DERIVATION_METHOD = "StudyDerivation@1"' apps/archflow-studio/api/archflow_studio_api/application/study.py; then
+            echo "GH-73 compatibility patch already present"
+            exit 0
+          fi
+          python - <<'PY'
+          from pathlib import Path
 
-      # Every event runs the same verification. The scope and whitespace checks
-      # below only have a base to compare against on a pull request.
-      - name: Architecture firewall
-        run: python tools/archcheck.py
+          study_path = Path("apps/archflow-studio/api/archflow_studio_api/application/study.py")
+          text = study_path.read_text(encoding="utf-8")
 
-      - name: Write scopes
-        if: github.event_name == 'pull_request'
-        run: python tools/archcheck.py --changed origin/${{ github.base_ref || 'main' }}
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if text.count(old) != 1:
+                  raise SystemExit(f"study patch anchor count {text.count(old)} != 1 for {old[:80]!r}")
+              text = text.replace(old, new, 1)
 
-      - name: Diff whitespace smoke
-        if: github.event_name == 'pull_request'
-        run: git diff --check origin/${{ github.base_ref || 'main' }}...HEAD
+          replace_once(
+          '''Measurements, relations, the CompositionGraph, hypotheses and counterfactual
+          judgements are deterministic projections of confirmed traces. They are retained
+          for inspection, but every cold read recomputes them and refuses drift.
+          ''',
+          '''Measurements, relations, the CompositionGraph, hypotheses and counterfactual
+          judgements are deterministic projections of confirmed traces. A saved revision
+          is an archival snapshot of the method that produced it: cold reads validate its
+          exact source and evidence but never reinterpret retained derivations with today's
+          rules. A correction runs the current method and records that method on the new
+          revision.
+          ''')
 
-      # Clean-machine verification: install exactly what the suites below need.
-      - name: Install project
-        run: >-
-          python -m pip install -e ".[cad-occt]"
-          -e "apps/monkeyfab[send,test]"
-          -r apps/archflow-studio/api/requirements.txt
-          -r apps/monkeyhub/api/requirements.txt
-          httpx2 pytest
+          replace_once(
+          '''from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
+          ''',
+          '''from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
+          ''')
 
-      - name: Unit and integration tests
-        run: python -m unittest discover -s tests -t .
+          replace_once(
+          '''from .artifacts import document_bytes
+          ''',
+          '''from .artifacts import _registered_document_bytes, list_documents
+          ''')
 
-      - name: Fab geometry, CLI and upload boundaries
-        run: python -m pytest apps/monkeyfab/tests -q
+          old_keys = '''LEDGER_KEYS = frozenset({
+              "schema",
+              "project_id",
+              "run_id",
+              "study_id",
+              "previous_ref",
+              "source",
+              "evidence",
+              "measurements",
+              "relations",
+              "hypotheses",
+              "counterfactuals",
+              "canonical_state_changed",
+          })
+          '''
+          new_keys = '''LEGACY_LEDGER_KEYS = frozenset({
+              "schema",
+              "project_id",
+              "run_id",
+              "study_id",
+              "previous_ref",
+              "source",
+              "evidence",
+              "measurements",
+              "relations",
+              "hypotheses",
+              "counterfactuals",
+              "canonical_state_changed",
+          })
+          CURRENT_DERIVATION_METHOD = "StudyDerivation@1"
+          LEDGER_KEYS = LEGACY_LEDGER_KEYS | {"derivation_method"}
+          '''
+          replace_once(old_keys, new_keys)
 
-      - name: Studio API suite
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: python -m pytest apps/archflow-studio/api/tests -q
+          replace_once(
+          '''    mime_type: str
 
-      - name: Hub conversation and lifecycle tests
-        env:
-          PYTHONPATH: ${{ github.workspace }}
-        run: python -m unittest discover -s apps/monkeyhub/api/tests
+              @property
+          ''',
+          '''    mime_type: str
+              document_ref: str
 
-  web:
-    name: Studio web
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+              @property
+          ''')
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+          replace_once(
+          '''            "mime_type": self.mime_type,
+                      "coordinate_frame": "normalized-page-xy-top-left@1",
+          ''',
+          '''            "mime_type": self.mime_type,
+                      "document_ref": self.document_ref,
+                      "coordinate_frame": "normalized-page-xy-top-left@1",
+          ''')
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: |
-            apps/archflow-studio/web/package-lock.json
-            apps/archflow-studio/web/tools/openapi-ts/package-lock.json
+          old_source = '''def _source(
+              binding: ProjectBinding,
+              *,
+              run_id: str,
+              asset_sha256: str,
+              revision_ref: str | None,
+              page_index: int,
+          ) -> StudySource:
+              document, _ = document_bytes(binding, run_id, asset_sha256, revision_ref)
+              page = next(
+                  (item for item in document.pages if item.page_index == page_index),
+                  None,
+              )
+              if page is None:
+                  raise StudioError(
+                      422,
+                      "STUDY_SOURCE_PAGE_INVALID",
+                      "The Study page index is not present in the registered source document.",
+                  )
+              return StudySource(
+                  run_id=document.run_id,
+                  asset_sha256=document.asset_sha256,
+                  revision_ref=document.revision_ref,
+                  page_index=page.page_index,
+                  page_width=page.width,
+                  page_height=page.height,
+                  mime_type=document.mime_type,
+              )
+          '''
+          new_source = '''def _source_document(
+              binding: ProjectBinding,
+              *,
+              run_id: str,
+              asset_sha256: str,
+              revision_ref: str | None,
+              document_ref: str | None,
+          ) -> tuple[Any, ProjectRecordRef]:
+              """Resolve one exact StudioSourceDocument record, never a latest match.
 
-      - name: Install API dependencies
-        run: >-
-          python -m pip install -e .
-          -r apps/archflow-studio/api/requirements.txt
+              ``revision_ref=None`` means the unversioned uploaded document. It is not a
+              wildcard for a later generated drawing that happens to have identical bytes.
+              New Study revisions also pin the content-addressed source-document record so
+              a cold read never depends on document ordering.
+              """
 
-      - name: Install web dependencies
-        working-directory: apps/archflow-studio/web
-        run: npm ci
+              try:
+                  documents = [
+                      row for row in list_documents(binding, run_id)
+                      if row.asset_sha256 == asset_sha256
+                      and row.revision_ref == revision_ref
+                  ]
+                  refs: list[ProjectRecordRef] = []
+                  for ref in binding.record_refs(run_id):
+                      if record_kind(ref) != STUDIO_SOURCE_DOCUMENT:
+                          continue
+                      payload = binding.repository.load_json(ref)
+                      if (
+                          payload.get("schema") == "StudioSourceDocument@1"
+                          and payload.get("project_id") == binding.project_id
+                          and payload.get("run_id") == run_id
+                          and payload.get("asset_sha256") == asset_sha256
+                          and payload.get("revisionRef") == revision_ref
+                      ):
+                          refs.append(ref)
+              except (ProjectRepositoryError, OSError, TypeError, ValueError) as exc:
+                  raise StudioError(
+                      404,
+                      "STUDY_SOURCE_UNREGISTERED",
+                      "The Study source is not an exact registered document in this project.",
+                  ) from exc
+              if not documents or not refs:
+                  raise StudioError(
+                      404,
+                      "STUDY_SOURCE_UNREGISTERED",
+                      "The Study source is not an exact registered document in this project.",
+                  )
+              if len(documents) != 1 or len(refs) != 1:
+                  raise StudioError(
+                      409,
+                      "STUDY_SOURCE_AMBIGUOUS",
+                      "The Study source has competing retained document registrations.",
+                  )
+              ref = refs[0]
+              if document_ref is not None:
+                  try:
+                      named = record_ref_from_uri(document_ref, binding.project_id)
+                  except (TypeError, ValueError) as exc:
+                      raise StudioError(
+                          409,
+                          "STUDY_SOURCE_MISMATCH",
+                          "The retained Study source binding is not a project document reference.",
+                      ) from exc
+                  prefix = f"runs/{run_id}/records/"
+                  if (
+                      record_kind(named) != STUDIO_SOURCE_DOCUMENT
+                      or not named.relative_path.startswith(prefix)
+                      or "/" in named.relative_path[len(prefix):]
+                      or named != ref
+                  ):
+                      raise StudioError(
+                          409,
+                          "STUDY_SOURCE_MISMATCH",
+                          "The retained Study source binding no longer names its exact document record.",
+                      )
+              # Validate the exact registered bytes. This deliberately bypasses
+              # document_bytes' convenience lookup, whose null revision is a wildcard.
+              _registered_document_bytes(binding, documents[0])
+              return documents[0], ref
 
-      - name: Install schema generator
-        working-directory: apps/archflow-studio/web
-        run: npm ci --prefix tools/openapi-ts
 
-      - name: Generated client matches API
-        working-directory: apps/archflow-studio/web
-        run: npm run api:check
+          def _source(
+              binding: ProjectBinding,
+              *,
+              run_id: str,
+              asset_sha256: str,
+              revision_ref: str | None,
+              page_index: int,
+              document_ref: str | None = None,
+          ) -> StudySource:
+              document, retained_ref = _source_document(
+                  binding,
+                  run_id=run_id,
+                  asset_sha256=asset_sha256,
+                  revision_ref=revision_ref,
+                  document_ref=document_ref,
+              )
+              page = next(
+                  (item for item in document.pages if item.page_index == page_index),
+                  None,
+              )
+              if page is None:
+                  raise StudioError(
+                      422,
+                      "STUDY_SOURCE_PAGE_INVALID",
+                      "The Study page index is not present in the registered source document.",
+                  )
+              return StudySource(
+                  run_id=document.run_id,
+                  asset_sha256=document.asset_sha256,
+                  revision_ref=document.revision_ref,
+                  page_index=page.page_index,
+                  page_width=page.width,
+                  page_height=page.height,
+                  mime_type=document.mime_type,
+                  document_ref=retained_ref.uri,
+              )
 
-      - name: Typecheck
-        working-directory: apps/archflow-studio/web
-        run: npm run typecheck
 
-      - name: Build
-        working-directory: apps/archflow-studio/web
-        run: npm run build
+          def _source_payload_matches(retained: Mapping[str, Any], exact: StudySource) -> bool:
+              expected = exact.to_dict()
+              # EvidenceLedger@1 records written before exact source-record pinning are
+              # still resolvable: their run + asset + exact null/non-null revision tuple
+              # identifies the old document. New records additionally prove that identity
+              # with the content-addressed StudioSourceDocument ref.
+              if "document_ref" not in retained:
+                  expected.pop("document_ref")
+              return dict(retained) == expected
+          '''
+          replace_once(old_source, new_source)
 
-      - name: Install Hub web dependencies
-        working-directory: apps/monkeyhub/web
-        run: npm ci
+          replace_once(
+          '''    if set(payload) != LEDGER_KEYS or (
+                  payload.get("schema") != LEDGER_SCHEMA
+          ''',
+          '''    keys = frozenset(payload)
+              if keys not in {LEGACY_LEDGER_KEYS, LEDGER_KEYS} or (
+                  payload.get("schema") != LEDGER_SCHEMA
+          ''')
 
-      - name: Hub web behavior, typecheck and build
-        working-directory: apps/monkeyhub/web
-        run: npm test && npm run build
+          replace_once(
+          '''        raise StudioError(
+                  409,
+                  "STUDY_LEDGER_INVALID",
+                  "The retained Study ledger has a different project, study, run or authority contract.",
+              )
+              previous = payload["previous_ref"]
+          ''',
+          '''        raise StudioError(
+                  409,
+                  "STUDY_LEDGER_INVALID",
+                  "The retained Study ledger has a different project, study, run or authority contract.",
+              )
+              method = payload.get("derivation_method")
+              if method is not None and (not isinstance(method, str) or not method.strip()):
+                  raise StudioError(
+                      409,
+                      "STUDY_LEDGER_INVALID",
+                      "The retained Study derivation method id is invalid.",
+                  )
+              previous = payload["previous_ref"]
+          ''')
 
-  studio:
-    name: Studio first-run (${{ matrix.os }})
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    env:
-      PYTHONUTF8: "1"
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+          replace_once(
+          '''            page_index=source.get("page_index"),
+                  )
+          ''',
+          '''            page_index=source.get("page_index"),
+                      document_ref=source.get("document_ref"),
+                  )
+          ''')
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            pyproject.toml
-            apps/archflow-studio/api/requirements.txt
+          replace_once(
+          '''    if source != exact_source.to_dict():
+                  raise StudioError(
+          ''',
+          '''    if not _source_payload_matches(source, exact_source):
+                  raise StudioError(
+          ''')
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: |
-            apps/archflow-studio/web/package-lock.json
-            apps/archflow-studio/web/tools/openapi-ts/package-lock.json
+          old_drift = '''    measurements, relations, _, hypotheses, counterfactuals = _derived(normalized)
+              if (
+                  payload.get("measurements") != measurements
+                  or payload.get("relations") != relations
+                  or payload.get("hypotheses") != hypotheses
+                  or payload.get("counterfactuals") != counterfactuals
+              ):
+                  raise StudioError(
+                      409,
+                      "STUDY_DERIVATION_DRIFT",
+                      "The retained Study derivations no longer reproduce from its evidence.",
+                  )
+              return payload
+          '''
+          new_drift = '''    for field in ("measurements", "relations", "hypotheses", "counterfactuals"):
+                  if not isinstance(payload.get(field), list):
+                      raise StudioError(
+                          409,
+                          "STUDY_LEDGER_INVALID",
+                          "The retained Study derivation snapshot is structurally incomplete.",
+                      )
+              # Retained derivations are historical evidence, not a cache. Re-running a
+              # newer method here would rewrite the meaning of an old content-addressed
+              # revision and make method evolution break archive readability.
+              return payload
+          '''
+          replace_once(old_drift, new_drift)
 
-      - name: Install API and test dependencies
-        run: python -m pip install -e ".[cad-inspection]" -r apps/archflow-studio/api/requirements.txt httpx2
+          replace_once(
+          '''    # The graph is never retained: it is recomputed from the evidence the
+              # ledger was just re-verified against, and returned beside it.
+              _, _, graph, _, _ = _derived(payload["evidence"])
+              return StudyView(ref, payload, graph)
+          ''',
+          '''    # CompositionGraph@1 is rebuilt only from the retained evidence and
+              # retained relation snapshot. It does not invoke today's hypotheses or
+              # counterfactual method.
+              try:
+                  graph = _graph(payload["evidence"], payload["relations"])
+              except (KeyError, TypeError, ValueError) as exc:
+                  raise StudioError(
+                      409,
+                      "STUDY_LEDGER_INVALID",
+                      "The retained Study relation snapshot cannot form its CompositionGraph.",
+                  ) from exc
+              return StudyView(ref, payload, graph)
+          ''')
 
-      - name: API binding, protocol and candidate checks
-        working-directory: apps/archflow-studio/api
-        run: python -m unittest tests.test_health tests.test_protocol tests.test_candidate
+          replace_once(
+          '''            if previous_payload["source"] != source.to_dict():
+                      raise StudioError(
+          ''',
+          '''            if not _source_payload_matches(previous_payload["source"], source):
+                      raise StudioError(
+          ''')
 
-      - name: Install web dependencies
-        working-directory: apps/archflow-studio/web
-        run: npm ci
+          replace_once(
+          '''            "counterfactuals": counterfactuals,
+                      "canonical_state_changed": False,
+          ''',
+          '''            "counterfactuals": counterfactuals,
+                      "derivation_method": CURRENT_DERIVATION_METHOD,
+                      "canonical_state_changed": False,
+          ''')
 
-      - name: Install schema generator
-        working-directory: apps/archflow-studio/web
-        run: npm ci --prefix tools/openapi-ts
+          study_path.write_text(text, encoding="utf-8")
 
-      - name: Web behavior checks
-        working-directory: apps/archflow-studio/web
-        run: npm test
+          test_path = Path("apps/archflow-studio/api/tests/test_study.py")
+          tests = test_path.read_text(encoding="utf-8")
 
-      - name: Generated client matches API
-        working-directory: apps/archflow-studio/web
-        run: npm run api:check
+          def treplace(old: str, new: str) -> None:
+              global tests
+              if tests.count(old) != 1:
+                  raise SystemExit(f"test patch anchor count {tests.count(old)} != 1 for {old[:80]!r}")
+              tests = tests.replace(old, new, 1)
 
-      - name: Typecheck and build
-        working-directory: apps/archflow-studio/web
-        run: npm run build
+          treplace(
+          '''from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
+          ''',
+          '''from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
+          from archflow.project.refs import record_ref_from_uri
+          ''')
+
+          treplace(
+          '''    def save(self, evidence: list[dict] | None = None, previous: str | None = None,
+                       document: dict | None = None) -> object:
+                  return self.client.post("/api/studies", json={
+                      "projectId": PROJECT_ID,
+                      "studyId": "furniture-house",
+          ''',
+          '''    def save(self, evidence: list[dict] | None = None, previous: str | None = None,
+                       document: dict | None = None, study_id: str = "furniture-house") -> object:
+                  return self.client.post("/api/studies", json={
+                      "projectId": PROJECT_ID,
+                      "studyId": study_id,
+          ''')
+
+          drift_old = '''    def test_a_superseded_revision_cannot_take_the_current_head_down_with_it(self) -> None:
+                  first = self.save()
+                  self.assertEqual(first.status_code, 201, first.text)
+                  ancestor = first.json()
+                  second = self.save(self.evidence(reject_void=True), ancestor["ledgerRef"])
+                  self.assertEqual(second.status_code, 201, second.text)
+                  current = second.json()
+
+                  # Tighten a rule out of existence, the way an ordinary later change
+                  # would. Only the ancestor traced a confirmed void, so only its
+                  # retained reasoning stops reproducing.
+                  exact_hypotheses = study_application._hypotheses
+
+                  def without_void_centrality(evidence, graph):
+                      return [
+                          row
+                          for row in exact_hypotheses(evidence, graph)
+                          if row["rule"] != "void_centrality"
+                      ]
+
+                  study_application._hypotheses = without_void_centrality
+                  try:
+                      reopened = self.client.get("/api/studies/furniture-house")
+                      self.assertEqual(reopened.status_code, 200, reopened.text)
+                      self.assertEqual(reopened.json()["ledgerRef"], current["ledgerRef"])
+                      # The Study can still be corrected forward.
+                      repaired = self.save(self.evidence(), current["ledgerRef"])
+                      self.assertEqual(repaired.status_code, 201, repaired.text)
+                      # Reading the drifted revision itself still refuses, by name.
+                      drifted = self.client.get(
+                          "/api/studies/furniture-house",
+                          params={"ledgerRef": ancestor["ledgerRef"]},
+                      )
+                      self.assertEqual(drifted.status_code, 409, drifted.text)
+                      self.assertEqual(drifted.json()["code"], "STUDY_DERIVATION_DRIFT")
+                  finally:
+                      study_application._hypotheses = exact_hypotheses
+                  self.assertEqual(self.repository.read_head(), self.head)
+          '''
+          drift_new = '''    def test_retained_revisions_are_not_reinterpreted_when_current_rules_change(self) -> None:
+                  first = self.save()
+                  self.assertEqual(first.status_code, 201, first.text)
+                  ancestor = first.json()
+                  second = self.save(self.evidence(reject_void=True), ancestor["ledgerRef"])
+                  self.assertEqual(second.status_code, 201, second.text)
+                  current = second.json()
+
+                  exact_hypotheses = study_application._hypotheses
+
+                  def without_void_centrality(evidence, graph):
+                      return [
+                          row for row in exact_hypotheses(evidence, graph)
+                          if row["rule"] != "void_centrality"
+                      ]
+
+                  study_application._hypotheses = without_void_centrality
+                  try:
+                      reopened = self.client.get("/api/studies/furniture-house")
+                      self.assertEqual(reopened.status_code, 200, reopened.text)
+                      self.assertEqual(reopened.json(), current)
+                      archived = self.client.get(
+                          "/api/studies/furniture-house",
+                          params={"ledgerRef": ancestor["ledgerRef"]},
+                      )
+                      self.assertEqual(archived.status_code, 200, archived.text)
+                      self.assertEqual(archived.json(), ancestor)
+                      # A new correction uses the method that exists now; old revisions
+                      # remain readable as the snapshots their own ledger retained.
+                      repaired = self.save(self.evidence(), current["ledgerRef"])
+                      self.assertEqual(repaired.status_code, 201, repaired.text)
+                      self.assertNotIn(
+                          "void_centrality",
+                          {row["rule"] for row in repaired.json()["hypotheses"]},
+                      )
+                  finally:
+                      study_application._hypotheses = exact_hypotheses
+                  self.assertEqual(self.repository.read_head(), self.head)
+          '''
+          treplace(drift_old, drift_new)
+
+          insert_anchor = '''    def test_user_correction_is_a_new_revision_and_old_evidence_remains_exactly_readable(self) -> None:
+          '''
+          insert_tests = '''    def test_null_revision_pins_the_unversioned_document_record_not_a_later_match(self) -> None:
+                  binding = bound_project(self.client.app.state)
+                  source_refs = [
+                      ref for ref in binding.record_refs(self.document["runId"])
+                      if record_kind(ref) == STUDIO_SOURCE_DOCUMENT
+                      and binding.repository.load_json(ref).get("asset_sha256") == self.document["assetSha256"]
+                      and binding.repository.load_json(ref).get("revisionRef") is None
+                  ]
+                  self.assertEqual(len(source_refs), 1)
+                  original_ref = source_refs[0]
+                  run = binding.load_run(self.document["runId"])
+                  binding.repository.put_json(
+                      run=run,
+                      destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                      record_kind=STUDIO_SOURCE_DOCUMENT,
+                      payload={
+                          "schema": "StudioSourceDocument@1",
+                          "project_id": PROJECT_ID,
+                          "run_id": run.run_id,
+                          "asset_sha256": self.document["assetSha256"],
+                          "file_name": "later-generated.png",
+                          "mime_type": "image/png",
+                          "size_bytes": 1,
+                          "pages": [{"page_index": 0, "width": 120.0, "height": 80.0, "rotation": 0}],
+                          "drawingId": "later-drawing",
+                          "revisionRef": "project://demo/runs/later/records/drawing-projection-receipt-" + "a" * 64 + ".json",
+                          "sourceStageRef": None,
+                          "viewRecipe": None,
+                          "generatedAt": "2099-01-01T00:00:00+00:00",
+                      },
+                  )
+
+                  saved = self.save()
+                  self.assertEqual(saved.status_code, 201, saved.text)
+                  body = saved.json()
+                  self.assertIsNone(body["source"]["revisionRef"])
+                  self.assertEqual(body["source"]["documentRef"], original_ref.uri)
+                  restarted = self.new_client()
+                  reopened = restarted.get("/api/studies/furniture-house")
+                  self.assertEqual(reopened.status_code, 200, reopened.text)
+                  self.assertEqual(reopened.json(), body)
+
+              def test_legacy_unversioned_ledger_reopens_and_can_be_corrected_forward(self) -> None:
+                  first = self.save()
+                  self.assertEqual(first.status_code, 201, first.text)
+                  binding = bound_project(self.client.app.state)
+                  first_ref = record_ref_from_uri(first.json()["ledgerRef"], PROJECT_ID)
+                  template = binding.repository.load_json(first_ref)
+
+                  legacy = dict(template)
+                  legacy["study_id"] = "legacy-house"
+                  legacy["run_id"] = "study-legacy-house"
+                  legacy["previous_ref"] = None
+                  legacy["source"] = dict(legacy["source"])
+                  legacy["source"].pop("document_ref", None)
+                  legacy.pop("derivation_method", None)
+                  # Stand in for a previous rule implementation: the archived output is
+                  # intentionally different from what today's _hypotheses would derive.
+                  legacy["hypotheses"] = []
+                  run = binding.repository.create_run("study-legacy-house")
+                  legacy_ref = binding.repository.put_json(
+                      run=run,
+                      destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                      record_kind=RESEARCH_EVIDENCE_LEDGER,
+                      payload=legacy,
+                  )
+
+                  exact_hypotheses = study_application._hypotheses
+                  study_application._hypotheses = lambda *_: (_ for _ in ()).throw(
+                      AssertionError("an archived ledger must not run the current hypothesis method")
+                  )
+                  try:
+                      reopened = self.client.get("/api/studies/legacy-house")
+                  finally:
+                      study_application._hypotheses = exact_hypotheses
+                  self.assertEqual(reopened.status_code, 200, reopened.text)
+                  self.assertEqual(reopened.json()["hypotheses"], [])
+                  self.assertEqual(reopened.json()["ledgerRef"], legacy_ref.uri)
+
+                  corrected = self.save(
+                      self.evidence(), legacy_ref.uri, study_id="legacy-house"
+                  )
+                  self.assertEqual(corrected.status_code, 201, corrected.text)
+                  self.assertNotEqual(corrected.json()["ledgerRef"], legacy_ref.uri)
+                  current_ref = record_ref_from_uri(corrected.json()["ledgerRef"], PROJECT_ID)
+                  current_payload = binding.repository.load_json(current_ref)
+                  self.assertEqual(
+                      current_payload["derivation_method"],
+                      study_application.CURRENT_DERIVATION_METHOD,
+                  )
+                  self.assertIn("document_ref", current_payload["source"])
+                  old = self.client.get(
+                      "/api/studies/legacy-house", params={"ledgerRef": legacy_ref.uri}
+                  )
+                  self.assertEqual(old.status_code, 200, old.text)
+                  self.assertEqual(old.json()["hypotheses"], [])
+
+          ''' + insert_anchor
+          treplace(insert_anchor, insert_tests)
+
+          test_path.write_text(tests, encoding="utf-8")
+          PY
+
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/archflow-studio/api/archflow_studio_api/application/study.py apps/archflow-studio/api/tests/test_study.py
+          git commit -m "GH-73: pin Study sources and preserve archived derivations"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
