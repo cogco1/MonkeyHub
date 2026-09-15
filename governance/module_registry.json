@@ -2242,7 +2242,8 @@
         "project.manifest",
         "project.ports",
         "project.record_kinds",
-        "project.refs"
+        "project.refs",
+        "state.record"
       ],
       "used_by": [
         "archflow/project/inputs.py",

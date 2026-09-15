@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,6 +28,7 @@ from archflow.project.repository import (
     PROJECT_FORMAT_TOO_NEW,
     ProjectIntegrityError,
     _json_bytes,
+    _replace_atomic,
     _sha256,
     _write_immutable,
     inspect_project_format,
@@ -127,6 +129,54 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         )
         self.populate(repository)
         return repository
+
+    def publish_legacy_version(self, root: Path, state: dict) -> ProjectVersionRef:
+        """Append one more published version exactly as an older build wrote it.
+
+        ``compare_and_swap`` needs a promotion receipt and a run of its own;
+        this writes the historical bytes directly so a legacy fixture can carry
+        a real multi-version history into the migration.
+        """
+
+        head_payload = json.loads((root / "HEAD").read_text(encoding="utf-8"))
+        project_id = head_payload["project_id"]
+        parent = head_payload["current"]
+        version = parent["version"] + 1
+        snapshot_bytes = _json_bytes({
+            "schema": "CanonicalSnapshot@1",
+            "project_id": project_id,
+            "version": version,
+            "parent": parent,
+            "state": dict(state),
+        })
+        snapshot_digest = _sha256(snapshot_bytes)
+        snapshot_path = f"canonical/{record_file_name(f'state-v{version:06d}', snapshot_digest)}"
+        _write_immutable(root / snapshot_path, snapshot_bytes)
+        head_ref = ProjectVersionRef(project_id, version, snapshot_digest)
+        event_bytes = _json_bytes({
+            "schema": "ProjectEvent@1",
+            "project_id": project_id,
+            "event_type": "candidate.promoted",
+            "decision": "accepted",
+            "run_id": None,
+            "from": parent,
+            "to": head_ref.to_dict(),
+            "previous_event": head_payload["event"],
+            "decision_receipt": None,
+        })
+        event_digest = _sha256(event_bytes)
+        event_path = f"events/{record_file_name(f'event-v{version:06d}', event_digest)}"
+        _write_immutable(root / event_path, event_bytes)
+        _replace_atomic(root / "HEAD", _json_bytes({
+            "schema": "ProjectHead@1",
+            "project_id": project_id,
+            "current": head_ref.to_dict(),
+            "snapshot": {"relative_path": snapshot_path, "sha256": snapshot_digest,
+                         "media_type": "application/json"},
+            "event": {"relative_path": event_path, "sha256": event_digest,
+                      "media_type": "application/json"},
+        }))
+        return head_ref
 
     def populate(self, repository: FilesystemProjectRepository) -> None:
         """Give a project retained runs, records, a design branch and bytes.
@@ -518,6 +568,121 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertEqual(plan.inventory, ())
         self.assertIn("could not be read completely", plan.blockers[0])
         self.assertIn("shared file changed", plan.blockers[0])
+
+    # ---- the migration
+
+    def test_migration_writes_a_format_2_project_beside_an_untouched_source(self) -> None:
+        repository = self.legacy_project()
+        source = repository.layout.root
+        before = self.fingerprint(source)
+        target = self.root / "migrated" / "legacy-building"
+
+        result = FilesystemProjectRepository.migrate_project_format(source, target)
+
+        self.assert_unchanged(source, before)
+        self.assertEqual((result.source_format_version, result.target_format_version), (1, CURRENT_FORMAT_VERSION))
+        self.assertEqual(inspect_project_format(target).status, PROJECT_FORMAT_CURRENT)
+        migrated = FilesystemProjectRepository.open(target)
+        migrated.verify()
+        closure = migrated.export_transfer(include_contents=False, include_all_runs=True)
+        self.assertEqual(sorted(closure["run_ids"]), sorted(r for r in ("first", "extra")))
+        # Every run base names a published format-2 version.
+        for run_id in closure["run_ids"]:
+            migrated.load_version_state(migrated.load_run(run_id).base)
+        # The version table covers the whole history and HEAD is its last row.
+        versions = {version: (legacy, semantic) for version, legacy, semantic in result.versions}
+        self.assertEqual(sorted(versions), list(range(repository.read_head().version + 1)))
+        self.assertEqual(migrated.read_head().state_sha256, versions[repository.read_head().version][1])
+        self.assertEqual(versions[repository.read_head().version][0], repository.read_head().state_sha256)
+        # The state content itself is what the legacy reader says it is.
+        for version, (legacy, semantic) in versions.items():
+            self.assertEqual(migrated.load_version_state(ProjectVersionRef(repository.layout.project_id, version, semantic)),
+                             repository.load_version_state(ProjectVersionRef(repository.layout.project_id, version, legacy)))
+        self.assertIn("runs/first/run.json", result.rewritten)
+        self.assertFalse(plan_project_migration(target).migration_required)
+
+    def test_migration_maps_every_published_version_of_a_longer_history(self) -> None:
+        root = self.legacy_envelope("history-building")
+        second = self.publish_legacy_version(root, {"phase": "developed"})
+        repository = FilesystemProjectRepository.open(root)
+        self.populate(repository)
+        before = self.fingerprint(root)
+        target = self.root / "migrated" / "history-building"
+
+        result = FilesystemProjectRepository.migrate_project_format(root, target)
+
+        self.assert_unchanged(root, before)
+        self.assertEqual([version for version, _, _ in result.versions], [0, 1])
+        self.assertEqual(result.versions[1][1], second.state_sha256)
+        migrated = FilesystemProjectRepository.open(target)
+        self.assertEqual(migrated.read_head().version, 1)
+        self.assertEqual(migrated.read_head().state_sha256, result.versions[1][2])
+        for version, legacy, semantic in result.versions:
+            self.assertEqual(
+                migrated.load_version_state(ProjectVersionRef("history-building", version, semantic)),
+                repository.load_version_state(ProjectVersionRef("history-building", version, legacy)),
+            )
+        # The runs were based on v1, and they name the migrated v1.
+        self.assertEqual(migrated.load_run("first").base,
+                         ProjectVersionRef("history-building", 1, result.versions[1][2]))
+
+    def test_migration_preserves_unknown_records_and_lists_their_embedded_references(self) -> None:
+        repository = self.legacy_project()
+        self.install_historical_record(repository, "retired-lane-note")
+        source = repository.layout.root
+        note = next(source.joinpath("runs", "extra", "records").glob("retired-lane-note-*.json"))
+        target = self.root / "migrated" / "legacy-building"
+        result = FilesystemProjectRepository.migrate_project_format(source, target)
+        self.assertEqual((target / note.relative_to(source)).read_bytes(), note.read_bytes())
+        legacy_head = repository.read_head()
+        self.assertIn((note.relative_to(source).as_posix(), "/base", legacy_head.version, legacy_head.state_sha256),
+                      result.embedded_legacy_references)
+        # The records the fixture's stages retain embed the run's base too.
+        self.assertTrue(any(path.startswith("runs/first/records/") for path, _, _, _ in result.embedded_legacy_references))
+
+    def test_migration_rewrites_the_authored_state_record_base(self) -> None:
+        root = self.legacy_envelope("authored-building")
+        repository = FilesystemProjectRepository.open(root)
+        head = repository.read_head()
+        repository.initialize_authored_inputs(
+            expected_head=head, expected_record=None,
+            authored_record={"schema": "StateRecord@1", "draft": "initial", "base": head.to_dict()},
+            seat_pack={"schema": "SeatPack@1", "seats": []},
+        )
+        self.populate(repository)
+        target = self.root / "migrated" / "authored-building"
+        result = FilesystemProjectRepository.migrate_project_format(root, target)
+        authored = json.loads((target / "input" / "runner" / "state-record.json").read_text(encoding="utf-8"))
+        self.assertEqual(authored["base"]["state_sha256"], FilesystemProjectRepository.open(target).read_head().state_sha256)
+        self.assertEqual(authored["draft"], "initial")
+        self.assertIn("input/runner/state-record.json", result.rewritten)
+        # Seats were not the migration's to touch.
+        self.assertEqual((target / "input" / "runner" / "seats.json").read_bytes(), (root / "input" / "runner" / "seats.json").read_bytes())
+
+    def test_migrated_project_continues_with_a_new_run_from_head(self) -> None:
+        repository = self.legacy_project()
+        target = self.root / "migrated" / "legacy-building"
+        FilesystemProjectRepository.migrate_project_format(repository.layout.root, target)
+        migrated = FilesystemProjectRepository.open(target)
+        head = migrated.read_head()
+        run = migrated.create_run("after-migration")
+        self.assertEqual(run.base, head)
+        self.stage(migrated, "after-migration")
+        migrated.verify()
+        self.assertEqual(migrated.read_head(), head)
+
+    def test_migration_refuses_a_current_project_a_wrong_target_name_and_a_used_target(self) -> None:
+        current = self.current_project()
+        with self.assertRaises(ProjectIntegrityError):
+            FilesystemProjectRepository.migrate_project_format(current.layout.root, self.root / "x" / "current-building")
+        legacy = self.legacy_project()
+        with self.assertRaises(ProjectIntegrityError):
+            FilesystemProjectRepository.migrate_project_format(legacy.layout.root, self.root / "x" / "other-name")
+        used = self.root / "x" / "legacy-building"
+        used.mkdir(parents=True)
+        (used / "note.txt").write_text("busy", encoding="utf-8")
+        with self.assertRaises(ProjectIntegrityError):
+            FilesystemProjectRepository.migrate_project_format(legacy.layout.root, used)
 
     # ---- the CLI consumer
 
