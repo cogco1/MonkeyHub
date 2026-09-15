@@ -119,8 +119,60 @@ SBOM 可用官方工具独立验证，例如 `cyclonedx-cli validate --input-fil
 
 **校验和不是签名。** 当前所有构建的 `trust.status` 都是 `candidate-unsigned`，清单里明确写出
 `"signed": false`。校验通过只证明手里的文件与**这份清单**一致，不能证明来源：能替换 ZIP 的人
-同样能替换旁边的清单。只有当清单本身来自你已经信任的渠道时，校验才有意义。签名、以及签名失败
-即终止安装的验证路径尚未实现（Issue #58 下一步）。安全报告途径见随包的 `SECURITY.md`，
+同样能替换旁边的清单。只有当清单本身来自你已经信任的渠道时，校验才有意义。
+
+## 已签名安装（需要自备发行者证书）
+
+安装器本身已经实现了「验证失败即终止安装」这条路径，但**本仓库不持有任何发行者私钥，
+构建器也不签名**。下面的命令只有在你自己（或你信任的发行者）用某个证书对清单做了分离签名，
+并且你已经通过可信渠道拿到该证书指纹时才有意义。
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\installer\install.ps1' `
+  -RequireSignedRelease `
+  -ReleaseManifest '<候选名>-candidate.zip.release-manifest.json' `
+  -ReleaseSignature '<候选名>-candidate.zip.release-manifest.json.p7s' `
+  -ReleaseArchive '<候选名>-candidate.zip' `
+  -ExpectedPublisherThumbprint '<发行者证书指纹>'
+```
+
+签名是分离式 CMS/PKCS#7（`.p7s`），覆盖清单文件的**原始字节**。安装器在复制任何文件、创建任何
+快捷方式、启动应用或让某个版本成为当前版本**之前**，按顺序核对一条完整链，任一环不符即拒绝退出：
+
+1. 用钉住的证书指纹验证清单字节上的签名，且签名者必须恰好只有一个——多签名者直接拒绝，
+   否则「钉住某个发行者」就失去意义。指纹只接受 64 位十六进制（SHA-256，推荐）或
+   40 位（SHA-1，即 Windows 证书对话框显示的 Thumbprint）；长度不对或含非十六进制字符直接拒绝。
+   两种指纹里 SHA-1 那种本身更弱，能选就选 SHA-256。
+   指纹按证书 DER 字节自行计算，PowerShell 7 与 Windows PowerShell 5.1 行为一致。
+   签名内的摘要算法同样被钉住，只接受 SHA-256/384/512；SHA-1 等弱摘要一律拒绝。
+2. 清单必须是 `ReleaseManifest@1`，且其封闭构件表里列出的正是手上这个 ZIP：文件名、字节数、SHA-256 全部相符。
+3. 清单的 `release.sourceCommit` 必须等于包内 `source-version.txt`，`buildInfo.sha256` 必须等于包内
+   `build-info.json` 的摘要——一份签名有效但描述别的发行的清单不构成授权。
+4. 解压出来的每一个文件都必须与该 ZIP 中同名成员逐字节一致，且不得多出或缺少文件；
+   目录联接／符号链接（reparse point）一律拒绝——它们不会出现在文件枚举里，却会被递归复制带进安装。
+   这一步把「清单封闭到 ZIP」延伸到「ZIP 封闭到即将安装的整棵目录树」，因此需要保留原始 ZIP。
+   ZIP 只打开一次且不共享写入权限：算给清单核对的那份字节，与后面每次比对读到的字节是同一份，
+   不会出现「校验完哈希之后、逐个成员比对之前被换掉」的窗口。
+5. **真正落地的那棵树再核一遍**：新装时核对已复制完成的暂存目录（在它成为当前版本之前），
+   重复安装同一版本时核对目标目录里已有的那份安装。只核对解压包是不够的——
+   解压目录在校验之后仍可写，已有安装也可能在上次安装之后被改过，而快捷方式与启动指向的是它们。
+
+`-RequireTrustedPublisherChain` 额外要求平台为签名者构建可信证书链（自签名证书会因此被拒绝）。
+**安装器自身不做、也不声称做吊销检查**；证据 JSON 里 `revocationCheck` 恒为 `not-demonstrated`。
+加了 `-RequireTrustedPublisherChain` 时链由平台按它自己的默认策略构建，Windows 可能因此访问
+CRL／OCSP 端点；那是平台行为，这里既没有配置也不依赖它，更不能当作「已检查吊销」的凭据。
+验证通过后打印 `ReleaseSignatureEvidence@1`，其中 `manifestTrustStatus` 仍会如实显示清单自称的
+`candidate-unsigned`：签名证明的是「这份清单出自被钉住的发行者」，不是「这个构建是受支持的正式发行」。
+
+只想在解压前检查一份下载到的清单，用 `-VerifyReleaseManifest`：它只验签名并打印证据，不绑定任何包、
+不安装任何东西（证据里 `archiveSha256` 为 `null`、`boundPackageFiles` 为 `0`）。
+
+不带 `-RequireSignedRelease` 的普通安装保持原样，并在结尾明确打印 `Trust: candidate-unsigned`。
+一旦传了 `-RequireSignedRelease`，缺参数、文件不存在、指纹格式错误都会拒绝退出，**绝不回退成未签名安装**。
+
+尚未解决的部分：没有可发布的发行者证书与签名密钥、发布流程未接入签名、没有吊销与更新通道；
+也**没有回滚保护**——一份真实签名过的旧发行（连同它自己的 ZIP）仍会被完整接受，安装器不比较版本新旧、
+不检查签名时间。这些属于 Issue #58 其余部分。安全报告途径见随包的 `SECURITY.md`，
 或仓库根目录的 [SECURITY.md](https://github.com/cogco1/MonkeyHub/blob/main/SECURITY.md)：
 目前没有私密上报渠道，也没有安全响应承诺。
 

@@ -6010,7 +6010,8 @@
         "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; all applications share the selected Hub source commit",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell",
         "Optional --desktop builds and verifies MonkeyArch.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
-        "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests"
+        "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests",
+        "Installer-side verification of a detached publisher signature over that same manifest, and the binding of the verified manifest to the candidate archive and extracted package before any installation"
       ],
       "does_not_own": [
         "Project data, project initialization, candidate execution or formal project issue",
@@ -6044,7 +6045,9 @@
         "Installation targets a fresh version directory and leaves unknown existing data intact",
         "The shared workspace setting supplies stable task staging/output and shared cache; explicit path overrides do not modify that setting",
         "--show-paths creates no directories and --configure writes only the personal root setting; neither command builds or accesses project data",
-        "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity"
+        "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity",
+        "install.ps1 -RequireSignedRelease verifies the pinned publisher signature and binds the manifest to the archive, the source commit and every file of the tree that becomes the installation, before the first shortcut, launch or current-version move, and never falls back to an unsigned installation",
+        "An installation without -RequireSignedRelease stays labelled candidate-unsigned; the builder signs nothing and no publisher key is held in this repository"
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"
@@ -6057,9 +6060,10 @@
         ".github/workflows/desktop.yml"
       ],
       "tests": [
-        "tests/test_package_monkeyapps.py"
+        "tests/test_package_monkeyapps.py",
+        "tests/test_installer_signed_release.py"
       ],
-      "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
+      "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Signed-installation tests use an ephemeral in-process key and a fixture candidate; they exercise the verifier, not a real publisher identity. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
     },
     {
       "module_id": "documentation.drawings",

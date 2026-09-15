@@ -4,28 +4,46 @@ param(
     [switch]$CreateDesktopShortcut,
     [string]$DesktopDirectory,
     [switch]$OpenHub,
+    [switch]$RequireSignedRelease,
     [switch]$VerifyReleaseManifest,
     [string]$ReleaseManifest,
     [string]$ReleaseSignature,
+    [string]$ReleaseArchive,
     [string]$ExpectedPublisherThumbprint,
-    [switch]$RequireTrustedPublisherChain,
-    [switch]$ReleaseSignatureSelfTest
+    [switch]$RequireTrustedPublisherChain
 )
 
 # Copies one fixed candidate. Its selected host owns process lifecycle.
 # ASCII source keeps this script readable by Windows PowerShell 5.1 without a BOM.
 $ErrorActionPreference = 'Stop'
 
-function Normalize-CertificateThumbprint([string]$Value) {
-    if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
-    $normalized = ($Value -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
-    if ($normalized -notmatch '^[0-9A-F]{40,128}$') {
-        throw 'Certificate thumbprint must be hexadecimal.'
+# -RequireSignedRelease verifies a chain, never one check: a pinned publisher
+# signature over the ReleaseManifest@1 bytes, that manifest bound to the exact
+# candidate archive it names, and that archive bound to every file of the
+# extracted package about to be copied. A valid signature over an unrelated
+# manifest, or over this manifest beside a changed package, is refused, and the
+# whole chain is checked before the first installation, shortcut or launch.
+# The manifest format and its closed artifact table belong to
+# tools/package_monkeyapps.py; this script reads them and adds no second format.
+
+function Resolve-PublisherFingerprint([string]$Value) {
+    # certutil and the Windows certificate dialog print separators, so accept
+    # those and nothing else: a truncated or mistyped pin must not pass as a
+    # shorter fingerprint. Length names the algorithm; there is no third one.
+    $candidate = ($Value -replace '[\s:-]', '')
+    $algorithm = $null
+    if ($candidate -match '^[0-9A-Fa-f]+$') {
+        if ($candidate.Length -eq 64) { $algorithm = 'sha256' }
+        elseif ($candidate.Length -eq 40) { $algorithm = 'sha1' }
     }
-    return $normalized
+    if (-not $algorithm) {
+        throw 'Expected publisher thumbprint must be 64 hexadecimal characters (SHA-256) or 40 (SHA-1).'
+    }
+    [ordered]@{ algorithm = $algorithm; value = $candidate.ToUpperInvariant() }
 }
 
 function Import-PkcsAssembly {
+    if ('System.Security.Cryptography.Pkcs.SignedCms' -as [type]) { return }
     try {
         Add-Type -AssemblyName System.Security.Cryptography.Pkcs -ErrorAction Stop
     } catch {
@@ -34,99 +52,321 @@ function Import-PkcsAssembly {
     }
 }
 
-function Test-ReleaseManifestSignature(
-    [string]$ManifestPath,
-    [string]$SignaturePath,
-    [string]$ExpectedThumbprint,
-    [switch]$RequireTrustedChain
-) {
-    Import-PkcsAssembly
-    $manifest = (Resolve-Path -LiteralPath $ManifestPath -ErrorAction Stop).Path
-    $signature = (Resolve-Path -LiteralPath $SignaturePath -ErrorAction Stop).Path
-    $expected = Normalize-CertificateThumbprint $ExpectedThumbprint
-    if (-not $expected) { throw 'Expected publisher thumbprint is required.' }
+function Import-ZipAssembly {
+    # ZipArchive is the type this script constructs, so it is the one to test
+    # for. It lives in System.IO.Compression, which Windows PowerShell 5.1 does
+    # not resolve from the FileSystem assembly alone; both hosts need both.
+    if ('System.IO.Compression.ZipArchive' -as [type]) { return }
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction Stop
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
+}
 
-    $content = [IO.File]::ReadAllBytes($manifest)
-    $contentInfo = [System.Security.Cryptography.Pkcs.ContentInfo]::new($content)
+function Get-StreamSha256($Stream, $Hasher) {
+    [BitConverter]::ToString($Hasher.ComputeHash($Stream)).Replace('-', '')
+}
+
+function Get-FileSha256([string]$Path) {
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::OpenRead($Path)
+        try { return (Get-StreamSha256 $stream $hasher).ToLowerInvariant() } finally { $stream.Dispose() }
+    } finally {
+        $hasher.Dispose()
+    }
+}
+
+function Get-BytesSha256([byte[]]$Bytes) {
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($hasher.ComputeHash($Bytes)).Replace('-', '').ToLowerInvariant() }
+    finally { $hasher.Dispose() }
+}
+
+function Get-CertificateFingerprint($Certificate, [string]$Algorithm) {
+    # Computed from the certificate bytes rather than read from .Thumbprint,
+    # which is SHA-1 only, so the same pin works on PowerShell 7 and 5.1.
+    $hasher = if ($Algorithm -eq 'sha1') {
+        [System.Security.Cryptography.SHA1]::Create()
+    } else {
+        [System.Security.Cryptography.SHA256]::Create()
+    }
+    try { return [BitConverter]::ToString($hasher.ComputeHash($Certificate.RawData)).Replace('-', '') }
+    finally { $hasher.Dispose() }
+}
+
+function Read-ReleaseInput([string]$Path, [string]$Label, [int]$MaximumBytes) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Label file was not found: $Path"
+    }
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $length = (Get-Item -LiteralPath $resolved).Length
+    if ($length -gt $MaximumBytes) {
+        throw "$Label file is $length bytes, too large to be release evidence."
+    }
+    return , [IO.File]::ReadAllBytes($resolved)
+}
+
+# Message digests this script accepts inside the signed message. A signature the
+# pinned publisher made over a SHA-1 digest would let a collision on the manifest
+# bytes carry the whole chain, so the algorithm is pinned as well as the key.
+$AcceptedDigestOids = @{
+    '2.16.840.1.101.3.4.2.1' = 'SHA-256'
+    '2.16.840.1.101.3.4.2.2' = 'SHA-384'
+    '2.16.840.1.101.3.4.2.3' = 'SHA-512'
+}
+
+function Test-ReleaseManifestSignature([byte[]]$ManifestBytes, [byte[]]$SignatureBytes,
+                                       $ExpectedFingerprint, [switch]$RequireTrustedChain) {
+    Import-PkcsAssembly
+    $contentInfo = [System.Security.Cryptography.Pkcs.ContentInfo]::new($ManifestBytes)
     $cms = [System.Security.Cryptography.Pkcs.SignedCms]::new($contentInfo, $true)
     try {
-        $cms.Decode([IO.File]::ReadAllBytes($signature))
-        # true checks the cryptographic signature only; false additionally builds
-        # the certificate chain. Production trust should request the latter.
+        $cms.Decode($SignatureBytes)
+    } catch {
+        throw "Release signature verification failed: $($_.Exception.Message)"
+    }
+    # A detached SignedCms verifies against the bytes supplied to its
+    # constructor and ignores any content the encoded message carries, so a
+    # signature made over a different manifest cannot authenticate this one by
+    # smuggling its own copy along. Both supported hosts are tested for that.
+    # The signer count is settled first so that every later step, and every
+    # refusal message, is about the one signer this release is pinned to. A
+    # second signer must not be able to report itself as a digest problem.
+    if ($cms.SignerInfos.Count -ne 1) {
+        throw "Expected exactly one embedded release signer; found $($cms.SignerInfos.Count)."
+    }
+    $digestOid = $cms.SignerInfos[0].DigestAlgorithm.Value
+    if (-not $AcceptedDigestOids.ContainsKey([string]$digestOid)) {
+        throw "Release signature verification failed: unsupported message digest algorithm $digestOid."
+    }
+    try {
+        # true checks the pinned signature mathematics against the manifest bytes.
+        # false additionally asks the platform to build a trusted certificate
+        # chain for the signer. Neither mode is claimed here to have checked
+        # revocation, and this script performs no revocation lookup of its own.
         $cms.CheckSignature(-not $RequireTrustedChain.IsPresent)
     } catch {
         throw "Release signature verification failed: $($_.Exception.Message)"
     }
-    if ($cms.SignerInfos.Count -ne 1 -or $null -eq $cms.SignerInfos[0].Certificate) {
-        throw "Expected exactly one embedded release signer; found $($cms.SignerInfos.Count)."
+    if ($null -eq $cms.SignerInfos[0].Certificate) {
+        throw 'The release signer embedded no certificate to pin.'
     }
-    $actual = Normalize-CertificateThumbprint $cms.SignerInfos[0].Certificate.Thumbprint
-    if ($actual -ne $expected) {
-        throw "Release signer thumbprint $actual does not match expected publisher $expected."
+    $certificate = $cms.SignerInfos[0].Certificate
+    $actual = Get-CertificateFingerprint $certificate $ExpectedFingerprint.algorithm
+    if ($actual -ne $ExpectedFingerprint.value) {
+        throw ("Release signer $($ExpectedFingerprint.algorithm) fingerprint " +
+               "does not match the expected publisher: $actual")
     }
-
+    $chain = if ($RequireTrustedChain) { 'required-trusted-chain' } else { 'pinned-signature-only' }
     [ordered]@{
-        schema = 'ReleaseSignatureEvidence@1'
-        manifest = [IO.Path]::GetFileName($manifest)
-        signature = [IO.Path]::GetFileName($signature)
-        manifestSha256 = (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
-        signatureSha256 = (Get-FileHash -LiteralPath $signature -Algorithm SHA256).Hash.ToLowerInvariant()
         signerThumbprint = $actual
-        chainValidation = if ($RequireTrustedChain) { 'required' } else { 'signature-only' }
+        thumbprintAlgorithm = $ExpectedFingerprint.algorithm
+        signerSubject = $certificate.Subject
+        chainValidation = $chain
+        revocationCheck = 'not-demonstrated'
     }
 }
 
-function Invoke-ReleaseSignatureSelfTest {
-    Import-PkcsAssembly
-    $temporary = Join-Path ([IO.Path]::GetTempPath()) ('MonkeyHub-signature-' + [Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Path $temporary | Out-Null
+function ConvertFrom-ReleaseManifest([byte[]]$ManifestBytes) {
+    # Parse the same bytes the signature was checked over, never a second read.
+    $text = [Text.Encoding]::UTF8.GetString($ManifestBytes).TrimStart([char]0xFEFF)
     try {
-        $manifest = Join-Path $temporary 'release-manifest.json'
-        $signature = "$manifest.p7s"
-        $utf8 = New-Object Text.UTF8Encoding($false)
-        [IO.File]::WriteAllText($manifest, '{"schema":"ReleaseManifest@1","trust":{"status":"signature-spike"}}', $utf8)
+        $document = $text | ConvertFrom-Json
+    } catch {
+        throw "The release manifest is not readable JSON: $($_.Exception.Message)"
+    }
+    if ($null -eq $document -or $document.schema -ne 'ReleaseManifest@1') {
+        throw 'The release manifest is not a ReleaseManifest@1 document.'
+    }
+    return $document
+}
 
-        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+function Open-SignedArchive([string]$Path) {
+    # One handle for the whole run, opened without sharing write or delete. The
+    # digest that the signed manifest is checked against and every later read of
+    # the members are then the same bytes: re-opening the path would leave a
+    # window in which the verified archive is replaced before it is compared.
+    Import-ZipAssembly
+    return [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+}
+
+function Compare-PackageWithArchive([string]$PackageRoot, $ArchiveStream, [string]$Prefix) {
+    # Every extracted file must be the signed archive's copy of it, and the
+    # package must carry nothing the archive does not. The manifest closes over
+    # the distributed archive, so this is what extends that closure to the tree.
+    # One trailing separator, the same way the copy step derives its prefix, so
+    # a package extracted at a drive root still yields correct relative names.
+    $root = $PackageRoot.TrimEnd('\') + '\'
+    # Ordinal keys with an explicit duplicate refusal: a default hashtable would
+    # merge two archive members differing only in case and under-count the set.
+    $expected = [Collections.Generic.Dictionary[string, string]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
+    $seen = 0
+    $ArchiveStream.Position = 0
+    # leaveOpen, because this same handle is read again for the tree that
+    # actually becomes the installation.
+    $archive = [IO.Compression.ZipArchive]::new(
+        $ArchiveStream, [IO.Compression.ZipArchiveMode]::Read, $true)
+    try {
+        $hasher = [System.Security.Cryptography.SHA256]::Create()
         try {
-            $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
-                'CN=MonkeyHub release-signature self-test',
-                $rsa,
-                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-                [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-            )
-            $certificate = $request.CreateSelfSigned(
-                [DateTimeOffset]::UtcNow.AddMinutes(-1),
-                [DateTimeOffset]::UtcNow.AddDays(1)
-            )
-            try {
-                $contentInfo = [System.Security.Cryptography.Pkcs.ContentInfo]::new([IO.File]::ReadAllBytes($manifest))
-                $cms = [System.Security.Cryptography.Pkcs.SignedCms]::new($contentInfo, $true)
-                $signer = [System.Security.Cryptography.Pkcs.CmsSigner]::new($certificate)
-                $signer.IncludeOption = [System.Security.Cryptography.X509Certificates.X509IncludeOption]::EndCertOnly
-                $cms.ComputeSignature($signer)
-                [IO.File]::WriteAllBytes($signature, $cms.Encode())
-
-                $evidence = Test-ReleaseManifestSignature $manifest $signature $certificate.Thumbprint
-                Add-Content -LiteralPath $manifest -Value ' ' -NoNewline
-                $acceptedTamper = $false
-                try {
-                    Test-ReleaseManifestSignature $manifest $signature $certificate.Thumbprint | Out-Null
-                    $acceptedTamper = $true
-                } catch {
-                    # Expected: the original detached signature cannot authenticate changed bytes.
+            foreach ($entry in $archive.Entries) {
+                if ($entry.FullName.EndsWith('/')) { continue }
+                if (-not $entry.FullName.StartsWith("$Prefix/", [StringComparison]::OrdinalIgnoreCase)) {
+                    throw "The signed candidate archive carries $($entry.FullName) outside $Prefix/."
                 }
-                if ($acceptedTamper) {
-                    throw 'A changed ReleaseManifest was accepted with the original detached signature.'
+                $relative = $entry.FullName.Substring($Prefix.Length + 1)
+                if ($expected.ContainsKey($relative)) {
+                    throw "The signed candidate archive names $relative more than once."
                 }
-                return $evidence
-            } finally {
-                $certificate.Dispose()
+                $stream = $entry.Open()
+                try { $expected[$relative] = Get-StreamSha256 $stream $hasher } finally { $stream.Dispose() }
+            }
+            # Directories are walked too, and no descent happens through a
+            # reparse point: a junction added to the tree would contribute no
+            # file here while Copy-Item -Recurse still installs its target.
+            foreach ($item in Get-ChildItem -LiteralPath $root -Recurse -Force) {
+                $relative = $item.FullName.Substring($root.Length).Replace('\', '/')
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    throw "This package does not match the signed candidate archive: $relative is a reparse point."
+                }
+                if ($item.PSIsContainer) { continue }
+                if (-not $expected.ContainsKey($relative)) {
+                    throw "This package does not match the signed candidate archive: $relative is not in it."
+                }
+                $stream = [IO.File]::OpenRead($item.FullName)
+                try { $digest = Get-StreamSha256 $stream $hasher } finally { $stream.Dispose() }
+                if ($digest -ne $expected[$relative]) {
+                    throw "This package does not match the signed candidate archive: $relative differs from it."
+                }
+                $seen++
             }
         } finally {
-            $rsa.Dispose()
+            $hasher.Dispose()
         }
     } finally {
-        Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
+        $archive.Dispose()
+    }
+    if ($seen -ne $expected.Count) {
+        throw ("This package does not match the signed candidate archive: " +
+               "$($expected.Count - $seen) signed file(s) are missing.")
+    }
+    return $seen
+}
+
+function Assert-SignedReleaseBinding($Document, [string]$PackageRoot, [string]$ArchivePath,
+                                     [string]$SourceCommit) {
+    # A signature only says who wrote the manifest. These bindings say that this
+    # manifest is about this archive, this source commit and this extracted tree.
+    $archive = (Resolve-Path -LiteralPath $ArchivePath).Path
+    $name = [IO.Path]::GetFileName($archive)
+    if ($Document.archive -ne $name) {
+        throw "The candidate archive $name is not the archive listed in the signed manifest."
+    }
+    $listed = @($Document.artifacts | Where-Object { $_.path -eq $name })
+    if ($listed.Count -ne 1) {
+        throw "The signed manifest does not list $name once in its closed artifact table."
+    }
+    # Held open for the rest of the run, so the bytes measured here stay the
+    # bytes every member comparison below reads.
+    $stream = Open-SignedArchive $archive
+    $size = $stream.Length
+    $hasher = [System.Security.Cryptography.SHA256]::Create()
+    try { $digest = (Get-StreamSha256 $stream $hasher).ToLowerInvariant() } finally { $hasher.Dispose() }
+    if ($size -ne $listed[0].size -or $digest -ne $listed[0].sha256) {
+        throw "The candidate archive does not match the signed manifest: SHA-256 $digest, $size bytes."
+    }
+    if ($Document.release.sourceCommit -ne $SourceCommit) {
+        throw ("The signed manifest describes source commit $($Document.release.sourceCommit), " +
+               "but this package carries $SourceCommit.")
+    }
+    $actual = Get-FileSha256 (Join-Path $PackageRoot 'build-info.json')
+    if ($Document.buildInfo.sha256 -ne $actual) {
+        throw ("The signed manifest binds build-info.json to $($Document.buildInfo.sha256), " +
+               "but this package carries $actual.")
+    }
+    $prefix = [string]$Document.artifactPrefix
+    if (-not $prefix) { throw 'The signed manifest names no artifact prefix for its archive members.' }
+    [ordered]@{
+        archiveName = $name
+        archivePath = $archive
+        archiveStream = $stream
+        artifactPrefix = $prefix
+        archiveSha256 = $digest
+        boundPackageFiles = (Compare-PackageWithArchive $PackageRoot $stream $prefix)
+    }
+}
+
+function New-ReleaseSignatureEvidence([string]$ManifestPath, [string]$SignaturePath,
+                                      [byte[]]$ManifestBytes, [byte[]]$SignatureBytes,
+                                      $Signer, $Document, $Binding) {
+    $archiveName = $null
+    $archiveDigest = $null
+    $boundFiles = 0
+    $statement = 'A pinned publisher signature authenticates this ReleaseManifest@1. ' +
+                 'It was not bound to any installed package, and no revocation check was performed.'
+    if ($Binding) {
+        $archiveName = $Binding.archiveName
+        $archiveDigest = $Binding.archiveSha256
+        $boundFiles = $Binding.boundPackageFiles
+        $statement = 'A pinned publisher signature authenticates this ReleaseManifest@1, which is ' +
+                     'bound to the named candidate archive and to every installed file. No ' +
+                     'certificate revocation check was performed or is claimed.'
+    }
+    [ordered]@{
+        schema = 'ReleaseSignatureEvidence@1'
+        manifest = [IO.Path]::GetFileName($ManifestPath)
+        signature = [IO.Path]::GetFileName($SignaturePath)
+        archive = $archiveName
+        manifestSha256 = Get-BytesSha256 $ManifestBytes
+        signatureSha256 = Get-BytesSha256 $SignatureBytes
+        archiveSha256 = $archiveDigest
+        signerThumbprint = $Signer.signerThumbprint
+        thumbprintAlgorithm = $Signer.thumbprintAlgorithm
+        signerSubject = $Signer.signerSubject
+        chainValidation = $Signer.chainValidation
+        revocationCheck = $Signer.revocationCheck
+        boundSourceCommit = $Document.release.sourceCommit
+        boundPackageFiles = $boundFiles
+        manifestTrustStatus = $Document.trust.status
+        statement = $statement
+    }
+}
+
+function Test-SignedRelease([string]$PackageRoot, [string]$SourceCommit) {
+    $expected = Resolve-PublisherFingerprint $ExpectedPublisherThumbprint
+    # 1MB, not more: Windows PowerShell 5.1 parses JSON with a smaller ceiling
+    # than PowerShell 7, and a release manifest is a few kilobytes.
+    $manifestBytes = Read-ReleaseInput $ReleaseManifest 'Release manifest' 1MB
+    $signatureBytes = Read-ReleaseInput $ReleaseSignature 'Release signature' 1MB
+    $signer = Test-ReleaseManifestSignature $manifestBytes $signatureBytes $expected `
+        -RequireTrustedChain:$RequireTrustedPublisherChain.IsPresent
+    $document = ConvertFrom-ReleaseManifest $manifestBytes
+    $binding = $null
+    if ($PackageRoot) {
+        if (-not (Test-Path -LiteralPath $ReleaseArchive -PathType Leaf)) {
+            throw "Release archive file was not found: $ReleaseArchive"
+        }
+        $binding = Assert-SignedReleaseBinding $document $PackageRoot $ReleaseArchive $SourceCommit
+    }
+    [ordered]@{
+        evidence = (New-ReleaseSignatureEvidence $ReleaseManifest $ReleaseSignature `
+                    $manifestBytes $signatureBytes $signer $document $binding)
+        binding = $binding
+    }
+}
+
+function Write-TrustNotice($Signed, [int]$InstalledFiles) {
+    if ($Signed) {
+        $evidence = $Signed.evidence
+        $evidence | ConvertTo-Json -Depth 4
+        Write-Host ("Trust: publisher signature verified, $($evidence.thumbprintAlgorithm) " +
+                    "$($evidence.signerThumbprint), $($evidence.chainValidation), " +
+                    "revocation $($evidence.revocationCheck).")
+        Write-Host ("Bound to $($evidence.archive); $InstalledFiles installed files verified " +
+                    "against it; the release manifest itself records $($evidence.manifestTrustStatus).")
+    } else {
+        Write-Host ('Trust: candidate-unsigned. No publisher signature was verified for this ' +
+                    'installation; it is a development candidate, not a supported release.')
     }
 }
 
@@ -192,20 +432,33 @@ function Complete-Installation([string]$Directory) {
 }
 
 try {
-    if ($ReleaseSignatureSelfTest) {
-        Invoke-ReleaseSignatureSelfTest | ConvertTo-Json -Depth 4
-        exit 0
-    }
     if ($VerifyReleaseManifest) {
-        if (-not $ReleaseManifest -or -not $ReleaseSignature -or -not $ExpectedPublisherThumbprint) {
-            throw 'ReleaseManifest, ReleaseSignature and ExpectedPublisherThumbprint are required for signature verification.'
+        # Inspect a downloaded manifest before extracting anything. This mode
+        # installs nothing, so it binds no package and says so in its evidence.
+        if ($RequireSignedRelease) {
+            throw 'Choose either -VerifyReleaseManifest or -RequireSignedRelease, not both.'
         }
-        Test-ReleaseManifestSignature $ReleaseManifest $ReleaseSignature $ExpectedPublisherThumbprint -RequireTrustedChain:$RequireTrustedPublisherChain.IsPresent |
-            ConvertTo-Json -Depth 4
+        if (-not $ReleaseManifest -or -not $ReleaseSignature -or -not $ExpectedPublisherThumbprint) {
+            throw '-VerifyReleaseManifest needs -ReleaseManifest, -ReleaseSignature and -ExpectedPublisherThumbprint.'
+        }
+        if ($ReleaseArchive) {
+            throw '-VerifyReleaseManifest binds no package; use -RequireSignedRelease to bind -ReleaseArchive.'
+        }
+        (Test-SignedRelease $null $null).evidence | ConvertTo-Json -Depth 4
         exit 0
     }
-    if ($ReleaseManifest -or $ReleaseSignature -or $ExpectedPublisherThumbprint -or $RequireTrustedPublisherChain) {
-        throw 'Release signature inputs require -VerifyReleaseManifest.'
+    if ($RequireSignedRelease) {
+        # Opting in must never degrade to an unsigned installation: a missing or
+        # malformed input is a refusal here, not a reason to carry on.
+        if (-not $ReleaseManifest -or -not $ReleaseSignature -or -not $ReleaseArchive -or
+            -not $ExpectedPublisherThumbprint) {
+            throw ('-RequireSignedRelease needs -ReleaseManifest, -ReleaseSignature, -ReleaseArchive ' +
+                   'and -ExpectedPublisherThumbprint.')
+        }
+        Resolve-PublisherFingerprint $ExpectedPublisherThumbprint | Out-Null
+    } elseif ($ReleaseManifest -or $ReleaseSignature -or $ReleaseArchive -or
+              $ExpectedPublisherThumbprint -or $RequireTrustedPublisherChain) {
+        throw 'Release signature inputs require -RequireSignedRelease or -VerifyReleaseManifest.'
     }
     if ($env:OS -ne 'Windows_NT' -or -not [Environment]::Is64BitOperatingSystem) {
         throw 'This candidate requires Windows x64.'
@@ -237,6 +490,13 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {
             throw "The extracted package is incomplete: $relative"
         }
+    }
+    # Nothing below this point may run unverified: the destination branches
+    # create shortcuts, launch the entry and move a new current version into
+    # place, and an already-installed build takes that path too.
+    $signedRelease = $null
+    if ($RequireSignedRelease) {
+        $signedRelease = Test-SignedRelease $packageRoot $version
     }
     if (-not $InstallDirectory) {
         if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is unavailable; supply -InstallDirectory.' }
@@ -270,6 +530,14 @@ try {
             if (-not $same) {
                 throw "The destination already contains files. Choose a new directory: $destination"
             }
+            # The package on disk being authentic says nothing about the copy
+            # that is already here and is about to be shortcut and launched.
+            $installedFiles = 0
+            if ($signedRelease) {
+                $installedFiles = Compare-PackageWithArchive $destination `
+                    $signedRelease.binding.archiveStream $signedRelease.binding.artifactPrefix
+            }
+            Write-TrustNotice $signedRelease $installedFiles
             Write-Host "This build is already installed: $destination"
             Write-Host "Open: $(Join-Path $destination $entryName)"
             Complete-Installation $destination
@@ -302,12 +570,20 @@ try {
             throw "Installation did not finish: $relative. Keep the extracted package and choose a new destination."
         }
     }
+    # Verify the copy that becomes the installation, not only the tree it was
+    # read from: the extracted package stays writable while this runs.
+    $installedFiles = 0
+    if ($signedRelease) {
+        $installedFiles = Compare-PackageWithArchive $stagedDestination `
+            $signedRelease.binding.archiveStream $signedRelease.binding.artifactPrefix
+    }
     if (Test-Path -LiteralPath $destination) {
         # Delete only the explicitly chosen, still-empty directory; false makes
         # a concurrent file creation a refusal rather than a recursive deletion.
         [IO.Directory]::Delete($destination, $false)
     }
     Move-Item -LiteralPath $stagedDestination -Destination $destination -ErrorAction Stop
+    Write-TrustNotice $signedRelease $installedFiles
     Write-Host "Installed MonkeyHub source $version"
     if ($fabVersion) { Write-Host "Included MonkeyFab source $fabVersion" }
     Write-Host "Open: $(Join-Path $destination $entryName)"
@@ -317,6 +593,9 @@ try {
     if ($stagedDestination -and (Test-Path -LiteralPath $stagedDestination)) {
         Write-Host "Incomplete installation files remain at: $stagedDestination"
     }
+    # One unwrapped line, so a refusal reads the same in a redirected log as on
+    # screen; the error record follows for the host's own formatting.
+    Write-Host "Refused: $($_.Exception.Message)"
     Write-Error $_ -ErrorAction Continue
     exit 1
 }
