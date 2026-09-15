@@ -129,6 +129,8 @@ class ProjectRuntimeHttpTests(LocalHubCase):
 
     @staticmethod
     def pdf_bytes(*sizes, title="plan"):
+        """A PDF with the given page sizes; ``title`` changes the bytes, not the pages."""
+
         from io import BytesIO
         from pypdf import PdfWriter
 
@@ -421,7 +423,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             manager = client.app.state.runtimes
             runtime = manager.get(runtime_id)
             copy, work = self.open_work_copy(client, runtime_id, original)
-            self.assertEqual(copy["pageCount"], 2)
+            self.assertIsNone(copy["refusal"])
             self.assertEqual(work.read_bytes(), first)
             self.assertEqual(list(manager.bind_work_copies(runtime).values()), [str(work)])
             head = FilesystemProjectRepository.open(self.project).read_head()
@@ -431,11 +433,12 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.assertEqual(sorted((page["pageIndex"], page["newPageIndex"])
                                     for page in replacement["replacesPages"]), [(0, 0), (1, 1)])
             self.assertEqual(FilesystemProjectRepository.open(self.project).read_head(), head)
-            row = self.wait_runtime(client, runtime_id, lambda row: row["error"] is None)
-            self.assertIsNone(row["error"])
+            self.wait_runtime(client, runtime_id, lambda row: row["error"] is None)
 
     def test_pdf_work_copy_with_a_changed_page_count_is_refused_visibly(self):
-        first = self.pdf_bytes((400, 300), (300, 400), title="first")
+        # One page in, one page listed either way: only the declared whole
+        # document lets the owner see that the file itself grew.
+        first = self.pdf_bytes((400, 300), title="first")
         with self.hub(studio_web=self.web) as client:
             runtime_id = self.open_project(client)
             original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
@@ -444,6 +447,32 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.wait_runtime_error(client, runtime_id, "WORK_COPY_DOCUMENT_REPLACEMENT_INVALID")
             documents = self.proxy(client, runtime_id, "/api/documents").json()["documents"]
             self.assertEqual([document["assetSha256"] for document in documents], [original["assetSha256"]])
+
+    def test_a_page_replaced_elsewhere_reports_the_copy_instead_of_dropping_it(self):
+        first = self.pdf_bytes((400, 300), (300, 400), title="first")
+        second = self.pdf_bytes((400, 300), (300, 400), title="second")
+        with self.hub(studio_web=self.web) as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            copy, work = self.open_work_copy(client, runtime_id, original)
+            self.assertEqual(list(manager.bind_work_copies(runtime).values()), [str(work)])
+            # The Board replaces page 1 on its own, the way its dialog does.
+            self.upload_document(client, runtime_id, self.png_bytes("red", size=(300, 400)),
+                                 "page-two.png", "image/png",
+                                 replaces=[{"runId": original["runId"], "assetSha256": original["assetSha256"],
+                                            "revisionRef": original["revisionRef"],
+                                            "pageIndex": 1, "newPageIndex": 0}])
+            count = len(self.proxy(client, runtime_id, "/api/documents").json()["documents"])
+            # The copy is still watched, its file is still there, and the next
+            # save is reported rather than silently thrown away.
+            work.write_bytes(second)
+            row = self.wait_runtime_error(client, runtime_id, "WORK_COPY_NOT_EDITABLE")
+            self.assertEqual(row["projection"], "ready")
+            self.assertEqual(work.read_bytes(), second)
+            self.assertEqual(list(manager.bind_work_copies(runtime).values()), [str(work)])
+            self.assertEqual(len(self.proxy(client, runtime_id, "/api/documents").json()["documents"]), count)
 
     def test_cold_hub_preserves_admission_identity_for_two_projects_without_retained_runs(self):
         other_id, other_project = self.make_parallel_project()

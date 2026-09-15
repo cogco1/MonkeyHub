@@ -563,11 +563,11 @@ class ProjectRuntimeManager:
         return copy.run_id, copy.asset_sha256, copy.revision_ref, copy.page_index
 
     def bind_work_copies(self, runtime: ProjectRuntime) -> dict[tuple[str, str, str | None, int], str]:
-        """Re-derive which of this project's registered pages have an editable file.
+        """Re-derive which of this project's registered documents have an editable file.
 
-        The project is the only record of that: a registered single-page image
-        names exactly one possible copy path and a row exists only when that
-        file is there. So a copy opened before this process started is bound on
+        The project is the only record of that: a registered document names
+        exactly one possible copy path and a row exists only when that file is
+        there. So a copy opened before this process started is bound on
         the first pass, and one the architect deleted stops being observed. No
         directory is scanned, no name is guessed and nothing is materialised —
         a copy exists because somebody asked the Studio for it.
@@ -622,19 +622,32 @@ class ProjectRuntimeManager:
         return data
 
     def _observe_work_copies(self, runtime: ProjectRuntime) -> int:
-        """Register what each settled work copy changed to, page for page, or say why not.
+        """Register what each settled work copy changed to, whole, or say why not.
 
         Three cases are kept apart on purpose. Bytes this process has not seen
-        move are nothing, even when the page they answer for was replaced by
-        some other client — an untouched copy must never roll the Board back.
+        move are nothing, even when the document they answer for was replaced
+        by some other client — an untouched copy must never roll the Board back.
         Bytes that moved to what the project already says are equally nothing.
         Anything else moved, including an undo to an earlier registration, and
         is offered to the document owner: it either becomes the next registered
         revision or its refusal is carried to the user, per copy, unchanged.
+
+        A copy the document owner no longer considers editable is reported and
+        left alone. Its file is still on disk and still holds someone's work, so
+        dropping it silently would throw away every save made from here on.
         """
 
         registered = 0
         for key, observed in tuple(runtime.work_copies.items()):
+            # Binding re-derived this row from the project a moment ago, so the
+            # answer is current without reading anything. Nothing is offered for
+            # a copy the owner will not take, and nothing is forgotten either.
+            if observed.copy.refusal is not None:
+                observed.failure = HubError(code="WORK_COPY_NOT_EDITABLE",
+                    detail=f"{observed.copy.file_name}: {observed.copy.refusal}"[:1200])
+                continue
+            if observed.failure and observed.failure.code == "WORK_COPY_NOT_EDITABLE":
+                observed.failure = None
             try:
                 data = self._stable_work_copy_bytes(observed)
             except OSError as exc:
@@ -663,8 +676,12 @@ class ProjectRuntimeManager:
                 continue
             observed.copy = copy
             observed.observed_sha256 = digest
+            if copy.refusal is not None:
+                observed.failure = HubError(code="WORK_COPY_NOT_EDITABLE",
+                    detail=f"{copy.file_name}: {copy.refusal}"[:1200])
+                continue
             if digest == copy.head_asset_sha256:
-                # The copy agrees with the page again. Whatever was refused
+                # The copy agrees with the document again. Whatever was refused
                 # before is no longer waiting on anything, so it stops being
                 # reported without anything having been registered.
                 observed.failure = None
@@ -693,12 +710,11 @@ class ProjectRuntimeManager:
                     "projectId": runtime.project_id, "runId": None,
                     "fileName": copy.file_name, "mimeType": copy.mime_type,
                     "contentBase64": base64.b64encode(data).decode("ascii"),
-                    # The copy is one file standing for the whole document, so
-                    # it answers for every page of it: page i replaces page i.
-                    "replacesPages": [{"runId": copy.head_run_id,
-                        "assetSha256": copy.head_asset_sha256, "revisionRef": copy.head_revision_ref,
-                        "pageIndex": copy.head_page_index + page, "newPageIndex": page}
-                        for page in range(copy.page_count)],
+                    # One file standing for one whole document: say that, and
+                    # let the document owner refuse a file that has gained or
+                    # lost a page rather than infer the intent from a page list.
+                    "replacesDocument": {"runId": copy.head_run_id,
+                        "assetSha256": copy.head_asset_sha256, "revisionRef": copy.head_revision_ref},
                 }).encode("utf-8"), {"content-type": "application/json"})
                 if result.status >= 400:
                     error = result.json()
