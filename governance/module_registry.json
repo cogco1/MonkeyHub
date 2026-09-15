@@ -3758,7 +3758,7 @@
         "optimistic scene replacement against the exact last saved revision; a stale tab cannot overwrite another save",
         "verifying image source references against the registered document page and drawing revision; originals remain with studio.artifacts",
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
-        "mapping one explicitly selected drawing and its board marks to page coordinates, then handing its exact saved annotations and user feedback to the existing Studio intent workflow",
+        "mapping one explicitly selected edit drawing and its board marks to page coordinates, then handing its exact saved annotations, user feedback and up to three explicitly connected reference pages to the existing Studio intent workflow",
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
         "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work"
       ],
@@ -3770,7 +3770,7 @@
       "inputs": [
         "ProjectBinding",
         "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
-        "one selected registered drawing or frame, selected board marks and text, and an explicitly reviewed design comment"
+        "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment"
       ],
       "outputs": [
         "BoardDto",
@@ -3806,7 +3806,7 @@
         "scene revisions retain element positions, text and exact source-document page references, never embedded image bytes or a second project store",
         "image references do not infer a model or Stage; accepted design state and project HEAD remain unchanged",
         "seen-document identities keep an intentionally removed drawing from being imported again during automatic discovery",
-        "feedback uses exactly one registered drawing page and its declared model source; board position, rotation and scale never change source identity",
+        "feedback edits exactly one registered drawing page and its declared model source; explicitly connected reference pages provide visual context only, and board position, rotation and scale never change source identity",
         "selected text includes native frame children and bound labels once per object, ordered by Board y, x and id; original text prefills the editable utterance without OCR, unselected nearby text or geometric text DTOs",
         "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
         "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version"
@@ -3822,7 +3822,8 @@
         "apps/archflow-studio/web/test/boardReplacement.browser.mjs",
         "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
         "apps/archflow-studio/web/test/boardNavigation.test.ts",
-        "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs"
+        "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs",
+        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
