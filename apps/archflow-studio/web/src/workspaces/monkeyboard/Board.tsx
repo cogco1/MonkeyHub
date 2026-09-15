@@ -657,13 +657,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     api.scrollToContent(targets, { fitToContent: true, animate: false });
   };
   // The entry point of the edit loop: an explicit editable copy of one registered
-  // single-page image, reported by its project-relative path.
+  // document, reported by its project-relative path. A document whose pages were
+  // replaced individually has no single file to stand for it; that refusal
+  // arrives from the document owner and is shown as it is.
   const requestWorkCopy = (document: SourceDocumentDto) => serial(async () => {
     const workCopy = await studio.createDocumentWorkCopy(board.projectId, document.runId, document.assetSha256, document.revisionRef ?? null);
     if (!alive.current) return;
     setNotice(`${replacementCopy[language].workCopyHint}: ${workCopy.relativePath}`);
   });
-  const workCopyUnavailable = (document: SourceDocumentDto) => document.pageCount !== 1 || document.mimeType === "application/pdf";
   const source = selected && findSource(documents, selected);
   const openReplacement = (document: SourceDocumentDto, pageIndex: number) => {
     replacementReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
@@ -804,7 +805,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
             <a className="monkeyboard-source-link" href={documentUrl(window.location.href, pageSource(document, page))} target="_blank" rel="noopener noreferrer">{text.open} ↗</a>
             <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementCopy[language].action}</button>
-            <button className="monkeyboard-source-work-copy" disabled={!ready || busy || saveState.conflict || workCopyUnavailable(document)} onClick={() => { void requestWorkCopy(document); }}>{replacementCopy[language].workCopy}</button>
+            <button className="monkeyboard-source-work-copy" disabled={!ready || busy || saveState.conflict} onClick={() => { void requestWorkCopy(document); }}>{replacementCopy[language].workCopy}</button>
           </article>;
         })}</div>
       </aside>
