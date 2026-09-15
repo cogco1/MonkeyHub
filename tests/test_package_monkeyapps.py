@@ -697,5 +697,203 @@ class ReleaseEvidenceTests(unittest.TestCase):
         jsonschema.Draft7Validator(schema).validate(self.sbom())
 
 
+WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/desktop.yml"
+NORMALIZE_STEP = "Normalize release version across package evidence"
+
+
+def workflow_step(name: str) -> tuple[str, dict[str, str]]:
+    """The ``run`` body and declared ``env`` of one desktop.yml step.
+
+    Read from the workflow rather than copied, because the release
+    normalisation exists only there: a second copy here could pass while the
+    step that actually runs on release-candidate is broken. Only the shape this
+    file already uses is understood -- two-space YAML, a literal ``run`` block
+    and plain ``KEY: value`` env entries -- and anything else raises instead of
+    quietly yielding an empty script.
+    """
+    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+    starts = [index for index, line in enumerate(lines) if line.strip() == f"- name: {name}"]
+    if len(starts) != 1:
+        raise AssertionError(f"expected exactly one {name!r} step, found {len(starts)}")
+    start = starts[0]
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = lines[start + 1:]
+    for offset, line in enumerate(body):
+        if line.strip().startswith("- ") and len(line) - len(line.lstrip()) == indent:
+            body = body[:offset]
+            break
+
+    def block(key: str) -> list[str]:
+        for offset, line in enumerate(body):
+            if line.strip() == key:
+                inner = len(line) - len(line.lstrip())
+                held = []
+                for following in body[offset + 1:]:
+                    if following.strip() and len(following) - len(following.lstrip()) <= inner:
+                        break
+                    held.append(following)
+                return held
+        return []
+
+    run = block("run: |")
+    if not run:
+        raise AssertionError(f"{name!r} has no literal run block")
+    margin = min(len(line) - len(line.lstrip()) for line in run if line.strip())
+    environment = {}
+    for line in block("env:"):
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        key, _, value = entry.partition(":")
+        environment[key.strip()] = value.strip()
+    return "\n".join(line[margin:] for line in run), environment
+
+
+def inline_python(run: str) -> str:
+    """The single-quoted PowerShell here-string the step pipes to a .py file."""
+    lines = run.splitlines()
+    opens = [index for index, line in enumerate(lines) if line == "@'"]
+    closes = [index for index, line in enumerate(lines) if line.startswith("'@")]
+    if len(opens) != 1 or len(closes) != 1:
+        raise AssertionError("expected exactly one here-string in the step")
+    return "\n".join(lines[opens[0] + 1:closes[0]])
+
+
+class ReleaseCandidateNormalizationTests(unittest.TestCase):
+    """The release-candidate normalisation in desktop.yml, without a real build.
+
+    The step promotes one assembled bundle to a named version and rewrites the
+    evidence around it. It runs only on the release-candidate branch, so a
+    defect there is invisible to every other build; these tests execute the
+    script the workflow actually ships against a synthetic bundle.
+    """
+
+    VERSION = "0.1.77"
+    SOURCE_SHA = "c" * 40
+    STALE = "MonkeyHub-abcdef123456-windows-x64-candidate.zip"
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="Hub 候选发行 ")
+        self.addCleanup(temporary.cleanup)
+        self.runner_temp = Path(temporary.name).resolve()
+        self.output = self.runner_temp / "mhp/output"
+        self.output.mkdir(parents=True)
+        # A previous unversioned build output the step is expected to replace.
+        (self.output / self.STALE).write_bytes(b"superseded")
+        self.build = self.runner_temp / "mhp/staging/task"
+        self.source = self.build / "source"
+        self.bundle = self.build / "MonkeyHub-abcdef123456-windows-x64"
+        node = self.bundle / "_runtime/node/node.exe"
+        node.parent.mkdir(parents=True)
+        node.write_bytes(b"selected Node runtime")
+        info = self.bundle / builder.PYTHON_SITE / "rhino3dm-8.32.1.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(
+            "Metadata-Version: 2.4\nName: rhino3dm\nVersion: 8.32.1\nLicense-Expression: MIT\n",
+            encoding="utf-8")
+        (self.bundle / "_runtime/desktop-Cargo.lock").write_text(
+            'version = 4\n\n[[package]]\nname = "monkeyarch-desktop"\nversion = '
+            f'"{self.VERSION}"\n\n[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
+            f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
+        for locked, tree in (("apps/monkeyhub", self.bundle / "apps/monkeyhub"),
+                             ("apps/monkeyhub/web", self.source / "apps/monkeyhub/web"),
+                             ("apps/archflow-studio/web", self.source / "apps/archflow-studio/web")):
+            package = tree / "node_modules/react"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text(
+                json.dumps({"name": "react", "version": "19.2.0", "license": "MIT"}), encoding="utf-8")
+            lock = self.source / locked / "package-lock.json"
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            lock.write_text(json.dumps({"packages": {
+                "": {"name": locked}, "node_modules/react": {"version": "19.2.0"}}}), encoding="utf-8")
+        (self.bundle / "OPEN_MONKEYHUB.cmd").write_text("fixture", encoding="utf-8")
+        self.write_build_info()
+
+    def write_build_info(self, **overrides: object) -> None:
+        desktop = {"version": self.VERSION, "sourceCommit": self.SOURCE_SHA,
+                   "cargoVersion": "cargo fixture", "cargoLockSha256": "a" * 64,
+                   "executableSha256": "b" * 64}
+        document = dict(ReleaseEvidenceTests.BUILD_INFO, sourceCommit=self.SOURCE_SHA, desktop=desktop)
+        document.update(overrides)
+        (self.bundle / "build-info.json").write_text(
+            json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def normalize(self) -> subprocess.CompletedProcess:
+        """Run the workflow's script the way the release-candidate build does.
+
+        The script is written into RUNNER_TEMP, not the checkout, so it is only
+        importable through what the step declares; PYTHONPATH is dropped first
+        so an ambient value cannot stand in for the workflow's own environment.
+        """
+        run, declared = workflow_step(NORMALIZE_STEP)
+        script = self.runner_temp / "mhp/normalize-release.py"
+        script.write_text(inline_python(run), encoding="utf-8", newline="\n")
+        repository = str(WORKFLOW.parents[2])
+        environment = dict(os.environ)
+        environment.pop("PYTHONPATH", None)
+        for key, value in declared.items():
+            environment[key] = value.replace("${{ github.workspace }}", repository)
+        environment.update({
+            "RUNNER_TEMP": str(self.runner_temp),
+            "GITHUB_WORKSPACE": repository,
+            "PACKAGE_BUILD": str(self.build),
+            "MONKEYHUB_RELEASE_VERSION": self.VERSION,
+            "MONKEYHUB_SOURCE_SHA": self.SOURCE_SHA,
+            "PYTHONUTF8": "1",
+        })
+        return subprocess.run([sys.executable, str(script)], cwd=repository, env=environment,
+                              capture_output=True, text=True, encoding="utf-8")
+
+    def test_promotion_binds_one_version_across_bundle_zip_sbom_manifest_and_build_info(self) -> None:
+        completed = self.normalize()
+        self.assertEqual(completed.returncode, 0, f"{completed.stdout}\n{completed.stderr}")
+        prefix = f"MonkeyHub-{self.VERSION}-windows-x64"
+        self.assertTrue((self.build / prefix).is_dir(), "the bundle directory carries the version")
+
+        archive = self.output / f"{prefix}-candidate.zip"
+        manifest = self.output / f"{archive.name}.release-manifest.json"
+        sbom = self.output / f"{prefix}.cyclonedx.json"
+        checksum = self.output / f"{archive.name}.sha256"
+        self.assertEqual({path.name for path in self.output.iterdir()},
+                         {archive.name, manifest.name, sbom.name, checksum.name})
+        self.assertFalse((self.output / self.STALE).exists(), "the unversioned output is replaced")
+
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+        self.assertEqual(document["release"]["version"], self.VERSION)
+        self.assertEqual(document["release"]["sourceCommit"], self.SOURCE_SHA)
+        self.assertEqual(document["artifactPrefix"], prefix)
+        self.assertEqual(json.loads(sbom.read_text(encoding="utf-8"))["metadata"]["component"]["version"],
+                         self.VERSION)
+        self.assertEqual(checksum.read_text(encoding="utf-8"),
+                         f"{builder.sha256(archive)}  {archive.name}\n")
+
+        with zipfile.ZipFile(archive) as opened:
+            names = opened.namelist()
+            shipped = json.loads(opened.read(f"{prefix}/build-info.json"))
+            bundled_sbom = json.loads(opened.read(f"{prefix}/{builder.SBOM_NAME}"))
+        self.assertTrue(all(name.startswith(f"{prefix}/") for name in names), names)
+        self.assertEqual(shipped["releaseVersion"], self.VERSION)
+        self.assertEqual(shipped["desktop"]["version"], self.VERSION)
+        self.assertEqual(bundled_sbom["metadata"]["component"]["version"], self.VERSION)
+        self.assertEqual(builder.verify_release(manifest), [])
+
+    def test_a_desktop_built_at_another_version_is_refused_before_any_output_changes(self) -> None:
+        self.write_build_info(desktop={"version": "0.1.1", "sourceCommit": self.SOURCE_SHA,
+                                       "cargoVersion": "cargo fixture", "cargoLockSha256": "a" * 64,
+                                       "executableSha256": "b" * 64})
+        completed = self.normalize()
+        self.assertEqual(completed.returncode, 1, completed.stdout)
+        self.assertIn("desktop version does not match", completed.stderr)
+        self.assertEqual({path.name for path in self.output.iterdir()}, {self.STALE},
+                         "a refused promotion leaves the previous output untouched")
+
+    def test_a_bundle_built_from_another_commit_is_refused(self) -> None:
+        self.write_build_info(sourceCommit="d" * 40)
+        completed = self.normalize()
+        self.assertEqual(completed.returncode, 1, completed.stdout)
+        self.assertIn("sourceCommit does not match", completed.stderr)
+        self.assertEqual({path.name for path in self.output.iterdir()}, {self.STALE})
+
+
 if __name__ == "__main__":
     unittest.main()

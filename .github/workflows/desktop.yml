@@ -100,6 +100,11 @@ jobs:
       - name: Normalize release version across package evidence
         if: github.ref == 'refs/heads/release-candidate'
         shell: pwsh
+        env:
+          # This script is written into RUNNER_TEMP, so sys.path[0] is that temp
+          # directory and the checkout is not importable. The release evidence is
+          # derived by the packaging owner, so put the checkout on the path.
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           $root = Join-Path $env:RUNNER_TEMP 'mhp'
           $script = Join-Path $root 'normalize-release.py'
