@@ -608,26 +608,6 @@ class StateRecord:
         return canonical_digest(content)
 
 
-def rewrite_base_digest(payload: Mapping[str, Any], mapping: Mapping[str, str]) -> dict[str, Any]:
-    """Where a state record keeps its project-version identity, restated for a format migration.
-
-    A ``StateRecord@1`` names its base as ``{project_id, version, state_sha256}``
-    and nowhere else. Given ``mapping`` from a legacy snapshot-file digest to the
-    semantic digest of the same version, return a copy whose base digest is
-    rewritten. A missing, null, oddly shaped or unknown base is returned as it
-    is: this reports nothing and guesses nothing - the caller lists what it
-    could not map.
-    """
-
-    base = payload.get("base")
-    if not isinstance(base, Mapping) or set(base) != {"project_id", "version", "state_sha256"}:
-        return dict(payload)
-    digest = base.get("state_sha256")
-    if not isinstance(digest, str) or digest not in mapping:
-        return dict(payload)
-    return {**payload, "base": {**base, "state_sha256": mapping[digest]}}
-
-
 # ---------------------------------------------------------------- typed views of the record
 
 def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str], ...]:
@@ -1775,7 +1755,7 @@ def developed_design_view(record: StateRecord, *, run: RunRef, option_id: str | 
 # A ``StateRecord@1`` names the canonical version it is bound to in exactly one
 # place. ``digest`` deliberately excludes ``base``, so restating it leaves this
 # record's content identity unchanged; ``state_digest`` is the binding identity
-# and does move with it.
+# and does move with it, so it is offered as this record's content digest.
 VERSION_REF_POINTERS = {"StateRecord@1": ("/base",)}
 
 _register_version_refs(VERSION_REF_POINTERS)

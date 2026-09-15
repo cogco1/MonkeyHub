@@ -18,7 +18,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import DESIGN_STAGE, PROJECT_FORMAT_MIGRATION, STATE_RECORD
+from archflow.project.record_kinds import (
+    DESIGN_STAGE,
+    PROJECT_FORMAT_MIGRATION,
+    PROJECT_STAGE_WORKFLOW,
+    RUNNER_RUN_RECEIPT,
+    STAGE_RUN_ENVELOPE,
+    STATE_RECORD,
+)
 from archflow.project.refs import ProjectVersionRef, record_file_name
 from archflow.project.repository import (
     CURRENT_FORMAT_VERSION,
@@ -30,6 +37,8 @@ from archflow.project.repository import (
     PROJECT_FORMAT_TOO_NEW,
     MIGRATION_RUN_ID,
     ProjectIntegrityError,
+    _cascade_records,
+    _retained_category,
     _json_bytes,
     _replace_atomic,
     _sha256,
@@ -37,6 +46,8 @@ from archflow.project.repository import (
     inspect_project_format,
     plan_project_migration,
 )
+from archflow.state.operational_state import DesignObligation
+from archflow.state.stage_workflow import DesignPhase, StageRunEnvelope
 from tools.create_project import _scan_legacy_version_references, main
 
 
@@ -870,7 +881,11 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         source = repository.layout.root
         target = self.root / "migrated" / "legacy-building"
         boom = OSError("the volume went away")
-        with patch.object(FilesystemProjectRepository, "verify", side_effect=boom):
+        # The receipt is the last step, so this fails with the whole target
+        # already written: the envelope, every record, every artifact.
+        with patch.object(
+            FilesystemProjectRepository, "_file_migration_receipt", side_effect=boom,
+        ):
             with self.assertRaises(ProjectIntegrityError) as raised:
                 FilesystemProjectRepository.migrate_project_format(source, target)
         self.assertIn("MIGRATION_FAILED", str(raised.exception))
@@ -997,6 +1012,227 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertEqual(
             (restored_root / result.receipt.relative_path).read_bytes(),
             (target / result.receipt.relative_path).read_bytes(),
+        )
+
+    def test_a_failure_after_the_envelope_empties_a_target_the_caller_made(self) -> None:
+        """A directory the caller prepared is kept; everything written into it is not."""
+
+        repository = self.legacy_project()
+        target = self.root / "migrated" / "legacy-building"
+        target.mkdir(parents=True)
+        with patch.object(
+            FilesystemProjectRepository, "_file_migration_receipt",
+            side_effect=OSError("the volume went away"),
+        ):
+            with self.assertRaises(ProjectIntegrityError):
+                FilesystemProjectRepository.migrate_project_format(
+                    repository.layout.root, target,
+                )
+        self.assertTrue(target.is_dir(), "the caller's directory is not removed")
+        self.assertEqual(list(target.iterdir()), [], "but nothing this wrote remains")
+        # And the retry is not refused by the wreckage of the first attempt.
+        result = FilesystemProjectRepository.migrate_project_format(
+            repository.layout.root, target,
+        )
+        self.assertEqual(result.target_format_version, CURRENT_FORMAT_VERSION)
+
+    # ---- migrate(downgrade(P)) == P
+
+    def downgrade(self, source: Path, target: Path) -> dict[str, str]:
+        """Write a format-1 copy of a format-2 project. The inverse substitution.
+
+        This is how a real project reaches the migration in a test: rather than
+        hand-writing what an older build would have produced, take a project
+        this build produced and put every published identity back into the
+        format-1 spelling, using the same owner declarations the migration
+        reads. What comes back out has to be what went in.
+        """
+
+        repository = FilesystemProjectRepository.open(source)
+        head = repository.read_head()
+        snapshot = json.loads(
+            (source / json.loads((source / "HEAD").read_text(encoding="utf-8"))
+             ["snapshot"]["relative_path"]).read_text(encoding="utf-8")
+        )
+        legacy_snapshot = _json_bytes({
+            "schema": "CanonicalSnapshot@1",
+            "project_id": snapshot["project_id"],
+            "version": snapshot["version"],
+            "parent": snapshot["parent"],
+            "state": snapshot["state"],
+        })
+        legacy_digest = _sha256(legacy_snapshot)
+        inverse = {head.require_digest(): legacy_digest}
+
+        target.mkdir(parents=True, exist_ok=True)
+        cascade = _cascade_records(
+            {
+                path.relative_to(source).as_posix(): json.loads(
+                    path.read_text(encoding="utf-8")
+                )
+                for path in sorted(source.rglob("*.json"))
+                if path.is_file()
+                and not path.relative_to(source).as_posix().startswith(
+                    ("canonical/", "events/")
+                )
+                and path.name != "project.json"
+                and _retained_category(path.relative_to(source).as_posix())[0] != "artifact"
+            },
+            project_id=source.name,
+            mapping=inverse,
+            legacy_digests={head.require_digest(): head.version},
+        )
+        self.assertEqual(cascade.blockers, [], "the fixture itself must be declared")
+
+        for path in sorted(source.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(source).as_posix()
+            if relative.endswith(".lock") or relative.startswith(("canonical/", "events/")):
+                continue
+            if relative in ("project.json", "HEAD"):
+                continue
+            destination = cascade.renames.get(relative, relative)
+            payload = cascade.payloads.get(destination)
+            data = (
+                _json_bytes(payload) if payload is not None else path.read_bytes()
+            )
+            _write_immutable(target / destination, data)
+
+        _write_immutable(target / "project.json", _json_bytes({
+            "schema": "ArchFlowProject@1",
+            "project_id": source.name,
+            "format_version": LEGACY_FORMAT_VERSION,
+        }))
+        snapshot_path = f"canonical/{record_file_name(f'state-v{head.version:06d}', legacy_digest)}"
+        _write_immutable(target / snapshot_path, legacy_snapshot)
+        head_ref = ProjectVersionRef(source.name, head.version, legacy_digest)
+        event_bytes = _json_bytes({
+            "schema": "ProjectEvent@1",
+            "project_id": source.name,
+            "event_type": "project.initialized",
+            "decision": "accepted",
+            "run_id": None,
+            "from": None,
+            "to": head_ref.to_dict(),
+            "previous_event": None,
+            "decision_receipt": None,
+        })
+        event_digest = _sha256(event_bytes)
+        event_path = f"events/{record_file_name(f'event-v{head.version:06d}', event_digest)}"
+        _write_immutable(target / event_path, event_bytes)
+        _write_immutable(target / "HEAD", _json_bytes({
+            "schema": "ProjectHead@1",
+            "project_id": source.name,
+            "current": head_ref.to_dict(),
+            "snapshot": {"relative_path": snapshot_path, "sha256": legacy_digest,
+                         "media_type": "application/json"},
+            "event": {"relative_path": event_path, "sha256": event_digest,
+                      "media_type": "application/json"},
+        }))
+        downgraded = FilesystemProjectRepository.open(target)
+        for lock in downgraded.lock_paths():
+            lock.parent.mkdir(parents=True, exist_ok=True)
+            lock.touch(exist_ok=True)
+        return inverse
+
+    def stage_bound_run(self, repository: FilesystemProjectRepository, name: str) -> None:
+        """A run holding the records whose digests derive from the canonical base.
+
+        This is the shape that made the cascade matter: a stage envelope states
+        the run's canonical base, its ``envelope_digest`` is derived from that
+        base, and another retained record cites both the envelope by content
+        reference and that digest by value. Restating the base has to move all
+        three or the migrated project cannot open its next stage.
+        """
+
+        run = repository.create_run(name)
+        head = repository.read_head()
+        subject = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=STATE_RECORD,
+            payload={"schema": "StateRecord@1", "run": run.to_dict(),
+                     "draft": "the record the stage executes"},
+        )
+        workflow = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=PROJECT_STAGE_WORKFLOW,
+            payload={"schema": "ProjectStageWorkflow@1", "stages": ["s0"]},
+        )
+        envelope = StageRunEnvelope(
+            project_id=run.project_id, run_id=name,
+            base_version=head.version, base_state_sha256=head.require_digest(),
+            branch_id="main", branch_epoch=1,
+            subject_ref=subject.uri, state_digest=subject.sha256,
+            workflow_ref=workflow.uri, workflow_digest=workflow.sha256,
+            stage_id="s0", stage_index=0, phase=DesignPhase.SCHEMATIC_DESIGN,
+            required_roles=("architect",), required_checks=(),
+            close_obligation=DesignObligation(
+                obligation_id="o1", statement="close", source_ref="ref:1",
+            ),
+        )
+        envelope_ref = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=STAGE_RUN_ENVELOPE, payload=envelope.to_dict(),
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=RUNNER_RUN_RECEIPT,
+            payload={"schema": "RunnerRunReceipt@3", "project_id": run.project_id,
+                     "run_id": name, "run": run.to_dict(),
+                     "stage_envelope_ref": envelope_ref.uri,
+                     "stage_envelope_digest": envelope.envelope_digest},
+        )
+
+    def test_migrating_a_downgraded_project_reproduces_it_exactly(self) -> None:
+        """migrate(downgrade(P)) == P, record by record and digest by digest."""
+
+        original = FilesystemProjectRepository.initialize(
+            self.root / "round-trip", project_id="round-trip",
+            initial_state={"phase": "design"},
+            authored_record={"schema": "StateRecord@1", "draft": "initial",
+                             "base": None},
+            seat_pack={"schema": "SeatPack@1", "seats": []},
+        )
+        self.populate(original)
+        self.stage_bound_run(original, "bound")
+        expected = {
+            path.relative_to(original.layout.root).as_posix(): path.read_bytes()
+            for path in sorted(original.layout.root.rglob("*"))
+            if path.is_file() and not path.name.endswith(".lock")
+        }
+
+        legacy_root = self.root / "downgraded" / "round-trip"
+        self.downgrade(original.layout.root, legacy_root)
+        self.assertEqual(
+            inspect_project_format(legacy_root).format_version, LEGACY_FORMAT_VERSION,
+        )
+
+        target = self.root / "remigrated" / "round-trip"
+        result = FilesystemProjectRepository.migrate_project_format(legacy_root, target)
+
+        produced = {
+            path.relative_to(target).as_posix(): path.read_bytes()
+            for path in sorted(target.rglob("*"))
+            if path.is_file() and not path.name.endswith(".lock")
+        }
+        # The migration adds exactly one thing: its own account of itself.
+        extra = sorted(set(produced) - set(expected))
+        self.assertTrue(
+            all(name.startswith(f"runs/{MIGRATION_RUN_ID}/") for name in extra), extra,
+        )
+        self.assertEqual(sorted(set(expected) - set(produced)), [])
+        for name, data in expected.items():
+            self.assertEqual(produced[name], data, name)
+        # The envelope's derived digest survived the round trip unchanged, which
+        # is what a later stage checks before it will open.
+        self.assertEqual(result.embedded_legacy_references, ())
+        self.assertEqual(
+            FilesystemProjectRepository.open(target).read_head(), original.read_head(),
         )
 
     # ---- the CLI consumer
