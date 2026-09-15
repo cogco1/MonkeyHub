@@ -476,6 +476,94 @@ class ProjectTransferTests(unittest.TestCase):
         )
         self.assertEqual(self.shared.read_transfer_file(native.relative_path, native.sha256), data)
 
+    def workspace_json(self, name="dwg/living-ground-boundaries.json"):
+        """A native export that happens to be JSON, named by a retained receipt."""
+        run = self.shared.load_run("source")
+        data = json.dumps({"schema": "DrawingBoundaries@1", "polylines": []}).encode("utf-8")
+        drawing = self.shared.put_workspace_file(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id),
+            artifact_id="boundaries", workspace_relative_path=name,
+            media_type="application/json", source=io.BytesIO(data),
+        )
+        self.shared.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=DRAWING_PROJECTION_RECEIPT,
+            payload={"schema": "DrawingProjectionReceipt@1", "artifacts": {"boundaries": {
+                "relative_path": drawing.relative_path, "sha256": drawing.sha256,
+                "media_type": drawing.media_type}}},
+        )
+        return drawing, data
+
+    def test_referenced_workspace_json_survives_export_archive_and_restore(self):
+        # A run's workspace holds native exports and some of those are JSON.
+        # They are artifacts, not records, so the content-addressed record
+        # filename must not be demanded of them — otherwise the receiver
+        # refuses an archive this same code just wrote.
+        from tools.create_project import _restore_project_archive, _write_project_archive
+
+        drawing, data = self.workspace_json()
+        transfer = self.shared.export_transfer()
+        self.assertIn(drawing.relative_path, {row["path"] for row in transfer["files"]})
+        self.assertEqual(self.shared.read_transfer_file(drawing.relative_path, drawing.sha256), data)
+
+        restored = self.clone("workspace-json")
+        self.assertEqual((restored.layout.root / drawing.relative_path).read_bytes(), data)
+        self.assertEqual(restored.read_transfer_file(drawing.relative_path, drawing.sha256), data)
+
+        archive = self.root / "archives" / "building.monkeyhub.zip"
+        _write_project_archive(self.shared, archive)
+        home = self.root / "archive-home" / "building"
+        home.parent.mkdir(parents=True, exist_ok=True)
+        opened, manifest = _restore_project_archive(home, archive)
+        self.assertIn(drawing.relative_path, {row["path"] for row in manifest["transfer"]["files"]})
+        self.assertEqual((home / drawing.relative_path).read_bytes(), data)
+        self.assertEqual(opened.read_head(), self.shared.read_head())
+        for row in manifest["transfer"]["files"]:
+            self.assertEqual((home / row["path"]).read_bytes(),
+                             (self.shared.layout.root / row["path"]).read_bytes())
+
+    def test_workspace_exemption_does_not_reach_records_canonical_events_or_digests(self):
+        drawing, data = self.workspace_json()
+        good = self.shared.export_transfer()
+        record_row = next(row for row in good["files"]
+                          if row["path"].startswith("runs/source/records/"))
+        payload, other = b'{"schema": "NotARecord@1"}', hashlib.sha256(b"other").hexdigest()
+
+        def mutated(path, blob, sha256=None):
+            case = copy.deepcopy(good)
+            case["files"] = [row for row in case["files"] if row["path"] != path]
+            case["files"].append({"path": path, "sha256": sha256 or hashlib.sha256(blob).hexdigest(),
+                                  "size": len(blob)})
+            case["contents"][path] = base64.b64encode(blob).decode()
+            return case
+
+        cases = {
+            # a plain name in a record area is still not a record
+            "TRANSFER_INVALID": mutated("runs/source/records/plain-data.json", payload),
+            # the same plain name under canonical/ and events/ stays refused
+            "canonical": mutated("canonical/plain-data.json", payload),
+            "events": mutated("events/plain-data.json", payload),
+            # a record-shaped name whose embedded digest is not its content
+            "record filename": mutated(f"runs/source/records/state-record-{other}.json", payload),
+            # the workspace artifact itself still needs the digest it claims
+            "workspace digest": mutated(drawing.relative_path, data, sha256=other),
+        }
+        for label, transfer in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(ProjectIntegrityError):
+                    FilesystemProjectRepository.bootstrap_transfer(
+                        self.root / f"refused-{label.replace(' ', '-')}", transfer,
+                        expected_project_id="building")
+        # the real record row is untouched and the good transfer still installs
+        self.assertEqual(next(row for row in good["files"]
+                              if row["path"] == record_row["path"]), record_row)
+        traversal = copy.deepcopy(good)
+        traversal["files"][0]["path"] = "../outside.json"
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_PATH_INVALID"):
+            FilesystemProjectRepository.bootstrap_transfer(
+                self.root / "refused-traversal", traversal, expected_project_id="building")
+        self.assertTrue(self.clone("still-good").verify().head)
+
     def test_only_cad_evidence_metadata_splits_a_comma_separated_reference_list(self):
         run = self.shared.load_run("source")
         evidence = f"{self.s0.uri},{self.s0.uri}"

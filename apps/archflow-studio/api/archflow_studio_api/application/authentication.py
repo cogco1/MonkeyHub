@@ -36,6 +36,18 @@ _SHARED_READ_PATHS = (
 )
 
 
+# The surfaces this boundary can name as an origin. Both are facts about how
+# this process was started - a Studio the Hub manages carries the instance id
+# it was launched with - and never a request header, which any caller can set.
+ORIGIN_STUDIO = "studio"
+ORIGIN_HUB = "hub"
+
+# What an explicit action is attributed to where the process runs with no actor
+# credentials configured at all: the local unauthenticated boundary itself,
+# stated as such rather than borrowed from a person who was never identified.
+LOCAL_ACTOR_ID = "studio:explicit-user-action"
+
+
 @dataclass(frozen=True, slots=True)
 class AuthenticatedActor:
     actor_id: str
@@ -102,6 +114,37 @@ def authenticated_actor(request: Request) -> AuthenticatedActor | None:
     """The authenticated caller, independent of every request-body field."""
 
     return getattr(request.state, "actor", None)
+
+
+@dataclass(frozen=True, slots=True)
+class ActorAttribution:
+    """Who caused one request, and through which surface, as this boundary knows it.
+
+    ``actor_id`` is the authenticated actor's own id, or the local boundary's
+    explicit identity where the process was configured with no credentials;
+    ``authenticated`` says which of the two it is, so nothing retained later
+    has to guess whether a name was proven. Every field is read from the
+    middleware's resolved actor and this process's own settings: no request
+    body and no request header takes part, because both are the caller's.
+    """
+
+    actor_id: str
+    authenticated: bool
+    origin: str
+
+
+def request_attribution(request: Request) -> ActorAttribution:
+    """The actor and origin to bind a decision to, from the request boundary."""
+
+    origin = (
+        ORIGIN_HUB
+        if getattr(request.app.state, "managed_instance_id", None)
+        else ORIGIN_STUDIO
+    )
+    actor = authenticated_actor(request)
+    if actor is None:
+        return ActorAttribution(LOCAL_ACTOR_ID, False, origin)
+    return ActorAttribution(actor.actor_id, True, origin)
 
 
 def require_actor(request: Request, action: str, project_id: str | None = None) -> AuthenticatedActor:
