@@ -2097,6 +2097,31 @@ export type DocumentPageReplacementDto = {
 };
 
 /**
+ * DocumentReplacementTargetDto
+ *
+ * The one registered document an upload replaces, whole.
+ *
+ * Naming the document instead of listing its pages is what makes a
+ * whole-file edit sayable: the server then knows a file that has gained or
+ * lost a page is wrong, rather than guessing from how many pages happened to
+ * be listed.
+ */
+export type DocumentReplacementTargetDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+};
+
+/**
  * DocumentVisualInputDto
  *
  * Transient visible-page PNGs, rendered by the client from a registered source.
@@ -2147,7 +2172,7 @@ export type DocumentVisualInputDto = {
 /**
  * DocumentWorkCopyDto
  *
- * One registered document's editable file, and the pages it answers for.
+ * One registered document's editable file, and the document it answers for.
  */
 export type DocumentWorkCopyDto = {
     /**
@@ -2171,15 +2196,13 @@ export type DocumentWorkCopyDto = {
      */
     pageIndex: number;
     /**
-     * Pagecount
-     */
-    pageCount: number;
-    /**
      * Filename
      */
     fileName: string;
     /**
      * Mimetype
+     *
+     * the kind of file the copy itself holds: the origin's own
      */
     mimeType: 'image/png' | 'image/jpeg' | 'application/pdf';
     /**
@@ -2204,12 +2227,18 @@ export type DocumentWorkCopyDto = {
      * Headpageindex
      */
     headPageIndex: number;
+    /**
+     * Refusal
+     *
+     * why no one file can stand for this document right now, in the same words the refused request answers with; null when it is editable
+     */
+    refusal?: string | null;
 };
 
 /**
  * DocumentWorkCopyRequestDto
  *
- * Which exact registered page is being made editable.
+ * Which exact registered document is being made editable.
  *
  * The digest in the path names the bytes; these name the one registration
  * they belong to. ``revisionRef`` is part of that identity, not a filter: a
@@ -6700,6 +6729,10 @@ export type SourceDocumentRequestDto = {
      * Replacespages
      */
     replacesPages?: Array<DocumentPageReplacementDto>;
+    /**
+     * Replace one registered document whole, page for page. The upload must have the same media type and page count as the document it replaces. Mutually exclusive with replacesPages.
+     */
+    replacesDocument?: DocumentReplacementTargetDto | null;
 };
 
 /**

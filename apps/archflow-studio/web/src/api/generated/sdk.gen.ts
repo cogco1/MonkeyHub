@@ -250,7 +250,7 @@ export const readDocumentBytesApiDocumentsAssetSha256BytesGet = <ThrowOnError ex
 /**
  * Create Document Work Copy
  *
- * Give this registered image page an editable file on disk, once.
+ * Give this registered document an editable file on disk, once.
  *
  * Explicitly asked for, like the Rhino work-model export beside it: the run
  * and revision are named in the body because the same registered bytes can

@@ -18,7 +18,12 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import FilesystemProjectRepository
-from archflow_studio_api.application.artifacts import _work_copy, list_document_work_copies, list_documents
+from archflow_studio_api.application.artifacts import (
+    _work_copy,
+    list_document_work_copies,
+    list_documents,
+    save_document,
+)
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
@@ -40,9 +45,10 @@ def two_page_pdf() -> bytes:
     return output.getvalue()
 
 
-def image_bytes(format: str = "PNG", *, color: str = "blue", orientation: int | None = None) -> bytes:
+def image_bytes(format: str = "PNG", *, color: str = "blue", orientation: int | None = None,
+                size: tuple[int, int] = (120, 80)) -> bytes:
     output = BytesIO()
-    image = Image.new("RGB", (120, 80), color)
+    image = Image.new("RGB", size, color)
     options = {}
     if orientation is not None:
         exif = Image.Exif()
@@ -52,10 +58,14 @@ def image_bytes(format: str = "PNG", *, color: str = "blue", orientation: int | 
     return output.getvalue()
 
 
-def sized_pdf(*sizes: tuple[float, float]) -> bytes:
+def sized_pdf(*sizes: tuple[float, float], title: str | None = None) -> bytes:
+    """A PDF with the given page sizes; ``title`` changes the bytes, not the pages."""
+
     writer = PdfWriter()
     for width, height in sizes:
         writer.add_blank_page(width=width, height=height)
+    if title is not None:
+        writer.add_metadata({"/Title": title})
     output = BytesIO()
     writer.write(output)
     return output.getvalue()
@@ -436,97 +446,162 @@ class SourceDocumentTests(unittest.TestCase):
         work_root = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents" / "work"
         self.assertFalse(work_root.exists())
 
-    @staticmethod
-    def pdf_pages(*sizes: tuple[float, float], title: str = "plan") -> bytes:
-        """A PDF with the given page sizes whose bytes change with ``title``."""
-
-        writer = PdfWriter()
-        for width, height in sizes:
-            writer.add_blank_page(width=width, height=height)
-        writer.add_metadata({"/Title": title})
-        output = BytesIO()
-        writer.write(output)
-        return output.getvalue()
-
-    @staticmethod
-    def portrait_png(color: str = "red") -> bytes:
-        """A 3:4 PNG: the visible ratio of the second page used below."""
-
-        output = BytesIO()
-        Image.new("RGB", (300, 400), color).save(output, format="PNG")
-        return output.getvalue()
+    def replaces_document(self, document: dict) -> dict:
+        return {"runId": document["runId"], "assetSha256": document["assetSha256"],
+                "revisionRef": document["revisionRef"]}
 
     def test_pdf_work_copy_covers_the_whole_document(self) -> None:
-        first = self.pdf_pages((400, 300), (300, 400), title="first")
+        first = sized_pdf((400, 300), (300, 400), title="first")
         original = self.upload(first, "plan.pdf").json()
         self.assertEqual(original["pageCount"], 2)
         response = self.work_copy(original)
         self.assertEqual(response.status_code, 201, response.text)
         copy = response.json()
-        self.assertEqual((copy["mimeType"], copy["pageCount"], copy["pageIndex"]),
-                         ("application/pdf", 2, 0))
+        # The media type is the copy's own: the kind of file these bytes are.
+        self.assertEqual((copy["mimeType"], copy["pageIndex"], copy["refusal"]),
+                         ("application/pdf", 0, None))
         self.assertEqual(copy["relativePath"],
                          f"runs/{REFERENCE_RUN_ID}/workspaces/studio-documents/work/{original['assetSha256']}/plan.pdf")
         path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
         self.assertEqual(path.read_bytes(), first)
         # Asking again answers with the same copy, untouched.
-        edited = self.pdf_pages((400, 300), (300, 400), title="edited")
+        edited = sized_pdf((400, 300), (300, 400), title="edited")
         path.write_bytes(edited)
         again = self.work_copy(original).json()
         self.assertEqual(again["relativePath"], copy["relativePath"])
         self.assertEqual(path.read_bytes(), edited)
 
     def test_non_portable_pdf_name_gets_a_pdf_segment(self) -> None:
-        original = self.upload(self.pdf_pages((400, 300)), "研究图纸.pdf").json()
+        original = self.upload(sized_pdf((400, 300)), "研究图纸.pdf").json()
         copy = self.work_copy(original).json()
         self.assertTrue(copy["relativePath"].endswith(f"/{original['assetSha256'][:32]}.pdf"), copy["relativePath"])
         self.assertTrue((self.repository.layout.root / Path(*copy["relativePath"].split("/"))).is_file())
 
     def test_a_pdf_whose_page_was_replaced_individually_is_not_editable(self) -> None:
-        original = self.upload(self.pdf_pages((400, 300), (300, 400))).json()
-        # Replace page 1 alone with an image of the same visible aspect ratio.
-        replacement = self.upload(self.portrait_png(), "page-two.png", "image/png", run_id=None,
+        original = self.upload(sized_pdf((400, 300), (300, 400))).json()
+        # The copy is made first: this is the case that loses an architect's
+        # work if a split page quietly removes the file from the watch list.
+        copy = self.work_copy(original).json()
+        path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
+        edited = sized_pdf((400, 300), (300, 400), title="edited")
+        path.write_bytes(edited)
+        # Now page 1 goes somewhere else, at the same visible aspect ratio.
+        replacement = self.upload(image_bytes(color="red", size=(300, 400)), "page-two.png", "image/png", run_id=None,
                                   replacesPages=[replacement_page(original, 1, 0)])
         self.assertEqual(replacement.status_code, 201, replacement.text)
         response = self.work_copy(original)
         self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(response.json()["code"], "DOCUMENT_NOT_EDITABLE")
-        # A document whose pages no longer travel together is watched nowhere.
-        self.assertEqual(list_document_work_copies(bound_project(self.client.app.state)), ())
-        work_root = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents" / "work"
-        self.assertFalse(work_root.exists())
+        self.assertIn("different documents", response.json()["detail"])
+        # The refusal names the file, and the file is still listed and untouched.
+        self.assertIn(copy["relativePath"], response.json()["detail"])
+        watched = list_document_work_copies(bound_project(self.client.app.state))
+        row = next(item for item in watched if item.relative_path == copy["relativePath"])
+        self.assertIn("different documents", row.refusal or "")
+        self.assertEqual(path.read_bytes(), edited)
 
     def test_pdf_work_copy_registration_replaces_every_page(self) -> None:
-        original = self.upload(self.pdf_pages((400, 300), (300, 400), title="first"), "plan.pdf").json()
+        original = self.upload(sized_pdf((400, 300), (300, 400), title="first"), "plan.pdf").json()
         copy = self.work_copy(original).json()
-        edited = self.pdf_pages((400, 300), (300, 400), title="second")
+        edited = sized_pdf((400, 300), (300, 400), title="second")
         registered = self.upload(edited, "plan.pdf", run_id=None,
-                                 replacesPages=[replacement_page(original, 0, 0), replacement_page(original, 1, 1)])
+                                 replacesDocument=self.replaces_document(original))
         self.assertEqual(registered.status_code, 201, registered.text)
         document = registered.json()
         self.assertEqual(sorted((page["pageIndex"], page["newPageIndex"]) for page in document["replacesPages"]),
                          [(0, 0), (1, 1)])
-        # The copy keeps its own identity and now answers for the new document,
-        # page for page.
+        # The copy keeps its own identity and now answers for the new document.
         head = self.work_copy(original).json()
         self.assertEqual(head["relativePath"], copy["relativePath"])
-        self.assertEqual((head["headAssetSha256"], head["headPageIndex"], head["pageCount"]),
-                         (document["assetSha256"], 0, 2))
+        self.assertEqual((head["headAssetSha256"], head["headPageIndex"], head["refusal"]),
+                         (document["assetSha256"], 0, None))
 
-    def test_a_replacement_answering_for_several_pages_must_answer_for_all_of_them(self) -> None:
-        original = self.upload(self.pdf_pages((400, 300), (300, 400), title="first"), "plan.pdf").json()
-        grown = self.pdf_pages((400, 300), (300, 400), (400, 300), title="three")
-        response = self.upload(grown, "plan.pdf", run_id=None,
-                               replacesPages=[replacement_page(original, 0, 0), replacement_page(original, 1, 1)])
+    def test_a_declared_whole_document_replacement_must_be_the_same_file_shape(self) -> None:
+        original = self.upload(sized_pdf((400, 300), title="one"), "plan.pdf").json()
+        target = self.replaces_document(original)
+        # A single-page original is the case a page-count heuristic cannot see:
+        # one page listed either way, whatever the uploaded file turned into.
+        grown = self.upload(sized_pdf((400, 300), (300, 400), (400, 300), title="three"),
+                            "plan.pdf", run_id=None, replacesDocument=target)
+        self.assertEqual(grown.status_code, 422, grown.text)
+        self.assertEqual(grown.json()["code"], "DOCUMENT_REPLACEMENT_INVALID")
+        self.assertIn("3 pages", grown.json()["detail"])
+        two = self.upload(sized_pdf((400, 300), (300, 400), title="two"), "plan.pdf").json()
+        shrunk = self.upload(sized_pdf((400, 300), title="back"), "plan.pdf", run_id=None,
+                             replacesDocument=self.replaces_document(two))
+        self.assertEqual(shrunk.status_code, 422, shrunk.text)
+        self.assertIn("1 pages", shrunk.json()["detail"])
+        other_kind = self.upload(image_bytes(color="red", size=(400, 300)), "plan.png", "image/png",
+                                 run_id=None, replacesDocument=target)
+        self.assertEqual(other_kind.status_code, 422, other_kind.text)
+        self.assertIn("different kind of file", other_kind.json()["detail"])
+        missing = self.upload(sized_pdf((400, 300), title="x"), "plan.pdf", run_id=None,
+                              replacesDocument={**target, "assetSha256": "0" * 64})
+        self.assertEqual(missing.status_code, 404, missing.text)
+        both = self.upload(sized_pdf((400, 300), title="y"), "plan.pdf", run_id=None,
+                           replacesDocument=target, replacesPages=[replacement_page(original)])
+        self.assertEqual(both.status_code, 422, both.text)
+        # Nothing above was retained.
+        self.assertEqual({row["assetSha256"] for row in self.client.get("/api/documents").json()["documents"]},
+                         {original["assetSha256"], two["assetSha256"]})
+
+    def test_two_old_pages_cannot_be_answered_by_one_uploaded_page(self) -> None:
+        original = self.upload(sized_pdf((400, 300), (400, 300), (300, 400))).json()
+        response = self.upload(sized_pdf((400, 300), (300, 400)), "merged.pdf", run_id=None,
+                               replacesPages=[replacement_page(original, 0, 0), replacement_page(original, 1, 0),
+                                              replacement_page(original, 2, 1)])
         self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(response.json()["code"], "DOCUMENT_REPLACEMENT_INVALID")
         self.assertEqual([row["assetSha256"] for row in self.client.get("/api/documents").json()["documents"]],
                          [original["assetSha256"]])
-        # One page answered for on its own may still come from any page of a
-        # longer file: that is the Board's own replacement dialog.
-        picked = self.upload(self.pdf_pages((400, 300), (300, 400)), "picked.pdf", run_id=None,
-                             replacesPages=[replacement_page(original, 1, 1)])
-        self.assertEqual(picked.status_code, 201, picked.text)
+        # Distinct pages of the upload remain a normal reordering replacement.
+        reordered = self.upload(sized_pdf((300, 400), (400, 300)), "reordered.pdf", run_id=None,
+                                replacesPages=[replacement_page(original, 2, 0), replacement_page(original, 0, 1)])
+        self.assertEqual(reordered.status_code, 201, reordered.text)
+
+    def test_a_cross_kind_page_replacement_leaves_the_copy_listed_and_refused(self) -> None:
+        original = self.upload(sized_pdf((120, 80), title="one"), "plan.pdf").json()
+        copy = self.work_copy(original).json()
+        path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
+        edited = sized_pdf((120, 80), title="edited")
+        path.write_bytes(edited)
+        # The Board's own dialog replaces that page with an image of the same
+        # ratio. The file on disk is still a PDF; it just answers for nothing.
+        replacement = self.upload(image_bytes(), "plan.png", "image/png", run_id=None,
+                                  replacesPages=[replacement_page(original)])
+        self.assertEqual(replacement.status_code, 201, replacement.text)
+        watched = list_document_work_copies(bound_project(self.client.app.state))
+        row = next(item for item in watched if item.relative_path == copy["relativePath"])
+        # The row keeps the copy's own kind, so nothing forwards PDF bytes as a PNG.
+        self.assertEqual(row.mime_type, "application/pdf")
+        self.assertEqual(row.refusal, "The current replacement is a different kind of file from this document.")
+        refused = self.work_copy(original)
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertEqual(refused.json()["code"], "DOCUMENT_NOT_EDITABLE")
+        self.assertIn(row.refusal, refused.json()["detail"])
+        self.assertEqual(path.read_bytes(), edited)
+
+    def test_a_generated_drawing_sheet_is_an_origin_like_any_upload(self) -> None:
+        binding = bound_project(self.client.app.state)
+        data = sized_pdf((400, 300), title="sheet")
+        sheet = save_document(binding, REFERENCE_RUN_ID, "front.pdf", "application/pdf",
+                              base64.b64encode(data).decode("ascii"), drawing_id="front",
+                              view_recipe={"view": "front", "scale": 100},
+                              generated_at="2026-09-01T00:00:00Z")
+        self.assertEqual((sheet.drawing_id, sheet.view_recipe["view"]), ("front", "front"))
+        copy = self.client.post(f"/api/documents/{sheet.asset_sha256}/work-copy", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "revisionRef": None})
+        self.assertEqual(copy.status_code, 201, copy.text)
+        self.assertEqual((copy.json()["mimeType"], copy.json()["refusal"]), ("application/pdf", None))
+        path = self.repository.layout.root / Path(*copy.json()["relativePath"].split("/"))
+        self.assertEqual(path.read_bytes(), data)
+        # Registering the edit carries none of the sheet's generated identity.
+        edited = sized_pdf((400, 300), title="marked up")
+        registered = self.upload(edited, "front.pdf", run_id=None, replacesDocument={
+            "runId": sheet.run_id, "assetSha256": sheet.asset_sha256, "revisionRef": sheet.revision_ref}).json()
+        self.assertEqual((registered["drawingId"], registered["viewRecipe"], registered["generatedAt"]),
+                         (None, None, None))
+        self.assertEqual([(page["pageIndex"], page["newPageIndex"]) for page in registered["replacesPages"]], [(0, 0)])
 
     def test_unregistered_digest_cannot_read_an_object_and_tampering_is_named(self) -> None:
         document = self.upload(image_bytes(), "a.png", "image/png").json()

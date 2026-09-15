@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..application.artifacts import (
     ArtifactListing,
@@ -142,7 +142,7 @@ class RhinoWorkExportRequestDto(BaseModel):
 
 
 class DocumentWorkCopyRequestDto(BaseModel):
-    """Which exact registered page is being made editable.
+    """Which exact registered document is being made editable.
 
     The digest in the path names the bytes; these name the one registration
     they belong to. ``revisionRef`` is part of that identity, not a filter: a
@@ -159,7 +159,7 @@ class DocumentWorkCopyRequestDto(BaseModel):
 
 
 class DocumentWorkCopyDto(BaseModel):
-    """One registered document's editable file, and the pages it answers for."""
+    """One registered document's editable file, and the document it answers for."""
 
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 
@@ -168,9 +168,10 @@ class DocumentWorkCopyDto(BaseModel):
     asset_sha256: str = Field(alias="assetSha256")
     revision_ref: str | None = Field(alias="revisionRef", default=None)
     page_index: int = Field(alias="pageIndex", ge=0)
-    page_count: int = Field(alias="pageCount", ge=1)
     file_name: str = Field(alias="fileName")
-    mime_type: Literal["image/png", "image/jpeg", "application/pdf"] = Field(alias="mimeType")
+    mime_type: Literal["image/png", "image/jpeg", "application/pdf"] = Field(
+        alias="mimeType", description="the kind of file the copy itself holds: the origin's own",
+    )
     relative_path: str = Field(
         alias="relativePath",
         description="where the editable copy lives, project-relative; display "
@@ -181,16 +182,20 @@ class DocumentWorkCopyDto(BaseModel):
     head_asset_sha256: str = Field(alias="headAssetSha256")
     head_revision_ref: str | None = Field(alias="headRevisionRef", default=None)
     head_page_index: int = Field(alias="headPageIndex", ge=0)
+    refusal: str | None = Field(
+        default=None,
+        description="why no one file can stand for this document right now, in "
+        "the same words the refused request answers with; null when it is editable",
+    )
 
 
 def work_copy_dto(copy: DocumentWorkCopy) -> DocumentWorkCopyDto:
     return DocumentWorkCopyDto(
         project_id=copy.project_id, run_id=copy.run_id, asset_sha256=copy.asset_sha256,
-        revision_ref=copy.revision_ref, page_index=copy.page_index, page_count=copy.page_count,
-        file_name=copy.file_name,
+        revision_ref=copy.revision_ref, page_index=copy.page_index, file_name=copy.file_name,
         mime_type=copy.mime_type, relative_path=copy.relative_path, head_run_id=copy.head_run_id,
         head_asset_sha256=copy.head_asset_sha256, head_revision_ref=copy.head_revision_ref,
-        head_page_index=copy.head_page_index,
+        head_page_index=copy.head_page_index, refusal=copy.refusal,
     )
 
 
@@ -248,6 +253,22 @@ class DocumentPageReplacementDto(BaseModel):
     new_page_index: int = Field(alias="newPageIndex", ge=0, strict=True)
 
 
+class DocumentReplacementTargetDto(BaseModel):
+    """The one registered document an upload replaces, whole.
+
+    Naming the document instead of listing its pages is what makes a
+    whole-file edit sayable: the server then knows a file that has gained or
+    lost a page is wrong, rather than guessing from how many pages happened to
+    be listed.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
+    revision_ref: str | None = Field(alias="revisionRef", default=None, min_length=1)
+
+
 class SourceDocumentRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
@@ -259,6 +280,20 @@ class SourceDocumentRequestDto(BaseModel):
     content_base64: str = Field(alias="contentBase64", min_length=1, description="Original file bytes; maximum decoded size 32 MiB. No server path is accepted.")
     model_source: ModelSourceDto | None = Field(alias="modelSource", default=None)
     replaces_pages: list[DocumentPageReplacementDto] = Field(alias="replacesPages", default_factory=list)
+    replaces_document: DocumentReplacementTargetDto | None = Field(
+        alias="replacesDocument", default=None,
+        description="Replace one registered document whole, page for page. The "
+        "upload must have the same media type and page count as the document it "
+        "replaces. Mutually exclusive with replacesPages.",
+    )
+
+    @model_validator(mode="after")
+    def _one_way_of_saying_what_is_replaced(self) -> "SourceDocumentRequestDto":
+        if self.replaces_document is not None and self.replaces_pages:
+            raise ValueError(
+                "Name either the whole document this replaces or the individual pages, not both."
+            )
+        return self
 
 
 class SourceDocumentDto(BaseModel):
