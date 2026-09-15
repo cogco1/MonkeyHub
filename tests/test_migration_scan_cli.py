@@ -123,7 +123,7 @@ class MigrationScanCliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn(
-            "Legacy ProjectVersionRef scan (exact shape only; not migration approval):",
+            "Legacy ProjectVersionRef scan (exact shape only; the migration lists these in its receipt):",
             output,
         )
         self.assertRegex(output, r"found [1-9][0-9]* exact reference\(s\)")

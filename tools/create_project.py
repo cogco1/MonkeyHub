@@ -507,7 +507,7 @@ def _print_migration_plan(
         if plan.orphan_paths:
             print(f"  orphan records not reachable from HEAD: {len(plan.orphan_paths)}")
     if reference_scan is not None:
-        print("Legacy ProjectVersionRef scan (exact shape only; not migration approval):")
+        print("Legacy ProjectVersionRef scan (exact shape only; the migration lists these in its receipt):")
         print(
             f"  scanned {reference_scan.scanned_documents} retained JSON document(s); "
             f"found {len(reference_scan.references)} exact reference(s)."
@@ -545,6 +545,7 @@ def _print_migration_plan(
         print(f"  - {reference_scan_error}")
     for title, lines in (
         ("Required transformations", plan.required_transformations),
+        ("preserved (byte for byte)", plan.preserved),
         ("Blockers", plan.blockers),
     ):
         if lines:

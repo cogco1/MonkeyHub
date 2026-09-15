@@ -242,9 +242,10 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         plan = plan_project_migration(root)
         self.assertTrue(plan.planned)
         self.assertTrue(plan.migration_required)
-        self.assertIn("no project-format migrator is implemented for 1 -> 2", plan.blockers[0])
+        self.assertEqual(plan.blockers, ())
         reported = " ".join(
-            (plan.inspection.detail, *plan.required_transformations, *plan.blockers)
+            (plan.inspection.detail, *plan.required_transformations,
+             *plan.preserved, *plan.blockers)
         )
         self.assertNotIn("upgradeable", reported)
         self.assert_unchanged(root, before)
@@ -392,7 +393,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertEqual(records[STATE_RECORD], 2)
         self.assertEqual(records[DESIGN_STAGE], 2)
 
-    def test_unknown_retained_record_is_surfaced_as_a_blocker(self) -> None:
+    def test_unknown_retained_record_is_preserved_and_listed(self) -> None:
         repository = self.legacy_project()
         root = repository.layout.root
         self.install_historical_record(repository, "retired-lane-note")
@@ -402,11 +403,21 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         unknown = [entry for entry in plan.inventory if entry.registered is False]
         self.assertEqual([entry.kind for entry in unknown], ["retired-lane-note"])
         self.assertEqual(unknown[0].schema, "RetiredLaneNote@1")
-        blocker = [line for line in plan.blockers if "retired-lane-note" in line]
-        self.assertEqual(len(blocker), 1)
-        self.assertIn("RetiredLaneNote@1", blocker[0])
-        self.assertIn("no typed owner", blocker[0])
+        preserved = [line for line in plan.preserved if "retired-lane-note" in line]
+        self.assertEqual(len(preserved), 1)
+        self.assertIn("RetiredLaneNote@1", preserved[0])
+        self.assertIn("preserves it byte for byte", preserved[0])
+        self.assertEqual(plan.blockers, ())
         self.assert_unchanged(root, before)
+
+    def test_a_complete_legacy_closure_plans_with_no_blockers(self) -> None:
+        repository = self.legacy_project()
+        plan = plan_project_migration(repository.layout.root)
+        self.assertTrue(plan.planned)
+        self.assertTrue(plan.migration_required)
+        self.assertEqual(plan.blockers, ())
+        self.assertEqual(plan.preserved, ())
+        self.assertTrue(any("state_sha256 becomes the semantic state digest" in t for t in plan.required_transformations))
 
     def test_legacy_plan_names_the_envelope_work_a_migration_would_require(self) -> None:
         plan = plan_project_migration(self.legacy_project().layout.root)
@@ -430,7 +441,8 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertTrue(plan.planned)
         entries = [entry for entry in plan.inventory if entry.kind == "retired-lane-note"]
         self.assertEqual({entry.schema for entry in entries}, {None, "RetiredLaneNote@1"})
-        self.assertEqual(len([line for line in plan.blockers if "retired-lane-note" in line]), 2)
+        self.assertEqual(len([line for line in plan.preserved if "retired-lane-note" in line]), 2)
+        self.assertEqual(plan.blockers, ())
         self.assert_unchanged(repository.layout.root, before)
 
     def test_the_plan_never_claims_to_have_analyzed_record_references(self) -> None:
@@ -442,7 +454,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         """
 
         plan = plan_project_migration(self.legacy_project().layout.root)
-        reported = (*plan.required_transformations, *plan.blockers)
+        reported = (*plan.required_transformations, *plan.preserved, *plan.blockers)
         for line in reported:
             self.assertNotRegex(line, r"\d+ (typed )?(record|project-version) reference")
         deferred = [
@@ -451,9 +463,6 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         ]
         self.assertEqual(len(deferred), 1)
         self.assertIn("4 retained record(s)", deferred[0])
-        unanalyzed = [line for line in plan.blockers if "does not parse record payloads" in line]
-        self.assertEqual(len(unanalyzed), 1)
-        self.assertIn("unanalyzed here", unanalyzed[0])
 
     # ---- refusals
 
@@ -537,7 +546,8 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertIn("supported_legacy (format 1)", output)
         self.assertIn("retired-lane-note", output)
         self.assertIn("UNREGISTERED", output)
-        self.assertIn("no project-format migrator is implemented for 1 -> 2", output)
+        self.assertIn("preserved (byte for byte)", output)
+        self.assertIn("preserves it byte for byte", output)
         self.assertIn("--export-archive", output)
         self.assertIn("No file in the project was created or changed", output)
         self.assertNotIn("upgradeable", output)
