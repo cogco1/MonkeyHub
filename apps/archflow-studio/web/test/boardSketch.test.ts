@@ -136,6 +136,28 @@ test("the frame data round-trips and defaults a missing storey height", () => {
     { kind: "sketch", version: 1, levelId: "level-2", storeyHeight: 3, metresPerUnit: null, calibration: null });
 });
 
+test("a sketch frame and its shapes are not marks a board-wide clear may delete", () => {
+  const rect = inFrame("rectangle", "r1", { x: 100, y: 600, width: 200, height: 100 });
+  const otherFrame = element("frame", "frame-2", { x: 2000, y: 100, width: 400, height: 400 });
+  const note = element("text", "t1", { frameId: "frame-2" });
+  const loose = element("freedraw", "d1", {});
+  const ids = sketch.sketchFrameIds([frame(), rect, otherFrame, note, loose]);
+  assert.deepEqual([...ids], ["frame-1"]);
+  assert.equal(sketch.insideSketchFrame(frame(), ids), true);
+  assert.equal(sketch.insideSketchFrame(rect, ids), true);
+  assert.equal(sketch.insideSketchFrame(note, ids), false);   // another frame's mark stays a mark
+  assert.equal(sketch.insideSketchFrame(loose, ids), false);
+  assert.equal(sketch.insideSketchFrame(rect, new Set<string>()), false);
+});
+
+test("leaving the board for the conversation drops the board view and keeps the rest", () => {
+  assert.equal(sketch.conversationUrl("http://host/app?view=board&candidate=run-9&embedded=tool"),
+    "http://host/app?candidate=run-9&embedded=tool");
+  assert.equal(sketch.conversationUrl("http://host/app?view=documents&documentRun=r&documentSource=a&documentPage=1&documentRevision=x"),
+    "http://host/app");
+  assert.equal(sketch.conversationUrl("http://host/app"), "http://host/app");
+});
+
 test("the summary names frame, count, level, scale and board revision", () => {
   const rect = inFrame("rectangle", "r1", { x: 100, y: 600, width: 200, height: 100 });
   const conversion = sketch.sketchActionsFromFrame([frame(), rect], frame());

@@ -72,6 +72,34 @@ export function newSketchFrameData(levelId: string): SketchFrameData {
   return { kind: "sketch", version: 1, levelId, storeyHeight: 3, metresPerUnit: null, calibration: null };
 }
 
+/** The frames on this board that carry a sketch. */
+export function sketchFrameIds(elements: readonly ExcalidrawElement[]): Set<string> {
+  return new Set(elements.filter((element) => sketchFrameData(element) !== null).map((element) => element.id));
+}
+
+/**
+ * Whether this element is a sketch frame or one of the shapes inside it.
+ *
+ * Those shapes are the drawing the architect will send to 3D, not marks on
+ * someone else's drawing, so a board-wide action that clears marks must leave
+ * them alone.
+ */
+export function insideSketchFrame(element: ExcalidrawElement, frameIds: ReadonlySet<string>): boolean {
+  return frameIds.has(element.id) || (element.frameId !== null && frameIds.has(element.frameId));
+}
+
+/**
+ * Leaving the board for the conversation, in the same tab: a reload must not
+ * reopen the board behind the answer the sketch is waiting for. The candidate
+ * a host page named, and every other parameter, are kept.
+ */
+export function conversationUrl(currentUrl: string): string {
+  const url = new URL(currentUrl);
+  url.searchParams.delete("view");
+  for (const key of ["documentRun", "documentSource", "documentPage", "documentRevision"]) url.searchParams.delete(key);
+  return url.href;
+}
+
 function twoPointLength(line: ExcalidrawElement): number | null {
   if ((line.type !== "line" && line.type !== "arrow") || line.isDeleted) return null;
   const points = (line as ExcalidrawElement & { points: readonly (readonly number[])[] }).points;

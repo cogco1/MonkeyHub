@@ -21,7 +21,7 @@ import { connection, type ServerIdentity } from "../api/connection";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardDocumentOpen, BoardViewState } from "../workspaces/monkeyboard/boardNavigation";
-import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
+import { conversationUrl, type BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import { boardUrl, documentUrl, type PageSource } from "../workspaces/monkeyboard/boardScene";
 import { TaskWorkspace } from "./TaskWorkspace";
 import App from "./App";
@@ -54,6 +54,9 @@ export function Connected() {
   const [sketchIntent, setSketchIntent] = useState<BoardSketchRequest | null>(null);
   const [board, setBoard] = useState(() => new URLSearchParams(window.location.search).get("view") === "board");
   const [visit, setVisit] = useState<BoardVisit | null>(null);
+  // A sketch is not a page visit, but it is a departure from the board, and the
+  // way back has to stay open: a refused sketch is corrected on the board.
+  const [sketchVisit, setSketchVisit] = useState(false);
   const t = useT();
 
   const submitBoardFeedback = useCallback((request: BoardDesignRequest) => {
@@ -68,8 +71,11 @@ export function Connected() {
   // A calibrated sketch frame continues in the conversation, exactly as design
   // feedback does: the board keeps its marks and nothing on it is mutated.
   const submitBoardSketch = useCallback((request: BoardSketchRequest) => {
+    // A reload must land on the answer, not back on the board that asked.
+    window.history.replaceState(null, "", conversationUrl(window.location.href));
     document.title = "MonkeyArch";
     setVisit(null);
+    setSketchVisit(true);
     setSketchIntent(request);
     setBoard(false);
   }, []);
@@ -86,6 +92,9 @@ export function Connected() {
   const returnToBoard = useCallback(() => {
     window.history.replaceState(null, "", boardUrl(window.location.href));
     document.title = "MonkeyBoard";
+    // A sketch already handed over is never replayed by the task view that
+    // mounts next; going back is for correcting the frame, not resending it.
+    setSketchIntent(null);
     setBoard(true);
   }, []);
 
@@ -151,9 +160,9 @@ export function Connected() {
       // conversation's own result is never read as the reference run.
       ? <App server={server.value} initialDocumentIntent={documentIntent ?? undefined}
              initialSketchRequest={sketchIntent ?? undefined}
-             onReturnToBoard={visit === null ? undefined : returnToBoard}
+             onReturnToBoard={visit === null && !sketchVisit ? undefined : returnToBoard}
              initialRunId={new URLSearchParams(window.location.search).get("candidate")} />
       : <TaskWorkspace server={server.value} initialDocumentIntent={documentIntent ?? undefined}
                        initialSketchRequest={sketchIntent ?? undefined}
-                       onReturnToBoard={visit === null ? undefined : returnToBoard} />;
+                       onReturnToBoard={visit === null && !sketchVisit ? undefined : returnToBoard} />;
 }

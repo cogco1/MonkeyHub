@@ -24,6 +24,8 @@ export const messagesEn = {
   "board.sketch.you": "Sketch from MonkeyBoard: {summary}",
   "board.sketch.preparing": "Preparing the project for its first model…",
   "board.sketch.what": "MonkeyBoard sketch",
+  "board.sketch.unmodelled": "This project has no state a proposal could be based on, and preparing one did not create it: the project already carries design records, or the kernel refused its bound view. The sketch was not submitted and its frame is saved on the board.",
+  "board.sketch.otherProject": "The board sketch belongs to another project. Its frame is saved on the board; nothing has been submitted here.",
   "stage.drawing.direction": "Elevation direction",
   "stage.drawing.front": "Front elevation",
   "stage.drawing.back": "Back elevation",

@@ -262,7 +262,8 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   const documentIntentStarted = useRef(false);
   const documentIntentSubmitted = useRef(false);
   const sketchSubmitted = useRef(false);
-  const sketchPrepared = useRef(false);
+  const sketchPrepared = useRef<"no" | "running" | "done">("no");
+  const sketchRetried = useRef(false);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
   const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
   const designHistoryEnabled = server.capabilities.includes("design-history");
@@ -2320,23 +2321,44 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   // A board sketch is submitted exactly once, through the routes a typed sketch
   // already uses: no board geometry is truth until the exact-base candidate has
   // run. An unmodelled project is prepared first, because a project with no
-  // state digest has nothing a proposal could be based on.
+  // state digest has nothing a proposal could be based on. Every way this can
+  // end early says so in the conversation: a sketch that vanishes without a
+  // word is indistinguishable from a broken button.
   useEffect(() => {
     if (!initialSketchRequest || sketchSubmitted.current || session.status !== "ready" || changingBase || proposalBusy) return;
-    if (project === null || project.projectId !== initialSketchRequest.projectId) return;
+    // The home model auto-loads on this same ready transition and raises a view
+    // request of its own. Waiting for the artifact list to settle first keeps
+    // the candidate this sketch starts from being cancelled as "not shown".
+    if (artifacts.status !== "ready" && artifacts.status !== "failed") return;
+    if (project === null) return;
+    const refuse = (cause: unknown) => {
+      sketchSubmitted.current = true;
+      append({ kind: "refusal", error: asStudioApiError(cause), what: t("board.sketch.what") });
+    };
+    if (project.projectId !== initialSketchRequest.projectId) { refuse(new Error(t("board.sketch.otherProject"))); return; }
     const sketchStateDigest = projection?.stateDigest ?? null;
     if (sketchStateDigest === null) {
-      if (sketchPrepared.current) return;
-      sketchPrepared.current = true;
+      if (sketchPrepared.current === "running") return;                                          // in flight
+      if (sketchPrepared.current === "done") { refuse(new Error(t("board.sketch.unmodelled"))); return; }
+      sketchPrepared.current = "running";
       append({ kind: "system", ...systemText([{ kind: "prose", text: t("board.sketch.preparing") }]) });
-      void studio.prepareModeling(project.projectId).then(() => reload()).catch((cause) => {
-        sketchSubmitted.current = true;
-        append({ kind: "refusal", error: asStudioApiError(cause), what: t("board.sketch.what") });
-      });
+      void (async () => {
+        // The server refuses to seed a project that already carries design
+        // records, and a record it cannot bind answers with no digest at all.
+        // Both answer 200, so only the flag and the re-read say what happened.
+        const prepared = await studio.prepareModeling(project.projectId);
+        const next = prepared.initialized ? await reload() : null;
+        sketchPrepared.current = "done";
+        if (next === null || next.projection.stateDigest === null) refuse(new Error(t("board.sketch.unmodelled")));
+      })().catch((cause) => { sketchPrepared.current = "done"; refuse(cause); });
       return;
     }
     sketchSubmitted.current = true;
-    const componentId = projection?.elements[0]?.componentId ?? "model";
+    // The record's own root, not whichever component happens to hold the first
+    // element: a footprint id is stable across sends, so the component it is
+    // authored under must not change when the element order does.
+    const roots = (projection?.catalog?.components ?? []).filter((row) => row.parentId === null);
+    const componentId = roots.length === 1 ? roots[0].componentId : projection?.elements[0]?.componentId ?? "model";
     append({ kind: "you", text: t("board.sketch.you", { summary: initialSketchRequest.summary }) });
     setProposalBusy(true);
     void (async () => {
@@ -2351,12 +2373,18 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
         await runCandidate(proposal.proposalId);
       } catch (cause) {
         const error = asStudioApiError(cause);
-        recoverFromStaleBase(error);
+        // The base moved under the sketch. recoverFromStaleBase re-projects, so
+        // the same frame is offered once more against the base it answers with;
+        // a second stale base is the operator's to resolve on the board.
+        if (recoverFromStaleBase(error) && !sketchRetried.current) {
+          sketchRetried.current = true;
+          sketchSubmitted.current = false;
+        }
         append({ kind: "refusal", error, what: t("board.sketch.what") });
       } finally { setProposalBusy(false); }
     })();
-  }, [append, changingBase, initialSketchRequest, project, projection, proposalBusy, recoverFromStaleBase, reload,
-      runCandidate, selectSemanticTarget, session.status, sourceRunId, t]);
+  }, [append, artifacts.status, changingBase, initialSketchRequest, project, projection, proposalBusy,
+      recoverFromStaleBase, reload, runCandidate, selectSemanticTarget, session.status, sourceRunId, t]);
 
   // Completed gestures update local geometry and history synchronously. Only
   // the explicit Sync action below crosses the proposal/candidate boundary.

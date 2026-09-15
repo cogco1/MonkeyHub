@@ -13,7 +13,7 @@ import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedb
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
-import { BoardSketchError, calibrateSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchSummary, type BoardSketchRequest, type SketchFrameData } from "./boardSketch";
+import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData } from "./boardSketch";
 import "./board.css";
 
 const copy = {
@@ -50,8 +50,11 @@ function feedbackContext(elements: readonly ExcalidrawElement[], selectedIds: Ap
   }
 }
 
-function isAnnotation(element: ExcalidrawElement): boolean {
-  return !element.isDeleted && ["freedraw", "line", "arrow", "rectangle", "ellipse", "diamond", "text"].includes(element.type);
+// A shape drawn inside a sketch frame is the architect's own geometry, not a
+// mark on someone else's drawing, so clearing marks never reaches into one.
+function isAnnotation(element: ExcalidrawElement, sketchFrames: ReadonlySet<string>): boolean {
+  return !element.isDeleted && !insideSketchFrame(element, sketchFrames)
+    && ["freedraw", "line", "arrow", "rectangle", "ellipse", "diamond", "text"].includes(element.type);
 }
 
 const replacementCopy = {
@@ -780,7 +783,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const api = canvas.current;
     if (!api || !ready || busyRef.current || queue.getState().conflict) return;
     const current = api.getSceneElementsIncludingDeleted();
-    const removed = new Set(current.filter(isAnnotation).map((element) => element.id));
+    const sketchFrames = sketchFrameIds(current);
+    const removed = new Set(current.filter((element) => isAnnotation(element, sketchFrames)).map((element) => element.id));
     if (removed.size === 0) return;
     const elements = current.map((element) => {
       if (element.isDeleted) return element;
@@ -963,7 +967,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             }
             const selectedSource = selectedPageSource(records(elements), appState.selectedElementIds);
             setSelected((previous) => JSON.stringify(previous) === JSON.stringify(selectedSource) ? previous : selectedSource);
-            setHasAnnotations(elements.some(isAnnotation));
+            const sketchFrames = sketchFrameIds(elements);
+            setHasAnnotations(elements.some((element) => isAnnotation(element, sketchFrames)));
             updateContext(elements, appState);
             capture(elements);
           }}>
