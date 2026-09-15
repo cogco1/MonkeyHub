@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -23,12 +25,31 @@ from fastapi.testclient import TestClient
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 from archflow.project.repository import FilesystemProjectRepository
-from tools.create_project import _restore_project_archive, _write_project_archive
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
 from .test_cad_export import NEEDS_OCCT, no_process, no_rhino
 
 JOB_DEADLINE = 180.0
+# The Studio API may not import ``tools``, and #56's rehearsal contract names
+# the CLI anyway, so export and restore go through the landed command itself.
+CREATE_PROJECT = Path(__file__).resolve().parents[4] / "tools/create_project.py"
+
+
+def create_project_cli(*args: str) -> str:
+    result = subprocess.run(
+        [sys.executable, str(CREATE_PROJECT), *args], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout
+
+
+def export_archive(project_root: Path, archive: Path) -> None:
+    create_project_cli("--project", str(project_root), "--export-archive", str(archive))
+
+
+def restore_archive(restored_root: Path, archive: Path) -> FilesystemProjectRepository:
+    create_project_cli("--project", str(restored_root), "--restore-archive", str(archive))
+    return FilesystemProjectRepository.open(restored_root)
 
 
 def finished(client: TestClient, job_id: str) -> dict:
@@ -100,13 +121,13 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
         run_a = job_a["candidateId"]
         source_head = self.repository.read_head()
         archive = self.root / f"{PROJECT_ID}.monkeyhub.zip"
-        _write_project_archive(FilesystemProjectRepository.open(self.source), archive)
+        export_archive(self.source, archive)
         rows = manifest_rows(archive)
 
         # The source is gone: nothing below can read it by accident.
         shutil.rmtree(self.root / "source")
         restored_root = self.root / "restored" / PROJECT_ID
-        restored, _ = _restore_project_archive(restored_root, archive)
+        restored = restore_archive(restored_root, archive)
         self.assertEqual(restored.read_head(), source_head)
 
         # B: continue from A on the restored project.
@@ -205,10 +226,10 @@ class RestoredContinuationWithOcctTests(unittest.TestCase):
         seat_a = runner_receipt(self.source, run_a)["seat_results"][0]
         exact_name = Path(str(seat_a["cad"]["model"]).replace("\\", "/")).name
         archive = self.root / f"{PROJECT_ID}.monkeyhub.zip"
-        _write_project_archive(FilesystemProjectRepository.open(self.source), archive)
+        export_archive(self.source, archive)
 
         restored_root = self.root / "restored" / PROJECT_ID
-        _restore_project_archive(restored_root, archive)
+        restore_archive(restored_root, archive)
         # The source project stays where it was, but its exact STEP is gone:
         # anything that still reads the retained absolute path fails loudly.
         exact_step_path(self.source, run_a, exact_name).unlink()
@@ -236,10 +257,10 @@ class RestoredContinuationWithOcctTests(unittest.TestCase):
         self.assertEqual(job_a["status"], "succeeded", job_a)
         run_a = job_a["candidateId"]
         archive = self.root / f"{PROJECT_ID}.monkeyhub.zip"
-        _write_project_archive(FilesystemProjectRepository.open(self.source), archive)
+        export_archive(self.source, archive)
         shutil.rmtree(self.root / "source")
         restored_root = self.root / "restored" / PROJECT_ID
-        _restore_project_archive(restored_root, archive)
+        restore_archive(restored_root, archive)
         with self.client(restored_root) as client, no_process():
             _, job_b = continue_candidate(
                 client,
