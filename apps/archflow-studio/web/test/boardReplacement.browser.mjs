@@ -426,6 +426,7 @@ try {
   assert.ok(byId(reopened, "kept-image").crop);
   assert.equal(replacement.modelSource, null);
   if (process.env.BOARD_REPLACEMENT_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_REPLACEMENT_SCREENSHOT });
+  const workCopiesBeforeUpload = workCopies.length;
   await updateAction().click();
   assert.match(await dialog.locator(".monkeyboard-feedback-source").innerText(), /Updated single page\.png.*1\/1/);
   await dialog.getByLabel("Updated PDF / image", { exact: true }).setInputFiles({ name: uploadedReplacement.fileName, mimeType: "application/pdf", buffer: uploadBytes });
@@ -435,7 +436,7 @@ try {
   const afterUpload = await readScene();
   assert.equal(uploads.length, 1, "One user submission uploads one replacement");
   assert.equal(await quiet.count(), 0, "A replacement this tab uploaded is never announced back to its author");
-  assert.equal(workCopies.length, 1, "Nothing but the explicit button asks for a work copy");
+  assert.equal(workCopies.length, workCopiesBeforeUpload, "Nothing but the explicit button asks for a work copy");
   assert.deepEqual(byId(afterUpload, "kept-image").customData.sourceDocument, pageSource(uploadedReplacement, 1));
   assert.deepEqual(geometry(byId(afterUpload, "kept-image")), geometry(byId(reopened, "kept-image")));
   assert.deepEqual(byId(afterUpload, "unmapped-image"), byId(reopened, "unmapped-image"));
