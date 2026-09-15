@@ -717,6 +717,23 @@ try {
   assert.equal(runtimeReads, quietReads, "a connected quiet runtime is not polled every 1.2 seconds");
   runtimeB.operations = []; emitRuntime();
 
+  // An edited work copy the project would not take is the architect's own save
+  // going nowhere: it is said on this same strip, in the owner's own words, and
+  // it goes away when the copy registers something. Other runtime error codes
+  // keep the behaviour they had — this strip is not a general error console.
+  const workCopyNotice = page.getByText("A work copy's change was not registered as a new revision", { exact: true });
+  runtimeB.error = { code: "WORK_COPY_DOCUMENT_REVISION_ALREADY_REGISTERED",
+    detail: "plan.png: These bytes are already a registered revision of this page." };
+  emitRuntime();
+  await workCopyNotice.waitFor();
+  await page.getByText(/plan\.png: These bytes are already a registered revision of this page\./).waitFor();
+  runtimeB.error = { code: "RUNTIME_READ_FAILED", detail: "an unrelated retained read failed" };
+  emitRuntime();
+  await workCopyNotice.waitFor({ state: "hidden" });
+  assert.equal(await page.getByText("an unrelated retained read failed").count(), 0,
+    "the work-copy notice must not turn this strip into a general runtime error console");
+  runtimeB.error = null; emitRuntime();
+
   // 2 — a failure reads as a sentence, keeps its original text for diagnosis,
   // and only offers the model picker when the failure named the model.
   const failed = sessions[0].id;

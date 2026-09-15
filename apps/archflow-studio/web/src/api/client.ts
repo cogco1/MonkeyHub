@@ -46,6 +46,7 @@ import {
   chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
   compileIntentApiIntentsPost,
   createDocumentApiDocumentsPost,
+  createDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPost,
   createProposalApiProposalsPost,
   createViewportCaptureApiCapturesPost,
   exportBoardApiBoardExportPost,
@@ -103,6 +104,7 @@ import type {
   DocumentAnnotationsDto,
   DocumentAnnotationsRequestDto,
   DocumentCommentsDto,
+  DocumentWorkCopyDto,
   FrameDto,
   IntentDto,
   IntentRequestDto,
@@ -411,6 +413,23 @@ export const studio = {
 
   documents(runId?: string | null): Promise<SourceDocumentListDto> {
     return call("GET /api/documents", readDocumentsApiDocumentsGet({ query: { runId } }));
+  },
+
+  /**
+   * Give this registered single-page image an editable copy on disk, and say where.
+   *
+   * Explicitly asked for, never made by watching a project. Asking twice answers
+   * with the copy already there, edits intact. What comes back names the page it
+   * answers for and a project-relative path, never this machine's.
+   */
+  createDocumentWorkCopy(projectId: string, runId: string, assetSha256: string, revisionRef?: string | null): Promise<DocumentWorkCopyDto> {
+    return call(
+      `POST /api/documents/${assetSha256}/work-copy`,
+      createDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPost({
+        path: { asset_sha256: assetSha256 },
+        body: { projectId, runId, revisionRef },
+      }),
+    );
   },
 
   /** Upload the original bytes; the server validates the MIME type and size. */

@@ -54,9 +54,22 @@ function isAnnotation(element: ExcalidrawElement): boolean {
 }
 
 const replacementCopy = {
-  en: { action: "Update this page", file: "Updated PDF / image", page: "Page number in the new file", hint: "Replace this page wherever it is placed on the board. Keep its position, scale and marks. The new page must have the same aspect ratio; the original remains in project documents.", cancel: "Cancel", submit: "Update in place", sending: "Updating page…" },
-  "zh-CN": { action: "更新此页原图", file: "更新后的 PDF / 图片", page: "新文件中的页码", hint: "更新图墙中此页的所有副本，保留位置、缩放与批注。新页须保持相同宽高比；旧原图仍保存在项目资料中。", cancel: "取消", submit: "原位更新", sending: "正在更新…" },
+  en: { action: "Update this page", file: "Updated PDF / image", page: "Page number in the new file", hint: "Replace this page wherever it is placed on the board. Keep its position, scale and marks. The new page must have the same aspect ratio; the original remains in project documents.", cancel: "Cancel", submit: "Update in place", sending: "Updating page…",
+    updated: "«{name}» updated", updatedMore: "«{name}» updated · {count} more updated", view: "View",
+    workCopy: "Get editable copy", workCopyHint: "Editable copy" },
+  "zh-CN": { action: "更新此页原图", file: "更新后的 PDF / 图片", page: "新文件中的页码", hint: "更新图墙中此页的所有副本，保留位置、缩放与批注。新页须保持相同宽高比；旧原图仍保存在项目资料中。", cancel: "取消", submit: "原位更新", sending: "正在更新…",
+    updated: "«{name}» 已更新", updatedMore: "«{name}» 已更新 · 另有 {count} 页已更新", view: "查看",
+    workCopy: "获取可编辑副本", workCopyHint: "可编辑副本" },
 };
+
+/** One live update notice at a time: the newest page named, the rest counted. */
+type BoardUpdateNotice = { fileName: string; others: number; sources: PageSource[] };
+function updateNoticeText(notice: BoardUpdateNotice, language: "en" | "zh-CN"): string {
+  const text = replacementCopy[language];
+  return notice.others > 0
+    ? text.updatedMore.replace("{name}", notice.fileName).replace("{count}", String(notice.others))
+    : text.updated.replace("{name}", notice.fileName);
+}
 
 function ReplacementDialog({ target, language, returnFocus, onCancel, onSubmit }: {
   target: { document: SourceDocumentDto; pageIndex: number }; language: "en" | "zh-CN";
@@ -295,6 +308,9 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const busyRef = useRef(false);
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [notice, setNotice] = useState("");
+  // A replacement this tab uploaded itself is never announced back to its author.
+  const originated = useRef(new Set<string>());
+  const [update, setUpdate] = useState<BoardUpdateNotice | null>(null);
   const [previewFailed, setPreviewFailed] = useState(failures.length > 0);
   const [sourceError, setSourceError] = useState("");
   const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false });
@@ -380,12 +396,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       if (!alive.current || !api || !initialized.current || queue.getState().conflict) return;
       // Rendering may take seconds. Read the live scene only after every await:
       // user moves, deletions, new marks and frame membership win over snapshots.
+      const applied = new Set<string>();
       const elements = api.getSceneElementsIncludingDeleted().map((element) => {
         if (element.type !== "image" || element.isDeleted) return element;
         const source = imageSource(element);
         const target = source && replacements.get(pageKey(source));
         const ready = target && rendered.get(pageKey(target));
         if (!ready) return element;
+        applied.add(pageKey(target));
         const crop = element.crop;
         // Excalidraw crop coordinates use source pixels, not board units.
         const nextCrop = crop ? {
@@ -400,6 +418,22 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       api.addFiles([...rendered.values()].map((item) => ({ id: item.fileId, dataURL: item.preview.dataURL, mimeType: "image/png", created: Date.now() })));
       api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       capture(elements);
+      // Everything this batch actually swapped on the scene, minus this tab's own
+      // upload, becomes one quiet notice that replaces any earlier one.
+      const arrived = [...applied].flatMap((key) => {
+        const item = rendered.get(key);
+        const document = item && findSource(next, item.source);
+        if (!item || !document || originated.current.has(documentKey(document))) return [];
+        return [{ source: item.source, document, order: next.indexOf(document) }];
+      });
+      if (arrived.length > 0 && alive.current) {
+        const newest = arrived.reduce((best, item) => {
+          const left = item.document.generatedAt ?? "", right = best.document.generatedAt ?? "";
+          return left > right || (left === right && item.order > best.order) ? item : best;
+        });
+        setUpdate({ fileName: newest.document.fileName, others: arrived.length - 1,
+          sources: [newest.source, ...arrived.filter((item) => item !== newest).map((item) => item.source)] });
+      }
     }
     for (const document of next) {
       const key = documentKey(document);
@@ -446,6 +480,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       await queue.retry();
       const original = file.type === mime ? file : new File([file], file.name, { type: mime });
       const updated = await studio.uploadDocument(board.projectId, null, original, [{ ...pageSource(replacement.document, replacement.pageIndex), newPageIndex }]);
+      originated.current.add(documentKey(updated));
       if (!alive.current) return;
       const next = [...documentsRef.current.filter((item) => documentKey(item) !== documentKey(updated)), updated];
       acceptDocuments(next);
@@ -603,6 +638,32 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     } catch (cause) { setNotice(errorText(cause)); }
     finally { if (alive.current) setExporting(false); }
   };
+  // The quiet notice never moves the canvas by itself; only this explicit action
+  // does, and it stands aside for an open dialog or a gesture in progress. The
+  // save queue persists title, elements and seenDocuments only, so selecting
+  // here changes nothing that is written back.
+  const focusUpdate = () => {
+    const api = canvas.current;
+    if (!api || !ready || !update || feedbackOpen.current || replacementOpen.current) return;
+    const state = api.getAppState();
+    if (state.selectedElementsAreBeingDragged || state.newElement || state.editingTextElement || state.isResizing || state.isRotating) return;
+    const keys = new Set(update.sources.map(pageKey));
+    const targets = api.getSceneElements().filter((element) => {
+      const source = imageSource(element);
+      return !!source && keys.has(pageKey(source));
+    });
+    if (targets.length === 0) return;
+    api.updateScene({ appState: { selectedElementIds: Object.fromEntries(targets.map((element) => [element.id, true])), selectedGroupIds: {} }, captureUpdate: CaptureUpdateAction.NEVER });
+    api.scrollToContent(targets, { fitToContent: true, animate: false });
+  };
+  // The entry point of the edit loop: an explicit editable copy of one registered
+  // single-page image, reported by its project-relative path.
+  const requestWorkCopy = (document: SourceDocumentDto) => serial(async () => {
+    const workCopy = await studio.createDocumentWorkCopy(board.projectId, document.runId, document.assetSha256, document.revisionRef ?? null);
+    if (!alive.current) return;
+    setNotice(`${replacementCopy[language].workCopyHint}: ${workCopy.relativePath}`);
+  });
+  const workCopyUnavailable = (document: SourceDocumentDto) => document.pageCount !== 1 || document.mimeType === "application/pdf";
   const source = selected && findSource(documents, selected);
   const openReplacement = (document: SourceDocumentDto, pageIndex: number) => {
     replacementReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
@@ -727,6 +788,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     {saveState.error !== null && <div className="monkeyboard-alert" role="alert"><span>{saveState.conflict ? text.conflict : `${text.saveError} ${errorText(saveState.error)}`}</span>{saveState.conflict ? <a href={window.location.href} target="_blank" rel="noopener noreferrer">{text.compare}</a> : <button onClick={() => { void queue.retry().catch(() => {}); }}>{text.retry}</button>}</div>}
     {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
+    {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, language)}</span><span className="monkeyboard-update-actions"><button onClick={focusUpdate}>{replacementCopy[language].view}</button><button onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
     <div className="monkeyboard-body">
       <aside id="monkeyboard-project-documents" className="monkeyboard-sources" aria-label={text.sources} hidden={!sourcesOpen}>
         <div className="monkeyboard-source-heading"><h2>{text.sources} · {documents.length}</h2><button aria-label={boardText.hideSources} onClick={() => { setSourcesOpen(false); root.current?.closest(".monkeyboard")?.querySelector<HTMLButtonElement>("[aria-controls=monkeyboard-project-documents]")?.focus(); }}>×</button></div>
@@ -742,6 +804,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             <div className="monkeyboard-page-row"><select aria-label={`${document.fileName} ${text.page}`} value={page} onChange={(event) => setPages((value) => ({ ...value, [key]: Number(event.target.value) }))}>{document.pages.map((item) => <option value={item.pageIndex} key={item.pageIndex}>{text.page} {item.pageIndex + 1} / {document.pageCount}</option>)}</select><button disabled={!ready || busy || saveState.conflict} onClick={() => { void serial(() => addPage(document, page)); }}>{text.add}</button></div>
             <a className="monkeyboard-source-link" href={documentUrl(window.location.href, pageSource(document, page))} target="_blank" rel="noopener noreferrer">{text.open} ↗</a>
             <button className="monkeyboard-source-update" disabled={!ready || busy || saveState.conflict} onClick={() => openReplacement(document, page)}>{replacementCopy[language].action}</button>
+            <button className="monkeyboard-source-work-copy" disabled={!ready || busy || saveState.conflict || workCopyUnavailable(document)} onClick={() => { void requestWorkCopy(document); }}>{replacementCopy[language].workCopy}</button>
           </article>;
         })}</div>
       </aside>

@@ -40,7 +40,7 @@ import hashlib
 from io import BytesIO
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import threading
 from typing import Any, Iterable, Mapping, NamedTuple
@@ -78,8 +78,13 @@ FILE_MISSING = "file missing"
 FILE_UNREADABLE = "file unreadable"
 DIGEST_MISMATCH = "digest mismatch"
 PNG_MEDIA_TYPE = "image/png"
+JPEG_MEDIA_TYPE = "image/jpeg"
 PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
 DOCUMENT_UPLOAD_RUN_ID = "studio-documents"
+
+# Where one registered image page's editable copy lives, below the run that
+# holds the page it was made from. A speculative workspace file, never truth.
+WORK_COPY_WORKSPACE = "studio-documents/work"
 
 # The receipts that certify an exported file, and the schema that tells the
 # two apart. Both are read; nothing is ever regenerated or run by reading them.
@@ -201,7 +206,9 @@ class ViewportCapture:
 
 
 MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
-DOCUMENT_MEDIA_TYPES = ("application/pdf", "image/png", "image/jpeg")
+DOCUMENT_MEDIA_TYPES = ("application/pdf", PNG_MEDIA_TYPE, JPEG_MEDIA_TYPE)
+# The one shape a person can be handed an editable copy of: one image, one page.
+DOCUMENT_IMAGE_MEDIA_TYPES = (PNG_MEDIA_TYPE, JPEG_MEDIA_TYPE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -518,6 +525,206 @@ def bind_document_model_source(
                      "runId": run_id, "assetSha256": asset_sha256, "modelSource": source.to_dict()},
         )
         return next(row for row in list_documents(binding, run_id) if row.asset_sha256 == asset_sha256)
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentWorkCopy:
+    """An editable copy of one registered image page, and the page it answers for.
+
+    Two identities, as everywhere else here. The *origin* four fields are the
+    copy's own identity: they never move, so the same page always resolves to
+    the same file across restarts. The *head* four are the page the copy
+    currently answers for — the newest registered replacement of the origin —
+    and they move whenever that page is replaced, from this copy or from the
+    Board's own upload.
+    """
+
+    project_id: str
+    run_id: str
+    asset_sha256: str
+    revision_ref: str | None
+    page_index: int
+    file_name: str
+    mime_type: str
+    path: Path                  # the editable file itself
+    relative_path: str          # project-relative POSIX path, for display
+    head_run_id: str
+    head_asset_sha256: str
+    head_revision_ref: str | None
+    head_page_index: int
+    # Every digest already registered in this page's replacement chain. Bytes
+    # equal to one of them are that history, not evidence of a new revision.
+    known_sha256: frozenset[str]
+
+
+# One page, as every replacement names it: which run and registered asset it
+# belongs to, which retained drawing revision (if any), and which page of it.
+_PageId = tuple[str, str, str | None, int]
+
+
+def _page_replacements(documents: tuple[SourceDocument, ...]) -> dict[_PageId, _PageId]:
+    """Old page -> the page that replaced it, from the documents' own records.
+
+    ``_validate_page_replacements`` has already refused a second replacement of
+    the same old page, so this mapping is single-valued.
+    """
+
+    links: dict[_PageId, _PageId] = {}
+    for document in documents:
+        for page in document.replaces_pages:
+            links[(page.run_id, page.asset_sha256, page.revision_ref, page.page_index)] = (
+                document.run_id, document.asset_sha256, document.revision_ref, page.new_page_index,
+            )
+    return links
+
+
+def _chain_head(links: dict[_PageId, _PageId], origin: _PageId) -> tuple[_PageId, frozenset[str]]:
+    """The newest registered page in this chain, and every digest on the way."""
+
+    head, seen, known = origin, {origin}, {origin[1]}
+    while True:
+        following = links.get(head)
+        # Retained records are immutable, so a cycle can only come from a
+        # hand-written or corrupted chain; the newest page reached wins.
+        if following is None or following in seen:
+            return head, frozenset(known)
+        seen.add(following)
+        head = following
+        known.add(head[1])
+
+
+# What P036 accepts as one workspace path segment (archflow/project/refs.py).
+_WORK_COPY_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
+
+
+def _work_copy_segment(document: SourceDocument) -> str:
+    """The copy's own file name on disk: the registered one when P036 can hold it.
+
+    A registered document may be called ``研究图纸.png`` and a P036 workspace
+    path segment must be portable ASCII. The copy is then named after the page
+    it belongs to, deterministically, so the same page always resolves to the
+    same file and an accented name costs nobody their edits.
+    """
+
+    if _WORK_COPY_SEGMENT.fullmatch(document.file_name):
+        return document.file_name
+    return f"{document.asset_sha256[:32]}{'.png' if document.mime_type == PNG_MEDIA_TYPE else '.jpg'}"
+
+
+def _work_copy(
+    binding: ProjectBinding, origin: SourceDocument, links: dict[_PageId, _PageId],
+    documents: tuple[SourceDocument, ...],
+) -> DocumentWorkCopy:
+    """The deterministic copy row for one registered single-page image.
+
+    No IO: the path is derived from the origin page's own identity, so the
+    caller only has to ask whether that one file is there. The media type is
+    the *head's*, because that is the page these bytes answer for.
+    """
+
+    page_index = origin.pages[0].page_index
+    registration_path = origin.asset_sha256
+    if origin.revision_ref is not None:
+        revision = record_ref_from_uri(origin.revision_ref, binding.project_id)
+        # Equal pixels can be registered by different drawing revisions. Keep
+        # the existing record's complete path, including its run, so asking for
+        # one registration never opts another into watching the same file.
+        registration_path += f"/revisions/{revision.relative_path}"
+    workspace_relative = f"{WORK_COPY_WORKSPACE}/{registration_path}/{_work_copy_segment(origin)}"
+    head, known = _chain_head(links, (origin.run_id, origin.asset_sha256, origin.revision_ref, page_index))
+    head_document = next((row for row in documents if (
+        row.run_id, row.asset_sha256, row.revision_ref) == head[:3]), origin)
+    return DocumentWorkCopy(
+        project_id=binding.project_id, run_id=origin.run_id, asset_sha256=origin.asset_sha256,
+        revision_ref=origin.revision_ref, page_index=page_index, file_name=origin.file_name,
+        mime_type=head_document.mime_type,
+        path=binding.repository.layout.run(origin.run_id).workspaces / Path(
+            *PurePosixPath(workspace_relative).parts),
+        relative_path=f"runs/{origin.run_id}/workspaces/{workspace_relative}",
+        head_run_id=head[0], head_asset_sha256=head[1], head_revision_ref=head[2], head_page_index=head[3],
+        known_sha256=known,
+    )
+
+
+def open_document_work_copy(
+    binding: ProjectBinding, run_id: str, asset_sha256: str, *, revision_ref: str | None = None,
+) -> DocumentWorkCopy:
+    """Give this registered image page an editable file, once, and say where.
+
+    Explicitly requested: nothing materialises a copy by observing a project or
+    a board. The three values name one exact registration — ``revision_ref``
+    selects the registration that carries it, and ``None`` selects the one that
+    carries none, so a plain upload and a retained drawing revision that happen
+    to share a run and digest are never confused for one another.
+
+    The bytes come from the page the copy has to answer for, through the
+    registered reader, which already refuses an unreadable or mismatched
+    registration. A copy that is already there is returned untouched: a
+    returning architect must not lose their edits to a second click.
+    """
+
+    if not SHA256_HEX.fullmatch(asset_sha256):
+        raise StudioError(422, "DOCUMENT_INVALID", "A source document is addressed by its SHA-256.")
+    with _document_source_lock:
+        documents = list_documents(binding)
+        origin = next((row for row in documents if (
+            row.run_id, row.asset_sha256, row.revision_ref) == (run_id, asset_sha256, revision_ref)), None)
+        if origin is None:
+            raise StudioError(404, "DOCUMENT_NOT_FOUND", f"Run {run_id} has no source document {asset_sha256}.")
+        if origin.mime_type not in DOCUMENT_IMAGE_MEDIA_TYPES or len(origin.pages) != 1:
+            raise StudioError(422, "DOCUMENT_NOT_EDITABLE",
+                              "Only a single-page PNG or JPEG document has an editable work copy.")
+        copy = _work_copy(binding, origin, _page_replacements(documents), documents)
+        head_document = next(row for row in documents if (
+            row.run_id, row.asset_sha256, row.revision_ref
+        ) == (copy.head_run_id, copy.head_asset_sha256, copy.head_revision_ref))
+        if head_document.mime_type not in DOCUMENT_IMAGE_MEDIA_TYPES or len(head_document.pages) != 1:
+            raise StudioError(422, "DOCUMENT_NOT_EDITABLE",
+                              "The current replacement is not a single-page PNG or JPEG document.")
+        if copy.path.is_file():
+            return copy
+        # document_bytes(..., revision_ref=None) is a legacy wildcard lookup.
+        # Here None is an exact registration, already selected above; retain
+        # the registered reader's source and byte checks without reselecting it.
+        data = _registered_document_bytes(binding, head_document)
+        run = binding.load_run(origin.run_id)
+        try:
+            binding.repository.put_workspace_file(
+                run=run,
+                destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id),
+                artifact_id=f"document-work-copy-{origin.asset_sha256}",
+                workspace_relative_path=copy.path.relative_to(
+                    binding.repository.layout.run(origin.run_id).workspaces).as_posix(),
+                media_type=copy.mime_type, source=BytesIO(data),
+            )
+        except (ProjectRepositoryError, OSError, ValueError) as exc:
+            raise StudioError(409, "DOCUMENT_WORK_COPY_FAILED",
+                              "The editable copy could not be written in its run's workspace.") from exc
+        # No receipt and no digest of its own: nothing crossed into project
+        # truth here. HEAD, the registered page and its pages are untouched.
+        return copy
+
+
+def list_document_work_copies(binding: ProjectBinding) -> tuple[DocumentWorkCopy, ...]:
+    """Every registered image page that currently has an editable file.
+
+    Derived and restart-safe: each registered single-page image names exactly
+    one possible copy path, and the row exists only when that one file does.
+    This is an existence check per registered document, not a walk of the
+    workspace — nothing here discovers a file the project does not already
+    account for, and no second store remembers which copies were made.
+    """
+
+    documents = list_documents(binding)
+    links = _page_replacements(documents)
+    copies = []
+    for document in documents:
+        if document.mime_type not in DOCUMENT_IMAGE_MEDIA_TYPES or len(document.pages) != 1:
+            continue
+        copy = _work_copy(binding, document, links, documents)
+        if copy.path.is_file():
+            copies.append(copy)
+    return tuple(copies)
 
 
 def save_viewport_capture(

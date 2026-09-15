@@ -16,6 +16,7 @@ from ..application.artifacts import (
     document_bytes,
     list_artifacts,
     list_documents,
+    open_document_work_copy,
     save_document,
     register_model_asset,
     save_viewport_capture,
@@ -23,6 +24,8 @@ from ..application.artifacts import (
 from ..application.binding import bound_project
 from ..transport.artifacts import (
     ArtifactListDto,
+    DocumentWorkCopyDto,
+    DocumentWorkCopyRequestDto,
     ModelAssetRequestDto,
     DocumentModelSourceRequestDto,
     ProjectArtifactDto,
@@ -37,6 +40,7 @@ from ..transport.artifacts import (
     model_source_from,
     document_dto,
     to_dto,
+    work_copy_dto,
 )
 from ..transport.errors import StudioError
 
@@ -91,6 +95,32 @@ def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+@router.post(
+    "/documents/{asset_sha256}/work-copy",
+    response_model=DocumentWorkCopyDto,
+    response_model_by_alias=True,
+    status_code=201,
+)
+def create_document_work_copy(
+    request: Request, asset_sha256: str, payload: DocumentWorkCopyRequestDto
+) -> DocumentWorkCopyDto:
+    """Give this registered image page an editable file on disk, once.
+
+    Explicitly asked for, like the Rhino work-model export beside it: the run
+    and revision are named in the body because the same registered bytes can
+    belong to more than one registration. Asking again answers with the copy
+    already made, edits and all. Only the project-relative path comes back —
+    no request here or anywhere selects a place on this machine's disk.
+    """
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
+    return work_copy_dto(
+        open_document_work_copy(binding, payload.run_id, asset_sha256, revision_ref=payload.revision_ref)
     )
 
 

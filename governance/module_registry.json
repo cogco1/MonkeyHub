@@ -3620,7 +3620,8 @@
         "project-wide source document discovery without coalescing distinct run or drawing revision identities; uploads without a run use the existing P036 studio-documents source-material run after content validation",
         "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration",
         "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states",
-        "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured"
+        "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
+        "the explicitly requested editable work copy of one registered single-page PNG/JPEG page: POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3683,7 +3684,11 @@
         "generate_sheet",
         "require_complete_model",
         "POST /api/artifacts/{sha256}/rhino-export",
-        "export_rhino_work_model"
+        "export_rhino_work_model",
+        "POST /api/documents/{asset_sha256}/work-copy",
+        "open_document_work_copy",
+        "list_document_work_copies",
+        "DocumentWorkCopy"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3729,7 +3734,9 @@
         "replacement mappings never infer correspondence from filenames or drawing names, never rewrite the old source or its annotations, and require equal visible-page aspect ratios for in-place board updates",
         "a work model is bound to the run named in the request, not to the first row with those bytes: the same STEP can be exported by more than one run",
         "an existing work model answers again only when its run, stage, program, state, source STEP digest and source receipt are all the one being asked for; a failed attempt keeps its own directory and never blocks the next one",
-        "the exact STEP and the mesh preview keep their meaning: the work model is an additional exact 3dm delivery beside them, and no preview is ever relabelled"
+        "the exact STEP and the mesh preview keep their meaning: the work model is an additional exact 3dm delivery beside them, and no preview is ever relabelled",
+        "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin page, so the same page resolves to the same file across restarts",
+        "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, aimed at the page's current chain head, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD"
       ],
       "status": "canonical",
       "tests": [
@@ -5814,7 +5821,8 @@
         "Thin Windows Tauri desktop window: starts one owned root Hub, checks compiled source/protocol/process/instance health, restricts WebView navigation and coordinates managed-stdin shutdown; existing Hub owns all workers",
         "Read-only project/native-session identity projection for Monitor, including archived chats, without exposing messages or project paths",
         "Content-free Hub turn, context, CLI activity, tool and permission intervals in the existing Monitor diagnostics journal; diagnostic turn/parent headers accompany existing project-bound Studio requests",
-        "Optional per-message designContext prepares the exact selected Studio context before either native CLI transport starts; no context is inferred or inherited by a later message"
+        "Optional per-message designContext prepares the exact selected Studio context before either native CLI transport starts; no context is inferred or inherited by a later message",
+        "observing the editable work copies this project explicitly opened: a settled, re-stat-validated change is offered to studio.artifacts as the next registered revision and its refusal is reported on the runtime's existing error surface; an untouched copy never rolls a page the Board replaced elsewhere back, and a copy that will not read or register never marks the retained projection stale"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -5951,7 +5959,8 @@
         "studio.intent",
         "monkeymonitor",
         "contracts.canonical",
-        "monkeyfab"
+        "monkeyfab",
+        "studio.artifacts"
       ]
     },
     {
@@ -6010,7 +6019,8 @@
         "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; all applications share the selected Hub source commit",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell",
         "Optional --desktop builds and verifies MonkeyArch.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
-        "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests"
+        "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests",
+        "Installer-side verification of a detached publisher signature over that same manifest, and the binding of the verified manifest to the candidate archive and extracted package before any installation"
       ],
       "does_not_own": [
         "Project data, project initialization, candidate execution or formal project issue",
@@ -6044,7 +6054,9 @@
         "Installation targets a fresh version directory and leaves unknown existing data intact",
         "The shared workspace setting supplies stable task staging/output and shared cache; explicit path overrides do not modify that setting",
         "--show-paths creates no directories and --configure writes only the personal root setting; neither command builds or accesses project data",
-        "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity"
+        "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity",
+        "install.ps1 -RequireSignedRelease verifies the pinned publisher signature and binds the manifest to the archive, the source commit and every file of the tree that becomes the installation, before the first shortcut, launch or current-version move, and never falls back to an unsigned installation",
+        "An installation without -RequireSignedRelease stays labelled candidate-unsigned; the builder signs nothing and no publisher key is held in this repository"
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"
@@ -6057,9 +6069,10 @@
         ".github/workflows/desktop.yml"
       ],
       "tests": [
-        "tests/test_package_monkeyapps.py"
+        "tests/test_package_monkeyapps.py",
+        "tests/test_installer_signed_release.py"
       ],
-      "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
+      "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Signed-installation tests use an ephemeral in-process key and a fixture candidate; they exercise the verifier, not a real publisher identity. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
     },
     {
       "module_id": "documentation.drawings",
@@ -6194,6 +6207,63 @@
         "apps/monkeyfab/tests/test_send.py"
       ],
       "notes": "User-requested repository consolidation. Import the existing MonkeyFab implementation at 6128f99c8fbcc5db41539a225386a6495fa6c5ab; retain its CLI and algorithm ownership. No current core, modeling or drawing owner provides print preparation, so this registers the existing capability instead of adding another implementation."
+    },
+    {
+      "module_id": "studio.study",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+      "purpose": "Experimental API for retaining and inspecting corrected precedent-page trace evidence; its geometric rules are research proposals awaiting method and compatibility review.",
+      "owns": [
+        "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
+        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
+        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence"
+      ],
+      "does_not_own": [
+        "source document import and byte identity (studio.artifacts)",
+        "Board scenes (studio.board), model proposal execution or canonical design state",
+        "image-model tracing, a user-facing Study workspace or validated architectural research methods"
+      ],
+      "inputs": [
+        "ProjectBinding",
+        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref"
+      ],
+      "outputs": [
+        "StudyView with retained EvidenceLedger@1 and its CompositionGraph@1 reconstructed from that revision's retained evidence and relations",
+        "StudyViewDto"
+      ],
+      "public_api": [
+        "POST /api/studies",
+        "GET /api/studies/{study_id}",
+        "save_study",
+        "read_study"
+      ],
+      "depends_on": [
+        "studio.artifacts",
+        "studio.binding",
+        "contracts.canonical",
+        "project.ports",
+        "project.repository",
+        "project.refs",
+        "project.record_kinds"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py"
+      ],
+      "invariants": [
+        "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
+        "only confirmed traces contribute geometric relations; proposed and rejected evidence stays inspectable",
+        "stale corrections and competing retained revision heads are refused",
+        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered"
+      ],
+      "status": "provisional",
+      "source_paths": [
+        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_study.py"
+      ],
+      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Source revision pinning, retained-method compatibility and retained-revision self-consistency are now resolved: a revision pins the exact StudioSourceDocument record, an older revision is replayed rather than re-derived, and a read refuses a retained relation whose endpoint is not a confirmed trace of that same revision, or a retained reasoning receipt bound to another composition graph. What remains open: two competing retained heads block default head selection and corrections with no reconciliation route, while a revision named by ledgerRef remains readable; and an archived revision stays readable only while the current evidence validator still accepts its exact retained rows. Page metric normalization and the unvalidated similarity thresholds remain the author's research decision; no architectural method is endorsed by this registration."
     }
   ]
 }

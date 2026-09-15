@@ -2145,6 +2145,90 @@ export type DocumentVisualInputDto = {
 };
 
 /**
+ * DocumentWorkCopyDto
+ *
+ * One registered image page's editable file, and the page it answers for.
+ */
+export type DocumentWorkCopyDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Mimetype
+     */
+    mimeType: 'image/png' | 'image/jpeg';
+    /**
+     * Relativepath
+     *
+     * where the editable copy lives, project-relative; display only — this machine's absolute path never crosses the boundary and no request may send a path back
+     */
+    relativePath: string;
+    /**
+     * Headrunid
+     */
+    headRunId: string;
+    /**
+     * Headassetsha256
+     */
+    headAssetSha256: string;
+    /**
+     * Headrevisionref
+     */
+    headRevisionRef?: string | null;
+    /**
+     * Headpageindex
+     */
+    headPageIndex: number;
+};
+
+/**
+ * DocumentWorkCopyRequestDto
+ *
+ * Which exact registered page is being made editable.
+ *
+ * The digest in the path names the bytes; these name the one registration
+ * they belong to. ``revisionRef`` is part of that identity, not a filter: a
+ * null selects the registration that carries none, so a plain upload and a
+ * retained drawing revision sharing a run and digest are never confused. No
+ * server path is accepted here or anywhere.
+ */
+export type DocumentWorkCopyRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+};
+
+/**
  * DrawingStyleDto
  */
 export type DrawingStyleDto = {
@@ -4959,6 +5043,29 @@ export type RuntimeDto = {
 };
 
 /**
+ * SaveStudyRequestDto
+ */
+export type SaveStudyRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Studyid
+     */
+    studyId: string;
+    source: StudySourceRequestDto;
+    /**
+     * Evidence
+     */
+    evidence: Array<TraceEvidenceRequestDto>;
+    /**
+     * Expectedpreviousref
+     */
+    expectedPreviousRef?: string | null;
+};
+
+/**
  * ScopeOptionDto
  *
  * One reading of how far a change reaches, and exactly what it covers.
@@ -6773,6 +6880,104 @@ export type StudioHealth = {
 };
 
 /**
+ * StudySourceRequestDto
+ */
+export type StudySourceRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+};
+
+/**
+ * StudyViewDto
+ */
+export type StudyViewDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Ledgerref
+     */
+    ledgerRef: string;
+    /**
+     * Previousref
+     */
+    previousRef: string | null;
+    /**
+     * Source
+     */
+    source: {
+        [key: string]: unknown;
+    };
+    /**
+     * Evidence
+     */
+    evidence: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Measurements
+     */
+    measurements: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Relations
+     */
+    relations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Compositiongraph
+     */
+    compositionGraph: {
+        [key: string]: unknown;
+    };
+    /**
+     * Hypotheses
+     */
+    hypotheses: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Counterfactuals
+     */
+    counterfactuals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Derivationmethod
+     */
+    derivationMethod: string | null;
+    /**
+     * Canonicalstatechanged
+     */
+    canonicalStateChanged: boolean;
+};
+
+/**
  * SynchronizationDto
  */
 export type SynchronizationDto = {
@@ -6818,6 +7023,39 @@ export type TimingsDto = {
      * Exports
      */
     exports: Array<ExportTimingDto>;
+};
+
+/**
+ * TraceEvidenceRequestDto
+ */
+export type TraceEvidenceRequestDto = {
+    /**
+     * Evidenceid
+     */
+    evidenceId: string;
+    /**
+     * Kind
+     */
+    kind: 'envelope' | 'mass' | 'void' | 'floor_plate';
+    /**
+     * Points
+     */
+    points: Array<[
+        number,
+        number
+    ]>;
+    /**
+     * Status
+     */
+    status?: 'proposed' | 'confirmed' | 'rejected';
+    /**
+     * Confidence
+     */
+    confidence?: number;
+    /**
+     * Origin
+     */
+    origin?: 'machine' | 'user' | 'imported';
 };
 
 /**
@@ -8162,6 +8400,46 @@ export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses = {
     200: unknown;
 };
 
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostData = {
+    body: DocumentWorkCopyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/documents/{asset_sha256}/work-copy';
+};
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostError = CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostErrors[keyof CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostErrors];
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DocumentWorkCopyDto;
+};
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponse = CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponses[keyof CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponses];
+
 export type ReadArtifactsApiArtifactsGetData = {
     body?: never;
     headers?: {
@@ -8517,6 +8795,86 @@ export type CreateElevationApiDrawingsElevationsPostResponses = {
 };
 
 export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationApiDrawingsElevationsPostResponses[keyof CreateElevationApiDrawingsElevationsPostResponses];
+
+export type RetainStudyApiStudiesPostData = {
+    body: SaveStudyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/studies';
+};
+
+export type RetainStudyApiStudiesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetainStudyApiStudiesPostError = RetainStudyApiStudiesPostErrors[keyof RetainStudyApiStudiesPostErrors];
+
+export type RetainStudyApiStudiesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: StudyViewDto;
+};
+
+export type RetainStudyApiStudiesPostResponse = RetainStudyApiStudiesPostResponses[keyof RetainStudyApiStudiesPostResponses];
+
+export type ReopenStudyApiStudiesStudyIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Study Id
+         */
+        study_id: string;
+    };
+    query?: {
+        /**
+         * Ledgerref
+         */
+        ledgerRef?: string | null;
+    };
+    url: '/api/studies/{study_id}';
+};
+
+export type ReopenStudyApiStudiesStudyIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReopenStudyApiStudiesStudyIdGetError = ReopenStudyApiStudiesStudyIdGetErrors[keyof ReopenStudyApiStudiesStudyIdGetErrors];
+
+export type ReopenStudyApiStudiesStudyIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: StudyViewDto;
+};
+
+export type ReopenStudyApiStudiesStudyIdGetResponse = ReopenStudyApiStudiesStudyIdGetResponses[keyof ReopenStudyApiStudiesStudyIdGetResponses];
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;

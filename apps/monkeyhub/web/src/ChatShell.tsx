@@ -55,6 +55,7 @@ const words = {
     toolStopped: "按需启动", toolStarting: "启动中", toolRunning: "可用", toolStopping: "停止中", toolError: "连接失败", toolUnavailable: "缺少依赖", toolUnknown: "读取状态中", toolConnect: "连接此项目",
     reconnecting: "连接中断，正在重新读取项目状态…", workerCrashed: "项目服务已退出", recoverWorker: "恢复项目服务", recovering: "正在恢复…",
     recoveryHint: "恢复服务后读取已保存结果；未完成的修改需要重新检查。", operationRecovery: "有操作需要检查恢复结果", operationFailed: "有操作未完成", operationStale: "操作基底已过期", runtimeOperations: "项目操作", operationCommitted: "已提交", operationPending: "尚无提交确认",
+    workCopyRefused: "可编辑副本的改动未能登记为新版本",
   },
   en: {
     projects: "Projects", add: "Add project", newChat: "New chat", settings: "Hub settings", settingsHeading: "Hub settings (global)", close: "Close", cancel: "Cancel", addProject: "Add project",
@@ -89,6 +90,7 @@ const words = {
     toolStopped: "On demand", toolStarting: "Starting", toolRunning: "Ready", toolStopping: "Stopping", toolError: "Failed", toolUnavailable: "Unavailable", toolUnknown: "Checking", toolConnect: "Connect project",
     reconnecting: "Connection interrupted. Reading the current project state…", workerCrashed: "The project service exited", recoverWorker: "Recover project service", recovering: "Recovering…",
     recoveryHint: "Recovery reads saved results. Unfinished changes need review.", operationRecovery: "An operation needs recovery review", operationFailed: "An operation did not complete", operationStale: "An operation has an outdated base", runtimeOperations: "Project operations", operationCommitted: "Committed", operationPending: "No commit confirmed",
+    workCopyRefused: "A work copy's change was not registered as a new revision",
   },
 } as const;
 /** The rail's two kinds of entry: places you work in this project, and the
@@ -261,6 +263,10 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const studioWorker = projectRuntime?.workers?.find((item) => item.serviceId === "studio");
   const crashed = studioWorker?.state === "crashed";
   const recoverableOperation = projectRuntime?.operations?.find((item) => ["needs_recovery", "failed", "stale"].includes(item.status));
+  // An edited work copy the project would not take is the architect's own save
+  // going nowhere. It is said here, on the runtime strip that already reports
+  // what this attachment knows, and nowhere else.
+  const workCopyRefusal = projectRuntime?.error?.code?.startsWith("WORK_COPY_") ? projectRuntime.error : null;
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
   const attachments = draftAttachments[draftKey] ?? [];
@@ -694,10 +700,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     </aside>
     <main className="chat-main">
       <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}</h1></div></header>
-      {(!eventsConnected || crashed || recovering || recoverableOperation) && <div className="chat-runtime" role="status" aria-live="polite">
+      {(!eventsConnected || crashed || recovering || recoverableOperation || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
           {recoverableOperation && <p>{recoverableOperation.status === "needs_recovery" ? t.operationRecovery : recoverableOperation.status === "stale" ? t.operationStale : t.operationFailed}</p>}
+          {workCopyRefusal && <><p>{t.workCopyRefused}</p><small>{workCopyRefusal.detail}</small></>}
         </div>
         {crashed && <button type="button" className="chat-activity__open" disabled={recovering || busy || Boolean(toolBusy)} onClick={() => void recoverWorker()}><Icon name="refresh" />{recovering ? t.recovering : t.recoverWorker}</button>}
       </div>}

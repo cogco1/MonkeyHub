@@ -35,10 +35,53 @@ Current manifests explicitly record `candidate-unsigned` and `signed: false`.
 An attacker who can replace both the package and manifest can recompute their
 hashes. Obtain the manifest through a channel you already trust.
 
-Signing, update verification and a release-revocation procedure remain open in
-[issue #58](https://github.com/cogco1/MonkeyHub/issues/58). Candidates have no
-automatic update or security patch channel; a fix reaches an installation only
-through a newly built and installed candidate.
+## Signed installation
+
+The installer can refuse to install a release it cannot authenticate. Running
+`install.ps1 -RequireSignedRelease` with a detached CMS signature over the
+manifest, the candidate ZIP and an expected publisher fingerprint verifies, in
+this order and before copying any file, creating any shortcut, launching the
+application or making a version current:
+
+1. the signature over the exact manifest bytes, made by exactly one signer whose
+   certificate matches a SHA-256 (64 hex) or SHA-1 (40 hex) fingerprint, and made
+   with a SHA-256/384/512 message digest — weaker digests, and a second signer,
+   are refused. Prefer the SHA-256 form: the 40-hex thumbprint Windows shows is
+   a SHA-1 digest of the certificate and is the weaker of the two pins;
+2. that the manifest's closed artifact table lists this exact ZIP by name, size
+   and SHA-256, and that its `release.sourceCommit` and `buildInfo.sha256` match
+   this package — a valid signature over an unrelated manifest is refused;
+3. that every extracted file equals the corresponding member of that ZIP, with
+   no extra file, no missing file and no reparse point. The ZIP is opened once,
+   without sharing write access, so the bytes that were hashed against the
+   manifest stay the bytes every comparison below reads;
+4. that the tree which actually becomes the installation satisfies (3) as well —
+   the staged copy before it is made current, or an existing installation of the
+   same build before it is shortcut or launched.
+
+Opting in never degrades to an unsigned installation: a missing input, an
+unreadable manifest or a malformed fingerprint is a refusal. `-VerifyReleaseManifest`
+checks a downloaded manifest's signature alone and installs nothing.
+`-RequireTrustedPublisherChain` additionally requires the platform to build a
+trusted certificate chain. **The installer performs no revocation lookup of its
+own and claims none in either mode**; the printed evidence always records
+`revocationCheck: not-demonstrated`. Under `-RequireTrustedPublisherChain` the
+chain is built by the platform under its own default policy, which on Windows
+may consult CRL or OCSP endpoints — that is the platform's behaviour, is not
+configured or relied on here, and is not evidence that revocation was checked.
+
+**This repository holds no publisher key and the builder signs nothing.** The
+verifier exists and is tested with ephemeral in-process keys; obtaining a real
+signing certificate, signing releases as part of publishing, distributing the
+expected fingerprint over a trusted channel, and a revocation procedure all
+remain open in [issue #58](https://github.com/cogco1/MonkeyHub/issues/58).
+There is also no rollback protection: a genuinely signed older release, served
+with its own archive, is accepted in full — nothing compares versions or signing
+times. An
+installation performed without `-RequireSignedRelease` prints
+`Trust: candidate-unsigned` and is not a supported production release.
+Candidates have no automatic update or security patch channel; a fix reaches an
+installation only through a newly built and installed candidate.
 
 ## Credentials and private data
 

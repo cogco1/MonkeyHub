@@ -53,6 +53,9 @@ const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-d
 let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
+// The explicit editable copy of one registered single-page image.
+let workCopy;
+const workCopies = [];
 const oldSource = pageSource(oldDocument, 1);
 const seeds = [
   { type: "image", id: "kept-image", fileId: "old-second-page", x: 80, y: 80, width: 500, height: 300,
@@ -137,6 +140,11 @@ try {
     replacesPages: [{ ...oldSource, newPageIndex: 0 }] };
   uploadedReplacement = { ...sourceDocument(uploadBytes, "UI updated.pdf", 2, "ui-drawing-revision"),
     replacesPages: [{ ...pageSource(replacement, 0), newPageIndex: 1 }] };
+  workCopy = { projectId, runId: replacement.runId, assetSha256: replacement.assetSha256,
+    revisionRef: replacement.revisionRef, pageIndex: 0, fileName: replacement.fileName, mimeType: "image/png",
+    relativePath: `runs/${replacement.runId}/workspaces/studio-documents/work/${replacement.assetSha256}/${replacement.fileName}`,
+    headRunId: replacement.runId, headAssetSha256: replacement.assetSha256,
+    headRevisionRef: replacement.revisionRef, headPageIndex: 0 };
   page.on("pageerror", (error) => failures.push(error.stack ?? error.message));
   await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const request = route.request(), url = new URL(request.url());
@@ -172,6 +180,10 @@ try {
         assert.equal(url.searchParams.get("revisionRef"), replacement.revisionRef);
         previewRequested(); await previewGate;
         return await route.fulfill({ contentType: "image/png", body: replacementBytes });
+      }
+      if (request.method() === "POST" && url.pathname.endsWith("/work-copy")) {
+        workCopies.push({ path: url.pathname, body: structuredClone(request.postDataJSON()) });
+        return await route.fulfill({ status: 201, json: workCopy });
       }
       if (request.method() === "POST" && url.pathname === "/api/documents") {
         const body = request.postDataJSON();
@@ -308,6 +320,39 @@ try {
   });
   assert.ok(previewPixel[1] > 150 && previewPixel[0] < 80, `The displayed replacement must be the green new page: ${previewPixel}`);
   await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "Saved");
+
+  // A replacement the poll brought in reports itself once, politely, and offers
+  // to show the page it swapped — without touching what gets saved.
+  const quiet = page.locator(".monkeyboard-update");
+  await quiet.waitFor();
+  assert.equal(await quiet.count(), 1, "One arriving replacement produces exactly one quiet notice");
+  assert.equal(await quiet.getAttribute("role"), "status", "A received update is reported politely, not as an alert");
+  assert.equal(await quiet.locator("span").first().innerText(), `«${replacement.fileName}» updated`);
+  assert.equal(await page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: `«${replacement.fileName}» updated` }).count(), 0,
+    "A received update must not use the error surface");
+  const boardBeforeView = JSON.stringify(saved), writesBeforeView = writes.length;
+  const beforeView = await readScene();
+  await quiet.getByRole("button", { name: "View", exact: true }).click();
+  await page.waitForFunction(() => window.__boardApi.getAppState().selectedElementIds["kept-image"] === true);
+  assert.deepEqual(await page.evaluate(() => Object.entries(window.__boardApi.getAppState().selectedElementIds)
+    .filter(([, active]) => active).map(([id]) => id).sort()), ["kept-image"], "View selects the updated page alone");
+  const framed = await page.evaluate(() => {
+    const api = window.__boardApi, state = api.getAppState();
+    const image = api.getSceneElements().find(({ id }) => id === "kept-image");
+    const left = (image.x + state.scrollX) * state.zoom.value, top = (image.y + state.scrollY) * state.zoom.value;
+    return { left, top, right: left + image.width * state.zoom.value, bottom: top + image.height * state.zoom.value,
+      width: state.width, height: state.height };
+  });
+  assert.ok(framed.left >= -2 && framed.top >= -2 && framed.right <= framed.width + 2 && framed.bottom <= framed.height + 2,
+    `View must bring the updated page into view: ${JSON.stringify(framed)}`);
+  // Past the 700 ms save debounce: focusing must never author a revision.
+  await page.waitForTimeout(1_500);
+  assert.deepEqual(persisted((await readScene()).elements), persisted(beforeView.elements), "Focusing an update changes no element");
+  assert.equal(writes.length, writesBeforeView, "Focusing an update must not write the board");
+  assert.equal(JSON.stringify(saved), boardBeforeView, "The saved board must be byte-identical across a View click");
+  await quiet.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await quiet.waitFor({ state: "hidden" });
+
   assert.deepEqual(saved.elements, persisted(updated.elements), "The latest replacement and concurrent edits must reach the saved scene");
   assert.ok(saved.seenDocuments.includes(documentKey(replacement)), "The replacement must be marked received before saving");
   const writesBeforeReload = writes.length;
@@ -335,6 +380,25 @@ try {
   // works for this cropped, unbound image whose marks cannot enter feedback.
   await page.getByRole("button", { name: "Project documents", exact: true }).click();
   const originalCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: oldDocument.fileName, exact: true }) });
+  // An editable copy is offered for one registered single-page image, and for
+  // nothing else: a two-page PDF has no single page to hand to an image editor.
+  const workCopyName = "Get editable copy";
+  assert.equal(await originalCard.getByRole("button", { name: workCopyName, exact: true }).isDisabled(), true,
+    "A multi-page PDF cannot be given an editable image copy");
+  const replacementCard = page.locator(".monkeyboard-source").filter({ has: page.getByRole("heading", { name: replacement.fileName, exact: true }) });
+  const workCopyButton = replacementCard.getByRole("button", { name: workCopyName, exact: true });
+  assert.equal(await workCopyButton.isEnabled(), true, "A registered single-page PNG can be given an editable copy");
+  await workCopyButton.click();
+  const workCopyNotice = page.locator(".monkeyboard-alert[role=alert]").filter({ hasText: workCopy.relativePath });
+  await workCopyNotice.waitFor();
+  assert.equal(workCopies.length, 1, "One click asks for one work copy");
+  assert.deepEqual(workCopies[0], { path: `/api/documents/${replacement.assetSha256}/work-copy`,
+    body: { projectId, runId: replacement.runId, revisionRef: replacement.revisionRef } },
+    "The work copy names the exact registration, and sends no path");
+  assert.match(await workCopyNotice.innerText(), new RegExp(workCopy.relativePath.replaceAll(".", "\\.")),
+    "The project-relative path of the editable copy is shown to the operator");
+  await workCopyNotice.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await workCopyNotice.waitFor({ state: "hidden" });
   await originalCard.getByRole("combobox").selectOption("0");
   await originalCard.getByRole("button", { name: "Update this page", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Update this page", exact: true });
@@ -354,6 +418,8 @@ try {
   await dialog.waitFor({ state: "hidden" });
   const afterUpload = await readScene();
   assert.equal(uploads.length, 1, "One user submission uploads one replacement");
+  assert.equal(await quiet.count(), 0, "A replacement this tab uploaded is never announced back to its author");
+  assert.equal(workCopies.length, 1, "Nothing but the explicit button asks for a work copy");
   assert.deepEqual(byId(afterUpload, "kept-image").customData.sourceDocument, pageSource(uploadedReplacement, 1));
   assert.deepEqual(geometry(byId(afterUpload, "kept-image")), geometry(byId(reopened, "kept-image")));
   assert.deepEqual(byId(afterUpload, "unmapped-image"), byId(reopened, "unmapped-image"));
@@ -456,7 +522,7 @@ try {
   assert.equal(await chineseUpdate.isDisabled(), true, "Conflicted local state cannot upload another replacement");
   assert.equal(uploads.length, 1);
   assert.deepEqual(failures, []); assert.deepEqual(escaped, []);
-  console.log(JSON.stringify({ passed: "Excalidraw explicit image/frame replacement, exact source mapping and crop/marks preservation, clear annotations and undo/redo in normal/Crit modes, save/reopen and CAS", writes: writes.length, uploads: uploads.length, conflicts, documentReads, fileReads: fileReads.length }));
+  console.log(JSON.stringify({ passed: "Excalidraw explicit image/frame replacement, exact source mapping and crop/marks preservation, explicit editable work copy, quiet received-update notice whose View never writes the board, clear annotations and undo/redo in normal/Crit modes, save/reopen and CAS", writes: writes.length, uploads: uploads.length, workCopies: workCopies.length, conflicts, documentReads, fileReads: fileReads.length }));
 } catch (error) {
   console.error(JSON.stringify({ failures, escaped, writes: writes.length, documentReads,
     visible: await page?.locator("body").innerText().catch(() => "") }));

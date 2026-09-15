@@ -18,6 +18,18 @@
       ]
     },
     {
+      "id": "GH-73",
+      "stream": "study",
+      "status": "active",
+      "goal": "Retain exact precedent-page trace evidence, deterministic composition reasoning and falsifiable counterfactuals without creating a second design truth or writing canonical design state.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
@@ -411,7 +423,9 @@
         "apps/monkeyfab/",
         "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
         "apps/archflow-studio/api/tests/test_catalog.py",
-        "tests/monkeymonitor/test_web_traces.py"
+        "tests/monkeymonitor/test_web_traces.py",
+        "SECURITY.md",
+        "apps/archflow-studio/api/tests/test_documents.py"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -514,7 +528,16 @@
             "apps/monkeyhub/web/src/api/generated/index.ts",
             "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-            "governance/architecture_policy.json"
+            "governance/architecture_policy.json",
+            "SECURITY.md",
+            "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+            "apps/archflow-studio/api/tests/test_documents.py",
+            "apps/archflow-studio/web/src/api/client.ts",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+            "apps/archflow-studio/web/src/workspaces/monkeyboard/board.css",
+            "apps/archflow-studio/web/test/boardReplacement.browser.mjs"
           ],
           "depends_on": []
         },

@@ -15,7 +15,11 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, NameObject, RectangleObject
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
+from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.application.artifacts import _work_copy, list_document_work_copies, list_documents
+from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -301,6 +305,136 @@ class SourceDocumentTests(unittest.TestCase):
         response = self.upload(output.getvalue())
         self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(response.json()["code"], "DOCUMENT_ENCRYPTED")
+
+    def work_copy(self, document: dict, *, revision_ref: str | None = "document"):
+        body = {"projectId": PROJECT_ID, "runId": document["runId"],
+                "revisionRef": document["revisionRef"] if revision_ref == "document" else revision_ref}
+        return self.client.post(f"/api/documents/{document['assetSha256']}/work-copy", json=body)
+
+    def test_work_copy_is_explicit_seeded_once_and_never_overwrites_an_edit(self) -> None:
+        before = self.repository.read_head()
+        original = self.upload(image_bytes(), "plan.png", "image/png").json()
+        # Nothing exists until it is asked for: registering a document, and
+        # listing them, materialises no editable file anywhere.
+        work_root = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents" / "work"
+        self.assertFalse(work_root.exists())
+        self.assertEqual(self.client.get("/api/documents").status_code, 200)
+        self.assertFalse(work_root.exists())
+
+        response = self.work_copy(original)
+        self.assertEqual(response.status_code, 201, response.text)
+        copy = response.json()
+        self.assertEqual(copy["relativePath"],
+                         f"runs/{REFERENCE_RUN_ID}/workspaces/studio-documents/work/{original['assetSha256']}/plan.png")
+        self.assertEqual((copy["runId"], copy["assetSha256"], copy["revisionRef"], copy["pageIndex"]),
+                         (REFERENCE_RUN_ID, original["assetSha256"], None, 0))
+        self.assertEqual((copy["headRunId"], copy["headAssetSha256"], copy["headPageIndex"]),
+                         (REFERENCE_RUN_ID, original["assetSha256"], 0))
+        path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
+        self.assertEqual(path.read_bytes(), image_bytes())
+
+        # An architect's own edit is theirs. Asking again answers with the same
+        # file, untouched, rather than restoring the registered bytes over it.
+        edited = image_bytes(color="red")
+        path.write_bytes(edited)
+        again = self.work_copy(original)
+        self.assertEqual(again.status_code, 201, again.text)
+        self.assertEqual(again.json(), copy)
+        self.assertEqual(path.read_bytes(), edited)
+        # Registered bytes and canonical position are untouched throughout.
+        self.assertEqual(self.client.get(f"/api/documents/{original['assetSha256']}/bytes",
+                                         params={"runId": REFERENCE_RUN_ID}).content, image_bytes())
+        self.assertEqual(self.repository.read_head(), before)
+
+    def test_work_copy_names_one_exact_registration_and_refuses_the_rest(self) -> None:
+        image = self.upload(image_bytes(), "plan.png", "image/png").json()
+        pdf = self.upload(two_page_pdf()).json()
+        self.assertEqual(self.work_copy(pdf).status_code, 422)
+        self.assertEqual(self.work_copy(pdf).json()["code"], "DOCUMENT_NOT_EDITABLE")
+        # A revisionRef is part of the identity, not a filter: naming one this
+        # registration does not carry selects nothing rather than the newest
+        # other registration of the same bytes.
+        mismatched = self.work_copy(image, revision_ref="some-drawing-revision")
+        self.assertEqual(mismatched.status_code, 404, mismatched.text)
+        self.assertEqual(self.client.post(f"/api/documents/{'0' * 64}/work-copy", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID}).status_code, 404)
+        self.assertEqual(self.client.post("/api/documents/not-a-digest/work-copy", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID}).status_code, 422)
+        self.assertEqual(self.client.post(f"/api/documents/{image['assetSha256']}/work-copy", json={
+            "projectId": "another-project", "runId": REFERENCE_RUN_ID}).status_code, 403)
+        self.assertFalse((self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents").exists())
+
+    def test_work_copy_seeds_from_the_page_its_origin_now_answers_for(self) -> None:
+        original = self.upload(image_bytes(), "plan.png", "image/png").json()
+        replacement_bytes = image_bytes(color="red")
+        self.upload(replacement_bytes, "plan.png", "image/png", None,
+                    replacesPages=[replacement_page(original)])
+        # The copy is still identified by the page the architect placed, but it
+        # is seeded from what that page has become.
+        copy = self.work_copy(original).json()
+        self.assertEqual(copy["assetSha256"], original["assetSha256"])
+        self.assertEqual(copy["headAssetSha256"], hashlib.sha256(replacement_bytes).hexdigest())
+        path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
+        self.assertEqual(path.read_bytes(), replacement_bytes)
+
+    def test_work_copy_of_a_name_p036_cannot_hold_is_named_after_its_page(self) -> None:
+        document = self.upload(image_bytes(), "研究图纸.png", "image/png").json()
+        copy = self.work_copy(document).json()
+        self.assertEqual(copy["fileName"], "研究图纸.png")
+        self.assertTrue(copy["relativePath"].endswith(f"/{document['assetSha256'][:32]}.png"), copy["relativePath"])
+        self.assertTrue((self.repository.layout.root / Path(*copy["relativePath"].split("/"))).is_file())
+
+    def test_work_copy_null_registration_does_not_read_or_bind_a_drawing_with_equal_bytes(self) -> None:
+        data = image_bytes()
+        original = self.upload(data, "plan.png", "image/png").json()
+        binding = bound_project(self.client.app.state)
+        run = binding.load_run(REFERENCE_RUN_ID)
+        original_payload = next(self.repository.load_json(ref) for ref in binding.record_refs(run.run_id)
+                                if ref.record_kind == STUDIO_SOURCE_DOCUMENT)
+        # Two retained drawing registrations have the same pixels as the plain
+        # upload. Their referenced drawings are unavailable: selecting the
+        # valid plain upload must neither read them nor opt them into watching.
+        for revision_run in ("drawing-a", "drawing-b"):
+            revision = ProjectRecordRef(
+                PROJECT_ID, f"runs/{revision_run}/records/{record_file_name('drawing-projection-receipt', 'a' * 64)}",
+                "a" * 64,
+            )
+            self.repository.put_json(
+                run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                record_kind=STUDIO_SOURCE_DOCUMENT,
+                payload={**original_payload, "revisionRef": revision.uri, "drawingId": "plan",
+                         "generatedAt": "2026-09-01T00:00:00Z"},
+            )
+        documents = list_documents(binding, run.run_id)
+        self.assertEqual(len(documents), 3)
+        # Full revision identity includes its run, even if both receipt names
+        # and content digests happen to be the same.
+        copies = [_work_copy(binding, document, {}, documents) for document in documents]
+        self.assertEqual(len({copy.relative_path for copy in copies}), 3)
+
+        opened = self.work_copy(original, revision_ref=None)
+        self.assertEqual(opened.status_code, 201, opened.text)
+        path = self.repository.layout.root / Path(*opened.json()["relativePath"].split("/"))
+        self.assertEqual(path.read_bytes(), data)
+        watched = list_document_work_copies(binding)
+        self.assertEqual(len(watched), 1)
+        self.assertIsNone(watched[0].revision_ref)
+        # The exact unavailable drawing remains refused by its original reader.
+        drawing = next(document for document in documents if document.revision_ref is not None)
+        refused = self.work_copy(original, revision_ref=drawing.revision_ref)
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "DOCUMENT_UNAVAILABLE")
+
+    def test_work_copy_refuses_a_pdf_replacement_before_creating_an_image_file(self) -> None:
+        original = self.upload(image_bytes(), "plan.png", "image/png").json()
+        replacement = self.upload(sized_pdf((120, 80)), "plan.pdf", "application/pdf", None,
+                                  replacesPages=[replacement_page(original)])
+        self.assertEqual(replacement.status_code, 201, replacement.text)
+        opened = self.work_copy(original)
+        self.assertEqual(opened.status_code, 422, opened.text)
+        self.assertEqual(opened.json()["code"], "DOCUMENT_NOT_EDITABLE")
+        work_root = self.repository.layout.run(REFERENCE_RUN_ID).workspaces / "studio-documents" / "work"
+        self.assertFalse(work_root.exists())
 
     def test_unregistered_digest_cannot_read_an_object_and_tampering_is_named(self) -> None:
         document = self.upload(image_bytes(), "a.png", "image/png").json()
