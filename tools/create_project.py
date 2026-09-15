@@ -37,6 +37,7 @@ import io
 import json
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping
 
@@ -45,9 +46,12 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from archflow.project.repository import (
+    CURRENT_FORMAT_VERSION,
+    LEGACY_FORMAT_VERSION,
     FilesystemProjectRepository,
     PROJECT_FORMAT_CURRENT,
     PROJECT_FORMAT_SUPPORTED_LEGACY,
+    ProjectIntegrityError,
     ProjectMigrationPlan,
     ProjectRepositoryError,
     inspect_project_format,
@@ -80,7 +84,24 @@ _TRANSFER_KEYS = {
     "files",
     "contents",
 }
+_VERSION_REF_KEYS = frozenset({"project_id", "version", "state_sha256"})
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedVersionReference:
+    file: str
+    json_path: str
+    project_id: str
+    version: int
+    state_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyVersionReferenceScan:
+    project_id: str
+    references: tuple[RetainedVersionReference, ...]
+    scanned_json_files: int
 
 
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -277,7 +298,119 @@ def _restore_project_archive(
     return repository, manifest
 
 
-def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
+def _json_pointer_token(value: object) -> str:
+    return str(value).replace("~", "~0").replace("/", "~1")
+
+
+def _collect_legacy_version_references(
+    value: Any,
+    *,
+    file: str,
+    path: str = "",
+) -> tuple[RetainedVersionReference, ...]:
+    """Find exact ProjectVersionRef-shaped values without claiming their owner."""
+
+    found: list[RetainedVersionReference] = []
+    if isinstance(value, Mapping):
+        if frozenset(value.keys()) == _VERSION_REF_KEYS:
+            project_id = value.get("project_id")
+            version = value.get("version")
+            digest = value.get("state_sha256")
+            if (
+                isinstance(project_id, str)
+                and project_id
+                and isinstance(version, int)
+                and not isinstance(version, bool)
+                and version >= 0
+                and isinstance(digest, str)
+                and len(digest) == 64
+                and all(char in "0123456789abcdef" for char in digest)
+            ):
+                return (
+                    RetainedVersionReference(
+                        file=file,
+                        json_path=path or "/",
+                        project_id=project_id,
+                        version=version,
+                        state_sha256=digest,
+                    ),
+                )
+        for key, item in value.items():
+            found.extend(
+                _collect_legacy_version_references(
+                    item,
+                    file=file,
+                    path=f"{path}/{_json_pointer_token(key)}",
+                )
+            )
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            found.extend(
+                _collect_legacy_version_references(
+                    item,
+                    file=file,
+                    path=f"{path}/{index}",
+                )
+            )
+    return tuple(found)
+
+
+def _scan_legacy_version_references(
+    plan: ProjectMigrationPlan,
+) -> LegacyVersionReferenceScan | None:
+    """Scan the already-planned retained closure for exact legacy version refs."""
+
+    if (
+        not plan.planned
+        or not plan.migration_required
+        or plan.inspection.format_version != LEGACY_FORMAT_VERSION
+        or plan.target_format_version != CURRENT_FORMAT_VERSION
+    ):
+        return None
+    if plan.project_id is None:
+        raise ProjectIntegrityError(
+            "MIGRATION_REFERENCE_SCAN_REFUSED: planned project identity is missing"
+        )
+
+    repository = FilesystemProjectRepository.open(plan.inspection.root)
+    transfer = repository.export_transfer(include_contents=False, include_all_runs=True)
+    references: list[RetainedVersionReference] = []
+    scanned = 0
+    for entry in transfer["files"]:
+        file = entry["path"]
+        if not (file.endswith(".json") or file == "HEAD"):
+            continue
+        data = repository.read_transfer_file(file, entry["sha256"])
+        try:
+            payload = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProjectIntegrityError(
+                f"MIGRATION_REFERENCE_SCAN_INVALID_JSON: {file}"
+            ) from exc
+        scanned += 1
+        for reference in _collect_legacy_version_references(payload, file=file):
+            if reference.project_id != plan.project_id:
+                raise ProjectIntegrityError(
+                    "MIGRATION_REFERENCE_SCAN_FOREIGN_PROJECT: "
+                    f"{file}{reference.json_path} names {reference.project_id!r}"
+                )
+            references.append(reference)
+
+    return LegacyVersionReferenceScan(
+        project_id=plan.project_id,
+        references=tuple(
+            sorted(references, key=lambda item: (item.file, item.json_path))
+        ),
+        scanned_json_files=scanned,
+    )
+
+
+def _print_migration_plan(
+    plan: ProjectMigrationPlan,
+    *,
+    reference_scan: LegacyVersionReferenceScan | None = None,
+    reference_scan_error: str | None = None,
+) -> None:
     """Print one dry run: what is retained, what a migration would have to do."""
 
     inspection = plan.inspection
@@ -305,6 +438,24 @@ def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
             )
         if plan.orphan_paths:
             print(f"  orphan records not reachable from HEAD: {len(plan.orphan_paths)}")
+    if reference_scan is not None:
+        print("Legacy ProjectVersionRef scan (exact shape only; not migration approval):")
+        print(
+            f"  scanned {reference_scan.scanned_json_files} retained JSON file(s); "
+            f"found {len(reference_scan.references)} exact reference(s)."
+        )
+        for reference in reference_scan.references:
+            print(
+                f"  {reference.file} {reference.json_path} -> "
+                f"version {reference.version} {reference.state_sha256}"
+            )
+        print(
+            "  Each location is diagnostic evidence only; its typed owner still "
+            "has to confirm migration semantics before any rewrite."
+        )
+    elif reference_scan_error is not None:
+        print("Legacy ProjectVersionRef scan: REFUSED")
+        print(f"  - {reference_scan_error}")
     for title, lines in (
         ("Required transformations", plan.required_transformations),
         ("Blockers", plan.blockers),
@@ -353,10 +504,20 @@ def main(argv: list[str] | None = None) -> int:
                     PROJECT_FORMAT_CURRENT, PROJECT_FORMAT_SUPPORTED_LEGACY,
                 ) else 2
             plan = plan_project_migration(root)
-            _print_migration_plan(plan)
+            reference_scan = None
+            reference_scan_error = None
+            try:
+                reference_scan = _scan_legacy_version_references(plan)
+            except ProjectRepositoryError as exc:
+                reference_scan_error = str(exc)
+            _print_migration_plan(
+                plan,
+                reference_scan=reference_scan,
+                reference_scan_error=reference_scan_error,
+            )
             # A supported legacy project with no migrator is still a complete
-            # diagnostic; a project that could not be inventoried is not.
-            return 0 if plan.planned else 2
+            # diagnostic only when its exact legacy-reference scan also completes.
+            return 0 if plan.planned and reference_scan_error is None else 2
         if args.export_archive or args.restore_archive:
             if args.state_record or args.seats_file:
                 raise ValueError("archive export/restore cannot be combined with authored initialization inputs")
