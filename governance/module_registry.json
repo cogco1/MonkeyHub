@@ -3735,7 +3735,7 @@
         "a work model is bound to the run named in the request, not to the first row with those bytes: the same STEP can be exported by more than one run",
         "an existing work model answers again only when its run, stage, program, state, source STEP digest and source receipt are all the one being asked for; a failed attempt keeps its own directory and never blocks the next one",
         "the exact STEP and the mesh preview keep their meaning: the work model is an additional exact 3dm delivery beside them, and no preview is ever relabelled",
-        "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose current replacement has a different page count, or whose current replacement is a different kind of file has no one file that can stand for it and is refused as not editable, naming any copy already made",
+        "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose page has become another page of one document, whose current replacement has a different page count or is a different kind of file, or whose registered media type has no editable copy at all, has no one file that can stand for it: the row carries that reason and the request is refused as not editable, naming any copy already made; the row names the whole registration it answers for and no page number, because one file answers for the whole document",
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page"
       ],
@@ -3769,8 +3769,7 @@
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
         "mapping one explicitly selected edit drawing and its board marks to page coordinates, then handing its exact saved annotations, user feedback and up to three explicitly connected reference pages to the existing Studio intent workflow",
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
-        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
-        "converting the closed shapes inside a calibrated sketch frame into existing sketch proposals; the frame carries the only scene-to-metres affine"
+        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -3796,9 +3795,7 @@
         "save_board",
         "export_board_pages",
         "web: createBoardFeedback",
-        "web: prepareBoardDesignRequest",
-        "web: sketchActionsFromFrame",
-        "web: calibrateSketchFrame"
+        "web: prepareBoardDesignRequest"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -3835,8 +3832,7 @@
         "apps/archflow-studio/web/test/boardWhiteboard.browser.mjs",
         "apps/archflow-studio/web/test/boardNavigation.test.ts",
         "apps/archflow-studio/web/test/boardDocumentOpen.browser.mjs",
-        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts",
-        "apps/archflow-studio/web/test/boardSketch.test.ts"
+        "apps/archflow-studio/web/test/boardConceptFeedback.test.ts"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -5827,7 +5823,7 @@
         "Read-only project/native-session identity projection for Monitor, including archived chats, without exposing messages or project paths",
         "Content-free Hub turn, context, CLI activity, tool and permission intervals in the existing Monitor diagnostics journal; diagnostic turn/parent headers accompany existing project-bound Studio requests",
         "Optional per-message designContext prepares the exact selected Studio context before either native CLI transport starts; no context is inferred or inherited by a later message",
-        "observing the editable work copies this project explicitly opened: a settled, re-stat-validated change is offered to studio.artifacts as the next revision of the whole document that copy answers for, and its refusal is reported on the runtime's existing error surface; a copy studio.artifacts no longer considers editable is reported and left on disk, never unwatched silently; an untouched copy never rolls a page the Board replaced elsewhere back, and a copy that will not read or register never marks the retained projection stale"
+        "observing the editable work copies this project explicitly opened: a settled, re-stat-validated change is offered to studio.artifacts as the next revision of the whole document that copy answers for, and its refusal is reported on the runtime's existing error surface; a copy studio.artifacts no longer considers editable is left on disk and still watched, reported only once its own bytes have moved, and the edit it holds keeps its place until the refusal goes away; an untouched copy never rolls a page the Board replaced elsewhere back, and a copy that will not read or register never marks the retained projection stale"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
