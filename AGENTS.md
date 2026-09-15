@@ -21,7 +21,7 @@ geometry engine needs a demonstrated reason. Extend existing owners for concrete
 needs, not one schema or module per vision term. Keep human judgments attributable
 and distinguish continuing a candidate, endorsing a direction and formally issuing
 a project version. Live development is indexed by `governance/work_registry.json`;
-the vision and `docs/RESEARCH_POSITIONING.md` do not themselves authorize new mechanisms.
+the vision and research proposals do not themselves authorize new mechanisms.
 Deliver one usable change, then use its results to choose the next. Do not make a
 local repair wait for a full research comparison, another building or formal issue.
 

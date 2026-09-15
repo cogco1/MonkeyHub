@@ -753,7 +753,7 @@
       "notes": [
         "Implementation and isolated verification are complete: A-to-B API regressions and six browser interactions pass, along with web tests, type/build, OpenAPI consistency and archcheck. Program and massing-option APIs and client calls also carry an explicit retained source after the 2026-09-06 repair, indexed in P115 C02; the client requires matching source and binding identity before generation. This card follows user trial rather than reopening implementation.",
         "This card replaces the earlier all-in-one acceptance bundle. P108/P110 retain their own obligations; no architectural check or formal-issue boundary is waived by permitting a local trial.",
-        "The user selected whole-stair usability and revision as the next capability direction. Its bounded task and owner mapping are in docs/ARCHITECTURE.md; the proposed benchmark is in docs/RESEARCH_POSITIONING.md. This card does not expand to implement it.",
+        "The user selected whole-stair usability and revision as the next capability direction. Its bounded task, evaluation boundary and owner mapping are in docs/ARCHITECTURE.md. This card does not expand to implement it.",
         "Internal simplification progress is maintained only in P115 C03/C09/C10. These items do not block P111 trial; preserve real validation and retained-data readers.",
         "Development order lives in docs/ARCHITECTURE.md, not this delivery card. Reuse existing drawing/environment proposals. Formal issue and cross-project comparisons are separate tasks.",
         "2026-09-06: write_scope narrowed to the ledgers only — the implementation is delivered; problems found in the trial go to the owning card, not this one.",
