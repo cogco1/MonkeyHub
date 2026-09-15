@@ -4280,11 +4280,11 @@ __all__ = [
 ]
 
 
-# A CAD execution receipt keeps the canonical base twice: once as the split
-# scalar pair the exported file's own metadata carries, and once as the exact
+# A CAD execution receipt keeps the canonical base twice: once as the flat
+# scalar the exported file's own metadata carries, and once as the exact
 # reference in the binding the receipt was produced from.
 VERSION_REF_POINTERS = {
-    schema: ("/metadata/base_version+base_state_sha256", "/binding/base")
+    schema: ("/metadata/base_state_sha256", "/binding/base")
     for schema in (
         "RhinoCadExecutionReceipt@4",
         "OcctExecutionReceipt@1",

@@ -426,6 +426,22 @@ class ProjectTransferTests(unittest.TestCase):
         )
         self.assertFalse((restored.layout.root / unreferenced).exists())
 
+    def test_a_referenced_export_is_readable_one_file_at_a_time(self):
+        """The archive writer and the sync route read the manifest row by row."""
+
+        referenced, digest = self._retained_export("sheet.json", b'{"sheet": 3}\n')
+        self._name_export_from_a_record(referenced, digest)
+
+        transfer = self.shared.export_transfer(include_contents=False, include_all_runs=True)
+        self.assertIn(referenced, {row["path"] for row in transfer["files"]})
+        # Every listed row has to be servable, or --export-archive fails on a
+        # file the manifest it just wrote says is part of the project.
+        for row in transfer["files"]:
+            self.assertEqual(
+                len(self.shared.read_transfer_file(row["path"], row["sha256"])),
+                row["size"], row["path"],
+            )
+
     def test_a_referenced_export_that_is_missing_still_fails_closed(self):
         referenced, digest = self._retained_export("gone.json", b'{"sheet": 2}\n')
         self._name_export_from_a_record(referenced, digest)

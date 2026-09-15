@@ -67,6 +67,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, RunRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
+from archflow.project.version_refs import register as _register_version_refs
 
 DRAWING_PROJECTION_RECEIPT_SCHEMA = "DrawingProjectionReceipt@1"
 SOURCE_RECEIPT_SCHEMA = "OcctExecutionReceipt@1"
@@ -587,3 +588,10 @@ __all__ = [
     "project_model_axis_elevation",
     "read_model_axis_elevation",
 ]
+
+
+# A drawing receipt names the canonical version its run was based on, and the
+# base of the verified CAD run its geometry was projected from.
+VERSION_REF_POINTERS = {"DrawingProjectionReceipt@1": ("/base", "/source/base")}
+
+_register_version_refs(VERSION_REF_POINTERS)
