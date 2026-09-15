@@ -122,11 +122,13 @@ function connectorBindings(element: ExcalidrawElement): readonly [string, string
  * Geometry is page-local after undoing the Board image transform. Page metadata
  * already includes PDF rotation/CropBox and image EXIF orientation.
  *
- * A concept selection may contain additional registered images, but only when
- * exactly one selected image has a declared model source and every extra image
- * is joined to that edit source (or one of its selected marks) by an explicit
- * Excalidraw connector binding. Those pages become reference visuals; the
- * connector itself stays Board evidence and is not mis-saved as page ink.
+ * A concept selection may contain additional registered images. The edit target
+ * is explicit: a model-linked page whose own selected frame contains the target
+ * mark wins; otherwise there must be exactly one selected model-linked page.
+ * Every extra page must also be joined to that edit source (or one of its
+ * selected marks) by an explicit Excalidraw connector binding. Those pages are
+ * reference visuals even when they themselves have a model binding; the
+ * connector stays Board evidence and is not mis-saved as page ink.
  */
 export function createBoardFeedback(
   elements: readonly ExcalidrawElement[],
@@ -165,9 +167,14 @@ export function createBoardFeedback(
     return { image: candidate, source: candidateSource, document: candidateDocument, page: candidatePage };
   });
   const boundRows = imageRows.filter((row) => row.document.modelSource != null);
-  const target = imageRows.length === 1 ? imageRows[0] : boundRows.length === 1 ? boundRows[0] : null;
+  const markedRows = boundRows.filter((row) => row.image.frameId != null && chosen.some((element) =>
+    element.frameId === row.image.frameId && element.type !== "image" && element.type !== "frame"
+      && element.type !== "text" && connectorBindings(element) === null));
+  const target = imageRows.length === 1 ? imageRows[0]
+    : markedRows.length === 1 ? markedRows[0]
+      : boundRows.length === 1 ? boundRows[0] : null;
   if (!target) {
-    fail("BOARD_FEEDBACK_SOURCE_AMBIGUOUS", "Select one model-linked edit drawing plus explicitly connected reference images. Feedback cannot guess between multiple edit sources.");
+    fail("BOARD_FEEDBACK_SOURCE_AMBIGUOUS", "Select one model-linked edit drawing and place the target mark in its frame before adding explicitly connected reference images.");
   }
   const { image, source, document, page } = target;
   const referenceRows = imageRows.filter((row) => row.image.id !== image.id);
