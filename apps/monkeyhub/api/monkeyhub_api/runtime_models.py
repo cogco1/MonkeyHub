@@ -64,12 +64,27 @@ class HubRuntimeDto(BaseModel):
     workers: list[WorkerStatus]
 
 
+class ArtifactUpdatedEvent(BaseModel):
+    """One objective update from an explicitly bound project work artifact."""
+
+    projectId: str
+    sourceId: str
+    artifactId: str
+    label: str
+    state: Literal["working", "candidate", "accepted"]
+    previousSha256: str
+    sha256: str
+    size: int = Field(ge=0)
+    mtimeNs: int = Field(ge=0)
+
+
 class RuntimeEvent(BaseModel):
     serverId: str
     sequence: int
     kind: str
     runtimeId: str | None = None
     snapshot: HubRuntimeDto | None = None
+    artifact: ArtifactUpdatedEvent | None = None
 
 
 class OpenRuntimeRequest(BaseModel):
