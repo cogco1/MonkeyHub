@@ -6202,7 +6202,7 @@
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
         "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
-        "explicit correction against the current Study revision and cold reads that report source or derivation mismatch"
+        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence"
       ],
       "does_not_own": [
         "source document import and byte identity (studio.artifacts)",
@@ -6214,7 +6214,7 @@
         "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref"
       ],
       "outputs": [
-        "StudyView with retained EvidenceLedger@1 and recomputed CompositionGraph@1",
+        "StudyView with retained EvidenceLedger@1 and its CompositionGraph@1 reconstructed from that revision's retained evidence and relations",
         "StudyViewDto"
       ],
       "public_api": [
@@ -6239,7 +6239,7 @@
         "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
         "only confirmed traces contribute geometric relations; proposed and rejected evidence stays inspectable",
         "stale corrections and competing retained revision heads are refused",
-        "source mismatch or changed derivations are reported on cold read; unversioned rules currently do not guarantee older ledger readability"
+        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered"
       ],
       "status": "provisional",
       "source_paths": [
@@ -6250,7 +6250,7 @@
       "tests": [
         "apps/archflow-studio/api/tests/test_study.py"
       ],
-      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Before merge, resolve source revision pinning and retained-method compatibility, and review page metric normalization and unvalidated similarity thresholds; no architectural method is endorsed by this registration."
+      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Source revision pinning and retained-method compatibility are now resolved: a revision pins the exact StudioSourceDocument record, and an older revision is replayed rather than re-derived. What remains open: replay checks a retained record's shape, not whether its retained relations still correspond to its retained evidence, so a retained edge naming an absent trace is served as retained; the reconstructed graph digest is not compared with the graph digest inside a retained reasoning receipt, so an inconsistent archived revision reads as 200 without saying so; two competing retained heads refuse every read and correction with no route to reconcile them; and an archived revision stays readable only while the current evidence validator still accepts its exact retained rows. Page metric normalization and the unvalidated similarity thresholds remain the author's research decision; no architectural method is endorsed by this registration."
     }
   ]
 }
