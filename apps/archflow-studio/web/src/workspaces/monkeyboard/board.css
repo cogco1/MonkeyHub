@@ -77,6 +77,17 @@
 /* A received update is reported, not raised: the same bar, without the accent. */
 .monkeyboard-alert.monkeyboard-update { background: var(--panel); color: var(--ink-2); }
 .monkeyboard-update-actions { display: flex; flex-shrink: 0; gap: 8px; }
+/* The sketch frame's own band: the affine, the level and the one action that uses them. */
+.monkeyboard-sketch { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 9px 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 12px; }
+.monkeyboard-sketch > strong { font-weight: 650; overflow-wrap: anywhere; }
+.monkeyboard-sketch label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
+.monkeyboard-sketch :is(input,select) { min-height: 31px; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--ground); color: var(--ink); }
+.monkeyboard-sketch input[type=number] { width: 88px; }
+.monkeyboard-sketch button { min-height: 31px; box-sizing: border-box; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); color: var(--ink); cursor: pointer; }
+.monkeyboard-sketch button:hover:not(:disabled) { background: var(--accent-soft); border-color: var(--accent); }
+.monkeyboard-sketch button:disabled { opacity: .5; cursor: default; }
+.monkeyboard-sketch .monkeyboard-sketch-scale { flex: 1 1 200px; min-width: 0; margin: 0; color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
+.monkeyboard--crit .monkeyboard-sketch { display: none; }
 .monkeyboard-initializing { position: absolute; inset: 0; display: grid; place-items: center; background: var(--panel); z-index: 10; font-size: 13px; color: var(--muted); }
 .monkeyboard-busy { position: absolute; right: 16px; bottom: 56px; background: var(--panel); color: var(--ink); padding: 9px 14px; border: 1px solid var(--line); border-radius: 7px; box-shadow: var(--shadow); font-size: 12px; pointer-events: none; }
 .monkeyboard-crit-actions { position: absolute; z-index: 20; left: 50%; bottom: 18px; display: flex; gap: 8px; transform: translateX(-50%); padding: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); }
