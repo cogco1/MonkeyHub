@@ -43,7 +43,8 @@ def _progress_chat_store():
         def _progress(self, session, key: str, text: str, *, append: bool = False,
                       status: str = "complete") -> None:
             """Publish one replaceable UI row without making it conversation history."""
-            clean = chat_module._redact(text).strip()
+            redacted = chat_module._redact(text)
+            clean = redacted if append else redacted.strip()
             if not clean:
                 return
             rows = self._progress_rows.setdefault(session.id, {})
