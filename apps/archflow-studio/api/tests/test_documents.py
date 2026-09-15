@@ -336,10 +336,10 @@ class SourceDocumentTests(unittest.TestCase):
         copy = response.json()
         self.assertEqual(copy["relativePath"],
                          f"runs/{REFERENCE_RUN_ID}/workspaces/studio-documents/work/{original['assetSha256']}/plan.png")
-        self.assertEqual((copy["runId"], copy["assetSha256"], copy["revisionRef"], copy["pageIndex"]),
-                         (REFERENCE_RUN_ID, original["assetSha256"], None, 0))
-        self.assertEqual((copy["headRunId"], copy["headAssetSha256"], copy["headPageIndex"]),
-                         (REFERENCE_RUN_ID, original["assetSha256"], 0))
+        self.assertEqual((copy["runId"], copy["assetSha256"], copy["revisionRef"]),
+                         (REFERENCE_RUN_ID, original["assetSha256"], None))
+        self.assertEqual((copy["headRunId"], copy["headAssetSha256"]),
+                         (REFERENCE_RUN_ID, original["assetSha256"]))
         path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
         self.assertEqual(path.read_bytes(), image_bytes())
 
@@ -458,8 +458,7 @@ class SourceDocumentTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         copy = response.json()
         # The media type is the copy's own: the kind of file these bytes are.
-        self.assertEqual((copy["mimeType"], copy["pageIndex"], copy["refusal"]),
-                         ("application/pdf", 0, None))
+        self.assertEqual((copy["mimeType"], copy["refusal"]), ("application/pdf", None))
         self.assertEqual(copy["relativePath"],
                          f"runs/{REFERENCE_RUN_ID}/workspaces/studio-documents/work/{original['assetSha256']}/plan.pdf")
         path = self.repository.layout.root / Path(*copy["relativePath"].split("/"))
@@ -513,8 +512,7 @@ class SourceDocumentTests(unittest.TestCase):
         # The copy keeps its own identity and now answers for the new document.
         head = self.work_copy(original).json()
         self.assertEqual(head["relativePath"], copy["relativePath"])
-        self.assertEqual((head["headAssetSha256"], head["headPageIndex"], head["refusal"]),
-                         (document["assetSha256"], 0, None))
+        self.assertEqual((head["headAssetSha256"], head["refusal"]), (document["assetSha256"], None))
 
     def test_a_declared_whole_document_replacement_must_be_the_same_file_shape(self) -> None:
         original = self.upload(sized_pdf((400, 300), title="one"), "plan.pdf").json()
@@ -530,7 +528,7 @@ class SourceDocumentTests(unittest.TestCase):
         shrunk = self.upload(sized_pdf((400, 300), title="back"), "plan.pdf", run_id=None,
                              replacesDocument=self.replaces_document(two))
         self.assertEqual(shrunk.status_code, 422, shrunk.text)
-        self.assertIn("1 pages", shrunk.json()["detail"])
+        self.assertIn("This file has 1 page; the document it replaces has 2 pages.", shrunk.json()["detail"])
         other_kind = self.upload(image_bytes(color="red", size=(400, 300)), "plan.png", "image/png",
                                  run_id=None, replacesDocument=target)
         self.assertEqual(other_kind.status_code, 422, other_kind.text)
@@ -580,6 +578,66 @@ class SourceDocumentTests(unittest.TestCase):
         self.assertEqual(refused.json()["code"], "DOCUMENT_NOT_EDITABLE")
         self.assertIn(row.refusal, refused.json()["detail"])
         self.assertEqual(path.read_bytes(), edited)
+
+    def test_a_page_sent_into_another_document_says_which_page_it_became(self) -> None:
+        # The Board's own dialog can answer for one page with page k of a
+        # longer file. Nothing is split across documents, so saying so would be
+        # wrong: the page simply is not page 1 of anything any more.
+        original = self.upload(sized_pdf((400, 300), title="one"), "plan.pdf").json()
+        copy = self.work_copy(original).json()
+        self.assertIsNone(copy["refusal"])
+        moved = self.upload(sized_pdf((300, 400), (400, 300)), "spread.pdf", run_id=None,
+                            replacesPages=[replacement_page(original, 0, 1)])
+        self.assertEqual(moved.status_code, 201, moved.text)
+        refused = self.work_copy(original)
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.assertEqual(refused.json()["code"], "DOCUMENT_NOT_EDITABLE")
+        self.assertIn("Page 1 of this document is now page 2 of another document",
+                      refused.json()["detail"])
+        self.assertNotIn("different documents", refused.json()["detail"])
+        row = next(item for item in list_document_work_copies(bound_project(self.client.app.state))
+                   if item.relative_path == copy["relativePath"])
+        self.assertIn("now page 2", row.refusal or "")
+
+    def test_a_page_count_refusal_counts_in_readable_english(self) -> None:
+        original = self.upload(sized_pdf((400, 300), title="one"), "plan.pdf").json()
+        self.work_copy(original)
+        grown = self.upload(sized_pdf((400, 300), (300, 400)), "two.pdf", run_id=None,
+                            replacesPages=[replacement_page(original, 0, 0)])
+        self.assertEqual(grown.status_code, 201, grown.text)
+        refused = self.work_copy(original)
+        self.assertIn("has 2 pages; this document has 1 page.", refused.json()["detail"])
+        shrunk = self.upload(sized_pdf((400, 300), title="back"), "one.pdf", run_id=None,
+                             replacesDocument=self.replaces_document(grown.json()))
+        self.assertEqual(shrunk.status_code, 422, shrunk.text)
+        self.assertIn("This file has 1 page; the document it replaces has 2 pages.",
+                      shrunk.json()["detail"])
+
+    def test_a_media_type_with_no_editable_copy_is_refused_not_raised(self) -> None:
+        # A record is read back from its own retained payload, so its media
+        # type is whatever was written there. One hand-written row must not
+        # cost the project every other work copy, nor answer with a 500.
+        good = self.upload(image_bytes(), "plan.png", "image/png").json()
+        copy = self.work_copy(good).json()
+        binding = bound_project(self.client.app.state)
+        run = binding.load_run(REFERENCE_RUN_ID)
+        payload = next(self.repository.load_json(ref) for ref in binding.record_refs(run.run_id)
+                       if ref.record_kind == STUDIO_SOURCE_DOCUMENT)
+        self.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_SOURCE_DOCUMENT,
+            payload={**payload, "asset_sha256": "b" * 64, "mime_type": "image/tiff",
+                     "file_name": "扫描.tiff"},
+        )
+        foreign = next(row for row in list_documents(binding, run.run_id) if row.mime_type == "image/tiff")
+        response = self.client.post(f"/api/documents/{foreign.asset_sha256}/work-copy", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "revisionRef": None})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "DOCUMENT_NOT_EDITABLE")
+        self.assertIn("image/tiff", response.json()["detail"])
+        # Every other copy is still derived and still listed.
+        watched = list_document_work_copies(binding)
+        self.assertEqual([row.relative_path for row in watched], [copy["relativePath"]])
 
     def test_a_generated_drawing_sheet_is_an_origin_like_any_upload(self) -> None:
         binding = bound_project(self.client.app.state)

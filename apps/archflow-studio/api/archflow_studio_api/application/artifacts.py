@@ -471,7 +471,8 @@ def _whole_document_replacement(
                           "This is a different kind of file from the document it replaces.")
     if len(pages) != len(previous.pages):
         raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID",
-                          f"This file has {len(pages)} pages; the document it replaces has {len(previous.pages)}.")
+                          f"This file has {_pages_phrase(len(pages))}; "
+                          f"the document it replaces has {_pages_phrase(len(previous.pages))}.")
     return tuple(DocumentPageReplacement(
         run_id=previous.run_id, asset_sha256=previous.asset_sha256, revision_ref=previous.revision_ref,
         page_index=page.page_index, new_page_index=new.page_index,
@@ -613,7 +614,6 @@ class DocumentWorkCopy:
     run_id: str
     asset_sha256: str
     revision_ref: str | None
-    page_index: int
     file_name: str
     mime_type: str              # the kind of file this copy holds: the origin's
     path: Path                  # the editable file itself
@@ -621,7 +621,6 @@ class DocumentWorkCopy:
     head_run_id: str
     head_asset_sha256: str
     head_revision_ref: str | None
-    head_page_index: int
     # Every digest already registered in this page's replacement chain. Bytes
     # equal to one of them are that history, not evidence of a new revision.
     known_sha256: frozenset[str]
@@ -667,24 +666,38 @@ def _chain_head(links: dict[_PageId, _PageId], origin: _PageId) -> tuple[_PageId
 
 def _whole_document_head(
     links: dict[_PageId, _PageId], origin: SourceDocument,
-) -> tuple[_PageId, frozenset[str]] | None:
+) -> tuple[_PageId, frozenset[str], str | None]:
     """The one document every page of ``origin`` is currently answered for by.
 
     A work copy is a file, so it can only stand for pages that still travel
     together: page ``i`` of the origin must resolve to page ``i`` of one and the
-    same registered document. Sending one page somewhere else — into page 2 of
-    a longer PDF, say — breaks that, and the origin then has no editable copy.
-    Returns the head of page 0 and every digest along the way, or ``None``.
+    same registered document. Two different things break that, and they are
+    worth telling apart because they look nothing alike to the person holding
+    the file: the pages can end up in several documents, or they can all end up
+    in one document at other page numbers — page 1 becoming page 2 of a longer
+    PDF, which is what the Board's own replacement dialog does.
+
+    Returns the head of page 0, every digest along the way, and the reason no
+    single file can stand for the origin, or ``None`` when one still can.
     """
 
     heads = [_chain_head(links, (origin.run_id, origin.asset_sha256, origin.revision_ref, page.page_index))
              for page in origin.pages]
     first, known = heads[0]
-    for page, (head, digests) in zip(origin.pages, heads):
-        if head[:3] != first[:3] or head[3] != page.page_index:
-            return None
+    for _, digests in heads[1:]:
         known |= digests
-    return (first[0], first[1], first[2], origin.pages[0].page_index), frozenset(known)
+    reason = None
+    if any(head[:3] != first[:3] for head, _ in heads):
+        reason = ("Pages of this document are answered for by different documents now, "
+                  "so no single file can stand for it.")
+    else:
+        moved = next(((page, head) for page, (head, _) in zip(origin.pages, heads)
+                      if head[3] != page.page_index), None)
+        if moved is not None:
+            page, head = moved
+            reason = (f"Page {page.page_index + 1} of this document is now page {head[3] + 1} of another "
+                      "document, so no single file can stand for it.")
+    return first, frozenset(known), reason
 
 
 # What P036 accepts as one workspace path segment (archflow/project/refs.py).
@@ -705,29 +718,43 @@ def _work_copy_segment(document: SourceDocument) -> str:
 
     if _WORK_COPY_SEGMENT.fullmatch(document.file_name):
         return document.file_name
-    return f"{document.asset_sha256[:32]}{_WORK_COPY_EXTENSIONS[document.mime_type]}"
+    # A media type this build has no editable copy for is refused on the row,
+    # not raised: one hand-written record must not cost a whole project its
+    # other work copies. The path stays derivable so nothing else has to care.
+    return f"{document.asset_sha256[:32]}{_WORK_COPY_EXTENSIONS.get(document.mime_type, '')}"
+
+
+def _pages_phrase(count: int) -> str:
+    """``1 page``/``3 pages``: the counts appear in sentences people read."""
+
+    return f"{count} page" if count == 1 else f"{count} pages"
 
 
 def _work_copy_refusal(
-    origin: SourceDocument, head_document: SourceDocument, travels_together: bool,
+    origin: SourceDocument, head_document: SourceDocument, split: str | None,
 ) -> str | None:
     """Why this document has no single editable file, in one accurate sentence.
 
     One predicate, one wording. The copy's name and path come from the origin
     and never move, so the file can only honestly hold bytes of the origin's
-    own kind and shape; when the page it answers for has become something
-    else, that is what is said, rather than a file quietly holding the wrong
-    thing under the right name.
+    own kind and shape; when what it answers for has become something else,
+    that is what is said, rather than a file quietly holding the wrong thing
+    under the right name.
+
+    A registered document is read back from its own retained payload, so an
+    unreadable media type is a refusal like any other. Nothing here may raise:
+    one hand-written record must not cost a project every other work copy.
     """
 
     if not origin.pages:
         return "This registered document has no pages."
-    if not travels_together:
-        return ("Pages of this document are answered for by different documents now, "
-                "so no single file can stand for it.")
+    if origin.mime_type not in _WORK_COPY_EXTENSIONS:
+        return f"This document is registered as {origin.mime_type}, which has no editable copy."
+    if split is not None:
+        return split
     if len(head_document.pages) != len(origin.pages):
-        return (f"The current replacement has {len(head_document.pages)} pages; "
-                f"this document has {len(origin.pages)}.")
+        return (f"The current replacement has {_pages_phrase(len(head_document.pages))}; "
+                f"this document has {_pages_phrase(len(origin.pages))}.")
     if head_document.mime_type != origin.mime_type:
         return "The current replacement is a different kind of file from this document."
     return None
@@ -746,7 +773,6 @@ def _work_copy(
     and hold work nobody may lose sight of.
     """
 
-    page_index = origin.pages[0].page_index if origin.pages else 0
     registration_path = origin.asset_sha256
     if origin.revision_ref is not None:
         revision = record_ref_from_uri(origin.revision_ref, binding.project_id)
@@ -754,24 +780,25 @@ def _work_copy(
         # the existing record's complete path, including its run, so asking for
         # one registration never opts another into watching the same file.
         registration_path += f"/revisions/{revision.relative_path}"
-    workspace_relative = f"{WORK_COPY_WORKSPACE}/{registration_path}/{_work_copy_segment(origin)}"
-    whole = _whole_document_head(links, origin) if origin.pages else None
-    if whole is None:
-        head = (origin.run_id, origin.asset_sha256, origin.revision_ref, page_index)
-        known: frozenset[str] = frozenset({origin.asset_sha256})
-    else:
-        head, known = whole
+    head, known, split = ((origin.run_id, origin.asset_sha256, origin.revision_ref, 0),
+                          frozenset({origin.asset_sha256}), None)
+    if origin.pages:
+        head, known, split = _whole_document_head(links, origin)
     head_document = next((row for row in documents if (
         row.run_id, row.asset_sha256, row.revision_ref) == head[:3]), origin)
-    refusal = _work_copy_refusal(origin, head_document, whole is not None)
+    refusal = _work_copy_refusal(origin, head_document, split)
+    if refusal is not None:
+        # Its own registration is the only thing a refused row can answer for.
+        head, known = (origin.run_id, origin.asset_sha256, origin.revision_ref, 0), frozenset({origin.asset_sha256})
+    workspace_relative = f"{WORK_COPY_WORKSPACE}/{registration_path}/{_work_copy_segment(origin)}"
     return DocumentWorkCopy(
         project_id=binding.project_id, run_id=origin.run_id, asset_sha256=origin.asset_sha256,
-        revision_ref=origin.revision_ref, page_index=page_index,
+        revision_ref=origin.revision_ref,
         file_name=origin.file_name, mime_type=origin.mime_type,
         path=binding.repository.layout.run(origin.run_id).workspaces / Path(
             *PurePosixPath(workspace_relative).parts),
         relative_path=f"runs/{origin.run_id}/workspaces/{workspace_relative}",
-        head_run_id=head[0], head_asset_sha256=head[1], head_revision_ref=head[2], head_page_index=head[3],
+        head_run_id=head[0], head_asset_sha256=head[1], head_revision_ref=head[2],
         known_sha256=known, refusal=refusal,
     )
 

@@ -167,7 +167,6 @@ class DocumentWorkCopyDto(BaseModel):
     run_id: str = Field(alias="runId")
     asset_sha256: str = Field(alias="assetSha256")
     revision_ref: str | None = Field(alias="revisionRef", default=None)
-    page_index: int = Field(alias="pageIndex", ge=0)
     file_name: str = Field(alias="fileName")
     mime_type: Literal["image/png", "image/jpeg", "application/pdf"] = Field(
         alias="mimeType", description="the kind of file the copy itself holds: the origin's own",
@@ -181,7 +180,6 @@ class DocumentWorkCopyDto(BaseModel):
     head_run_id: str = Field(alias="headRunId")
     head_asset_sha256: str = Field(alias="headAssetSha256")
     head_revision_ref: str | None = Field(alias="headRevisionRef", default=None)
-    head_page_index: int = Field(alias="headPageIndex", ge=0)
     refusal: str | None = Field(
         default=None,
         description="why no one file can stand for this document right now, in "
@@ -192,10 +190,10 @@ class DocumentWorkCopyDto(BaseModel):
 def work_copy_dto(copy: DocumentWorkCopy) -> DocumentWorkCopyDto:
     return DocumentWorkCopyDto(
         project_id=copy.project_id, run_id=copy.run_id, asset_sha256=copy.asset_sha256,
-        revision_ref=copy.revision_ref, page_index=copy.page_index, file_name=copy.file_name,
+        revision_ref=copy.revision_ref, file_name=copy.file_name,
         mime_type=copy.mime_type, relative_path=copy.relative_path, head_run_id=copy.head_run_id,
         head_asset_sha256=copy.head_asset_sha256, head_revision_ref=copy.head_revision_ref,
-        head_page_index=copy.head_page_index, refusal=copy.refusal,
+        refusal=copy.refusal,
     )
 
 

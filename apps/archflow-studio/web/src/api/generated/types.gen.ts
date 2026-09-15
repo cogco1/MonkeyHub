@@ -2192,10 +2192,6 @@ export type DocumentWorkCopyDto = {
      */
     revisionRef?: string | null;
     /**
-     * Pageindex
-     */
-    pageIndex: number;
-    /**
      * Filename
      */
     fileName: string;
@@ -2223,10 +2219,6 @@ export type DocumentWorkCopyDto = {
      * Headrevisionref
      */
     headRevisionRef?: string | null;
-    /**
-     * Headpageindex
-     */
-    headPageIndex: number;
     /**
      * Refusal
      *
