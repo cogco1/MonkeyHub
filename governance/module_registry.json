@@ -5939,6 +5939,7 @@
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
         "apps/monkeyhub/api/tests/test_launch_hub.py",
+        "apps/monkeyhub/api/tests/test_applications.py",
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "apps/monkeyhub/api/tests/test_chat.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
