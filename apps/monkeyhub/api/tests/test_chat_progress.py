@@ -40,16 +40,17 @@ class ChatProgressProjectionTests(unittest.TestCase):
         return [row for row in self.store.get(self.session.id).messages if ":progress:" in row.id]
 
     def test_provider_summary_is_transient_and_never_enters_saved_chat(self):
-        self.store._acp_update(self.session.id, {
-            "sessionId": "fixture/session",
-            "update": {
-                "sessionUpdate": "agent_thought_chunk",
-                "content": {"type": "text", "text": "平面已经整理好，接下来检查 circulation。"},
-            },
-        }, {})
+        for text in ("Checking ", "circulation."):
+            self.store._acp_update(self.session.id, {
+                "sessionId": "fixture/session",
+                "update": {
+                    "sessionUpdate": "agent_thought_chunk",
+                    "content": {"type": "text", "text": text},
+                },
+            }, {})
         visible = self.visible_progress()
         self.assertEqual(len(visible), 1)
-        self.assertIn("接下来检查 circulation", visible[0].content)
+        self.assertEqual("Checking circulation.", visible[0].content)
         self.assertEqual(visible[0].status, "streaming")
         self.assertFalse(any(":progress:" in row.id for row in self.session.messages))
 
