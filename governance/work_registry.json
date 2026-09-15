@@ -3,6 +3,30 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-56",
+      "stream": "project-data",
+      "status": "active",
+      "goal": "Repair cross-run retained artifact retrieval during project archive export; representative restore remains separate acceptance.",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/56",
+      "branch": "codex/56-cross-run-export-reviewed",
+      "worktree": "codex-56-cross-run-export-reviewed",
+      "base_ref": "2b97628866d493c4c63cd3f93503f51750f89053",
+      "contributor": "Codex coordinator and Claude",
+      "reviewer": null,
+      "handoff": null,
+      "modules": [
+        "project.repository"
+      ],
+      "depends_on": [],
+      "write_scope": [
+        "archflow/project/repository.py",
+        "tests/test_project_transfer.py"
+      ],
+      "acceptance": [
+        "Cross-run manifest artifact reads succeed; run-local basename references cannot authorize files in another run."
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
