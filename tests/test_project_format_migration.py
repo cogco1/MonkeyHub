@@ -759,6 +759,38 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertIn("was not inventoried", output)
         self.assert_unchanged(root, before)
 
+    def test_migrate_format_writes_the_target_and_a_receipt(self) -> None:
+        repository = self.legacy_project()
+        root = repository.layout.root
+        before = self.fingerprint(root)
+        target = self.root / "migrated" / "legacy-building"
+        code, output = self.invoke(root, "--migrate-format", "--into", str(target))
+        self.assertEqual(code, 0, output)
+        self.assert_unchanged(root, before)
+        receipt = json.loads((target / "migration" / "format-1-to-2.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["schema"], "ProjectFormatMigration@1")
+        self.assertEqual((receipt["project_id"], receipt["source_format_version"], receipt["target_format_version"]), ("legacy-building", 1, 2))
+        self.assertEqual([row["version"] for row in receipt["versions"]], list(range(repository.read_head().version + 1)))
+        self.assertIn("runs/first/run.json", receipt["rewritten"])
+        self.assertIn("embedded_legacy_references", receipt)
+        self.assertIn("preserved_files", receipt)
+        self.assertIn(str(target), output)
+        self.assertEqual(inspect_project_format(target).status, "current")
+        # Running it again refuses: the target is used, and idempotence is the format itself.
+        code, output = self.invoke(root, "--migrate-format", "--into", str(target))
+        self.assertEqual(code, 2, output)
+        self.assertIn("MIGRATION_TARGET_USED", output)
+
+    def test_migrate_format_requires_into_and_refuses_the_source_tree(self) -> None:
+        repository = self.legacy_project()
+        root = repository.layout.root
+        code, output = self.invoke(root, "--migrate-format")
+        self.assertEqual(code, 2, output)
+        self.assertIn("--into", output)
+        code, output = self.invoke(root, "--migrate-format", "--into", str(root / "nested" / "legacy-building"))
+        self.assertEqual(code, 2, output)
+        self.assertIn("MIGRATION_TARGET_NESTED", output)
+
     def test_cli_refuses_a_format_report_with_initialization_inputs(self) -> None:
         root = self.current_project().layout.root
         with self.assertRaises(SystemExit):
