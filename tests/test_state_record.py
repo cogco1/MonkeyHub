@@ -959,5 +959,28 @@ class StateRecordTests(unittest.TestCase):
             self.assertNotEqual(bound_a.state_digest, bound_b.state_digest)
 
 
+class RewriteBaseDigestTests(unittest.TestCase):
+    def test_rewrites_only_a_known_exact_base(self) -> None:
+        from archflow.state.state_record import rewrite_base_digest
+        legacy, semantic = "a" * 64, "b" * 64
+        payload = {"schema": "StateRecord@1", "draft": "x", "base": {"project_id": "p", "version": 3, "state_sha256": legacy}}
+        rewritten = rewrite_base_digest(payload, {legacy: semantic})
+        self.assertEqual(rewritten["base"], {"project_id": "p", "version": 3, "state_sha256": semantic})
+        self.assertEqual({k: v for k, v in rewritten.items() if k != "base"}, {"schema": "StateRecord@1", "draft": "x"})
+        self.assertEqual(payload["base"]["state_sha256"], legacy, "input is not mutated")
+
+    def test_leaves_unknown_missing_or_odd_bases_alone(self) -> None:
+        from archflow.state.state_record import rewrite_base_digest
+        mapping = {"a" * 64: "b" * 64}
+        for payload in (
+            {"schema": "StateRecord@1"},
+            {"schema": "StateRecord@1", "base": None},
+            {"schema": "StateRecord@1", "base": {"project_id": "p", "version": 1, "state_sha256": "c" * 64}},
+            {"schema": "StateRecord@1", "base": {"version": 1, "state_sha256": "a" * 64}},
+            {"schema": "StateRecord@1", "base": {"project_id": "p", "version": 1, "state_sha256": None}},
+        ):
+            self.assertEqual(rewrite_base_digest(payload, mapping), dict(payload), payload)
+
+
 if __name__ == "__main__":
     unittest.main()
