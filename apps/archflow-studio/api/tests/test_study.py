@@ -10,7 +10,8 @@ import unittest
 from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
+from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
+from archflow.project.refs import record_ref_from_uri
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.application import study as study_application
 from archflow_studio_api.application.binding import bound_project, record_kind
@@ -104,10 +105,10 @@ class StudyTests(unittest.TestCase):
         ]
 
     def save(self, evidence: list[dict] | None = None, previous: str | None = None,
-             document: dict | None = None) -> object:
+             document: dict | None = None, study_id: str = "furniture-house") -> object:
         return self.client.post("/api/studies", json={
             "projectId": PROJECT_ID,
-            "studyId": "furniture-house",
+            "studyId": study_id,
             "source": self.source(document),
             "evidence": evidence if evidence is not None else self.evidence(),
             "expectedPreviousRef": previous,
@@ -187,6 +188,103 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(reopened.json(), study)
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_null_revision_pins_the_unversioned_document_record_not_a_later_match(self) -> None:
+        binding = bound_project(self.client.app.state)
+        source_refs = [
+            ref for ref in binding.record_refs(self.document["runId"])
+            if record_kind(ref) == STUDIO_SOURCE_DOCUMENT
+            and binding.repository.load_json(ref).get("asset_sha256") == self.document["assetSha256"]
+            and binding.repository.load_json(ref).get("revisionRef") is None
+        ]
+        self.assertEqual(len(source_refs), 1)
+        original_ref = source_refs[0]
+        run = binding.load_run(self.document["runId"])
+        binding.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_SOURCE_DOCUMENT,
+            payload={
+                "schema": "StudioSourceDocument@1",
+                "project_id": PROJECT_ID,
+                "run_id": run.run_id,
+                "asset_sha256": self.document["assetSha256"],
+                "file_name": "later-generated.png",
+                "mime_type": "image/png",
+                "size_bytes": 1,
+                "pages": [{"page_index": 0, "width": 120.0, "height": 80.0, "rotation": 0}],
+                "drawingId": "later-drawing",
+                "revisionRef": "project://demo/runs/later/records/drawing-projection-receipt-" + "a" * 64 + ".json",
+                "sourceStageRef": None,
+                "viewRecipe": None,
+                "generatedAt": "2099-01-01T00:00:00+00:00",
+            },
+        )
+
+        saved = self.save()
+        self.assertEqual(saved.status_code, 201, saved.text)
+        body = saved.json()
+        self.assertIsNone(body["source"]["revisionRef"])
+        self.assertEqual(body["source"]["documentRef"], original_ref.uri)
+        restarted = self.new_client()
+        reopened = restarted.get("/api/studies/furniture-house")
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json(), body)
+
+    def test_legacy_unversioned_ledger_reopens_and_can_be_corrected_forward(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        binding = bound_project(self.client.app.state)
+        first_ref = record_ref_from_uri(first.json()["ledgerRef"], PROJECT_ID)
+        template = binding.repository.load_json(first_ref)
+
+        legacy = dict(template)
+        legacy["study_id"] = "legacy-house"
+        legacy["run_id"] = "study-legacy-house"
+        legacy["previous_ref"] = None
+        legacy["source"] = dict(legacy["source"])
+        legacy["source"].pop("document_ref", None)
+        legacy.pop("derivation_method", None)
+        # Stand in for a previous rule implementation: the archived output is
+        # intentionally different from what today's _hypotheses would derive.
+        legacy["hypotheses"] = []
+        run = binding.repository.create_run("study-legacy-house")
+        legacy_ref = binding.repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=RESEARCH_EVIDENCE_LEDGER,
+            payload=legacy,
+        )
+
+        exact_hypotheses = study_application._hypotheses
+        study_application._hypotheses = lambda *_: (_ for _ in ()).throw(
+            AssertionError("an archived ledger must not run the current hypothesis method")
+        )
+        try:
+            reopened = self.client.get("/api/studies/legacy-house")
+        finally:
+            study_application._hypotheses = exact_hypotheses
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["hypotheses"], [])
+        self.assertEqual(reopened.json()["ledgerRef"], legacy_ref.uri)
+
+        corrected = self.save(
+            self.evidence(), legacy_ref.uri, study_id="legacy-house"
+        )
+        self.assertEqual(corrected.status_code, 201, corrected.text)
+        self.assertNotEqual(corrected.json()["ledgerRef"], legacy_ref.uri)
+        current_ref = record_ref_from_uri(corrected.json()["ledgerRef"], PROJECT_ID)
+        current_payload = binding.repository.load_json(current_ref)
+        self.assertEqual(
+            current_payload["derivation_method"],
+            study_application.CURRENT_DERIVATION_METHOD,
+        )
+        self.assertIn("document_ref", current_payload["source"])
+        old = self.client.get(
+            "/api/studies/legacy-house", params={"ledgerRef": legacy_ref.uri}
+        )
+        self.assertEqual(old.status_code, 200, old.text)
+        self.assertEqual(old.json()["hypotheses"], [])
+
     def test_user_correction_is_a_new_revision_and_old_evidence_remains_exactly_readable(self) -> None:
         first = self.save()
         self.assertEqual(first.status_code, 201, first.text)
@@ -245,7 +343,7 @@ class StudyTests(unittest.TestCase):
         # The issue was the other operator's; the Study neither made nor undid it.
         self.assertEqual(self.repository.read_head().version, self.head.version + 1)
 
-    def test_a_superseded_revision_cannot_take_the_current_head_down_with_it(self) -> None:
+    def test_retained_revisions_are_not_reinterpreted_when_current_rules_change(self) -> None:
         first = self.save()
         self.assertEqual(first.status_code, 201, first.text)
         ancestor = first.json()
@@ -253,15 +351,11 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(second.status_code, 201, second.text)
         current = second.json()
 
-        # Tighten a rule out of existence, the way an ordinary later change
-        # would. Only the ancestor traced a confirmed void, so only its
-        # retained reasoning stops reproducing.
         exact_hypotheses = study_application._hypotheses
 
         def without_void_centrality(evidence, graph):
             return [
-                row
-                for row in exact_hypotheses(evidence, graph)
+                row for row in exact_hypotheses(evidence, graph)
                 if row["rule"] != "void_centrality"
             ]
 
@@ -269,17 +363,21 @@ class StudyTests(unittest.TestCase):
         try:
             reopened = self.client.get("/api/studies/furniture-house")
             self.assertEqual(reopened.status_code, 200, reopened.text)
-            self.assertEqual(reopened.json()["ledgerRef"], current["ledgerRef"])
-            # The Study can still be corrected forward.
-            repaired = self.save(self.evidence(), current["ledgerRef"])
-            self.assertEqual(repaired.status_code, 201, repaired.text)
-            # Reading the drifted revision itself still refuses, by name.
-            drifted = self.client.get(
+            self.assertEqual(reopened.json(), current)
+            archived = self.client.get(
                 "/api/studies/furniture-house",
                 params={"ledgerRef": ancestor["ledgerRef"]},
             )
-            self.assertEqual(drifted.status_code, 409, drifted.text)
-            self.assertEqual(drifted.json()["code"], "STUDY_DERIVATION_DRIFT")
+            self.assertEqual(archived.status_code, 200, archived.text)
+            self.assertEqual(archived.json(), ancestor)
+            # A new correction uses the method that exists now; old revisions
+            # remain readable as the snapshots their own ledger retained.
+            repaired = self.save(self.evidence(), current["ledgerRef"])
+            self.assertEqual(repaired.status_code, 201, repaired.text)
+            self.assertNotIn(
+                "void_centrality",
+                {row["rule"] for row in repaired.json()["hypotheses"]},
+            )
         finally:
             study_application._hypotheses = exact_hypotheses
         self.assertEqual(self.repository.read_head(), self.head)

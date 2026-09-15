@@ -3,8 +3,11 @@
 A Study begins from one exact registered document page. Its editable truth is a
 small set of trace-evidence primitives in normalized page coordinates.
 Measurements, relations, the CompositionGraph, hypotheses and counterfactual
-judgements are deterministic projections of confirmed traces. They are retained
-for inspection, but every cold read recomputes them and refuses drift.
+judgements are deterministic projections of confirmed traces. A saved revision
+is an archival snapshot of the method that produced it: cold reads validate its
+exact source and evidence but never reinterpret retained derivations with today's
+rules. A correction runs the current method and records that method on the new
+revision.
 
 Nothing here edits a StateRecord, DesignStage, design branch or canonical HEAD.
 The existing ``research-evidence-ledger`` record kind is the durable substrate.
@@ -22,17 +25,17 @@ from typing import Any, Iterable, Mapping
 
 from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
+from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
 from archflow.project.repository import ProjectRepositoryError
 
-from .artifacts import document_bytes
+from .artifacts import _registered_document_bytes, list_documents
 from .binding import ProjectBinding, record_kind
 from ..transport.errors import StudioError
 
 
 LEDGER_SCHEMA = "EvidenceLedger@1"
-LEDGER_KEYS = frozenset({
+LEGACY_LEDGER_KEYS = frozenset({
     "schema",
     "project_id",
     "run_id",
@@ -46,6 +49,8 @@ LEDGER_KEYS = frozenset({
     "counterfactuals",
     "canonical_state_changed",
 })
+CURRENT_DERIVATION_METHOD = "StudyDerivation@1"
+LEDGER_KEYS = LEGACY_LEDGER_KEYS | {"derivation_method"}
 STUDY_RUN_PREFIX = "study-"
 TRACE_KINDS = frozenset({"envelope", "mass", "void", "floor_plate"})
 TRACE_STATUSES = frozenset({"proposed", "confirmed", "rejected"})
@@ -73,6 +78,7 @@ class StudySource:
     page_width: float
     page_height: float
     mime_type: str
+    document_ref: str
 
     @property
     def basis_ref(self) -> str:
@@ -91,6 +97,7 @@ class StudySource:
             "page_width": self.page_width,
             "page_height": self.page_height,
             "mime_type": self.mime_type,
+            "document_ref": self.document_ref,
             "coordinate_frame": "normalized-page-xy-top-left@1",
             "basis_ref": self.basis_ref,
         }
@@ -166,6 +173,87 @@ def _study_run_id(study_id: str) -> str:
     return f"{STUDY_RUN_PREFIX}{study_id}"
 
 
+def _source_document(
+    binding: ProjectBinding,
+    *,
+    run_id: str,
+    asset_sha256: str,
+    revision_ref: str | None,
+    document_ref: str | None,
+) -> tuple[Any, ProjectRecordRef]:
+    """Resolve one exact StudioSourceDocument record, never a latest match.
+
+    ``revision_ref=None`` means the unversioned uploaded document. It is not a
+    wildcard for a later generated drawing that happens to have identical bytes.
+    New Study revisions also pin the content-addressed source-document record so
+    a cold read never depends on document ordering.
+    """
+
+    try:
+        documents = [
+            row for row in list_documents(binding, run_id)
+            if row.asset_sha256 == asset_sha256
+            and row.revision_ref == revision_ref
+        ]
+        refs: list[ProjectRecordRef] = []
+        for ref in binding.record_refs(run_id):
+            if record_kind(ref) != STUDIO_SOURCE_DOCUMENT:
+                continue
+            payload = binding.repository.load_json(ref)
+            if (
+                payload.get("schema") == "StudioSourceDocument@1"
+                and payload.get("project_id") == binding.project_id
+                and payload.get("run_id") == run_id
+                and payload.get("asset_sha256") == asset_sha256
+                and payload.get("revisionRef") == revision_ref
+            ):
+                refs.append(ref)
+    except (ProjectRepositoryError, OSError, TypeError, ValueError) as exc:
+        raise StudioError(
+            404,
+            "STUDY_SOURCE_UNREGISTERED",
+            "The Study source is not an exact registered document in this project.",
+        ) from exc
+    if not documents or not refs:
+        raise StudioError(
+            404,
+            "STUDY_SOURCE_UNREGISTERED",
+            "The Study source is not an exact registered document in this project.",
+        )
+    if len(documents) != 1 or len(refs) != 1:
+        raise StudioError(
+            409,
+            "STUDY_SOURCE_AMBIGUOUS",
+            "The Study source has competing retained document registrations.",
+        )
+    ref = refs[0]
+    if document_ref is not None:
+        try:
+            named = record_ref_from_uri(document_ref, binding.project_id)
+        except (TypeError, ValueError) as exc:
+            raise StudioError(
+                409,
+                "STUDY_SOURCE_MISMATCH",
+                "The retained Study source binding is not a project document reference.",
+            ) from exc
+        prefix = f"runs/{run_id}/records/"
+        if (
+            record_kind(named) != STUDIO_SOURCE_DOCUMENT
+            or not named.relative_path.startswith(prefix)
+            or "/" in named.relative_path[len(prefix):]
+            or named != ref
+        ):
+            raise StudioError(
+                409,
+                "STUDY_SOURCE_MISMATCH",
+                "The retained Study source binding no longer names its exact document record.",
+            )
+    # Validate the exact registered bytes. This deliberately bypasses
+    # document_bytes' convenience lookup, whose null revision is a wildcard.
+    _registered_document_bytes(binding, documents[0])
+    return documents[0], ref
+
+
 def _source(
     binding: ProjectBinding,
     *,
@@ -173,8 +261,15 @@ def _source(
     asset_sha256: str,
     revision_ref: str | None,
     page_index: int,
+    document_ref: str | None = None,
 ) -> StudySource:
-    document, _ = document_bytes(binding, run_id, asset_sha256, revision_ref)
+    document, retained_ref = _source_document(
+        binding,
+        run_id=run_id,
+        asset_sha256=asset_sha256,
+        revision_ref=revision_ref,
+        document_ref=document_ref,
+    )
     page = next(
         (item for item in document.pages if item.page_index == page_index),
         None,
@@ -193,7 +288,19 @@ def _source(
         page_width=page.width,
         page_height=page.height,
         mime_type=document.mime_type,
+        document_ref=retained_ref.uri,
     )
+
+
+def _source_payload_matches(retained: Mapping[str, Any], exact: StudySource) -> bool:
+    expected = exact.to_dict()
+    # EvidenceLedger@1 records written before exact source-record pinning are
+    # still resolvable: their run + asset + exact null/non-null revision tuple
+    # identifies the old document. New records additionally prove that identity
+    # with the content-addressed StudioSourceDocument ref.
+    if "document_ref" not in retained:
+        expected.pop("document_ref")
+    return dict(retained) == expected
 
 
 def _points(value: object, evidence_id: str) -> list[list[float]]:
@@ -814,7 +921,8 @@ def _identity(
             "STUDY_LEDGER_NOT_FOUND",
             "No retained Study ledger answers that reference in this project.",
         ) from exc
-    if set(payload) != LEDGER_KEYS or (
+    keys = frozenset(payload)
+    if keys not in {LEGACY_LEDGER_KEYS, LEDGER_KEYS} or (
         payload.get("schema") != LEDGER_SCHEMA
         or payload.get("project_id") != binding.project_id
         or payload.get("study_id") != study_id
@@ -861,6 +969,7 @@ def _load_payload(
             asset_sha256=source.get("asset_sha256"),
             revision_ref=source.get("revision_ref"),
             page_index=source.get("page_index"),
+            document_ref=source.get("document_ref"),
         )
     except (StudioError, TypeError, ValueError) as exc:
         raise StudioError(
@@ -868,7 +977,7 @@ def _load_payload(
             "STUDY_SOURCE_MISMATCH",
             "The retained Study source no longer resolves to the exact registered page it names.",
         ) from exc
-    if source != exact_source.to_dict():
+    if not _source_payload_matches(source, exact_source):
         raise StudioError(
             409,
             "STUDY_SOURCE_MISMATCH",
@@ -888,18 +997,16 @@ def _load_payload(
             "STUDY_LEDGER_INVALID",
             "The retained Study evidence is not canonical.",
         )
-    measurements, relations, _, hypotheses, counterfactuals = _derived(normalized)
-    if (
-        payload.get("measurements") != measurements
-        or payload.get("relations") != relations
-        or payload.get("hypotheses") != hypotheses
-        or payload.get("counterfactuals") != counterfactuals
-    ):
-        raise StudioError(
-            409,
-            "STUDY_DERIVATION_DRIFT",
-            "The retained Study derivations no longer reproduce from its evidence.",
-        )
+    for field in ("measurements", "relations", "hypotheses", "counterfactuals"):
+        if not isinstance(payload.get(field), list):
+            raise StudioError(
+                409,
+                "STUDY_LEDGER_INVALID",
+                "The retained Study derivation snapshot is structurally incomplete.",
+            )
+    # Retained derivations are historical evidence, not a cache. Re-running a
+    # newer method here would rewrite the meaning of an old content-addressed
+    # revision and make method evolution break archive readability.
     return payload
 
 
@@ -961,9 +1068,17 @@ def read_study(
             )
         ref = named
     payload = _load_payload(binding, ref, study_id)
-    # The graph is never retained: it is recomputed from the evidence the
-    # ledger was just re-verified against, and returned beside it.
-    _, _, graph, _, _ = _derived(payload["evidence"])
+    # CompositionGraph@1 is rebuilt only from the retained evidence and
+    # retained relation snapshot. It does not invoke today's hypotheses or
+    # counterfactual method.
+    try:
+        graph = _graph(payload["evidence"], payload["relations"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise StudioError(
+            409,
+            "STUDY_LEDGER_INVALID",
+            "The retained Study relation snapshot cannot form its CompositionGraph.",
+        ) from exc
     return StudyView(ref, payload, graph)
 
 
@@ -1015,7 +1130,7 @@ def save_study(
         previous_payload: Mapping[str, Any] | None = None
         if current is not None:
             previous_payload = _load_payload(binding, current, study_id)
-            if previous_payload["source"] != source.to_dict():
+            if not _source_payload_matches(previous_payload["source"], source):
                 raise StudioError(
                     409,
                     "STUDY_SOURCE_IMMUTABLE",
@@ -1034,6 +1149,7 @@ def save_study(
             "relations": relations,
             "hypotheses": hypotheses,
             "counterfactuals": counterfactuals,
+            "derivation_method": CURRENT_DERIVATION_METHOD,
             "canonical_state_changed": False,
         }
         if (
