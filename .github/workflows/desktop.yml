@@ -5,14 +5,19 @@ on:
   push:
     branches:
       - main
+      - release-candidate
     # Both surfaces ship from every main revision, including web-only and Monitor changes.
+    # Updating the dedicated release-candidate branch promotes that exact base into a versioned prerelease.
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: windows-desktop-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  MONKEYHUB_RELEASE_SERIES: '0.1'
 
 jobs:
   desktop:
@@ -22,6 +27,45 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Prepare exact build identity
+        shell: pwsh
+        run: |
+          $sourceSha = '${{ github.sha }}'
+          if ('${{ github.ref }}' -eq 'refs/heads/release-candidate') {
+            $version = "$env:MONKEYHUB_RELEASE_SERIES.${{ github.run_number }}"
+            if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+              throw "Invalid release version: $version"
+            }
+            $cargoToml = 'apps/monkeyhub/desktop/Cargo.toml'
+            $cargoLock = 'apps/monkeyhub/desktop/Cargo.lock'
+            $toml = Get-Content -LiteralPath $cargoToml -Raw
+            $match = [regex]::Match($toml, '(?ms)^\[package\]\s+name = "monkeyarch-desktop"\s+version = "([^"]+)"')
+            if (-not $match.Success) { throw 'Cannot find the desktop package version in Cargo.toml' }
+            $oldVersion = $match.Groups[1].Value
+            $toml = $toml.Remove($match.Groups[1].Index, $match.Groups[1].Length).Insert($match.Groups[1].Index, $version)
+            Set-Content -LiteralPath $cargoToml -Value $toml -NoNewline -Encoding utf8
+            $lock = Get-Content -LiteralPath $cargoLock -Raw
+            $lockPattern = '(?ms)(\[\[package\]\]\s+name = "monkeyarch-desktop"\s+version = ")' + [regex]::Escape($oldVersion) + '"'
+            $lockMatch = [regex]::Match($lock, $lockPattern)
+            if (-not $lockMatch.Success) { throw "Cannot find monkeyarch-desktop $oldVersion in Cargo.lock" }
+            $lock = [regex]::Replace($lock, $lockPattern, ('${1}' + $version + '"'), 1)
+            Set-Content -LiteralPath $cargoLock -Value $lock -NoNewline -Encoding utf8
+
+            git config user.name 'MonkeyHub Release Bot'
+            git config user.email 'release-bot@users.noreply.github.com'
+            $stamp = git show -s --format=%cI $sourceSha
+            $env:GIT_AUTHOR_DATE = $stamp
+            $env:GIT_COMMITTER_DATE = $stamp
+            git add -- $cargoToml $cargoLock
+            git commit -m "release: v$version"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $sourceSha = (git rev-parse HEAD).Trim()
+            "MONKEYHUB_RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          }
+          "MONKEYHUB_SOURCE_SHA=$sourceSha" >> $env:GITHUB_ENV
+          Write-Host "Build source: $sourceSha"
+          if ($env:MONKEYHUB_RELEASE_VERSION) { Write-Host "Release version: $env:MONKEYHUB_RELEASE_VERSION" }
       - name: Rust toolchain
         run: rustup show
       - uses: actions/cache/restore@v4
@@ -51,11 +95,24 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $build = Get-ChildItem -LiteralPath "$root/staging" -Directory | Select-Object -First 1
           "PACKAGE_BUILD=$($build.FullName)" >> $env:GITHUB_ENV
+      - name: Verify release desktop version
+        if: github.ref == 'refs/heads/release-candidate'
+        shell: pwsh
+        run: |
+          $identity = & "$env:PACKAGE_BUILD/desktop-target/release/MonkeyArch.exe" --version
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $parsed = $identity | ConvertFrom-Json
+          if ($parsed.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
+            throw "Desktop version $($parsed.version) does not match release $env:MONKEYHUB_RELEASE_VERSION"
+          }
+          if ($parsed.sourceRevision -ne $env:MONKEYHUB_SOURCE_SHA) {
+            throw "Desktop source $($parsed.sourceRevision) does not match release source $env:MONKEYHUB_SOURCE_SHA"
+          }
       - name: Test host boundaries from the packaged snapshot
         shell: pwsh
         run: |
           Push-Location "$env:PACKAGE_BUILD/source/apps/monkeyhub/desktop"
-          $env:ARCHFLOW_SOURCE_REVISION = '${{ github.sha }}'
+          $env:ARCHFLOW_SOURCE_REVISION = $env:MONKEYHUB_SOURCE_SHA
           cargo test --locked --release --target-dir "$env:PACKAGE_BUILD/desktop-target"
           $result = $LASTEXITCODE
           Pop-Location
@@ -82,6 +139,17 @@ jobs:
           $env:PYTHONUTF8 = '1'
           & "$env:MONKEYARCH_INSTALLED_ROOT/_runtime/python/python.exe" -B apps/monkeyhub/desktop/tests/test_runtime.py -v
           exit $LASTEXITCODE
+      - name: Verify installed release identity
+        if: github.ref == 'refs/heads/release-candidate'
+        shell: pwsh
+        run: |
+          $identity = (& "$env:MONKEYARCH_DESKTOP_EXE" --version) | ConvertFrom-Json
+          if ($identity.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
+            throw "Installed desktop version $($identity.version) does not match release $env:MONKEYHUB_RELEASE_VERSION"
+          }
+          if ($identity.sourceRevision -ne $env:MONKEYHUB_SOURCE_SHA) {
+            throw "Installed source $($identity.sourceRevision) does not match release source $env:MONKEYHUB_SOURCE_SHA"
+          }
       - name: Keep complete review package
         if: always()
         uses: actions/upload-artifact@v4
@@ -101,6 +169,44 @@ jobs:
           if-no-files-found: warn
       - name: Package and native shortcut selection
         run: python -m unittest discover -s tests -p test_package_monkeyapps.py -v
+      - name: Publish versioned GitHub prerelease
+        if: github.ref == 'refs/heads/release-candidate'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP 'mhp'
+          $tag = "v$env:MONKEYHUB_RELEASE_VERSION"
+          $remoteTag = (git ls-remote --tags origin "refs/tags/$tag").Trim()
+          if ($remoteTag) {
+            $remoteSha = ($remoteTag -split '\s+')[0]
+            if ($remoteSha -ne $env:MONKEYHUB_SOURCE_SHA) {
+              throw "$tag already points to $remoteSha, expected $env:MONKEYHUB_SOURCE_SHA"
+            }
+          } else {
+            git tag $tag $env:MONKEYHUB_SOURCE_SHA
+            git push origin "refs/tags/$tag"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "$tag already has a GitHub Release; leaving it unchanged."
+            exit 0
+          }
+          $assets = Get-ChildItem -LiteralPath "$root/output" -File | ForEach-Object { $_.FullName }
+          if (-not $assets) { throw 'No release assets were produced.' }
+          $notes = @"
+          Automated Windows candidate release.
+
+          - Version: $tag
+          - Source: $env:MONKEYHUB_SOURCE_SHA
+          - Base promoted from: ${{ github.sha }}
+          - Trust: candidate-unsigned
+          - Includes ReleaseManifest@1, SHA-256 sidecar, and CycloneDX 1.6 SBOM.
+          - This is a prerelease for clean-machine acceptance; it is not a signed production release.
+          "@
+          gh release create $tag $assets --repo $env:GITHUB_REPOSITORY --prerelease --title "MonkeyHub $tag · Windows candidate" --notes $notes
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - uses: actions/cache/save@v4
         if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         with:
