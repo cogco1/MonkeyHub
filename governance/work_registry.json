@@ -35,13 +35,13 @@
         {
           "id": "runtime-contract",
           "issue": "#127 Phase 1",
-          "status": "active",
+          "status": "done",
           "branch": "claude/gh127-runtime-contract",
           "worktree": "workspace/worktrees/claude-gh127-runtime-contract",
           "base_ref": "a7c56b92d4fe4088f271e607f82941a98f7a0ef6",
           "contributor": "Claude Opus worker",
           "reviewer": "Claude Fable, then the repository owner",
-          "handoff": "Docs and registry only: declare the Project Runtime, what the Hub supplies, what it owns and does not own, identity, isolation, the direct development start, and the rule that the legacy Studio web shell takes no new product-level behavior. No route, wire, package or module-id rename.",
+          "handoff": "Landed: docs/PROJECT_RUNTIME.md, studio.shell redefined as the runtime, studio.web.shell registered, hub.shell states it is the application, AGENTS/REPO_LAYOUT/guide updated. Next: shell-infra (2a move, then 2b), after #113, #115 and #116 merge.",
           "modules": [
             "studio.shell",
             "hub.shell"

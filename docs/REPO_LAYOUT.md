@@ -41,14 +41,15 @@ MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适�
 ├─ monkeymonitor/                用量、计价、算法建议接口及独立 web 页面
 ├─ apps/monkeyfab/               制造算法、CLI、参数和测试，默认随 Hub 打包
 ├─ apps/monkeyhub/               统一应用入口，承载 Fab 页面与桌面宿主
-├─ apps/archflow-studio/         共享启动与应用装配，不承载两套领域算法
-│  ├─ api/                       HTTP、鉴权、DTO、路由及工作流装配
+├─ apps/archflow-studio/         Project Runtime（api/，历史目录名）与迁移中的旧 Studio 前端壳（web/）
+│  ├─ api/                       Project Runtime：HTTP、鉴权、DTO、路由及工作流装配；每个打开的项目一个进程，由 Hub 启动
 │  └─ web/src/
 │     ├─ app/                   项目连接、同级入口、通用布局
 │     ├─ api/                   一份生成客户端与连接层
 │     ├─ workspaces/
 │     │  ├─ monkeyarch/         3D 工作区、专用交互与组件
-│     │  └─ monkeydiagram/      图纸工作区、专用交互与组件
+│     │  ├─ monkeydiagram/      图纸工作区、专用交互与组件
+│     │  └─ monkeyboard/        画板工作区、方案比较与会议展示
 │     └─ features/              两边实际复用的设置、会话等组件
 ├─ scripts/dev/                  仅供开发的薄启动脚本（显式 --project-dir）；生产入口只有 MonkeyHub
 ├─ tools/                       对应既有能力的 CLI 与治理命令
@@ -73,7 +74,7 @@ MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适�
 | `adapters/cad_execution.py`、`three_dm_inspector.py`、`ports/model.py` | 已被两条链使用的技术部分留在 ArchFlow。模型生成与二维投影的领域规则分别归各工作流；按函数职责处理混合文件，不整份复制。 |
 | Web 的 `ThreeDmViewport`、Program／Options、模型 `Annotate`／`useModelAnnotations` | 归 `workspaces/monkeyarch/`；通用三维显示器若有实际共享消费者，可以继续共用。 |
 | Web 的 `DocumentCanvas`、`DocumentTextLayer`、`documentInk`、`documentVisualInput`、`useDocumentAnnotations` | 已在 `workspaces/monkeydiagram/`。模型修改提交仍是显式交给 MonkeyArch 的动作，不能误称为重新出图。 |
-| App／AppShell、生成 SDK、连接、通用设置、会话显示 | 留在共同宿主。会话按当前工作流调用不同能力；不能把整个 Conversation 都归 3D，也不复制一套消息系统。 |
+| App／AppShell、生成 SDK、连接、通用设置、会话显示 | 留在共同宿主。会话按当前工作流调用不同能力；不能把整个 Conversation 都归 3D，也不复制一套消息系统。该宿主是迁移中的旧 Studio 前端壳（注册表 `studio.web.shell`，#127）；不再新增产品级行为，产品级行为归 MonkeyHub。 |
 | API 的 `application/artifacts.py`、`gestures.py`、`jobs.py` 等混合文件 | 公共文件访问、实际共用的排队／事件机制留在宿主或已有底座；模型用例归 MonkeyArch，图纸用例归 MonkeyDiagram。当前 job 合同仍偏向 candidate，不能先当成已完成的通用绘图任务接口。拆现有函数和调用，不复制保存、锁或来源校验。 |
 
 API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方法，应随下一项真实用例进行，
@@ -83,6 +84,8 @@ API 中的装配用例仍保留一位 owner；拆出混合文件中的具体方�
 ## 4. 依赖方向与交接
 
 ```text
+MonkeyHub 前端       → Project Runtime API（经 Hub 转发路径）
+Project Runtime      → monkeyarch / monkeydiagram / archflow
 MonkeyArch 工作区    → monkeyarch    → archflow
 MonkeyDiagram 工作区 → monkeydiagram → archflow
                      共同宿主负责装配
@@ -120,6 +123,7 @@ MonkeyMonitor 独立页 → monkeymonitor ← Studio 元数据适配器
    API、记录 schema、摘要计算与项目保存位置保持一致。
 3. **后续功能沿新归属继续。** 显式更新图纸、独立二维编辑、通用平立剖与排版等仍按实际用例推进；
    本次迁移本身不宣称这些能力已经交付，也不将它们作为完成目录分离的前置条件。
+4. **#127：** Project Runtime 已命名（`docs/PROJECT_RUNTIME.md`）；前端按 shell-infra → board → arch-diagram → retire-studio-shell 四条 lane 并入 MonkeyHub，旧壳最后删除。
 
 包安装配置、registry 路径与受影响测试同步新位置；已有 archcheck 同时检查三个 Python 包，
 拒绝底座反向导入工作流，以及两个工作流互导。

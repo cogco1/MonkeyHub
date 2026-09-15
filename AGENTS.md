@@ -176,6 +176,13 @@ production each has exactly one lifecycle owner, and for every Monkey applicatio
 owner is MonkeyHub. Do not add a second launcher, configuration file, tray icon or
 shortcut for a service the Hub already starts, monitors and stops.
 
+MonkeyHub is the application. The Project Runtime (`docs/PROJECT_RUNTIME.md`, module
+`studio.shell`) is the project-scoped backend it starts per open project; Board, Arch and
+Diagram are workspace modules. Product behaviour — navigation, settings authority, chat,
+lifecycle — goes to `hub.shell`; project-scoped computation and record access go to the
+runtime; workspace behaviour goes to `workspaces/*`. The legacy Studio web shell
+(`studio.web.shell`) takes no new product-level behaviour while #127 moves it into the Hub.
+
 Keep tests of observable behavior, geometry, persistence/restart, exact-base,
 external effects and retained-data compatibility. Delete assertions that only
 freeze unused internal packaging with that packaging; do not delete a boundary
