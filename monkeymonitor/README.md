@@ -1,212 +1,134 @@
 # MonkeyMonitor
 
-独立的工程用量与预算工具，与 `monkeyarch/`、`monkeydiagram/` 同级。
-可以单独启动，无额外 Python／Node 依赖。Studio 只负责把真实调用结果交给它。
+MonkeyMonitor 是 MonkeyHub 的工程观测与费用估算模块。它继续拥有 **用量记录、任务 trace、费率估算与诊断算法**；用户界面现在由 MonkeyHub 的 **Usage / 用量** 页面承载，不再维护第二套独立 Web App。
 
-## 已可使用
-
-- 读取显式指定的 Codex 会话，统计实际报告的输入、缓存、输出及推理用量。重复累计快照不重复计入；计数重置或历史断点会显示提示。
-- Studio 的 Codex／Anthropic 意图调用返回 token 计数；成功、澄清、输出无效及 provider 失败均可记录。没有用量的调用保留为未计量。
-- 首页按一轮任务展示自动摘要、五泳道水平耗时图、语义活动树和阻塞区间；选择阶段可看关联记录。原调用表、来源设置和手动假设计算器位于高级工具。
-- 通用 `Algorithm.choose(context)` 接口及 `FirstAvailablePolicy` 基线已实现。接口返回建议，宿主仍负责执行、预算扣减与结果验收。
-- Studio 候选生成、几何导出、模型加载及 Stage 保存按实际操作分段计时；可以按项目、运行与确切来源查看。没有模型调用的操作不产生 token 用量。
-
-界面采用 [NN/g 的渐进呈现建议](https://www.nngroup.com/articles/progressive-disclosure/)：
-常用比较操作先显示，完整参数按需展开。算法接入说明留在本文，首页不显示开发接口。
-高级调用表和按模型汇总并列展示四项指标：缓存输入、未缓存输入、输出、等待时间。
-排序只改变调用顺序，不隐藏其他指标；总输入保留在旁注及明细中。缓存输入是总输入中的缓存读取，
-未缓存输入为总输入减缓存读取（包括新写入缓存的输入），输出已含推理 token，均不重复相加。
-缓存命中率按输入与缓存均已知的调用加权计算，不取各调用命中百分比的平均值。
-缺失计数保留未知，部分记录只显示已知小计及覆盖次数。等待时间采用已记录模型请求往返的中位数（P50），
-不是纯推理时间；不拿工具执行、客户端等待或代理整轮时间补齐旧 Codex 调用的缺失计时。
-这些是定位调用的指标，不直接等于费用或自动优化结论。
-
-## 启动
-
-从源码仓根目录运行，Python 3.12 以上：
-
-```powershell
-python -m monkeymonitor serve
-```
-
-打开 `http://127.0.0.1:8788`。未指定数据源时显示空列表，计价器仍可使用。
-
-从新版 Hub 打开的 Monitor 会自动读取该 Hub 已绑定的 Codex 会话用量，包括已归档会话。
-Hub 仅提供项目与会话 ID；Monitor 在 `CODEX_HOME`（默认 `~/.codex`）的只读索引中精确定位日志，
-核对会话身份后沿用现有数值解析器，不按工作目录或最近任务猜测项目，也不读取 Hub 聊天正文。
-索引尚未出现、会话身份不符或 Hub 不可达时会显示来源提示，已有诊断和手选来源仍可查看。
-这条自动连接由 Hub 的 `--codex-bindings-url` 启动参数提供，独立启动仍使用下方的显式来源。
-
-读取一个明确的 Codex JSONL 会话；子代理需要分别传入自己的文件：
-
-```powershell
-python -m monkeymonitor serve --codex-session 'C:/path/to/rollout.jsonl'
-python -m monkeymonitor report --codex-session 'C:/path/to/rollout.jsonl'
-```
-
-`report` 向标准输出返回统计元数据，不写文件。不扫描其他任务，不导出提示词、回答、工具内容或凭据。
-选中的文件每次刷新重新读取，因此可跟随正在增长的会话。它不能凭 token_count 把开发调用细分为“查代码／推理／工具”，也不能从累计事件可靠反推模型调用耗时。
-
-页面的“Codex 来源”折叠区可逐行填写明确的父任务及子代理 JSONL 绝对路径，应用后立即刷新。
-重复路径与同一会话的重复快照不会重复统计；清空可停止读取。此选择只在当前 Monitor 进程内保留，
-重启后通过同一区域重新选择，或使用多个 `--codex-session` 参数。不会搜索其他任务或自动发现子代理。
-父子关系仅来自会话元数据；缺失关系保持未知。无法核实旧式继承历史的归属时显示提示，不能据此宣称整个任务已完整计量。
-
-让下一次启动的 Studio 记录用量，并让 Monitor 读取同一目录：
-
-```powershell
-$env:MONKEYMONITOR_DATA_DIR = Join-Path $env:LOCALAPPDATA 'MonkeyMonitor/studio'
-# 在这个环境中使用原有 Studio 启动命令
-python -m monkeymonitor serve --data-dir $env:MONKEYMONITOR_DATA_DIR
-```
-
-目录必须由运行者明确提供，位于项目文档之外；`usage.jsonl` 属于 MonkeyMonitor 的非正式诊断数据。
-Hub 与 Studio 通过跨进程锁共用该目录，Monitor 读取同一日志。创建应用时不触碰文件；首次记录才创建目录。
-日志占用时，写入跳过本次观测，读取返回繁忙提示，业务继续执行。后续成功记录会提示曾有观测缺失；
-受影响的具体回合、数量和耗时保持未知。如果没有后续成功写入，缺失提示无法保存。
-不设置变量则保持原启动行为。已运行的 Studio 需要下次启动才会采用设置，历史缺失的 token 无法补算。
-
-## 整轮任务观测
-
-Hub 在收到消息时建立 turn ID；上下文准备、Agent 活动、工具和权限等待自动计时。
-既有 HTTP 请求把关联传给 Studio，候选队列、CAD、保存结果读回和验证沿用已有 observer。
-浏览器下载、解析、安装与首帧通过确切候选关联回该轮。页面可见时每 3 秒更新任务图。
-日志不保存请求/回复正文、思考内容或凭据；相同工具输入只记录散列和大小。
-
-摘要中的模型轮次只统计明确的模型请求边界；原生 token 用量事件单独统计，不能据此反推请求次数。
-缺少请求边界时模型轮次显示未知；Agent 活动区间包括 CLI 和网络等待。
-首文本到达与浏览器首次可见分别记录。进程内时长取单调时钟，跨进程位置使用墙钟毫秒；
-父子、并行阶段不相加。关键路径只标出有明确阻塞关联的区间；并行分支缺少因果证据时保留未归因。
-
-费率要求精确 provider、model、billing plan、来源和生效日期。写入的实际用量保存费率匹配快照；
-仅从原生日志读取的历史用量会明确标出读取时目录口径。当前内置手算费率没有可唯一匹配的
-billing plan，因此自动价格显示不可用，不猜模型别名、长短上下文档位或实际账户扣款。
-订阅使用可配置的 API 等价值，永远不作为订阅扣款；未知本机计算成本也不当作零。
-
-`GET /api/traces` 和页面 JSON 下载来自同一日志归一化结果；导出过滤本机路径与正文。
-默认日志每段 8 MiB、3 个历史段；轮转只删除最旧一段并给其余分段改名，同步写入不解码历史，
-但文件操作本身仍需时间，并非零开销。运行中阶段与已完成历史一样只在这几段内保留：
-轮转可能淘汰尚未结束的根阶段，此后该阶段与其耗时保持未知，不做补算；界面显示保留范围说明。
-
-固定 `simple-create` 与 `incremental-edit` 配置位于
-[`benchmarks.json`](../tests/monkeymonitor/benchmarks.json)。手动运行真实 provider 基准：
-
-```powershell
-python tests/monkeymonitor/run_turn_benchmark.py --scenario simple-create --output C:/explicit/nonproject/benchmark-output
-```
-
-该命令使用已安装的 Codex 身份，需已有 ACP 依赖和 Studio web build。它创建可丢弃 Hub/Studio/OCCT
-项目与端口，保留明确指定目录中的 Monitor trace 和基准配置；不接受 Stage，不改活动服务。
-provider 响应时间作为测量值，不设绝对秒数 CI 门槛。
-源文件直接运行即可；完整发行包也包含页面和费率预设。
-
-## 时间口径
-
-| 页面操作 | 起止与包含范围 | 关联与限制 |
-| --- | --- | --- |
-| 一次修改 | 提交修改到候选模型加载完成 | `interaction`；显示总历时、实际等待与返回提案到点击生成的间隔。没有客户端根记录时总历时未知 |
-| 模型请求 | 实际 provider 调用开始到返回或失败 | 不包括本地提示准备和答案解析；是请求往返，含服务及传输等待，纯推理时间仍未知 |
-| 执行前排队 | 候选提交到 worker 进入 | 独立等待段，不并入候选执行计时；与客户端候选等待重叠 |
-| 候选生成 | worker 开始执行至返回或失败；包含编译、几何和该候选的保存 | 不包含排队和人工查看；关联项目、候选 run、输入来源与已有模型调用 |
-| 几何导出 | 实际导出路径开始至完成、失败或取消 | 展开 OCCT 形体复用检查、几何、STEP 写出/回读、tessellation、预览写出/回读；不能再与候选总时长相加 |
-| 模型加载 | 浏览器开始下载至视口加载方法完成 | `client_wait`；包含下载、解析和提交视口，受客户端性能影响，不是服务器或模型耗时；不等于浏览器首帧呈现时间 |
-| 图纸生成 | 明确请求立面后，源加载、全局可见线计算、SVG、PNG、保存与注册 | 命中精确已有图纸时不报告未执行的投影阶段；改模型和保存 Stage 本身不自动出图 |
-| Stage 保存 | 保存接口开始至返回、拒绝或失败 | `service`；只含保存请求，不含用户看模型、决定接受的停留时间 |
-| Codex 任务轮次 | 原生起止字段，或明确配对的 task-start/complete/abort 边界 | `agent_turn`，包含工具执行和等待；没有完整边界则保留未知，不从 token 行间距推算 |
-
-模型请求耗时中位数仅使用明确的 `model_call` 计时。意图编译是请求的服务父项，不重复记录 token；
-未提供实际调用边界的旧编译器只能保留模型用量，调用耗时未知。Token 数只在原始调用记录汇总一次，
-任务分组、父子分组和操作关联不会创建第二份计数。旧日志仍可读，缺少新时间口径时显示未知。
-运行中与最终操作使用同一事件 ID；异常或取消保留实际终止状态。监控写入失败不会重试模型、导出或保存。
-浏览器在 `operation-diagnostics` 可用时按单次操作上报；旧服务的 `operation-timing` 加载记录仍兼容。
-关闭页面或断网可能缺失最后一条记录。父子区间与并行阶段会重叠，不能相加还原总历时。
-
-展开阶段可检查已存在的输入摘要、实际对象名单、执行路径、缓存比较字段及引用。
-OCCT 可以只复用形体而仍重新写出和检查文件；tessellation 的内核内部缓存未观测时显示未知。
-MonkeyDiagram 的输入名单参与全局遮挡计算，输出名单说明实际画出了谁，不把它冒充仅修改对象的重算差量。
-
-重复判断只比较当前选中日志中已记录的输入身份：相同模型请求、相同几何/图纸计算或相同资源请求分别呈现。
-已有缓存命中单独显示为复用；相同 URL 的候选轮询不被当作重复工作。输入相同仍需验证旧结果的绑定、
-缓存可用性和 provider 规则，不能直接断言本来可以免掉这次请求。没有输入身份的旧行保持未知。
-
-## 计价口径
-
-输入总量包含普通输入、缓存读取与缓存写入；1 小时写入是全部写入的子集。
-输出总量已经包含推理 token，不能再加一次。
+这条边界是刻意的：
 
 ```text
-普通输入 = 输入总量 - 缓存读取 - 全部缓存写入
-普通缓存写入 = 全部缓存写入 - 1 小时缓存写入
-估价 = Σ(每个互不重叠的 token 桶 × 对应每百万 token 单价) / 1,000,000
+Hub / Studio / CAD / Codex observations
+                 ↓
+      MonkeyMonitor UsageLog + trace views
+                 ↓
+        MonkeyHub · Usage page
 ```
 
-金额使用 Decimal。某个必要桶或费率未知时，总价保持未知，同时展示已知部分的小计。
-没有费率的模型不自动映射到“相近型号”。预设仅供明确选择，不能自动判定上下文档位、服务层级或账号优惠。
-四个 Standard 预设来自 [OpenAI 官方定价](https://developers.openai.com/api/docs/pricing)，于 2026-09-09 核对；实际使用前可按当前账户与官网修改。
-OpenAI 的普通缓存写入价格与 Anthropic 的 5 分钟／1 小时写入档位应按 provider 分别填写。
+`monkeymonitor` 不写建筑项目状态，不接受设计，不执行候选，也不成为 P036 / Canonical State 的第二个权威。它的诊断日志位于调用方明确提供的非项目目录；页面只是读取同一份记录。
 
-Codex 会话中换算出来的金额是 API 等价估算，不是订阅扣费或剩余额度。
-通过 Studio 调用 Codex 的鉴权／付费方式不能由模型名确定，因此记录为 `unknown`。
-估算不包含工具调用费、存储、税费、折扣、区域与优先处理附加费，也不代替账单。
+## 在 MonkeyHub 中使用
 
-## 算法接口与位置
+打开 MonkeyHub，右侧 **Usage / 用量** 进入监控页面。Hub 启动时会监督一个内部 MonkeyMonitor API worker；页面关闭或重新打开不会改变日志，也不会改变项目状态。
 
-```text
-工作流提供允许动作、候选与已有检查结果
-  → evaluator 提供质量／约束／不确定性观测
-  → MonkeyMonitor 计价、用量与预算信息
-  → Algorithm.choose(SelectionContext) 返回一个动作或停止
-  → 宿主执行动作，回填实际用量和结果，进入下一轮
-```
+Usage 页面目前提供：
 
-| 方法 | 接入位置 | 边界 |
-| --- | --- | --- |
-| evaluator | 工作流已有检查与评价的调用方，结果进入 observations | 几何正确性与设计判断仍归对应 owner；Monitor 不复制 evaluator |
-| OCBA | 已固定候选的重复评估／采样分配策略 | 需要各候选样本均值、方差与成本；尚未实现 |
-| MCTS | 多步修改的搜索策略 | 搜索节点与可执行变更由工作流提供；需要真实的状态转移与评价；尚未实现 |
-| Pareto | 多目标观测的候选筛选 | 保留冲突目标，不假定唯一综合分；尚未实现 |
-| AHP | 明确给定偏好的排序策略 | 权重与成对判断需要可追溯的作者输入；尚未实现 |
+- 模型调用的缓存输入、未缓存输入、输出与请求往返 P50；缺失观测保持未知，不补成 0。
+- `TurnTrace@1` 任务时间线：Hub / Agent / Studio / CAD / Client 阶段、阻塞标记、诊断与原始安全元数据。
+- 原始用量记录与项目过滤。
+- Hub 自动绑定的 Codex 会话，以及按明确 JSONL 路径补充的诊断来源。
+- 显式选择费率的费用估算器；不会把 API 等价值冒充订阅实际扣款。
 
-接口使用方法：
+MonkeyHub 页面通过只允许 owning Hub loopback origin 的 CORS 访问内部 Monitor API。Monitor 不再提供 `index.html`、`app.js` 或自己的样式/导航壳；受 Hub 管理时访问其根地址会回到 MonkeyHub 的 Usage 页面。独立启动 API 时根地址只返回服务说明。
 
-```python
-from monkeymonitor.algorithms import (
-    Action, Budget, FirstAvailablePolicy, SelectionContext, choose_action,
-)
+## CLI 与内部 API
 
-context = SelectionContext(
-    available_actions=(
-        Action("reuse-preview", estimated_cost_usd="0", estimated_tokens=0, estimated_time_ms=50),
-        Action("generate-candidate", estimated_cost_usd="0.08", estimated_tokens=4000, estimated_time_ms=20000),
-    ),
-    remaining_budget=Budget(cost_usd="0.10", tokens=5000, time_ms=30000),
-    observations={"candidate-a": {"quality": 0.7, "uncertainty": 0.2}},
-    objectives={"quality": "maximize", "latency": "minimize"},
-)
-decision = choose_action(FirstAvailablePolicy(), context)
-```
-
-基线按调用方优先顺序选择估算在预算内的动作；未知估算不能通过已声明的预算上限。
-这是单步建议校验，尚不是并发预算预留、真实用量强制上限或自动调度器。
-第三方策略只能返回调用方允许的动作。不能因此跳过建筑验证、接受设计或写入正式 HEAD。
-
-## 优化实施顺序
-
-1. **先找大头。** 用当前采集器覆盖真实 Studio 请求和明确的开发会话；分别检查输入、缓存命中、输出、失败率及分段耗时。正式发布目前没有独立计时。
-2. **缩小模型输入。** 在现有 intent 编译器中复用稳定规则前缀，把状态上下文收敛到选择对象、受影响依赖及完成本次修改需要的字段。用相同修改任务确认输出与依赖覆盖，再比较未缓存输入和成功完成耗时。
-3. **缩短可见等待。** 根据候选、导出与浏览器加载的实测时间定位瓶颈；结合已有增量执行，先展示可续改候选，重任务按依赖与对象版本处理。同步必须保留明确来源，过期结果不得覆盖新候选。
-4. **再替换策略。** 用相同已记录任务比较基线与新算法的成功率、实际费用和完成耗时。OCBA 先用于确实需要重复评估的固定候选；只有多步搜索带来可测收益时接 MCTS。
-
-当前已实现采集、计价、分段耗时与算法接口；输入精简、同步改造及具体优化算法仍是后续工作。
-
-## 开发检查
+`report` 是保留的无 UI 诊断入口：
 
 ```powershell
-$env:PYTHONPATH = "$PWD;$PWD/apps/archflow-studio/api"
-python -m pytest tests/monkeymonitor apps/archflow-studio/api/tests/test_monitoring.py -q
-python tools/archcheck.py
+python -m monkeymonitor report --data-dir C:\explicit\diagnostics
+python -m monkeymonitor report --codex-session C:\path\to\rollout.jsonl
 ```
 
-CREATE 的理由：`ports.model` 已拥有模型调用回执，但不拥有跨应用用量、费率或算法预算建议；
-建模与出图 owner 也不应承担开发会话计量。用户明确要求独立 MonkeyMonitor，故建立此同级工程包。
-项目持久化继续由 P036 独占，ArchFlow 核心与两条领域工作流均不导入 Monitor；共同宿主完成装配。
+它向标准输出返回 JSON，不写项目文件，不导出提示词、回答、工具正文或凭据。
+
+`serve` 也保留，供 MonkeyHub 的受管 worker、测试和明确的诊断集成使用；它现在是 **API-only** 服务，而不是第二个产品入口：
+
+```powershell
+python -m monkeymonitor serve --data-dir C:\explicit\diagnostics
+```
+
+主要接口：
+
+| 接口 | 作用 |
+| --- | --- |
+| `GET /api/health` | 受管进程身份与健康状态 |
+| `GET /api/events` | 当前归一化用量记录 |
+| `GET /api/traces` | `TurnTrace@1` 任务视图 |
+| `GET /api/traces/export?trace_id=...` | 导出一条经过过滤的 trace |
+| `GET/PUT /api/sources/codex` | 查看/设置明确的 Codex JSONL 补充来源 |
+| `GET /api/rates` | 读取内置参考费率目录 |
+| `POST /api/quote` | 对调用方提供的 token + rate 做确定性估算 |
+
+服务只监听 loopback。受 Hub 管理时，跨 origin 浏览器访问只允许启动它的那个本机 Hub（`127.0.0.1` / `localhost` 同端口）；其他 origin 和非 loopback Host 被拒绝。
+
+## 数据与用量口径
+
+Studio / Hub 的观测写入显式的 `MONKEYMONITOR_DATA_DIR`，默认由 MonkeyHub 指向它自己的 runtime diagnostics 目录。日志属于工程诊断，不属于建筑项目文档。
+
+`UsageLog` 使用分段 JSONL：默认每段 8 MiB、保留 3 个历史段。写入和读取使用跨进程锁；日志被占用时，业务操作不等待。写入会跳过本次观测，后续成功记录携带“曾缺失观测”提示；读取占用则返回 503，而不是假装这是一个空的新日志。
+
+Token 口径：
+
+- `input_tokens` 是总输入，包含缓存读取与缓存写入。
+- `cached_input_tokens` 是总输入中的缓存读取子集。
+- `cache_write_input_tokens` 是总输入中的缓存写入子集；1 小时写入是它的子集。
+- `output_tokens` 已包含 `reasoning_output_tokens`，不能再加一次。
+- 没有 provider 数值的字段保持 `null`。
+
+同一事件的累计快照按 `event_id` 去重。Hub/Codex 能证明同一原生会话时，trace 汇总不会把 Hub 活动区间和 Codex 原生 token 再算两份。
+
+## TurnTrace
+
+`GET /api/traces` 是对 UsageLog 的只读投影，不建立第二个 trace store。它把能明确关联的阶段组织到一个任务根下，并保留五条显示泳道：Agent、Hub、Studio、CAD、Client。
+
+关键限制：
+
+- 父子阶段与并行阶段可以重叠，不能相加还原总时长。
+- `elapsed_ms` 只有存在完整根区间时才成立。
+- `model_rounds` 只有能把真实用量事件绑定到明确模型请求边界时才给数值。
+- `first_visible_ms`、客户端加载、CAD 等时间使用各自产生者记录的边界，不拿 token 时间差补算。
+- critical path 只标注有明确阻塞证据的区间；并行分支缺少等待先后证据时保留未归因。
+- trace export 过滤本机路径、正文与任意自由文本，只保留允许的诊断代码、计数和摘要身份。
+
+输入重复诊断只表示“当前记录里的输入身份相同”。它不会自行断言某次请求本来可以删除；是否能复用还要满足 exact source、缓存可用性、provider 规则与结果绑定。
+
+## Codex 会话来源
+
+Hub 管理的 Monitor 启动参数包含：
+
+```text
+--codex-bindings-url http://127.0.0.1:<hub-port>/api/chat/usage-sources
+```
+
+这个私有 Hub 投影只提供项目/会话身份。Monitor 在 `CODEX_HOME`（默认 `~/.codex`）中只读定位对应日志并核对身份，不读取 Hub 聊天正文，也不按“最近任务”或工作目录猜归属。
+
+需要额外诊断时，可在 Usage 页面逐行填写明确的 JSONL 绝对路径，或在 CLI 使用多个 `--codex-session`。重复路径和重复快照不会重复计数；无法核实的旧式继承关系保持未知。
+
+## 费率
+
+`rates.json` 是带来源与生效日期的参考目录，不是某个账户的账单。自动历史价格只有在 provider、model、billing plan 与日期可以精确匹配时才成立；匹配不到就保持未知。
+
+页面中的手动计算器要求用户明确选择费率。`quote()` 只对互不重叠的 token bucket 计价：普通输入、缓存读取、短缓存写入、1h 写入、输出。任一所需计数或费率缺失时，`amount_usd` 保持 `null`，同时返回已知小计与缺失项。
+
+## 算法建议接口
+
+`Algorithm.choose(context)` 与 `FirstAvailablePolicy` 仍是 Monitor 的通用工程预算建议接口。它只返回建议；宿主负责执行、预算扣减与结果验收。MonkeyMonitor 不因此获得候选执行、设计接受或项目发布权限。
+
+## 基准与测试
+
+真实任务基准配置仍位于 `tests/monkeymonitor/benchmarks.json`，可运行：
+
+```powershell
+python tests/monkeymonitor/run_turn_benchmark.py --scenario simple-create --output C:\explicit\benchmark-output
+```
+
+它创建可丢弃的测试 Hub/Studio/OCCT 项目并把 trace 留在明确输出目录。provider 响应时间是测量值，不设固定秒数 CI 门槛。
+
+核心检查：
+
+```powershell
+python -m unittest tests.monkeymonitor.test_core tests.monkeymonitor.test_trace tests.monkeymonitor.test_turntrace_contract tests.monkeymonitor.test_server
+cd apps/monkeyhub/web
+npm test
+npm run build
+```
+
+Web 表达测试随页面 owner 移到 `apps/monkeyhub/web/`；`monkeymonitor/web/` 已退役，不再维护平行浏览器实现。
