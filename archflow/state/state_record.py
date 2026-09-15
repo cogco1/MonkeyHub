@@ -629,7 +629,6 @@ def rewrite_base_digest(payload: Mapping[str, Any], mapping: Mapping[str, str]) 
 
 # ---------------------------------------------------------------- typed views of the record
 
-
 def _entity_references(fields: Mapping[str, Any]) -> tuple[tuple[str, str, str], ...]:
     """(key, kind, id) for every reference that names something: ``level`` and ``offset_from.level``
     name a Level@1, ``host.element`` names an Element@1 (kind ``entity``); grid labels name

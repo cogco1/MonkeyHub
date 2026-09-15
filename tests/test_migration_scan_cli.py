@@ -88,7 +88,7 @@ class MigrationScanCliTests(unittest.TestCase):
         )
         return artifact.relative_path
 
-    def test_collector_accepts_only_exact_project_version_ref_shape(self) -> None:
+    def test_collector_names_each_retained_identity_shape_and_nothing_else(self) -> None:
         digest = "a" * 64
         payload = {
             "base": {"project_id": "building", "version": 3, "state_sha256": digest},
@@ -109,10 +109,43 @@ class MigrationScanCliTests(unittest.TestCase):
 
         references = _collect_legacy_version_references(payload, file="runs/r/run.json")
 
+        # An artifact ref shares a key with a version ref and is not one; a
+        # mapping with an extra field is not the exact shape either, but the
+        # digest it carries is still a retained identity and is named as one.
         self.assertEqual(
-            [(reference.json_path, reference.version) for reference in references],
-            [("/base", 3), ("/list/0", 1)],
+            [(r.json_path, r.shape, r.version) for r in references],
+            [
+                ("/base", "version_ref", 3),
+                ("/lookalike/state_sha256", "digest_field", None),
+                ("/list/0", "version_ref", 1),
+            ],
         )
+
+    def test_collector_names_the_two_key_and_flat_digest_shapes(self) -> None:
+        """The shapes real writers retain besides the exact three-key mapping.
+
+        ``state.spatial`` keeps a branch base as ``{version, state_sha256}``
+        and a CAD receipt keeps one as ``base_version``/``base_state_sha256``.
+        A scan that knew only the exact mapping would call a project surveyed
+        while those sat unlisted.
+        """
+
+        digest = "c" * 64
+        payload = {
+            "branch": {"version": 2, "state_sha256": digest},
+            "metadata": {"base_version": "2", "base_state_sha256": digest},
+        }
+
+        found = _collect_legacy_version_references(payload, file="runs/r/x.json")
+
+        self.assertEqual(
+            [(r.json_path, r.shape, r.state_sha256) for r in found],
+            [
+                ("/branch", "version_digest", digest),
+                ("/metadata/base_state_sha256", "digest_field", digest),
+            ],
+        )
+        self.assertEqual([r.project_id for r in found], [None, None])
 
     def test_plan_migration_prints_real_legacy_reference_locations_without_writing(self) -> None:
         repository = self.fixture.legacy_project("legacy-scan")
@@ -123,14 +156,14 @@ class MigrationScanCliTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn(
-            "Legacy ProjectVersionRef scan (exact shape only; the migration lists these in its receipt):",
+            "Retained project-version identities (the migration lists these in its receipt):",
             output,
         )
-        self.assertRegex(output, r"found [1-9][0-9]* exact reference\(s\)")
-        self.assertIn("HEAD /current -> version 0", output)
+        self.assertRegex(output, r"found [1-9][0-9]* identity location\(s\)")
+        self.assertIn("HEAD /current (version_ref) -> version 0", output)
         self.assertIn("events/", output)
-        self.assertIn(" /to -> version 0", output)
-        self.assertIn("typed owner still has to confirm migration semantics", output)
+        self.assertIn(" /to (version_ref) -> version 0", output)
+        self.assertIn("the same locations --migrate-format lists in its receipt", output)
         self.assertIn("No file in the project was created or changed.", output)
         self.fixture.assert_unchanged(root, before)
         self.assertEqual(repository.read_head().version, 0)
@@ -196,7 +229,7 @@ class MigrationScanCliTests(unittest.TestCase):
         result, output = self.invoke(root, "--plan-migration")
 
         self.assertEqual(result, 2)
-        self.assertIn("Legacy ProjectVersionRef scan: REFUSED", output)
+        self.assertIn("Retained project-version identities: REFUSED", output)
         self.assertIn("MIGRATION_REFERENCE_SCAN_FOREIGN_PROJECT", output)
         self.assertIn("'someone-elses-project'", output)
         self.fixture.assert_unchanged(root, before)
@@ -233,7 +266,7 @@ class MigrationScanCliTests(unittest.TestCase):
         # coverage of the whole closure.
         self.assertIn("2 retained file(s) were not opened", output)
         self.assertIn("preserving the file does not carry it forward", output)
-        self.assertIn("this scan does not show that every typed reference is mapped", output)
+        self.assertIn("blocks the migration rather than being guessed at", output)
         self.fixture.assert_unchanged(root, before)
 
     def test_a_workspace_json_artifact_is_never_opened_by_the_scan(self) -> None:
@@ -264,7 +297,7 @@ class MigrationScanCliTests(unittest.TestCase):
         result, output = self.invoke(root, "--plan-migration")
 
         self.assertEqual(result, 0)
-        self.assertNotIn("Legacy ProjectVersionRef scan", output)
+        self.assertNotIn("Retained project-version identities", output)
         self.fixture.assert_unchanged(root, before)
 
 

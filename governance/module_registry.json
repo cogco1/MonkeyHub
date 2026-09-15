@@ -2183,7 +2183,8 @@
         "design Stage reachability and unreferenced prepared Stage reporting in verify",
         "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization; archive callers may include all retained runs and their referenced artifacts without promoting candidates or copying runtime workspaces",
         "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
-        "Ephemeral retained-format inventories and migration blockers through the existing guarded transfer closure; no migration writes or second format manifest"
+        "Ephemeral retained-format inventories, preserved retained kinds and migration blockers through the existing guarded transfer closure; no second format manifest",
+        "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written, the target envelope is written by this build own writers, run manifest and authored state-record bases are restated by their owners, every other retained file is copied byte for byte and the project-version identities it still embeds are listed rather than guessed"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -2231,8 +2232,10 @@
         "FilesystemProjectRepository.initialize_authored_inputs",
         "inspect_project_format",
         "plan_project_migration",
+        "FilesystemProjectRepository.migrate_project_format",
         "ProjectFormatInspection",
         "ProjectMigrationPlan",
+        "ProjectFormatMigration",
         "RetainedFormatEntry",
         "FilesystemProjectRepository.lock_paths"
       ],
@@ -2271,7 +2274,7 @@
         "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
-        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and legacy readability does not imply upgradeability"
+        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written"
       ],
       "status": "canonical",
       "tests": [
@@ -3370,6 +3373,7 @@
         "stale_parameters",
         "resolve_element_bindings",
         "compile_component_edit",
+        "rewrite_base_digest",
         "StateRecordOperator.to_dict",
         "StateRecordOperator.from_dict",
         "combine_component_changes",
@@ -5708,7 +5712,8 @@
       "owns": [
         "the create-project command line: external project root and optional authored StateRecord/seat-pack input files",
         "checking new project identity and rejecting occupied roots, foreign or bound records and malformed seats before initialization",
-        "Read-only --inspect-format and --plan-migration diagnostics over an explicitly located existing project; failed closure planning returns a nonzero exit code"
+        "Read-only --inspect-format and --plan-migration diagnostics over an explicitly located existing project; failed closure planning returns a nonzero exit code",
+        "the --migrate-format --into command line: an empty target directory named by the project id, and the migration/format-1-to-2.json receipt written beside the migrated project"
       ],
       "does_not_own": [
         "project format, filesystem writes or HEAD authority (project.repository)",
@@ -5725,7 +5730,8 @@
         "new P036 project with authored inputs",
         "project path and creation summary",
         "process exit code",
-        "Declared format classification or retained-format inventory with migration requirements and blockers"
+        "Declared format classification or retained-format inventory with migration requirements and blockers",
+        "a migrated format-2 project directory and its ProjectFormatMigration@1 receipt at migration/format-1-to-2.json, listing every version mapping, rewritten file and retained legacy reference"
       ],
       "public_api": [
         "main"
