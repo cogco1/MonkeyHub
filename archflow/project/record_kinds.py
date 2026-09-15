@@ -130,6 +130,7 @@ STAGE_CLOSURE = "stage-closure"
 # ---- reserved: named here before the module that will write them exists
 
 RESEARCH_EVIDENCE_LEDGER = "research-evidence-ledger"
+PROJECT_FORMAT_MIGRATION = "project-format-migration"
 
 
 _RUN_RECORD = PersistenceArea.RUN_RECORD.value
@@ -481,6 +482,14 @@ _TABLE: tuple[RecordKind, ...] = (
         _RUN_RECORD,
         "reserved (the research bridge): one entry per evidence id a record "
         "may cite; nothing writes it yet",
+    ),
+    RecordKind(
+        PROJECT_FORMAT_MIGRATION,
+        "ProjectFormatMigration@1",
+        _RUN_RECORD,
+        "how this project reached its current format: the version identity map "
+        "a format migration used, what it restated, and every retained legacy "
+        "identity it preserved without rewriting",
     ),
 )
 
