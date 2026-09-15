@@ -11,6 +11,7 @@ from ..transport.errors import StudioError
 from ..transport.study import SaveStudyRequestDto, StudyViewDto, study_dto
 
 
+# The wire contract stays stable while archive/source compatibility lives in the application layer.
 router = APIRouter(tags=["study"])
 
 
