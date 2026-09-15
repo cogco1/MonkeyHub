@@ -15,12 +15,12 @@ same evidence contract and can never bypass user correction.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import json
 import math
 import threading
 from typing import Any, Iterable, Mapping
 
+from archflow.contracts.canonical import canonical_digest
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
@@ -32,13 +32,33 @@ from ..transport.errors import StudioError
 
 
 LEDGER_SCHEMA = "EvidenceLedger@1"
+LEDGER_KEYS = frozenset({
+    "schema",
+    "project_id",
+    "run_id",
+    "study_id",
+    "previous_ref",
+    "source",
+    "evidence",
+    "measurements",
+    "relations",
+    "hypotheses",
+    "counterfactuals",
+    "canonical_state_changed",
+})
 STUDY_RUN_PREFIX = "study-"
 TRACE_KINDS = frozenset({"envelope", "mass", "void", "floor_plate"})
 TRACE_STATUSES = frozenset({"proposed", "confirmed", "rejected"})
 TRACE_ORIGINS = frozenset({"machine", "user", "imported"})
 _COORD_EPS = 1e-9
+# Traces are retained at six decimals, so anything smaller than one
+# quantisation step would measure as a zero-area trace the moment it is
+# written down. Refuse it at the door instead of retaining that measurement.
+_MIN_TRACE_AREA = 1e-6
 _ALIGN_TOLERANCE = 0.02
 _EQUAL_SIZE_TOLERANCE = 0.03
+_CENTRED_VOID_TOLERANCE = 0.05
+_DOMINANT_MASS_RATIO = 1.5
 _COUNTERFACTUAL_SHIFT = 0.08
 _COUNTERFACTUAL_SCALE = 0.82
 _study_lock = threading.RLock()
@@ -128,16 +148,6 @@ def _q(value: float) -> float:
     return round(float(value), 6)
 
 
-def _canonical_digest(value: object) -> str:
-    encoded = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _study_run_id(study_id: str) -> str:
     try:
         require_identifier(study_id, "study_id")
@@ -224,7 +234,7 @@ def _points(value: object, evidence_id: str) -> list[list[float]]:
             "STUDY_EVIDENCE_INVALID",
             f"Evidence {evidence_id!r} polygon collapses to fewer than three distinct points.",
         )
-    if _polygon_area(result) <= _COORD_EPS:
+    if _polygon_area(result) < _MIN_TRACE_AREA:
         raise StudioError(
             422,
             "STUDY_EVIDENCE_INVALID",
@@ -444,7 +454,41 @@ def _graph(
         "nodes": nodes,
         "edges": edges,
     }
-    return {**body, "graph_digest": _canonical_digest(body)}
+    return {**body, "graph_digest": canonical_digest(body, ascii=False)}
+
+
+def _aligned_columns(
+    plates: list[Mapping[str, Any]],
+    aligned: set[frozenset[str]],
+) -> list[list[str]]:
+    """Group plates into columns whose members are all aligned with each other.
+
+    Alignment is a tolerance, so it does not chain: a-b and b-c can both hold
+    while a-c does not. Taking connected components would claim a stacking the
+    relation layer refused to state, so a plate joins a column only when it is
+    aligned with every plate already in it. Sweeping left to right by centre
+    makes that choice deterministic and independent of trace names.
+    """
+
+    columns: list[list[str]] = []
+    for plate in sorted(
+        plates,
+        key=lambda node: (node["bounds"]["centroid_x"], node["evidence_id"]),
+    ):
+        plate_id = plate["evidence_id"]
+        for column in columns:
+            if all(
+                frozenset((plate_id, member)) in aligned
+                for member in column
+            ):
+                column.append(plate_id)
+                break
+        else:
+            columns.append([plate_id])
+    return sorted(
+        (sorted(column) for column in columns if len(column) > 1),
+        key=lambda column: column[0],
+    )
 
 
 def _hypotheses(
@@ -462,29 +506,30 @@ def _hypotheses(
     edges = list(graph["edges"])
     rows: list[dict[str, Any]] = []
 
+    # Dominance is a comparison between masses. An envelope encloses them by
+    # definition, so ranking it here would only ever report that an envelope
+    # was traced; and a single mass has nothing to dominate.
     masses = sorted(
-        (
-            node
-            for node in nodes.values()
-            if node["kind"] in {"mass", "envelope"}
-        ),
+        (node for node in nodes.values() if node["kind"] == "mass"),
         key=lambda node: (
             -node["bounds"]["area"],
             node["evidence_id"],
         ),
     )
-    if masses:
-        leader = masses[0]
-        next_area = masses[1]["bounds"]["area"] if len(masses) > 1 else 0.0
-        if next_area == 0.0 or leader["bounds"]["area"] >= 1.5 * next_area:
+    if len(masses) > 1:
+        leader, runner_up = masses[0], masses[1]
+        if leader["bounds"]["area"] >= _DOMINANT_MASS_RATIO * runner_up["bounds"]["area"]:
             rows.append(
                 {
                     "hypothesis_id": f"dominant-mass:{leader['evidence_id']}",
                     "rule": "dominant_mass",
-                    "support_evidence_ids": [leader["evidence_id"]],
-                    "counter_evidence_ids": [
-                        node["evidence_id"] for node in masses[1:]
-                    ],
+                    # The verdict rests on exactly this comparison. The masses
+                    # ranked below the runner-up agree with it, so they are not
+                    # counter-evidence to it.
+                    "support_evidence_ids": sorted(
+                        {leader["evidence_id"], runner_up["evidence_id"]}
+                    ),
+                    "counter_evidence_ids": [],
                     "status": "supported",
                 }
             )
@@ -510,8 +555,8 @@ def _hypotheses(
             a = nodes[subject]["bounds"]
             b = nodes[object_id]["bounds"]
             if (
-                abs(a["centroid_x"] - b["centroid_x"]) <= 0.05
-                and abs(a["centroid_y"] - b["centroid_y"]) <= 0.05
+                abs(a["centroid_x"] - b["centroid_x"]) <= _CENTRED_VOID_TOLERANCE
+                and abs(a["centroid_y"] - b["centroid_y"]) <= _CENTRED_VOID_TOLERANCE
             ):
                 rows.append(
                     {
@@ -529,32 +574,20 @@ def _hypotheses(
     ]
     if len(plates) >= 2:
         plate_ids = {node["evidence_id"] for node in plates}
-        aligned = [
-            edge
+        aligned = {
+            frozenset((edge["subject_evidence_id"], edge["object_evidence_id"]))
             for edge in edges
             if edge["kind"] == "aligned_x_center"
             and edge["subject_evidence_id"] in plate_ids
             and edge["object_evidence_id"] in plate_ids
-        ]
-        if aligned:
-            support = sorted(
-                {
-                    value
-                    for edge in aligned
-                    for value in (
-                        edge["subject_evidence_id"],
-                        edge["object_evidence_id"],
-                    )
-                }
-            )
+        }
+        for column in _aligned_columns(plates, aligned):
             rows.append(
                 {
-                    "hypothesis_id": "stacked-floor-plates:" + ":".join(support),
+                    "hypothesis_id": "stacked-floor-plates:" + ":".join(column),
                     "rule": "stacked_floor_plate_alignment",
-                    "support_evidence_ids": support,
-                    "counter_evidence_ids": sorted(
-                        plate_ids - set(support)
-                    ),
+                    "support_evidence_ids": column,
+                    "counter_evidence_ids": sorted(plate_ids - set(column)),
                     "status": "supported",
                 }
             )
@@ -582,20 +615,27 @@ def _transform_points(
     *,
     dx: float = 0.0,
     scale: float = 1.0,
-) -> list[list[float]]:
+) -> list[list[float]] | None:
+    """Move a trace inside the page, or refuse rather than fabricate geometry.
+
+    Clamping a transformed point back onto the page silently flattens the
+    trace: a shift at the page edge becomes a contraction, and a narrow trace
+    collapses to a line this module's own validator would reject. A variant
+    that cannot be carried out on this page is not a counterfactual.
+    """
+
     box = _box(points)
     cx = box.cx
     cy = box.cy
     transformed = []
     for x, y in points:
-        tx = cx + (x - cx) * scale + dx
-        ty = cy + (y - cy) * scale
-        transformed.append(
-            [
-                _q(min(1.0, max(0.0, tx))),
-                _q(min(1.0, max(0.0, ty))),
-            ]
-        )
+        tx = _q(cx + (x - cx) * scale + dx)
+        ty = _q(cy + (y - cy) * scale)
+        if not (0.0 <= tx <= 1.0 and 0.0 <= ty <= 1.0):
+            return None
+        transformed.append([tx, ty])
+    if _polygon_area(transformed) < _MIN_TRACE_AREA:
+        return None
     return transformed
 
 
@@ -623,14 +663,23 @@ def _counterfactuals(
     if not confirmed:
         return []
     baseline_signature = _signature(evidence, baseline_relations)
-    preferred = sorted(
+    # Falsify the trace the composition actually rests on — the one carrying
+    # the most relations, then the largest. Preferring a kind, or the first id
+    # in the alphabet, would let renaming a trace change what the Study claims
+    # to have tested.
+    incident = {item["evidence_id"]: 0 for item in confirmed}
+    for row in baseline_relations:
+        for end in ("subject_evidence_id", "object_evidence_id"):
+            if row[end] in incident:
+                incident[row[end]] += 1
+    target = min(
         confirmed,
         key=lambda item: (
-            item["kind"] not in {"void", "mass", "envelope"},
+            -incident[item["evidence_id"]],
+            -_box(item["geometry"]["points"]).area,
             item["evidence_id"],
         ),
     )
-    target = preferred[0]
     variants = (
         ("shift_x", {"dx": _COUNTERFACTUAL_SHIFT, "scale": 1.0}),
         ("contract", {"dx": 0.0, "scale": _COUNTERFACTUAL_SCALE}),
@@ -647,10 +696,15 @@ def _counterfactuals(
         if operation == "remove":
             candidate["status"] = "rejected"
         else:
-            candidate["geometry"]["points"] = _transform_points(
-                candidate["geometry"]["points"],
-                **parameters,
-            )
+            moved = _transform_points(candidate["geometry"]["points"], **parameters)
+            if moved is None and operation == "shift_x":
+                parameters = {**parameters, "dx": -parameters["dx"]}
+                moved = _transform_points(candidate["geometry"]["points"], **parameters)
+            if moved is None:
+                # The page has no room to carry this variant out on this
+                # trace. A clamped one would falsify nothing.
+                continue
+            candidate["geometry"]["points"] = moved
         relations = _relation_rows(changed)
         signature = _signature(changed, relations)
         union = baseline_signature | signature
@@ -702,27 +756,65 @@ def _ledger_refs(
 ) -> tuple[ProjectRecordRef, ...]:
     if run_id not in binding.run_ids():
         return ()
-    run = binding.load_run(run_id)
-    return tuple(
-        ref
-        for ref in binding.repository.list_json(
+    try:
+        run = binding.load_run(run_id)
+        refs = binding.repository.list_json(
             run=run,
             destination=PersistenceDestination(
                 PersistenceArea.RUN_RECORD,
                 run_id=run_id,
             ),
         )
-        if record_kind(ref) == RESEARCH_EVIDENCE_LEDGER
+    except (ProjectRepositoryError, OSError) as exc:
+        raise StudioError(
+            409,
+            "STUDY_LEDGER_UNREADABLE",
+            "This Study's retained run cannot be read back from its project.",
+        ) from exc
+    return tuple(
+        ref for ref in refs if record_kind(ref) == RESEARCH_EVIDENCE_LEDGER
     )
 
 
-def _load_payload(
+def _own_ledger_ref(
+    value: object,
+    binding: ProjectBinding,
+    run_id: str,
+) -> ProjectRecordRef | None:
+    """The retained ledger of this Study run that ``value`` names, if any."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        ref = record_ref_from_uri(value, binding.project_id)
+    except (TypeError, ValueError):
+        return None
+    if record_kind(ref) != RESEARCH_EVIDENCE_LEDGER:
+        return None
+    prefix = f"runs/{run_id}/records/"
+    if not ref.relative_path.startswith(prefix):
+        return None
+    if "/" in ref.relative_path[len(prefix) :]:
+        return None
+    return ref
+
+
+def _identity(
     binding: ProjectBinding,
     ref: ProjectRecordRef,
     study_id: str,
 ) -> dict[str, Any]:
-    payload = binding.repository.load_json(ref)
-    if (
+    """Read a retained ledger and check only whose revision it is."""
+
+    try:
+        payload = binding.repository.load_json(ref)
+    except (ProjectRepositoryError, OSError) as exc:
+        raise StudioError(
+            404,
+            "STUDY_LEDGER_NOT_FOUND",
+            "No retained Study ledger answers that reference in this project.",
+        ) from exc
+    if set(payload) != LEDGER_KEYS or (
         payload.get("schema") != LEDGER_SCHEMA
         or payload.get("project_id") != binding.project_id
         or payload.get("study_id") != study_id
@@ -734,6 +826,26 @@ def _load_payload(
             "STUDY_LEDGER_INVALID",
             "The retained Study ledger has a different project, study, run or authority contract.",
         )
+    previous = payload["previous_ref"]
+    if previous is not None and _own_ledger_ref(
+        previous,
+        binding,
+        _study_run_id(study_id),
+    ) is None:
+        raise StudioError(
+            409,
+            "STUDY_REVISION_INVALID",
+            "A Study revision does not name a predecessor retained by this Study run.",
+        )
+    return payload
+
+
+def _load_payload(
+    binding: ProjectBinding,
+    ref: ProjectRecordRef,
+    study_id: str,
+) -> dict[str, Any]:
+    payload = _identity(binding, ref, study_id)
     source = payload.get("source")
     evidence = payload.get("evidence")
     if not isinstance(source, Mapping) or not isinstance(evidence, list):
@@ -802,8 +914,11 @@ def _current_ref(
     by_uri = {ref.uri: ref for ref in refs}
     referenced: set[str] = set()
     for ref in refs:
-        payload = _load_payload(binding, ref, study_id)
-        previous = payload.get("previous_ref")
+        # Choosing a head needs each revision's link, not its reasoning.
+        # Recomputation belongs to the revision a caller actually reads or
+        # extends: re-deriving every ancestor here would let one superseded
+        # revision make the current head unreadable and uncorrectable.
+        previous = _identity(binding, ref, study_id).get("previous_ref")
         if previous is not None:
             if previous not in by_uri:
                 raise StudioError(
@@ -837,32 +952,18 @@ def read_study(
                 f"Study {study_id!r} has no retained evidence ledger.",
             )
     else:
-        try:
-            ref = record_ref_from_uri(ledger_ref, binding.project_id)
-        except (TypeError, ValueError) as exc:
-            raise StudioError(
-                422,
-                "STUDY_LEDGER_REF_INVALID",
-                "Provide a retained Study ledger reference in this project.",
-            ) from exc
-        expected_prefix = f"runs/{run_id}/records/"
-        if (
-            record_kind(ref) != RESEARCH_EVIDENCE_LEDGER
-            or not ref.relative_path.startswith(expected_prefix)
-        ):
+        named = _own_ledger_ref(ledger_ref, binding, run_id)
+        if named is None:
             raise StudioError(
                 422,
                 "STUDY_LEDGER_REF_INVALID",
                 "The ledger reference does not belong to this Study run.",
             )
+        ref = named
     payload = _load_payload(binding, ref, study_id)
-    _, relations, graph, _, _ = _derived(payload["evidence"])
-    if graph["edges"] != relations:
-        raise StudioError(
-            409,
-            "STUDY_DERIVATION_DRIFT",
-            "The Study graph does not reproduce from its evidence.",
-        )
+    # The graph is never retained: it is recomputed from the evidence the
+    # ledger was just re-verified against, and returned beside it.
+    _, _, graph, _, _ = _derived(payload["evidence"])
     return StudyView(ref, payload, graph)
 
 
@@ -889,10 +990,9 @@ def save_study(
     evidence_rows: Iterable[Mapping[str, Any]],
     expected_previous_ref: str | None,
 ) -> StudyView:
-    """Save one corrected evidence revision while proving design truth did not move."""
+    """Save one corrected evidence revision without writing design state."""
 
     run_id = _study_run_id(study_id)
-    canonical_before = binding.repository.read_head()
     source = _source(
         binding,
         run_id=source_run_id,
@@ -947,10 +1047,7 @@ def save_study(
             run = (
                 binding.load_run(run_id)
                 if run_id in binding.run_ids()
-                else binding.repository.create_run(
-                    run_id,
-                    base=canonical_before,
-                )
+                else binding.repository.create_run(run_id)
             )
             ref = binding.repository.put_json(
                 run=run,
@@ -968,11 +1065,8 @@ def save_study(
                 "The Study evidence ledger could not be retained in its project.",
             ) from exc
 
-    canonical_after = binding.repository.read_head()
-    if canonical_after != canonical_before:
-        raise StudioError(
-            409,
-            "STUDY_CANONICAL_AUTHORITY_VIOLATION",
-            "A Study write observed canonical HEAD move while saving; its ledger has no authority over that change.",
-        )
+    # A Study has no canonical writer at all: it only creates its own run and
+    # retains run records, and neither can move HEAD or a design branch. So a
+    # HEAD that differs across a save is someone else issuing a version, which
+    # this save may not refuse — the ledger it just retained is already valid.
     return read_study(binding, study_id, ref.uri)

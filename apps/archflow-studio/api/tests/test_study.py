@@ -12,11 +12,12 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
 from archflow.project.repository import FilesystemProjectRepository
+from archflow_studio_api.application import study as study_application
 from archflow_studio_api.application.binding import bound_project, record_kind
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID
+from .support import PROJECT_ID, advance_head
 from .test_documents import image_bytes
 
 
@@ -139,12 +140,35 @@ class StudyTests(unittest.TestCase):
         relation_ids = {row["relationId"] for row in study["relations"]}
         self.assertIn("contains:envelope:central-void", relation_ids)
         self.assertIn("aligned_x_center:plate-high:plate-low", relation_ids)
-        rules = {row["rule"] for row in study["hypotheses"]}
-        self.assertIn("void_nested_in_mass", rules)
-        self.assertIn("void_centrality", rules)
-        self.assertIn("stacked_floor_plate_alignment", rules)
-        self.assertEqual(len(study["counterfactuals"]), 3)
-        self.assertTrue({row["judgement"] for row in study["counterfactuals"]} <= {"preserve-family", "transition"})
+        by_rule = {row["rule"]: row for row in study["hypotheses"]}
+        self.assertEqual(
+            sorted(by_rule),
+            ["stacked_floor_plate_alignment", "void_centrality", "void_nested_in_mass"],
+        )
+        # An envelope encloses every mass, so it may not win a mass comparison;
+        # this page traces no second mass, so nothing is dominant.
+        self.assertNotIn("dominant_mass", by_rule)
+        self.assertEqual(
+            by_rule["void_nested_in_mass"]["supportEvidenceIds"],
+            ["envelope", "central-void"],
+        )
+        self.assertEqual(
+            by_rule["stacked_floor_plate_alignment"]["supportEvidenceIds"],
+            ["plate-high", "plate-low"],
+        )
+        self.assertEqual(
+            by_rule["stacked_floor_plate_alignment"]["counterEvidenceIds"], []
+        )
+
+        # Falsification names the trace the composition rests on, and every
+        # retained variant is one this page can actually carry out.
+        self.assertEqual(
+            [row["counterfactualId"] for row in study["counterfactuals"]],
+            ["shift_x:envelope", "contract:envelope", "remove:envelope"],
+        )
+        removal = study["counterfactuals"][2]
+        self.assertEqual(removal["judgement"], "transition")
+        self.assertIn("edge:contains:envelope:central-void", removal["removedFacts"])
 
         # Study owns no canonical or branch authority.
         self.assertEqual(self.repository.read_head(), self.head)
@@ -189,6 +213,177 @@ class StudyTests(unittest.TestCase):
         self.assertEqual(stale.status_code, 409, stale.text)
         self.assertEqual(stale.json()["code"], "STUDY_REVISION_STALE")
         self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_someone_else_issuing_a_version_does_not_refuse_a_correction(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        original = first.json()
+
+        # A Study has no canonical writer: it creates its own run and retains
+        # run records. So an unrelated issue landing mid-save is not a Study
+        # authority violation, and refusing a correction that was in fact
+        # retained would leave the caller unable to tell what happened.
+        exact_source = study_application._source
+        issued: list[str] = []
+
+        def issue_then_resolve(binding, **named):
+            if not issued:
+                issued.append("run-promotion")
+                advance_head(self.repository, run_id="run-promotion")
+            return exact_source(binding, **named)
+
+        study_application._source = issue_then_resolve
+        try:
+            corrected = self.save(self.evidence(reject_void=True), original["ledgerRef"])
+        finally:
+            study_application._source = exact_source
+
+        self.assertEqual(corrected.status_code, 201, corrected.text)
+        self.assertEqual(corrected.json()["previousRef"], original["ledgerRef"])
+        self.assertFalse(corrected.json()["canonicalStateChanged"])
+        self.assertEqual(self.client.get("/api/studies/furniture-house").json(), corrected.json())
+        # The issue was the other operator's; the Study neither made nor undid it.
+        self.assertEqual(self.repository.read_head().version, self.head.version + 1)
+
+    def test_a_superseded_revision_cannot_take_the_current_head_down_with_it(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        ancestor = first.json()
+        second = self.save(self.evidence(reject_void=True), ancestor["ledgerRef"])
+        self.assertEqual(second.status_code, 201, second.text)
+        current = second.json()
+
+        # Tighten a rule out of existence, the way an ordinary later change
+        # would. Only the ancestor traced a confirmed void, so only its
+        # retained reasoning stops reproducing.
+        exact_hypotheses = study_application._hypotheses
+
+        def without_void_centrality(evidence, graph):
+            return [
+                row
+                for row in exact_hypotheses(evidence, graph)
+                if row["rule"] != "void_centrality"
+            ]
+
+        study_application._hypotheses = without_void_centrality
+        try:
+            reopened = self.client.get("/api/studies/furniture-house")
+            self.assertEqual(reopened.status_code, 200, reopened.text)
+            self.assertEqual(reopened.json()["ledgerRef"], current["ledgerRef"])
+            # The Study can still be corrected forward.
+            repaired = self.save(self.evidence(), current["ledgerRef"])
+            self.assertEqual(repaired.status_code, 201, repaired.text)
+            # Reading the drifted revision itself still refuses, by name.
+            drifted = self.client.get(
+                "/api/studies/furniture-house",
+                params={"ledgerRef": ancestor["ledgerRef"]},
+            )
+            self.assertEqual(drifted.status_code, 409, drifted.text)
+            self.assertEqual(drifted.json()["code"], "STUDY_DERIVATION_DRIFT")
+        finally:
+            study_application._hypotheses = exact_hypotheses
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_a_ledger_reference_naming_no_retained_record_is_answered_not_crashed(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        retained = first.json()["ledgerRef"]
+
+        absent = retained.replace(retained.rsplit("-", 1)[1], "b" * 64 + ".json")
+        self.assertNotEqual(absent, retained)
+        missing = self.client.get(
+            "/api/studies/furniture-house", params={"ledgerRef": absent}
+        )
+        self.assertEqual(missing.status_code, 404, missing.text)
+        self.assertEqual(missing.json()["code"], "STUDY_LEDGER_NOT_FOUND")
+
+        for refused in (
+            retained.replace("/records/", "/records/nested/"),
+            retained.replace("study-furniture-house", "study-other-house"),
+            "project://other-project/runs/study-furniture-house/records/x.json",
+            "not a reference at all",
+        ):
+            answer = self.client.get(
+                "/api/studies/furniture-house", params={"ledgerRef": refused}
+            )
+            self.assertEqual(answer.status_code, 422, f"{refused}: {answer.text}")
+            self.assertEqual(answer.json()["code"], "STUDY_LEDGER_REF_INVALID")
+
+    def test_reasoning_states_only_the_alignment_and_dominance_it_can_show(self) -> None:
+        def plate(evidence_id: str, x0: float, y0: float) -> dict:
+            return {
+                "evidenceId": evidence_id,
+                "kind": "floor_plate",
+                "points": [
+                    [x0, y0], [x0 + 0.2, y0], [x0 + 0.2, y0 + 0.04], [x0, y0 + 0.04],
+                ],
+                "status": "confirmed",
+                "confidence": 1.0,
+                "origin": "user",
+            }
+
+        # Two plate columns 0.6 apart share no alignment, so they are two
+        # stacking claims, not one merged family.
+        columns = self.save([
+            plate("l1", 0.10, 0.10), plate("l2", 0.10, 0.30),
+            plate("r1", 0.70, 0.10), plate("r2", 0.70, 0.30),
+        ])
+        self.assertEqual(columns.status_code, 201, columns.text)
+        stacked = [
+            row for row in columns.json()["hypotheses"]
+            if row["rule"] == "stacked_floor_plate_alignment"
+        ]
+        self.assertEqual(
+            [row["supportEvidenceIds"] for row in stacked],
+            [["l1", "l2"], ["r1", "r2"]],
+        )
+
+        masses = self.save([
+            {
+                "evidenceId": name,
+                "kind": "mass",
+                "points": [[x, 0.5], [x + 0.1, 0.5], [x + 0.1, 0.6], [x, 0.6]],
+                "status": "confirmed",
+                "confidence": 1.0,
+                "origin": "user",
+            }
+            for name, x in (("m0", 0.1), ("m1", 0.3), ("m2", 0.5))
+        ], columns.json()["ledgerRef"])
+        self.assertEqual(masses.status_code, 201, masses.text)
+        # Three equal masses: nothing dominates, and no rule may say otherwise.
+        self.assertEqual(
+            [row for row in masses.json()["hypotheses"] if row["rule"] == "dominant_mass"],
+            [],
+        )
+
+    def test_a_counterfactual_is_refused_rather_than_clamped_onto_the_page_edge(self) -> None:
+        response = self.save([
+            {
+                "evidenceId": "envelope",
+                "kind": "envelope",
+                "points": [[0.01, 0.01], [0.99, 0.01], [0.99, 0.99], [0.01, 0.99]],
+                "status": "confirmed",
+                "confidence": 1.0,
+                "origin": "user",
+            },
+            {
+                "evidenceId": "edge-mass",
+                "kind": "mass",
+                "points": [[0.95, 0.40], [0.99, 0.40], [0.99, 0.60], [0.95, 0.60]],
+                "status": "confirmed",
+                "confidence": 1.0,
+                "origin": "user",
+            },
+        ])
+        self.assertEqual(response.status_code, 201, response.text)
+        counterfactuals = response.json()["counterfactuals"]
+        # The envelope carries the relations, and this page has no room to
+        # slide it either way, so no shifted variant is claimed at all.
+        self.assertEqual(
+            [row["operation"] for row in counterfactuals], ["contract", "remove"]
+        )
+        for row in counterfactuals:
+            self.assertEqual(row["targetEvidenceId"], "envelope")
 
     def test_source_page_is_immutable_and_invalid_trace_does_not_create_a_study(self) -> None:
         invalid = self.save(evidence=[{
