@@ -4639,7 +4639,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py",
-        "apps/archflow-studio/launch-studio.ps1",
+        "scripts/dev/run-project-runtime.ps1",
         "apps/archflow-studio/web/src/features/settings/preferences.tsx",
         "apps/archflow-studio/web/src/app/TaskWorkspace.tsx",
         "apps/archflow-studio/web/src/app/TaskWorkspace.css",
@@ -5938,6 +5938,7 @@
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+        "apps/monkeyhub/api/tests/test_launch_hub.py",
         "apps/monkeyhub/api/tests/test_monkeyfab.py",
         "apps/monkeyhub/api/tests/test_chat.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
