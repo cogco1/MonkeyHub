@@ -27,6 +27,50 @@ export type AcceptDesignCandidateRequestDto = {
 };
 
 /**
+ * AcceptanceEvidenceDto
+ *
+ * The retained acceptance evidence of one Stage, or absent where none is.
+ *
+ * ``acceptedBy`` remains the actor id on the public wire. New retained Stages
+ * may use an opaque internal acceptance principal so the exact winning origin
+ * can be recovered after a crash; that principal is never exposed here.
+ */
+export type AcceptanceEvidenceDto = {
+    /**
+     * Eventid
+     */
+    eventId: string;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     */
+    origin: string;
+    /**
+     * Auditref
+     */
+    auditRef: string;
+};
+
+/**
  * AgentReadingDto
  *
  * What the agent said and how it was obtained — the agent's, not the record's.
@@ -1770,6 +1814,7 @@ export type DesignStageDto = {
      * Acceptedby
      */
     acceptedBy: string;
+    acceptance?: AcceptanceEvidenceDto | null;
 };
 
 /**

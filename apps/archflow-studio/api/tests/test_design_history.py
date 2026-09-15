@@ -29,7 +29,13 @@ from .test_candidate import CandidateTestCase
 from .test_working_copies import register_model
 
 
-class DesignHistoryTests(CandidateTestCase):
+class DesignHistoryFixture(CandidateTestCase):
+    """One project, one registered model, and the four steps a Stage takes.
+
+    The helpers are separate from the tests so another suite can accept the
+    same real candidates without re-running this file's assertions.
+    """
+
     def setUp(self) -> None:
         super().setUp()
         self.model_bytes = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()
@@ -73,6 +79,7 @@ class DesignHistoryTests(CandidateTestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+class DesignHistoryTests(DesignHistoryFixture):
     def test_legacy_model_does_not_become_history_without_explicit_acceptance(self) -> None:
         self.assertEqual(self.history()["stages"], [])
         self.assertEqual(self.history()["branches"], [])

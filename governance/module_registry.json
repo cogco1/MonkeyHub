@@ -2025,7 +2025,8 @@
         "the six kinds no spine module writes, each saying so in its note: the ADR-007 stage envelope, exit binding and closure Wave C will write, the research bridge's ledger, and the component template and catalog confrontation the proposal producer still accepts",
         "deliberation-episode (DeliberationEpisode@1): written by the studio into the candidate run at accept / reject / modify",
         "the StudioModelAsset@1, StudioDocumentModelSource@1, StudioModelAnnotations@1 and StudioWorkingCopy@1 run-record kinds",
-        "seat-blender-execution (BlenderExecutionReceipt@1): the existing runner retains a verified Blender scene export and its exact source binding in the run-record area"
+        "seat-blender-execution (BlenderExecutionReceipt@1): the existing runner retains a verified Blender scene export and its exact source binding in the run-record area",
+        "audit-event (AuditEvent@1): the actor/origin binding the studio retains beside an authoritative decision, in the review area of the run that decision produced"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -4190,7 +4191,8 @@
         "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
         "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked",
         "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design",
-        "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission"
+        "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
+        "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4321,7 +4323,9 @@
         "POST /api/proposals/push-pull",
         "direct_element_proposal",
         "operator_of",
-        "continue_proposal"
+        "continue_proposal",
+        "read_acceptance",
+        "AcceptanceEvidence"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4394,7 +4398,9 @@
         "A context supplement names one to sixteen existing references and makes progress; at most three provider calls are made and reading another target never grants a write",
         "Provider counters are kept per actual attempt; preflight text estimates exclude provider framing and image token costs, are labelled estimates, and never populate billed token counters",
         "Unexecuted proposal continuations fold checked operators onto their original run/Stage base in memory; a sketch batch stores only its complete proposal, failures leave previous proposals unchanged, and only final candidate execution creates a run or model file",
-        "Completed direct-model gestures update local previews without network writes; Sync never locks editing or replaces later local edits, retries retain candidate request identity through existing Hub admission, and local selection/preview is not acceptance or project authority"
+        "Completed direct-model gestures update local previews without network writes; Sync never locks editing or replaces later local edits, retries retain candidate request identity through existing Hub admission, and local selection/preview is not acceptance or project authority",
+        "one accepted Stage carries at most one acceptance event: it is written only after the branch head actually advanced, a repeat acceptance returns the committed Stage and writes none, a refusal writes none, and a Stage committed before this evidence existed reads back with none rather than an invented actor",
+        "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance"
       ],
       "status": "canonical",
       "tests": [
@@ -4423,7 +4429,8 @@
         "apps/archflow-studio/api/tests/test_deepening_parameterized_prisms.py",
         "apps/archflow-studio/web/test/modelDraft.test.ts",
         "apps/archflow-studio/web/test/syncModelDraft.test.ts",
-        "apps/archflow-studio/web/test/modelSync.browser.mjs"
+        "apps/archflow-studio/web/test/modelSync.browser.mjs",
+        "apps/archflow-studio/api/tests/test_acceptance_audit.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4477,7 +4484,8 @@
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "Browser-local project/task navigation, transcript and editing-base pointers; independent mounted task views keep in-flight responses and pending exchanges in their originating task",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
-        "Browser entry for the editable work model: the stage's own view tools offer it wherever the viewer is, embedded in the Hub included, bound to the exact STEP of the delivery on screen and never to the editing base, the newest run or one seat of a picture that shows several"
+        "Browser entry for the editable work model: the stage's own view tools offer it wherever the viewer is, embedded in the Hub included, bound to the exact STEP of the delivery on screen and never to the editing base, the newest run or one seat of a picture that shows several",
+        "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header"
       ],
       "does_not_own": [
         "any design question or kernel call",
@@ -4548,7 +4556,12 @@
         "authenticated_actor",
         "require_actor",
         "ProjectTransferDto",
-        "SynchronizationDto"
+        "SynchronizationDto",
+        "ActorAttribution",
+        "request_attribution",
+        "LOCAL_ACTOR_ID",
+        "ORIGIN_STUDIO",
+        "ORIGIN_HUB"
       ],
       "depends_on": [
         "monkeymonitor",
@@ -4586,7 +4599,8 @@
         "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown",
         "Tasks use only the project and provider actually bound to the connected Studio server. Task history is personal browser storage, never project authority or implicit model input; refresh does not replay model requests or reuse old continuation tokens, and tasks do not overwrite the shared editing-base preference",
         "configured actors never fall back to the legacy token; authorization uses the authenticated actor and actual project binding; shared services reject computation before route execution; accept grants do not imply release",
-        "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery"
+        "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery",
+        "an actor identity a caller supplies is never an actor: attribution comes from the authenticated actor the middleware resolved, or states the local unauthenticated boundary's own identity; no credential byte leaves this module"
       ],
       "status": "canonical",
       "tests": [
