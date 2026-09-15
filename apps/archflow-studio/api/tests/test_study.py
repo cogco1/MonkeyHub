@@ -449,6 +449,27 @@ class StudyTests(unittest.TestCase):
             archived.json()["hypotheses"], first.json()["hypotheses"]
         )
 
+    def test_a_malformed_retained_method_is_answered_not_crashed(self) -> None:
+        first = self.save()
+        self.assertEqual(first.status_code, 201, first.text)
+        binding = bound_project(self.client.app.state)
+        template = binding.repository.load_json(
+            record_ref_from_uri(first.json()["ledgerRef"], PROJECT_ID)
+        )
+        for index, method in enumerate((123, False, {}, [], None, "")):
+            with self.subTest(method=method):
+                study_id = f"corrupt-method-{index}"
+                self.retain_variant(template, study_id, derivation_method=method)
+                answer = self.client.get(f"/api/studies/{study_id}")
+                self.assertEqual(answer.status_code, 409, answer.text)
+                self.assertEqual(answer.json()["code"], "STUDY_LEDGER_INVALID")
+
+        self.retain_variant(template, "old-method", derivation_method="ArchivedStudyMethod@1")
+        archived = self.client.get("/api/studies/old-method")
+        self.assertEqual(archived.status_code, 200, archived.text)
+        self.assertEqual(archived.json()["derivationMethod"], "ArchivedStudyMethod@1")
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_a_ledger_reference_naming_no_retained_record_is_answered_not_crashed(self) -> None:
         first = self.save()
         self.assertEqual(first.status_code, 201, first.text)

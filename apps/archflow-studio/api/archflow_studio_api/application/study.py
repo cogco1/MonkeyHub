@@ -940,6 +940,15 @@ def _identity(
             "STUDY_LEDGER_INVALID",
             "The retained Study ledger has a different project, study, run or authority contract.",
         )
+    if "derivation_method" in payload and (
+        not isinstance(payload["derivation_method"], str)
+        or not payload["derivation_method"]
+    ):
+        raise StudioError(
+            409,
+            "STUDY_LEDGER_INVALID",
+            "The retained Study method name is invalid.",
+        )
     previous = payload["previous_ref"]
     if previous is not None and _own_ledger_ref(
         previous,
