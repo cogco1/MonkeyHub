@@ -158,6 +158,30 @@ class StudyComparisonTests(unittest.TestCase):
         )
         self.assertEqual(self.repository.read_head(), self.head)
 
+    def test_no_envelope_proportions_use_long_edge_not_page_aspect(self) -> None:
+        a_size = (120, 80)
+        b_size = (160, 80)
+        document_a = self.upload(*a_size, "cyan")
+        document_b = self.upload(*b_size, "magenta")
+
+        def evidence(size: tuple[int, int]) -> list[dict]:
+            return [
+                self.metric_rect(*size, "left", "mass", (0.08, 0.12, 0.22, 0.24)),
+                self.metric_rect(*size, "right", "mass", (0.52, 0.18, 0.68, 0.30)),
+            ]
+
+        study_a = self.save("no-envelope-a", document_a, evidence(a_size))
+        study_b = self.save("no-envelope-b", document_b, evidence(b_size))
+        answer = self.compare(study_a, study_b)
+        self.assertEqual(answer.status_code, 200, answer.text)
+        comparison = answer.json()
+        self.assertEqual(comparison["pairwise"][0]["maxProportionDelta"], 0.0)
+        self.assertEqual(
+            {row["proportions"]["basis"] for row in comparison["studies"]},
+            {"source-page-long-edge"},
+        )
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_same_topology_can_report_a_real_proportion_difference(self) -> None:
         size = (120, 80)
         document_a = self.upload(*size, "red")
