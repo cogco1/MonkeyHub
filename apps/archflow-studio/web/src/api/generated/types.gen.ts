@@ -6884,6 +6884,10 @@ export type StudyViewDto = {
         [key: string]: unknown;
     }>;
     /**
+     * Derivationmethod
+     */
+    derivationMethod: string | null;
+    /**
      * Canonicalstatechanged
      */
     canonicalStateChanged: boolean;
