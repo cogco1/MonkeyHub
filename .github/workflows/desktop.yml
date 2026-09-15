@@ -33,6 +33,19 @@ jobs:
             capture {sub(/^          /, ""); print}
           ' .github/workflows/verify.yml > /tmp/patch_gh73.py
           test -s /tmp/patch_gh73.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/patch_gh73.py')
+          text = path.read_text(encoding='utf-8')
+          marker = 'The retained Study derivation method id is invalid.'
+          position = text.index(marker)
+          start = text.rfind('replace_once(', 0, position)
+          end = text.find('\n\nreplace_once(', position)
+          if start < 0 or end < 0:
+              raise SystemExit('could not isolate optional derivation-method validation patch')
+          text = text[:start] + text[end + 2:]
+          path.write_text(text, encoding='utf-8')
+          PY
           python /tmp/patch_gh73.py
           git diff --check
           git config user.name "github-actions[bot]"
