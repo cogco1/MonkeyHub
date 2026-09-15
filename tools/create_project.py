@@ -43,6 +43,9 @@ from typing import Any, BinaryIO, Mapping
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
+MONKEYHUB_API = REPO / "apps/monkeyhub/api"
+if str(MONKEYHUB_API) not in sys.path:
+    sys.path.insert(0, str(MONKEYHUB_API))
 
 from archflow.project.repository import (
     FilesystemProjectRepository,
@@ -56,6 +59,10 @@ from archflow.project.repository import (
 )
 from archflow.project.refs import require_identifier
 from archflow.state.state_record import StateRecord
+from monkeyhub_api.project_format_references import (
+    ProjectVersionReferenceReport,
+    analyze_project_version_references,
+)
 from tools.run_project import _seat
 
 
@@ -277,7 +284,49 @@ def _restore_project_archive(
     return repository, manifest
 
 
-def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
+def _reference_owner(file: str, json_path: str) -> str:
+    """Name only the ProjectVersionRef locations owned by project.repository."""
+
+    if file == "HEAD" and json_path == "/current":
+        return "project.repository"
+    if file.startswith("events/") and json_path in {"/from", "/to"}:
+        return "project.repository"
+    parts = file.split("/")
+    if len(parts) == 3 and parts[0] == "runs" and parts[2] == "run.json" and json_path == "/base":
+        return "project.repository"
+    return "owner-unconfirmed"
+
+
+def _print_migration_reference_scan(report: ProjectVersionReferenceReport) -> None:
+    """Show exact old-version reference locations without claiming their semantics."""
+
+    confirmed = sum(
+        _reference_owner(ref.file, ref.json_path) == "project.repository"
+        for ref in report.references
+    )
+    print(
+        "Legacy ProjectVersionRef scan: "
+        f"{len(report.references)} exact-shape reference(s) across "
+        f"{report.scanned_json_files} retained JSON file(s); "
+        f"{confirmed} project.repository-owned, "
+        f"{len(report.references) - confirmed} owner-unconfirmed."
+    )
+    for ref in report.references:
+        owner = _reference_owner(ref.file, ref.json_path)
+        print(
+            f"  [{owner}] {ref.file}{ref.json_path} -> version {ref.version}, "
+            f"state_sha256 {ref.state_sha256}"
+        )
+    print(
+        "  Location evidence only: exact ProjectVersionRef shape does not prove "
+        "migration semantics for owner-unconfirmed retained payloads."
+    )
+
+
+def _print_migration_plan(
+    plan: ProjectMigrationPlan,
+    reference_report: ProjectVersionReferenceReport | None = None,
+) -> None:
     """Print one dry run: what is retained, what a migration would have to do."""
 
     inspection = plan.inspection
@@ -305,6 +354,8 @@ def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
             )
         if plan.orphan_paths:
             print(f"  orphan records not reachable from HEAD: {len(plan.orphan_paths)}")
+    if reference_report is not None:
+        _print_migration_reference_scan(reference_report)
     for title, lines in (
         ("Required transformations", plan.required_transformations),
         ("Blockers", plan.blockers),
@@ -353,7 +404,13 @@ def main(argv: list[str] | None = None) -> int:
                     PROJECT_FORMAT_CURRENT, PROJECT_FORMAT_SUPPORTED_LEGACY,
                 ) else 2
             plan = plan_project_migration(root)
-            _print_migration_plan(plan)
+            reference_report = None
+            if plan.planned and plan.migration_required:
+                reference_report = analyze_project_version_references(
+                    root,
+                    target_format_version=plan.target_format_version,
+                )
+            _print_migration_plan(plan, reference_report)
             # A supported legacy project with no migrator is still a complete
             # diagnostic; a project that could not be inventoried is not.
             return 0 if plan.planned else 2
