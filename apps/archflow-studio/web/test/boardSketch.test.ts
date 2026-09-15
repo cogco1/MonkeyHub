@@ -121,11 +121,91 @@ test("the calibration line itself is never a footprint", () => {
   assert.deepEqual(result.skipped, []);
 });
 
-test("footprint ids are stable and identifier-safe", () => {
+const area = (profile: readonly (readonly [number, number])[]) =>
+  profile.reduce((sum, [x, z], i) => { const [nx, nz] = profile[(i + 1) % profile.length]; return sum + x * nz - nx * z; }, 0) / 2;
+const only = (elements: ExcalidrawElement[]) => sketch.sketchActionsFromFrame([frame(), ...elements], frame());
+
+test("a stroke closed exactly onto its own first point is still a polygon", () => {
+  // Excalidraw's actionFinalize snaps the last point onto the first, so a
+  // carefully closed loop is stored as [P0 ... P0, P0].
+  const loop = Array.from({ length: 40 }, (_, i) => { const a = i / 40 * 2 * Math.PI; return [50 + 40 * Math.cos(a), 50 + 40 * Math.sin(a)]; });
+  const closed = inFrame("freedraw", "f1", { x: 300, y: 300, width: 80, height: 80, points: [...loop, loop[0], loop[0]] });
+  const result = only([closed]);
+  assert.deepEqual(result.skipped, []);
+  assert.equal(result.sketches.length, 1);
+  assert.ok(result.sketches[0].profile.length >= 3, "the ring collapsed to a point");
+  assert.ok(Math.abs(area(result.sketches[0].profile)) > 0.1, "the ring enclosed nothing");
+});
+
+test("a diamond is the rhombus through its edge midpoints, not its bounding box", () => {
+  const diamond = inFrame("diamond", "d1", { x: 200, y: 400, width: 200, height: 100 });
+  const [footprint] = only([diamond]).sketches;
+  assert.equal(footprint.profile.length, 4);
+  // 2 m x 1 m box: the rhombus through the midpoints is half of it.
+  assert.ok(Math.abs(area(footprint.profile) - 1) < 1e-9, `rhombus area was ${area(footprint.profile)}`);
+});
+
+test("an outline that visits one point twice is skipped, and the rest are still sent", () => {
+  const pinched = inFrame("line", "p1", { x: 150, y: 150, width: 100, height: 100,
+    points: [[0, 0], [100, 0], [50, 50], [100, 100], [0, 100], [50, 50], [0, 0]] });
+  const rect = inFrame("rectangle", "r1", { x: 100, y: 600, width: 200, height: 100 });
+  const result = only([pinched, rect]);
+  assert.deepEqual(result.skipped, [{ elementId: "p1", reason: "selfTouching" }]);
+  assert.deepEqual(result.sketches.map((row) => row.elementId), ["board-r1"]);
+});
+
+test("an outline that crosses itself is skipped before the kernel is asked to build it", () => {
+  // A bow tie with a non-zero signed area: the area test alone lets it through.
+  const bowTie = inFrame("line", "b1", { x: 150, y: 200, width: 200, height: 200,
+    points: [[0, 0], [200, 0], [0, 120], [160, 200], [0, 0]] });
+  assert.throws(() => only([bowTie]), (e: Error) => (e as { code?: string }).code === "BOARD_SKETCH_EMPTY");
+  const rect = inFrame("rectangle", "r1", { x: 100, y: 600, width: 200, height: 100 });
+  assert.deepEqual(only([bowTie, rect]).skipped, [{ elementId: "b1", reason: "selfIntersecting" }]);
+});
+
+test("a rotated round line is refused; a rotated sharp one is converted", () => {
+  const square = [[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]];
+  const round = inFrame("line", "l1", { x: 200, y: 200, width: 100, height: 100, points: square, roundness: { type: 2 }, angle: Math.PI / 4 });
+  const sharp = inFrame("line", "l2", { x: 400, y: 300, width: 100, height: 100, points: square, angle: Math.PI / 2 });
+  const result = only([round, sharp]);
+  assert.deepEqual(result.skipped, [{ elementId: "l1", reason: "roundRotated" }]);
+  assert.deepEqual(result.sketches.map((row) => row.elementId), ["board-l2"]);
+  // A round line that was never rotated has no centre to get wrong.
+  assert.equal(only([inFrame("line", "l3", { x: 200, y: 200, width: 100, height: 100, points: square, roundness: { type: 2 } })]).sketches.length, 1);
+});
+
+test("a shape Excalidraw still calls a child, but which lies outside the frame, is skipped", () => {
+  const drifted = inFrame("rectangle", "r8", { x: 2000, y: 2000, width: 100, height: 100 });
+  const half = inFrame("rectangle", "r7", { x: 850, y: 300, width: 200, height: 100 });   // straddles the right edge at x=900
+  const rect = inFrame("rectangle", "r1", { x: 100, y: 600, width: 200, height: 100 });
+  const result = only([drifted, half, rect]);
+  assert.deepEqual(result.skipped, [{ elementId: "r8", reason: "outsideFrame" }, { elementId: "r7", reason: "outsideFrame" }]);
+  assert.deepEqual(result.sketches.map((row) => row.elementId), ["board-r1"]);
+});
+
+test("a sliver under a millimetre is refused, however much signed area it has", () => {
+  // 1 m x 0.5 mm: 0.0005 m2, far above the old 1e-9 area floor.
+  const sliver = inFrame("rectangle", "s1", { x: 200, y: 400, width: 100, height: 0.05 });
+  const rect = inFrame("rectangle", "r1", { x: 100, y: 600, width: 200, height: 100 });
+  assert.deepEqual(only([sliver, rect]).skipped, [{ elementId: "s1", reason: "degenerate" }]);
+});
+
+test("footprint ids are stable, identifier-safe and never fold two shapes into one", () => {
   assert.equal(sketch.footprintElementId(element("rectangle", "AbC_12-x")), sketch.footprintElementId(element("rectangle", "AbC_12-x")));
-  assert.match(sketch.footprintElementId(element("rectangle", "we!rd id")), /^board-[a-z0-9-]+$/);
+  assert.equal(sketch.footprintElementId(element("rectangle", "AbC_12-x")), "board-AbC_12-x");
+  assert.match(sketch.footprintElementId(element("rectangle", "we!rd id")), /^board-[A-Za-z0-9._-]+$/);
   // archflow/project/refs.py: ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$
   assert.match(sketch.footprintElementId(element("rectangle", "x".repeat(400))), /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/);
+  for (const [left, right] of [["ab_c", "ab-c"], ["AB-C", "ab-c"], ["a.b", "a-b"]]) {
+    assert.notEqual(sketch.footprintElementId(element("rectangle", left)), sketch.footprintElementId(element("rectangle", right)));
+  }
+});
+
+test("two shapes that would author the same element refuse the whole send", () => {
+  const left = inFrame("rectangle", "ab/c", { x: 150, y: 400, width: 100, height: 100 });
+  const right = inFrame("rectangle", "ab c", { x: 400, y: 400, width: 100, height: 100 });
+  assert.equal(sketch.footprintElementId(left), sketch.footprintElementId(right));
+  assert.throws(() => only([left, right]), (e: Error) => (e as { code?: string }).code === "BOARD_SKETCH_ID_COLLISION");
 });
 
 test("the frame data round-trips and defaults a missing storey height", () => {
@@ -156,6 +236,16 @@ test("leaving the board for the conversation drops the board view and keeps the 
   assert.equal(sketch.conversationUrl("http://host/app?view=documents&documentRun=r&documentSource=a&documentPage=1&documentRevision=x"),
     "http://host/app");
   assert.equal(sketch.conversationUrl("http://host/app"), "http://host/app");
+});
+
+test("a coarse scale is stated, not rounded away, and a long name is cut between characters", () => {
+  const empty = { sketches: [], skipped: [] };
+  assert.ok(sketch.sketchSummary("S", empty, frameData({ metresPerUnit: 2 }), null).includes("1 m = 0.5 board units"));
+  assert.ok(sketch.sketchSummary("S", empty, frameData(), null).includes("1 m = 100 board units"));
+  const summary = sketch.sketchSummary("\u{1F3DB}\u{FE0F}".repeat(200), empty, frameData(), "a".repeat(64));
+  assert.ok(Array.from(summary).length <= 240);
+  assert.ok([...summary].every((character) => character.length === 2
+    || character.charCodeAt(0) < 0xD800 || character.charCodeAt(0) > 0xDFFF), "a surrogate pair was cut in half");
 });
 
 test("the summary names frame, count, level, scale and board revision", () => {

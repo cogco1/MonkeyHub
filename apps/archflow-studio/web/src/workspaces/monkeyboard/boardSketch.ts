@@ -28,7 +28,23 @@ export interface SketchFrameData {
   metresPerUnit: number | null;
   calibration: { elementId: string; metres: number } | null;
 }
-export type SketchSkipReason = "open" | "unsupported" | "degenerate" | "tooManyPoints";
+export type SketchSkipReason =
+  /** A stroke whose ends are too far apart to be one outline. */
+  | "open"
+  /** An arrow, a text, an image, a nested frame: never canonical geometry. */
+  | "unsupported"
+  /** Too few points, no area, or a sliver under a millimetre. */
+  | "degenerate"
+  /** More points than one profile may carry. */
+  | "tooManyPoints"
+  /** The outline visits the same point twice, which the record refuses. */
+  | "selfTouching"
+  /** The outline crosses itself, which no solid can be pulled from. */
+  | "selfIntersecting"
+  /** Excalidraw still calls it a child of the frame, but it no longer is. */
+  | "outsideFrame"
+  /** A rotated round line, whose drawn centre this module cannot reproduce. */
+  | "roundRotated";
 export interface SketchFootprint { elementId: string; profile: Point[]; height: number; closed: true; baseLevel: string }
 export interface SketchConversion { sketches: SketchFootprint[]; skipped: { elementId: string; reason: SketchSkipReason }[] }
 
@@ -45,7 +61,8 @@ export interface BoardSketchRequest {
   summary: string;
 }
 
-type Code = "BOARD_SKETCH_SCALE_REQUIRED" | "BOARD_SKETCH_EMPTY" | "BOARD_SKETCH_FRAME_INVALID" | "BOARD_SKETCH_CALIBRATION_INVALID";
+type Code = "BOARD_SKETCH_SCALE_REQUIRED" | "BOARD_SKETCH_EMPTY" | "BOARD_SKETCH_FRAME_INVALID"
+  | "BOARD_SKETCH_CALIBRATION_INVALID" | "BOARD_SKETCH_ID_COLLISION";
 export class BoardSketchError extends Error {
   constructor(public readonly code: Code, message: string) { super(message); this.name = "BoardSketchError"; }
 }
@@ -53,6 +70,10 @@ export class BoardSketchError extends Error {
 const MAX_PROFILE_POINTS = 512;
 const MAX_FOOTPRINTS = 64;
 const ELLIPSE_SAMPLES = 32;
+/** Metres. Anything thinner than a millimetre is a slip of the hand, not a wall. */
+const MIN_EXTENT = 0.001;
+/** The record rounds a profile point to nine decimals before refusing repeats. */
+const POINT_DECIMALS = 9;
 /** archflow/project/refs.py: ^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$ */
 const MAX_ELEMENT_ID = 100;
 const FOOTPRINT_TYPES = ["rectangle", "diamond", "ellipse", "line", "freedraw"];
@@ -116,10 +137,15 @@ export function calibrateSketchFrame(data: SketchFrameData, line: ExcalidrawElem
   return { ...data, metresPerUnit: metres / length, calibration: { elementId: line.id, metres } };
 }
 
-/** The same board element always names the same model element, so re-sending edits it. */
+/**
+ * The same board element always names the same model element, so re-sending
+ * edits it. Only characters the record's identifier rule forbids are replaced —
+ * case and the dot and underscore it allows are kept, because folding them
+ * would make two different shapes claim one element and lose one of them.
+ */
 export function footprintElementId(element: ExcalidrawElement): string {
-  const safe = element.id.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
-  return `board-${safe || "shape"}`.slice(0, MAX_ELEMENT_ID).replace(/-+$/g, "");
+  const safe = element.id.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[^A-Za-z0-9]+/, "");
+  return `board-${safe || "shape"}`.slice(0, MAX_ELEMENT_ID);
 }
 
 function rotate([x, y]: Point, [cx, cy]: Point, angle: number): Point {
@@ -132,7 +158,7 @@ function finite(element: ExcalidrawElement): boolean {
     && element.width > 0 && element.height > 0;
 }
 
-/** Ramer–Douglas–Peucker: keep the corners the architect drew, drop the hand's noise. */
+/** Ramer–Douglas–Peucker on an open path: keep the corners, drop the hand's noise. */
 function simplify(points: Point[], epsilon: number): Point[] {
   if (points.length <= 2) return points;
   const [first, last] = [points[0], points[points.length - 1]];
@@ -153,34 +179,120 @@ function dedupe(points: Point[]): Point[] {
   return out;
 }
 
+/**
+ * A closed ring has no first and last point to draw a baseline between, and a
+ * baseline of zero length makes every distance zero — which is how a carefully
+ * closed stroke (Excalidraw snaps its last point onto its first) would collapse
+ * to a single point. So the ring is cut at the vertex furthest from its start
+ * and the two halves are simplified as the open paths they then are.
+ */
+function simplifyRing(ring: Point[], epsilon: number): Point[] {
+  if (ring.length <= 3) return ring;
+  let far = 1, furthest = -1;
+  for (let i = 1; i < ring.length; i += 1) {
+    const distance = Math.hypot(ring[i][0] - ring[0][0], ring[i][1] - ring[0][1]);
+    if (distance > furthest) { furthest = distance; far = i; }
+  }
+  const head = simplify(ring.slice(0, far + 1), epsilon);
+  const tail = simplify([...ring.slice(far), ring[0]], epsilon);
+  return dedupe([...head, ...tail.slice(1, -1)]);
+}
+
 function signedArea(points: readonly Point[]): number {
   return points.reduce((sum, [x, y], i) => { const [nx, ny] = points[(i + 1) % points.length]; return sum + x * ny - nx * y; }, 0) / 2;
 }
 
-/** The closed outline of one element in scene coordinates, or null when it is not a footprint. */
-export function closedOutline(element: ExcalidrawElement): Point[] | null {
-  if (element.isDeleted || !finite(element)) return null;
+/** Two segments that share no endpoint must not meet; a crossed outline encloses nothing. */
+function crosses(a1: Point, a2: Point, b1: Point, b2: Point): boolean {
+  const side = (p: Point, q: Point, r: Point) => {
+    const value = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    return value > 1e-12 ? 1 : value < -1e-12 ? -1 : 0;
+  };
+  const between = (p: Point, q: Point, r: Point) =>
+    Math.min(p[0], q[0]) - 1e-12 <= r[0] && r[0] <= Math.max(p[0], q[0]) + 1e-12 &&
+    Math.min(p[1], q[1]) - 1e-12 <= r[1] && r[1] <= Math.max(p[1], q[1]) + 1e-12;
+  const d1 = side(b1, b2, a1), d2 = side(b1, b2, a2), d3 = side(a1, a2, b1), d4 = side(a1, a2, b2);
+  if (d1 !== d2 && d3 !== d4) return true;
+  return (d1 === 0 && between(b1, b2, a1)) || (d2 === 0 && between(b1, b2, a2))
+    || (d3 === 0 && between(a1, a2, b1)) || (d4 === 0 && between(a1, a2, b2));
+}
+
+function selfIntersects(profile: readonly Point[]): boolean {
+  const n = profile.length;
+  for (let i = 0; i < n; i += 1) {
+    for (let j = i + 2; j < n; j += 1) {
+      if (i === 0 && j === n - 1) continue;   // the closing edge is adjacent to the first
+      if (crosses(profile[i], profile[(i + 1) % n], profile[j], profile[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
+
+/** The record's own repeat rule, applied before a whole batch is refused for one shape. */
+function visitsAPointTwice(profile: readonly Point[]): boolean {
+  const round = (value: number) => Number(value.toFixed(POINT_DECIMALS));
+  const seen = new Set(profile.map((p) => `${round(p[0])},${round(p[1])}`));
+  return seen.size !== profile.length;
+}
+
+function extent(profile: readonly Point[]): number {
+  const xs = profile.map((p) => p[0]), ys = profile.map((p) => p[1]);
+  return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+}
+
+function shortestEdge(profile: readonly Point[]): number {
+  return profile.reduce((least, [x, y], i) => {
+    const [nx, ny] = profile[(i + 1) % profile.length];
+    return Math.min(least, Math.hypot(nx - x, ny - y));
+  }, Infinity);
+}
+
+type Outline = { points: Point[]; reason?: undefined } | { points?: undefined; reason: SketchSkipReason };
+
+/** The closed outline of one element in scene coordinates, or the reason it is not one. */
+function outlineOf(element: ExcalidrawElement): Outline {
+  if (element.isDeleted || !finite(element)) return { reason: "degenerate" };
   const center: Point = [element.x + element.width / 2, element.y + element.height / 2];
   const local = ([x, y]: Point): Point => rotate([element.x + x, element.y + y], center, element.angle);
-  if (element.type === "rectangle" || element.type === "diamond") {
+  if (element.type === "rectangle") {
     // Rounded corners are ignored: the massing corners are what the architect meant.
-    return ([[0, 0], [element.width, 0], [element.width, element.height], [0, element.height]] as Point[]).map(local);
+    return { points: ([[0, 0], [element.width, 0], [element.width, element.height], [0, element.height]] as Point[]).map(local) };
+  }
+  if (element.type === "diamond") {
+    // A diamond is the rhombus through its edge midpoints, not its bounding box:
+    // sending the box would give the massing twice the area that was drawn.
+    return { points: ([[element.width / 2, 0], [element.width, element.height / 2],
+      [element.width / 2, element.height], [0, element.height / 2]] as Point[]).map(local) };
   }
   if (element.type === "ellipse") {
-    return Array.from({ length: ELLIPSE_SAMPLES }, (_, i) => { const a = i * 2 * Math.PI / ELLIPSE_SAMPLES;
-      return local([element.width / 2 * (1 + Math.cos(a)), element.height / 2 * (1 + Math.sin(a))]); });
+    return { points: Array.from({ length: ELLIPSE_SAMPLES }, (_, i) => { const a = i * 2 * Math.PI / ELLIPSE_SAMPLES;
+      return local([element.width / 2 * (1 + Math.cos(a)), element.height / 2 * (1 + Math.sin(a))]); }) };
   }
-  if (element.type !== "line" && element.type !== "freedraw") return null;
+  if (element.type !== "line" && element.type !== "freedraw") return { reason: "unsupported" };
+  // Excalidraw rotates a round line about its bezier bounds, which this module
+  // cannot reproduce from the element alone; a rotated one would land tens of
+  // centimetres out. Lines drawn on the board are sharp by default.
+  if (element.type === "line" && element.roundness !== null && element.angle !== 0) return { reason: "roundRotated" };
   const raw = (element as ExcalidrawElement & { points: readonly (readonly number[])[] }).points;
-  if (raw.length < 3 || raw.some((p) => p.length !== 2 || !p.every((value) => Number.isFinite(value)))) return null;
+  if (raw.length < 3 || raw.some((p) => p.length !== 2 || !p.every((value) => Number.isFinite(value)))) return { reason: "degenerate" };
   const xs = raw.map((p) => p[0]), ys = raw.map((p) => p[1]);
   const diagonal = Math.hypot(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
   const first = raw[0], last = raw[raw.length - 1];
-  if (Math.hypot(last[0] - first[0], last[1] - first[1]) > Math.max(6, 0.01 * diagonal)) return null;   // open
+  if (Math.hypot(last[0] - first[0], last[1] - first[1]) > Math.max(6, 0.01 * diagonal)) return { reason: "open" };
   // Excalidraw rotates strokes about their local point bounds (see boardFeedbackGeometry).
   const strokeCenter: Point = [element.x + (Math.min(...xs) + Math.max(...xs)) / 2, element.y + (Math.min(...ys) + Math.max(...ys)) / 2];
   const scene = raw.slice(0, -1).map(([x, y]) => rotate([element.x + x, element.y + y], strokeCenter, element.angle));
-  return dedupe(simplify(scene, 0.005 * diagonal));
+  // Dedupe before simplifying: a stroke closed onto its own first point would
+  // otherwise give the ring a zero-length baseline and collapse to one point.
+  const ring = dedupe(scene);
+  if (ring.length < 3) return { reason: "degenerate" };
+  const simplified = simplifyRing(ring, 0.005 * diagonal);
+  return simplified.length < 3 ? { reason: "degenerate" } : { points: simplified };
+}
+
+/** The closed outline of one element in scene coordinates, or null when it is not a footprint. */
+export function closedOutline(element: ExcalidrawElement): Point[] | null {
+  return outlineOf(element).points ?? null;
 }
 
 /**
@@ -194,20 +306,46 @@ export function sketchActionsFromFrame(elements: readonly ExcalidrawElement[], f
   if (data.metresPerUnit === null) throw new BoardSketchError("BOARD_SKETCH_SCALE_REQUIRED", "State one known length inside the frame before sending it to 3D.");
   const m = data.metresPerUnit, baseline = frame.y + frame.height;
   const toBuilding = ([sx, sy]: Point): Point => [(sx - frame.x) * m, (baseline - sy) * m];
+  // Excalidraw keeps frameId while any part of a shape still overlaps the frame,
+  // and an arrow-key nudge never revisits membership at all. Only a shape that
+  // is wholly inside the frame is a footprint of it.
+  const frameCenter: Point = [frame.x + frame.width / 2, frame.y + frame.height / 2];
+  const insideFrame = (point: Point): boolean => {
+    const [lx, ly] = frame.angle === 0 ? point : rotate(point, frameCenter, -frame.angle);
+    return lx >= frame.x - 1e-6 && lx <= frame.x + frame.width + 1e-6
+      && ly >= frame.y - 1e-6 && ly <= frame.y + frame.height + 1e-6;
+  };
   const sketches: SketchFootprint[] = [], skipped: SketchConversion["skipped"] = [];
+  const claimed = new Map<string, string>();
   for (const element of elements) {
     // The dimension line stays on the board as a mark, never as geometry.
     if (element.isDeleted || element.frameId !== frame.id || element.id === data.calibration?.elementId) continue;
-    if (!FOOTPRINT_TYPES.includes(element.type)) { skipped.push({ elementId: element.id, reason: "unsupported" }); continue; }
-    const outline = closedOutline(element);
-    if (outline === null) { skipped.push({ elementId: element.id, reason: (element.type === "line" || element.type === "freedraw") && finite(element) ? "open" : "degenerate" }); continue; }
-    let profile = dedupe(outline.map(toBuilding));
-    if (profile.length < 3 || Math.abs(signedArea(profile)) <= 1e-9) { skipped.push({ elementId: element.id, reason: "degenerate" }); continue; }
-    if (profile.length > MAX_PROFILE_POINTS) { skipped.push({ elementId: element.id, reason: "tooManyPoints" }); continue; }
+    const skip = (reason: SketchSkipReason) => { skipped.push({ elementId: element.id, reason }); };
+    if (!FOOTPRINT_TYPES.includes(element.type)) { skip("unsupported"); continue; }
+    const outline = outlineOf(element);
+    if (outline.points === undefined) { skip(outline.reason); continue; }
+    if (!outline.points.every(insideFrame)) { skip("outsideFrame"); continue; }
+    let profile = dedupe(outline.points.map(toBuilding));
+    if (profile.length < 3 || Math.abs(signedArea(profile)) <= 1e-9) { skip("degenerate"); continue; }
+    if (profile.length > MAX_PROFILE_POINTS) { skip("tooManyPoints"); continue; }
+    // A millimetre is the finest a drawn massing can mean; below it OCCT is
+    // asked for a solid with no thickness and answers with an invalid shape.
+    if (extent(profile) < MIN_EXTENT || shortestEdge(profile) < MIN_EXTENT) { skip("degenerate"); continue; }
+    // One pinched outline would otherwise refuse the whole batch at the server,
+    // taking every other footprint down with it.
+    if (visitsAPointTwice(profile)) { skip("selfTouching"); continue; }
+    if (selfIntersects(profile)) { skip("selfIntersecting"); continue; }
     if (signedArea(profile) < 0) profile = profile.slice().reverse();
+    const elementId = footprintElementId(element);
+    const owner = claimed.get(elementId);
+    if (owner !== undefined) {
+      throw new BoardSketchError("BOARD_SKETCH_ID_COLLISION",
+        `Two shapes in this frame would author the same element «${elementId}»; one of them would be lost. Redraw one of them.`);
+    }
+    claimed.set(elementId, element.id);
     const own = (element.customData as { sketch?: { height?: unknown } } | undefined)?.sketch?.height;
     const height = typeof own === "number" && Number.isFinite(own) && own > 0 ? own : data.storeyHeight;
-    sketches.push({ elementId: footprintElementId(element), profile, height, closed: true, baseLevel: data.levelId });
+    sketches.push({ elementId, profile, height, closed: true, baseLevel: data.levelId });
   }
   if (sketches.length === 0) throw new BoardSketchError("BOARD_SKETCH_EMPTY", "Draw at least one closed shape inside the frame.");
   if (sketches.length > MAX_FOOTPRINTS) throw new BoardSketchError("BOARD_SKETCH_EMPTY", `Send at most ${MAX_FOOTPRINTS} footprints at once.`);
@@ -215,7 +353,11 @@ export function sketchActionsFromFrame(elements: readonly ExcalidrawElement[], f
 }
 
 export function sketchSummary(frameName: string, conversion: SketchConversion, data: SketchFrameData, boardRevisionSha256: string | null): string {
-  const units = data.metresPerUnit ? Math.round(1 / data.metresPerUnit) : 0;
-  const text = `Board sketch «${frameName}»: ${conversion.sketches.length} footprint(s) on level ${data.levelId}, 1 m = ${units} board units, board ${boardRevisionSha256?.slice(0, 12) ?? "unsaved"}`;
-  return text.length <= 240 ? text : `${text.slice(0, 237)}…`;
+  // A coarse scale rounds to "0 board units" once one unit is two metres wide.
+  const units = data.metresPerUnit ? 1 / data.metresPerUnit : 0;
+  const scale = units >= 10 ? String(Math.round(units)) : units.toFixed(1);
+  const text = `Board sketch «${frameName}»: ${conversion.sketches.length} footprint(s) on level ${data.levelId}, 1 m = ${scale} board units, board ${boardRevisionSha256?.slice(0, 12) ?? "unsaved"}`;
+  // The record counts characters, and half a surrogate pair is not one.
+  const characters = Array.from(text);
+  return characters.length <= 240 ? text : `${characters.slice(0, 239).join("")}…`;
 }

@@ -13,7 +13,7 @@ import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedb
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
-import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData } from "./boardSketch";
+import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import "./board.css";
 
 const copy = {
@@ -71,13 +71,31 @@ const sketchCopy = {
     scale: "Scale", uncalibrated: "Not calibrated — select one straight line inside the frame and enter its real length.",
     calibrated: "1 m = {units} board units · frame {w} × {h} m", metres: "Known length (m)", calibrate: "Set scale",
     send: "Send to 3D", sending: "Sending sketch…", empty: "Draw at least one closed shape inside the frame.",
-    skipped: "{count} object(s) were not sent (open strokes, arrows or text stay on the board).", noLevels: "The project has no levels yet; the ground level will be created on first send." },
+    skipped: "{count} object(s) were not sent and stay on the board: {reasons}.", noLevels: "The project has no levels yet; the ground level will be created on first send." },
   "zh-CN": { newFrame: "新建草图框", frameName: "草图", panel: "草图框", level: "楼层", storeyHeight: "层高（米）",
     scale: "比例", uncalibrated: "尚未标定——选中框内一条直线，输入它的真实长度。",
     calibrated: "1 米 = {units} 画板单位 · 框 {w} × {h} 米", metres: "已知长度（米）", calibrate: "设定比例",
     send: "起模到 3D", sending: "正在发送草图…", empty: "请先在框内画至少一个闭合形状。",
-    skipped: "{count} 个对象未发送（开放线条、箭头和文字留在画板上）。", noLevels: "项目还没有楼层；首次发送时会创建地面层。" },
+    skipped: "{count} 个对象未发送，留在画板上：{reasons}。", noLevels: "项目还没有楼层；首次发送时会创建地面层。" },
 };
+
+// Why a shape stayed on the board, in the words that say what to do about it.
+const sketchSkipCopy: Record<"en" | "zh-CN", Record<SketchSkipReason, string>> = {
+  en: { open: "open strokes", unsupported: "arrows, text or images", degenerate: "shapes with no buildable area",
+    tooManyPoints: "outlines with too many points", selfTouching: "outlines that touch themselves",
+    selfIntersecting: "outlines that cross themselves", outsideFrame: "shapes no longer inside the frame",
+    roundRotated: "rotated curved lines — set their edges to sharp" },
+  "zh-CN": { open: "未闭合的线条", unsupported: "箭头、文字或图片", degenerate: "面积过小、无法起模的形状",
+    tooManyPoints: "点数过多的轮廓", selfTouching: "自相接触的轮廓",
+    selfIntersecting: "自相交叉的轮廓", outsideFrame: "已不在框内的形状",
+    roundRotated: "旋转过的圆角线条——请将其边角改为直角" },
+};
+
+function skippedNotice(skipped: readonly { reason: SketchSkipReason }[], language: "en" | "zh-CN"): string {
+  const reasons = [...new Set(skipped.map((row) => row.reason))].map((reason) => sketchSkipCopy[language][reason]);
+  return sketchCopy[language].skipped.replace("{count}", String(skipped.length))
+    .replace("{reasons}", reasons.join(language === "en" ? ", " : "、"));
+}
 
 /** The one sketch frame a panel can act on, and the dimension line selected with it. */
 type SketchSelection = { frame: ExcalidrawElement; data: SketchFrameData; line: ExcalidrawElement | null };
@@ -369,7 +387,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const restored = restoreView === null ? null : boardViewAppState(restoreView, board.elements);
     return {
       elements: board.elements as unknown as ExcalidrawElement[], files, scrollToContent: restored === null,
-      appState: { viewBackgroundColor: "#f4f5f0", currentItemStrokeColor: "#29352d", currentItemBackgroundColor: "transparent", currentItemRoughness: 0, currentItemFontFamily: FONT_FAMILY.Helvetica, currentItemStrokeWidth: 1, gridSize: 20,
+      appState: { viewBackgroundColor: "#f4f5f0", currentItemStrokeColor: "#29352d", currentItemBackgroundColor: "transparent", currentItemRoughness: 0, currentItemFontFamily: FONT_FAMILY.Helvetica, currentItemStrokeWidth: 1, currentItemRoundness: "sharp", gridSize: 20,
         ...(restored === null ? {} : { ...restored, zoom: { value: restored.zoom.value as AppState["zoom"]["value"] } }) },
     };
   });
@@ -853,7 +871,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       const conversion = sketchActionsFromFrame(api.getSceneElements(), live);
       const revision = queue.getState().revisionSha256;
       const frameName = (live as { name?: string | null }).name ?? sketchCopy[language].frameName;
-      if (conversion.skipped.length > 0) setNotice(sketchCopy[language].skipped.replace("{count}", String(conversion.skipped.length)));
+      if (conversion.skipped.length > 0) setNotice(skippedNotice(conversion.skipped, language));
       onSketch({ projectId: board.projectId, frameId: live.id, frameName, boardRevisionSha256: revision,
         levelId: data.levelId, sketches: conversion.sketches, skipped: conversion.skipped,
         summary: sketchSummary(frameName, conversion, data, revision) });
