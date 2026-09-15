@@ -4,8 +4,7 @@
 **方向：** [愿景](../../VISION.md)；唯一 live 清单为 `governance/work_registry.json`。
 **本次可交付范围：** 在已有候选上继续一项修改，不再误回旧起点。反馈恢复、正式发布与研究比较不捆成一次大交付。
 
-整体职责与下一步见 [ARCHITECTURE.md](../../ARCHITECTURE.md)，benchmark 见
-[RESEARCH_POSITIONING.md](../../RESEARCH_POSITIONING.md)。本卡只保留此次交付、试用边界及已记录的局部简化候选，不再承担总路线。
+整体职责、评价边界与下一步见 [ARCHITECTURE.md](../../ARCHITECTURE.md)。本卡只保留此次交付、试用边界及已记录的局部简化候选，不再承担总路线。
 
 ## 1. 先让什么工作消失
 
