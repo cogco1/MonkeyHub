@@ -375,6 +375,107 @@ class ProjectTransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_DEPENDENCY_MISSING"):
             self.shared.export_transfer()
 
+    def test_shared_workspace_artifact_survives_when_only_another_run_refers_to_it(self):
+        # A retained run may hold the bytes while the only receipt naming them
+        # lives in a different retained run. Export follows that reference by
+        # its complete project-relative path, so every exported manifest row
+        # must stay readable one file at a time; the archive writer reads the
+        # whole manifest that way and cannot fall back to a rescan.
+        holder = self.shared.create_run("holder")
+        data = b"retained synthetic shared elevation PNG"
+        png = self.shared.put_workspace_file(
+            run=holder, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=holder.run_id),
+            artifact_id="elevation", workspace_relative_path="documentation/elevation.png",
+            media_type="image/png", source=io.BytesIO(data),
+        )
+        self.assertTrue(png.relative_path.startswith(f"runs/{holder.run_id}/workspaces/"))
+        self.shared.put_json(
+            run=self.shared.load_run("source"),
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="source"),
+            record_kind=DRAWING_PROJECTION_RECEIPT,
+            payload={"schema": "DrawingProjectionReceipt@1", "artifacts": {"png": {
+                "relative_path": png.relative_path, "sha256": png.sha256, "media_type": png.media_type,
+            }}},
+        )
+        transfer = self.shared.export_transfer()
+        self.assertIn(holder.run_id, transfer["run_ids"])
+        self.assertIn(png.relative_path, {row["path"] for row in transfer["files"]})
+        # The archive writer's contract: every manifest row, byte for byte.
+        for row in transfer["files"]:
+            with self.subTest(path=row["path"]):
+                read = self.shared.read_transfer_file(row["path"], row["sha256"])
+                self.assertEqual(read, (self.shared.layout.root / row["path"]).read_bytes())
+                self.assertEqual(len(read), row["size"])
+        self.assertEqual(self.shared.read_transfer_file(png.relative_path, png.sha256), data)
+        restored = self.clone("shared-artifact")
+        self.assertEqual((restored.layout.root / png.relative_path).read_bytes(), data)
+        self.assertEqual(restored.read_transfer_file(png.relative_path, png.sha256), data)
+
+        # Reaching the bytes from another run must not relax any other refusal.
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_DIGEST_MISMATCH|TRANSFER_FILE_UNAVAILABLE"):
+            self.shared.read_transfer_file(png.relative_path, hashlib.sha256(b"other").hexdigest())
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_PATH_INVALID"):
+            self.shared.read_transfer_file(f"runs/{holder.run_id}/workspaces/../../../outside.png", png.sha256)
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_PATH_INVALID"):
+            self.shared.read_transfer_file("input/private.txt", png.sha256)
+        neighbour = self.shared.layout.run(holder.run_id).workspaces / "documentation" / "local.log"
+        neighbour.write_bytes(b"private log beside a shared artifact")
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_FILE_UNAVAILABLE"):
+            self.shared.read_transfer_file(neighbour.relative_to(self.shared.layout.root).as_posix(),
+                                           hashlib.sha256(neighbour.read_bytes()).hexdigest())
+        unreferenced = self.shared.ingest(
+            run=holder, destination=PersistenceDestination(PersistenceArea.OBJECT),
+            artifact_id="unreferenced", media_type="application/octet-stream",
+            source=io.BytesIO(b"unreferenced bytes"),
+        )
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_FILE_UNAVAILABLE"):
+            self.shared.read_transfer_file(unreferenced.relative_path, unreferenced.sha256)
+
+        # A foreign project's reference authorizes nothing, from any run.
+        foreign_data = b"bytes a foreign project claims"
+        foreign = self.shared.put_workspace_file(
+            run=holder, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=holder.run_id),
+            artifact_id="foreign", workspace_relative_path="documentation/foreign.png",
+            media_type="image/png", source=io.BytesIO(foreign_data),
+        )
+        self.shared.put_json(
+            run=self.shared.load_run("source"),
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="source"),
+            record_kind=DRAWING_PROJECTION_RECEIPT,
+            payload={"schema": "DrawingProjectionReceipt@1", "artifacts": {"png": {
+                "project_id": "other-building", "relative_path": foreign.relative_path,
+                "sha256": foreign.sha256, "media_type": foreign.media_type,
+            }}},
+        )
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_FILE_UNAVAILABLE"):
+            self.shared.read_transfer_file(foreign.relative_path, foreign.sha256)
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_PROJECT_MISMATCH"):
+            self.shared.export_transfer()
+
+    def test_cross_run_uri_is_exact_and_native_basename_stays_run_local(self):
+        holder = self.shared.create_run("holder")
+        data = b"shared native model"
+        native = self.shared.put_workspace_file(
+            run=holder, destination=PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=holder.run_id),
+            artifact_id="shared", workspace_relative_path="native/shared.3dm",
+            media_type="model/3dm", source=io.BytesIO(data),
+        )
+        source = self.shared.load_run("source")
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=source.run_id)
+        self.shared.put_json(
+            run=source, destination=destination, record_kind=SEAT_OCCT_EXECUTION,
+            payload={"schema": "OcctExecutionReceipt@1", "preview_artifact": {
+                "relative_path": "shared.3dm", "sha256": native.sha256},
+                "artifact_relative_path": "shared.3dm", "inspection": {"file_sha256": native.sha256}},
+        )
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_FILE_UNAVAILABLE"):
+            self.shared.read_transfer_file(native.relative_path, native.sha256)
+        self.shared.put_json(
+            run=source, destination=destination, record_kind=STATE_RECORD,
+            payload={"schema": "StateRecord@1", "reference": f"project://building/{native.relative_path}"},
+        )
+        self.assertEqual(self.shared.read_transfer_file(native.relative_path, native.sha256), data)
+
     def test_only_cad_evidence_metadata_splits_a_comma_separated_reference_list(self):
         run = self.shared.load_run("source")
         evidence = f"{self.s0.uri},{self.s0.uri}"
