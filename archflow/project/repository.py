@@ -24,7 +24,7 @@ else:  # pragma: no cover - exercised only on POSIX hosts
     import fcntl
 
 from archflow.project.digests import project_state_sha256
-from archflow.project.layout import ProjectLayout
+from archflow.project.layout import AUTHORED_RECORD_PATH, ProjectLayout
 from archflow.project.manifest import ProjectManifest, ProjectManifestError
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
@@ -182,6 +182,31 @@ class ProjectMigrationPlan:
     required_transformations: tuple[str, ...]
     preserved: tuple[str, ...]
     blockers: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectFormatMigration:
+    """What one completed forward migration wrote, and what it could not restate.
+
+    ``versions`` is the exact identity map the migration used: one row per
+    published version, its legacy snapshot-file digest and the semantic digest
+    that names the same state in the target. ``rewritten`` names the few
+    project-relative files whose owner restated a base digest; every other
+    retained file was copied byte for byte and counted in ``preserved_files``.
+    ``embedded_legacy_references`` lists each place a preserved file still
+    carries a legacy project-version identity, so the receipt states what the
+    migration deliberately did not touch instead of guessing at it.
+    """
+
+    source_root: Path
+    target_root: Path
+    project_id: str
+    source_format_version: int
+    target_format_version: int
+    versions: tuple[tuple[int, str, str], ...]
+    rewritten: tuple[str, ...]
+    preserved_files: int
+    embedded_legacy_references: tuple[tuple[str, str, int, str], ...]
 
 
 _LOCK_INDEX_GUARD = threading.Lock()
@@ -490,6 +515,41 @@ def _record_from_dict(
         )
     except (TypeError, ValueError) as exc:
         raise ProjectIntegrityError(f"{field} is invalid") from exc
+
+
+_VERSION_REF_KEYS = frozenset({"project_id", "version", "state_sha256"})
+
+
+def _legacy_refs_in(
+    payload: object,
+    legacy_digests: Mapping[str, int],
+    pointer: str = "",
+) -> list[tuple[str, int, str]]:
+    """Every exact ``ProjectVersionRef`` mapping in ``payload`` whose digest is a known legacy snapshot digest.
+
+    Returns ``(json_pointer, version, legacy_digest)`` rows. Only mappings with
+    exactly the three reference keys count; a matched mapping is not descended.
+    ``legacy_digests`` maps each legacy digest to its version so a reference
+    whose version disagrees with its digest is reported by its digest, never
+    silently trusted.
+    """
+
+    found: list[tuple[str, int, str]] = []
+    if isinstance(payload, Mapping):
+        digest = payload.get("state_sha256")
+        if (
+            set(payload) == _VERSION_REF_KEYS
+            and isinstance(digest, str)
+            and digest in legacy_digests
+        ):
+            return [(pointer or "/", legacy_digests[digest], digest)]
+        for key, value in payload.items():
+            escaped = str(key).replace("~", "~0").replace("/", "~1")
+            found.extend(_legacy_refs_in(value, legacy_digests, f"{pointer}/{escaped}"))
+    elif isinstance(payload, list):
+        for index, value in enumerate(payload):
+            found.extend(_legacy_refs_in(value, legacy_digests, f"{pointer}/{index}"))
+    return found
 
 
 class FilesystemProjectRepository:
@@ -1713,6 +1773,222 @@ class FilesystemProjectRepository:
                     _write_immutable(root / path, data)
             _write_immutable(root / "HEAD", files["HEAD"])
         return cls.open(root)
+
+    @classmethod
+    def migrate_project_format(
+        cls,
+        source_root: Path,
+        target_root: Path,
+        *,
+        target_format_version: int = CURRENT_FORMAT_VERSION,
+    ) -> ProjectFormatMigration:
+        """Write a format-``target`` copy of a format-1 project into an empty directory.
+
+        The source is never written, not even its advisory lock files: it is
+        copied whole into a disposable staging directory, and that copy is what
+        is opened, planned and read. The target envelope is written by this
+        build's own writers; run manifests and the authored state record have
+        their base digest restated by their owners; everything else is copied
+        byte for byte and any project-version identity it still embeds is
+        listed, not rewritten. The result is opened, verified and re-exported
+        before it is returned.
+        """
+
+        source_root = Path(source_root).resolve(strict=True)
+        target_root = Path(target_root).resolve(strict=False)
+        inspection = inspect_project_format(source_root)
+        if (
+            inspection.status != PROJECT_FORMAT_SUPPORTED_LEGACY
+            or inspection.format_version != LEGACY_FORMAT_VERSION
+        ):
+            raise ProjectIntegrityError(
+                f"MIGRATION_NOT_APPLICABLE: {inspection.status}: {inspection.detail}"
+            )
+        if target_format_version != CURRENT_FORMAT_VERSION:
+            raise ProjectIntegrityError(
+                "MIGRATION_TARGET_UNSUPPORTED: only the current format can be the target"
+            )
+        project_id = inspection.project_id
+        if project_id is None or target_root.name != project_id:
+            raise ProjectIntegrityError(
+                f"MIGRATION_TARGET_NAME: the target directory must be named {project_id!r}"
+            )
+        if target_root.exists() and (not target_root.is_dir() or any(target_root.iterdir())):
+            raise ProjectIntegrityError(
+                "MIGRATION_TARGET_USED: the target directory already contains files"
+            )
+        if target_root.is_relative_to(source_root) or source_root.is_relative_to(target_root):
+            raise ProjectIntegrityError(
+                "MIGRATION_TARGET_NESTED: source and target may not contain each other"
+            )
+        for path in source_root.rglob("*"):
+            if path.is_symlink():
+                raise ProjectIntegrityError(
+                    f"MIGRATION_SOURCE_REDIRECTED: {path.relative_to(source_root).as_posix()}"
+                )
+
+        with tempfile.TemporaryDirectory(prefix="archflow-migrate-") as temporary:
+            staging = Path(temporary) / project_id
+            shutil.copytree(source_root, staging, symlinks=False)
+            legacy = cls.open(staging)
+            for lock in legacy.lock_paths():
+                lock.parent.mkdir(parents=True, exist_ok=True)
+                lock.touch(exist_ok=True)
+            plan = plan_project_migration(staging, target_format_version=target_format_version)
+            if not plan.planned or plan.blockers:
+                raise ProjectIntegrityError("MIGRATION_BLOCKED: " + "; ".join(plan.blockers))
+            if not plan.migration_required:
+                raise ProjectIntegrityError(
+                    "MIGRATION_NOT_REQUIRED: the project is already at the target format"
+                )
+
+            # Walk published history back from HEAD, then forward.
+            current, _, event_ref = legacy._read_head_document()
+            lineage: list[tuple[ProjectVersionRef, dict[str, Any]]] = []
+            while True:
+                event = legacy.load_json(event_ref)
+                lineage.append((current, event))
+                parent = event.get("from")
+                if parent is None:
+                    break
+                current = _version_from_dict(parent, field="event from")
+                event_ref = _record_from_dict(
+                    event.get("previous_event"), project_id=project_id, field="previous_event",
+                )
+            lineage.reverse()
+            states = [legacy.load_version_state(ref) for ref, _ in lineage]
+            if [ref.version for ref, _ in lineage] != list(range(len(lineage))):
+                raise ProjectIntegrityError(
+                    "MIGRATION_LINEAGE: published versions are not contiguous from 0"
+                )
+
+            # Target envelope: v0 through initialize, later versions through the v2 writers.
+            target = cls.initialize(target_root, project_id=project_id, initial_state=states[0])
+            mapping: dict[str, str] = {
+                lineage[0][0].require_digest(): target.read_head().require_digest()
+            }
+            versions: list[tuple[int, str, str]] = [
+                (0, lineage[0][0].require_digest(), target.read_head().require_digest())
+            ]
+            with target._lock, target._head_lock:
+                for (legacy_ref, event), state in zip(lineage[1:], states[1:]):
+                    previous = target.read_head()
+                    _, previous_snapshot, previous_event = target._read_head_document()
+                    version = legacy_ref.version
+                    _require_semantic_state_identity(
+                        state, project_id=project_id, version=version,
+                        field=f"migrated state v{version}",
+                    )
+                    digest = _semantic_state_sha256(state, field=f"migrated state v{version}")
+                    snapshot = target._put_internal_json(
+                        target.layout.canonical,
+                        f"state-v{version:06d}",
+                        {
+                            "schema": "CanonicalSnapshot@2",
+                            "project_id": project_id,
+                            "version": version,
+                            "state_sha256": digest,
+                            "parent": previous.to_dict(),
+                            "state": state,
+                        },
+                    )
+                    replacement = ProjectVersionRef(project_id, version, digest)
+                    written = target._put_internal_json(
+                        target.layout.events,
+                        f"event-v{version:06d}",
+                        {
+                            "schema": "ProjectEvent@2",
+                            "project_id": project_id,
+                            "event_type": event.get("event_type"),
+                            "decision": event.get("decision"),
+                            "run_id": event.get("run_id"),
+                            "from": previous.to_dict(),
+                            "from_snapshot": _record_dict(previous_snapshot),
+                            "to": replacement.to_dict(),
+                            "to_snapshot": _record_dict(snapshot),
+                            "previous_event": _record_dict(previous_event),
+                            "decision_receipt": event.get("decision_receipt"),
+                        },
+                    )
+                    _replace_atomic(
+                        target.layout.head,
+                        _json_bytes(target._head_payload(replacement, snapshot, written)),
+                    )
+                    mapping[legacy_ref.require_digest()] = digest
+                    versions.append((version, legacy_ref.require_digest(), digest))
+
+            # Everything else: owners restate their base; the rest is copied byte for byte.
+            legacy_digests = {legacy_digest: version for version, legacy_digest, _ in versions}
+            rewritten: list[str] = []
+            preserved = 0
+            embedded: list[tuple[str, str, int, str]] = []
+            skip_prefixes = ("canonical/", "events/")
+            for path in sorted(p for p in staging.rglob("*") if p.is_file()):
+                relative = path.relative_to(staging).as_posix()
+                if (
+                    relative in ("project.json", "HEAD")
+                    or relative.startswith(skip_prefixes)
+                    or relative.endswith(".lock")
+                ):
+                    continue
+                data = _read_bytes(path)
+                parts = relative.split("/")
+                if len(parts) == 3 and parts[0] == "runs" and parts[2] == "run.json":
+                    payload = _parse_json_document(data, relative)
+                    base = payload.get("base") or {}
+                    if base.get("state_sha256") not in mapping:
+                        raise ProjectIntegrityError(
+                            f"MIGRATION_RUN_BASE: {relative} names an unknown legacy version"
+                        )
+                    payload["base"] = {**base, "state_sha256": mapping[base["state_sha256"]]}
+                    _write_immutable(target_root / path.relative_to(staging), _json_bytes(payload))
+                    rewritten.append(relative)
+                    continue
+                if relative == AUTHORED_RECORD_PATH:
+                    # The record owner states where its version identity lives;
+                    # the project layer does not read a state record otherwise.
+                    from archflow.state.state_record import rewrite_base_digest
+
+                    payload = _parse_json_document(data, relative)
+                    restated = rewrite_base_digest(payload, mapping)
+                    if restated != payload:
+                        _write_immutable(
+                            target_root / path.relative_to(staging), _json_bytes(restated),
+                        )
+                        rewritten.append(relative)
+                        continue
+                if relative.endswith(".json"):
+                    try:
+                        payload = json.loads(data.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                    for pointer, version, legacy_digest in _legacy_refs_in(payload, legacy_digests):
+                        embedded.append((relative, pointer, version, legacy_digest))
+                _write_immutable(target_root / path.relative_to(staging), data)
+                preserved += 1
+
+        migrated = cls.open(target_root)
+        migrated.verify()
+        closure = migrated.export_transfer(include_contents=False, include_all_runs=True)
+        if closure["format_version"] != target_format_version:
+            raise ProjectIntegrityError(
+                "MIGRATION_VERIFY: the migrated closure does not report the target format"
+            )
+        if plan_project_migration(target_root).migration_required:
+            raise ProjectIntegrityError(
+                "MIGRATION_VERIFY: the migrated project still requires migration"
+            )
+        return ProjectFormatMigration(
+            source_root=source_root,
+            target_root=target_root,
+            project_id=project_id,
+            source_format_version=LEGACY_FORMAT_VERSION,
+            target_format_version=target_format_version,
+            versions=tuple(versions),
+            rewritten=tuple(rewritten),
+            preserved_files=preserved,
+            embedded_legacy_references=tuple(embedded),
+        )
 
     def import_candidate_transfer(self, transfer: Mapping[str, Any]) -> None:
         """Import immutable candidate evidence; never accept, branch or issue."""
