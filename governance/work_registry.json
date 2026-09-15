@@ -693,27 +693,6 @@
         "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes."
       ]
-    },
-    {
-      "id": "GH-46",
-      "stream": "board",
-      "status": "active",
-      "goal": "Board sketch to 3D, path A slice 1: a calibrated sketch frame turns closed shapes into existing sketch proposals and runs the existing candidate; re-sending edits the same elements. No server change.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardSketch.ts",
-        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyboard/board.css",
-        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardSaveQueue.ts",
-        "apps/archflow-studio/web/src/app/Connected.tsx",
-        "apps/archflow-studio/web/src/app/TaskWorkspace.tsx",
-        "apps/archflow-studio/web/src/app/App.tsx",
-        "apps/archflow-studio/web/src/api/client.ts",
-        "apps/archflow-studio/web/src/i18n/messages.en.ts",
-        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts",
-        "apps/archflow-studio/web/test/boardSketch.test.ts",
-        "apps/archflow-studio/web/test/boardSaveQueue.test.ts"
-      ]
     }
   ]
 }
