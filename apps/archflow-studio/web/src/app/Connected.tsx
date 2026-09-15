@@ -21,6 +21,7 @@ import { connection, type ServerIdentity } from "../api/connection";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardDocumentOpen, BoardViewState } from "../workspaces/monkeyboard/boardNavigation";
+import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import { boardUrl, documentUrl, type PageSource } from "../workspaces/monkeyboard/boardScene";
 import { TaskWorkspace } from "./TaskWorkspace";
 import App from "./App";
@@ -50,6 +51,7 @@ type BoardVisit = { page: PageSource; view: BoardViewState };
 export function Connected() {
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | null>(null);
+  const [sketchIntent, setSketchIntent] = useState<BoardSketchRequest | null>(null);
   const [board, setBoard] = useState(() => new URLSearchParams(window.location.search).get("view") === "board");
   const [visit, setVisit] = useState<BoardVisit | null>(null);
   const t = useT();
@@ -60,6 +62,15 @@ export function Connected() {
     // Feedback continues in the conversation; it is not a page visit to return from.
     setVisit(null);
     setDocumentIntent(request);
+    setBoard(false);
+  }, []);
+
+  // A calibrated sketch frame continues in the conversation, exactly as design
+  // feedback does: the board keeps its marks and nothing on it is mutated.
+  const submitBoardSketch = useCallback((request: BoardSketchRequest) => {
+    document.title = "MonkeyArch";
+    setVisit(null);
+    setSketchIntent(request);
     setBoard(false);
   }, []);
 
@@ -133,7 +144,7 @@ export function Connected() {
 
   return board
     ? <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-        <Board onSubmit={submitBoardFeedback} onOpenDocument={openBoardDocument} restoreView={visit?.view ?? null} />
+        <Board onSubmit={submitBoardFeedback} onSketch={submitBoardSketch} onOpenDocument={openBoardDocument} restoreView={visit?.view ?? null} />
       </Suspense>
     : new URLSearchParams(window.location.search).get("embedded") === "tool"
       // An embedding page may name the exact candidate run to open, so that a

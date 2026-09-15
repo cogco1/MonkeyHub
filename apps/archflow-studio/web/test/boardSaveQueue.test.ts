@@ -73,7 +73,7 @@ test("in-flight edits save only the latest draft after the sent snapshot receive
 
   responses[1].resolve(reply(requests[1], 2));
   await saving;
-  assert.deepEqual(queue.getState(), { dirty: false, saving: false, error: null, conflict: false });
+  assert.deepEqual(queue.getState(), { dirty: false, saving: false, error: null, conflict: false, revisionSha256: revision(2) });
   await queue.flush();
   assert.equal(requests.length, 2);
 });
@@ -95,7 +95,7 @@ for (const code of ["BOARD_STALE", "BOARD_CONFLICT", "BOARD_BINDING_MISMATCH"]) 
     await delay(20);
     await assert.rejects(queue.retry(), (error) => error === conflict);
     await assert.rejects(queue.flush(), (error) => error === conflict);
-    assert.deepEqual(queue.getState(), { dirty: true, saving: false, error: conflict, conflict: true });
+    assert.deepEqual(queue.getState(), { dirty: true, saving: false, error: conflict, conflict: true, revisionSha256: revision(0) });
     queue.dispose();
     await tick();
     assert.equal(requests.length, 1, "neither editing, retrying nor leaving the board writes through a conflict");
@@ -126,13 +126,13 @@ test("a transient failure retries the latest draft against the last acknowledged
   queue.change(draft("Latest retained note"));
   await tick();
   assert.equal(requests.length, 2, "editing does not silently restart a failed write");
-  assert.deepEqual(queue.getState(), { dirty: true, saving: false, error: offline, conflict: false });
+  assert.deepEqual(queue.getState(), { dirty: true, saving: false, error: offline, conflict: false, revisionSha256: revision(1) });
 
   await queue.retry();
   assert.equal(requests.length, 3);
   assert.deepEqual(requests.map((body) => body.baseRevisionSha256), [revision(0), revision(1), revision(1)]);
   assert.deepEqual(requests.map((body) => body.elements[0].text), ["Acknowledged note", "Failed snapshot", "Latest retained note"]);
-  assert.deepEqual(queue.getState(), { dirty: false, saving: false, error: null, conflict: false });
+  assert.deepEqual(queue.getState(), { dirty: false, saving: false, error: null, conflict: false, revisionSha256: revision(2) });
 });
 
 test("unchanged canvas captures from app-only updates never dirty the board or duplicate a save", async (t) => {
@@ -216,5 +216,5 @@ test("dispose during a write still saves the final local draft after that write 
   responses[1].resolve(reply(requests[1], 2));
   await saving;
   assert.equal(notifications.length, count);
-  assert.deepEqual(queue.getState(), { dirty: false, saving: false, error: null, conflict: false });
+  assert.deepEqual(queue.getState(), { dirty: false, saving: false, error: null, conflict: false, revisionSha256: revision(2) });
 });

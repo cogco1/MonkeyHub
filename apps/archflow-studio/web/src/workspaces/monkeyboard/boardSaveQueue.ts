@@ -6,6 +6,8 @@ export interface BoardSaveState {
   saving: boolean;
   error: unknown | null;
   conflict: boolean;
+  /** The revision every acknowledged save is chained to; what a board sketch cites. */
+  revisionSha256: string | null;
 }
 
 /** One single-user CAS queue. A response acknowledges its sent snapshot, never the current canvas. */
@@ -25,7 +27,7 @@ export function createBoardSaveQueue(
   let error: unknown | null = null;
   let closed = false;
   const state = (): BoardSaveState => ({ dirty: signature !== acknowledged,
-    saving: writing !== null, error, conflict: isBoardConflict(error) });
+    saving: writing !== null, error, conflict: isBoardConflict(error), revisionSha256: revision });
   const publish = () => { if (!closed) onState(state()); };
   const clearTimer = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; };
 

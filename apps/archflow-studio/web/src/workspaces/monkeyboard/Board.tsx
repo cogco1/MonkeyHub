@@ -5,7 +5,7 @@ import type { AppState, BinaryFiles, DataURL, ExcalidrawImperativeAPI, Excalidra
 import "@excalidraw/excalidraw/index.css";
 
 import { studio } from "../../api/client";
-import type { BoardDto, SourceDocumentDto } from "../../api/generated";
+import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/generated";
 import { usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
@@ -13,6 +13,7 @@ import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedb
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { BoardSketchError, calibrateSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchSummary, type BoardSketchRequest, type SketchFrameData } from "./boardSketch";
 import "./board.css";
 
 const copy = {
@@ -61,6 +62,41 @@ const replacementCopy = {
     updated: "«{name}» 已更新", updatedMore: "«{name}» 已更新 · 另有 {count} 页已更新", view: "查看",
     workCopy: "获取可编辑副本", workCopyHint: "可编辑副本" },
 };
+
+const sketchCopy = {
+  en: { newFrame: "New sketch frame", frameName: "Sketch", panel: "Sketch frame", level: "Level", storeyHeight: "Storey height (m)",
+    scale: "Scale", uncalibrated: "Not calibrated — select one straight line inside the frame and enter its real length.",
+    calibrated: "1 m = {units} board units · frame {w} × {h} m", metres: "Known length (m)", calibrate: "Set scale",
+    send: "Send to 3D", sending: "Sending sketch…", empty: "Draw at least one closed shape inside the frame.",
+    skipped: "{count} object(s) were not sent (open strokes, arrows or text stay on the board).", noLevels: "The project has no levels yet; the ground level will be created on first send." },
+  "zh-CN": { newFrame: "新建草图框", frameName: "草图", panel: "草图框", level: "楼层", storeyHeight: "层高（米）",
+    scale: "比例", uncalibrated: "尚未标定——选中框内一条直线，输入它的真实长度。",
+    calibrated: "1 米 = {units} 画板单位 · 框 {w} × {h} 米", metres: "已知长度（米）", calibrate: "设定比例",
+    send: "起模到 3D", sending: "正在发送草图…", empty: "请先在框内画至少一个闭合形状。",
+    skipped: "{count} 个对象未发送（开放线条、箭头和文字留在画板上）。", noLevels: "项目还没有楼层；首次发送时会创建地面层。" },
+};
+
+/** The one sketch frame a panel can act on, and the dimension line selected with it. */
+type SketchSelection = { frame: ExcalidrawElement; data: SketchFrameData; line: ExcalidrawElement | null };
+
+// A frame is the panel's subject when it is selected itself or holds the selection.
+function sketchSelectionOf(elements: readonly ExcalidrawElement[], selectedIds: AppState["selectedElementIds"]): SketchSelection | null {
+  const selected = elements.filter((element) => !element.isDeleted && selectedIds[element.id]);
+  if (selected.length === 0) return null;
+  const frames = new Set<string>();
+  for (const element of selected) {
+    if (sketchFrameData(element) !== null) frames.add(element.id);
+    else if (element.frameId) frames.add(element.frameId);
+    else return null;
+  }
+  if (frames.size !== 1) return null;
+  const frame = elements.find((element) => element.id === [...frames][0] && sketchFrameData(element) !== null);
+  const data = frame && sketchFrameData(frame);
+  if (!frame || !data) return null;
+  const lines = selected.filter((element) => (element.type === "line" || element.type === "arrow")
+    && element.frameId === frame.id && (element as { points?: readonly unknown[] }).points?.length === 2);
+  return { frame, data, line: lines.length === 1 ? lines[0] : null };
+}
 
 /** One live update notice at a time: the newest page named, the rest counted. */
 type BoardUpdateNotice = { fileName: string; others: number; sources: PageSource[] };
@@ -233,8 +269,10 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
   return { files, failures };
 }
 
-export default function MonkeyBoard({ onSubmit, onOpenDocument, restoreView = null }: {
+export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restoreView = null }: {
   onSubmit: (request: BoardDesignRequest) => void;
+  /** Hand one calibrated sketch frame to the App, which runs it as a sketch proposal. */
+  onSketch: (request: BoardSketchRequest) => void;
   /** Hand one registered page to the existing document editor, with this place on the board. */
   onOpenDocument?: (open: BoardDocumentOpen) => void;
   /** The place a returning operator left, when this board is being reopened. */
@@ -256,7 +294,7 @@ export default function MonkeyBoard({ onSubmit, onOpenDocument, restoreView = nu
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
   }, [attempt]);
-  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onOpenDocument={onOpenDocument} restoreView={restoreView} />;
+  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} restoreView={restoreView} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
@@ -264,9 +302,10 @@ export default function MonkeyBoard({ onSubmit, onOpenDocument, restoreView = nu
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onOpenDocument, restoreView }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, restoreView }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
   onSubmit: (request: BoardDesignRequest) => void;
+  onSketch: (request: BoardSketchRequest) => void;
   onOpenDocument?: (open: BoardDocumentOpen) => void;
   restoreView: BoardViewState | null;
 }) {
@@ -313,7 +352,12 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const [update, setUpdate] = useState<BoardUpdateNotice | null>(null);
   const [previewFailed, setPreviewFailed] = useState(failures.length > 0);
   const [sourceError, setSourceError] = useState("");
-  const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false });
+  const [sketchSelection, setSketchSelection] = useState<SketchSelection | null>(null);
+  const sketchKey = useRef("");
+  const [sketchLevels, setSketchLevels] = useState<FrameLevelDto[] | null>(null);
+  const [sketchMetres, setSketchMetres] = useState("");
+  const [sketchSending, setSketchSending] = useState(false);
+  const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false, revisionSha256: board.revisionSha256 });
   const [queue] = useState(() => createBoardSaveQueue(board, studio.saveBoard, (state) => {
     if (alive.current) setSaveState(state);
   }));
@@ -330,11 +374,27 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const next = appState.editingTextElement || appState.newElement || appState.selectionElement || appState.isResizing || appState.isRotating
       ? null : feedbackContext(elements, appState.selectedElementIds, documentsRef.current);
     setContext((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+    // The panel follows the selected sketch frame; only what it shows is compared,
+    // so dragging a shape inside the frame does not re-render it on every pointer move.
+    const sketch = sketchSelectionOf(elements, appState.selectedElementIds);
+    const key = sketch === null ? ""
+      : `${sketch.frame.id}|${Math.round(sketch.frame.width)}x${Math.round(sketch.frame.height)}|${JSON.stringify(sketch.data)}|${sketch.line?.id ?? ""}`;
+    if (key === sketchKey.current) return;
+    sketchKey.current = key;
+    setSketchSelection(sketch);
   };
   useEffect(() => {
     const api = canvas.current;
     if (api) updateContext(api.getSceneElements(), api.getAppState());
   }, [documents]);
+  useEffect(() => {
+    if (sketchSelection === null || sketchLevels !== null) return;
+    let live = true;
+    // An unmodelled project has no frame yet; the panel then offers the frame's
+    // own level alone and says the ground level is created on first send.
+    void studio.frame().then((frame) => { if (live) setSketchLevels(frame.levels); }, () => { if (live) setSketchLevels([]); });
+    return () => { live = false; };
+  }, [sketchSelection, sketchLevels]);
   const capture = useCallback((elements: readonly ExcalidrawElement[]) => {
     if (!initialized.current) return;
     const invalid = records(elements).some((element) => element.type === "image" && (!imageSource(element) || !findSource(documentsRef.current, imageSource(element)!)));
@@ -733,6 +793,72 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     capture(elements);
     root.current?.querySelector<HTMLElement>(".excalidraw")?.focus();
   };
+  // One sketch frame carries the only scene-to-metres affine there is. It is an
+  // ordinary Excalidraw frame, so it is saved, undone and versioned like the
+  // rest of the board; nothing about it is kept outside the scene.
+  const newSketchFrame = () => serial(async () => {
+    closeActions();
+    const api = canvas.current;
+    if (!api || !ready) return;
+    let levelId = "ground";
+    try { const frame = await studio.frame(); levelId = frame.levels[0]?.levelId ?? "ground"; }
+    catch { /* an unmodelled project: the App prepares it on first send */ }
+    if (!alive.current || !canvas.current) return;
+    const position = nextDocumentPosition(records(api.getSceneElements()));
+    const count = api.getSceneElements().filter((element) => sketchFrameData(element) !== null).length + 1;
+    const id = crypto.randomUUID();
+    const additions = convertToExcalidrawElements([{ type: "frame", id, children: [], ...position, width: 800, height: 600,
+      name: `${sketchCopy[language].frameName} ${count}`, customData: { sketch: newSketchFrameData(levelId) } }], { regenerateIds: false });
+    const elements = [...api.getSceneElementsIncludingDeleted(), ...additions];
+    api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    api.updateScene({ appState: { selectedElementIds: { [id]: true } }, captureUpdate: CaptureUpdateAction.NEVER });
+    capture(elements);
+    api.scrollToContent(additions, { fitToContent: true, animate: false });
+  });
+  // Every panel edit is written back through Excalidraw, so it is saved with the
+  // board and undone with Ctrl+Z like any other change to the drawing.
+  const updateSketchFrame = (frame: ExcalidrawElement, data: SketchFrameData) => {
+    const api = canvas.current;
+    if (!api || !ready || queue.getState().conflict) return;
+    const elements = api.getSceneElementsIncludingDeleted().map((element) => element.id === frame.id
+      ? newElementWith(element, { customData: { ...element.customData, sketch: data } }) : element);
+    api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+    capture(elements);
+  };
+  const calibrateSketch = () => {
+    const selection = sketchSelection;
+    if (!selection?.line) return;
+    try {
+      updateSketchFrame(selection.frame, calibrateSketchFrame(selection.data, selection.line, Number(sketchMetres)));
+      setSketchMetres("");
+    } catch (cause) { setNotice(errorText(cause)); }
+  };
+  const sendSketch = async () => {
+    const frame = sketchSelection?.frame;
+    if (!frame || sketchSending) return;
+    busyRef.current = true; setSketchSending(true);
+    try {
+      // The proposal cites the revision the board was saved at, so the marks it
+      // was read from can always be found again.
+      await queue.flush();
+      const api = canvas.current;
+      if (!api || !alive.current) return;
+      const live = api.getSceneElements().find((element) => element.id === frame.id) ?? frame;
+      const data = sketchFrameData(live);
+      if (!data) throw new BoardSketchError("BOARD_SKETCH_FRAME_INVALID", sketchCopy[language].panel);
+      const conversion = sketchActionsFromFrame(api.getSceneElements(), live);
+      const revision = queue.getState().revisionSha256;
+      const frameName = (live as { name?: string | null }).name ?? sketchCopy[language].frameName;
+      if (conversion.skipped.length > 0) setNotice(sketchCopy[language].skipped.replace("{count}", String(conversion.skipped.length)));
+      onSketch({ projectId: board.projectId, frameId: live.id, frameName, boardRevisionSha256: revision,
+        levelId: data.levelId, sketches: conversion.sketches, skipped: conversion.skipped,
+        summary: sketchSummary(frameName, conversion, data, revision) });
+    } catch (error) {
+      setNotice(error instanceof BoardSketchError
+        ? (error.code === "BOARD_SKETCH_EMPTY" ? sketchCopy[language].empty : error.message)
+        : errorText(error));
+    } finally { busyRef.current = false; if (alive.current) setSketchSending(false); }
+  };
   const exitCrit = useCallback(() => {
     const api = canvas.current;
     if (api && previousTool.current) api.updateScene({ appState: { activeTool: previousTool.current }, captureUpdate: CaptureUpdateAction.NEVER });
@@ -770,6 +896,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         <div className="monkeyboard-actions-panel" role="group" aria-label={boardText.more}>
           <button disabled={!ready} onClick={() => canvas.current?.scrollToContent(undefined, { fitToContent: true, animate: false })}>{text.fit}</button>
           <button disabled={!ready || busy || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>
+          <button disabled={!ready || busy || saveState.conflict} onClick={() => { void newSketchFrame(); }}>{sketchCopy[language].newFrame}</button>
           <button disabled={!ready} onClick={enterCrit}>{text.crit}</button>
           <button type="button" disabled={!ready || busy || saveState.conflict || !hasAnnotations} onClick={clearAnnotations} title={text.clearAnnotationsHint}>{text.clearAnnotations}</button>
           <button disabled={!ready || busy || saveState.conflict} onClick={() => { closeActions(); void queue.flush().catch(() => {}); }}>{text.save}</button>
@@ -789,6 +916,18 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     {(previewFailed || sourceError) && <div className="monkeyboard-alert" role="alert"><span>{previewFailed ? text.previewError : `${text.sourceError} ${sourceError}`}</span><button onClick={retryVisuals} disabled={busy}>{text.refresh}</button></div>}
     {notice && <div className="monkeyboard-alert" role="alert"><span>{notice}</span><button onClick={() => setNotice("")} aria-label={text.dismiss}>×</button></div>}
     {update && <div className="monkeyboard-alert monkeyboard-update" role="status"><span>{updateNoticeText(update, language)}</span><span className="monkeyboard-update-actions"><button onClick={focusUpdate}>{replacementCopy[language].view}</button><button onClick={() => setUpdate(null)} aria-label={text.dismiss}>×</button></span></div>}
+    {!critMode && sketchSelection && <div className="monkeyboard-sketch" role="group" aria-label={sketchCopy[language].panel}>
+      <strong>{(sketchSelection.frame as { name?: string | null }).name ?? sketchCopy[language].panel}</strong>
+      <label>{sketchCopy[language].level}<select value={sketchSelection.data.levelId} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, levelId: event.target.value })}>{[...new Set([...(sketchLevels ?? []).map((level) => level.levelId), sketchSelection.data.levelId])].map((levelId) => <option key={levelId} value={levelId}>{levelId}</option>)}</select></label>
+      <label>{sketchCopy[language].storeyHeight}<input type="number" min={0.1} step={0.1} value={sketchSelection.data.storeyHeight} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value) && value > 0) updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, storeyHeight: value }); }} /></label>
+      <label>{sketchCopy[language].metres}<input type="number" min={0} step={0.01} value={sketchMetres} disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null} onChange={(event) => setSketchMetres(event.target.value)} /></label>
+      <button type="button" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null || !(Number(sketchMetres) > 0)} onClick={calibrateSketch}>{sketchCopy[language].calibrate}</button>
+      <p className="monkeyboard-sketch-scale">{sketchSelection.data.metresPerUnit === null ? sketchCopy[language].uncalibrated
+        : sketchCopy[language].calibrated.replace("{units}", String(Math.round(1 / sketchSelection.data.metresPerUnit)))
+          .replace("{w}", (sketchSelection.frame.width * sketchSelection.data.metresPerUnit).toFixed(1))
+          .replace("{h}", (sketchSelection.frame.height * sketchSelection.data.metresPerUnit).toFixed(1))}{sketchLevels?.length === 0 ? ` · ${sketchCopy[language].noLevels}` : ""}</p>
+      <button type="button" className="monkeyboard-primary" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.data.metresPerUnit === null} onClick={() => { void sendSketch(); }}>{sketchSending ? sketchCopy[language].sending : sketchCopy[language].send}</button>
+    </div>}
     <div className="monkeyboard-body">
       <aside id="monkeyboard-project-documents" className="monkeyboard-sources" aria-label={text.sources} hidden={!sourcesOpen}>
         <div className="monkeyboard-source-heading"><h2>{text.sources} · {documents.length}</h2><button aria-label={boardText.hideSources} onClick={() => { setSourcesOpen(false); root.current?.closest(".monkeyboard")?.querySelector<HTMLButtonElement>("[aria-controls=monkeyboard-project-documents]")?.focus(); }}>×</button></div>
