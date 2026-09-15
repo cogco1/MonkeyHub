@@ -6179,6 +6179,63 @@
         "apps/monkeyfab/tests/test_send.py"
       ],
       "notes": "User-requested repository consolidation. Import the existing MonkeyFab implementation at 6128f99c8fbcc5db41539a225386a6495fa6c5ab; retain its CLI and algorithm ownership. No current core, modeling or drawing owner provides print preparation, so this registers the existing capability instead of adding another implementation."
+    },
+    {
+      "module_id": "studio.study",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+      "purpose": "Experimental API for retaining and inspecting corrected precedent-page trace evidence; its geometric rules are research proposals awaiting method and compatibility review.",
+      "owns": [
+        "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
+        "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
+        "explicit correction against the current Study revision and cold reads that report source or derivation mismatch"
+      ],
+      "does_not_own": [
+        "source document import and byte identity (studio.artifacts)",
+        "Board scenes (studio.board), model proposal execution or canonical design state",
+        "image-model tracing, a user-facing Study workspace or validated architectural research methods"
+      ],
+      "inputs": [
+        "ProjectBinding",
+        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref"
+      ],
+      "outputs": [
+        "StudyView with retained EvidenceLedger@1 and recomputed CompositionGraph@1",
+        "StudyViewDto"
+      ],
+      "public_api": [
+        "POST /api/studies",
+        "GET /api/studies/{study_id}",
+        "save_study",
+        "read_study"
+      ],
+      "depends_on": [
+        "studio.artifacts",
+        "studio.binding",
+        "contracts.canonical",
+        "project.ports",
+        "project.repository",
+        "project.refs",
+        "project.record_kinds"
+      ],
+      "used_by": [
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py"
+      ],
+      "invariants": [
+        "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
+        "only confirmed traces contribute geometric relations; proposed and rejected evidence stays inspectable",
+        "stale corrections and competing retained revision heads are refused",
+        "source mismatch or changed derivations are reported on cold read; unversioned rules currently do not guarantee older ledger readability"
+      ],
+      "status": "provisional",
+      "source_paths": [
+        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_study.py"
+      ],
+      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Before merge, resolve source revision pinning and retained-method compatibility, and review page metric normalization and unvalidated similarity thresholds; no architectural method is endorsed by this registration."
     }
   ]
 }
