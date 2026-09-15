@@ -15,6 +15,132 @@
       ]
     },
     {
+      "id": "GH-127",
+      "stream": "architecture",
+      "status": "active",
+      "goal": "MonkeyHub is the application: name the Project Runtime as the internal project-scoped backend boundary, fold shared app infrastructure and the three workspaces into the Hub frontend one at a time, and delete the legacy Studio web shell once nothing depends on it. Lanes land in order; #46 and #90 workspace semantics are not reopened.",
+      "depends_on": [],
+      "write_scope": [
+        "docs/PROJECT_RUNTIME.md",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+        "apps/monkeyhub/",
+        "apps/archflow-studio/",
+        "README.md",
+        ".claude/launch.json",
+        "tools/package_monkeyapps.py",
+        ".github/workflows/verify.yml",
+        "scripts/dev/"
+      ],
+      "lanes": [
+        {
+          "id": "runtime-contract",
+          "issue": "#127 Phase 1",
+          "status": "active",
+          "branch": "claude/gh127-runtime-contract",
+          "worktree": "workspace/worktrees/claude-gh127-runtime-contract",
+          "base_ref": "a7c56b92d4fe4088f271e607f82941a98f7a0ef6",
+          "contributor": "Claude Opus worker",
+          "reviewer": "Claude Fable, then the repository owner",
+          "handoff": "Docs and registry only: declare the Project Runtime, what the Hub supplies, what it owns and does not own, identity, isolation, the direct development start, and the rule that the legacy Studio web shell takes no new product-level behavior. No route, wire, package or module-id rename.",
+          "modules": [
+            "studio.shell",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "docs/PROJECT_RUNTIME.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "apps/monkeyhub/README.md",
+            "apps/archflow-studio/README.md",
+            "apps/archflow-studio/api/archflow_studio_api/__init__.py",
+            "apps/monkeyhub/launch-hub.ps1",
+            "apps/monkeyhub/installer/README.md"
+          ],
+          "depends_on": []
+        },
+        {
+          "id": "shell-infra",
+          "issue": "#127 Phase 2",
+          "status": "planned",
+          "branch": null,
+          "worktree": null,
+          "base_ref": null,
+          "contributor": null,
+          "reviewer": "Claude Fable, then the repository owner",
+          "handoff": "2a: move apps/archflow-studio/web to apps/monkeyhub/web with the Hub shell folded in, behavior unchanged. 2b: one URL router, ProjectContext with one runtime client per open project, one settings authority, one catalog pair, one failure and loading surface. Starts after runtime-contract is done and PRs #113, #115 and #116 have merged.",
+          "modules": [
+            "hub.shell",
+            "studio.web.shell",
+            "studio.board",
+            "studio.intent"
+          ],
+          "write_scope": [],
+          "depends_on": [
+            "GH-127/runtime-contract"
+          ]
+        },
+        {
+          "id": "board",
+          "issue": "#127 Phase 3a",
+          "status": "planned",
+          "branch": null,
+          "worktree": null,
+          "base_ref": null,
+          "contributor": null,
+          "reviewer": "Claude Fable, then the repository owner",
+          "handoff": "MonkeyBoard rendered at /project/:runtimeId/board from ProjectContext; Board-to-App intent handoff becomes context state; #46 and #90 semantics untouched.",
+          "modules": [
+            "studio.board",
+            "hub.shell"
+          ],
+          "write_scope": [],
+          "depends_on": [
+            "GH-127/shell-infra"
+          ]
+        },
+        {
+          "id": "arch-diagram",
+          "issue": "#127 Phase 3b",
+          "status": "planned",
+          "branch": null,
+          "worktree": null,
+          "base_ref": null,
+          "contributor": null,
+          "reviewer": "Claude Fable, then the repository owner",
+          "handoff": "App.tsx and Stage.tsx become the project workspace module bound to ProjectContext at /arch and /diagram; DocumentCanvas receives its inputs from the context; useSession, useCandidateRuns and the transcript become the context's.",
+          "modules": [
+            "studio.web.shell",
+            "studio.intent",
+            "studio.candidate",
+            "hub.shell"
+          ],
+          "write_scope": [],
+          "depends_on": [
+            "GH-127/board"
+          ]
+        },
+        {
+          "id": "retire-studio-shell",
+          "issue": "#127 Phase 4",
+          "status": "planned",
+          "branch": null,
+          "worktree": null,
+          "base_ref": null,
+          "contributor": null,
+          "reviewer": "Claude Fable, then the repository owner",
+          "handoff": "Delete Connected, TaskWorkspace, the embedded-mode branches, the host bridge and the Hub iframe code; the runtime stops serving a UI; then the naming decisions (forwarding segment, service id, server name, package directory) are made together and once.",
+          "modules": [
+            "studio.web.shell",
+            "hub.shell",
+            "studio.shell"
+          ],
+          "write_scope": [],
+          "depends_on": [
+            "GH-127/arch-diagram"
+          ]
+        }
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
