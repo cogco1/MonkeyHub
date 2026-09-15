@@ -49,7 +49,7 @@ MonkeyArch（ArchFlow Studio）是当前的工作界面和实验环境。先让�
 
 每轮从一项实际请求开始，例如“接着刚才的方案改入口”。先看用户原本在哪里重复解释、等待或修补，再修最直接的原因，交回模型让用户继续用。一个可用改进不必等待整套研究或产品完备。
 
-评价以整项建筑任务为单位：构件是否承担所需功能、组织与依赖是否正确、连续修改后是否仍可用，人能否接手并尝试不同做法。可编辑物件数、关系条数和首次生成成功不替代这些结果。计入系统新增的设置、确认、检查与修补成本；节省操作和扩大设计能力分别观察。具体比较方式见 [RESEARCH_POSITIONING.md](RESEARCH_POSITIONING.md)。
+评价以整项建筑任务为单位：构件是否承担所需功能、组织与依赖是否正确、连续修改后是否仍可用，人能否接手并尝试不同做法。可编辑物件数、关系条数和首次生成成功不替代这些结果。计入系统新增的设置、确认、检查与修补成本；节省操作和扩大设计能力分别观察。
 
 研究比较采用认真配置的既有软件及合适插件，包含首次准备和后续改稿的成本，不拿散件模型或一次失败演示充当对照。没有实际比较，不宣布优越性；没有新收益，不通过扩大案例规模来掩盖。
 
@@ -65,4 +65,4 @@ ArchFlow 探索人与 AI 共同工作的建筑设计基础设施。它从真实�
 
 ArchFlow explores infrastructure for people and AI to work on architectural design together. It starts with the repeated explanation, manual transfer and repair that tools leave to architects, and asks how removing that work can make ideas easier to develop, inspect and revise. MonkeyArch is the current environment for testing these methods. Its value is established through what people can do with it, not the number of mechanisms behind it.
 
-实现见 [ARCHITECTURE.md](ARCHITECTURE.md)，下一项开发见 [DYNAMIC_MAP.md](DYNAMIC_MAP.md)，研究与比较见 [RESEARCH_POSITIONING.md](RESEARCH_POSITIONING.md)。
+实现与评价边界见 [ARCHITECTURE.md](ARCHITECTURE.md)，下一项开发见 [DYNAMIC_MAP.md](DYNAMIC_MAP.md)。

@@ -198,8 +198,8 @@ the architect changes that decision; ask about a real conflict, not an internal 
    P104 and P106 retired unbuilt with the
    monument lane on 2026-09-05.
 
-The [benchmark proposal](RESEARCH_POSITIONING.md) evaluates task completion,
-relationship errors, repair and handover cost. Separate executing supplied rules,
+Evaluation should cover task completion, relationship errors, repair and handover
+cost. Separate executing supplied rules,
 recovering relationships in a supported case, and deriving a project-specific method.
 Stage completion states the maturity and unresolved work of the project; it does not
 substitute for these observations or turn a Studio candidate into an issued version.
@@ -208,7 +208,8 @@ archived controller or build a new one as a prerequisite for this revision.
 
 Document roles stay small: VISION explains the purpose, this file explains the
 implemented shape and development order, the module registry owns contracts, the
-work registry tracks live assignments, and RESEARCH_POSITIONING defines comparisons.
+work registry tracks live assignments. Private research and application drafts are
+kept outside the public source tree.
 An idea here becomes implementation work only with a concrete task and write scope.
 
 ## Rules that hold the shape
@@ -219,13 +220,14 @@ An idea here becomes implementation work only with a concrete task and write sco
   acceptance crossed a boundary (AGENTS.md).
 - **One owner per capability.** The registry names it; `archcheck` fails a second definition,
   a copied helper body, a missing public symbol or a missing test.
-- **The spine never imports `archive/`.** Archived lanes run from the archive and return only as
-  folds (CANONICAL_SPINE.md §3).
+- **The spine never imports retired lanes.** Their source is retained outside the
+  public checkout; a capability returns only through its current owner.
 - **Layer imports and write sites** are fenced by `governance/architecture_policy.json`.
 
 ## What is not on the spine
 
-`archive/` holds the agent-portfolio lane, the Pantheon and Parthenon tools, the design
-controller and its loops, the sandbox/voxel lane, the research and experiment lane and the v3
-diagnostic, each runnable from there with its own tests. Retained data under `probes/` and the
-external workspace never moved.
+The retired agent-portfolio lane, monument tools, design controller, sandbox/voxel
+lane, research experiments and v3 diagnostic are retained in a local archive outside
+the public checkout. A public clone does not include that archive or its tests.
+`CANONICAL_SPINE.md` records the historical consolidation layout, not the current
+checkout layout. Retained data under `probes/` and the external workspace never moved.
