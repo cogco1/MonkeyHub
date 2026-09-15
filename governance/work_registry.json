@@ -3,6 +3,21 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-55",
+      "stream": "runtime",
+      "status": "active",
+      "goal": "Bind the authenticated actor and origin the request boundary resolved to the existing explicit candidate acceptance, as retained AuditEvent@1 evidence readable after restart; propose/reject and formal issue remain unaudited.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/design_history.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/episodes.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/design_history.py",
+        "archflow/project/record_kinds.py"
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
@@ -487,6 +502,7 @@
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "tests/monkeymonitor/test_web_traces.py",
             "monkeymonitor/server.py",
+            "monkeymonitor/trace.py",
             "tests/monkeymonitor/test_server.py",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/monkeyhub_api/models.py",
@@ -564,6 +580,29 @@
           ],
           "depends_on": [],
           "blocked_reason": "Awaiting a new-user blind walkthrough of the Board reference-to-model-feedback workflow."
+        },
+        {
+          "id": "studio-api-integration",
+          "issue": "#55 / #73 shared Studio API boundary integration",
+          "status": "active",
+          "branch": "codex/studio-api-integration",
+          "worktree": "cloud/studio-api-integration",
+          "base_ref": "c4dbd5f08490808a0aa5aaaf2096dbeee2c390a4",
+          "contributor": "ChatGPT coding session",
+          "reviewer": "Repository owner",
+          "handoff": "Own only the shared Studio binding, route mount and generated OpenAPI client needed to integrate active issue slices; issue semantics stay with GH-55 and GH-73.",
+          "modules": [
+            "studio.binding",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+            "apps/archflow-studio/web/src/api/generated/index.ts",
+            "apps/archflow-studio/web/src/api/generated/sdk.gen.ts",
+            "apps/archflow-studio/web/src/api/generated/types.gen.ts"
+          ],
+          "depends_on": []
         }
       ]
     },

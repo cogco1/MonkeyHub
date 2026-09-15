@@ -1625,7 +1625,14 @@ class FilesystemProjectRepository:
             if type(row["size"]) is not int or len(data) != row["size"] or _sha256(data) != row["sha256"]:
                 raise ProjectIntegrityError(f"TRANSFER_DIGEST_MISMATCH: {path}")
             parts = PurePosixPath(path).parts
-            if path.endswith(".json") and path not in (
+            # A run's workspace holds native exports, and some of those exports
+            # are themselves JSON. They are artifacts, not records: the sender
+            # only admits one a retained receipt names, and ``read_transfer_file``
+            # already serves it by area and digest. The content-addressed record
+            # filename is required of records, canonical state and events alone,
+            # so applying it here too would refuse an archive this code wrote.
+            workspace = parts[0] == "runs" and len(parts) >= 4 and parts[2] == "workspaces"
+            if path.endswith(".json") and not workspace and path not in (
                 "project.json", "design/branches.json", "input/runner/state-record.json",
                 "input/runner/seats.json", "input/runner/program-sheet.json",
             ) and not (parts[0] == "runs" and len(parts) == 3 and parts[2] == "run.json"):
