@@ -16,7 +16,7 @@ export type BoardDesignRequest = {
 };
 
 export class BoardFeedbackError extends Error {
-  constructor(readonly code: "SOURCE_CHANGED" | "MODEL_REQUIRED" | "MODEL_CHANGED" | "EMPTY_COMMENT", message: string) {
+  constructor(readonly code: "SOURCE_CHANGED" | "REFERENCE_CHANGED" | "MODEL_REQUIRED" | "MODEL_CHANGED" | "EMPTY_COMMENT", message: string) {
     super(message); this.name = "BoardFeedbackError";
   }
 }
@@ -66,7 +66,7 @@ export async function prepareBoardDesignRequest(selection: BoardFeedbackSelectio
     const currentPage = currentDocument?.pages.find((value) => value.pageIndex === reference.source.pageIndex);
     if (!currentDocument || currentDocument.projectId !== projectId || !currentPage
       || !samePageGeometry(currentPage, reference.page)) {
-      throw new BoardFeedbackError("SOURCE_CHANGED", "A selected concept reference changed or is no longer available. Select the reference again.");
+      throw new BoardFeedbackError("REFERENCE_CHANGED", "A selected concept reference changed or is no longer available. Select the reference again.");
     }
     return { selection: reference, document: currentDocument, page: currentPage };
   });
@@ -93,7 +93,7 @@ export async function prepareBoardDesignRequest(selection: BoardFeedbackSelectio
         : new File([referenceFile], referenceFile.name, { type: reference.document.mimeType });
       const visual = await renderDocumentVisual(original, reference.page, annotations.annotations);
       if (annotations.annotations.length > 0 && !visual.annotatedPngBase64) {
-        throw new BoardFeedbackError("SOURCE_CHANGED", "A selected concept reference could not reproduce its saved annotation overlay.");
+        throw new BoardFeedbackError("REFERENCE_CHANGED", "A selected concept reference could not reproduce its saved annotation overlay.");
       }
       const input: DocumentVisualInputDto = {
         role: "reference",

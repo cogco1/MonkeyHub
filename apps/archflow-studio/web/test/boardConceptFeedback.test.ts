@@ -28,10 +28,16 @@ const linkedReferenceDocument: SourceDocumentDto = {
   modelSourceBindingRef: "binding-reference",
   sourceStageRef: "stage-1",
 };
+const secondReferenceDocument: SourceDocumentDto = {
+  ...referenceDocument, runId: "second-reference-run", assetSha256: digest("c"), fileName: "Courtyard.png",
+  revisionRef: "project://project/runs/second-reference-run/records/reference.json",
+};
 const targetSource = { runId: targetDocument.runId, assetSha256: targetDocument.assetSha256,
   revisionRef: targetDocument.revisionRef!, pageIndex: 0 };
 const referenceSource = { runId: referenceDocument.runId, assetSha256: referenceDocument.assetSha256,
   revisionRef: referenceDocument.revisionRef!, pageIndex: 0 };
+const secondReferenceSource = { runId: secondReferenceDocument.runId, assetSha256: secondReferenceDocument.assetSha256,
+  revisionRef: secondReferenceDocument.revisionRef!, pageIndex: 0 };
 
 function element(type: ExcalidrawElement["type"], id: string, changes: Record<string, unknown> = {}): ExcalidrawElement {
   return { type, id, x: 0, y: 0, width: 100, height: 100, angle: 0, isDeleted: false,
@@ -75,7 +81,105 @@ test("a target mark inside one page frame keeps another model-linked page as exp
 
   assert.throws(() => geometry.createBoardFeedback([target, reference, circle], { target: true, reference: true, zone: true },
     [targetDocument, linkedReferenceDocument]), (cause: unknown) =>
-      cause instanceof geometry.BoardFeedbackGeometryError && cause.code === "BOARD_FEEDBACK_UNSUPPORTED");
+      cause instanceof geometry.BoardFeedbackGeometryError && cause.code === "BOARD_FEEDBACK_REFERENCE_UNLINKED");
+});
+
+test("a connector drawn between two references stays Board evidence instead of becoming edit-page ink", async (t) => {
+  const geometry = await geometryModule(t);
+  const target = element("image", "target", { width: 1000, height: 500, frameId: "target-frame" });
+  const first = element("image", "reference", { x: 1200, width: 600, height: 600, frameId: "reference-frame" });
+  const second = element("image", "second", { x: 2000, width: 600, height: 600, frameId: "second-frame",
+    customData: { sourceDocument: secondReferenceSource } });
+  const circle = element("ellipse", "zone", { x: 100, y: 100, width: 160, height: 120, frameId: "target-frame" });
+  const toFirst = element("arrow", "link-first", { x: 240, y: 160, points: [[0, 0], [1000, 200]],
+    startBinding: { elementId: "zone" }, endBinding: { elementId: "reference" } });
+  const toSecond = element("arrow", "link-second", { x: 240, y: 160, points: [[0, 0], [1800, 200]],
+    startBinding: { elementId: "zone" }, endBinding: { elementId: "second" } });
+  // Both endpoints sit far to the right of the edit page; as ordinary ink this
+  // arrow could only be refused as outside the page.
+  const between = element("arrow", "between", { x: 1800, y: 300, points: [[0, 0], [200, 0]],
+    startBinding: { elementId: "reference" }, endBinding: { elementId: "second" } });
+  const elements = [target, first, second, circle, toFirst, toSecond, between];
+  const result = geometry.createBoardFeedback(elements, Object.fromEntries(elements.map((item) => [item.id, true])),
+    [targetDocument, linkedReferenceDocument, secondReferenceDocument]);
+
+  assert.deepEqual(result.source, targetSource);
+  assert.equal(result.references?.length, 2);
+  assert.equal(result.annotations.length, 1, "only the target circle reaches the edit page");
+  assert.equal(result.annotations[0].kind, "circle");
+  assert.deepEqual(new Set(result.annotationGroups),
+    new Set(["board:target:link-first", "board:target:link-second", "board:target:between", "board:target:zone"]));
+});
+
+test("a reference's own marks are refused rather than converted against the edit page", async (t) => {
+  const geometry = await geometryModule(t);
+  const target = element("image", "target", { width: 1000, height: 500, frameId: "target-frame" });
+  const reference = element("image", "reference", { x: 1200, width: 600, height: 600, frameId: "reference-frame" });
+  const circle = element("ellipse", "zone", { x: 100, y: 100, width: 160, height: 120, frameId: "target-frame" });
+  const connector = element("arrow", "relationship", { x: 240, y: 160, points: [[0, 0], [1000, 200]],
+    startBinding: { elementId: "zone" }, endBinding: { elementId: "reference" } });
+  // Selecting the reference by its own frame pulls the ink drawn on that page in.
+  const referenceInk = element("freedraw", "reference-ink", { x: 1300, y: 100, frameId: "reference-frame" });
+  const elements = [target, reference, circle, connector, referenceInk];
+  assert.throws(() => geometry.createBoardFeedback(elements, Object.fromEntries(elements.map((item) => [item.id, true])),
+    [targetDocument, referenceDocument]), (cause: unknown) =>
+      cause instanceof geometry.BoardFeedbackGeometryError && cause.code === "BOARD_FEEDBACK_REFERENCE_MARKED");
+});
+
+test("a frame shared by the edit page and a reference keeps the edit page's own marks and ink", async (t) => {
+  const geometry = await geometryModule(t);
+  const target = element("image", "target", { width: 1000, height: 500, frameId: "shared" });
+  const reference = element("image", "reference", { x: 1200, width: 600, height: 600, frameId: "shared" });
+  const circle = element("ellipse", "zone", { x: 100, y: 100, width: 160, height: 120, frameId: "shared" });
+  // Bound to the shared frame, this arrow reaches no reference and stays page ink.
+  const pointer = element("arrow", "pointer", { x: 200, y: 200, points: [[0, 0], [100, 60]],
+    startBinding: { elementId: "shared" }, endBinding: { elementId: "zone" } });
+  const elements = [target, reference, circle, pointer];
+  const ids = Object.fromEntries(elements.map((item) => [item.id, true]));
+  assert.throws(() => geometry.createBoardFeedback(elements, ids, [targetDocument, referenceDocument]),
+    (cause: unknown) => cause instanceof geometry.BoardFeedbackGeometryError
+      && cause.code === "BOARD_FEEDBACK_REFERENCE_UNLINKED",
+    "a shared frame never counts as the reference's own explicit connector");
+
+  const linked = element("arrow", "relationship", { x: 240, y: 160, points: [[0, 0], [1000, 200]],
+    startBinding: { elementId: "zone" }, endBinding: { elementId: "reference" } });
+  const joined = [...elements, linked];
+  const result = geometry.createBoardFeedback(joined, Object.fromEntries(joined.map((item) => [item.id, true])),
+    [targetDocument, referenceDocument]);
+  assert.deepEqual(result.source, targetSource);
+  assert.equal(result.references?.length, 1);
+  assert.deepEqual(result.annotations.map((mark) => mark.id).sort(),
+    ["board:target:pointer:end", "board:target:pointer:shaft", "board:target:zone"],
+    "the pointer drawn on the edit page is still saved as that page's ink");
+});
+
+test("marks on more than one model-linked page name the real mistake instead of ambiguity", async (t) => {
+  const geometry = await geometryModule(t);
+  const target = element("image", "target", { width: 1000, height: 500, frameId: "target-frame" });
+  const reference = element("image", "reference", { x: 1200, width: 600, height: 600, frameId: "reference-frame" });
+  const circle = element("ellipse", "zone", { x: 100, y: 100, width: 160, height: 120, frameId: "target-frame" });
+  const referenceCircle = element("ellipse", "reference-zone", { x: 1300, y: 100, frameId: "reference-frame" });
+  const elements = [target, reference, circle, referenceCircle];
+  assert.throws(() => geometry.createBoardFeedback(elements, Object.fromEntries(elements.map((item) => [item.id, true])),
+    [targetDocument, linkedReferenceDocument]), (cause: unknown) =>
+      cause instanceof geometry.BoardFeedbackGeometryError && cause.code === "BOARD_FEEDBACK_REFERENCE_MARKED");
+});
+
+test("a connector chained onto another connector never stands in for the edit drawing", async (t) => {
+  const geometry = await geometryModule(t);
+  const target = element("image", "target", { width: 1000, height: 500, frameId: "target-frame" });
+  const first = element("image", "reference", { x: 1200, width: 600, height: 600, frameId: "reference-frame" });
+  const second = element("image", "second", { x: 2000, width: 600, height: 600, frameId: "second-frame",
+    customData: { sourceDocument: secondReferenceSource } });
+  const circle = element("ellipse", "zone", { x: 100, y: 100, width: 160, height: 120, frameId: "target-frame" });
+  const toFirst = element("arrow", "link-first", { x: 240, y: 160, points: [[0, 0], [1000, 200]],
+    startBinding: { elementId: "zone" }, endBinding: { elementId: "reference" } });
+  const chained = element("arrow", "chained", { x: 900, y: 300, points: [[0, 0], [1100, 100]],
+    startBinding: { elementId: "link-first" }, endBinding: { elementId: "second" } });
+  const elements = [target, first, second, circle, toFirst, chained];
+  assert.throws(() => geometry.createBoardFeedback(elements, Object.fromEntries(elements.map((item) => [item.id, true])),
+    [targetDocument, linkedReferenceDocument, secondReferenceDocument]), (cause: unknown) =>
+      cause instanceof geometry.BoardFeedbackGeometryError && cause.code === "BOARD_FEEDBACK_REFERENCE_UNLINKED");
 });
 
 test("two model-linked pages without an explicit framed target mark remain ambiguous", async (t) => {
@@ -149,4 +253,18 @@ test("concept references travel as reference visuals while only the exact target
   assert.equal(request.documentVisuals[1].revisionSha256, "reference-rev");
   assert.equal(h.calls.filter((call) => call.method === "write").length, 1, "only target annotations are written");
   assert.equal(h.calls.filter((call) => call.method === "state").length, 1, "the target's declared model remains the sole editing base");
+});
+
+test("a reference page that changed since selection names the reference and writes no annotation", async (t) => {
+  const h = await handoffHarness(t);
+  const selection: BoardFeedbackSelection = {
+    image: {} as BoardFeedbackSelection["image"], document: structuredClone(targetDocument), page: { ...targetPage }, source: { ...targetSource },
+    annotations: [], annotationGroups: [], selectedText: "",
+    references: [{ image: {} as NonNullable<BoardFeedbackSelection["references"]>[number]["image"],
+      document: structuredClone(linkedReferenceDocument), page: { ...referencePage, width: 900 },
+      source: { ...referenceSource }, referenceNote: "note" }],
+  };
+  await assert.rejects(() => h.prepareBoardDesignRequest(selection, "project", "把这段立面往后退"),
+    (cause: unknown) => cause instanceof h.BoardFeedbackError && cause.code === "REFERENCE_CHANGED");
+  assert.equal(h.calls.filter((call) => call.method === "write").length, 0, "a stale reference never writes the edit page");
 });
