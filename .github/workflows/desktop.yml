@@ -320,6 +320,17 @@ jobs:
           if-no-files-found: warn
       - name: Package and native shortcut selection
         run: python -m unittest discover -s tests -p test_package_monkeyapps.py -v
+      # Both PowerShell hosts and a signing library the suite needs, on the only
+      # Windows job there is. The install runs after packaging on purpose: the
+      # candidate's build-input inventory is read from this environment, so a
+      # test dependency installed earlier would appear in the shipped SBOM. The
+      # suite fails rather than skips when the library is missing.
+      - name: Signed release installation
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check cryptography==50.0.0
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_installer_signed_release.py -v
       # A pull request reads the shared cache but never writes it: its key would
       # be scoped to the pull request ref and only evict entries main still uses.
       - uses: actions/cache/save@v4

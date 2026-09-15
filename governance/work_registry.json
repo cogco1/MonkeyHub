@@ -411,7 +411,8 @@
         "apps/monkeyfab/",
         "apps/archflow-studio/api/archflow_studio_api/application/catalog.py",
         "apps/archflow-studio/api/tests/test_catalog.py",
-        "tests/monkeymonitor/test_web_traces.py"
+        "tests/monkeymonitor/test_web_traces.py",
+        "SECURITY.md"
       ],
       "card": "docs/mapping/planning/P115-capability-consolidation.md",
       "acceptance": [
@@ -514,7 +515,8 @@
             "apps/monkeyhub/web/src/api/generated/index.ts",
             "apps/monkeyhub/web/src/api/generated/sdk.gen.ts",
             "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-            "governance/architecture_policy.json"
+            "governance/architecture_policy.json",
+            "SECURITY.md"
           ],
           "depends_on": []
         },

@@ -37,6 +37,7 @@ import io
 import json
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO, Mapping
 
@@ -45,13 +46,17 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from archflow.project.repository import (
+    CURRENT_FORMAT_VERSION,
+    LEGACY_FORMAT_VERSION,
     FilesystemProjectRepository,
     PROJECT_FORMAT_CURRENT,
     PROJECT_FORMAT_SUPPORTED_LEGACY,
+    ProjectIntegrityError,
     ProjectMigrationPlan,
     ProjectRepositoryError,
     inspect_project_format,
     plan_project_migration,
+    _retained_category,
     _write_immutable,
 )
 from archflow.project.refs import require_identifier
@@ -80,7 +85,43 @@ _TRANSFER_KEYS = {
     "files",
     "contents",
 }
+_VERSION_REF_KEYS = frozenset({"project_id", "version", "state_sha256"})
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedVersionReference:
+    """One retained location whose value this build reads as a version identity."""
+
+    file: str
+    json_path: str
+    project_id: str
+    version: int
+    state_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class UnreadableVersionReference:
+    """One retained location with the same key set but a value that does not read.
+
+    It is reported rather than dropped: a location this scan saw and could not
+    interpret is not a location it covered, and a readable ``project_id`` still
+    decides whether the closure belongs to one project.
+    """
+
+    file: str
+    json_path: str
+    project_id: str | None
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class LegacyVersionReferenceScan:
+    project_id: str
+    references: tuple[RetainedVersionReference, ...]
+    unreadable: tuple[UnreadableVersionReference, ...]
+    scanned_documents: int
+    unopened_files: int
 
 
 def _json_bytes(payload: Mapping[str, Any]) -> bytes:
@@ -277,7 +318,167 @@ def _restore_project_archive(
     return repository, manifest
 
 
-def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
+def _json_pointer_token(value: object) -> str:
+    return str(value).replace("~", "~0").replace("/", "~1")
+
+
+def _read_version_reference(
+    value: Mapping[str, Any],
+    *,
+    file: str,
+    path: str,
+) -> RetainedVersionReference | UnreadableVersionReference:
+    """Read one exactly-ProjectVersionRef-shaped mapping, or say why it does not.
+
+    A value that matches the key set but not the field contract is returned as
+    unreadable, carrying whatever part was readable. Dropping it would report
+    the scan as complete at a location it never interpreted, and would let a
+    foreign ``project_id`` leave the closure behind one bad sibling field.
+    """
+
+    raw_project_id = value.get("project_id")
+    raw_version = value.get("version")
+    raw_digest = value.get("state_sha256")
+    project_id = raw_project_id if isinstance(raw_project_id, str) and raw_project_id else None
+    problems: list[str] = []
+    if project_id is None:
+        problems.append("project_id is not a non-empty string")
+    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 0:
+        problems.append("version is not a non-negative integer")
+    if (
+        not isinstance(raw_digest, str)
+        or len(raw_digest) != 64
+        or any(char not in "0123456789abcdef" for char in raw_digest)
+    ):
+        problems.append("state_sha256 is not a 64-character lowercase sha-256")
+    if problems or project_id is None:
+        return UnreadableVersionReference(
+            file=file,
+            json_path=path,
+            project_id=project_id,
+            detail="; ".join(problems),
+        )
+    return RetainedVersionReference(
+        file=file,
+        json_path=path,
+        project_id=project_id,
+        version=int(raw_version),
+        state_sha256=str(raw_digest),
+    )
+
+
+def _collect_legacy_version_references(
+    value: Any,
+    *,
+    file: str,
+    path: str = "",
+) -> tuple[RetainedVersionReference | UnreadableVersionReference, ...]:
+    """Find exact ProjectVersionRef-shaped values without claiming their owner.
+
+    The key set is the only thing readable here without the record's typed
+    owner, so a match is a location, never a decided reference. A match whose
+    fields do not read is still returned, and its children are still walked,
+    because an unreadable value proves nothing about what it contains.
+    """
+
+    found: list[RetainedVersionReference | UnreadableVersionReference] = []
+    if isinstance(value, Mapping):
+        if frozenset(value.keys()) == _VERSION_REF_KEYS:
+            reference = _read_version_reference(value, file=file, path=path or "/")
+            found.append(reference)
+            if isinstance(reference, RetainedVersionReference):
+                # A readable reference's three fields are scalars; nothing nests.
+                return tuple(found)
+        for key, item in value.items():
+            found.extend(
+                _collect_legacy_version_references(
+                    item,
+                    file=file,
+                    path=f"{path}/{_json_pointer_token(key)}",
+                )
+            )
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            found.extend(
+                _collect_legacy_version_references(
+                    item,
+                    file=file,
+                    path=f"{path}/{index}",
+                )
+            )
+    return tuple(found)
+
+
+def _scan_legacy_version_references(
+    plan: ProjectMigrationPlan,
+) -> LegacyVersionReferenceScan | None:
+    """Scan the already-planned retained closure for exact legacy version refs."""
+
+    if (
+        not plan.planned
+        or not plan.migration_required
+        or plan.inspection.format_version != LEGACY_FORMAT_VERSION
+        or plan.target_format_version != CURRENT_FORMAT_VERSION
+    ):
+        return None
+    if plan.project_id is None:
+        raise ProjectIntegrityError(
+            "MIGRATION_REFERENCE_SCAN_REFUSED: planned project identity is missing"
+        )
+
+    repository = FilesystemProjectRepository.open(plan.inspection.root)
+    transfer = repository.export_transfer(include_contents=False, include_all_runs=True)
+    references: list[RetainedVersionReference] = []
+    unreadable: list[UnreadableVersionReference] = []
+    scanned = 0
+    for entry in transfer["files"]:
+        file = entry["path"]
+        if _retained_category(file)[0] == "artifact":
+            # The plan preserves these byte-for-byte and the planner never opens
+            # them; a run workspace holds native exports that are themselves
+            # JSON, and reading one would both claim coverage this scan does not
+            # have and refuse a project on the contents of an opaque artifact.
+            continue
+        data = repository.read_transfer_file(file, entry["sha256"])
+        try:
+            payload = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ProjectIntegrityError(
+                f"MIGRATION_REFERENCE_SCAN_INVALID_JSON: {file}"
+            ) from exc
+        scanned += 1
+        for found in _collect_legacy_version_references(payload, file=file):
+            # A readable project_id refuses whatever the other two fields hold:
+            # gating this on a fully readable value would let one bad digest
+            # carry a foreign identity through as a merely unreadable local one.
+            if found.project_id is not None and found.project_id != plan.project_id:
+                raise ProjectIntegrityError(
+                    "MIGRATION_REFERENCE_SCAN_FOREIGN_PROJECT: "
+                    f"{file}{found.json_path} names {found.project_id!r}"
+                )
+            if isinstance(found, RetainedVersionReference):
+                references.append(found)
+            else:
+                unreadable.append(found)
+
+    def order(item: RetainedVersionReference | UnreadableVersionReference):
+        return item.file, item.json_path
+
+    return LegacyVersionReferenceScan(
+        project_id=plan.project_id,
+        references=tuple(sorted(references, key=order)),
+        unreadable=tuple(sorted(unreadable, key=order)),
+        scanned_documents=scanned,
+        unopened_files=len(transfer["files"]) - scanned,
+    )
+
+
+def _print_migration_plan(
+    plan: ProjectMigrationPlan,
+    *,
+    reference_scan: LegacyVersionReferenceScan | None = None,
+    reference_scan_error: str | None = None,
+) -> None:
     """Print one dry run: what is retained, what a migration would have to do."""
 
     inspection = plan.inspection
@@ -305,6 +506,43 @@ def _print_migration_plan(plan: ProjectMigrationPlan) -> None:
             )
         if plan.orphan_paths:
             print(f"  orphan records not reachable from HEAD: {len(plan.orphan_paths)}")
+    if reference_scan is not None:
+        print("Legacy ProjectVersionRef scan (exact shape only; not migration approval):")
+        print(
+            f"  scanned {reference_scan.scanned_documents} retained JSON document(s); "
+            f"found {len(reference_scan.references)} exact reference(s)."
+        )
+        for reference in reference_scan.references:
+            print(
+                f"  {reference.file} {reference.json_path} -> "
+                f"version {reference.version} {reference.state_sha256}"
+            )
+        if reference_scan.unreadable:
+            print(
+                f"  {len(reference_scan.unreadable)} further location(s) match that "
+                f"key set but hold a value this build cannot read as a project "
+                f"version; none is counted above and none was interpreted:"
+            )
+            for entry in reference_scan.unreadable:
+                print(
+                    f"  {entry.file} {entry.json_path} -> MALFORMED, unchecked: "
+                    f"{entry.detail}"
+                )
+        print(
+            f"  {reference_scan.unopened_files} retained file(s) were not opened: a "
+            f"migration preserves them byte-for-byte, so a project-version identity "
+            f"written inside one is not in this list and preserving the file does not "
+            f"carry it forward."
+        )
+        print(
+            "  Each location is diagnostic evidence only; its typed owner still "
+            "has to confirm migration semantics before any rewrite. A reference "
+            "written in any other shape is not listed here, so this scan does not "
+            "show that every typed reference is mapped."
+        )
+    elif reference_scan_error is not None:
+        print("Legacy ProjectVersionRef scan: REFUSED")
+        print(f"  - {reference_scan_error}")
     for title, lines in (
         ("Required transformations", plan.required_transformations),
         ("Blockers", plan.blockers),
@@ -353,10 +591,20 @@ def main(argv: list[str] | None = None) -> int:
                     PROJECT_FORMAT_CURRENT, PROJECT_FORMAT_SUPPORTED_LEGACY,
                 ) else 2
             plan = plan_project_migration(root)
-            _print_migration_plan(plan)
+            reference_scan = None
+            reference_scan_error = None
+            try:
+                reference_scan = _scan_legacy_version_references(plan)
+            except ProjectRepositoryError as exc:
+                reference_scan_error = str(exc)
+            _print_migration_plan(
+                plan,
+                reference_scan=reference_scan,
+                reference_scan_error=reference_scan_error,
+            )
             # A supported legacy project with no migrator is still a complete
-            # diagnostic; a project that could not be inventoried is not.
-            return 0 if plan.planned else 2
+            # diagnostic only when its exact legacy-reference scan also completes.
+            return 0 if plan.planned and reference_scan_error is None else 2
         if args.export_archive or args.restore_archive:
             if args.state_record or args.seats_file:
                 raise ValueError("archive export/restore cannot be combined with authored initialization inputs")
