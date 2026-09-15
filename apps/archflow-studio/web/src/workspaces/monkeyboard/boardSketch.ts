@@ -62,7 +62,7 @@ export interface BoardSketchRequest {
 }
 
 type Code = "BOARD_SKETCH_SCALE_REQUIRED" | "BOARD_SKETCH_EMPTY" | "BOARD_SKETCH_FRAME_INVALID"
-  | "BOARD_SKETCH_CALIBRATION_INVALID" | "BOARD_SKETCH_ID_COLLISION";
+  | "BOARD_SKETCH_CALIBRATION_INVALID" | "BOARD_SKETCH_ID_COLLISION" | "BOARD_SKETCH_TOO_MANY";
 export class BoardSketchError extends Error {
   constructor(public readonly code: Code, message: string) { super(message); this.name = "BoardSketchError"; }
 }
@@ -107,6 +107,34 @@ export function sketchFrameIds(elements: readonly ExcalidrawElement[]): Set<stri
  */
 export function insideSketchFrame(element: ExcalidrawElement, frameIds: ReadonlySet<string>): boolean {
   return frameIds.has(element.id) || (element.frameId !== null && frameIds.has(element.frameId));
+}
+
+/** A base a document intent names; a sketch names none and takes the current one. */
+export interface BoardDocumentBase { runId: string; sourceStageRef: string | null; stateDigest: string }
+export type BoardHandoff =
+  | { kind: "document"; base: BoardDocumentBase }
+  | { kind: "sketch" }
+  | { kind: "none" };
+
+/**
+ * Which board hand-off the task workspace should open, given whatever the shell
+ * is still holding.
+ *
+ * The shell clears the other one whenever it takes a new hand-off, so both being
+ * set means one of them outlived its journey. The sketch wins that case: it is
+ * the one that would otherwise be dropped in silence, because a document intent
+ * that has already been submitted still looks like a live instruction here.
+ */
+export function boardHandoff(
+  documentIntent: { modelSource: { runId: string; stateDigest: string }; sourceStageRef: string | null } | null | undefined,
+  sketchRequest: BoardSketchRequest | null | undefined,
+): BoardHandoff {
+  if (sketchRequest) return { kind: "sketch" };
+  if (documentIntent) {
+    return { kind: "document", base: { runId: documentIntent.modelSource.runId,
+      sourceStageRef: documentIntent.sourceStageRef, stateDigest: documentIntent.modelSource.stateDigest } };
+  }
+  return { kind: "none" };
 }
 
 /**
@@ -290,10 +318,6 @@ function outlineOf(element: ExcalidrawElement): Outline {
   return simplified.length < 3 ? { reason: "degenerate" } : { points: simplified };
 }
 
-/** The closed outline of one element in scene coordinates, or null when it is not a footprint. */
-export function closedOutline(element: ExcalidrawElement): Point[] | null {
-  return outlineOf(element).points ?? null;
-}
 
 /**
  * Every closed shape inside `frame`, in project metres on the default sketch
@@ -308,13 +332,13 @@ export function sketchActionsFromFrame(elements: readonly ExcalidrawElement[], f
   const toBuilding = ([sx, sy]: Point): Point => [(sx - frame.x) * m, (baseline - sy) * m];
   // Excalidraw keeps frameId while any part of a shape still overlaps the frame,
   // and an arrow-key nudge never revisits membership at all. Only a shape that
-  // is wholly inside the frame is a footprint of it.
-  const frameCenter: Point = [frame.x + frame.width / 2, frame.y + frame.height / 2];
-  const insideFrame = (point: Point): boolean => {
-    const [lx, ly] = frame.angle === 0 ? point : rotate(point, frameCenter, -frame.angle);
-    return lx >= frame.x - 1e-6 && lx <= frame.x + frame.width + 1e-6
-      && ly >= frame.y - 1e-6 && ly <= frame.y + frame.height + 1e-6;
-  };
+  // is wholly inside the frame is a footprint of it. Containment is measured in
+  // the same scene axes `toBuilding` maps from — Excalidraw gives a frame no
+  // rotation handle, and accepting one here would accept by one frame and map
+  // by another.
+  const insideFrame = ([sx, sy]: Point): boolean =>
+    sx >= frame.x - 1e-6 && sx <= frame.x + frame.width + 1e-6
+    && sy >= frame.y - 1e-6 && sy <= frame.y + frame.height + 1e-6;
   const sketches: SketchFootprint[] = [], skipped: SketchConversion["skipped"] = [];
   const claimed = new Map<string, string>();
   for (const element of elements) {
@@ -348,7 +372,7 @@ export function sketchActionsFromFrame(elements: readonly ExcalidrawElement[], f
     sketches.push({ elementId, profile, height, closed: true, baseLevel: data.levelId });
   }
   if (sketches.length === 0) throw new BoardSketchError("BOARD_SKETCH_EMPTY", "Draw at least one closed shape inside the frame.");
-  if (sketches.length > MAX_FOOTPRINTS) throw new BoardSketchError("BOARD_SKETCH_EMPTY", `Send at most ${MAX_FOOTPRINTS} footprints at once.`);
+  if (sketches.length > MAX_FOOTPRINTS) throw new BoardSketchError("BOARD_SKETCH_TOO_MANY", `Send at most ${MAX_FOOTPRINTS} footprints at once.`);
   return { sketches, skipped };
 }
 

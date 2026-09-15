@@ -230,6 +230,27 @@ test("a sketch frame and its shapes are not marks a board-wide clear may delete"
   assert.equal(sketch.insideSketchFrame(rect, new Set<string>()), false);
 });
 
+test("the newest board hand-off decides which task opens, whatever the shell still holds", () => {
+  const request = { projectId: "p", frameId: "f", frameName: "Sketch", boardRevisionSha256: null,
+    levelId: "ground", sketches: [], skipped: [], summary: "s" };
+  const intent = { modelSource: { runId: "run-7", stateDigest: "d".repeat(64) }, sourceStageRef: "stage-2" };
+  assert.deepEqual(sketch.boardHandoff(null, null), { kind: "none" });
+  assert.deepEqual(sketch.boardHandoff(undefined, undefined), { kind: "none" });
+  assert.deepEqual(sketch.boardHandoff(intent, null),
+    { kind: "document", base: { runId: "run-7", sourceStageRef: "stage-2", stateDigest: "d".repeat(64) } });
+  assert.deepEqual(sketch.boardHandoff(null, request), { kind: "sketch" });
+  // A document intent that outlived its own journey must not swallow the sketch
+  // that came after it; before this rule the sketch reached no conversation.
+  assert.deepEqual(sketch.boardHandoff(intent, request), { kind: "sketch" });
+});
+
+test("too many footprints is its own refusal, not the empty-frame one", () => {
+  const many = Array.from({ length: 65 }, (_, i) =>
+    inFrame("rectangle", `m${i}`, { x: 110 + (i % 13) * 60, y: 110 + Math.floor(i / 13) * 100, width: 40, height: 40 }));
+  assert.throws(() => only(many), (e: Error) => (e as { code?: string }).code === "BOARD_SKETCH_TOO_MANY");
+  assert.equal(only(many.slice(0, 64)).sketches.length, 64);
+});
+
 test("leaving the board for the conversation drops the board view and keeps the rest", () => {
   assert.equal(sketch.conversationUrl("http://host/app?view=board&candidate=run-9&embedded=tool"),
     "http://host/app?candidate=run-9&embedded=tool");

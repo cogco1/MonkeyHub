@@ -64,6 +64,10 @@ export function Connected() {
     document.title = "MonkeyArch";
     // Feedback continues in the conversation; it is not a page visit to return from.
     setVisit(null);
+    // One hand-off at a time: an earlier one that survived its journey would
+    // otherwise decide where this one is opened, and swallow it.
+    setSketchIntent(null);
+    setSketchVisit(false);
     setDocumentIntent(request);
     setBoard(false);
   }, []);
@@ -76,6 +80,7 @@ export function Connected() {
     document.title = "MonkeyArch";
     setVisit(null);
     setSketchVisit(true);
+    setDocumentIntent(null);
     setSketchIntent(request);
     setBoard(false);
   }, []);
@@ -92,9 +97,11 @@ export function Connected() {
   const returnToBoard = useCallback(() => {
     window.history.replaceState(null, "", boardUrl(window.location.href));
     document.title = "MonkeyBoard";
-    // A sketch already handed over is never replayed by the task view that
-    // mounts next; going back is for correcting the frame, not resending it.
+    // A hand-off already made is never replayed by the task view that mounts
+    // next; going back is for correcting the drawing, not resending it.
     setSketchIntent(null);
+    setSketchVisit(false);
+    setDocumentIntent(null);
     setBoard(true);
   }, []);
 

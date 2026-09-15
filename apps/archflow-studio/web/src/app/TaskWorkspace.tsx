@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { studio, asStudioApiError } from "../api/client";
 import { connection, type ServerIdentity } from "../api/connection";
 import type { ProjectBindingDto } from "../api/generated";
 import { useT } from "../i18n/useT";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
-import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
+import { boardHandoff, type BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import App from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { createTaskStore, type StudioTask } from "./tasks";
@@ -40,20 +40,21 @@ export function TaskWorkspace({ server, initialDocumentIntent, initialSketchRequ
     void studio.project().then((value) => { if (live) setProject(value); }, (cause) => { if (live) setError(asStudioApiError(cause)); });
     return () => { live = false; };
   }, []);
+  // One rule decides which hand-off opens, so a document intent that outlived
+  // its own journey can never silently swallow the sketch that came after it.
+  const handoff = useMemo(() => boardHandoff(initialDocumentIntent, initialSketchRequest),
+    [initialDocumentIntent, initialSketchRequest]);
   useEffect(() => {
     if (!project || initialized.current) return;
     initialized.current = true;
     const saved = store.getSnapshot();
-    if (initialDocumentIntent) {
-      documentTask.current = store.create(project.projectId, t("tasks.new"), {
-        runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef,
-        stateDigest: initialDocumentIntent.modelSource.stateDigest,
-      });
+    if (handoff.kind === "document") {
+      documentTask.current = store.create(project.projectId, t("tasks.new"), handoff.base);
       return;
     }
     // A sketch names no run: it is proposed against whatever this project's
     // current editing base is, in its own task so nothing else is disturbed.
-    if (initialSketchRequest) {
+    if (handoff.kind === "sketch") {
       sketchTask.current = store.create(project.projectId, t("tasks.new"));
       return;
     }
@@ -61,7 +62,7 @@ export function TaskWorkspace({ server, initialDocumentIntent, initialSketchRequ
       ?? saved.tasks.find((task) => task.projectId === project.projectId && !task.archived);
     if (selected) store.select(selected.id, project.projectId);
     else store.create(project.projectId, t("tasks.new"));
-  }, [project, store, initialDocumentIntent, initialSketchRequest, t]);
+  }, [project, store, handoff, t]);
 
   const active = snapshot.tasks.find((task) => task.id === snapshot.activeTaskId && !task.archived && task.projectId === project?.projectId);
   if (active) visited.current.add(active.id);
@@ -126,8 +127,8 @@ export function TaskWorkspace({ server, initialDocumentIntent, initialSketchRequ
         data-studio-task={task.id} className="task-workspace__view" hidden={task.id !== active?.id} inert={task.id !== active?.id}>
         <App server={server} task={store.handle(task.id)} active={task.id === active?.id}
           onReturnToBoard={task.id === active?.id ? returnToBoard : undefined}
-          initialDocumentIntent={task.id === documentTask.current ? initialDocumentIntent : undefined}
-          initialSketchRequest={task.id === sketchTask.current ? initialSketchRequest : undefined} />
+          initialDocumentIntent={handoff.kind === "document" && task.id === documentTask.current ? initialDocumentIntent : undefined}
+          initialSketchRequest={handoff.kind === "sketch" && task.id === sketchTask.current ? initialSketchRequest : undefined} />
       </div>)}
     </div>
   </div>;

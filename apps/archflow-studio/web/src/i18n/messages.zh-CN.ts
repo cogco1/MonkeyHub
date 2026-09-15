@@ -28,6 +28,7 @@ export const messagesZhCN = {
   "board.sketch.what": "MonkeyBoard 草图",
   "board.sketch.unmodelled": "项目没有可作为提案基底的状态，准备也未能创建：项目已有设计记录，或内核拒绝了它的绑定视图。草图未提交，草图框已保存在画板上。",
   "board.sketch.otherProject": "这张草图属于另一个项目。草图框已保存在画板上，此处未提交任何内容。",
+  "board.sketch.prepareFailed": "为项目准备首个模型",
   "stage.drawing.direction": "立面方向",
   "stage.drawing.front": "正立面",
   "stage.drawing.back": "背立面",

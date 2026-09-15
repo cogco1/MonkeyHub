@@ -71,11 +71,13 @@ const sketchCopy = {
     scale: "Scale", uncalibrated: "Not calibrated — select one straight line inside the frame and enter its real length.",
     calibrated: "1 m = {units} board units · frame {w} × {h} m", metres: "Known length (m)", calibrate: "Set scale",
     send: "Send to 3D", sending: "Sending sketch…", empty: "Draw at least one closed shape inside the frame.",
+    tooMany: "Too many shapes in this frame to send at once. Split them across two sketch frames.",
     skipped: "{count} object(s) were not sent and stay on the board: {reasons}.", noLevels: "The project has no levels yet; the ground level will be created on first send." },
   "zh-CN": { newFrame: "新建草图框", frameName: "草图", panel: "草图框", level: "楼层", storeyHeight: "层高（米）",
     scale: "比例", uncalibrated: "尚未标定——选中框内一条直线，输入它的真实长度。",
     calibrated: "1 米 = {units} 画板单位 · 框 {w} × {h} 米", metres: "已知长度（米）", calibrate: "设定比例",
     send: "起模到 3D", sending: "正在发送草图…", empty: "请先在框内画至少一个闭合形状。",
+    tooMany: "框内形状太多，无法一次发送；请分成两个草图框。",
     skipped: "{count} 个对象未发送，留在画板上：{reasons}。", noLevels: "项目还没有楼层；首次发送时会创建地面层。" },
 };
 
@@ -377,6 +379,10 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const sketchKey = useRef("");
   const [sketchLevels, setSketchLevels] = useState<FrameLevelDto[] | null>(null);
   const [sketchMetres, setSketchMetres] = useState("");
+  // What the box shows while it is being typed in. It is written back only on
+  // blur, and anything unusable there reverts to the height the frame carries,
+  // so the panel never shows a number that would not be sent.
+  const [sketchHeight, setSketchHeight] = useState("");
   const [sketchSending, setSketchSending] = useState(false);
   const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false, revisionSha256: board.revisionSha256 });
   const [queue] = useState(() => createBoardSaveQueue(board, studio.saveBoard, (state) => {
@@ -408,6 +414,9 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const api = canvas.current;
     if (api) updateContext(api.getSceneElements(), api.getAppState());
   }, [documents]);
+  useEffect(() => {
+    setSketchHeight(sketchSelection === null ? "" : String(sketchSelection.data.storeyHeight));
+  }, [sketchSelection?.frame.id, sketchSelection?.data.storeyHeight]);
   useEffect(() => {
     if (sketchSelection === null || sketchLevels !== null) return;
     let live = true;
@@ -877,7 +886,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         summary: sketchSummary(frameName, conversion, data, revision) });
     } catch (error) {
       setNotice(error instanceof BoardSketchError
-        ? (error.code === "BOARD_SKETCH_EMPTY" ? sketchCopy[language].empty : error.message)
+        ? (error.code === "BOARD_SKETCH_EMPTY" ? sketchCopy[language].empty
+          : error.code === "BOARD_SKETCH_TOO_MANY" ? sketchCopy[language].tooMany : error.message)
         : errorText(error));
     } finally { busyRef.current = false; if (alive.current) setSketchSending(false); }
   };
@@ -941,7 +951,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     {!critMode && sketchSelection && <div className="monkeyboard-sketch" role="group" aria-label={sketchCopy[language].panel}>
       <strong>{(sketchSelection.frame as { name?: string | null }).name ?? sketchCopy[language].panel}</strong>
       <label>{sketchCopy[language].level}<select value={sketchSelection.data.levelId} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, levelId: event.target.value })}>{[...new Set([...(sketchLevels ?? []).map((level) => level.levelId), sketchSelection.data.levelId])].map((levelId) => <option key={levelId} value={levelId}>{levelId}</option>)}</select></label>
-      <label>{sketchCopy[language].storeyHeight}<input type="number" min={0.1} step={0.1} value={sketchSelection.data.storeyHeight} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value) && value > 0) updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, storeyHeight: value }); }} /></label>
+      <label>{sketchCopy[language].storeyHeight}<input type="number" min={0.1} step={0.1} value={sketchHeight} disabled={!ready || busy || sketchSending || saveState.conflict} onChange={(event) => setSketchHeight(event.target.value)} onBlur={() => { const value = Number(sketchHeight); if (sketchHeight.trim() !== "" && Number.isFinite(value) && value > 0) updateSketchFrame(sketchSelection.frame, { ...sketchSelection.data, storeyHeight: value }); else setSketchHeight(String(sketchSelection.data.storeyHeight)); }} /></label>
       <label>{sketchCopy[language].metres}<input type="number" min={0} step={0.01} value={sketchMetres} disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null} onChange={(event) => setSketchMetres(event.target.value)} /></label>
       <button type="button" disabled={!ready || busy || sketchSending || saveState.conflict || sketchSelection.line === null || !(Number(sketchMetres) > 0)} onClick={calibrateSketch}>{sketchCopy[language].calibrate}</button>
       <p className="monkeyboard-sketch-scale">{sketchSelection.data.metresPerUnit === null ? sketchCopy[language].uncalibrated

@@ -264,6 +264,9 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   const sketchSubmitted = useRef(false);
   const sketchPrepared = useRef<"no" | "running" | "done">("no");
   const sketchRetried = useRef(false);
+  // One more pass after the preparation settles, because the session it produced
+  // may already have been published by then.
+  const [sketchPass, setSketchPass] = useState(0);
   const sourceRunId = session.status === "ready" ? session.value.sourceRunId : null;
   const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
   const designHistoryEnabled = server.capabilities.includes("design-history");
@@ -2325,16 +2328,20 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   // end early says so in the conversation: a sketch that vanishes without a
   // word is indistinguishable from a broken button.
   useEffect(() => {
-    if (!initialSketchRequest || sketchSubmitted.current || session.status !== "ready" || changingBase || proposalBusy) return;
+    if (!initialSketchRequest || sketchSubmitted.current) return;
+    const refuse = (cause: unknown, what = t("board.sketch.what")) => {
+      sketchSubmitted.current = true;
+      append({ kind: "refusal", error: asStudioApiError(cause), what });
+    };
+    // A session that failed is not something to wait through: it has its own
+    // error on screen, and the sketch has to say it was not submitted.
+    if (session.status === "failed") { refuse(session.error); return; }
+    if (session.status !== "ready" || changingBase || proposalBusy) return;
     // The home model auto-loads on this same ready transition and raises a view
     // request of its own. Waiting for the artifact list to settle first keeps
     // the candidate this sketch starts from being cancelled as "not shown".
     if (artifacts.status !== "ready" && artifacts.status !== "failed") return;
     if (project === null) return;
-    const refuse = (cause: unknown) => {
-      sketchSubmitted.current = true;
-      append({ kind: "refusal", error: asStudioApiError(cause), what: t("board.sketch.what") });
-    };
     if (project.projectId !== initialSketchRequest.projectId) { refuse(new Error(t("board.sketch.otherProject"))); return; }
     const sketchStateDigest = projection?.stateDigest ?? null;
     if (sketchStateDigest === null) {
@@ -2347,10 +2354,15 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
         // records, and a record it cannot bind answers with no digest at all.
         // Both answer 200, so only the flag and the re-read say what happened.
         const prepared = await studio.prepareModeling(project.projectId);
-        const next = prepared.initialized ? await reload() : null;
+        if (!prepared.initialized) { sketchPrepared.current = "done"; refuse(new Error(t("board.sketch.unmodelled"))); return; }
+        // reload answers null both when it failed and when a newer read replaced
+        // it, so its answer decides nothing. The next pass reads the session that
+        // actually settled; only a digest still absent there is a refusal, and a
+        // session that failed outright is refused at the top of this effect.
+        await reload();
         sketchPrepared.current = "done";
-        if (next === null || next.projection.stateDigest === null) refuse(new Error(t("board.sketch.unmodelled")));
-      })().catch((cause) => { sketchPrepared.current = "done"; refuse(cause); });
+        setSketchPass((pass) => pass + 1);
+      })().catch((cause) => { sketchPrepared.current = "done"; refuse(cause, t("board.sketch.prepareFailed")); });
       return;
     }
     sketchSubmitted.current = true;
@@ -2384,7 +2396,7 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
       } finally { setProposalBusy(false); }
     })();
   }, [append, artifacts.status, changingBase, initialSketchRequest, project, projection, proposalBusy,
-      recoverFromStaleBase, reload, runCandidate, selectSemanticTarget, session.status, sourceRunId, t]);
+      recoverFromStaleBase, reload, runCandidate, selectSemanticTarget, session, sketchPass, sourceRunId, t]);
 
   // Completed gestures update local geometry and history synchronously. Only
   // the explicit Sync action below crosses the proposal/candidate boundary.
