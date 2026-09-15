@@ -13,6 +13,7 @@ from ..application.artifacts import (
     export_rhino_work_model,
     bind_document_model_source,
     DocumentPageReplacement,
+    DocumentReplacementTarget,
     document_bytes,
     list_artifacts,
     list_documents,
@@ -71,7 +72,9 @@ def create_document(request: Request, payload: SourceDocumentRequestDto) -> Sour
         raise StudioError(403, "PROJECT_MISMATCH", "The source document names another project.")
     return document_dto(save_document(binding, payload.run_id, payload.file_name, payload.mime_type, payload.content_base64,
                                      model_source_from(payload.model_source) if payload.model_source else None,
-                                     tuple(DocumentPageReplacement(**page.model_dump()) for page in payload.replaces_pages)))
+                                     tuple(DocumentPageReplacement(**page.model_dump()) for page in payload.replaces_pages),
+                                     replaces_document=DocumentReplacementTarget(**payload.replaces_document.model_dump())
+                                     if payload.replaces_document else None))
 
 
 @router.get("/documents", response_model=SourceDocumentListDto, response_model_by_alias=True)
@@ -107,7 +110,7 @@ def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query
 def create_document_work_copy(
     request: Request, asset_sha256: str, payload: DocumentWorkCopyRequestDto
 ) -> DocumentWorkCopyDto:
-    """Give this registered image page an editable file on disk, once.
+    """Give this registered document an editable file on disk, once.
 
     Explicitly asked for, like the Rhino work-model export beside it: the run
     and revision are named in the body because the same registered bytes can
