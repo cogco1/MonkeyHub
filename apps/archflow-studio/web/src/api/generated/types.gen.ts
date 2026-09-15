@@ -2145,6 +2145,90 @@ export type DocumentVisualInputDto = {
 };
 
 /**
+ * DocumentWorkCopyDto
+ *
+ * One registered image page's editable file, and the page it answers for.
+ */
+export type DocumentWorkCopyDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Mimetype
+     */
+    mimeType: 'image/png' | 'image/jpeg';
+    /**
+     * Relativepath
+     *
+     * where the editable copy lives, project-relative; display only — this machine's absolute path never crosses the boundary and no request may send a path back
+     */
+    relativePath: string;
+    /**
+     * Headrunid
+     */
+    headRunId: string;
+    /**
+     * Headassetsha256
+     */
+    headAssetSha256: string;
+    /**
+     * Headrevisionref
+     */
+    headRevisionRef?: string | null;
+    /**
+     * Headpageindex
+     */
+    headPageIndex: number;
+};
+
+/**
+ * DocumentWorkCopyRequestDto
+ *
+ * Which exact registered page is being made editable.
+ *
+ * The digest in the path names the bytes; these name the one registration
+ * they belong to. ``revisionRef`` is part of that identity, not a filter: a
+ * null selects the registration that carries none, so a plain upload and a
+ * retained drawing revision sharing a run and digest are never confused. No
+ * server path is accepted here or anywhere.
+ */
+export type DocumentWorkCopyRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+};
+
+/**
  * DrawingStyleDto
  */
 export type DrawingStyleDto = {
@@ -8161,6 +8245,46 @@ export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetResponses = {
      */
     200: unknown;
 };
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostData = {
+    body: DocumentWorkCopyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Asset Sha256
+         */
+        asset_sha256: string;
+    };
+    query?: never;
+    url: '/api/documents/{asset_sha256}/work-copy';
+};
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostError = CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostErrors[keyof CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostErrors];
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DocumentWorkCopyDto;
+};
+
+export type CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponse = CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponses[keyof CreateDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPostResponses];
 
 export type ReadArtifactsApiArtifactsGetData = {
     body?: never;
