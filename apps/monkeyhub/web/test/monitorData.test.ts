@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateTokens, formatDuration, projectIds, summarizeUsage, type MonitorEvent, type MonitorTrace } from "../src/monitorData.ts";
+import { aggregateTokens, formatDuration, projectIds, summarizeUsage, quoteDraftReducer, type QuoteDraft, type MonitorEvent, type MonitorTrace } from "../src/monitorData.ts";
 
 const tokens = (input: number | null, cached: number | null, output: number | null) => ({
   input_tokens: input, output_tokens: output, cached_input_tokens: cached,
@@ -40,4 +40,53 @@ test("durations are compact without inventing missing timing", () => {
   assert.equal(formatDuration(800), "800 ms");
   assert.equal(formatDuration(2500), "2.5 s");
   assert.equal(formatDuration(90_000), "1.5 min");
+});
+
+const emptyDraft = (): QuoteDraft => ({ projectId: "p1", values: {}, automatic: true });
+const refreshDraft = (draft: QuoteDraft, input: number, projectId = "p1") =>
+  quoteDraftReducer(draft, { type: "refresh", projectId, tokens: tokens(input, 0, 5) });
+
+test("manual estimate inputs survive two successive diagnostic refreshes", () => {
+  const automatic = refreshDraft(emptyDraft(), 100);
+  const edited = quoteDraftReducer(automatic, { type: "edit", field: "input_tokens", value: "1234" });
+  assert.equal(refreshDraft(edited, 200), edited);
+  assert.equal(refreshDraft(edited, 300), edited);
+  assert.equal(edited.values.input_tokens, "1234");
+  assert.equal(automatic.values.input_tokens, "100");
+});
+
+test("calculating freezes the exact automatic snapshot until an explicit reset", () => {
+  const automatic = refreshDraft(emptyDraft(), 100);
+  const frozen = quoteDraftReducer(automatic, { type: "freeze" });
+  assert.equal(frozen.values, automatic.values);
+  assert.equal(refreshDraft(frozen, 200), frozen);
+  assert.equal(refreshDraft(frozen, 300), frozen);
+  const reset = quoteDraftReducer(frozen, { type: "reset", projectId: "p1", tokens: tokens(300, 0, 5) });
+  assert.equal(reset.automatic, true);
+  assert.equal(reset.values.input_tokens, "300");
+  assert.equal(refreshDraft(reset, 400).values.input_tokens, "400");
+});
+
+test("identical polling preserves input identity but changed automatic totals replace it", () => {
+  const automatic = refreshDraft(emptyDraft(), 100);
+  assert.equal(refreshDraft(automatic, 100), automatic);
+  const changed = refreshDraft(automatic, 200);
+  assert.notEqual(changed.values, automatic.values);
+  assert.equal(changed.values.input_tokens, "200");
+});
+
+test("switching projects replaces manual inputs with the new project's totals", () => {
+  const edited = quoteDraftReducer(refreshDraft(emptyDraft(), 100), { type: "edit", field: "input_tokens", value: "999" });
+  const switched = refreshDraft(edited, 40, "p2");
+  assert.equal(switched.projectId, "p2");
+  assert.equal(switched.automatic, true);
+  assert.equal(switched.values.input_tokens, "40");
+  assert.notEqual(switched.values, edited.values);
+});
+
+test("unknown reset counters remain empty rather than becoming zero", () => {
+  const reset = quoteDraftReducer(emptyDraft(), { type: "reset", projectId: "p1", tokens: tokens(null, null, null) });
+  assert.equal(reset.values.input_tokens, "");
+  assert.equal(reset.values.cached_input_tokens, "");
+  assert.equal(reset.values.output_tokens, "");
 });

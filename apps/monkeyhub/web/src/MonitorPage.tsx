@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { AppStatus, ApplicationSettingsDto } from "./api/generated";
 import {
-  aggregateTokens, formatCount, formatDuration, projectIds, summarizeUsage,
+  aggregateTokens, formatCount, formatDuration, projectIds, summarizeUsage, quoteDraftReducer,
   type MonitorEvent, type MonitorTrace,
 } from "./monitorData";
 import "./MonitorPage.css";
@@ -30,7 +30,7 @@ const words = {
     activity: "阶段", lane: "泳道", duration: "耗时", blocking: "阻塞", yes: "是", no: "否", details: "详情", diagnostics: "耗时诊断", warnings: "记录提示",
     usage: "调用记录", source: "来源", provider: "Provider / 模型", phase: "阶段", time: "时间", noUsage: "暂无用量记录。", showMore: "再显示 20 条",
     sources: "Codex 来源", sourcesHelp: "每行一个明确的本机 JSONL 路径。Hub 自动绑定的会话不需要手填；这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
-    calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
+    calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", resetTotals: "恢复当前汇总", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录",
   },
   en: {
@@ -42,7 +42,7 @@ const words = {
     activity: "Stage", lane: "Lane", duration: "Duration", blocking: "Blocking", yes: "Yes", no: "No", details: "Details", diagnostics: "Timing diagnostics", warnings: "Record notices",
     usage: "Call records", source: "Source", provider: "Provider / model", phase: "Phase", time: "Time", noUsage: "No usage records yet.", showMore: "Show 20 more",
     sources: "Codex sources", sourcesHelp: "One explicit local JSONL path per line. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
-    calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
+    calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", resetTotals: "Use current totals", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
     serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record",
   },
 } as const;
@@ -93,7 +93,16 @@ export function MonitorPage({ preferences }: Props) {
   const [rateIndex, setRateIndex] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
-  const [usageDraft, setUsageDraft] = useState<Record<string, string>>({});
+  const [quoteDraft, dispatchQuoteDraft] = useReducer(quoteDraftReducer, { projectId: "", values: {}, automatic: true });
+  const usageDraft = quoteDraft.values;
+  const quoteRequest = useRef(0);
+  const rateKey = JSON.stringify(rateIndex === "" ? null : rates[Number(rateIndex)] ?? null);
+  const invalidateQuote = useCallback(() => {
+    quoteRequest.current += 1;
+    setQuote(null); setQuoteError(null);
+  }, []);
+  useEffect(() => { invalidateQuote(); }, [project, usageDraft, rateIndex, rateKey, invalidateQuote]);
+  useEffect(() => () => { quoteRequest.current += 1; }, []);
   const loadingRef = useRef(false);
 
   // The current Hub still opens generic tools through its right-panel iframe.
@@ -175,17 +184,13 @@ export function MonitorPage({ preferences }: Props) {
   useEffect(() => { setVisible(20); }, [project]);
 
   useEffect(() => {
-    const totals = aggregateTokens(filteredEvents);
-    setUsageDraft({
-      input_tokens: totals.input_tokens?.toString() ?? "",
-      output_tokens: totals.output_tokens?.toString() ?? "",
-      cached_input_tokens: totals.cached_input_tokens?.toString() ?? "",
-      cache_write_input_tokens: totals.cache_write_input_tokens?.toString() ?? "",
-      cache_write_1h_input_tokens: totals.cache_write_1h_input_tokens?.toString() ?? "",
-      reasoning_output_tokens: totals.reasoning_output_tokens?.toString() ?? "",
-    });
-    setQuote(null); setQuoteError(null);
-  }, [filteredEvents]);
+    dispatchQuoteDraft({ type: "refresh", projectId: project, tokens: aggregateTokens(filteredEvents) });
+  }, [filteredEvents, project]);
+
+  const resetEstimate = () => {
+    invalidateQuote();
+    dispatchQuoteDraft({ type: "reset", projectId: project, tokens: aggregateTokens(filteredEvents) });
+  };
 
   const applySources = async (event: FormEvent) => {
     event.preventDefault(); if (!base) return;
@@ -198,9 +203,11 @@ export function MonitorPage({ preferences }: Props) {
   };
 
   const calculate = async (event: FormEvent) => {
-    event.preventDefault(); if (!base || rateIndex === "") return;
-    setQuote(null); setQuoteError(null);
+    event.preventDefault(); if (!base || rateIndex === "" || quoteDraft.projectId !== project) return;
+    invalidateQuote();
+    const request = quoteRequest.current;
     const rate = rates[Number(rateIndex)];
+    if (!rate) return;
     const count = (key: string) => {
       const value = usageDraft[key]?.trim();
       if (!value) return null;
@@ -214,8 +221,13 @@ export function MonitorPage({ preferences }: Props) {
         cache_write_input_tokens: count("cache_write_input_tokens"), cache_write_1h_input_tokens: count("cache_write_1h_input_tokens"),
         reasoning_output_tokens: count("reasoning_output_tokens"),
       };
-      setQuote(await jsonRequest<Quote>(`${base}/api/quote`, { method: "POST", body: JSON.stringify({ usage, rate }) }));
-    } catch (cause) { setQuoteError(cause instanceof Error ? cause.message : String(cause)); }
+      // Bind this estimate to the displayed inputs, not the next polling tick.
+      dispatchQuoteDraft({ type: "freeze" });
+      const result = await jsonRequest<Quote>(`${base}/api/quote`, { method: "POST", body: JSON.stringify({ usage, rate }) });
+      if (quoteRequest.current === request) setQuote(result);
+    } catch (cause) {
+      if (quoteRequest.current === request) setQuoteError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
 
   if (framed) return <main className="monitor-redirect" role="status">{t.connecting}</main>;
@@ -228,7 +240,7 @@ export function MonitorPage({ preferences }: Props) {
   return <div className="monitor-page">
     <header className="toolbar monitor-toolbar"><a className="btn" href={home}>{t.back}</a><strong className="wordmark">MonkeyHub</strong><span className={`monitor-health ${error ? "monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span><button className="btn" type="button" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</button></header>
     <main className="monitor-shell">
-      <div className="monitor-heading"><div><p className="monitor-eyebrow">MonkeyMonitor</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><label>{t.project}<select value={project} onChange={(event) => setProject(event.target.value)}><option value="">{t.allProjects}</option>{projects.map((id) => <option key={id}>{id}</option>)}</select></label></div>
+      <div className="monitor-heading"><div><p className="monitor-eyebrow">MonkeyMonitor</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><label>{t.project}<select value={project} onChange={(event) => { invalidateQuote(); setProject(event.target.value); }}><option value="">{t.allProjects}</option>{projects.map((id) => <option key={id}>{id}</option>)}</select></label></div>
       {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
       <section className="monitor-stats" aria-label={t.usage}>
         {[
@@ -280,10 +292,10 @@ export function MonitorPage({ preferences }: Props) {
 
       <div className="monitor-lower-grid">
         <section className="monitor-section"><div className="monitor-section__head"><h2>{t.sources}</h2></div><p className="monitor-help">{t.sourcesHelp}</p><form onSubmit={(event) => void applySources(event)}><textarea className="monitor-sources" rows={6} spellCheck={false} value={sourcePaths} onChange={(event) => { setSourcePaths(event.target.value); setSourceDirty(true); setSourceStatus(""); }} /><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base}>{t.apply}</button><span role="status">{sourceStatus}</span></div></form></section>
-        <section className="monitor-section"><div className="monitor-section__head"><h2>{t.calculator}</h2></div><p className="monitor-help">{t.calculatorHelp}</p><form onSubmit={(event) => void calculate(event)} className="monitor-calculator"><label>{t.rate}<select value={rateIndex} onChange={(event) => { setRateIndex(event.target.value); setQuote(null); }} required><option value="">{t.chooseRate}</option>{rates.map((rate, index) => <option value={index} key={`${rate.provider}:${rate.model}:${index}`}>{rate.label ?? `${rate.provider} · ${rate.model}`}</option>)}</select></label><div className="monitor-token-grid">{[
+        <section className="monitor-section"><div className="monitor-section__head"><h2>{t.calculator}</h2></div><p className="monitor-help">{t.calculatorHelp}</p><form onSubmit={(event) => void calculate(event)} className="monitor-calculator"><label>{t.rate}<select value={rateIndex} onChange={(event) => { invalidateQuote(); setRateIndex(event.target.value); }} required><option value="">{t.chooseRate}</option>{rates.map((rate, index) => <option value={index} key={`${rate.provider}:${rate.model}:${index}`}>{rate.label ?? `${rate.provider} · ${rate.model}`}</option>)}</select></label><div className="monitor-token-grid">{[
           ["input_tokens", t.input], ["cached_input_tokens", t.cacheRead], ["cache_write_input_tokens", t.cacheWrite],
           ["cache_write_1h_input_tokens", t.cacheWrite1h], ["output_tokens", t.output], ["reasoning_output_tokens", t.reasoning],
-        ].map(([key, label]) => <label key={key}>{label}<input inputMode="numeric" value={usageDraft[key] ?? ""} onChange={(event) => setUsageDraft((value) => ({ ...value, [key]: event.target.value }))} placeholder="—" /></label>)}</div><button className="btn btn--primary" type="submit" disabled={!base || rateIndex === ""}>{t.calculate}</button></form>
+        ].map(([key, label]) => <label key={key}>{label}<input inputMode="numeric" value={usageDraft[key] ?? ""} onChange={(event) => { invalidateQuote(); dispatchQuoteDraft({ type: "edit", field: key, value: event.target.value }); }} placeholder="—" /></label>)}</div><div className="monitor-actions"><button className="btn btn--primary" type="submit" disabled={!base || rateIndex === "" || quoteDraft.projectId !== project}>{t.calculate}</button><button className="btn" type="button" onClick={resetEstimate}>{t.resetTotals}</button></div></form>
           {quoteError && <div className="error-message"><p>{quoteError}</p></div>}
           {quote && <div className="monitor-quote"><span>{t.estimated}</span><strong>{quote.amount_usd === null ? "—" : `$${quote.amount_usd} ${quote.currency}`}</strong><small>{t.knownSubtotal}: ${quote.known_subtotal_usd}{quote.missing.length ? ` · ${t.missing}: ${quote.missing.join(", ")}` : ""}</small></div>}
         </section>

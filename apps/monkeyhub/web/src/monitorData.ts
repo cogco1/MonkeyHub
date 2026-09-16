@@ -137,3 +137,23 @@ export function projectIds(events: readonly MonitorEvent[], traces: readonly Mon
     ...traces.map((trace) => trace.project_id).filter((value): value is string => Boolean(value)),
   ])].sort();
 }
+
+export type QuoteDraft = { projectId: string; values: Record<string, string>; automatic: boolean };
+export type QuoteDraftAction =
+  | { type: "refresh" | "reset"; projectId: string; tokens: MonitorTokenUsage }
+  | { type: "edit"; field: string; value: string }
+  | { type: "freeze" };
+
+/** Polling updates diagnostics, not an estimate the person has started editing. */
+export function quoteDraftReducer(state: QuoteDraft, action: QuoteDraftAction): QuoteDraft {
+  if (action.type === "edit") {
+    return { ...state, automatic: false, values: { ...state.values, [action.field]: action.value } };
+  }
+  if (action.type === "freeze") return state.automatic ? { ...state, automatic: false } : state;
+  if (action.type === "refresh" && action.projectId === state.projectId && !state.automatic) return state;
+  const values = Object.fromEntries(Object.entries(action.tokens).map(([key, value]) => [key, value?.toString() ?? ""]));
+  const unchanged = Object.keys(values).length === Object.keys(state.values).length
+    && Object.entries(values).every(([key, value]) => state.values[key] === value);
+  if (action.projectId === state.projectId && unchanged && state.automatic) return state;
+  return { projectId: action.projectId, automatic: true, values };
+}
