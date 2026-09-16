@@ -8,9 +8,10 @@ detached run a proposal's candidate takes, through the same code — and answers
 the authored record; the one authored file it can write is the sheet itself,
 on request, on a local studio.
 
-``GET /api/semantics`` sits here because this is the panel that needs it: a
-function on a program row is a registered role, and a client that guessed at
-the vocabulary would offer the architect choices the record refuses.
+The retired manual Program panel is not the owner of this HTTP contract.
+Hub Agents still read/apply structured programs through ``studio_request``.
+``GET /api/semantics`` supplies the registered vocabulary for those requests;
+guessed role names remain invalid.
 """
 
 from __future__ import annotations

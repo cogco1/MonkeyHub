@@ -96,6 +96,32 @@ project repository (PROTOCOL.md, "MonkeyHub project runtime").
 Owner module names above are those in `governance/module_registry.json` (`docs/SYSTEM_MAP.md`
 renders them); where a concern has several owners the registry is authoritative.
 
+### Program / Massing consumers after the #138 UI retirement
+
+The #151 consumer audit retains these HTTP routes for the existing Hub Agent,
+not as compatibility stubs for the removed panels:
+
+| Runtime route | Production consumer / decision |
+| --- | --- |
+| `GET /api/program` | Hub `chat.call_tool` → `studio_request` reads the bound project's structured brief; keep. |
+| `POST /api/program` | The same Agent tool applies a sheet through Hub mutation admission and the existing candidate worker; keep. |
+| `GET /api/options`, `POST /api/options` | Agent reads/generates measured massing options using the bound runtime; keep. |
+| `POST /api/options/{option_id}/select` | Agent sends an explicit selection through Hub admission to the existing candidate path; keep. |
+| `GET /api/semantics` | Agent queries the vocabulary accepted by structured Program/component edits; keep. |
+| `GET /api/state/frame` | Local model Sync and the Agent both consume declared datum references; keep. |
+
+The route allowlists and guidance are in
+`apps/monkeyhub/api/monkeyhub_api/chat.py`; the dispatch regression is
+`test_program_and_massing_routes_remain_bound_agent_capabilities` in its existing
+`test_chat.py`. Runtime `test_program.py` and `test_options.py` continue to test
+real source validation, candidate execution and retained-data behavior.
+
+Only the unused hand-maintained browser `studio` methods (`options`, `makeOption`,
+`selectOption`, `program`, `applyProgram`, `semantics`) retire. The generated SDK
+still describes the live HTTP API and is not pruned by UI usage. Program data,
+massing metrics, candidate/exact-base protections and frame/datum capabilities
+are unchanged. No new panel replaces the old panels.
+
 ## 4. What it does not own
 
 - **Settings authority.** User preferences (`%APPDATA%\MonkeyArch\settings.json`) and
