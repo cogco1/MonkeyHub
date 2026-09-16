@@ -66,6 +66,7 @@ import {
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
+import { TranslationGizmo, type TranslationGizmoSpec, type TranslationSample } from "./translationGizmo";
 import {
   candidatesOf,
   closestOnEdge,
@@ -262,6 +263,8 @@ export interface ViewportController {
    */
   sketchPreview(spec: SketchPreview | null): void;
   draftPreview(spec: { objects: readonly DraftPreviewObject[]; hiddenObjectNames: readonly string[] } | null): void;
+  translationGizmo(spec: TranslationGizmoSpec | null): void;
+  translationPointer(kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null;
   fitView(): void;
   frontView(): void;
   standardView(view: "top" | "front" | "right" | "iso"): void;
@@ -325,6 +328,7 @@ interface ViewportRuntime {
   draftIds: WeakMap<Object3D, string>;
   draftHidden: Map<Object3D, boolean>;
   draftBounds: Sphere | null;
+  translation: TranslationGizmo | null;
   render: () => void;
 }
 
@@ -1759,6 +1763,35 @@ export const ThreeDmViewport = forwardRef<
     [rayAt],
   );
 
+  const translationGizmo = useCallback((spec: TranslationGizmoSpec | null) => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (!spec) { runtime.translation?.dispose(); runtime.translation = null; }
+    else {
+      runtime.translation ??= new TranslationGizmo(runtime.scene, runtime.camera);
+      runtime.translation.set(spec);
+    }
+    runtime.render();
+  }, []);
+
+  const translationPointer = useCallback((kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null => {
+    const runtime = runtimeRef.current, handles = runtime?.translation;
+    if (!runtime || !handles) return null;
+    const rect = runtime.renderer.domElement.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const pointer = { x: (clientX - rect.left) / rect.width * 2 - 1,
+      y: 1 - (clientY - rect.top) / rect.height * 2, button: 0 };
+    let result: TranslationSample | null = null;
+    if (kind === "hover") handles.hover(pointer);
+    else if (kind === "start") result = handles.start(pointer);
+    else if (kind === "move") result = handles.move(pointer);
+    else handles.end();
+    // Stage coalesces drag previews on its existing animation frame. Hover and
+    // release still repaint immediately, but a move must not render twice.
+    if (kind !== "move") runtime.render();
+    return result;
+  }, []);
+
   useImperativeHandle(
     forwardedRef,
     () => ({
@@ -1771,6 +1804,8 @@ export const ThreeDmViewport = forwardRef<
       pointOnWorkPlane,
       pointOnSketchPlane,
       pointAlongAxis,
+      translationGizmo,
+      translationPointer,
       workPlaneFromSelection: () => {
         const picked = pickedPlaneRef.current;
         const runtime = runtimeRef.current;
@@ -1843,6 +1878,8 @@ export const ThreeDmViewport = forwardRef<
       openFiles,
       pointOnSketchPlane,
       pointAlongAxis,
+      translationGizmo,
+      translationPointer,
       sampleAt,
       sketchPreview,
       showOriginal,
@@ -1953,6 +1990,7 @@ export const ThreeDmViewport = forwardRef<
       draftIds: new WeakMap(),
       draftHidden: new Map(),
       draftBounds: null,
+      translation: null,
       render,
     };
     runtimeRef.current = runtime;
@@ -1985,6 +2023,7 @@ export const ThreeDmViewport = forwardRef<
       runtime.preselection?.dispose();
       controls.removeEventListener("change", changedCamera);
       controls.removeEventListener("start", startCameraInteraction);
+      runtime.translation?.dispose();
       controls.dispose();
       // Give the highlighted meshes their own materials back, so what is
       // disposed below is the file's and the clones go with the mark.

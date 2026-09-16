@@ -39,6 +39,7 @@ import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/inte
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
+import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
 import { draftTransformCenter, previewDirectModel, specFromDrawnShape } from "./modelDraft";
 import {
   IDLE as SKETCH_IDLE,
@@ -420,13 +421,17 @@ export function Stage({
   const [moveInputs] = useState(() => [createRef<HTMLInputElement>(), createRef<HTMLInputElement>(), createRef<HTMLInputElement>()]);
   const [movePhase, setMovePhase] = useState<"anchor" | "target" | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [moveConstraint, setMoveConstraint] = useState<TranslationConstraint | null>(null);
   const stopMove = useCallback(() => {
     cancelInteractionFrame(interaction.current, "move");
-    if (interaction.current.move) viewportRef.current?.sketchPreview(null);
+    if (interaction.current.move) {
+      viewportRef.current?.translationGizmo(null);
+      viewportRef.current?.sketchPreview(null);
+    }
     interaction.current.move = null;
     interaction.current.modelSnap = null;
     interaction.current.planeSnap = null;
-    setMovePhase(null); setMoveError(null);
+    setMovePhase(null); setMoveError(null); setMoveConstraint(null);
   }, [viewportRef]);
   const rotateInput = useRef<HTMLInputElement>(null);
   const [rotateAxis, setRotateAxis] = useState<"x" | "y" | "z">("z");
@@ -606,15 +611,20 @@ export function Stage({
   }, [model?.directTool, documentOpen, closeDirectTool, commitRotate]);
   const paintMove = useCallback(() => {
     const current = interaction.current.move;
-    if (!current) return;
-    const translation = current.typed ? current.typed.map(Number) as Vec3 : current.translation;
-    if (!current.typed) moveInputs.forEach((input, i) => {
-      if (input.current) input.current.value = String(Number(translation[i]!.toFixed(4)));
-    });
+    if (!current || !current.constraint) return;
+    const values = current.typed ? current.typed.map(Number) : current.translation;
     try {
-      if (current.typed?.some(value => !value.trim()) || !translation.every(Number.isFinite)) throw new Error("Enter finite X, Y and Z distances.");
+      if (current.typed?.some(value => !value.trim())) throw new Error("Enter finite distances in metres.");
+      const translation = constrainedTranslation(values, current.constraint);
+      // Keep disabled coordinates visibly zero, including after switching a
+      // handle; typed values and the visible preview have the same constraint.
+      moveInputs.forEach((input, i) => {
+        if (input.current && (!current.typed || !current.constraint!.includes("XYZ"[i]!)))
+          input.current.value = String(Number(translation[i]!.toFixed(4)));
+      });
       viewportRef.current?.sketchPreview(previewDirectModel({ spec: current.spec,
         parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: current.tool, translation }));
+      viewportRef.current?.translationGizmo({ origin: current.origin, translation, constraint: current.constraint });
       setMoveError(null);
     } catch (error) {
       viewportRef.current?.sketchPreview(null);
@@ -623,32 +633,45 @@ export function Stage({
   }, [moveInputs, viewportRef]);
   const commitMove = useCallback(() => {
     const current = interaction.current.move, keys = modelKeysRef.current;
-    if (!current || !keys?.onApply || keys.busy || keys.directTool !== current.tool || keys.pushPullTarget !== current.target) return;
-    if (!current.anchor && current.typed === null) return;
-    const translation = current.typed ? current.typed.map(Number) as Vec3 : current.translation;
-    if (current.typed?.some(value => !value.trim()) || !translation.every(Number.isFinite) || (current.tool === "move" && Math.hypot(...translation) < 1e-9)) return;
+    if (!current || !current.constraint || !keys?.onApply || keys.busy || keys.interactionBlocked ||
+        keys.directTool !== current.tool || keys.pushPullTarget !== current.target) return;
+    if (current.typed?.some(value => !value.trim())) return;
     try {
+      const translation = constrainedTranslation(current.typed ? current.typed.map(Number) : current.translation, current.constraint);
+      if (current.tool === "move" && Math.hypot(...translation) < 1e-9) return;
       previewDirectModel({ spec: current.spec, parameterBoundFields: current.target.shape.parameterBoundFields }, { kind: current.tool, translation });
+      // Clear the gesture before handing over: Enter, submit or a later mouse
+      // release cannot apply the same action twice.
       stopMove();
       keys.onApply({ kind: current.tool, translation, target: current.target });
       keys.onTool?.("select");
     } catch (error) { setMoveError(error instanceof Error ? error.message : String(error)); }
   }, [stopMove]);
+  const changeMoveConstraint = useCallback((constraint: TranslationConstraint) => {
+    const current = interaction.current.move;
+    if (!current) return;
+    cancelInteractionFrame(interaction.current, "move");
+    viewportRef.current?.translationPointer("end", 0, 0);
+    current.constraint = constraint; current.pointerId = null;
+    current.translation = [0, 0, 0]; current.typed = null;
+    setMoveConstraint(constraint); setMovePhase("target");
+    paintMove();
+  }, [paintMove, viewportRef]);
   useEffect(() => {
     stopMove();
-    if ((model?.directTool !== "move" && model?.directTool !== "copy") || documentOpen || model.interactionBlocked) return;
+    if ((model?.directTool !== "move" && model?.directTool !== "copy") || documentOpen || model.interactionBlocked || status === "loading" || status === "error") return;
     const target = model.pushPullTarget;
     if (!target) { setMoveError("Select a drawn solid or face before moving or copying."); return; }
-    const spec = specFromDrawnShape(target.shape);
-    // The selected face supplies a predictable drawing plane; XYZ values can
-    // override it for a precise translation outside that plane.
-    const plane = viewportRef.current?.workPlaneFromSelection() ?? spec.plane!;
-    interaction.current.move = { target, tool: model.directTool, spec, plane, anchor: null, translation: [0, 0, 0], typed: null };
+    const spec = specFromDrawnShape(target.shape), origin = draftTransformCenter(spec);
+    interaction.current.move = { target, tool: model.directTool, spec, origin, constraint: null,
+      pointerId: null, translation: [0, 0, 0], typed: null };
     interaction.current.pointer = null;
     moveInputs.forEach(input => { if (input.current) input.current.value = "0"; });
+    viewportRef.current?.translationGizmo({ origin, translation: [0, 0, 0], constraint: null });
     setMovePhase("anchor");
     return stopMove;
-  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, moveInputs, stopMove, viewportRef]);
+  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, status,
+    editingBaseRunId, loadedRunId, moveInputs, stopMove, viewportRef]);
   useEffect(() => {
     if (model?.directTool !== "move" && model?.directTool !== "copy") return;
     const listen = (event: KeyboardEvent) => {
@@ -660,8 +683,9 @@ export function Stage({
           (target.closest("button, a") && !target.closest('button[data-model-tool="move"], button[data-model-tool="copy"]')))) return;
       event.preventDefault(); commitMove();
     };
-    window.addEventListener("keydown", listen);
-    return () => window.removeEventListener("keydown", listen);
+    const blur = () => { if (interaction.current.move?.pointerId != null) closeDirectTool(); };
+    window.addEventListener("keydown", listen); window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", listen); window.removeEventListener("blur", blur); };
   }, [model?.directTool, documentOpen, closeDirectTool, commitMove]);
   const paintPushPull = useCallback(() => {
     const current = interaction.current.pushPull;
@@ -1249,35 +1273,46 @@ export function Stage({
           commitRotate();
         }} />}
       {movePhase !== null && <div className="stage-sketch stage-move" data-phase={movePhase}
+        data-constraint={moveConstraint ?? "none"} style={{ touchAction: "none" }}
+        aria-label={zh ? "拖动坐标轴或平面；Enter 应用，Esc 取消" : "Drag an axis or plane; Enter applies, Esc cancels"}
         onPointerDown={(event) => {
-          if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }
+          if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); return; }
+          const current = interaction.current.move;
+          if (event.button !== 0 || !current || current.pointerId !== null) return;
+          const sample = viewportRef.current?.translationPointer("start", event.clientX, event.clientY);
+          if (!sample) return;
+          event.preventDefault();
+          current.pointerId = event.pointerId; current.constraint = sample.constraint;
+          current.translation = sample.translation; current.typed = null;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setMoveConstraint(sample.constraint); setMovePhase("target");
+          paintMove();
         }}
         onPointerMove={(event) => {
           const current = interaction.current.move;
-          if (!current || current.typed !== null || event.buttons) return;
-          interaction.current.pointer = { x: event.clientX, y: event.clientY };
-          if (!current.anchor) return;
-          const snap = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
-          const point = snap && snap.kind !== "surface" ? snap.point : viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, current.plane);
-          if (!point) return;
-          current.translation = point.map((value, i) => value - current.anchor![i]!) as Vec3;
+          if (!current) return;
+          if (current.pointerId === null) { viewportRef.current?.translationPointer("hover", event.clientX, event.clientY); return; }
+          if (event.pointerId !== current.pointerId || current.typed !== null) return;
+          const sample = viewportRef.current?.translationPointer("move", event.clientX, event.clientY);
+          if (!sample) return;
+          current.translation = sample.translation;
           scheduleInteractionFrame(interaction.current, "move", paintMove);
         }}
-        onClick={(event) => {
-          if (event.button !== 0) return;
+        onPointerUp={(event) => {
           const current = interaction.current.move;
-          if (!current) return;
-          if (current.typed === null && !current.anchor) {
-            const pointer = interaction.current.pointer ?? { x: event.clientX, y: event.clientY };
-            const snap = viewportRef.current?.snapOnModel(pointer.x, pointer.y);
-            const point = snap && snap.kind !== "surface" ? snap.point : viewportRef.current?.pointOnSketchPlane(pointer.x, pointer.y, current.plane);
-            if (!point) return;
-            current.anchor = [...point]; current.plane = { ...current.plane, origin: [...point] };
-            setMovePhase("target"); return;
-          }
-          // Click coordinates are integer-rounded in browsers. The session
-          // already holds the latest precise pointer result, even before RAF.
-          commitMove();
+          if (!current || event.pointerId !== current.pointerId) return;
+          // Release only ends pointer capture. Keep the preview available for
+          // numeric correction; explicit Enter/Apply commits the typed action.
+          current.pointerId = null;
+          viewportRef.current?.translationPointer("end", event.clientX, event.clientY);
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+          cancelInteractionFrame(interaction.current, "move"); paintMove();
+        }}
+        onLostPointerCapture={(event) => {
+          if (interaction.current.move?.pointerId === event.pointerId) closeDirectTool();
+        }}
+        onPointerCancel={(event) => {
+          if (interaction.current.move?.pointerId === event.pointerId) closeDirectTool();
         }} />}
       {pushPullActive && <div className="stage-sketch stage-pushpull" data-phase="pushPull"
         onPointerDown={(event) => {
@@ -1877,12 +1912,12 @@ export function Stage({
                 current.typed = value;
                 cancelInteractionFrame(interaction.current, "rotate"); paintRotate();
               }, onCommit: commitRotate }}
-            move={{ inputs: moveInputs,
-              hint: zh ? "点基点，再沿所选面平面指向目标。X/Y/Z 可覆盖位移；单击或 Enter 完成，Esc 取消。"
-                : "Pick a base point, then a destination on the selected face plane. X/Y/Z override the translation; click or Enter to apply, Esc to cancel.",
+            move={{ inputs: moveInputs, constraint: moveConstraint, onConstraint: changeMoveConstraint,
+              hint: zh ? "世界坐标：拖动箭头或平面，松开后可输入精确位移。Enter/应用确认，Esc 取消。切换约束重置预览；正对视线的轴请用数值输入。"
+                : "World axes: drag an arrow or plane, then refine the distance. Enter/Apply confirms; Esc cancels. Changing constraint resets the preview. Use numbers for end-on axes.",
               onChange: (index, value) => {
                 const current = interaction.current.move;
-                if (!current) return;
+                if (!current?.constraint || !current.constraint.includes("XYZ"[index]!)) return;
                 current.typed ??= current.translation.map(String) as [string, string, string];
                 current.typed[index] = value;
                 cancelInteractionFrame(interaction.current, "move"); paintMove();
