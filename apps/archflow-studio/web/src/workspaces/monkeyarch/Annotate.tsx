@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
-import type { GestureDto, GestureHitDto } from "../../api/generated";
+import type { GestureDto, GestureHitDto, ModelAnnotationsDto } from "../../api/generated";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
 import type { CameraState, SampleHit, Vec3, ViewportController } from "./viewer/ThreeDmViewport";
@@ -288,9 +288,28 @@ export function tracingPaperViewMatches(camera: CameraState, gestures: readonly 
     const drawn = gesture.camera as typeof gesture.camera & { projection?: CameraState["projection"]; zoom?: number };
     return closeVector(drawn.position, camera.position) && closeVector(drawn.target, camera.target)
       && closeVector(drawn.up, camera.up) && Math.abs(drawn.fov - camera.fov) <= 1e-6
-      && (drawn.projection === undefined || drawn.projection === camera.projection)
-      && (drawn.zoom === undefined || Math.abs(drawn.zoom - camera.zoom) <= 1e-6);
+      && drawn.projection === camera.projection
+      && drawn.zoom != null && Math.abs(drawn.zoom - camera.zoom) <= 1e-6;
   });
+}
+
+/** Freeze camera, ink and pixels in this turn, not after an asynchronous save. */
+export async function captureTracingPaperReview(
+  viewport: Pick<ViewportController, "camera" | "viewportSize" | "capturePng">,
+  gestures: readonly GestureDto[],
+  save: () => Promise<ModelAnnotationsDto>,
+) {
+  const camera = structuredClone(viewport.camera());
+  const screenSize = viewport.viewportSize();
+  if (!camera || !screenSize || !tracingPaperViewMatches(camera, gestures)
+      || gestures.some((mark) => !mark.screenSize || !closeVector(mark.screenSize, screenSize))) {
+    throw new Error("Tracing Paper is not registered to this view. Restore its camera and size, or redraw legacy marks without projection/zoom.");
+  }
+  // Both operations start before yielding: navigation during save cannot replace
+  // the pixels captured for the original model and annotation revision.
+  const [saved, viewportPng] = await Promise.all([save(), viewport.capturePng()]);
+  if (!saved.revisionSha256 || !viewportPng) throw new Error("The Tracing Paper review could not be captured and saved.");
+  return { saved, camera, screenSize, viewportPng };
 }
 
 /** Composite the exact saved ink over the WebGL capture; neither source is mutated. */

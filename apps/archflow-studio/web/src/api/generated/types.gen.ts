@@ -380,6 +380,14 @@ export type CameraDto = {
      * Fov
      */
     fov: number;
+    /**
+     * Projection
+     */
+    projection?: 'perspective' | 'orthographic' | null;
+    /**
+     * Zoom
+     */
+    zoom?: number | null;
 };
 
 /**

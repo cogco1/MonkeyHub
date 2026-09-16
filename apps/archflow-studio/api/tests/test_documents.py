@@ -120,7 +120,8 @@ class SourceDocumentTests(unittest.TestCase):
     def test_tracing_paper_review_is_explicit_idempotent_and_revision_bound(self) -> None:
         before = self.repository.read_head()
         source = self.retained_model_source()
-        camera = {"position": [8, 6, 5], "target": [0, 0, 0], "up": [0, 0, 1], "fov": 50}
+        camera = {"position": [8, 6, 5], "target": [0, 0, 0], "up": [0, 0, 1], "fov": 50,
+                  "projection": "orthographic", "zoom": 2}
         mark = {"id": "mark-a", "kind": "circle", "screen": [[12, 12], [40, 12], [40, 36], [12, 36]],
                 "camera": camera, "hits": [], "color": "#e5534b", "lineWidth": 2, "screenSize": [120, 80]}
         saved = self.client.put("/api/model-annotations", json={
@@ -129,9 +130,14 @@ class SourceDocumentTests(unittest.TestCase):
         })
         self.assertEqual(saved.status_code, 200, saved.text)
         revision = saved.json()["revisionSha256"]
+        reopened = self.new_client().get("/api/model-annotations", params={**source, "revisionSha256": revision})
+        self.assertEqual(reopened.status_code, 200, reopened.text)
+        self.assertEqual(reopened.json()["annotations"][0]["camera"], camera)
+        # A normal save has not sent any review to Board.
+        self.assertEqual(self.client.get("/api/documents").json()["documents"], [])
         request = {"projectId": PROJECT_ID, "modelSource": source, "sourceStageRef": None,
                    "annotationRevisionSha256": revision,
-                   "camera": {**camera, "projection": "perspective", "zoom": 1}, "screenSize": [120, 80],
+                   "camera": camera, "screenSize": [120, 80],
                    "pngBase64": base64.b64encode(image_bytes(size=(120, 80))).decode("ascii")}
         response = self.client.post("/api/tracing-paper/reviews", json=request)
         self.assertEqual(response.status_code, 201, response.text)
@@ -156,6 +162,22 @@ class SourceDocumentTests(unittest.TestCase):
         })
         self.assertEqual(wrong_view.status_code, 409, wrong_view.text)
         self.assertEqual(wrong_view.json()["code"], "TRACING_PAPER_VIEW_CHANGED")
+        for change in ({"zoom": 3}, {"projection": "perspective"}):
+            wrong = self.client.post("/api/tracing-paper/reviews", json={**request, "camera": {**camera, **change}})
+            self.assertEqual(wrong.status_code, 409, wrong.text)
+            self.assertEqual(wrong.json()["code"], "TRACING_PAPER_VIEW_CHANGED")
+        legacy = {**mark, "camera": {key: value for key, value in camera.items() if key not in ("projection", "zoom")}}
+        saved_legacy = self.client.put("/api/model-annotations", json={
+            "projectId": PROJECT_ID, "modelSource": source, "baseRevisionSha256": saved2["revisionSha256"],
+            "annotations": [legacy], "comment": "",
+        })
+        self.assertEqual(saved_legacy.status_code, 200, saved_legacy.text)
+        self.assertEqual(saved_legacy.json()["annotations"][0]["camera"], legacy["camera"])
+        unknown = self.client.post("/api/tracing-paper/reviews", json={
+            **request, "annotationRevisionSha256": saved_legacy.json()["revisionSha256"],
+        })
+        self.assertEqual(unknown.status_code, 409, unknown.text)
+        self.assertEqual(self.client.post("/api/tracing-paper/reviews", json=request).json(), review)
         self.assertEqual(self.repository.read_head(), before)
 
     def test_real_pdf_pages_crop_and_rotation_are_read_from_retained_original(self) -> None:

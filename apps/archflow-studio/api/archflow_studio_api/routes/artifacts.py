@@ -95,7 +95,9 @@ def _same_review_camera(saved: object, requested) -> bool:
         if any(abs(float(a) - float(b)) > 1e-6 for a, b in zip(left, right)):
             return False
     try:
-        return abs(float(saved.get("fov")) - requested.fov) <= 1e-6
+        return (saved.get("projection") == requested.projection
+                and abs(float(saved.get("zoom")) - requested.zoom) <= 1e-6
+                and abs(float(saved.get("fov")) - requested.fov) <= 1e-6)
     except (TypeError, ValueError):
         return False
 
@@ -116,7 +118,7 @@ def create_tracing_paper_review(request: Request, payload: TracingPaperReviewReq
     screen = list(payload.screen_size)
     if any(row.get("screenSize") != screen or not _same_review_camera(row.get("camera"), payload.camera)
            for row in saved.annotations):
-        raise StudioError(409, "TRACING_PAPER_VIEW_CHANGED", "The saved marks belong to another view. Return to that view before sending this Tracing Paper snapshot.")
+        raise StudioError(409, "TRACING_PAPER_VIEW_CHANGED", "The saved marks do not identify this exact view. Return to the original view, or redraw legacy marks without recorded projection/zoom, before sending.")
     recipe = {
         "schema": "TracingPaperSnapshot@1", "kind": "tracing-paper-review",
         "annotationRevisionSha256": payload.annotation_revision_sha256,

@@ -50,7 +50,7 @@ import type {
   StateProjectionDto,
   ValidationDto,
 } from "../api/generated";
-import { renderTracingPaperSnapshotPng, tracingPaperViewMatches, type GestureTool } from "../workspaces/monkeyarch/Annotate";
+import { renderTracingPaperSnapshotPng, captureTracingPaperReview, type GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
@@ -633,6 +633,7 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   }, modelAnnotationsController);
   const gestures = modelAnnotations.annotations;
   const tracingPaperSignature = useMemo(() => JSON.stringify(gestures), [gestures]);
+  const tracingPaperSending = useRef(false);
   const [tracingPaperSend, setTracingPaperSend] = useState<{ busy: boolean; sent: boolean; error: string | null }>({ busy: false, sent: false, error: null });
   useEffect(() => { setTracingPaperSend({ busy: false, sent: false, error: null }); },
     [loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, tracingPaperSignature]);
@@ -749,36 +750,33 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   }, [loadedArtifact?.runId, sourceLabel]);
 
   const sendTracingPaperToBoard = useCallback(async () => {
-    if (!project || !loadedModelSource || !persistentAnnotations || !modelAnnotations.ready || gestures.length === 0) return;
+    const viewport = viewportRef.current;
+    if (!viewport || tracingPaperSending.current || !project || !loadedModelSource || !persistentAnnotations || !modelAnnotations.ready || gestures.length === 0) return;
+    tracingPaperSending.current = true;
     setTracingPaperSend({ busy: true, sent: false, error: null });
+    const modelSource = { ...loadedModelSource };
+    const acceptedStage = designHistory?.stages.find((stage) => sameModelSource(stage.modelSource, modelSource));
+    const sourceStageRef = acceptedStage?.stageRef ?? (sameModelSource(loadedArtifact?.modelSource, modelSource)
+      ? loadedArtifact?.sourceStageRef ?? null : null);
     try {
-      // Freeze the local gesture objects before awaiting the save. CameraState already
-      // carries projection + orthographic zoom in this session even though the older
-      // persisted annotation DTO intentionally remains unchanged.
-      const reviewGestures = structuredClone(gestures);
-      const saved = await modelAnnotations.save();
-      const revision = saved.revisionSha256;
-      const camera = viewportRef.current?.camera();
-      const screenSize = reviewGestures[0]?.screenSize;
-      if (!revision || !camera || !screenSize || !tracingPaperViewMatches(camera, reviewGestures)) {
-        throw new Error("These Tracing Paper marks do not all belong to the current locked view.");
-      }
-      const raw = await viewportRef.current?.capturePng();
-      if (!raw) throw new Error("The current model view could not be captured.");
-      const png = await renderTracingPaperSnapshotPng(raw, reviewGestures);
-      const acceptedStage = designHistory?.stages.find((stage) => sameModelSource(stage.modelSource, loadedModelSource));
-      const sourceStageRef = acceptedStage?.stageRef ?? (sameModelSource(loadedArtifact?.modelSource, loadedModelSource)
-        ? loadedArtifact?.sourceStageRef ?? null : null);
+      const capture = await captureTracingPaperReview(viewport, gestures, modelAnnotations.save);
+      const png = await renderTracingPaperSnapshotPng(capture.viewportPng, capture.saved.annotations);
       const review = await studio.createTracingPaperReview({
-        projectId: project.projectId, modelSource: { ...loadedModelSource }, sourceStageRef,
-        annotationRevisionSha256: revision, camera, screenSize,
+        projectId: project.projectId, modelSource, sourceStageRef,
+        annotationRevisionSha256: capture.saved.revisionSha256!, camera: capture.camera, screenSize: capture.screenSize,
       }, png);
-      setTracingPaperSend({ busy: false, sent: true, error: null });
+      if (sameModelSource(currentViewSourceRef.current, modelSource)) {
+        setTracingPaperSend({ busy: false, sent: true, error: null });
+      }
       append({ kind: "system", text: `Tracing Paper review sent to Board · ${review.fileName}` });
     } catch (cause) {
-      setTracingPaperSend({ busy: false, sent: false, error: asStudioApiError(cause).detail });
+      if (sameModelSource(currentViewSourceRef.current, modelSource)) {
+        setTracingPaperSend({ busy: false, sent: false, error: asStudioApiError(cause).detail });
+      }
+    } finally {
+      tracingPaperSending.current = false;
     }
-  }, [append, designHistory, gestures.length, loadedArtifact, loadedModelSource, modelAnnotations, persistentAnnotations, project]);
+  }, [append, designHistory, gestures, loadedArtifact, loadedModelSource, modelAnnotations, persistentAnnotations, project]);
 
   const captureViewport = useCallback(async () => {
     const runId = loadedArtifact?.runId;
