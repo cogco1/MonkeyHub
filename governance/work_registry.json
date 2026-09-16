@@ -834,6 +834,33 @@
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes.",
         "2026-09-15: the standalone launcher and its runtime.json bridge retired with #126; the Hub injects intentProvider/intentModel/intentTimeoutS into the Studio child environment (applications.py, covered by apps/monkeyhub/api/tests/test_applications.py)."
       ]
+    },
+    {
+      "id": "GH-128",
+      "stream": "integration",
+      "status": "active",
+      "goal": "Complete the existing Monitor UI fold on the current split Hub/Project Runtime boundary; source-only integration, no user project changes.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/src/MonitorPage.css",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/main.tsx",
+        "apps/monkeyhub/web/src/monitorData.ts",
+        "apps/monkeyhub/web/test/monitorData.test.ts",
+        "docs/REPO_LAYOUT.md",
+        "docs/SYSTEM_MAP.md",
+        "governance/module_registry.json",
+        "monkeymonitor/README.md",
+        "monkeymonitor/__main__.py",
+        "monkeymonitor/server.py",
+        "monkeymonitor/web/app.js",
+        "monkeymonitor/web/index.html",
+        "monkeymonitor/web/style.css",
+        "tests/monkeymonitor/benchmark_preview.mjs",
+        "tests/monkeymonitor/test_server.py",
+        "tests/monkeymonitor/test_web_timing.py",
+        "tests/monkeymonitor/test_web_traces.py"
+      ]
     }
   ]
 }
