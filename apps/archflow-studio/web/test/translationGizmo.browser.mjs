@@ -213,7 +213,10 @@ try {
   if (page && process.env.BROWSER_OUTPUT) {
     await mkdir(process.env.BROWSER_OUTPUT,{recursive:true});
     await page.screenshot({path:path.join(process.env.BROWSER_OUTPUT,"translation-failure.png")}).catch(()=>{});
-    console.error("Browser errors", errors, "project calls", projectCalls);
+    console.error("Browser errors", errors, "project calls", projectCalls,
+      "state", await page.evaluate(() => ({ actions: window.actions, snapshot: window.snapshot?.(),
+        phase: document.querySelector(".stage-move")?.getAttribute("data-phase"),
+        constraint: document.querySelector(".stage-move")?.getAttribute("data-constraint") })));
   }
   throw error;
 } finally {

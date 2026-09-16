@@ -6,7 +6,7 @@
  * stage decides nothing.
  */
 
-import { createRef, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
+import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/client";
 import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
@@ -418,6 +418,16 @@ export function Stage({
     setPushPullActive(false);
     reportPushPullError(null);
   }, [reportPushPullError, viewportRef]);
+  // Keep the gesture bound to the source visible when it was armed. A render
+  // may publish a new base before passive effects run; completion must refuse
+  // the old gesture synchronously, not rely on a later visual cleanup.
+  const moveSourceKey = JSON.stringify([editingBaseRunId, loadedRunId,
+    editingModelSource?.runId, editingModelSource?.stateDigest, editingModelSource?.assetSha256,
+    viewedModelSource?.runId, viewedModelSource?.stateDigest, viewedModelSource?.assetSha256]);
+  const moveAvailable = !documentOpen && !changingBase && !baseActionBusy && loadingSha === null &&
+    status !== "loading" && status !== "error" && !model?.interactionBlocked && !model?.busy;
+  const moveContextRef = useRef({ sourceKey: moveSourceKey, available: moveAvailable });
+  moveContextRef.current = { sourceKey: moveSourceKey, available: moveAvailable };
   const [moveInputs] = useState(() => [createRef<HTMLInputElement>(), createRef<HTMLInputElement>(), createRef<HTMLInputElement>()]);
   const [movePhase, setMovePhase] = useState<"anchor" | "target" | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -633,8 +643,11 @@ export function Stage({
   }, [moveInputs, viewportRef]);
   const commitMove = useCallback(() => {
     const current = interaction.current.move, keys = modelKeysRef.current;
-    if (!current || !current.constraint || !keys?.onApply || keys.busy || keys.interactionBlocked ||
-        keys.directTool !== current.tool || keys.pushPullTarget !== current.target) return;
+    if (!current || !current.constraint || !keys?.onApply) return;
+    if (!moveContextRef.current.available || current.sourceKey !== moveContextRef.current.sourceKey ||
+        keys.directTool !== current.tool || keys.pushPullTarget !== current.target) {
+      closeDirectTool(); return;
+    }
     if (current.typed?.some(value => !value.trim())) return;
     try {
       const translation = constrainedTranslation(current.typed ? current.typed.map(Number) : current.translation, current.constraint);
@@ -646,7 +659,7 @@ export function Stage({
       keys.onApply({ kind: current.tool, translation, target: current.target });
       keys.onTool?.("select");
     } catch (error) { setMoveError(error instanceof Error ? error.message : String(error)); }
-  }, [stopMove]);
+  }, [closeDirectTool, stopMove]);
   const changeMoveConstraint = useCallback((constraint: TranslationConstraint) => {
     const current = interaction.current.move;
     if (!current) return;
@@ -657,21 +670,20 @@ export function Stage({
     setMoveConstraint(constraint); setMovePhase("target");
     paintMove();
   }, [paintMove, viewportRef]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     stopMove();
-    if ((model?.directTool !== "move" && model?.directTool !== "copy") || documentOpen || model.interactionBlocked || status === "loading" || status === "error") return;
+    if ((model?.directTool !== "move" && model?.directTool !== "copy") || !moveAvailable) return;
     const target = model.pushPullTarget;
     if (!target) { setMoveError("Select a drawn solid or face before moving or copying."); return; }
     const spec = specFromDrawnShape(target.shape), origin = draftTransformCenter(spec);
-    interaction.current.move = { target, tool: model.directTool, spec, origin, constraint: null,
+    interaction.current.move = { target, tool: model.directTool, sourceKey: moveSourceKey, spec, origin, constraint: null,
       pointerId: null, translation: [0, 0, 0], typed: null };
     interaction.current.pointer = null;
     moveInputs.forEach(input => { if (input.current) input.current.value = "0"; });
     viewportRef.current?.translationGizmo({ origin, translation: [0, 0, 0], constraint: null });
     setMovePhase("anchor");
     return stopMove;
-  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, status,
-    editingBaseRunId, loadedRunId, moveInputs, stopMove, viewportRef]);
+  }, [model?.directTool, model?.pushPullTarget, moveAvailable, moveSourceKey, moveInputs, stopMove, viewportRef]);
   useEffect(() => {
     if (model?.directTool !== "move" && model?.directTool !== "copy") return;
     const listen = (event: KeyboardEvent) => {

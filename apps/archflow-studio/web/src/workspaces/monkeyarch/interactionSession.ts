@@ -23,6 +23,7 @@ export interface PushPullGesture {
 export interface MoveGesture {
   readonly target: PushPullTarget;
   readonly tool: "move" | "copy";
+  readonly sourceKey: string;
   readonly spec: SketchPreview;
   origin: [number, number, number];
   constraint: TranslationConstraint | null;
