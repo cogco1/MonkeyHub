@@ -1,7 +1,5 @@
 import { Color, Line, Mesh, MeshStandardMaterial, SRGBColorSpace, Texture, type Material, type Object3D } from "three";
 
-export type ModelDisplayMode = "model" | "framework" | "massing";
-
 export interface SemanticHighlightTarget {
   /** Exact object names returned by the server's catalog for this model run. */
   readonly objectNames: readonly string[];
@@ -65,14 +63,6 @@ export function matchesSemanticCarrier(
   target: SemanticHighlightTarget,
 ): boolean {
   return carrier.name !== undefined && target.objectNames.includes(carrier.name);
-}
-
-/** Clicking an open projection returns to the model; every other click selects it. */
-export function nextModelDisplayMode(
-  current: ModelDisplayMode,
-  requested: ModelDisplayMode,
-): ModelDisplayMode {
-  return requested !== "model" && requested === current ? "model" : requested;
 }
 
 /**

@@ -10,7 +10,6 @@ import {
   fadeOpacity,
   isDisplayed,
   matchesSemanticCarrier,
-  nextModelDisplayMode,
   prepareLoadedModel,
   restoreModelAppearance,
   restoreOpacity,
@@ -52,14 +51,6 @@ function loadedMesh(name: string, layerIndex: number, saved: { visible?: boolean
   mesh.visible = saved.layerVisible;
   return mesh;
 }
-
-test("framework and massing return to the original model without a picked object", () => {
-  assert.equal(nextModelDisplayMode("model", "framework"), "framework");
-  assert.equal(nextModelDisplayMode("framework", "framework"), "model");
-  assert.equal(nextModelDisplayMode("model", "massing"), "massing");
-  assert.equal(nextModelDisplayMode("massing", "model"), "model");
-  assert.equal(nextModelDisplayMode("framework", "massing"), "massing");
-});
 
 test("returning to model restores every original visibility, layer and material", () => {
   const model = new Group();

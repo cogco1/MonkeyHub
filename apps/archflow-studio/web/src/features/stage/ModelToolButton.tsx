@@ -37,8 +37,8 @@ export type ModelToolIcon = keyof typeof paths;
  * later contextual exposure, but do not make the primary toolbar another CAD
  * command shelf.
  *
- * Stage 1 is for massing correction and spatial steering: draw a simple
- * profile, move it, push/pull it, then mark what the agent should understand.
+ * Stage 1 is for spatial correction and steering: draw a simple profile, move
+ * it, push/pull it, then mark what the agent should understand.
  */
 const HIDDEN_FROM_STAGE1_TOOLBAR = new Set<ModelToolIcon>([
   "freehand",
@@ -54,11 +54,6 @@ const HIDDEN_FROM_STAGE1_TOOLBAR = new Set<ModelToolIcon>([
 const ANNOTATION_PANEL = "#annotation-tools";
 const VIEWPORT_CANVAS = ".viewport-canvas";
 const ANNOTATION_CANVAS = ".annotate";
-const LEGACY_STAGE_SURFACE_LABELS = new Set([
-  "Frame", "Framework", "框架",
-  "Massing", "Mass", "体量",
-  "Program", "Brief", "任务书",
-]);
 let stageToolbarPolicyInstalled = false;
 let annotationSpaceHeld = false;
 
@@ -87,29 +82,6 @@ function markAnnotationLock(locked: boolean): void {
 function releaseTemporaryAnnotationView(): void {
   annotationSpaceHeld = false;
   markAnnotationLock(activeAnnotationPanel() !== null);
-}
-
-/**
- * Frame / Massing / Program are retained runtime concepts, not normal product
- * modes. Keep their APIs and project data available to Sync/Agent/evaluators,
- * but remove the obsolete Studio-era launch controls from MonkeyArch.
- *
- * This small compatibility guard lives at the existing toolbar owner while the
- * Hub/Project-Runtime consolidation (#127) removes the legacy panel wiring. It
- * deliberately changes no retained project data and does not disable the
- * underlying runtime capabilities.
- */
-function retireLegacyStageSurfaces(): void {
-  const panel = document.querySelector<HTMLElement>("#view-tools");
-  if (!panel) return;
-  for (const button of panel.querySelectorAll<HTMLButtonElement>("button")) {
-    const label = button.textContent?.trim() ?? "";
-    if (!LEGACY_STAGE_SURFACE_LABELS.has(label)) continue;
-    button.hidden = true;
-    button.tabIndex = -1;
-    button.setAttribute("aria-hidden", "true");
-    button.dataset.retiredProductSurface = "true";
-  }
 }
 
 /**
@@ -158,10 +130,8 @@ function installStageToolbarPolicy(): void {
 
   const observer = new MutationObserver(() => {
     markAnnotationLock(activeAnnotationPanel() !== null && !annotationSpaceHeld);
-    retireLegacyStageSurfaces();
   });
   observer.observe(document.body, { childList: true, subtree: true });
-  retireLegacyStageSurfaces();
 }
 
 export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "aria-label"> & {
