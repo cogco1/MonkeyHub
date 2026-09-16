@@ -752,16 +752,20 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     if (!project || !loadedModelSource || !persistentAnnotations || !modelAnnotations.ready || gestures.length === 0) return;
     setTracingPaperSend({ busy: true, sent: false, error: null });
     try {
+      // Freeze the local gesture objects before awaiting the save. CameraState already
+      // carries projection + orthographic zoom in this session even though the older
+      // persisted annotation DTO intentionally remains unchanged.
+      const reviewGestures = structuredClone(gestures);
       const saved = await modelAnnotations.save();
       const revision = saved.revisionSha256;
       const camera = viewportRef.current?.camera();
-      const screenSize = saved.annotations[0]?.screenSize;
-      if (!revision || !camera || !screenSize || !tracingPaperViewMatches(camera, saved.annotations)) {
+      const screenSize = reviewGestures[0]?.screenSize;
+      if (!revision || !camera || !screenSize || !tracingPaperViewMatches(camera, reviewGestures)) {
         throw new Error("These Tracing Paper marks do not all belong to the current locked view.");
       }
       const raw = await viewportRef.current?.capturePng();
       if (!raw) throw new Error("The current model view could not be captured.");
-      const png = await renderTracingPaperSnapshotPng(raw, saved.annotations);
+      const png = await renderTracingPaperSnapshotPng(raw, reviewGestures);
       const acceptedStage = designHistory?.stages.find((stage) => sameModelSource(stage.modelSource, loadedModelSource));
       const sourceStageRef = acceptedStage?.stageRef ?? (sameModelSource(loadedArtifact?.modelSource, loadedModelSource)
         ? loadedArtifact?.sourceStageRef ?? null : null);

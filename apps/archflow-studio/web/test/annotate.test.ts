@@ -134,3 +134,15 @@ test("whole-stroke erasing intersects actual ink across fast cursor moves", asyn
   assert.equal(annotationIntersectsEraser(arc, [75, 25], [75, 25], 1), false, "the third-point sample must not add an eraser chord");
   assert.equal(annotationIntersectsEraser({ ...line, kind: "remove", screen: [[20, 20]] }, [30, 20], [30, 20], 1), true, "remove remains a visible semantic mark, erasable like other ink");
 });
+
+
+test("Tracing Paper framing includes orthographic zoom when the live gesture carries it", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { tracingPaperViewMatches } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
+  const camera = { position: [1, 2, 3], target: [0, 0, 0], up: [0, 0, 1], fov: 50, projection: "orthographic", zoom: 2 };
+  const gesture = { id: "g", kind: "circle", screen: [[0, 0]], hits: [], screenSize: [100, 100], camera: { ...camera } };
+  assert.equal(tracingPaperViewMatches(camera, [gesture]), true);
+  assert.equal(tracingPaperViewMatches({ ...camera, zoom: 3 }, [gesture]), false);
+  assert.equal(tracingPaperViewMatches({ ...camera, projection: "perspective" }, [gesture]), false);
+});

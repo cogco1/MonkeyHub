@@ -284,9 +284,13 @@ function closeVector(left: readonly number[], right: readonly number[]): boolean
 
 /** A frozen review is one view. Mixed-view ink must be resolved before promotion. */
 export function tracingPaperViewMatches(camera: CameraState, gestures: readonly GestureDto[]): boolean {
-  return gestures.length > 0 && gestures.every((gesture) => closeVector(gesture.camera.position, camera.position)
-    && closeVector(gesture.camera.target, camera.target) && closeVector(gesture.camera.up, camera.up)
-    && Math.abs(gesture.camera.fov - camera.fov) <= 1e-6);
+  return gestures.length > 0 && gestures.every((gesture) => {
+    const drawn = gesture.camera as typeof gesture.camera & { projection?: CameraState["projection"]; zoom?: number };
+    return closeVector(drawn.position, camera.position) && closeVector(drawn.target, camera.target)
+      && closeVector(drawn.up, camera.up) && Math.abs(drawn.fov - camera.fov) <= 1e-6
+      && (drawn.projection === undefined || drawn.projection === camera.projection)
+      && (drawn.zoom === undefined || Math.abs(drawn.zoom - camera.zoom) <= 1e-6);
+  });
 }
 
 /** Composite the exact saved ink over the WebGL capture; neither source is mutated. */
@@ -366,10 +370,14 @@ export function Annotate({
       const camera = viewportRef.current?.camera();
       if (!camera) return;
       const rect = canvasRef.current?.getBoundingClientRect();
+      const framing = drawnIn as typeof drawnIn & { projection?: CameraState["projection"]; zoom?: number };
       setMoved(
         !same(camera.position, drawnIn.position) ||
           !same(camera.target, drawnIn.target) ||
+          !same(camera.up, drawnIn.up) ||
           Math.abs(camera.fov - drawnIn.fov) > 1e-6 ||
+          (framing.projection !== undefined && framing.projection !== camera.projection) ||
+          (framing.zoom !== undefined && Math.abs(framing.zoom - camera.zoom) > 1e-6) ||
           (drawnSize !== undefined && drawnSize !== null && rect !== undefined &&
             (Math.round(rect.width) !== drawnSize[0] || Math.round(rect.height) !== drawnSize[1])),
       );
