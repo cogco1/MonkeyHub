@@ -11,18 +11,22 @@ export type TFunction = (
   parameters?: MessageParameters,
 ) => string;
 
-// Product term, not a generic annotation mode: this layer is registered to
-// one camera view like a sheet of tracing paper laid over the model.
 const catalogs = {
-  en: { ...messagesEn, "stage.tools.annotate": "Tracing Paper" },
-  "zh-CN": { ...messagesZhCN, "stage.tools.annotate": "Tracing Paper" },
+  en: messagesEn,
+  "zh-CN": messagesZhCN,
 } as const;
+
+const PRODUCT_TERMS: Partial<Record<MessageKey, string>> = {
+  // Camera-registered review layer: conceptually a sheet of tracing paper over
+  // the current model view, rather than a generic annotation mode.
+  "stage.tools.annotate": "Tracing Paper",
+};
 
 export function useT(): TFunction {
   const { language } = usePreferences();
 
   return useCallback(
-    (key, parameters) => translateMessage(catalogs[language], key, parameters),
+    (key, parameters) => PRODUCT_TERMS[key] ?? translateMessage(catalogs[language], key, parameters),
     [language],
   );
 }
