@@ -78,6 +78,9 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(
 try {
   vite = await createServer({ root:webRoot, configFile:false, cacheDir, publicDir:".generated/public", logLevel:"silent",
     plugins:[{ name:"read-only-viewport-probe", enforce:"pre", transform(source,id) {
+      if (id.replaceAll("\\", "/").endsWith("/viewer/normalDrag.ts")) {
+        return {code:source.replace("matches(next, nextRect) {", "matches(next, nextRect) { (window as any).__normalCapture = {rect, nextRect, world, currentWorld:next.matrixWorld.toArray(), projection, currentProjection:next.projectionMatrix.toArray()};"),map:null};
+      }
       if (!id.replaceAll("\\", "/").endsWith("/viewer/ThreeDmViewport.tsx")) return;
       const marker = "  const pickAt = useCallback(";
       assert.equal(source.split(marker).length,2);
@@ -175,6 +178,16 @@ try {
     await writeFile(path.join(process.env.EVIDENCE_DIR,"pushpull-report.json"),JSON.stringify({cases:8,cancellations:7,projectCalls,errors},null,2));
   }
   console.log("PASS cancellations, missing-face refusal, zero project requests and zero JavaScript errors");
+} catch (error) {
+  const diagnostic = await page?.evaluate(() => ({ capture:window.__normalCapture, selection:window.selection,
+    camera:window.viewport?.current?.camera(), panel:document.querySelector(".model-edit-panel")?.outerHTML,
+    stage:document.querySelector(".stage")?.textContent, actions:window.actions })).catch(() => null);
+  console.error("BROWSER_DIAGNOSTIC", JSON.stringify({diagnostic,errors,projectCalls}));
+  if (process.env.EVIDENCE_DIR && page) {
+    await mkdir(process.env.EVIDENCE_DIR,{recursive:true});
+    await page.screenshot({path:path.join(process.env.EVIDENCE_DIR,"pushpull-failure.png")}).catch(() => {});
+  }
+  throw error;
 } finally {
   await browser?.close(); await vite?.close(); await new Promise(resolve=>http.close(resolve)); await rm(cacheDir,{recursive:true,force:true});
 }
