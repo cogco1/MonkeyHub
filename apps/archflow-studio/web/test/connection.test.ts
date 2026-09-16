@@ -83,45 +83,33 @@ test("candidate requests carry their explicit source without changing default re
   await studio.state(source.sourceRunId);
   await studio.frame(source.sourceRunId);
   await studio.volumes(source.sourceRunId);
-  await studio.options(source.sourceRunId);
-  await studio.program(source.sourceRunId);
-  await studio.makeOption({ ...source, modelSource, transform: "add_floor" });
-  await studio.applyProgram({ ...source, modelSource, sheet: {} as never });
   await studio.resolvePick({ ...source, userStrings: {} });
   await studio.closure({ ...source, changedRefs: ["entity:column"] });
   await studio.compileIntent({ ...source, utterance: "set height to 3" });
-  await studio.createProposal({ ...source, targetComponentId: "portico", utterance: "set height to 3" });
-  assert.deepEqual(requests.slice(0, 5).map((r) => r.path), [
+  await studio.createProposal({ ...source, modelSource, targetComponentId: "portico", utterance: "set height to 3" });
+  assert.deepEqual(requests.slice(0, 3).map((r) => r.path), [
     "/api/state?run=candidate-a",
     "/api/state/frame?run=candidate-a",
     "/api/state/volumes?run=candidate-a",
-    "/api/options?run=candidate-a",
-    "/api/program?run=candidate-a",
   ]);
-  for (const request of requests.slice(5)) {
+  for (const request of requests.slice(3)) {
     assert.deepEqual(
       { stateDigest: (request.body as typeof source).stateDigest, sourceRunId: (request.body as typeof source).sourceRunId },
       source,
     );
   }
-  for (const request of requests.slice(5, 7)) {
-    assert.deepEqual((request.body as { modelSource: unknown }).modelSource, modelSource);
-  }
+  assert.deepEqual((requests.at(-1)!.body as { modelSource: unknown }).modelSource, modelSource);
 
   // Returning to the default is per request, not a hidden global SDK pointer.
   requests.length = 0;
   await studio.state();
   await studio.frame();
   await studio.volumes();
-  await studio.options();
-  await studio.program();
-  await studio.makeOption({ stateDigest: "b".repeat(64), transform: "add_floor" });
-  await studio.applyProgram({ stateDigest: "b".repeat(64), sheet: {} as never });
   await studio.compileIntent({ stateDigest: "b".repeat(64), utterance: "set height to 4" });
-  assert.deepEqual(requests.slice(0, 5).map((r) => r.path), [
-    "/api/state", "/api/state/frame", "/api/state/volumes", "/api/options", "/api/program",
+  assert.deepEqual(requests.slice(0, 3).map((r) => r.path), [
+    "/api/state", "/api/state/frame", "/api/state/volumes",
   ]);
-  for (const request of requests.slice(5)) {
+  for (const request of requests.slice(3)) {
     assert.equal(Object.hasOwn(request.body as object, "sourceRunId"), false);
     assert.equal(Object.hasOwn(request.body as object, "modelSource"), false);
   }
