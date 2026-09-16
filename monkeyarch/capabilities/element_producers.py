@@ -82,6 +82,8 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
     grid_role = {**identifier, "description": "The existing GridAxis@1 fields.role, not its entity_id."}
     level_id = {**identifier, "description": "The existing Level@1 entity_id, not its role."}
     plan = {"anyOf": [
+        obj({"point": {"type": "array", "items": scalar, "minItems": 2, "maxItems": 2,
+                       "description": "Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required."}}, ("point",)),
         obj({"grid": {"anyOf": [grid_role, {"type": "array", "items": grid_role,
                                                 "minItems": 2, "maxItems": 2}]}}, ("grid",)),
         obj({"axis_point": obj({"axis": grid_role, "along": scalar}, ("axis", "along"))}, ("axis_point",)),
@@ -176,7 +178,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "producer": "wall",
         "label": "墙体与宿主开口",
         "description": (
-            "A straight wall placed on existing grids or host references. Its hosted opening may be "
+            "A straight wall placed by explicit project-local points, existing grids or host references. Its hosted opening may be "
             "rectangular or semicircular. No opening type means an empty passage, with no frame or leaf. "
             "Types supply reusable defaults; instance params and references override named defaults. "
             "References and dimensions must come from the project or an explicit design proposal. "
@@ -718,6 +720,8 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
     end = resolve_plan(parse_reference(line["to"]), context.references)
     dx, dz = end[0] - start[0], end[1] - start[1]
     length = math.hypot(dx, dz)
+    if not math.isfinite(length) or length <= 0:
+        raise ElementProducerError(f"{row.element_id}: wall endpoints must define a finite, non-zero length")
     direction = (dx / length, dz / length)
     origin = start
     inward = line.get("inward")

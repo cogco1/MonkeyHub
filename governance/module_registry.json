@@ -799,7 +799,8 @@
         "loft semantic authoring: corresponding polyline sections with parameter-bound coordinates form one normal or straight loft, capped or open; unsupported section bases and inconsistent vertex counts refuse before execution",
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
         "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits",
-        "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred"
+        "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
+        "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations"
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -875,7 +876,8 @@
         "tests/test_cad_patch.py",
         "tests/test_project_runner.py",
         "tests/test_prism_cutouts.py",
-        "tests/test_occt_execution.py"
+        "tests/test_occt_execution.py",
+        "tests/test_grid_free_wall.py"
       ],
       "notes": "The single geometry-emission owner on the spine; P105 is where monument vocabulary would be added here rather than beside it."
     },
@@ -1052,9 +1054,9 @@
     {
       "module_id": "capabilities.reference_resolver",
       "owner_path": "monkeyarch/capabilities/reference_resolver.py",
-      "purpose": "Resolve the record's symbolic plan and elevation references against grids, levels and host lines - the one resolver every producer calls.",
+      "purpose": "Resolve the record's symbolic plan and elevation references against explicit project-local points, grids, levels and host lines - the one resolver every producer calls.",
       "owns": [
-        "the reference vocabulary: GridRef, GridIntersection, AxisPoint, HostAlong, LevelRef, OffsetFrom",
+        "the reference vocabulary: GridRef, GridIntersection, AxisPoint, HostAlong, LevelRef, OffsetFrom, ProjectPoint",
         "parsing a reference from its JSON form",
         "resolving a plan reference to one (x, z) coordinate",
         "resolving an elevation reference to a symbolic (level datum id, offset) pair",
@@ -1092,7 +1094,8 @@
         "OffsetFrom",
         "parse_reference",
         "resolve_plan",
-        "resolve_elevation"
+        "resolve_elevation",
+        "ProjectPoint"
       ],
       "depends_on": [
         "archflow.project.refs",
@@ -1114,12 +1117,14 @@
         "resolve_elevation never returns a number - the compiler is the only thing that turns a datum id into one",
         "a grid role matches exactly; there is no id fallback, and a miss fails ReferenceError naming the role and the roles that exist",
         "an unknown axis, level or host fails ReferenceError rather than defaulting",
-        "a resolver reads only grids, levels and host lines; it cannot see components or geometry"
+        "a resolver reads only grids, levels and host lines; it cannot see components or geometry",
+        "A ProjectPoint is explicit finite project-local [x, z] in metres; missing or unknown grid/host references never fall back to a point."
       ],
       "status": "canonical",
       "tests": [
         "tests/test_derivations_and_references.py",
-        "tests/test_element_producers.py"
+        "tests/test_element_producers.py",
+        "tests/test_grid_free_wall.py"
       ],
       "notes": "The datum namespace boundary: level ids and element-top ids resolve here, so producers stay coordinate-free."
     },

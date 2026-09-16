@@ -127,8 +127,9 @@ class FrameTestCase(unittest.TestCase):
         frame = frame_of(record)
         self.assertEqual(frame.axes, ())
         self.assertIn(
-            "no GridAxis@1 in the record: nothing here places an element in "
-            "plan",
+            "no GridAxis@1 in the record: grid-axis references are unavailable; "
+            "explicit project-local points and sketch profiles can still place "
+            "elements in plan, with a declared base level",
             frame.honesty,
         )
 

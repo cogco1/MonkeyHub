@@ -1659,12 +1659,16 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
             return json.load(response)
     except HTTPError as exc:
+        code = "CHAT_TOOL_FAILED"
         try:
             payload = json.load(exc)
             detail = payload.get("detail", "The application refused the request.")
+            reported = payload.get("code")
+            if isinstance(reported, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", reported):
+                code = reported
         except (ValueError, AttributeError):
             detail = "The application refused the request."
-        raise HubFailure(exc.code, "CHAT_TOOL_FAILED", _redact(str(detail))[:1200]) from exc
+        raise HubFailure(exc.code, code, _redact(str(detail))[:1200]) from exc
 
 
 def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
@@ -2248,6 +2252,19 @@ def _mcp(hub: str, chat_id: str) -> None:
         "or rebuild every dependent form. Submit the final proposal once with awaitSeconds: 60 as above.",
         "If a semantic field is unclear, read studio_schema POST /api/proposals with producer: 'prism' (or the producer needed).",
         "That selects its request contract; avoid repeatedly reading the full schema with unrelated producers and response payloads.",
+        "When a wall is explicitly requested, producer: 'wall' accepts references.line.from/to as {point: [x,z]},",
+        "including @parameter coordinates, or existing grid/host references; references.base names an existing level.",
+        "Its params include thickness, height and optional openings [{opening_id, kind, along, width, sill, head}].",
+        "Read studio_schema POST /api/proposals with producer: 'wall' for its exact contract. No invented GridAxis is needed.",
+        "Keep an existing wall's identity, hosted openings and relations; do not silently replace it with a prism.",
+        "A shape that has not been identified as a wall can remain a generic form; geometry alone does not decide its role.",
+        "RECOVER REFUSED MODELING REQUESTS: preserve the original source/base, keep conditions and object identity.",
+        "For SEMANTIC_EDIT_INVALID or REQUEST_INVALID, inspect the named contract, correct the request, and continue",
+        "from the last valid sourceProposalId before the single final checkpoint. A rejected request produced no model.",
+        "For STALE_BASE or a chain conflict, re-read the actual state and reconcile the intended change; never blindly retry",
+        "or drop keep conditions. Unknown references must be corrected explicitly, not converted into free coordinates.",
+        "A truly unsupported operation is a capability limit. Use another representation only when it preserves the",
+        "requested design meaning and relationships; otherwise explain the limitation rather than invent success.",
         "For a tapered or rounded form, use ONE entity with producer: 'loft' instead of stacked independent prisms.",
         "Its params are {profiles: [[[x,y,z],...], ...], profile_size: <vertices per section>, loft_type: 'normal',",
         "profile_basis: 'polyline', cap_ends: true}; references.base names the level or datum. Y is height here.",
@@ -2341,6 +2358,12 @@ def _mcp(hub: str, chat_id: str) -> None:
                 try:
                     value = call_tool(hub, chat_id, params.get("name", ""), params.get("arguments", {}))
                     result = {"content": [{"type": "text", "text": _redact(json.dumps(value, ensure_ascii=False))}]}
+                except HubFailure as exc:
+                    # Keep the Runtime's refusal class across the MCP boundary.
+                    # A stale base is not an input typo and must never be blindly retried.
+                    failure = {"code": exc.error.code, "detail": _redact(exc.error.detail)[:1200],
+                               "httpStatus": exc.status}
+                    result = {"isError": True, "content": [{"type": "text", "text": json.dumps(failure, ensure_ascii=False)}]}
                 except Exception as exc:
                     result = {"isError": True, "content": [{"type": "text", "text": _redact(str(exc))[:1500]}]}
             elif method == "ping":

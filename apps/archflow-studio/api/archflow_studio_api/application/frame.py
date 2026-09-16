@@ -1,10 +1,10 @@
 """The record's frame — its levels and axes — and what changing one would move.
 
-Every position in an ArchFlow record is a reference to a ``Level@1`` (role,
-elevation) or a ``GridAxis@1`` (role, origin, direction); no element carries a
-coordinate of its own. That is why one axis or one level can move a whole side
-of a building, and why an architect must be able to see *what would move*
-before touching one.
+The shared frame consists of ``Level@1`` (role, elevation) and ``GridAxis@1``
+(role, origin, direction). An element may instead retain explicit project-local
+points or a sketch profile; those positions do not acquire a grid dependency.
+For elements that reference the frame, an architect can inspect what moving an
+axis or level would affect through the record's declared dependency closure.
 
 Nothing here decides any of it. ``StateRecord.closure`` computes what a change
 reaches, over ``StateRecord.dependency_edges``; the plan reading of an axis is
@@ -289,8 +289,9 @@ def _honesty(
         )
     if not axes:
         lines.append(
-            "no GridAxis@1 in the record: nothing here places an element in "
-            "plan"
+            "no GridAxis@1 in the record: grid-axis references are unavailable; "
+            "explicit project-local points and sketch profiles can still place "
+            "elements in plan, with a declared base level"
         )
     for axis in axes:
         if axis.const is None:
