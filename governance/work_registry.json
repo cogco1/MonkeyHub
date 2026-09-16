@@ -38,6 +38,24 @@
       ]
     },
     {
+      "id": "GH-138",
+      "stream": "cleanup",
+      "status": "active",
+      "goal": "Retire the legacy Frame, Massing and Program product surfaces from normal MonkeyArch while retaining real datum, Program, massing metric and runtime consumers.",
+      "depends_on": [],
+      "branch": "gpt/138-retire-legacy-clean",
+      "worktree": "cloud/gpt-138-retire-legacy-clean",
+      "base_ref": "f19f3a7bbaf8babaee328d9e9037a71476471088",
+      "contributor": "GPT-5.6 Sol",
+      "reviewer": "Repository owner",
+      "write_scope": [
+        "apps/archflow-studio/web/src/features/stage/ModelToolButton.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/OptionsPanel.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/ProgramPanel.tsx",
+        "apps/archflow-studio/web/test/programOptions.browser.mjs"
+      ]
+    },
+    {
       "id": "GH-127",
       "stream": "architecture",
       "status": "active",
