@@ -7,6 +7,7 @@ import { createClient } from "./api/generated/client";
 import { applicationSettingsApiSettingsAppsGet, chatProvidersApiChatProvidersGet, chatWorkspaceApiChatWorkspaceGet, getUserSettingsApiSettingsUserGet, listAppsApiAppsGet, putUserSettingsApiSettingsUserPut, startAppApiAppsAppIdStartPost, stopAppApiAppsAppIdStopPost, updateApplicationSettingsApiSettingsAppsPut, type AppStatus, type ApplicationSettingsDto, type ChatProvider, type ChatWorkspace, type UserSettingsDto } from "./api/generated";
 import "./styles.css";
 import { FabPage } from "./FabPage";
+import { MonitorPage } from "./MonitorPage";
 import { ChatShell } from "./ChatShell";
 
 type AppId = AppStatus["appId"];
@@ -100,8 +101,11 @@ function ErrorMessage({ issue, language }: { issue: Issue | null; language: Lang
 }
 
 function App() {
-  const fabView = new URLSearchParams(window.location.search).get("view") === "fab";
-  const [preferences, setPreferences] = useState<AppearancePreferences>(() => fabView ? appearanceFromSearch(window.location.search) : { ...DEFAULT_APPEARANCE });
+  const view = new URLSearchParams(window.location.search).get("view");
+  const fabView = view === "fab";
+  const monitorView = view === "monitor";
+  const hostedView = fabView || monitorView;
+  const [preferences, setPreferences] = useState<AppearancePreferences>(() => hostedView ? appearanceFromSearch(window.location.search) : { ...DEFAULT_APPEARANCE });
   const [savedAppearance, setSavedAppearance] = useState<AppearancePreferences | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettingsDto | null>(null);
   // What a new conversation starts with, and what is actually saved for it.
@@ -153,7 +157,7 @@ function App() {
       setSavedChatDefaults(savedChat);
       // Checking the connections again re-reads what is installed, not what is
       // being edited: an unsaved choice stays where the person left it.
-      if (appearanceEdits.current === appearanceRevision && !refreshConnections) { setPreferences(fabView ? appearanceFromSearch(window.location.search, resolved) : resolved); setChatDraft(savedChat); }
+      if (appearanceEdits.current === appearanceRevision && !refreshConnections) { setPreferences(hostedView ? appearanceFromSearch(window.location.search, resolved) : resolved); setChatDraft(savedChat); }
       setAppearanceIssue(null);
     } else setAppearanceIssue(issueOf(appearance.reason));
     if (connections.status === "fulfilled") setChatProviders(connections.value);
@@ -162,7 +166,7 @@ function App() {
       setSavedLaunch(launch.value); if (launchEdits.current === launchRevision && !refreshConnections) setLaunchDraft(launch.value); setLaunchIssue(null);
     } else setLaunchIssue(issueOf(launch.reason));
     readingSettings.current = false;
-  }, []);
+  }, [hostedView]);
   useEffect(() => {
     void refreshApps(); void readSettings();
     const refreshVisible = () => { if (!document.hidden) void refreshApps(); };
@@ -218,6 +222,7 @@ function App() {
     finally { actionLocks.current.delete(app.serviceId); setBusyServices(new Set(actionLocks.current)); }
   };
   if (fabView) return <FabPage preferences={preferences} client={hubClient} readResult={responseData} />;
+  if (monitorView) return <MonitorPage preferences={preferences} />;
   // One detection answers both places: what a connection is, and what it lists.
   const connectionWords = (row: ChatProvider) => !row.installed ? t("notInstalled")
     : row.id === "coding-plan" && !row.available ? t("notConfigured")
@@ -278,12 +283,11 @@ function App() {
             onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></label>
         <p className="help">{t("workspaceHelp")}</p>
         <details className="advanced"><summary>{t("advanced")}</summary>
-          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch" || app.appId === "monkeymonitor").map((app) => <div key={app.appId}><span>{app.serviceId === "studio" ? "Studio" : "Monitor"} · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
+          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Studio · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
           <div className="settings-fields">
             <label>{t("reference")}<input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></label>
             <label>{t("cad")}<select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] })}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></label>
             <label>{t("studioPort")}<input id="studio-port" type="number" min="1024" max="65535" value={launchDraft.studioPort} onChange={(event) => changeLaunch({ studioPort: Number(event.target.value) })} /></label>
-            <label>{t("monitorPort")}<input id="monitor-port" type="number" min="1024" max="65535" value={launchDraft.monitorPort} onChange={(event) => changeLaunch({ monitorPort: Number(event.target.value) })} /></label>
           </div>
           <p className="help">{t("launchHelp")}</p>
         </details>

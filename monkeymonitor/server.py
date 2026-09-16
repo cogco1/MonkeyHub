@@ -1,4 +1,9 @@
-"""Small loopback-only HTTP UI; no dependency on Studio or its API runtime."""
+"""Loopback-only MonkeyMonitor diagnostic API.
+
+MonkeyHub owns the product UI.  This service keeps the existing usage, trace,
+pricing and explicit-source boundaries in a small independently testable process;
+it serves no application shell of its own.
+"""
 from __future__ import annotations
 
 from functools import partial
@@ -9,7 +14,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .codex import bound_codex_sources, iter_codex_events
@@ -18,14 +23,6 @@ from .store import BUSY_NOTICE, UsageLog
 from .trace import build_traces
 from .usage import TokenUsage
 
-WEB = Path(__file__).parent / "web"
-SHARED_WEB = Path(__file__).resolve().parents[1] / "apps/shared-web/src"
-SHARED_ASSETS = {
-    "/shared/appearance.js": ("appearance.js", "text/javascript"),
-    "/shared/i18n.js": ("i18n.js", "text/javascript"),
-    "/shared/browserTranslator.js": ("browserTranslator.js", "text/javascript"),
-    "/shared/base.css": ("base.css", "text/css"),
-}
 SERVER_VERSION = "0.1.0"
 
 
@@ -56,13 +53,28 @@ class MonitorData:
                  codex_bindings_url: str | None = None, codex_home: Path | None = None):
         self.store = UsageLog(data_dir) if data_dir is not None else None
         self.codex_sessions = codex_sessions
+        self.hub_origin: str | None = None
+        self.hub_origins: tuple[str, ...] = ()
         if codex_bindings_url is not None:
             parsed = urlsplit(codex_bindings_url)
+            try:
+                port = parsed.port
+            except ValueError as exc:
+                raise ValueError("Codex bindings must use the loopback Hub usage-sources endpoint") from exc
             if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
                     or parsed.username is not None or parsed.password is not None
                     or parsed.path != "/api/chat/usage-sources" or parsed.query or parsed.fragment
-                    or parsed.port == 0):
+                    or port is None or port == 0):
                 raise ValueError("Codex bindings must use the loopback Hub usage-sources endpoint")
+            self.hub_origin = f"http://{parsed.netloc}"
+            # The Hub itself is fixed to loopback, but a person may have opened
+            # the same listener as localhost rather than 127.0.0.1.  These are
+            # the only cross-origin browser callers the diagnostic API accepts.
+            self.hub_origins = tuple(dict.fromkeys((
+                self.hub_origin,
+                f"http://127.0.0.1:{port}",
+                f"http://localhost:{port}",
+            )))
         self.codex_bindings_url = codex_bindings_url
         self.codex_home = Path(codex_home or os.environ.get("CODEX_HOME") or Path.home() / ".codex").resolve()
 
@@ -156,9 +168,9 @@ def _measured(value) -> bool:
 def _trace_contract(result: dict) -> dict:
     """Expose stable span identity and observation coverage without a second store.
 
-    UsageLog remains the only retained diagnostic source.  Legacy event ids stay
+    UsageLog remains the only retained diagnostic source. Legacy event ids stay
     in the response; span ids are aliases so Hub, Studio, CAD and client views can
-    share one contract.  Missing lanes are explicitly unobserved rather than zero.
+    share one contract. Missing lanes are explicitly unobserved rather than zero.
     Coverage reports what the producer measured; it never turns an absent
     measurement into full coverage.
     """
@@ -174,20 +186,13 @@ def _trace_contract(result: dict) -> dict:
         summary = trace.get("summary") or {}
         critical = trace.get("critical_path") or {}
         elapsed = summary.get("elapsed_ms")
-        # The producer's own blocking total for the root interval. The critical
-        # path keeps only the part it could attribute to a single span, so the
-        # two are reported under separate names and never substituted.
         observed = summary.get("blocking_ms")
         timeline = summary.get("timeline_ms")
         ratio = None
         if _measured(elapsed) and elapsed > 0 and _measured(observed) and observed >= 0:
             ratio = round(max(0.0, min(1.0, observed / elapsed)), 4)
-        # Associated phases past the root interval are outside the ratio's base;
-        # how much of that tail was blocking is not measured inside the window.
         outside = max(0, timeline - elapsed) if _measured(elapsed) and _measured(timeline) else None
         observed_lanes = {span.get("lane") for span in spans if span.get("lane")}
-        # The sticky drop notice rides the next stored event, so recorded tool
-        # rounds do not establish that every tool observation survived.
         dropped = any((span.get("details") or {}).get("missing_observations") for span in spans)
         tool_rounds = summary.get("tool_rounds") or 0
         trace["coverage"] = {
@@ -237,8 +242,6 @@ def _diagnose_operations(rows: list[dict]) -> list[dict]:
         elif previous is None:
             details["duplicate_status"] = "first_observed_input"
         else:
-            # input_equivalent belongs to the producer's selected-source check;
-            # this comparison may refer to another historical execution.
             details["comparison_event_id"] = previous["event_id"]
             if phase == "model_request":
                 details.update(duplicate_status="same_input_request", duplicate_reason="same_observed_model_inputs",
@@ -259,8 +262,6 @@ def _diagnose_operations(rows: list[dict]) -> list[dict]:
                                opportunity_refs=[context["event_id"]],
                                reuse_opportunity="shared_context_prefix_eligibility_unknown")
             contexts[context_key] = row
-        # Failed/cancelled attempts still happened. Their inputs can recur even
-        # though they establish no successful result to reuse.
         seen[key] = row
     return rows
 
@@ -274,6 +275,10 @@ class MonitorHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def _cors_origin(self) -> str | None:
+        origin = self.headers.get("Origin")
+        return origin if origin in self.data.hub_origins else None
+
     def _send(self, value, status=200, content_type="application/json; charset=utf-8", *, download=False):
         body = value if isinstance(value, bytes) else json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
         self.send_response(status)
@@ -281,10 +286,21 @@ class MonitorHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        origin = self._cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         if download:
             self.send_header("Content-Disposition", 'attachment; filename="monkeymonitor-trace.json"')
         self.end_headers()
         self.wfile.write(body)
+
+    def _redirect(self, location: str):
+        self.send_response(307)
+        self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _local_request(self) -> bool:
         host = self.headers.get("Host", "")
@@ -293,20 +309,37 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send({"error": "Loopback host required"}, 403)
             return False
         origin = self.headers.get("Origin")
-        if origin and origin not in {f"http://{host}" for host in expected}:
-            self._send({"error": "Same-origin request required"}, 403)
+        allowed = {f"http://{item}" for item in expected} | set(self.data.hub_origins)
+        if origin and origin not in allowed:
+            self._send({"error": "Same-origin or owning-Hub request required"}, 403)
             return False
         return True
+
+    def do_OPTIONS(self):
+        if not self._local_request():
+            return
+        origin = self._cors_origin()
+        if origin is None:
+            self._send({"error": "Owning Hub origin required"}, 403)
+            return
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Methods", "GET, PUT, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Vary", "Origin")
+        self.end_headers()
 
     def do_GET(self):
         if not self._local_request():
             return
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
         if path == "/api/health":
             self._send(self.health)
         elif path in {"/api/events", "/api/traces", "/api/traces/export"}:
             if path == "/api/traces/export":
-                query = parse_qs(urlsplit(self.path).query)
+                query = parse_qs(parsed.query)
                 if set(query) != {"trace_id"} or len(query["trace_id"]) != 1:
                     self._send({"error": "Expected one trace_id"}, 400)
                     return
@@ -324,18 +357,17 @@ class MonitorHandler(BaseHTTPRequestHandler):
             self._send(self.data.codex_sources())
         elif path == "/api/rates":
             self._send(json.loads((Path(__file__).parent / "rates.json").read_text(encoding="utf-8")))
-        elif path in SHARED_ASSETS:
-            filename, mime = SHARED_ASSETS[path]
-            try:
-                body = (SHARED_WEB / filename).read_bytes()
-            except FileNotFoundError:
-                self._send({"error": "Not found"}, 404)
+        elif path in {"/", "/index.html"}:
+            if self.data.hub_origin:
+                query = parse_qs(parsed.query)
+                target = {"view": "monitor"}
+                for key in ("lang", "theme", "fontScale"):
+                    values = query.get(key)
+                    if values and len(values) == 1:
+                        target[key] = values[0]
+                self._redirect(f"{self.data.hub_origin}/?{urlencode(target)}")
             else:
-                self._send(body, content_type=mime + "; charset=utf-8")
-        elif path in {"/", "/index.html", "/style.css", "/app.js"}:
-            filename = "index.html" if path == "/" else path[1:]
-            mime = {".html": "text/html", ".css": "text/css", ".js": "text/javascript"}
-            self._send((WEB / filename).read_bytes(), content_type=mime[Path(filename).suffix] + "; charset=utf-8")
+                self._send({"name": "MonkeyMonitor", "ui": "MonkeyHub", "detail": "This process serves the diagnostic API only."})
         else:
             self._send({"error": "Not found"}, 404)
 
