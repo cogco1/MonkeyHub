@@ -415,6 +415,22 @@ def record_ref_from_uri(uri: str, project_id: str) -> ProjectRecordRef:
 # A ``RunRef`` names the canonical version its run is based on, and travels
 # inside other records rather than as a record of its own. Declaring the shape
 # once covers every payload that embeds one.
-from archflow.project.version_refs import register_structural  # noqa: E402
+from archflow.project.version_refs import (  # noqa: E402
+    register_file_reference,
+    register_structural,
+)
 
 register_structural(("project_id", "run_id", "base"), "base")
+
+# A ``ProjectRecordRef`` names a retained file by its digest, and in format 1
+# the canonical snapshot's file digest is also the version identity. Declaring
+# the shape says which of the two a given occurrence is, so the migration moves
+# it with the file instead of restating it as a version.
+register_file_reference(
+    ("project_id", "relative_path", "sha256", "media_type"), "sha256",
+)
+register_file_reference(("relative_path", "sha256", "media_type"), "sha256")
+register_file_reference(("relative_path", "sha256"), "sha256")
+register_file_reference(
+    ("project_id", "relative_path", "sha256", "media_type", "uri"), "sha256",
+)

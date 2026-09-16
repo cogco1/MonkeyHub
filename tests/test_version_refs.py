@@ -37,6 +37,7 @@ from archflow.project.version_refs import (
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.adapters.cad_execution import RhinoCadProgramBinding
+from archflow.adapters.three_dm_inspector import ThreeDmInspection
 from archflow.state.spatial import (
     SchematicOption,
     SchematicOptionSet,
@@ -280,12 +281,11 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
         Most come from the owner's own writer. Four have no constructor of
         their own - ``ProjectRun@1`` is written by
         ``FilesystemProjectRepository.create_run``, ``PromotionDecision@1`` by
-        ``archflow.project.issue``, ``DrawingProjectionReceipt@1`` by
-        ``monkeydiagram`` and ``ThreeDmInspectionSummary@4`` by a Rhino
-        readback - so those four are the literal each of those writers emits,
-        copied from it. The round-trip test in
-        ``tests/test_project_format_migration.py`` puts all four through the
-        real writer inside a real project.
+        ``archflow.project.issue`` and ``DrawingProjectionReceipt@1`` by
+        ``monkeydiagram`` - so those three are the literal each of those
+        writers emits, copied from it. All three, and every other declared
+        schema, are also written by their real writer inside a real project by
+        the round-trip test in ``tests/test_project_format_migration.py``.
         """
 
         base = self.version_ref()
@@ -363,13 +363,20 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
                     SchematicOption.from_dict(selected["option"]),
                 ),
             ).to_dict(),
-            "ThreeDmInspectionSummary@4": {
-                "schema": "ThreeDmInspectionSummary@4",
-                "document_user_strings": [
+            "ThreeDmInspectionSummary@4": ThreeDmInspection(
+                file_sha256="7" * 64, file_bytes=1024, three_dm_version=7,
+                archive_version=70, units={"system": "millimeters"}, layers=(),
+                object_count=0, top_level_object_count=0,
+                instance_definition_member_count=0, object_counts_by_type={},
+                object_counts_by_layer=(), instance_definitions=(),
+                instance_references=(),
+                document_user_strings=(
                     {"key": "archflow:base_state_sha256", "value": self.BASE},
                     {"key": "archflow:stage", "value": "s0"},
-                ],
-            },
+                ),
+                object_user_strings=(), aggregate_bbox=None,
+                bbox_contributing_geometry_count=0,
+            ).to_dict(),
             "DrawingProjectionReceipt@1": {
                 "schema": "DrawingProjectionReceipt@1",
                 "project_id": "round-trip", "run_id": "r",
@@ -386,9 +393,6 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 self.assertIn(schema, built, "no owner-built payload for this schema")
                 payload = built[schema]
-                # A keyed-row declaration resolves to the concrete pointer of
-                # the row it selected, so the two spellings are compared by
-                # what they found rather than letter for letter.
                 # A keyed-row declaration resolves to the pointer of the row
                 # it selected, and a payload may also be covered structurally,
                 # so the two spellings are compared by what they find: every

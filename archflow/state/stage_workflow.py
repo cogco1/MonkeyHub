@@ -207,6 +207,7 @@ from archflow.project.version_refs import (
     register as _register_version_refs,
     register_content_digest as _register_version_ref_digest,
     register_derived as _register_derived_fields,
+    register_closure_check as _register_version_ref_closure_check,
     register_reader as _register_version_ref_reader,
 )
 
@@ -1597,3 +1598,35 @@ _register_version_ref_reader(
 )
 _register_version_ref_reader("StageRunEnvelope@1", StageRunEnvelope.from_dict)
 _register_version_ref_reader("StageExitBinding@1", StageExitBinding.from_dict)
+
+
+def _check_exit_binding_citations(payload, resolve):
+    """An exit binding cites the envelope and closure it closed, by digest.
+
+    Recomputed here through the readers rather than through whatever the
+    digest registration says, because this is the rule
+    ``require_stage_exit_binding`` applies later: a binding that cites a digest
+    its envelope no longer has is stale, and a migration that wrote one has
+    produced a run that cannot open its next stage.
+    """
+
+    for ref_field, digest_field, read, name in (
+        ("envelope_ref", "envelope_digest",
+         lambda value: StageRunEnvelope.from_dict(value).envelope_digest, "envelope"),
+        ("closure_ref", "closure_digest",
+         lambda value: CompositeStageClosureReceipt.from_dict(value).receipt_digest,
+         "closure"),
+    ):
+        cited = payload.get(digest_field)
+        target = resolve(payload.get(ref_field))
+        if target is None or not isinstance(cited, str):
+            continue
+        if read(target) != cited:
+            raise StageWorkflowError(
+                f"exit binding cites a {name} digest that {name} no longer has"
+            )
+
+
+_register_version_ref_closure_check(
+    "StageExitBinding@1", _check_exit_binding_citations,
+)

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,8 +27,10 @@ from archflow.project.record_kinds import (
     PROJECT_FORMAT_MIGRATION,
     PROJECT_STAGE_WORKFLOW,
     PROMOTION_DECISION,
+    DEVELOPED_DESIGN_STATE,
     RUNNER_RUN_RECEIPT,
     SEAT_3DM_INSPECTION,
+    SELECTED_SPATIAL_OPTION,
     SEAT_OCCT_EXECUTION,
     STAGE_CLOSURE,
     STAGE_EXIT_BINDING,
@@ -56,7 +59,15 @@ from archflow.project.repository import (
 )
 from archflow.state.operational_state import DesignObligation
 from archflow.adapters.cad_execution import RhinoCadProgramBinding
-from archflow.project.refs import BranchRef
+from archflow.adapters.three_dm_inspector import ThreeDmInspection
+from archflow.project.refs import BranchRef, RunRef
+from archflow.state.spatial import (
+    SchematicOption,
+    SchematicOptionSet,
+    SpatialOptionProposal,
+)
+from archflow.state.state_record import RECORD_BINDING_PHASE, developed_design_view
+from tests.test_state_record import _record as state_record_fixture
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
@@ -177,6 +188,15 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         else:
             _replace_atomic(head_path, head_payload)
         return head_ref
+
+    def legacy_project_in(self, root: Path, name: str) -> FilesystemProjectRepository:
+        """The same legacy fixture, built under a directory of the caller's."""
+
+        previous, self.root = self.root, root
+        try:
+            return self.legacy_project(name)
+        finally:
+            self.root = previous
 
     def legacy_project(self, name: str = "legacy-building") -> FilesystemProjectRepository:
         """A format-1 project an older build went on to author and use."""
@@ -1262,6 +1282,67 @@ class ProjectFormatPlannerTests(unittest.TestCase):
                      "project_id": run.project_id, "run_id": name,
                      "checked_state": head.to_dict(), "candidate_ref": None},
         )
+        inspection = ThreeDmInspection(
+            file_sha256="7" * 64, file_bytes=1024, three_dm_version=7,
+            archive_version=70, units={"system": "millimeters"}, layers=(),
+            object_count=0, top_level_object_count=0,
+            instance_definition_member_count=0, object_counts_by_type={},
+            object_counts_by_layer=(), instance_definitions=(),
+            instance_references=(),
+            document_user_strings=(
+                {"key": "archflow:base_state_sha256", "value": head.require_digest()},
+                {"key": "archflow:stage", "value": "s0"},
+            ),
+            object_user_strings=(), aggregate_bbox=None,
+            bbox_contributing_geometry_count=0,
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=SEAT_3DM_INSPECTION, payload=inspection.to_dict(),
+        )
+        state = developed_design_view(
+            replace(state_record_fixture(), project_id=run.project_id),
+            run=RunRef(run.project_id, name, head),
+            evidence_ref="reading:detail-review", phase=RECORD_BINDING_PHASE,
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=DEVELOPED_DESIGN_STATE, payload=state.to_dict(),
+        )
+        option = state.selected_schematic.option
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=SELECTED_SPATIAL_OPTION, payload=option.proposal.to_dict(),
+        )
+        option_set = SchematicOptionSet(
+            project_id=run.project_id, run_id=name, base=head,
+            branch=BranchRef(run=run, branch_id="main", epoch=1),
+            operational_state_digest="1" * 64,
+            input_phase=DesignPhase.SITE_RESOURCE_COORDINATION,
+            output_phase=DesignPhase.SCHEMATIC_DESIGN,
+            program_digest="2" * 64, site_context_digest="3" * 64,
+            build_policy_digest="4" * 64, phase_gate_receipt_ref="receipt:gate",
+            phase_gate_receipt_digest="5" * 64, compiler_id="test-compiler",
+            compiler_version="1",
+            options=(
+                SchematicOption(
+                    proposal=SpatialOptionProposal.from_dict({
+                        **option.proposal.to_dict(), "option_id": "alternative",
+                    }),
+                    footprint_area=option.footprint_area,
+                    topology_signature="6" * 64,
+                ),
+                option,
+            ),
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=STATE_RECORD, payload=option_set.to_dict(),
+        )
         repository.put_json(
             run=run,
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
@@ -1421,6 +1502,161 @@ class ProjectFormatPlannerTests(unittest.TestCase):
                     root, self.root / "migrated" / "legacy-building",
                 )
         self.assertIn("MIGRATION_BLOCKED", str(raised.exception))
+
+    def test_every_registered_reader_runs_over_a_migrated_project(self) -> None:
+        """A reader registered but never reached is a check that does not exist."""
+
+        from archflow.project import version_refs
+
+        repository = self.legacy_project()
+        self.stage_bound_run(repository, "bound")
+        seen: set[str] = set()
+        real = version_refs.read_back
+
+        def spy(payload):
+            schema = payload.get("schema")
+            if schema in version_refs.schemas_declaring_readers():
+                seen.add(schema)
+            return real(payload)
+
+        with patch.object(version_refs, "read_back", spy), \
+                patch("archflow.project.repository._read_back", spy):
+            FilesystemProjectRepository.migrate_project_format(
+                repository.layout.root, self.root / "migrated" / "legacy-building",
+            )
+
+        self.assertEqual(seen, set(version_refs.schemas_declaring_readers()))
+
+    def test_a_legacy_digest_survives_in_no_spelling(self) -> None:
+        """Wrapped, pathed, uri-ed or upper-cased, it is still that version."""
+
+        for label, wrap in (
+            ("bare", lambda digest: digest),
+            ("record uri", lambda digest: f"record:{digest}"),
+            ("artifact uri", lambda digest: f"artifact:sha256:{digest}"),
+            ("export path", lambda digest: f"exports/canonical/state-v000000-{digest}.json"),
+            ("upper case", lambda digest: digest.upper()),
+        ):
+            with self.subTest(spelling=label):
+                case_root = self.root / label.replace(" ", "-")
+                case_root.mkdir()
+                repository = self.legacy_project_in(case_root, "legacy-building")
+                head = repository.read_head()
+                data = _json_bytes({
+                    "schema": "ThreeDmInspectionSummary@4",
+                    "document_user_strings": [
+                        {"key": "archflow:base_state_sha256",
+                         "value": wrap(head.state_sha256)},
+                    ],
+                })
+                _write_immutable(
+                    repository.layout.run("extra").records
+                    / record_file_name(SEAT_3DM_INSPECTION, _sha256(data)), data,
+                )
+                target = case_root / "migrated" / "legacy-building"
+
+                result = FilesystemProjectRepository.migrate_project_format(
+                    repository.layout.root, target,
+                )
+
+                migrated = FilesystemProjectRepository.open(target).read_head()
+                text = "".join(
+                    path.read_text(encoding="utf-8", errors="ignore")
+                    for path in sorted(target.rglob("*.json"))
+                    if MIGRATION_RUN_ID not in path.as_posix()
+                )
+                self.assertNotIn(head.state_sha256.lower(), text.lower(), label)
+                self.assertIn(migrated.state_sha256, text, label)
+                self.assertEqual(result.embedded_legacy_references, ())
+
+    def test_a_legacy_digest_an_owner_does_not_declare_blocks_in_any_spelling(self) -> None:
+        for label, wrap in (
+            ("record uri", lambda digest: f"record:{digest}"),
+            ("upper case", lambda digest: digest.upper()),
+        ):
+            with self.subTest(spelling=label):
+                case_root = self.root / f"blocked-{label.replace(' ', '-')}"
+                case_root.mkdir()
+                repository = self.legacy_project_in(case_root, "legacy-building")
+                head = repository.read_head()
+                data = _json_bytes({
+                    "schema": "RetiredLaneNote@1", "note": wrap(head.state_sha256),
+                })
+                _write_immutable(
+                    repository.layout.run("extra").records
+                    / record_file_name("retired-lane-note", _sha256(data)), data,
+                )
+                target = case_root / "migrated" / "legacy-building"
+
+                self.assertTrue(plan_project_migration(repository.layout.root).blockers)
+                with self.assertRaises(ProjectIntegrityError) as raised:
+                    FilesystemProjectRepository.migrate_project_format(
+                        repository.layout.root, target,
+                    )
+                self.assertIn("MIGRATION_BLOCKED", str(raised.exception))
+                self.assertFalse(target.exists())
+
+    def test_a_record_citing_the_canonical_snapshot_moves_with_it(self) -> None:
+        """The snapshot file does not survive a format change either."""
+
+        repository = self.legacy_project()
+        head = repository.read_head()
+        snapshot = f"canonical/{record_file_name('state-v000000', head.state_sha256)}"
+        data = _json_bytes({
+            "schema": "StateRecord@1", "base": head.to_dict(),
+            "snapshot": {"project_id": "legacy-building", "relative_path": snapshot,
+                         "sha256": head.state_sha256,
+                         "media_type": "application/json"},
+        })
+        _write_immutable(
+            repository.layout.run("extra").records
+            / record_file_name(STATE_RECORD, _sha256(data)), data,
+        )
+        target = self.root / "migrated" / "legacy-building"
+
+        FilesystemProjectRepository.migrate_project_format(
+            repository.layout.root, target,
+        )
+
+        migrated = FilesystemProjectRepository.open(target)
+        written = next(
+            path for path in (target / "runs" / "extra" / "records").glob("state-record-*.json")
+            if "snapshot" in path.read_text(encoding="utf-8")
+        )
+        payload = json.loads(written.read_text(encoding="utf-8"))
+        # The base became the semantic digest; the file reference became the
+        # new snapshot file. In format 1 those were the same string.
+        self.assertEqual(
+            payload["base"]["state_sha256"], migrated.read_head().state_sha256,
+        )
+        self.assertNotEqual(payload["snapshot"]["relative_path"], snapshot)
+        resolved = target / payload["snapshot"]["relative_path"]
+        self.assertTrue(resolved.is_file())
+        self.assertEqual(_sha256(resolved.read_bytes()), payload["snapshot"]["sha256"])
+
+    def test_an_owner_that_miscomputes_its_digest_is_caught_by_the_record_citing_it(self) -> None:
+        """The citing record's owner recomputes independently, and refuses."""
+
+        from archflow.project import version_refs
+
+        repository = self.legacy_project()
+        self.stage_bound_run(repository, "bound")
+        target = self.root / "migrated" / "legacy-building"
+
+        with patch.dict(
+            version_refs._CONTENT_DIGESTS,
+            {"StageRunEnvelope@1": lambda payload: "9" * 64},
+        ):
+            with self.assertRaises(ProjectIntegrityError) as raised:
+                FilesystemProjectRepository.migrate_project_format(
+                    repository.layout.root, target,
+                )
+
+        message = str(raised.exception)
+        self.assertIn("MIGRATION_VERIFY", message)
+        self.assertIn("stage-exit-binding", message)
+        self.assertIn("envelope digest", message)
+        self.assertFalse(target.exists())
 
     # ---- the CLI consumer
 

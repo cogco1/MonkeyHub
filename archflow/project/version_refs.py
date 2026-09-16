@@ -71,9 +71,15 @@ _TWO_KEY_KEYS = frozenset({"version", "state_sha256"})
 
 _DECLARATIONS: dict[str, tuple[str, ...]] = {}
 _STRUCTURAL: dict[frozenset[str], str] = {}
+# Shapes that name a *file* by digest rather than a version. Their digest is
+# covered - the caller moves it with the file - but it is never restated as a
+# version identity: in format 1 the two are the same string and only the
+# shape says which is meant.
+_FILE_REFERENCES: dict[frozenset[str], str] = {}
 _CONTENT_DIGESTS: dict[str, Callable[[Mapping[str, Any]], str]] = {}
 _DERIVED: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, Any]], Mapping[str, Any]] | None]] = {}
 _READERS: dict[str, Callable[[Mapping[str, Any]], Any]] = {}
+_CLOSURE_CHECKS: dict[str, Callable[..., None]] = {}
 
 
 # ---------------------------------------------------------------- registration
@@ -160,6 +166,42 @@ def register_reader(schema: str, read: Callable[[Mapping[str, Any]], Any]) -> No
     _READERS[schema] = read
 
 
+def register_closure_check(schema: str, check: Callable[..., None]) -> None:
+    """Declare an owner's rule that can only be checked against other records.
+
+    A record may cite another record's content digest. Nothing inside the
+    citing record can tell whether that value is still right - only the record
+    it names can - so the owner is given a resolver and states the rule
+    itself. This is deliberately not routed through the content-digest
+    registration: an owner that miscomputes its own digest would otherwise
+    agree with itself everywhere, and a migration would write a project whose
+    bindings only fail at the next stage.
+    """
+
+    existing = _CLOSURE_CHECKS.get(schema)
+    if existing is not None and existing is not check:
+        raise VersionRefDeclarationError(
+            f"schema {schema!r} already declares a closure check"
+        )
+    _CLOSURE_CHECKS[schema] = check
+
+
+def closure_check(
+    payload: Mapping[str, Any], resolve: Callable[[Any], Mapping[str, Any] | None],
+) -> None:
+    """Run the owner's cross-record rule for this payload, if it declares one."""
+
+    check = _CLOSURE_CHECKS.get(payload.get("schema"))
+    if check is not None:
+        check(payload, resolve)
+
+
+def schemas_declaring_closure_checks() -> tuple[str, ...]:
+    """Every schema whose owner states a rule about the records it cites."""
+
+    return tuple(sorted(_CLOSURE_CHECKS))
+
+
 def read_back(payload: Mapping[str, Any]) -> None:
     """Put a payload through its owner's reader. Raises what that reader raises."""
 
@@ -244,6 +286,48 @@ def schemas_declaring_derived_fields() -> tuple[str, ...]:
     return tuple(sorted(_DERIVED))
 
 
+def register_file_reference(keys: tuple[str, ...], child: str) -> None:
+    """Declare a shape whose ``child`` names a retained file by its digest."""
+
+    existing = _FILE_REFERENCES.get(frozenset(keys))
+    if existing is not None and existing != child:
+        raise VersionRefDeclarationError(
+            f"file-reference shape {sorted(keys)} is already declared at {existing!r}"
+        )
+    _FILE_REFERENCES[frozenset(keys)] = child
+
+
+def file_reference_child(payload: Mapping[str, Any]) -> str | None:
+    """The field of ``payload`` naming a file by digest, if it is a declared shape."""
+
+    return _FILE_REFERENCES.get(frozenset(payload))
+
+
+def file_reference_locations(payload: Any, pointer: str = "") -> list[str]:
+    """Every pointer inside ``payload`` that names a retained file by digest.
+
+    These are covered, so they do not block; the migration moves them with the
+    files they name rather than restating them as versions.
+    """
+
+    found: list[str] = []
+    if isinstance(payload, Mapping):
+        child = file_reference_child(payload)
+        for key, value in payload.items():
+            token = _escape(key)
+            # The whole reference is accounted for, not only its digest field:
+            # a content-addressed file carries its digest in its name too, so
+            # the path and the uri hold it as well.
+            if child is not None and isinstance(value, str):
+                found.append(f"{pointer}/{token}")
+                continue
+            found.extend(file_reference_locations(value, f"{pointer}/{token}"))
+    elif isinstance(payload, list):
+        for index, value in enumerate(payload):
+            found.extend(file_reference_locations(value, f"{pointer}/{index}"))
+    return found
+
+
 def structural_child(payload: Mapping[str, Any]) -> str | None:
     """The field of ``payload`` holding a version identity, if it is a declared shape."""
 
@@ -322,23 +406,6 @@ def _escape(key: object) -> str:
     return str(key).replace("~", "~0").replace("/", "~1")
 
 
-def _walk(payload: Any, tokens: tuple[str, ...]) -> Any:
-    current = payload
-    for token in tokens:
-        if isinstance(current, Mapping):
-            if token not in current:
-                return None
-            current = current[token]
-        elif isinstance(current, list):
-            try:
-                current = current[int(token)]
-            except (ValueError, IndexError):
-                return None
-        else:
-            return None
-    return current
-
-
 def _read_location(value: Any) -> tuple[str, str] | None:
     """(kind, digest) for a value sitting at a declared location, or None."""
 
@@ -399,9 +466,17 @@ def locations(payload: Any, pointer: str = "") -> list[tuple[str, str, str]]:
 
 
 def covered_pointers(payload: Any) -> set[str]:
-    """Every pointer in ``payload`` that some owner declares. One rule, one spelling."""
+    """Every pointer in ``payload`` some owner accounts for. One rule, one spelling.
 
-    return {pointer for pointer, _, _ in locations(payload)}
+    A declared version identity, and a declared file reference: the second is
+    not restated as a version but it is not unaccounted for either, and in
+    format 1 a file digest and a version digest are the same string.
+    """
+
+    return (
+        {pointer for pointer, _, _ in locations(payload)}
+        | set(file_reference_locations(payload))
+    )
 
 
 def restate(payload: Mapping[str, Any], mapping: Mapping[str, str]) -> dict[str, Any]:
@@ -451,8 +526,9 @@ def _substitute(
         return
     value = parent.get(field)
     if isinstance(value, str):
-        if value in mapping:
-            parent[field] = mapping[value]
+        replaced = _replace_digests(value, mapping)
+        if replaced != value:
+            parent[field] = replaced
         return
     if not isinstance(value, dict):
         return
@@ -463,3 +539,24 @@ def _substitute(
         and set(value) in (_VERSION_REF_KEYS, _TWO_KEY_KEYS)
     ):
         value["state_sha256"] = mapping[digest]
+
+
+def _replace_digests(value: str, mapping: Mapping[str, str]) -> str:
+    """Replace every mapped digest inside ``value``, whatever else it holds.
+
+    A retained field may hold the digest alone, or wrapped: ``record:<sha>``,
+    ``artifact:sha256:<sha>``, a file name, a ``project://`` URI. Matching is
+    case-insensitive because a CAD document may have upper-cased it on the way
+    through; the replacement is written in the canonical lower case.
+    """
+
+    if len(value) < 64:
+        return value
+    lowered = value.lower()
+    for digest, replacement in mapping.items():
+        at = lowered.find(digest.lower())
+        while at != -1:
+            value = value[:at] + replacement + value[at + len(digest):]
+            lowered = value.lower()
+            at = lowered.find(digest.lower(), at + len(replacement))
+    return value
