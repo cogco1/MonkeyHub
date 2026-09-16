@@ -32,11 +32,14 @@ Four things can be declared.
     is restated every other record that cites that digest can be moved with
     it. The owner computes it; nothing here knows what a digest covers.
 
-``register_recompute``
-    how an owner rebuilds its own payload after a restatement, for a record
-    that embeds a digest derived from its own contents. Without this such a
-    field keeps a value derived from the pre-migration base, and a migrated
-    project fails its own binding checks.
+``register_derived``
+    which serialised fields of a record are derived from its own contents, and
+    how the owner rebuilds them. Every declared kind states this, ``()`` when
+    nothing is derived, so a record that carries a self-derived digest can
+    never pass silently for want of a registration: without the rebuild such a
+    field keeps a value derived from the pre-migration base, the record's own
+    ``from_dict`` then refuses it, and the migration reports success on a
+    project that cannot open its next stage.
 
 A location no owner declares is not migrated: the planner reports it and the
 migration refuses. Silence is never read as absence.
@@ -63,7 +66,7 @@ _TWO_KEY_KEYS = frozenset({"version", "state_sha256"})
 _DECLARATIONS: dict[str, tuple[str, ...]] = {}
 _STRUCTURAL: dict[frozenset[str], str] = {}
 _CONTENT_DIGESTS: dict[str, Callable[[Mapping[str, Any]], str]] = {}
-_RECOMPUTE: dict[str, Callable[[Mapping[str, Any]], Mapping[str, Any]]] = {}
+_DERIVED: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, Any]], Mapping[str, Any]] | None]] = {}
 
 
 # ---------------------------------------------------------------- registration
@@ -113,17 +116,39 @@ def register_content_digest(
     _CONTENT_DIGESTS[schema] = compute
 
 
-def register_recompute(
-    schema: str, rebuild: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+def register_derived(
+    schema: str,
+    fields: tuple[str, ...],
+    rebuild: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
 ) -> None:
-    """Declare how an owner rebuilds a payload whose own fields derive from it."""
+    """Declare which serialised fields of ``schema`` derive from its own contents.
 
-    existing = _RECOMPUTE.get(schema)
-    if existing is not None and existing is not rebuild:
+    ``fields`` may be empty, which is a statement in itself: this record keeps
+    nothing that a restatement invalidates. Naming a field without saying how
+    to rebuild it is refused, because that is exactly the state in which a
+    migration writes a record its own reader will reject.
+    """
+
+    declared = tuple(fields)
+    if declared and rebuild is None:
         raise VersionRefDeclarationError(
-            f"schema {schema!r} already declares a recompute"
+            f"schema {schema!r} names self-derived fields {declared} but no rebuild"
         )
-    _RECOMPUTE[schema] = rebuild
+    existing = _DERIVED.get(schema)
+    if existing is not None and existing[0] != declared:
+        raise VersionRefDeclarationError(
+            f"schema {schema!r} already declares self-derived fields {existing[0]}"
+        )
+    _DERIVED[schema] = (declared, rebuild)
+
+
+def derived_fields(schema: object) -> tuple[str, ...] | None:
+    """The self-derived fields ``schema`` declares, or ``None`` if it declares none."""
+
+    if not isinstance(schema, str):
+        return None
+    found = _DERIVED.get(schema)
+    return None if found is None else found[0]
 
 
 # ---------------------------------------------------------------- reading the table
@@ -143,30 +168,48 @@ def declared_schemas() -> tuple[str, ...]:
 
 
 def content_digest_of(payload: Mapping[str, Any]) -> str | None:
-    """The record's own content digest, if its owner declares how to compute one."""
+    """The record's own content digest, if its owner declares how to compute one.
 
-    compute = _CONTENT_DIGESTS.get(payload.get("schema"))
+    A payload whose own owner cannot read it is not a missing digest, it is a
+    record nothing can restate: swallowing that would leave every citation of
+    the digest stale with nothing said about it, so it is raised with the
+    schema named.
+    """
+
+    schema = payload.get("schema")
+    compute = _CONTENT_DIGESTS.get(schema)
     if compute is None:
         return None
     try:
         return compute(payload)
-    except Exception:  # pragma: no cover - a payload its own owner cannot read
-        return None
+    except Exception as exc:
+        raise VersionRefDeclarationError(
+            f"{schema!r} declares a content digest its owner cannot compute "
+            f"from this payload: {exc}"
+        ) from exc
 
 
 def recompute(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     """Let the payload's owner rebuild any field derived from its own contents."""
 
-    rebuild = _RECOMPUTE.get(payload.get("schema"))
-    if rebuild is None:
+    found = _DERIVED.get(payload.get("schema"))
+    if found is None or found[1] is None:
         return payload
-    return rebuild(payload)
+    return found[1](payload)
 
 
 def recomputable_schemas() -> tuple[str, ...]:
     """Schemas whose owner rebuilds derived fields after a restatement."""
 
-    return tuple(sorted(_RECOMPUTE))
+    return tuple(sorted(
+        schema for schema, (fields, _) in _DERIVED.items() if fields
+    ))
+
+
+def schemas_declaring_derived_fields() -> tuple[str, ...]:
+    """Every schema that has stated what it derives, empty statement included."""
+
+    return tuple(sorted(_DERIVED))
 
 
 def structural_child(payload: Mapping[str, Any]) -> str | None:

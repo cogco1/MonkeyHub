@@ -75,7 +75,10 @@ from archflow.project.refs import BranchRef, ProjectRecordRef, require_identifie
 from archflow.state.geometry_program import CompiledGeometryProgram
 from archflow.state.geometry_program import AssemblyRole, require_sha256
 from archflow.contracts.canonical import canonical_digest
-from archflow.project.version_refs import register as _register_version_refs
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_derived as _register_derived_fields,
+)
 
 
 _MAX_PROCESS_TEXT = 2_000
@@ -4280,16 +4283,20 @@ __all__ = [
 ]
 
 
-# A CAD execution receipt keeps the canonical base twice: once as the flat
-# scalar the exported file's own metadata carries, and once as the exact
-# reference in the binding the receipt was produced from.
-VERSION_REF_POINTERS = {
-    schema: ("/metadata/base_state_sha256", "/binding/base")
-    for schema in (
-        "RhinoCadExecutionReceipt@4",
-        "OcctExecutionReceipt@1",
-        "BlenderExecutionReceipt@1",
-    )
-}
+# The canonical base a CAD execution reaches the adapter with lives in the
+# program binding, and every receipt family carries that binding rather than
+# repeating the base: Rhino, OCCT and Blender receipts all serialise it at
+# ``identity.binding``. Declaring the binding once covers all three, and none
+# of the receipts derives anything from the base.
+VERSION_REF_POINTERS = {"RhinoCadProgramBinding@1": ("/base",)}
 
 _register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("RhinoCadProgramBinding@1", ())
+for _receipt_schema in (
+    "RhinoCadExecutionReceipt@4",
+    "OcctExecutionReceipt@1",
+    "BlenderExecutionReceipt@1",
+    "RhinoCadExportIdentity@2",
+    "OcctCadExportIdentity@1",
+):
+    _register_derived_fields(_receipt_schema, ())

@@ -26,7 +26,11 @@ from archflow.contracts.fields import (
     refs as _refs,
     text as _text,
 )
-from archflow.project.version_refs import register as _register_version_refs, register_content_digest as _register_version_ref_digest
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_content_digest as _register_version_ref_digest,
+    register_derived as _register_derived_fields,
+)
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -1517,12 +1521,15 @@ class DevelopedDesignState:
 
 # ``DevelopedDesignState@1`` holds no base of its own: the canonical version it
 # develops is named by the ``SelectedSchematicInput@1`` it selected, which is
-# where the declaration belongs. The developed state's ``state_digest`` is
-# derived from that input, so restating the input moves the digest and every
-# record citing it.
+# where the declaration belongs. Its ``state_digest`` is derived from that
+# input but computed on demand rather than serialised, so restating the input
+# moves the digest for every record that cites it and nothing inside this
+# record needs rebuilding.
 VERSION_REF_POINTERS = {"SelectedSchematicInput@1": ("/base",)}
 
 _register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("SelectedSchematicInput@1", ())
+_register_derived_fields("DevelopedDesignState@1", ())
 _register_version_ref_digest(
     "DevelopedDesignState@1",
     lambda payload: DevelopedDesignState.from_dict(payload).state_digest,

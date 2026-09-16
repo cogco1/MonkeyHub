@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import unittest
 
-# The one place that loads every owner. Importing anything else to populate the
-# table is the bug this module exists to prevent.
+# Both owner tiers, loaded the way an entry point loads them. Relying on a
+# sibling test having imported an owner first is the bug this module exists to
+# prevent, so nothing here depends on import order.
 import archflow.project.version_ref_owners as owners
+
+owners.load_workflow_owners()
 from archflow.project.record_kinds import RECORD_KINDS
 from archflow.project.repository import undeclared_version_identities
 from archflow.project.version_refs import (
@@ -22,16 +25,27 @@ from archflow.project.version_refs import (
     covered_pointers,
     declared_pointers,
     declared_schemas,
+    derived_fields,
     locations,
     recompute,
     recomputable_schemas,
     register,
+    register_derived,
     register_structural,
     restate,
     structural_child,
 )
+from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
+from archflow.adapters.cad_execution import RhinoCadProgramBinding
 from archflow.state.operational_state import DesignObligation
-from archflow.state.stage_workflow import DesignPhase, StageRunEnvelope
+from archflow.state.state_record import StateRecord
+from archflow.state.stage_workflow import (
+    CompositeStageClosureReceipt,
+    DesignPhase,
+    StageClosureStatus,
+    StageExitBinding,
+    StageRunEnvelope,
+)
 
 LEGACY = "a" * 64
 SEMANTIC = "b" * 64
@@ -43,19 +57,12 @@ MAPPING = {LEGACY: SEMANTIC}
 # rather than making a migration quietly refuse the project that holds it.
 NO_VERSION_IDENTITY = {
     "AuditEvent@1": "an actor/action record; names no canonical version",
-    "BlenderExecutionReceipt@1": "declared",
     "CatalogConfrontationReceipt@1": "compares a catalog to a program; no base",
     "ComponentCatalog@1": "a library listing; no project version",
     "ComponentTemplate@1": "a library template; no project version",
     "CompiledGeometryProgram@3": "compiled from a state digest, not a canonical base",
-    "CompositeStageClosureReceipt@1": "identifies its stage by branch and digests",
     "DeliberationEpisode@1": "a conversation record; no canonical version",
-    "DrawingProjectionReceipt@1":
-        "declared by monkeydiagram.drawing_elevation, a workflow module the shared "
-        "core may not import: in a core-only process it stays undeclared and a "
-        "project retaining one is refused by name rather than migrated on a guess",
     "DesignStage@1": "names its record by content ref, not by canonical version",
-    "DevelopedDesignState@1": "its base lives in the SelectedSchematicInput it selected",
     "EvidenceLedger@1": "reserved; nothing writes it",
     "GeometryProgramProposalRecord@1": "a proposal keyed by program digest",
     "GeometryProposalEscalation@1": "escalation text and refs; no base",
@@ -71,12 +78,10 @@ NO_VERSION_IDENTITY = {
     "ProtocolCompletion@1": "completion of a proposal round; no base",
     "RelationCheckReport@1": "check findings against a state digest",
     "RunnerRunFailure@1": "a failure report; no base",
-    "RunnerRunReceipt@3": "cites digests its owners restate; its own run base is a RunRef",
     "SeatAuthoringContext@1": "seat inputs keyed by digests",
     "SeatHandover@1": "a handover between seats; no base",
     "SeatRoundReceipt@1": "a seat round; no base",
     "SeatSpec@1": "a seat definition; no project version",
-    "SpatialOptionProposal@2": "an option identified by content; the set holds the base",
     "StateRecordEquivalence@1": "compares two record digests; no base",
     "StudioBoardScene@1": "board layout; no canonical version",
     "StudioCandidateDelta@1": "a delta between candidate digests",
@@ -88,6 +93,20 @@ NO_VERSION_IDENTITY = {
     "StudioSourceDocument@1": "an uploaded document by digest; no base",
     "StudioWorkingCopy@1": "a work copy by digest; no base",
     "ThreeDmInspectionSummary@4": "inspects a file by digest; no canonical base",
+}
+
+# A kind that carries a version identity somewhere other than its own top-level
+# declaration: through a nested record its owner declares, or through a
+# structural shape. It is covered, so it is not in the excuse list above, and
+# the round-trip test proves it.
+COVERED_INDIRECTLY = {
+    "BlenderExecutionReceipt@1": "identity.binding is a RhinoCadProgramBinding@1",
+    "OcctExecutionReceipt@1": "identity.binding is a RhinoCadProgramBinding@1",
+    "RhinoCadExecutionReceipt@4": "identity.binding is a RhinoCadProgramBinding@1",
+    "CompositeStageClosureReceipt@1": "its branch is a design BranchRef",
+    "DevelopedDesignState@1": "its SelectedSchematicInput@1 holds the base",
+    "RunnerRunReceipt@3": "its run is a RunRef",
+    "SpatialOptionProposal@2": "identified by content; the option set holds the base",
 }
 
 
@@ -121,17 +140,28 @@ class OwnerLoadingTests(unittest.TestCase):
         declared = set(declared_schemas())
         missing = []
         for kind in RECORD_KINDS.values():
-            if kind.schema is None or kind.schema in declared:
+            schema = kind.schema
+            if schema is None or schema in declared or schema in COVERED_INDIRECTLY:
                 continue
-            if kind.schema not in NO_VERSION_IDENTITY:
-                missing.append((kind.kind, kind.schema))
+            if schema not in NO_VERSION_IDENTITY:
+                missing.append((kind.kind, schema))
         self.assertEqual(missing, [], "these kinds are neither declared nor excused")
-        # The excuse list may not drift into covering a declared schema.
+        # A kind that does carry an identity may not sit in the excuse list.
         self.assertEqual(
-            sorted(set(NO_VERSION_IDENTITY) & declared),
-            ["BlenderExecutionReceipt@1", "DrawingProjectionReceipt@1"],
-            "only the CAD receipt family and the workflow-owned drawing receipt",
+            sorted(set(NO_VERSION_IDENTITY) & (declared | set(COVERED_INDIRECTLY))),
+            [],
+            "these are excused as carrying no identity but they carry one",
         )
+
+    def test_every_kind_that_carries_an_identity_states_what_it_derives(self) -> None:
+        """Item 4's blocker: silence about a self-derived field is not a pass."""
+
+        undeclared = sorted(
+            schema for schema in set(declared_schemas()) | set(COVERED_INDIRECTLY)
+            # Schemas this module registers to exercise the table itself.
+            if not schema.startswith("Test") and derived_fields(schema) is None
+        )
+        self.assertEqual(undeclared, [], "these carry an identity and derive who knows what")
 
 
 class DeclarationTableTests(unittest.TestCase):
@@ -191,6 +221,135 @@ class DeclarationMatchesTheSerialisationTests(unittest.TestCase):
         self.assertEqual(locations({"schema": "TestDecorative@1", "other": 1}), [])
 
 
+class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
+    """Item 7: a declaration is worth nothing unless the owner writes it there.
+
+    Each declared schema is serialised by the code that owns it - never by a
+    literal written here - and ``locations()`` has to find exactly the pointers
+    that owner declared. A declaration naming a field the owner does not write
+    reads as a covered record while covering nothing, which is how a CAD
+    receipt came to block every migration and a closure receipt came to pass
+    one with a stale identity.
+    """
+
+    BASE = "f" * 64
+
+    def version_ref(self) -> ProjectVersionRef:
+        return ProjectVersionRef("round-trip", 3, self.BASE)
+
+    def built(self) -> dict[str, dict]:
+        """One real payload per declared schema, each from its owner."""
+
+        base = self.version_ref()
+        run = RunRef("round-trip", "r", base)
+        obligation = DesignObligation(
+            obligation_id="o1", statement="close", source_ref="ref:1",
+        )
+        envelope = StageRunEnvelope(
+            project_id="round-trip", run_id="r", base_version=base.version,
+            base_state_sha256=base.require_digest(), branch_id="main",
+            branch_epoch=1, subject_ref="project://round-trip/runs/r/records/s.json",
+            state_digest="d" * 64,
+            workflow_ref="project://round-trip/runs/r/records/w.json",
+            workflow_digest="e" * 64, stage_id="s0", stage_index=0,
+            phase=DesignPhase.SCHEMATIC_DESIGN, required_roles=("architect",),
+            required_checks=(), close_obligation=obligation,
+        )
+        exit_binding = StageExitBinding.bind(
+            envelope, envelope_ref="project://round-trip/runs/r/records/e.json",
+            closure_ref="project://round-trip/runs/r/reviews/c.json",
+            closure_digest="a" * 64,
+        )
+        binding = RhinoCadProgramBinding(
+            program_ref=ProjectRecordRef(
+                project_id="round-trip",
+                relative_path=(
+                    "runs/r/branches/main/records/s0-geometry-program-"
+                    + "b" * 64 + ".json"
+                ),
+                sha256="b" * 64,
+            ),
+            branch=BranchRef(run=run, branch_id="main", epoch=1),
+            stage_id="s0", program_digest="c" * 64,
+            design_state_digest="d" * 64, predecessor_program_digest=None,
+        )
+        return {
+            "StateRecord@1": StateRecord(
+                project_id="round-trip", run_id="r", entities=(), base=base,
+            ).to_dict(),
+            "ProjectRun@1": {
+                "schema": "ProjectRun@1", "project_id": run.project_id,
+                "run_id": run.run_id, "base": run.base.to_dict(),
+            },
+            "PromotionDecision@1": {
+                "schema": "PromotionDecision@1", "status": "accepted",
+                "project_id": "round-trip", "run_id": "r",
+                "checked_state": base.to_dict(), "candidate_ref": None,
+            },
+            "StageRunEnvelope@1": envelope.to_dict(),
+            "StageExitBinding@1": exit_binding.to_dict(),
+            "RhinoCadProgramBinding@1": binding.to_dict(),
+            "SelectedSchematicInput@1": None,
+            "SchematicOptionSet@1": None,
+            "DrawingProjectionReceipt@1": {
+                "schema": "DrawingProjectionReceipt@1",
+                "project_id": "round-trip", "run_id": "r",
+                "base": base.to_dict(),
+                "source": {"run_id": "r", "base": base.to_dict()},
+            },
+        }
+
+    def test_every_declared_schema_is_found_where_its_owner_writes_it(self) -> None:
+        built = self.built()
+        for schema in declared_schemas():
+            if schema.startswith("Test"):
+                continue
+            with self.subTest(schema=schema):
+                self.assertIn(schema, built, "no owner-built payload for this schema")
+                payload = built[schema]
+                if payload is None:
+                    self.skipTest(
+                        "built only inside a full project; the round-trip test in "
+                        "tests/test_project_format_migration.py covers this schema"
+                    )
+                self.assertEqual(
+                    [pointer for pointer, _, _ in locations(payload)],
+                    list(declared_pointers(schema)),
+                    f"{schema} declares a pointer its own writer does not produce",
+                )
+                restated = restate(payload, {self.BASE: SEMANTIC})
+                self.assertNotEqual(restated, payload)
+                self.assertEqual(
+                    [digest for _, _, digest in locations(restated)],
+                    [SEMANTIC] * len(declared_pointers(schema)),
+                )
+
+    def test_the_closure_receipt_restates_its_own_identity(self) -> None:
+        """Blocking item 1: a one-way migration used to leave this stale."""
+
+        base = self.version_ref()
+        closure = CompositeStageClosureReceipt(
+            profile_id="p0", profile_digest="a" * 64, stage_id="s0",
+            branch=BranchRef(run=RunRef("round-trip", "r", base), branch_id="main", epoch=1),
+            stage_subject_ref="project://round-trip/runs/r/records/s.json",
+            subject_digest="b" * 64, check_receipt_digests=(), findings=(),
+            status=StageClosureStatus.SATISFIED,
+        )
+        payload = closure.to_dict()
+        self.assertEqual(
+            [pointer for pointer, _, _ in locations(payload)], ["/branch/base"],
+        )
+
+        restated = restate(payload, {self.BASE: SEMANTIC})
+
+        self.assertEqual(restated["branch"]["base"]["state_sha256"], SEMANTIC)
+        self.assertNotEqual(restated["receipt_digest"], payload["receipt_digest"])
+        # Its own reader accepts it, which is what a later stage depends on.
+        reread = CompositeStageClosureReceipt.from_dict(restated)
+        self.assertEqual(reread.receipt_digest, restated["receipt_digest"])
+        self.assertEqual(content_digest_of(restated), restated["receipt_digest"])
+
+
 class NestedAndCanonicalPointerTests(unittest.TestCase):
     def test_a_nested_record_is_covered_by_its_own_owners_declaration(self) -> None:
         """DevelopedDesignState@1 holds no base; the input it selected does."""
@@ -210,18 +369,26 @@ class NestedAndCanonicalPointerTests(unittest.TestCase):
             restated["selected_schematic"]["base"]["state_sha256"], SEMANTIC,
         )
 
-    def test_a_flat_declared_digest_uses_the_same_pointer_a_scan_produces(self) -> None:
-        """N2: two spellings of one location made every CAD receipt block."""
+    def test_a_cad_receipt_is_covered_where_its_binding_really_sits(self) -> None:
+        """A declaration read off the wrong field covers nothing at all."""
 
         from archflow.project.repository import embedded_version_identities
 
-        payload = {"schema": "OcctExecutionReceipt@1",
-                   "metadata": {"base_version": "1", "base_state_sha256": LEGACY}}
+        payload = {"schema": "OcctExecutionReceipt@1", "identity": {
+            "schema": "OcctCadExportIdentity@1",
+            "binding": {"schema": "RhinoCadProgramBinding@1",
+                        "base": {"project_id": "p", "version": 1,
+                                 "state_sha256": LEGACY}},
+        }}
         declared = covered_pointers(payload)
         scanned = {row.json_pointer for row in embedded_version_identities(payload)}
-        self.assertIn("/metadata/base_state_sha256", declared)
+        self.assertIn("/identity/binding/base", declared)
         self.assertTrue(scanned <= declared, scanned - declared)
         self.assertEqual(undeclared_version_identities(payload, {LEGACY: 1}), [])
+        self.assertEqual(
+            restate(payload, MAPPING)["identity"]["binding"]["base"]["state_sha256"],
+            SEMANTIC,
+        )
 
     def test_a_run_ref_and_a_branch_ref_carry_their_base_anywhere(self) -> None:
         self.assertEqual(structural_child({"project_id": "p", "run_id": "r", "base": {}}), "base")
@@ -301,10 +468,28 @@ class DerivedDigestTests(unittest.TestCase):
             "the migrated envelope digests exactly as one written at that base",
         )
 
-    def test_an_owner_rebuilds_a_payload_that_embeds_its_own_derivation(self) -> None:
-        self.assertIn("StageRunEnvelope@1", recomputable_schemas())
+    def test_only_a_kind_with_self_derived_fields_is_recomputable(self) -> None:
+        self.assertEqual(
+            recomputable_schemas(), ("CompositeStageClosureReceipt@1",),
+        )
+        self.assertEqual(derived_fields("StageRunEnvelope@1"), ())
+        self.assertEqual(
+            derived_fields("CompositeStageClosureReceipt@1"),
+            ("receipt_id", "receipt_digest"),
+        )
         payload = self.envelope(LEGACY)
         self.assertEqual(dict(recompute(payload)), payload)
+
+    def test_naming_a_self_derived_field_without_a_rebuild_is_refused(self) -> None:
+        with self.assertRaises(VersionRefDeclarationError):
+            register_derived("TestDerivedNoRebuild@1", ("digest",))
+
+    def test_a_payload_its_own_owner_cannot_read_is_not_a_missing_digest(self) -> None:
+        """Item 5: swallowing this left every citation stale and unreported."""
+
+        with self.assertRaises(VersionRefDeclarationError) as raised:
+            content_digest_of({"schema": "StageRunEnvelope@1", "base": None})
+        self.assertIn("StageRunEnvelope@1", str(raised.exception))
 
 
 if __name__ == "__main__":  # pragma: no cover

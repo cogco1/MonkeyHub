@@ -67,7 +67,10 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DRAWING_PROJECTION_RECEIPT
 from archflow.project.refs import ProjectArtifactRef, ProjectRecordRef, RunRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
-from archflow.project.version_refs import register as _register_version_refs
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_derived as _register_derived_fields,
+)
 
 DRAWING_PROJECTION_RECEIPT_SCHEMA = "DrawingProjectionReceipt@1"
 SOURCE_RECEIPT_SCHEMA = "OcctExecutionReceipt@1"
@@ -591,7 +594,9 @@ __all__ = [
 
 
 # A drawing receipt names the canonical version its run was based on, and the
-# base of the verified CAD run its geometry was projected from.
+# base of the verified CAD run its geometry was projected from. It derives
+# nothing from either.
 VERSION_REF_POINTERS = {"DrawingProjectionReceipt@1": ("/base", "/source/base")}
 
 _register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("DrawingProjectionReceipt@1", ())

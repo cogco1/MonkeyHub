@@ -68,6 +68,7 @@ from archflow.project.repository import (
     _write_immutable,
 )
 from archflow.project.refs import require_identifier
+from archflow.project.version_ref_owners import load_workflow_owners
 from archflow.state.state_record import StateRecord
 from tools.run_project import _seat
 
@@ -532,6 +533,11 @@ def main(argv: list[str] | None = None) -> int:
     # a finished migration into a UnicodeEncodeError on the line reporting it.
     with contextlib.suppress(AttributeError, OSError, ValueError):
         sys.stdout.reconfigure(encoding="utf-8")
+    # The shared core cannot import a workflow package, so this command - which
+    # is above both layers - loads the workflow owners itself. Without it a
+    # project holding a drawing sheet is refused for a contract this build
+    # does state.
+    load_workflow_owners()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, type=Path, help="external project directory; its name is the project id")
     parser.add_argument("--state-record", type=Path, help="authored StateRecord@1 JSON for a new project")
@@ -597,12 +603,13 @@ def main(argv: list[str] | None = None) -> int:
                   f"{len(result.embedded_legacy_references)} retained record reference(s) still legacy-shaped")
             if result.orphans:
                 print(f"carried {len(result.orphans)} unreachable canonical/event record(s) forward unchanged")
-            for name, paths in (
-                ("binary file(s) containing a legacy digest, not opened", result.unscanned_binaries),
-                ("retained JSON file(s) this build could not decode", result.undecodable),
-            ):
-                if paths:
-                    print(f"{len(paths)} {name}: " + ", ".join(paths))
+            if result.unscanned_binaries:
+                print(f"{len(result.unscanned_binaries)} binary file(s) containing a "
+                      f"legacy digest, not opened: " + ", ".join(result.unscanned_binaries))
+            if result.orphan_legacy_references:
+                print(f"{len(result.orphan_legacy_references)} location(s) inside records "
+                      f"the published chain does not reach still name a legacy version; "
+                      f"they were carried over unchanged and are listed in the receipt")
             print(f"receipt: {result.receipt.uri if result.receipt else 'none'}")
             return 0
         if args.export_archive or args.restore_archive:

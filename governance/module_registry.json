@@ -2198,7 +2198,8 @@
         "state.developed_design",
         "state.record",
         "state.spatial",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "project.version_refs"
       ],
       "used_by": [
         "archflow/project/repository.py"
@@ -2241,7 +2242,9 @@
         "register",
         "register_structural",
         "register_content_digest",
-        "register_recompute",
+        "register_derived",
+        "derived_fields",
+        "schemas_declaring_derived_fields",
         "declared_pointers",
         "declared_schemas",
         "structural_child",
@@ -5858,7 +5861,8 @@
         "project.repository",
         "project.refs",
         "state.record",
-        "tools.run_project"
+        "tools.run_project",
+        "project.version_ref_owners"
       ],
       "used_by": [
         "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"

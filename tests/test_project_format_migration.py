@@ -10,8 +10,10 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,9 +22,14 @@ from unittest.mock import patch
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     DESIGN_STAGE,
+    DRAWING_PROJECTION_RECEIPT,
     PROJECT_FORMAT_MIGRATION,
     PROJECT_STAGE_WORKFLOW,
+    PROMOTION_DECISION,
     RUNNER_RUN_RECEIPT,
+    SEAT_OCCT_EXECUTION,
+    STAGE_CLOSURE,
+    STAGE_EXIT_BINDING,
     STAGE_RUN_ENVELOPE,
     STATE_RECORD,
 )
@@ -47,8 +54,23 @@ from archflow.project.repository import (
     plan_project_migration,
 )
 from archflow.state.operational_state import DesignObligation
-from archflow.state.stage_workflow import DesignPhase, StageRunEnvelope
+from archflow.adapters.cad_execution import RhinoCadProgramBinding
+from archflow.project.refs import BranchRef
+from archflow.state.stage_workflow import (
+    CompositeStageClosureReceipt,
+    DesignPhase,
+    StageClosureStatus,
+    StageExitBinding,
+    StageRunEnvelope,
+)
+from archflow.project.version_ref_owners import load_workflow_owners
 from tools.create_project import _scan_legacy_version_references, main
+
+# This module builds a drawing receipt, whose owner is a workflow module:
+# load that tier the way the command line does.
+load_workflow_owners()
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProjectFormatPlannerTests(unittest.TestCase):
@@ -989,7 +1011,7 @@ class ProjectFormatPlannerTests(unittest.TestCase):
                 (target / name).read_bytes(), (source / name).read_bytes(), name,
             )
         self.assertEqual(result.orphans, ())
-        self.assertEqual(result.undecodable, ())
+        self.assertEqual(result.orphan_legacy_references, ())
 
     def test_the_receipt_record_survives_export_and_restore(self) -> None:
         repository = self.legacy_project()
@@ -1178,6 +1200,67 @@ class ProjectFormatPlannerTests(unittest.TestCase):
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
             record_kind=STAGE_RUN_ENVELOPE, payload=envelope.to_dict(),
         )
+        closure = CompositeStageClosureReceipt(
+            profile_id="p0", profile_digest="a" * 64, stage_id="s0",
+            branch=BranchRef(run=run, branch_id="main", epoch=1),
+            stage_subject_ref=subject.uri, subject_digest=subject.sha256,
+            check_receipt_digests=(), findings=(),
+            status=StageClosureStatus.SATISFIED,
+        )
+        closure_ref = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=name),
+            record_kind=STAGE_CLOSURE, payload=closure.to_dict(),
+        )
+        exit_binding = StageExitBinding.bind(
+            envelope, envelope_ref=envelope_ref.uri,
+            closure_ref=closure_ref.uri, closure_digest=closure.receipt_digest,
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=STAGE_EXIT_BINDING, payload=exit_binding.to_dict(),
+        )
+        program = repository.put_json(
+            run=run,
+            destination=PersistenceDestination(
+                PersistenceArea.RUN_BRANCH, run_id=name, branch_id="main",
+            ),
+            record_kind="s0-geometry-program",
+            payload={"schema": "CompiledGeometryProgram@3", "stage_id": "s0"},
+        )
+        binding = RhinoCadProgramBinding(
+            program_ref=program,
+            branch=BranchRef(run=run, branch_id="main", epoch=1),
+            stage_id="s0", program_digest="c" * 64,
+            design_state_digest=subject.sha256, predecessor_program_digest=None,
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=SEAT_OCCT_EXECUTION,
+            payload={"schema": "OcctExecutionReceipt@1", "status": "succeeded",
+                     "identity": {"schema": "OcctCadExportIdentity@1",
+                                  "binding": binding.to_dict(),
+                                  "length_unit": "millimeter", "up_axis": "Z-up"}},
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=DRAWING_PROJECTION_RECEIPT,
+            payload={"schema": "DrawingProjectionReceipt@1",
+                     "project_id": run.project_id, "run_id": name,
+                     "base": head.to_dict(),
+                     "source": {"run_id": name, "base": head.to_dict()}},
+        )
+        repository.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
+            record_kind=PROMOTION_DECISION,
+            payload={"schema": "PromotionDecision@1", "status": "accepted",
+                     "project_id": run.project_id, "run_id": name,
+                     "checked_state": head.to_dict(), "candidate_ref": None},
+        )
         repository.put_json(
             run=run,
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
@@ -1185,7 +1268,9 @@ class ProjectFormatPlannerTests(unittest.TestCase):
             payload={"schema": "RunnerRunReceipt@3", "project_id": run.project_id,
                      "run_id": name, "run": run.to_dict(),
                      "stage_envelope_ref": envelope_ref.uri,
-                     "stage_envelope_digest": envelope.envelope_digest},
+                     "stage_envelope_digest": envelope.envelope_digest,
+                     "closure_ref": closure_ref.uri,
+                     "closure_digest": closure.receipt_digest},
         )
 
     def test_migrating_a_downgraded_project_reproduces_it_exactly(self) -> None:
@@ -1365,6 +1450,56 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         )
         self.assertEqual(code, 2, output)
         self.assertIn("MIGRATION_TARGET_NESTED", errors)
+
+    def test_the_cli_process_declares_the_workflow_owned_kinds(self) -> None:
+        """A fresh process, entered the way an operator enters it.
+
+        The shared core may not import a workflow package, so the command has
+        to load that tier itself. Asserting it in-process would pass on an
+        import some other test performed; this asks a new interpreter.
+        """
+
+        probe = (
+            "import tools.create_project as cli;"
+            "cli.load_workflow_owners();"
+            "from archflow.project.version_refs import declared_pointers;"
+            "print(declared_pointers('DrawingProjectionReceipt@1'))"
+        )
+        finished = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True, text=True, cwd=str(REPOSITORY_ROOT),
+            env={**os.environ, "PYTHONPATH": str(REPOSITORY_ROOT)},
+        )
+        self.assertEqual(finished.returncode, 0, finished.stderr)
+        self.assertIn("('/base', '/source/base')", finished.stdout)
+
+    def test_a_project_holding_a_drawing_sheet_migrates_through_the_cli(self) -> None:
+        repository = self.legacy_project()
+        run = repository.load_run("extra")
+        head = repository.read_head()
+        _write_immutable(
+            repository.layout.run("extra").records
+            / record_file_name(DRAWING_PROJECTION_RECEIPT, _sha256(_json_bytes({
+                "schema": "DrawingProjectionReceipt@1",
+                "project_id": run.project_id, "run_id": run.run_id,
+                "base": head.to_dict(),
+                "source": {"run_id": run.run_id, "base": head.to_dict()},
+            }))),
+            _json_bytes({
+                "schema": "DrawingProjectionReceipt@1",
+                "project_id": run.project_id, "run_id": run.run_id,
+                "base": head.to_dict(),
+                "source": {"run_id": run.run_id, "base": head.to_dict()},
+            }),
+        )
+        target = self.root / "migrated" / "legacy-building"
+
+        code, output = self.invoke(
+            repository.layout.root, "--migrate-format", "--into", str(target),
+        )
+
+        self.assertEqual(code, 0, output)
+        self.assertEqual(inspect_project_format(target).status, "current")
 
     def test_into_without_migrate_format_is_a_usage_error(self) -> None:
         root = self.legacy_project().layout.root

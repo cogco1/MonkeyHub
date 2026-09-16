@@ -38,7 +38,10 @@ from archflow.project.record_kinds import (
 from archflow.project.version_refs import (
     content_digest_of as _content_digest_of,
     covered_pointers as _covered_pointers,
+    derived_fields as _derived_fields,
+    recompute as _recompute_derived,
     register as _register_version_refs,
+    register_derived as _register_derived_fields,
     restate as _restate_declared,
 )
 from archflow.project.refs import (
@@ -210,9 +213,11 @@ class ProjectFormatMigration:
     project-relative files whose owner restated a base; every other retained
     file was copied byte for byte. ``embedded_legacy_references`` lists each
     place a copied file still carries a legacy project-version identity, and
-    ``unscanned_binaries``/``undecodable`` name the files whose contents this
-    could not survey, so the receipt states the limits of its own account
-    instead of reading silence as absence.
+    ``unscanned_binaries`` names the opaque files this did not open and
+    ``orphan_legacy_references`` the identities inside records the published
+    chain does not reach, which are carried over exactly as they are: the
+    receipt states the limits of its own account rather than reading its own
+    silence as absence.
     """
 
     source_root: Path
@@ -225,8 +230,8 @@ class ProjectFormatMigration:
     rewritten: tuple[str, ...]
     preserved_files: int
     orphans: tuple[str, ...]
+    orphan_legacy_references: tuple[tuple[str, str, str, int, str], ...]
     unscanned_binaries: tuple[str, ...]
-    undecodable: tuple[str, ...]
     embedded_legacy_references: tuple[tuple[str, str, str, int, str], ...]
     receipt: ProjectRecordRef | None
 
@@ -247,8 +252,12 @@ class ProjectFormatMigration:
             "rewritten": list(self.rewritten),
             "preserved_files": self.preserved_files,
             "orphans": list(self.orphans),
+            "orphan_legacy_references": [
+                {"path": path, "pointer": pointer, "shape": shape,
+                 "version": version, "legacy_state_sha256": legacy}
+                for path, pointer, shape, version, legacy in self.orphan_legacy_references
+            ],
             "unscanned_binaries": list(self.unscanned_binaries),
-            "undecodable": list(self.undecodable),
             "embedded_legacy_references": [
                 {
                     "path": path,
@@ -270,8 +279,8 @@ class _CopiedClosure:
     rewritten: list[str]
     preserved_files: int
     orphans: list[str]
+    orphan_legacy: list[tuple[str, str, str, int, str]]
     unscanned_binaries: list[str]
-    undecodable: list[str]
     embedded: list[tuple[str, str, str, int, str]]
 
 _LOCK_INDEX_GUARD = threading.Lock()
@@ -726,6 +735,7 @@ UNDECLARED_IDENTITY_BLOCKER = "migration needs a handler"
 # canonical version the run is based on in one place.
 VERSION_REF_POINTERS = {"ProjectRun@1": ("/base",)}
 _register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("ProjectRun@1", ())
 _MIGRATED_EVENT_KEYS = frozenset({
     "schema", "project_id", "event_type", "decision", "run_id",
     "from", "from_snapshot", "to", "to_snapshot", "previous_event",
@@ -908,8 +918,16 @@ def _cascade_records(
             # keyed by the name a record came in under, so a record that moves
             # twice must be resolved from that name both times; rewriting the
             # already-rewritten copy would leave every citation one step behind.
-            updated = _rewrite_references(
-                _restate_declared(payloads[path], mapping), project_id, renames, digests,
+            # Rewriting the references changes the record's contents too, so
+            # the owners get a second pass to rebuild whatever they derive from
+            # those contents; an empty mapping restates nothing and rebuilds
+            # everything.
+            updated = _restate_declared(
+                _rewrite_references(
+                    _restate_declared(payloads[path], mapping),
+                    project_id, renames, digests,
+                ),
+                {},
             )
             if updated == current[path]:
                 continue
@@ -987,6 +1005,16 @@ def _copy_retained_closure(
         category, _, _ = _retained_category(relative)
         if relative.startswith(("canonical/", "events/")):
             if relative in orphans:
+                # Content-addressed and unreachable, so it is carried over as
+                # it is - but it is still read, because the snapshot an
+                # interrupted promotion left names the version it was reaching.
+                for row in legacy_version_identities(
+                    _parse_json_document(data, relative), legacy_digests,
+                ):
+                    report.orphan_legacy.append((
+                        relative, row.json_pointer, row.shape,
+                        legacy_digests[row.state_sha256], row.state_sha256,
+                    ))
                 _write_immutable(target_root / relative, data)
                 report.orphans.append(relative)
             continue
@@ -1003,7 +1031,7 @@ def _copy_retained_closure(
         payload = cascade.payloads.get(destination)
         if payload is None:
             # Not a document the cascade read: its decodability was already
-            # settled by the caller, which owns the undecodable list.
+            # settled by the plan's own read of this closure.
             _write_immutable(target_root / relative, data)
             report.preserved_files += 1
             continue
@@ -1036,8 +1064,11 @@ def _require_consistent_migration(
     owner after the restatement.
     """
 
-    known = set(mapping) | set(mapping.values())
     legacy = {digest: 0 for digest in mapping}
+    # Every content digest the migrated closure can be cited by, and every
+    # place it still cites a digest the migration replaced.
+    citable: dict[str, str] = {}
+    stale: dict[str, str] = {}
     for entry in closure["files"]:
         path = entry["path"]
         if _retained_category(path)[0] == "artifact":
@@ -1063,14 +1094,67 @@ def _require_consistent_migration(
                 raise ProjectIntegrityError(
                     f"MIGRATION_VERIFY: {reference} does not hold the bytes its name claims"
                 )
-        rebuilt = _content_digest_of(payload)
-        if rebuilt is not None and rebuilt in known:
-            # The owner re-derives its digest from the migrated contents; a
-            # value still derived from the pre-migration base is exactly the
-            # failure a later stage would hit instead.
-            raise ProjectIntegrityError(  # pragma: no cover - defensive
-                f"MIGRATION_VERIFY: {path} derives a digest from a version identity"
+        _require_self_derived_fields_agree(path, payload)
+        digest = _content_digest_of(payload)
+        if digest is not None:
+            citable[digest] = path
+        stale.update(
+            (value, path) for value in _digest_strings(payload) if value in mapping
+        )
+    for digest, path in sorted(stale.items()):
+        if digest not in citable:
+            continue
+        raise ProjectIntegrityError(  # pragma: no cover - the guard above fires first
+            f"MIGRATION_VERIFY: {path} still cites {digest[:12]}, which the "
+            f"migration moved"
+        )
+
+
+def _require_self_derived_fields_agree(path: str, payload: Mapping[str, Any]) -> None:
+    """A record still says about itself what its owner says about it.
+
+    A record that serialises a digest of its own contents is invalidated by
+    any restatement inside it. Its owner declares those fields and how to
+    rebuild them; here the rebuild is run and compared. A kind whose schema
+    never declared what it derives is refused rather than trusted: that is the
+    state in which a migration writes a record its own reader will reject.
+    """
+
+    schema = payload.get("schema")
+    if not isinstance(schema, str):
+        return
+    fields = _derived_fields(schema)
+    if fields is None:
+        if _covered_pointers(payload):
+            raise ProjectIntegrityError(
+                f"MIGRATION_VERIFY: {path} is a {schema} carrying a project-version "
+                f"identity whose owner never said what it derives from one"
             )
+        return
+    if not fields:
+        return
+    rebuilt = _recompute_derived(payload)
+    for field in fields:
+        if payload.get(field) != rebuilt.get(field):
+            raise ProjectIntegrityError(
+                f"MIGRATION_VERIFY: {path} keeps a {field!r} its own owner no longer "
+                f"derives from its contents"
+            )
+
+
+def _digest_strings(payload: object) -> list[str]:
+    """Every 64-character lowercase hex string anywhere in a payload."""
+
+    found: list[str] = []
+    if isinstance(payload, Mapping):
+        for value in payload.values():
+            found.extend(_digest_strings(value))
+    elif isinstance(payload, list):
+        for value in payload:
+            found.extend(_digest_strings(value))
+    elif _digest_or_none(payload) is not None:
+        found.append(payload)
+    return found
 
 
 def _record_references_in(payload: object, project_id: str) -> list[str]:
@@ -2507,7 +2591,6 @@ class FilesystemProjectRepository:
                 # single target byte exists: an event names a decision receipt,
                 # so the envelope cannot be written until the receipt's final
                 # name is known, and an undeclared identity must refuse here.
-                undecodable: list[str] = []
                 payloads: dict[str, dict[str, Any]] = {}
                 for relative, item in sorted(project_files.items()):
                     if (
@@ -2518,12 +2601,11 @@ class FilesystemProjectRepository:
                         or _TEMPORARY_NAME.match(PurePosixPath(relative).name)
                     ):
                         continue
-                    try:
-                        payloads[relative] = json.loads(
-                            _read_bytes(item).decode("utf-8-sig")
-                        )
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        undecodable.append(relative)
+                    # A retained document that does not decode has already
+                    # failed the plan's own read of this closure above.
+                    payloads[relative] = _parse_json_document(
+                        _read_bytes(item), relative,
+                    )
                 cascade = _cascade_records(
                     payloads, project_id=project_id,
                     mapping=mapping, legacy_digests=legacy_digests,
@@ -2546,10 +2628,13 @@ class FilesystemProjectRepository:
                             "owner can restate it"
                         )
 
+                # ``initialize`` writes the manifest, the first snapshot and
+                # HEAD before it verifies its own work, so the target is this
+                # migration's from before that call, not after it returns.
+                created = target_root
                 target = cls.initialize(
                     target_root, project_id=project_id, initial_state=lineage[0][2],
                 )
-                created = target_root
                 versions: list[tuple[int, str, str]] = [
                     (0, lineage[0][0].require_digest(), target.read_head().require_digest())
                 ]
@@ -2593,7 +2678,6 @@ class FilesystemProjectRepository:
                 report = _copy_retained_closure(
                     staging, target_root, legacy, mapping, legacy_digests, cascade,
                 )
-                report.undecodable.extend(undecodable)
 
                 migrated = cls.open(target_root)
                 migrated.verify()
@@ -2628,8 +2712,8 @@ class FilesystemProjectRepository:
                     rewritten=tuple(report.rewritten),
                     preserved_files=report.preserved_files,
                     orphans=tuple(report.orphans),
+                    orphan_legacy_references=tuple(report.orphan_legacy),
                     unscanned_binaries=tuple(report.unscanned_binaries),
-                    undecodable=tuple(report.undecodable),
                     embedded_legacy_references=tuple(report.embedded),
                     receipt=None,
                 )

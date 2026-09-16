@@ -203,7 +203,11 @@ def _stage_index(value: object, field: str = "stage_index") -> int:
 
 from archflow.contracts.fields import text as _text
 from archflow.contracts.fields import mapping
-from archflow.project.version_refs import register as _register_version_refs, register_content_digest as _register_version_ref_digest, register_recompute as _register_version_ref_recompute
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_content_digest as _register_version_ref_digest,
+    register_derived as _register_derived_fields,
+)
 
 
 # ---------------------------------------------------------------- the stage-exit record
@@ -1540,25 +1544,48 @@ __all__ = [
 ]
 
 
-# A stage envelope and its exit binding both restate the run's canonical base.
-# Both also carry digests derived from their own contents, so both say how to
-# rebuild themselves and what their content digest is: an exit binding cites
-# the envelope's digest, and a runner receipt cites both.
+# A stage envelope and its exit binding both restate the run's canonical base,
+# and the composite closure reaches one through the design branch it names.
+# All three also serialise a digest of their own contents, so each says which
+# fields those are and how to rebuild them: an exit binding cites the
+# envelope's digest and the closure's, and a runner receipt cites all of them.
+# Without the rebuild a migrated record keeps a digest of its pre-migration
+# self, and its own ``from_dict`` refuses it.
 VERSION_REF_POINTERS = {
     "StageRunEnvelope@1": ("/base",),
     "StageExitBinding@1": ("/base",),
 }
 
+_CLOSURE_DERIVED = ("receipt_id", "receipt_digest")
+
+
+def _rebuild_stage_closure(payload):
+    """Restate a closure receipt's own identity from its restated contents."""
+
+    content = {
+        key: value for key, value in payload.items() if key not in _CLOSURE_DERIVED
+    }
+    digest = canonical_digest(content)
+    return {
+        **content,
+        "receipt_id": f"composite-stage-closure-{digest}",
+        "receipt_digest": digest,
+    }
+
+
 _register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("StageRunEnvelope@1", ())
+_register_derived_fields("StageExitBinding@1", ())
+_register_derived_fields(
+    "CompositeStageClosureReceipt@1", _CLOSURE_DERIVED, _rebuild_stage_closure,
+)
 _register_version_ref_digest(
     "StageRunEnvelope@1", lambda payload: StageRunEnvelope.from_dict(payload).envelope_digest,
 )
 _register_version_ref_digest(
     "StageExitBinding@1", lambda payload: StageExitBinding.from_dict(payload).exit_digest,
 )
-_register_version_ref_recompute(
-    "StageRunEnvelope@1", lambda payload: StageRunEnvelope.from_dict(payload).to_dict(),
-)
-_register_version_ref_recompute(
-    "StageExitBinding@1", lambda payload: StageExitBinding.from_dict(payload).to_dict(),
+_register_version_ref_digest(
+    "CompositeStageClosureReceipt@1",
+    lambda payload: _rebuild_stage_closure(payload)["receipt_digest"],
 )
