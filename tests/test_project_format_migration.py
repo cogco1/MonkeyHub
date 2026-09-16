@@ -27,6 +27,7 @@ from archflow.project.record_kinds import (
     PROJECT_STAGE_WORKFLOW,
     PROMOTION_DECISION,
     RUNNER_RUN_RECEIPT,
+    SEAT_3DM_INSPECTION,
     SEAT_OCCT_EXECUTION,
     STAGE_CLOSURE,
     STAGE_EXIT_BINDING,
@@ -1319,6 +1320,107 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertEqual(
             FilesystemProjectRepository.open(target).read_head(), original.read_head(),
         )
+
+    def test_a_cad_user_string_naming_the_base_moves_with_the_migration(self) -> None:
+        """No field is named for a version anywhere near this one.
+
+        A Rhino export writes the canonical base into the document's user
+        strings as the value of a ``{key, value}`` row. A migration that knew
+        only the named shapes copied that row forward unchanged, reported no
+        embedded reference at all, and called the project migrated.
+        """
+
+        repository = self.legacy_project()
+        source = repository.layout.root
+        head = repository.read_head()
+        summary = _json_bytes({
+            "schema": "ThreeDmInspectionSummary@4",
+            "document_user_strings": [
+                {"key": "archflow:base_state_sha256", "value": head.state_sha256},
+                {"key": "archflow:stage", "value": "s0"},
+            ],
+        })
+        original = (repository.layout.run("extra").records
+                    / record_file_name(SEAT_3DM_INSPECTION, _sha256(summary)))
+        _write_immutable(original, summary)
+        target = self.root / "migrated" / "legacy-building"
+
+        result = FilesystemProjectRepository.migrate_project_format(source, target)
+
+        migrated = FilesystemProjectRepository.open(target)
+        moved = sorted(
+            target.joinpath("runs", "extra", "records").glob("seat-3dm-inspection-*.json")
+        )
+        self.assertEqual(len(moved), 1)
+        text = moved[0].read_text(encoding="utf-8")
+        payload = json.loads(text)
+        self.assertEqual(
+            payload["document_user_strings"][0]["value"],
+            migrated.read_head().state_sha256,
+            "the exported model still reports the version it was built at",
+        )
+        self.assertNotIn(head.state_sha256, text)
+        self.assertNotEqual(moved[0].name, original.name, "re-hashed, so renamed")
+        # And the receipt is honest: nothing was left behind to list.
+        self.assertEqual(result.embedded_legacy_references, ())
+        self.assertEqual(result.orphan_legacy_references, ())
+        self.assertEqual(result.unscanned_binaries, ())
+
+    def test_a_rebuild_that_lies_is_caught_by_the_owners_own_reader(self) -> None:
+        """A rebuild cannot vouch for itself; the reader every stage uses can."""
+
+        from archflow.project import version_refs
+
+        repository = self.legacy_project()
+        self.stage_bound_run(repository, "bound")
+        target = self.root / "migrated" / "legacy-building"
+        fields, _ = version_refs._DERIVED["CompositeStageClosureReceipt@1"]
+
+        def wrong(payload):
+            return {**payload, "receipt_digest": "0" * 64,
+                    "receipt_id": "composite-stage-closure-" + "0" * 64}
+
+        with patch.dict(
+            version_refs._DERIVED,
+            {"CompositeStageClosureReceipt@1": (fields, wrong)},
+        ):
+            with self.assertRaises(ProjectIntegrityError) as raised:
+                FilesystemProjectRepository.migrate_project_format(
+                    repository.layout.root, target,
+                )
+
+        # Caught by the owner's reader, whether that is the content digest it
+        # computes through from_dict or the read-back after the cascade; never
+        # by the rebuild agreeing with itself.
+        message = str(raised.exception)
+        self.assertIn("CompositeStageClosureReceipt@1", message)
+        self.assertIn("stage closure receipt identity changed", message)
+        self.assertFalse(target.exists(), "and the target it half-wrote is gone")
+
+    def test_the_dry_run_refuses_what_the_migration_would_refuse(self) -> None:
+        """A record its own owner cannot read has to block in both places."""
+
+        from archflow.project import version_refs
+
+        repository = self.legacy_project()
+        root = repository.layout.root
+
+        def unreadable(payload):
+            raise version_refs.VersionRefDeclarationError("this owner cannot read it")
+
+        with patch.dict(
+            version_refs._CONTENT_DIGESTS, {"StateRecord@1": unreadable},
+        ):
+            plan = plan_project_migration(root)
+            self.assertTrue(
+                any("its own owner cannot read" in blocker for blocker in plan.blockers),
+                plan.blockers,
+            )
+            with self.assertRaises(ProjectIntegrityError) as raised:
+                FilesystemProjectRepository.migrate_project_format(
+                    root, self.root / "migrated" / "legacy-building",
+                )
+        self.assertIn("MIGRATION_BLOCKED", str(raised.exception))
 
     # ---- the CLI consumer
 

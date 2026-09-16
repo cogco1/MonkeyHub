@@ -37,8 +37,22 @@ from archflow.project.version_refs import (
 )
 from archflow.project.refs import BranchRef, ProjectRecordRef, ProjectVersionRef, RunRef
 from archflow.adapters.cad_execution import RhinoCadProgramBinding
+from archflow.state.spatial import (
+    SchematicOption,
+    SchematicOptionSet,
+    SpatialOptionProposal,
+)
+import tempfile
+from pathlib import Path
+
+from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.operational_state import DesignObligation
-from archflow.state.state_record import StateRecord
+from archflow.state.state_record import (
+    RECORD_BINDING_PHASE,
+    StateRecord,
+    developed_design_view,
+)
+from tests.test_state_record import _record as state_record_fixture
 from archflow.state.stage_workflow import (
     CompositeStageClosureReceipt,
     DesignPhase,
@@ -92,7 +106,6 @@ NO_VERSION_IDENTITY = {
     "StudioModelAsset@1": "an asset by digest; no base",
     "StudioSourceDocument@1": "an uploaded document by digest; no base",
     "StudioWorkingCopy@1": "a work copy by digest; no base",
-    "ThreeDmInspectionSummary@4": "inspects a file by digest; no canonical base",
 }
 
 # A kind that carries a version identity somewhere other than its own top-level
@@ -237,8 +250,43 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
     def version_ref(self) -> ProjectVersionRef:
         return ProjectVersionRef("round-trip", 3, self.BASE)
 
+    def selected_schematic(self, base: ProjectVersionRef) -> dict:
+        """A real SelectedSchematicInput@1, projected by its own owner.
+
+        ``developed_design_view`` is the only thing that builds this graph, so
+        the payload comes from there rather than from a literal written here.
+        """
+
+        record = state_record_fixture()
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = FilesystemProjectRepository.initialize(
+                Path(temporary) / record.project_id, project_id=record.project_id,
+                initial_state={"schema": "TestState@1"},
+            )
+            head = repository.read_head()
+            repository.create_run("r")
+            state = developed_design_view(
+                record, run=RunRef(record.project_id, "r", head),
+                evidence_ref="reading:detail-review", phase=RECORD_BINDING_PHASE,
+            )
+        payload = state.selected_schematic.to_dict()
+        # Projected against that throwaway project's head; restate it onto the
+        # base this test maps, through the owner's own declaration.
+        return restate(payload, {head.require_digest(): self.BASE})
+
     def built(self) -> dict[str, dict]:
-        """One real payload per declared schema, each from its owner."""
+        """One payload per declared schema, produced the way the project does.
+
+        Most come from the owner's own writer. Four have no constructor of
+        their own - ``ProjectRun@1`` is written by
+        ``FilesystemProjectRepository.create_run``, ``PromotionDecision@1`` by
+        ``archflow.project.issue``, ``DrawingProjectionReceipt@1`` by
+        ``monkeydiagram`` and ``ThreeDmInspectionSummary@4`` by a Rhino
+        readback - so those four are the literal each of those writers emits,
+        copied from it. The round-trip test in
+        ``tests/test_project_format_migration.py`` puts all four through the
+        real writer inside a real project.
+        """
 
         base = self.version_ref()
         run = RunRef("round-trip", "r", base)
@@ -273,6 +321,7 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
             stage_id="s0", program_digest="c" * 64,
             design_state_digest="d" * 64, predecessor_program_digest=None,
         )
+        selected = self.selected_schematic(base)
         return {
             "StateRecord@1": StateRecord(
                 project_id="round-trip", run_id="r", entities=(), base=base,
@@ -289,8 +338,38 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
             "StageRunEnvelope@1": envelope.to_dict(),
             "StageExitBinding@1": exit_binding.to_dict(),
             "RhinoCadProgramBinding@1": binding.to_dict(),
-            "SelectedSchematicInput@1": None,
-            "SchematicOptionSet@1": None,
+            "SelectedSchematicInput@1": selected,
+            "SchematicOptionSet@1": SchematicOptionSet(
+                project_id="round-trip", run_id="r", base=base,
+                branch=BranchRef(run=run, branch_id="main", epoch=1),
+                operational_state_digest="1" * 64,
+                input_phase=DesignPhase.SITE_RESOURCE_COORDINATION,
+                output_phase=DesignPhase.SCHEMATIC_DESIGN,
+                program_digest="2" * 64, site_context_digest="3" * 64,
+                build_policy_digest="4" * 64,
+                phase_gate_receipt_ref="receipt:gate",
+                phase_gate_receipt_digest="5" * 64,
+                compiler_id="test-compiler", compiler_version="1",
+                # Its owner requires alternatives, in id order.
+                options=(
+                    SchematicOption(
+                        proposal=SpatialOptionProposal.from_dict({
+                            **selected["option"]["proposal"],
+                            "option_id": "alternative",
+                        }),
+                        footprint_area=selected["option"]["footprint_area"],
+                        topology_signature="6" * 64,
+                    ),
+                    SchematicOption.from_dict(selected["option"]),
+                ),
+            ).to_dict(),
+            "ThreeDmInspectionSummary@4": {
+                "schema": "ThreeDmInspectionSummary@4",
+                "document_user_strings": [
+                    {"key": "archflow:base_state_sha256", "value": self.BASE},
+                    {"key": "archflow:stage", "value": "s0"},
+                ],
+            },
             "DrawingProjectionReceipt@1": {
                 "schema": "DrawingProjectionReceipt@1",
                 "project_id": "round-trip", "run_id": "r",
@@ -307,21 +386,30 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 self.assertIn(schema, built, "no owner-built payload for this schema")
                 payload = built[schema]
-                if payload is None:
-                    self.skipTest(
-                        "built only inside a full project; the round-trip test in "
-                        "tests/test_project_format_migration.py covers this schema"
-                    )
-                self.assertEqual(
-                    [pointer for pointer, _, _ in locations(payload)],
-                    list(declared_pointers(schema)),
-                    f"{schema} declares a pointer its own writer does not produce",
+                # A keyed-row declaration resolves to the concrete pointer of
+                # the row it selected, so the two spellings are compared by
+                # what they found rather than letter for letter.
+                # A keyed-row declaration resolves to the pointer of the row
+                # it selected, and a payload may also be covered structurally,
+                # so the two spellings are compared by what they find: every
+                # declared location has to exist, hold this base, and move.
+                found = locations(payload)
+                self.assertGreaterEqual(
+                    len(found), len(declared_pointers(schema)),
+                    f"{schema} declares a pointer its own writer does not produce: "
+                    f"declared {declared_pointers(schema)}, found "
+                    f"{[pointer for pointer, _, _ in found]}",
                 )
+                self.assertEqual([digest for _, _, digest in found],
+                                 [self.BASE] * len(found))
+
                 restated = restate(payload, {self.BASE: SEMANTIC})
+
                 self.assertNotEqual(restated, payload)
                 self.assertEqual(
                     [digest for _, _, digest in locations(restated)],
-                    [SEMANTIC] * len(declared_pointers(schema)),
+                    [SEMANTIC] * len(found),
+                    f"{schema} left a declared location behind",
                 )
 
     def test_the_closure_receipt_restates_its_own_identity(self) -> None:

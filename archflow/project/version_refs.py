@@ -32,6 +32,12 @@ Four things can be declared.
     is restated every other record that cites that digest can be moved with
     it. The owner computes it; nothing here knows what a digest covers.
 
+``register_reader``
+    the owner's own reader for a record, used to check a migrated one back. A
+    rebuild registered beside it cannot vouch for itself: comparing a rebuilt
+    field with the same rebuild proves only that the function is a function.
+    The reader is what every later stage will use, so it is what decides.
+
 ``register_derived``
     which serialised fields of a record are derived from its own contents, and
     how the owner rebuilds them. Every declared kind states this, ``()`` when
@@ -67,6 +73,7 @@ _DECLARATIONS: dict[str, tuple[str, ...]] = {}
 _STRUCTURAL: dict[frozenset[str], str] = {}
 _CONTENT_DIGESTS: dict[str, Callable[[Mapping[str, Any]], str]] = {}
 _DERIVED: dict[str, tuple[tuple[str, ...], Callable[[Mapping[str, Any]], Mapping[str, Any]] | None]] = {}
+_READERS: dict[str, Callable[[Mapping[str, Any]], Any]] = {}
 
 
 # ---------------------------------------------------------------- registration
@@ -140,6 +147,31 @@ def register_derived(
             f"schema {schema!r} already declares self-derived fields {existing[0]}"
         )
     _DERIVED[schema] = (declared, rebuild)
+
+
+def register_reader(schema: str, read: Callable[[Mapping[str, Any]], Any]) -> None:
+    """Declare the owner's reader, which a migrated record has to satisfy."""
+
+    existing = _READERS.get(schema)
+    if existing is not None and existing is not read:
+        raise VersionRefDeclarationError(
+            f"schema {schema!r} already declares a reader"
+        )
+    _READERS[schema] = read
+
+
+def read_back(payload: Mapping[str, Any]) -> None:
+    """Put a payload through its owner's reader. Raises what that reader raises."""
+
+    read = _READERS.get(payload.get("schema"))
+    if read is not None:
+        read(payload)
+
+
+def schemas_declaring_readers() -> tuple[str, ...]:
+    """Every schema whose owner lends its reader to the migration's check."""
+
+    return tuple(sorted(_READERS))
 
 
 def derived_fields(schema: object) -> tuple[str, ...] | None:
@@ -220,7 +252,15 @@ def structural_child(payload: Mapping[str, Any]) -> str | None:
 
 # ---------------------------------------------------------------- applying it
 
-def _tokens(pointer: str) -> tuple[str, ...]:
+def _tokens(pointer: str) -> tuple[Any, ...]:
+    """The tokens of one declaration, a keyed-row selector included.
+
+    ``/document_user_strings[key=archflow:base_state_sha256]/value`` names the
+    ``value`` of whichever row of that list carries that key. A CAD document's
+    user strings are a sorted list of key/value rows, so the row a record means
+    cannot be named by index: its position moves with the data.
+    """
+
     if not isinstance(pointer, str) or not pointer.startswith("/"):
         raise VersionRefDeclarationError(
             f"a version-ref pointer must start with '/': {pointer!r}"
@@ -228,9 +268,54 @@ def _tokens(pointer: str) -> tuple[str, ...]:
     parts = pointer[1:].split("/")
     if any(part == "" for part in parts):
         raise VersionRefDeclarationError(f"empty pointer token in {pointer!r}")
-    return tuple(
-        part.replace("~1", "/").replace("~0", "~") for part in parts
-    )
+    tokens: list[Any] = []
+    for part in parts:
+        part = part.replace("~1", "/").replace("~0", "~")
+        if part.endswith("]") and "[" in part:
+            field, predicate = part[:-1].split("[", 1)
+            if "=" not in predicate or not field:
+                raise VersionRefDeclarationError(
+                    f"a keyed-row selector reads as name[key=value]: {pointer!r}"
+                )
+            key, value = predicate.split("=", 1)
+            tokens.append((field, key, value))
+            continue
+        tokens.append(part)
+    return tuple(tokens)
+
+
+def _select(parent: Any, token: Any) -> tuple[Any, str | None]:
+    """(value, canonical token) for one declaration token applied to ``parent``."""
+
+    if isinstance(token, tuple):
+        field, key, wanted = token
+        rows = parent.get(field) if isinstance(parent, Mapping) else None
+        if not isinstance(rows, list):
+            return None, None
+        for index, row in enumerate(rows):
+            if isinstance(row, Mapping) and row.get(key) == wanted:
+                return row, f"{_escape(field)}/{index}"
+        return None, None
+    if isinstance(parent, Mapping):
+        return (parent.get(token), _escape(token)) if token in parent else (None, None)
+    if isinstance(parent, list):
+        try:
+            return parent[int(token)], _escape(token)
+        except (ValueError, IndexError):
+            return None, None
+    return None, None
+
+
+def _resolve(payload: Any, tokens: tuple[Any, ...]) -> tuple[Any, str | None]:
+    """Walk a declaration to its value, and to the plain pointer that names it."""
+
+    current, spelling = payload, ""
+    for token in tokens:
+        current, step = _select(current, token)
+        if step is None:
+            return None, None
+        spelling = f"{spelling}/{step}"
+    return current, spelling
 
 
 def _escape(key: object) -> str:
@@ -287,14 +372,11 @@ def locations(payload: Any, pointer: str = "") -> list[tuple[str, str, str]]:
     found: list[tuple[str, str, str]] = []
     if isinstance(payload, Mapping):
         for declared in declared_pointers(payload.get("schema")) or ():
-            tokens = _tokens(declared)
-            read = _read_location(_walk(payload, tokens))
-            if read is not None:
+            value, spelling = _resolve(payload, _tokens(declared))
+            read = _read_location(value)
+            if read is not None and spelling is not None:
                 kind, digest = read
-                found.append((
-                    pointer + "".join(f"/{_escape(token)}" for token in tokens),
-                    kind, digest,
-                ))
+                found.append((pointer + spelling, kind, digest))
         child = structural_child(payload)
         if child is not None:
             read = _read_location(payload.get(child))
@@ -355,12 +437,18 @@ def _restate_value(value: Any, mapping: Mapping[str, str]) -> Any:
 
 
 def _substitute(
-    payload: dict[str, Any], tokens: tuple[str, ...], mapping: Mapping[str, str],
+    payload: dict[str, Any], tokens: tuple[Any, ...], mapping: Mapping[str, str],
 ) -> None:
-    parent = _walk(payload, tokens[:-1]) if len(tokens) > 1 else payload
+    parent: Any = payload
+    for token in tokens[:-1]:
+        parent, step = _select(parent, token)
+        if step is None:
+            return
     if not isinstance(parent, dict):
         return
     field = tokens[-1]
+    if isinstance(field, tuple):  # pragma: no cover - a row is not itself a digest
+        return
     value = parent.get(field)
     if isinstance(value, str):
         if value in mapping:

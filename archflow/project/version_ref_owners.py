@@ -31,6 +31,7 @@ import archflow.project.refs  # noqa: F401
 import archflow.state.developed_design  # noqa: F401
 import archflow.state.spatial  # noqa: F401
 import archflow.state.stage_workflow  # noqa: F401
+import archflow.adapters.three_dm_inspector  # noqa: F401
 import archflow.state.state_record  # noqa: F401
 from archflow.project.version_refs import register_derived
 
@@ -42,6 +43,7 @@ OWNER_MODULES = (
     "archflow.state.developed_design",
     "archflow.state.spatial",
     "archflow.state.stage_workflow",
+    "archflow.adapters.three_dm_inspector",
     "archflow.state.state_record",
 )
 

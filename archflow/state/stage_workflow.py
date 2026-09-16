@@ -207,6 +207,7 @@ from archflow.project.version_refs import (
     register as _register_version_refs,
     register_content_digest as _register_version_ref_digest,
     register_derived as _register_derived_fields,
+    register_reader as _register_version_ref_reader,
 )
 
 
@@ -1585,7 +1586,14 @@ _register_version_ref_digest(
 _register_version_ref_digest(
     "StageExitBinding@1", lambda payload: StageExitBinding.from_dict(payload).exit_digest,
 )
+# Through the reader, not through the rebuild: a rebuild that vouches for
+# itself proves nothing, and this is the reader every later stage uses.
 _register_version_ref_digest(
     "CompositeStageClosureReceipt@1",
-    lambda payload: _rebuild_stage_closure(payload)["receipt_digest"],
+    lambda payload: CompositeStageClosureReceipt.from_dict(payload).receipt_digest,
 )
+_register_version_ref_reader(
+    "CompositeStageClosureReceipt@1", CompositeStageClosureReceipt.from_dict,
+)
+_register_version_ref_reader("StageRunEnvelope@1", StageRunEnvelope.from_dict)
+_register_version_ref_reader("StageExitBinding@1", StageExitBinding.from_dict)

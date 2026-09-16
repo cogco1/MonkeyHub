@@ -39,6 +39,7 @@ from archflow.project.version_refs import (
     content_digest_of as _content_digest_of,
     covered_pointers as _covered_pointers,
     derived_fields as _derived_fields,
+    read_back as _read_back,
     recompute as _recompute_derived,
     register as _register_version_refs,
     register_derived as _register_derived_fields,
@@ -639,6 +640,22 @@ def _version_or_none(value: object) -> int | None:
     return value
 
 
+def _digest_strings(payload: object, pointer: str = "") -> list[tuple[str, str]]:
+    """(pointer, digest) for every 64-character lowercase hex string in a payload."""
+
+    found: list[tuple[str, str]] = []
+    if isinstance(payload, Mapping):
+        for key, value in payload.items():
+            escaped = str(key).replace("~", "~0").replace("/", "~1")
+            found.extend(_digest_strings(value, f"{pointer}/{escaped}"))
+    elif isinstance(payload, list):
+        for index, value in enumerate(payload):
+            found.extend(_digest_strings(value, f"{pointer}/{index}"))
+    elif _digest_or_none(payload) is not None:
+        found.append((pointer or "/", payload))
+    return found
+
+
 def _identity_row(
     payload: Mapping[str, Any], pointer: str, shape: str,
 ) -> EmbeddedVersionIdentity:
@@ -708,18 +725,38 @@ def embedded_version_identities(
 def legacy_version_identities(
     payload: object, legacy_digests: Mapping[str, int],
 ) -> list[EmbeddedVersionIdentity]:
-    """The subset of :func:`embedded_version_identities` naming a known legacy version.
+    """Every place ``payload`` names a known legacy version, in any spelling at all.
 
-    ``legacy_digests`` maps a legacy snapshot-file digest to its version. A row
-    is selected by its digest alone: a reference whose declared version
-    disagrees with the version that digest belongs to is still reported, by its
-    digest, and never silently trusted.
+    The typed shapes come first, and then every remaining string in the payload
+    that *is* one of these digests, wherever it sits. A CAD document's user
+    strings keep the canonical base as the value of a ``{key, value}`` row - no
+    field is named ``state_sha256`` anywhere near it - and a migration that
+    only knew the named shapes would copy that row forward unchanged and call
+    the project migrated. ``legacy_digests`` maps a legacy snapshot-file digest
+    to its version; a row is selected by its digest alone, so a reference whose
+    declared version disagrees with its digest is still reported.
     """
 
-    return [
+    found = [
         row for row in embedded_version_identities(payload)
         if row.state_sha256 is not None and row.state_sha256 in legacy_digests
     ]
+    named = {row.json_pointer for row in found}
+
+    def inside_a_named_location(pointer: str) -> bool:
+        # The digest inside a reference this already named is that reference,
+        # not a second location: reporting both would refuse every project.
+        return any(
+            pointer == other or pointer.startswith(f"{other}/") for other in named
+        )
+
+    for pointer, digest in _digest_strings(payload):
+        if digest in legacy_digests and not inside_a_named_location(pointer):
+            found.append(EmbeddedVersionIdentity(
+                json_pointer=pointer, shape=DIGEST_FIELD, project_id=None,
+                version=None, state_sha256=digest, detail=None,
+            ))
+    return found
 
 
 # The run the migration files its own receipt in, and the event keys a
@@ -1064,11 +1101,10 @@ def _require_consistent_migration(
     owner after the restatement.
     """
 
+    # Every version the migration replaced. A migrated record naming one of
+    # these anywhere - in a typed reference or as the value of a CAD user
+    # string - is a location the cascade did not reach.
     legacy = {digest: 0 for digest in mapping}
-    # Every content digest the migrated closure can be cited by, and every
-    # place it still cites a digest the migration replaced.
-    citable: dict[str, str] = {}
-    stale: dict[str, str] = {}
     for entry in closure["files"]:
         path = entry["path"]
         if _retained_category(path)[0] == "artifact":
@@ -1095,19 +1131,6 @@ def _require_consistent_migration(
                     f"MIGRATION_VERIFY: {reference} does not hold the bytes its name claims"
                 )
         _require_self_derived_fields_agree(path, payload)
-        digest = _content_digest_of(payload)
-        if digest is not None:
-            citable[digest] = path
-        stale.update(
-            (value, path) for value in _digest_strings(payload) if value in mapping
-        )
-    for digest, path in sorted(stale.items()):
-        if digest not in citable:
-            continue
-        raise ProjectIntegrityError(  # pragma: no cover - the guard above fires first
-            f"MIGRATION_VERIFY: {path} still cites {digest[:12]}, which the "
-            f"migration moved"
-        )
 
 
 def _require_self_derived_fields_agree(path: str, payload: Mapping[str, Any]) -> None:
@@ -1140,21 +1163,20 @@ def _require_self_derived_fields_agree(path: str, payload: Mapping[str, Any]) ->
                 f"MIGRATION_VERIFY: {path} keeps a {field!r} its own owner no longer "
                 f"derives from its contents"
             )
+    # The rebuild cannot vouch for itself: comparing it with itself proves only
+    # that it is a function. The owner's reader is what every later stage uses,
+    # so it is what decides whether this record survived the migration.
+    try:
+        _read_back(payload)
+    except ProjectRepositoryError:
+        raise
+    except Exception as exc:
+        raise ProjectIntegrityError(
+            f"MIGRATION_VERIFY: {path} is a {schema} its own reader rejects "
+            f"after migration: {exc}"
+        ) from exc
 
 
-def _digest_strings(payload: object) -> list[str]:
-    """Every 64-character lowercase hex string anywhere in a payload."""
-
-    found: list[str] = []
-    if isinstance(payload, Mapping):
-        for value in payload.values():
-            found.extend(_digest_strings(value))
-    elif isinstance(payload, list):
-        for value in payload:
-            found.extend(_digest_strings(value))
-    elif _digest_or_none(payload) is not None:
-        found.append(payload)
-    return found
 
 
 def _record_references_in(payload: object, project_id: str) -> list[str]:
@@ -3379,6 +3401,7 @@ def plan_project_migration(
     unknown: dict[tuple[str, str | None], int] = {}
     # kind -> (record count, one example "<path><pointer>")
     undeclared: dict[str, tuple[int, str]] = {}
+    unreadable: list[str] = []
     # The same legacy identities the migration would remap, so the dry run and
     # the migration cannot disagree about what blocks.
     try:
@@ -3409,6 +3432,13 @@ def plan_project_migration(
                 if registered is False:
                     unknown[(kind, schema)] = unknown.get((kind, schema), 0) + 1
                 if category in ("record", "run_manifest", "authored_input", "design"):
+                    # The migration asks each owner for this record's content
+                    # digest; if the owner cannot read its own record the
+                    # migration stops, so the dry run has to say so too.
+                    try:
+                        _content_digest_of(payload)
+                    except ValueError as exc:
+                        unreadable.append(f"{path}: {exc}")
                     for found in undeclared_version_identities(payload, legacy_digests):
                         count, example = undeclared.get(kind, (0, ""))
                         undeclared[kind] = (
@@ -3501,6 +3531,10 @@ def plan_project_migration(
     # Grouped by kind with a count and one example, so a project carrying many
     # of them reads as a list of contracts to declare, not a wall of paths.
     blockers = [
+        f"a retained record its own owner cannot read, so no owner can restate "
+        f"it: {detail}"
+        for detail in sorted(unreadable)
+    ] + [
         f"retained kind {kind!r}: {count} record(s) carry a project-version "
         f"identity at a location no owner in this build restates "
         f"(for example {example}); {UNDECLARED_IDENTITY_BLOCKER}"
