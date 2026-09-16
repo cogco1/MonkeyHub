@@ -203,6 +203,13 @@ def _stage_index(value: object, field: str = "stage_index") -> int:
 
 from archflow.contracts.fields import text as _text
 from archflow.contracts.fields import mapping
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_content_digest as _register_version_ref_digest,
+    register_derived as _register_derived_fields,
+    register_closure_check as _register_version_ref_closure_check,
+    register_reader as _register_version_ref_reader,
+)
 
 
 # ---------------------------------------------------------------- the stage-exit record
@@ -1537,3 +1544,89 @@ __all__ = [
     "require_stage_exit_binding",
     "require_stage_run_envelope",
 ]
+
+
+# A stage envelope and its exit binding both restate the run's canonical base,
+# and the composite closure reaches one through the design branch it names.
+# All three also serialise a digest of their own contents, so each says which
+# fields those are and how to rebuild them: an exit binding cites the
+# envelope's digest and the closure's, and a runner receipt cites all of them.
+# Without the rebuild a migrated record keeps a digest of its pre-migration
+# self, and its own ``from_dict`` refuses it.
+VERSION_REF_POINTERS = {
+    "StageRunEnvelope@1": ("/base",),
+    "StageExitBinding@1": ("/base",),
+}
+
+_CLOSURE_DERIVED = ("receipt_id", "receipt_digest")
+
+
+def _rebuild_stage_closure(payload):
+    """Restate a closure receipt's own identity from its restated contents."""
+
+    content = {
+        key: value for key, value in payload.items() if key not in _CLOSURE_DERIVED
+    }
+    digest = canonical_digest(content)
+    return {
+        **content,
+        "receipt_id": f"composite-stage-closure-{digest}",
+        "receipt_digest": digest,
+    }
+
+
+_register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("StageRunEnvelope@1", ())
+_register_derived_fields("StageExitBinding@1", ())
+_register_derived_fields(
+    "CompositeStageClosureReceipt@1", _CLOSURE_DERIVED, _rebuild_stage_closure,
+)
+_register_version_ref_digest(
+    "StageRunEnvelope@1", lambda payload: StageRunEnvelope.from_dict(payload).envelope_digest,
+)
+_register_version_ref_digest(
+    "StageExitBinding@1", lambda payload: StageExitBinding.from_dict(payload).exit_digest,
+)
+# Through the reader, not through the rebuild: a rebuild that vouches for
+# itself proves nothing, and this is the reader every later stage uses.
+_register_version_ref_digest(
+    "CompositeStageClosureReceipt@1",
+    lambda payload: CompositeStageClosureReceipt.from_dict(payload).receipt_digest,
+)
+_register_version_ref_reader(
+    "CompositeStageClosureReceipt@1", CompositeStageClosureReceipt.from_dict,
+)
+_register_version_ref_reader("StageRunEnvelope@1", StageRunEnvelope.from_dict)
+_register_version_ref_reader("StageExitBinding@1", StageExitBinding.from_dict)
+
+
+def _check_exit_binding_citations(payload, resolve):
+    """An exit binding cites the envelope and closure it closed, by digest.
+
+    Recomputed here through the readers rather than through whatever the
+    digest registration says, because this is the rule
+    ``require_stage_exit_binding`` applies later: a binding that cites a digest
+    its envelope no longer has is stale, and a migration that wrote one has
+    produced a run that cannot open its next stage.
+    """
+
+    for ref_field, digest_field, read, name in (
+        ("envelope_ref", "envelope_digest",
+         lambda value: StageRunEnvelope.from_dict(value).envelope_digest, "envelope"),
+        ("closure_ref", "closure_digest",
+         lambda value: CompositeStageClosureReceipt.from_dict(value).receipt_digest,
+         "closure"),
+    ):
+        cited = payload.get(digest_field)
+        target = resolve(payload.get(ref_field))
+        if target is None or not isinstance(cited, str):
+            continue
+        if read(target) != cited:
+            raise StageWorkflowError(
+                f"exit binding cites a {name} digest that {name} no longer has"
+            )
+
+
+_register_version_ref_closure_check(
+    "StageExitBinding@1", _check_exit_binding_citations,
+)

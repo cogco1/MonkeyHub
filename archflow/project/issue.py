@@ -91,6 +91,10 @@ from archflow.state.stage_workflow import (
     StageExitBinding,
     StageWorkflowError,
 )
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_derived as _register_derived_fields,
+)
 
 
 CANONICAL_STATE_SCHEMA = "CanonicalProjectState@1"
@@ -402,3 +406,11 @@ def _retained_ref(
             f"run {run_id!r} receipt names a {field} the run does not retain"
         )
     return value
+
+
+# A promotion decision states the exact published version it checked, and
+# derives nothing from it.
+VERSION_REF_POINTERS = {"PromotionDecision@1": ("/checked_state",)}
+
+_register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("PromotionDecision@1", ())

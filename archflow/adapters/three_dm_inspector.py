@@ -18,6 +18,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_derived as _register_derived_fields,
+)
 
 
 _MAX_ERROR_TEXT = 1_000
@@ -1502,3 +1506,18 @@ __all__ = [
     "ThreeDmInspectionErrorCode",
     "inspect_three_dm",
 ]
+
+
+# A CAD document carries the canonical base it was exported from as one of its
+# user strings, not as a field named for a version: the row is
+# ``{"key": "archflow:base_state_sha256", "value": <digest>}`` and its position
+# moves with the sorted table, so the declaration names the row by its key.
+# Without this a migrated model still reports the version it was built at.
+VERSION_REF_POINTERS = {
+    "ThreeDmInspectionSummary@4": (
+        "/document_user_strings[key=archflow:base_state_sha256]/value",
+    ),
+}
+
+_register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("ThreeDmInspectionSummary@4", ())

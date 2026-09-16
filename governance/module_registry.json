@@ -337,7 +337,8 @@
         "archflow.adapters.blender_worker",
         "archflow.project.record_kinds",
         "project.record_kinds",
-        "archflow.adapters.cad_backend"
+        "archflow.adapters.cad_backend",
+        "project.version_refs"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -599,7 +600,8 @@
         "inspect_three_dm_contents"
       ],
       "depends_on": [
-        "contracts.canonical"
+        "contracts.canonical",
+        "project.version_refs"
       ],
       "used_by": [
         "archflow/adapters/cad_execution.py",
@@ -1777,7 +1779,8 @@
         "project.record_kinds",
         "project.refs",
         "project.repository",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "project.version_refs"
       ],
       "used_by": [
         "tools/issue_project.py",
@@ -2132,7 +2135,9 @@
         "require_project_relative_path",
         "require_same_branch"
       ],
-      "depends_on": [],
+      "depends_on": [
+        "project.version_refs"
+      ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
         "apps/archflow-studio/api/archflow_studio_api/application/validation.py",
@@ -2166,6 +2171,133 @@
       "notes": "No dedicated test module; 46 test modules and ~30 spine modules import these Ref types, making it the widest dependency on the spine. ProjectVersionRef still accepts the pre-M007 run_id keyword as a project id."
     },
     {
+      "module_id": "project.version_ref_owners",
+      "owner_path": "archflow/project/version_ref_owners.py",
+      "purpose": "Load every shared-core module that declares where its records keep a project-version identity, so no reader depends on which modules a caller happened to import.",
+      "owns": [
+        "the list of shared-core owner modules, loaded by importing this module, and the separate list of workflow-owned ones (WORKFLOW_OWNER_MODULES) that load_workflow_owners() imports on request",
+        "the boundary between the two tiers: the shared core may not import a workflow package, so an entry point above both layers - tools/create_project.py - calls load_workflow_owners(), and a process that loads only the core tier refuses a project holding a workflow-owned identity by name instead of guessing at it",
+        "one borrowed declaration, stated as borrowed: RunnerRunReceipt@3 derives nothing from the canonical base it carries, and its owner module belongs to another lane"
+      ],
+      "does_not_own": [
+        "every declaration but the one borrowed above (each owner module states its own)",
+        "the declaration table and how a declaration is applied (project.version_refs)",
+        "what to do about an undeclared location (project.repository)"
+      ],
+      "inputs": [
+        "nothing; importing it is the operation"
+      ],
+      "outputs": [
+        "a fully populated project.version_refs table for the shared core"
+      ],
+      "public_api": [
+        "OWNER_MODULES",
+        "WORKFLOW_OWNER_MODULES",
+        "load_workflow_owners"
+      ],
+      "depends_on": [
+        "adapters.cad_execution",
+        "project.issue",
+        "project.refs",
+        "state.developed_design",
+        "state.record",
+        "state.spatial",
+        "state.stage_workflow",
+        "project.version_refs",
+        "adapters.three_dm_inspector"
+      ],
+      "used_by": [
+        "archflow/project/repository.py",
+        "tools/create_project.py"
+      ],
+      "invariants": [
+        "holds no rule of its own: it names owners and loads them, and the single declaration it makes is borrowed and says so",
+        "imports a shared-core owner at module scope and a workflow owner only through load_workflow_owners(), which a caller above both layers invokes"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_version_refs.py"
+      ],
+      "notes": "CREATE: registration by import side effect made the declared table depend on a caller's incidental imports, which refused every project that had promoted a candidate."
+    },
+    {
+      "module_id": "project.version_refs",
+      "owner_path": "archflow/project/version_refs.py",
+      "purpose": "Hold each record schema owner's declaration of where that record keeps a project-version identity, and apply a declaration generically so a format migration restates only what an owner has stated.",
+      "owns": [
+        "the schema-to-pointer declaration table and its registration (register, declared_pointers, declared_schemas); registering one schema twice with different pointers is refused",
+        "the structural declaration for a keyed sub-object that carries a version identity wherever it is embedded (register_structural, structural_child)",
+        "the retained spellings a declaration may name: the exact {project_id, version, state_sha256} mapping, the two-field {version, state_sha256} mapping, a bare digest string, and the value of a keyed row selected as name[key=value], which is how a CAD document user string keeps a base",
+        "what each kind derives from its own contents and how its owner rebuilds those fields (register_derived, derived_fields, recompute), the owner reader a migrated record has to satisfy (register_reader, read_back, schemas_declaring_readers), and the owner rule about the records it cites, resolved across the migrated closure (register_closure_check, closure_check, schemas_declaring_closure_checks)",
+        "which shapes name a retained file by its digest rather than a version (register_file_reference, file_reference_child, file_reference_locations): in format 1 a canonical snapshot file digest and the version identity are the same string, and only the shape says which is meant",
+        "reading the declared locations out of one payload (locations) and returning a restated copy of it (restate); the input payload is never modified"
+      ],
+      "does_not_own": [
+        "what any record means; a declaration is a data statement by that record's own owner module",
+        "what to do about a location no owner declares (project.repository's planner and migration decide, and both refuse)",
+        "the meaning of a project version or the digests themselves (project.refs, project.digests)",
+        "reading or writing any file"
+      ],
+      "inputs": [
+        "owner-module VERSION_REF_POINTERS declarations, registered at import",
+        "one retained record payload"
+      ],
+      "outputs": [
+        "the declared version-identity locations of a payload",
+        "a restated copy of a payload"
+      ],
+      "public_api": [
+        "register",
+        "register_structural",
+        "register_file_reference",
+        "register_content_digest",
+        "register_derived",
+        "register_reader",
+        "register_closure_check",
+        "derived_fields",
+        "schemas_declaring_derived_fields",
+        "declared_pointers",
+        "declared_schemas",
+        "structural_child",
+        "file_reference_child",
+        "file_reference_locations",
+        "locations",
+        "covered_pointers",
+        "content_digest_of",
+        "recompute",
+        "recomputable_schemas",
+        "read_back",
+        "schemas_declaring_readers",
+        "closure_check",
+        "schemas_declaring_closure_checks",
+        "restate",
+        "VersionRefDeclarationError"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "archflow/project/repository.py",
+        "archflow/project/refs.py",
+        "archflow/project/issue.py",
+        "archflow/state/state_record.py",
+        "archflow/state/spatial.py",
+        "archflow/state/stage_workflow.py",
+        "archflow/state/developed_design.py",
+        "archflow/adapters/cad_execution.py"
+      ],
+      "invariants": [
+        "never writes the filesystem and imports no other archflow module",
+        "a schema with no declaration returns None, never an empty declaration: silence is not read as absence",
+        "restate touches only declared locations, and only where the digest already there is one the caller's mapping knows",
+        "registering one schema twice with different pointers is refused rather than resolved"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_version_refs.py",
+        "tests/test_project_format_migration.py"
+      ],
+      "notes": "CREATE: the declaration has to live somewhere neither the migrator nor any single owner controls, or a format migration ends up guessing a record's meaning from its JSON shape. Holds no payload knowledge of its own."
+    },
+    {
       "module_id": "project.repository",
       "owner_path": "archflow/project/repository.py",
       "purpose": "The single durable filesystem owner of one project document: immutable content-addressed records plus one atomic compare-and-swap HEAD.",
@@ -2183,7 +2315,8 @@
         "design Stage reachability and unreferenced prepared Stage reporting in verify",
         "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization; archive callers may include all retained runs and their referenced artifacts without promoting candidates or copying runtime workspaces",
         "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
-        "Ephemeral retained-format inventories and migration blockers through the existing guarded transfer closure; no migration writes or second format manifest"
+        "Ephemeral retained-format inventories, preserved retained kinds and migration blockers through the existing guarded transfer closure; no second format manifest",
+        "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written; every retained record is restated at the pointers its schema owner declares (project.version_refs) and re-hashed, and the rename cascades to a fixed point so every record ref, project:// URI and design branch naming it moves with it; a record carrying a legacy identity no owner declares blocks the migration; everything the declarations do not own is copied byte for byte; the migration retains its own ProjectFormatMigration@1 receipt in a format-migration run inside the project it produced"
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -2231,8 +2364,10 @@
         "FilesystemProjectRepository.initialize_authored_inputs",
         "inspect_project_format",
         "plan_project_migration",
+        "FilesystemProjectRepository.migrate_project_format",
         "ProjectFormatInspection",
         "ProjectMigrationPlan",
+        "ProjectFormatMigration",
         "RetainedFormatEntry",
         "FilesystemProjectRepository.lock_paths"
       ],
@@ -2242,7 +2377,10 @@
         "project.manifest",
         "project.ports",
         "project.record_kinds",
-        "project.refs"
+        "project.refs",
+        "state.record",
+        "project.version_refs",
+        "project.version_ref_owners"
       ],
       "used_by": [
         "archflow/project/inputs.py",
@@ -2270,7 +2408,7 @@
         "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
-        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and legacy readability does not imply upgradeability"
+        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written"
       ],
       "status": "canonical",
       "tests": [
@@ -2543,7 +2681,8 @@
         "project.ports",
         "project.record_kinds",
         "project.refs",
-        "project.repository"
+        "project.repository",
+        "project.version_refs"
       ],
       "used_by": [
         "tests/test_drawing_elevation.py",
@@ -2965,7 +3104,8 @@
         "state.design_portfolio",
         "state.operational_state",
         "state.spatial",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "project.version_refs"
       ],
       "used_by": [
         "monkeyarch/capabilities/discipline_seats.py",
@@ -3387,7 +3527,8 @@
         "state.geometry_program",
         "state.operational_state",
         "state.spatial",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "project.version_refs"
       ],
       "used_by": [
         "archflow/project/inputs.py",
@@ -3486,7 +3627,8 @@
         "state.design_maturity",
         "state.operational_state",
         "state.site_context",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "project.version_refs"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -3573,7 +3715,8 @@
         "project.refs",
         "state.design_maturity",
         "state.operational_state",
-        "state.record"
+        "state.record",
+        "project.version_refs"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -5707,7 +5850,8 @@
       "owns": [
         "the create-project command line: external project root and optional authored StateRecord/seat-pack input files",
         "checking new project identity and rejecting occupied roots, foreign or bound records and malformed seats before initialization",
-        "Read-only --inspect-format and --plan-migration diagnostics over an explicitly located existing project; failed closure planning returns a nonzero exit code"
+        "Read-only --inspect-format and --plan-migration diagnostics over an explicitly located existing project; failed closure planning returns a nonzero exit code",
+        "the --migrate-format --into command line: an empty target directory named by the project id; the tool writes no project file of its own and prints the project:// URI of the receipt the repository retained"
       ],
       "does_not_own": [
         "project format, filesystem writes or HEAD authority (project.repository)",
@@ -5724,7 +5868,8 @@
         "new P036 project with authored inputs",
         "project path and creation summary",
         "process exit code",
-        "Declared format classification or retained-format inventory with migration requirements and blockers"
+        "Declared format classification or retained-format inventory with migration requirements and blockers",
+        "a migrated format-2 project directory whose retained ProjectFormatMigration@1 record lists every version mapping, every file restated or renamed, and every retained location the migration could not survey"
       ],
       "public_api": [
         "main"
@@ -5733,7 +5878,8 @@
         "project.repository",
         "project.refs",
         "state.record",
-        "tools.run_project"
+        "tools.run_project",
+        "project.version_ref_owners"
       ],
       "used_by": [
         "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
