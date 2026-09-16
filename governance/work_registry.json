@@ -67,7 +67,7 @@
     {
       "id": "GH-145",
       "stream": "interaction",
-      "status": "active",
+      "status": "done",
       "goal": "Finish the architect-facing Tracing Paper product term without changing annotation/gesture persistence or the already-landed camera-lock behavior.",
       "depends_on": [],
       "branch": "gpt/145-146-tracing-paper-board",
@@ -78,6 +78,39 @@
       "write_scope": [
         "apps/archflow-studio/web/src/i18n/messages.en.ts",
         "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts"
+      ]
+    },
+    {
+      "id": "GH-146",
+      "stream": "interaction",
+      "status": "active",
+      "goal": "Promote an explicitly sent, immutable Tracing Paper review snapshot into the existing SourceDocument/MonkeyBoard feedback pipeline without turning ordinary annotation saves into Agent requests.",
+      "depends_on": [
+        "GH-145"
+      ],
+      "branch": "gpt/145-146-tracing-paper-board",
+      "worktree": "cloud/gpt-145-146-tracing-paper-board",
+      "base_ref": "20694af0a68663865cc9d7fdfd1137d14dfe73de",
+      "contributor": "GPT-5.6 Sol",
+      "reviewer": "Repository owner",
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
+        "apps/archflow-studio/api/tests/test_documents.py",
+        "apps/archflow-studio/web/src/api/client.ts",
+        "apps/archflow-studio/web/src/api/generated/index.ts",
+        "apps/archflow-studio/web/src/api/generated/sdk.gen.ts",
+        "apps/archflow-studio/web/src/api/generated/types.gen.ts",
+        "apps/archflow-studio/web/src/app/App.tsx",
+        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
+        "apps/archflow-studio/web/src/i18n/messages.en.ts",
+        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/Annotate.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardScene.ts",
+        "apps/archflow-studio/web/test/boardScene.test.ts",
+        "apps/archflow-studio/web/test/annotate.test.ts"
       ]
     },
     {
