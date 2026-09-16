@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+import hashlib
+import json
 from urllib.parse import quote
 
 from fastapi import APIRouter, Query
@@ -20,9 +23,12 @@ from ..application.artifacts import (
     open_document_work_copy,
     save_document,
     register_model_asset,
+    require_model_source,
     save_viewport_capture,
 )
 from ..application.binding import bound_project
+from ..application.gestures import read_model_annotations
+from ..application.projection import project_state
 from ..transport.artifacts import (
     ArtifactListDto,
     DocumentWorkCopyDto,
@@ -34,6 +40,7 @@ from ..transport.artifacts import (
     SourceDocumentDto,
     SourceDocumentListDto,
     SourceDocumentRequestDto,
+    TracingPaperReviewRequestDto,
     ViewportCaptureDto,
     ViewportCaptureRequestDto,
     capture_dto,
@@ -75,6 +82,58 @@ def create_document(request: Request, payload: SourceDocumentRequestDto) -> Sour
                                      tuple(DocumentPageReplacement(**page.model_dump()) for page in payload.replaces_pages),
                                      replaces_document=DocumentReplacementTarget(**payload.replaces_document.model_dump())
                                      if payload.replaces_document else None))
+
+
+
+def _same_review_camera(saved: object, requested) -> bool:
+    if not isinstance(saved, dict):
+        return False
+    for key in ("position", "target", "up"):
+        left, right = saved.get(key), getattr(requested, key)
+        if not isinstance(left, (list, tuple)) or len(left) != 3:
+            return False
+        if any(abs(float(a) - float(b)) > 1e-6 for a, b in zip(left, right)):
+            return False
+    try:
+        return abs(float(saved.get("fov")) - requested.fov) <= 1e-6
+    except (TypeError, ValueError):
+        return False
+
+
+@router.post("/tracing-paper/reviews", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
+def create_tracing_paper_review(request: Request, payload: TracingPaperReviewRequestDto) -> SourceDocumentDto:
+    """Freeze one explicitly sent model-annotation revision as a Board document."""
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The Tracing Paper review names another project.")
+    source = model_source_from(payload.model_source)
+    projection = project_state(binding, run_id=source.run_id, source_stage_ref=payload.source_stage_ref)
+    require_model_source(binding, source, projection)
+    saved = read_model_annotations(binding, source, payload.annotation_revision_sha256)
+    if not saved.annotations:
+        raise StudioError(422, "TRACING_PAPER_EMPTY", "Draw and save at least one Tracing Paper mark before sending it to Board.")
+    screen = list(payload.screen_size)
+    if any(row.get("screenSize") != screen or not _same_review_camera(row.get("camera"), payload.camera)
+           for row in saved.annotations):
+        raise StudioError(409, "TRACING_PAPER_VIEW_CHANGED", "The saved marks belong to another view. Return to that view before sending this Tracing Paper snapshot.")
+    recipe = {
+        "schema": "TracingPaperSnapshot@1", "kind": "tracing-paper-review",
+        "annotationRevisionSha256": payload.annotation_revision_sha256,
+        "camera": payload.camera.model_dump(mode="json"), "screenSize": screen,
+    }
+    for document in list_documents(binding, source.run_id):
+        if document.model_source == source and document.source_stage_ref == payload.source_stage_ref and document.view_recipe == recipe:
+            return document_dto(document)
+    identity = hashlib.sha256(json.dumps({
+        "modelSource": source.to_dict(), "sourceStageRef": payload.source_stage_ref, "viewRecipe": recipe,
+    }, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return document_dto(save_document(
+        binding, source.run_id, f"Tracing Paper - {payload.annotation_revision_sha256[:8]}.png",
+        "image/png", payload.png_base64, source,
+        source_stage_ref=payload.source_stage_ref, view_recipe=recipe,
+        generated_at=datetime.now(timezone.utc).isoformat(), content_identity=identity,
+    ))
 
 
 @router.get("/documents", response_model=SourceDocumentListDto, response_model_by_alias=True)

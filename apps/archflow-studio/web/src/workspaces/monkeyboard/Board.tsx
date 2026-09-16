@@ -12,7 +12,7 @@ import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
 import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
-import { documentKey, documentMime, documentUrl, findSource, imageSource, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
+import { boardDocumentFrameName, documentKey, documentMime, documentUrl, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
 import { BoardSketchError, calibrateSketchFrame, insideSketchFrame, newSketchFrameData, sketchActionsFromFrame, sketchFrameData, sketchFrameIds, sketchSummary, type BoardSketchRequest, type SketchFrameData, type SketchSkipReason } from "./boardSketch";
 import "./board.css";
 
@@ -191,7 +191,8 @@ function FeedbackDialog({ selection, language, returnFocus, onCancel, onSubmit }
   onCancel: () => void; onSubmit: (comment: string) => Promise<void>;
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
-  const [comment, setComment] = useState(selection.selectedText);
+  const [comment, setComment] = useState(selection.selectedText || (isTracingPaperReview(selection.document)
+    ? language === "en" ? "Apply the changes shown in this Tracing Paper review." : "按这张 Tracing Paper review 中标出的意见修改。" : ""));
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [error, setError] = useState("");
@@ -453,7 +454,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const fileId = crypto.randomUUID() as FileId;
     const additions = convertToExcalidrawElements([
       { type: "image", id: imageId, fileId, ...position, width: rendered.width * scale, height: rendered.height * scale, status: "saved", customData: { sourceDocument: pageSource(document, pageIndex) } },
-      { type: "frame", children: [imageId], name: `${document.fileName} · ${pageIndex + 1}/${document.pageCount}` },
+      { type: "frame", children: [imageId], name: boardDocumentFrameName(document, pageIndex) },
     ], { regenerateIds: false });
     api.addFiles([{ id: fileId, dataURL: rendered.dataURL, mimeType: "image/png", created: Date.now() }]);
     seen.current.add(documentKey(document));

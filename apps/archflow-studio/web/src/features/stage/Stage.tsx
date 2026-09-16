@@ -145,6 +145,7 @@ export function Stage({
   onEraseGestures,
   modelAnnotations,
   annotationsReady,
+  tracingPaperReview,
   documentProjectId,
   documentModelSources,
   editingModelSource,
@@ -225,6 +226,7 @@ export function Stage({
   onEraseGestures(indices: readonly number[]): void;
   modelAnnotations: ModelAnnotationsHandle | null;
   annotationsReady: boolean;
+  tracingPaperReview?: { enabled: boolean; busy: boolean; sent: boolean; error: string | null; onSend(): void };
   documentProjectId: string | null;
   documentModelSources: readonly { label: string; modelSource: ModelSourceDto }[];
   editingModelSource: ModelSourceDto | null;
@@ -1636,6 +1638,13 @@ export function Stage({
               ))}
             </span>
             {tool && activeTool && <span className="viewtools__hint quiet">{t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}</span>}
+            {tracingPaperReview && <>
+              <span className="viewtools__sep" aria-hidden="true" />
+              <button type="button" disabled={!tracingPaperReview.enabled || tracingPaperReview.busy}
+                onClick={tracingPaperReview.onSend}>{t(tracingPaperReview.busy ? "stage.tracingPaper.sending" : "stage.tracingPaper.send")}</button>
+              {tracingPaperReview.sent && <span className="quiet" role="status">{t("stage.tracingPaper.sent")}</span>}
+              {tracingPaperReview.error && <span className="quiet" role="alert">{tracingPaperReview.error}</span>}
+            </>}
           </div>}
           {viewToolsOpen && <div id="view-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.viewOptions")}>
           <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>

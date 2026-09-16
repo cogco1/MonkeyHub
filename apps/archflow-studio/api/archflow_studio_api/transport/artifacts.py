@@ -232,6 +232,39 @@ class ViewportCaptureDto(BaseModel):
     size_bytes: int = Field(alias="sizeBytes")
 
 
+class TracingPaperCameraDto(BaseModel):
+    """The exact camera the frozen review image was rendered from."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    position: tuple[float, float, float]
+    target: tuple[float, float, float]
+    up: tuple[float, float, float]
+    fov: float = Field(gt=0, lt=180, allow_inf_nan=False)
+    projection: Literal["perspective", "orthographic"]
+    zoom: float = Field(gt=0, allow_inf_nan=False)
+
+
+class TracingPaperReviewRequestDto(BaseModel):
+    """One explicit promotion of a saved model-annotation revision to Board."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    project_id: str = Field(alias="projectId", min_length=1)
+    model_source: ModelSourceDto = Field(alias="modelSource")
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None)
+    annotation_revision_sha256: str = Field(alias="annotationRevisionSha256", pattern=r"^[0-9a-f]{64}$")
+    camera: TracingPaperCameraDto
+    screen_size: tuple[int, int] = Field(alias="screenSize")
+    png_base64: str = Field(alias="pngBase64", min_length=1)
+
+    @model_validator(mode="after")
+    def _valid_screen_size(self) -> "TracingPaperReviewRequestDto":
+        if any(value < 1 or value > 32768 for value in self.screen_size):
+            raise ValueError("screenSize must contain two positive viewport dimensions")
+        return self
+
+
 class DocumentPageDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True)
 

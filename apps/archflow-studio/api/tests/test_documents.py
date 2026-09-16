@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import asdict
 import hashlib
 from io import BytesIO
 from pathlib import Path
@@ -15,7 +16,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import DecodedStreamObject, NameObject, RectangleObject
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_SOURCE_DOCUMENT
+from archflow.project.record_kinds import STUDIO_MODEL_ASSET, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_file_name
 from archflow.project.repository import FilesystemProjectRepository
 from archflow_studio_api.application.artifacts import (
@@ -28,7 +29,7 @@ from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
-from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project
+from .support import PROJECT_ID, REFERENCE_RUN_ID, make_project, runner_state_digest
 
 
 def two_page_pdf() -> bytes:
@@ -96,6 +97,66 @@ class SourceDocumentTests(unittest.TestCase):
             "mimeType": mime, "contentBase64": base64.b64encode(data).decode("ascii"),
             **extra,
         })
+
+    def retained_model_source(self) -> dict:
+        data = b"fixture composed model bytes"
+        digest = hashlib.sha256(data).hexdigest()
+        state_digest = runner_state_digest(self.repository, REFERENCE_RUN_ID)
+        run = self.repository.load_run(REFERENCE_RUN_ID)
+        artifact = self.repository.ingest(
+            run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+            artifact_id=f"fixture-model-{digest}", media_type="model/vnd.rhino", source=BytesIO(data),
+        )
+        source = {"runId": REFERENCE_RUN_ID, "stateDigest": state_digest, "assetSha256": digest}
+        self.repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_MODEL_ASSET,
+            payload={"schema": "StudioModelAsset@1", "projectId": PROJECT_ID, "modelSource": source,
+                     "stateRecordRef": "fixture", "artifact": asdict(artifact), "fileName": "fixture.3dm",
+                     "sizeBytes": len(data), "objectCount": 1, "lengthUnit": "meter"},
+        )
+        return source
+
+    def test_tracing_paper_review_is_explicit_idempotent_and_revision_bound(self) -> None:
+        before = self.repository.read_head()
+        source = self.retained_model_source()
+        camera = {"position": [8, 6, 5], "target": [0, 0, 0], "up": [0, 0, 1], "fov": 50}
+        mark = {"id": "mark-a", "kind": "circle", "screen": [[12, 12], [40, 12], [40, 36], [12, 36]],
+                "camera": camera, "hits": [], "color": "#e5534b", "lineWidth": 2, "screenSize": [120, 80]}
+        saved = self.client.put("/api/model-annotations", json={
+            "projectId": PROJECT_ID, "modelSource": source, "baseRevisionSha256": None,
+            "annotations": [mark], "comment": "",
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        revision = saved.json()["revisionSha256"]
+        request = {"projectId": PROJECT_ID, "modelSource": source, "sourceStageRef": None,
+                   "annotationRevisionSha256": revision,
+                   "camera": {**camera, "projection": "perspective", "zoom": 1}, "screenSize": [120, 80],
+                   "pngBase64": base64.b64encode(image_bytes(size=(120, 80))).decode("ascii")}
+        response = self.client.post("/api/tracing-paper/reviews", json=request)
+        self.assertEqual(response.status_code, 201, response.text)
+        review = response.json()
+        self.assertEqual(review["modelSource"], source)
+        self.assertIsNone(review["sourceStageRef"])
+        self.assertEqual(review["viewRecipe"]["kind"], "tracing-paper-review")
+        self.assertEqual(review["viewRecipe"]["annotationRevisionSha256"], revision)
+        self.assertIsNotNone(review["generatedAt"])
+        self.assertEqual(self.client.post("/api/tracing-paper/reviews", json=request).json(), review)
+
+        mark_b = {**mark, "id": "mark-b", "kind": "arrow", "screen": [[15, 15], [60, 30]]}
+        saved2 = self.client.put("/api/model-annotations", json={
+            "projectId": PROJECT_ID, "modelSource": source, "baseRevisionSha256": revision,
+            "annotations": [mark, mark_b], "comment": "",
+        }).json()
+        second = self.client.post("/api/tracing-paper/reviews", json={**request, "annotationRevisionSha256": saved2["revisionSha256"]})
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertNotEqual(second.json()["assetSha256"], review["assetSha256"])
+        wrong_view = self.client.post("/api/tracing-paper/reviews", json={
+            **request, "camera": {**request["camera"], "fov": 55},
+        })
+        self.assertEqual(wrong_view.status_code, 409, wrong_view.text)
+        self.assertEqual(wrong_view.json()["code"], "TRACING_PAPER_VIEW_CHANGED")
+        self.assertEqual(self.repository.read_head(), before)
 
     def test_real_pdf_pages_crop_and_rotation_are_read_from_retained_original(self) -> None:
         data = two_page_pdf()

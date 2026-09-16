@@ -7136,6 +7136,83 @@ export type TraceEvidenceRequestDto = {
 };
 
 /**
+ * TracingPaperCameraDto
+ *
+ * The exact camera the frozen review image was rendered from.
+ */
+export type TracingPaperCameraDto = {
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Up
+     */
+    up: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Fov
+     */
+    fov: number;
+    /**
+     * Projection
+     */
+    projection: 'perspective' | 'orthographic';
+    /**
+     * Zoom
+     */
+    zoom: number;
+};
+
+/**
+ * TracingPaperReviewRequestDto
+ *
+ * One explicit promotion of a saved model-annotation revision to Board.
+ */
+export type TracingPaperReviewRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    modelSource: ModelSourceDto;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Annotationrevisionsha256
+     */
+    annotationRevisionSha256: string;
+    camera: TracingPaperCameraDto;
+    /**
+     * Screensize
+     */
+    screenSize: [
+        number,
+        number
+    ];
+    /**
+     * Pngbase64
+     */
+    pngBase64: string;
+};
+
+/**
  * TransferFileDto
  */
 export type TransferFileDto = {
@@ -8429,6 +8506,41 @@ export type CreateDocumentApiDocumentsPostResponses = {
 };
 
 export type CreateDocumentApiDocumentsPostResponse = CreateDocumentApiDocumentsPostResponses[keyof CreateDocumentApiDocumentsPostResponses];
+
+export type CreateTracingPaperReviewApiTracingPaperReviewsPostData = {
+    body: TracingPaperReviewRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/tracing-paper/reviews';
+};
+
+export type CreateTracingPaperReviewApiTracingPaperReviewsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateTracingPaperReviewApiTracingPaperReviewsPostError = CreateTracingPaperReviewApiTracingPaperReviewsPostErrors[keyof CreateTracingPaperReviewApiTracingPaperReviewsPostErrors];
+
+export type CreateTracingPaperReviewApiTracingPaperReviewsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreateTracingPaperReviewApiTracingPaperReviewsPostResponse = CreateTracingPaperReviewApiTracingPaperReviewsPostResponses[keyof CreateTracingPaperReviewApiTracingPaperReviewsPostResponses];
 
 export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetData = {
     body?: never;

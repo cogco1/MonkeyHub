@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import type { GestureDto, GestureHitDto } from "../../api/generated";
 import type { MessageKey } from "../../i18n/messages.en";
 import { useT } from "../../i18n/useT";
-import type { SampleHit, Vec3, ViewportController } from "./viewer/ThreeDmViewport";
+import type { CameraState, SampleHit, Vec3, ViewportController } from "./viewer/ThreeDmViewport";
 
 export type GestureTool = GestureDto["kind"];
 
@@ -275,6 +275,41 @@ export function annotationIntersectsEraser(gesture: GestureDto, from: Point, to:
     }
   }
   return false;
+}
+
+
+function closeVector(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((value, index) => Math.abs(value - right[index]!) <= 1e-6);
+}
+
+/** A frozen review is one view. Mixed-view ink must be resolved before promotion. */
+export function tracingPaperViewMatches(camera: CameraState, gestures: readonly GestureDto[]): boolean {
+  return gestures.length > 0 && gestures.every((gesture) => closeVector(gesture.camera.position, camera.position)
+    && closeVector(gesture.camera.target, camera.target) && closeVector(gesture.camera.up, camera.up)
+    && Math.abs(gesture.camera.fov - camera.fov) <= 1e-6);
+}
+
+/** Composite the exact saved ink over the WebGL capture; neither source is mutated. */
+export async function renderTracingPaperSnapshotPng(viewportPng: Blob, gestures: readonly GestureDto[]): Promise<Blob> {
+  const size = gestures[0]?.screenSize;
+  if (!size || gestures.length === 0 || gestures.some((gesture) => !gesture.screenSize
+      || gesture.screenSize[0] !== size[0] || gesture.screenSize[1] !== size[1])) {
+    throw new Error("Tracing Paper marks do not share one saved viewport size.");
+  }
+  const bitmap = await createImageBitmap(viewportPng);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width; canvas.height = bitmap.height;
+  const context = canvas.getContext("2d");
+  if (!context) { bitmap.close(); throw new Error("The Tracing Paper snapshot canvas is unavailable."); }
+  context.drawImage(bitmap, 0, 0); bitmap.close();
+  context.save(); context.scale(canvas.width / size[0], canvas.height / size[1]);
+  const palette = { accent: "#2f80ed", held: "#58b368", violated: "#e5534b" };
+  for (const gesture of gestures) drawGesture(context, gesture.kind, gesture.screen, palette, false,
+    { color: gesture.color ?? palette.accent, lineWidth: gesture.lineWidth === 4 || gesture.lineWidth === 6 ? gesture.lineWidth : 2 },
+    gesture.label ?? null);
+  context.restore();
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob && blob.size > 0 ? resolve(blob)
+    : reject(new Error("The Tracing Paper snapshot did not produce a PNG.")), "image/png"));
 }
 
 export function Annotate({

@@ -70,6 +70,16 @@ export function findSource(documents: readonly SourceDocumentDto[], source: Page
     && document.pages.some((page) => page.pageIndex === source.pageIndex));
 }
 
+
+export function isTracingPaperReview(document: Pick<SourceDocumentDto, "viewRecipe">): boolean {
+  return document.viewRecipe?.kind === "tracing-paper-review" && document.viewRecipe?.schema === "TracingPaperSnapshot@1";
+}
+
+export function boardDocumentFrameName(document: SourceDocumentDto, pageIndex: number): string {
+  const page = `${pageIndex + 1}/${document.pageCount}`;
+  return isTracingPaperReview(document) ? `Tracing Paper review · ${document.fileName} · ${page}` : `${document.fileName} · ${page}`;
+}
+
 /** Select one image explicitly or through its native frame; marks never choose a source. */
 export function selectedPageSource(
   elements: readonly Record<string, unknown>[], selectedElementIds: Readonly<Record<string, boolean>>,
