@@ -37,7 +37,8 @@ export function captureNormalDrag(live: PerspectiveCamera | OrthographicCamera, 
       || box.width <= 0 || box.height <= 0 || Math.hypot(...pickedNormal) < 1e-9) {
     throw new Error("A finite face normal and a visible viewport are required.");
   }
-  const rect = { ...box }, camera = live.clone();
+  // DOMRect dimensions are prototype getters, not enumerable own fields.
+  const rect = { left: box.left, top: box.top, width: box.width, height: box.height }, camera = live.clone();
   camera.updateMatrixWorld(true);
   const world = camera.matrixWorld.toArray(), projection = camera.projectionMatrix.toArray();
   const origin = new Vector3(...pickedOrigin), normal = new Vector3(...pickedNormal).normalize();

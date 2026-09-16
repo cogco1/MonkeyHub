@@ -67,3 +67,14 @@ test("invalid normals, zero viewports, behind-camera points and nonfinite sample
   assert.equal(signedAxisDistance([0, 0, 0], [0, 0, 1], [0, 0, 10], [0, 0, -1]), null);
   assert.equal(signedAxisDistance([0, 0, 0], [1, 0, 0], [0, 10, 0], [0, 1, 0]), null);
 });
+
+test("native DOMRect-style prototype getters survive the frozen viewport snapshot", () => {
+  const box = Object.create(null);
+  for (const [key, value] of Object.entries(rect)) Object.defineProperty(box, key, {get: () => value});
+  assert.deepEqual({...box}, {}, "the browser rectangle must not be copied with object spread");
+  const camera = fixture(false);
+  const drag = captureNormalDrag(camera, box, [0,0,0], [1,0,0]);
+  assert.equal(drag.matches(camera, box), true);
+  const point = drag.project(1.25)!;
+  near(drag.distance(rect.left + point[0], rect.top + point[1]), 1.25);
+});
