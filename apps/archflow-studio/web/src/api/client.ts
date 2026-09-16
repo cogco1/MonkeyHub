@@ -41,7 +41,6 @@ import {
   initializeCommittedDesignApiDesignStagesInitializePost,
   acceptCommittedDesignApiCandidatesCandidateIdAcceptPost,
   forkCommittedDesignApiDesignBranchesPost,
-  applyProgramApiProgramPost,
   associateDocumentModelSourceApiDocumentsAssetSha256ModelSourcePost,
   chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
   compileIntentApiIntentsPost,
@@ -75,14 +74,9 @@ import {
   readProposalApiProposalsProposalIdGet,
   readClosureApiStateClosurePost,
   readFrameApiStateFrameGet,
-  readOptionsApiOptionsGet,
-  readSemanticsApiSemanticsGet,
-  readSheetApiProgramGet,
   readStateApiStateGet,
   readSubmittedDocumentCommentsApiDocumentCommentsGet,
   readVolumesApiStateVolumesGet,
-  makeMassingOptionApiOptionsPost,
-  selectOptionApiOptionsOptionIdSelectPost,
   readValidationApiCandidatesCandidateIdValidationGet,
   compareCandidateApiCandidatesCandidateIdCompareGet,
   resolveApiPickResolvePost,
@@ -111,8 +105,6 @@ import type {
   IntentRequestDto,
   JobDto,
   RuntimeDto,
-  MassingOptionDto,
-  MassingOptionRequestDto,
   ModelAnnotationsDto,
   ModelAnnotationsRequestDto,
   ModelSourceDto,
@@ -120,12 +112,8 @@ import type {
   ClientTimingDto,
   DeleteElementRequestDto,
   MonitorWriteDto,
-  OptionsDto,
   PickRequestDto,
   PickResolutionDto,
-  ProgramApplyRequestDto,
-  ProgramCandidateDto,
-  ProgramDto,
   ProjectBindingDto,
   ProjectArtifactDto,
   ProjectListDto,
@@ -136,7 +124,6 @@ import type {
   TransformElementRequestDto,
   PushPullRequestDto,
   ProposalRequestDto,
-  SemanticsDto,
   SourceDocumentDto,
   SourceDocumentListDto,
   SourceDocumentRequestDto,
@@ -280,8 +267,8 @@ export const studio = {
   },
 
   /**
-   * The record's frame: the levels and axes every element is positioned
-   * against, each with what stands on it and what changing it would move.
+   * The record's declared level/axis references and their dependents. Local
+   * model Sync still consumes this; free geometry need not bind to a datum.
    */
   frame(run?: string): Promise<FrameDto> {
     return call("GET /api/state/frame", readFrameApiStateFrameGet({ query: { run } }));
@@ -305,58 +292,6 @@ export const studio = {
    */
   volumes(run?: string): Promise<VolumesDto> {
     return call("GET /api/state/volumes", readVolumesApiStateVolumesGet({ query: { run } }));
-  },
-
-  /** The baseline and every massing option this server process holds. */
-  options(run?: string | null): Promise<OptionsDto> {
-    return call(
-      "GET /api/options",
-      readOptionsApiOptionsGet(run == null ? {} : { query: { run } }),
-    );
-  },
-
-  /** One deterministic transform of the record's massing, measured. */
-  makeOption(body: MassingOptionRequestDto): Promise<MassingOptionDto> {
-    return call("POST /api/options", makeMassingOptionApiOptionsPost({ body }));
-  },
-
-  /**
-   * Run one option as a candidate. A 202 and a job, like every other candidate:
-   * selecting a massing is a geometry run, not a note.
-   */
-  selectOption(optionId: string): Promise<CandidateAcceptedDto> {
-    return call(
-      `POST /api/options/${optionId}/select`,
-      selectOptionApiOptionsOptionIdSelectPost({ path: { option_id: optionId } }),
-    );
-  },
-
-  /**
-   * The project's program sheet: the architect's own where one is authored,
-   * else the record's own reading of its zones. `source` says which.
-   */
-  program(run?: string | null): Promise<ProgramDto> {
-    return call(
-      "GET /api/program",
-      readSheetApiProgramGet(run == null ? {} : { query: { run } }),
-    );
-  },
-
-  /**
-   * Apply a sheet to the record as a candidate run. Answers 202 with the run
-   * it will become; the authored record is never rewritten.
-   */
-  applyProgram(body: ProgramApplyRequestDto): Promise<ProgramCandidateDto> {
-    return call("POST /api/program", applyProgramApiProgramPost({ body }));
-  },
-
-  /**
-   * Every role and condition canonical state may name. The function dropdown
-   * is built from this rather than from a list this client carries: the
-   * record refuses a term the registry does not know.
-   */
-  semantics(): Promise<SemanticsDto> {
-    return call("GET /api/semantics", readSemanticsApiSemanticsGet());
   },
 
   artifacts(signal?: AbortSignal): Promise<ArtifactListDto> {

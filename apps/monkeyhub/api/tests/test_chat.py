@@ -1016,6 +1016,52 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(base, "http://127.0.0.1:8791")
         return path
 
+    def test_program_and_massing_routes_remain_bound_agent_capabilities(self):
+        """Retiring a UI panel must not remove the Agent's real runtime contract."""
+
+        session = self.create()
+        session.status = "running"
+        source = {"stateDigest": "a" * 64, "sourceRunId": "candidate-a",
+                  "modelSource": {"runId": "candidate-a", "stateDigest": "a" * 64, "assetSha256": "b" * 64}}
+        routes = [
+            ("GET", "/api/program?run=candidate-a", None),
+            ("GET", "/api/options?run=candidate-a", None),
+            ("GET", "/api/semantics", None),
+            ("POST", "/api/program", {**source, "sheet": {"departments": []}}),
+            ("POST", "/api/options", {**source, "transform": "add_floor"}),
+            ("POST", "/api/options/option-1/select", None),
+        ]
+        forwarded = []
+        description = next(tool for tool in _tools_of(chat) if tool["name"] == "studio_request")["description"]
+        for path in ("/api/program", "/api/options", "/api/semantics", "/api/options/{id}/select"):
+            self.assertIn(path, description)
+
+        def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
+            path = self._studio_tool_path(base, path, method, headers, session)
+            if path == f"/api/chat/sessions/{session.id}":
+                return session.model_dump()
+            if path == "/api/settings/apps":
+                return {"projectDir": str(self.project)}
+            if path.startswith("/api/apps?"):
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+            if path == "/api/health":
+                return {"processId": 123, "sourceRevision": "same-revision"}
+            if path == "/api/project":
+                return {"projectId": session.projectId, "projectDir": str(self.project)}
+            if method == "GET":
+                self.assertEqual(base, "http://127.0.0.1:8791")
+            forwarded.append((method, path, body))
+            return {"method": method, "path": path, "body": body}
+
+        with patch.object(chat, "_request_json", side_effect=request):
+            for method, path, body in routes:
+                with self.subTest(method=method, path=path):
+                    result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                        "method": method, "path": path, **({"body": body} if body is not None else {}),
+                    })
+                    self.assertEqual((result["method"], result["path"], result["body"]), (method, path, body))
+        self.assertEqual(forwarded, routes, "Each request forwards once; reads preserve run and writes preserve exact source.")
+
     def test_the_drawing_action_is_findable_and_callable_without_exploring(self):
         """What a request to make a form actually needs: the described path works."""
 
