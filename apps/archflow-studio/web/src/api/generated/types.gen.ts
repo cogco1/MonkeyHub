@@ -5187,6 +5187,14 @@ export type SemanticEditRequestDto = {
                 support?: string;
                 line?: {
                     from: {
+                        /**
+                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
+                         */
+                        point: [
+                            number | string,
+                            number | string
+                        ];
+                    } | {
                         grid: string | [
                             string,
                             string
@@ -5216,6 +5224,14 @@ export type SemanticEditRequestDto = {
                         };
                     };
                     to: {
+                        /**
+                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
+                         */
+                        point: [
+                            number | string,
+                            number | string
+                        ];
+                    } | {
                         grid: string | [
                             string,
                             string
@@ -5276,6 +5292,14 @@ export type SemanticEditRequestDto = {
                      */
                     along?: number | string;
                     at?: {
+                        /**
+                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
+                         */
+                        point: [
+                            number | string,
+                            number | string
+                        ];
+                    } | {
                         grid: string | [
                             string,
                             string
@@ -5709,6 +5733,14 @@ export type SemanticEditRequestDto = {
                 support?: string;
                 line?: {
                     from: {
+                        /**
+                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
+                         */
+                        point: [
+                            number | string,
+                            number | string
+                        ];
+                    } | {
                         grid: string | [
                             string,
                             string
@@ -5738,6 +5770,14 @@ export type SemanticEditRequestDto = {
                         };
                     };
                     to: {
+                        /**
+                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
+                         */
+                        point: [
+                            number | string,
+                            number | string
+                        ];
+                    } | {
                         grid: string | [
                             string,
                             string
@@ -5798,6 +5838,14 @@ export type SemanticEditRequestDto = {
                      */
                     along?: number | string;
                     at?: {
+                        /**
+                         * Explicit project-local [x, z] in metres; coordinates may bind @parameters. No grid is required.
+                         */
+                        point: [
+                            number | string,
+                            number | string
+                        ];
+                    } | {
                         grid: string | [
                             string,
                             string

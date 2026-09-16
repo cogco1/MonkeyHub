@@ -1,10 +1,12 @@
 """Semantic references and their one resolver (P100).
 
-Elements are placed by reference, not by coordinate:
+Elements retain their placement in the record, resolved through this vocabulary:
 
 * plan references — ``GridRef(axis)``, ``GridIntersection(a, b)``,
   ``AxisPoint(axis, along)``, ``HostAlong(host, along)`` — resolve here into
   plan coordinates (X, Z) from the project grids or a host's reference line;
+* explicit ``ProjectPoint(x, z)`` references retain a project-local position in
+  metres, without fabricating a grid or silently replacing an unknown reference;
 * elevation references — ``LevelRef(level)`` and ``OffsetFrom(LevelRef, d)``
   — are *not* resolved here: they stay symbolic as ``base_level`` /
   ``base_offset`` and the geometry compiler resolves them from the datum
@@ -109,18 +111,34 @@ class OffsetFrom:
         object.__setattr__(self, "offset", _finite(self.offset, "offset"))
 
 
-PlanReference = GridRef | GridIntersection | AxisPoint | HostAlong
+@dataclass(frozen=True, slots=True)
+class ProjectPoint:
+    """An explicitly authored (X, Z) position in the project's local frame."""
+
+    x: float
+    z: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "x", _finite(self.x, "point X"))
+        object.__setattr__(self, "z", _finite(self.z, "point Z"))
+
+
+PlanReference = GridRef | GridIntersection | AxisPoint | HostAlong | ProjectPoint
 ElevationReference = LevelRef | OffsetFrom
 
 
 def parse_reference(value: object) -> PlanReference | ElevationReference:
     """Read a reference from its JSON form ``{"grid": ...}`` etc."""
 
-    if isinstance(value, (GridRef, GridIntersection, AxisPoint, HostAlong, LevelRef, OffsetFrom)):
+    if isinstance(value, (GridRef, GridIntersection, AxisPoint, HostAlong, ProjectPoint, LevelRef, OffsetFrom)):
         return value
     if not isinstance(value, Mapping) or len(value) != 1:
         raise ReferenceError(f"a reference is a one-key object, got {value!r}")
     (kind, payload), = value.items()
+    if kind == "point":
+        if not isinstance(payload, (list, tuple)) or len(payload) != 2:
+            raise ReferenceError("point needs exactly two project-local coordinates [x, z] in metres")
+        return ProjectPoint(payload[0], payload[1])
     if kind == "grid":
         if isinstance(payload, (list, tuple)) and len(payload) == 2:
             return GridIntersection(str(payload[0]), str(payload[1]))
@@ -196,6 +214,8 @@ def resolve_plan(reference: PlanReference, context: ReferenceContext) -> Plan:
     if isinstance(reference, AxisPoint):
         (o, d) = _line_of(context.axis(reference.axis))
         return (round(o[0] + d[0] * reference.along, 9), round(o[1] + d[1] * reference.along, 9))
+    if isinstance(reference, ProjectPoint):
+        return (round(reference.x, 9), round(reference.z, 9))
     if isinstance(reference, GridRef):
         (o, _) = _line_of(context.axis(reference.axis))
         return (round(o[0], 9), round(o[1], 9))
