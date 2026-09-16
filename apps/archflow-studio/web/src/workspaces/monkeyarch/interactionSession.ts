@@ -4,6 +4,7 @@ import type { DrawnShapeDto } from "../../api/generated";
 import type { PreparedPushPull } from "../../features/stage/pushPull";
 import type { PlanPoint, SketchPlane, SnapCandidate } from "../../features/stage/sketch";
 import type { ModelSnap, SketchPreview } from "./viewer/ThreeDmViewport";
+import type { TranslationConstraint } from "./viewer/translationGizmo";
 
 export interface PushPullTarget {
   readonly elementId: string;
@@ -18,12 +19,15 @@ export interface PushPullGesture {
   typed: string | null;
 }
 
+
 export interface MoveGesture {
   readonly target: PushPullTarget;
   readonly tool: "move" | "copy";
+  readonly sourceKey: string;
   readonly spec: SketchPreview;
-  plane: SketchPlane;
-  anchor: [number, number, number] | null;
+  origin: [number, number, number];
+  constraint: TranslationConstraint | null;
+  pointerId: number | null;
   translation: [number, number, number];
   typed: [string, string, string] | null;
 }
@@ -72,7 +76,7 @@ export function createInteractionSession(): InteractionSession {
     get phase() {
       if (this.scale) return this.scale.typed !== null ? "value-override" : this.scale.reference ? "dragging" : "armed";
       if (this.rotate) return this.rotate.typed !== null ? "value-override" : this.rotate.reference ? "dragging" : "armed";
-      if (this.move) return this.move.typed !== null ? "value-override" : this.move.anchor ? "dragging" : "armed";
+      if (this.move) return this.move.typed !== null ? "value-override" : this.move.pointerId !== null ? "dragging" : this.move.constraint ? "anchored" : "armed";
       if (this.pushPull) return this.pushPull.typed !== null ? "value-override" : this.pushPull.distance === 0 ? "anchored" : "dragging";
       if (this.sketch.tool !== null) {
         if (this.sketch.typed.trim()) return "value-override";
