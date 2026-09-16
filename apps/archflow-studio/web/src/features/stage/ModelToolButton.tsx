@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { useEffect, type ComponentProps } from "react";
 
 const paths = {
   select: "M5 3 20 12 13 14 10 21 5 3Z",
@@ -31,6 +31,107 @@ const paths = {
 
 export type ModelToolIcon = keyof typeof paths;
 
+/**
+ * MonkeyArch's visible Stage 1 surface is intentionally smaller than its
+ * implementation. Keep the capable tools underneath for shortcuts, tests and
+ * later contextual exposure, but do not make the primary toolbar another CAD
+ * command shelf.
+ *
+ * Stage 1 is for massing correction and spatial steering: draw a simple
+ * profile, move it, push/pull it, then mark what the agent should understand.
+ */
+const HIDDEN_FROM_STAGE1_TOOLBAR = new Set<ModelToolIcon>([
+  "freehand",
+  "arc",
+  "rotate",
+  "scale",
+  "copy",
+  "measure",
+  "fit",
+  "front",
+]);
+
+const ANNOTATION_PANEL = "#annotation-tools";
+const VIEWPORT_CANVAS = ".viewport-canvas";
+const ANNOTATION_CANVAS = ".annotate";
+let annotationViewLockInstalled = false;
+let annotationSpaceHeld = false;
+
+function activeAnnotationPanel(): HTMLElement | null {
+  const panel = document.querySelector<HTMLElement>(ANNOTATION_PANEL);
+  if (!panel || panel.closest("[inert], [aria-hidden='true']")) return null;
+  return panel;
+}
+
+function writingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement &&
+    (target.isContentEditable || target.closest("input, textarea, select, [contenteditable]") !== null);
+}
+
+function inside(target: EventTarget | null, selector: string): boolean {
+  return target instanceof Element && (target.matches(selector) || target.closest(selector) !== null);
+}
+
+function markAnnotationLock(locked: boolean): void {
+  const stage = activeAnnotationPanel()?.closest<HTMLElement>(".stage");
+  if (!stage) return;
+  if (locked) stage.dataset.annotationViewLocked = "true";
+  else delete stage.dataset.annotationViewLocked;
+}
+
+function releaseTemporaryAnnotationView(): void {
+  annotationSpaceHeld = false;
+  markAnnotationLock(activeAnnotationPanel() !== null);
+}
+
+/**
+ * Annotation ink is screen-space evidence tied to one recorded camera. Keep
+ * navigation locked while the annotation palette is open; Space is a
+ * hold-to-inspect escape hatch and releasing it restores the lock.
+ *
+ * Install at the existing Stage toolbar boundary so this policy does not add a
+ * second interaction owner or persisted state.
+ */
+function installAnnotationViewLock(): void {
+  if (annotationViewLockInstalled || typeof window === "undefined") return;
+  annotationViewLockInstalled = true;
+
+  window.addEventListener("keydown", (event) => {
+    if (event.code !== "Space" || event.repeat || writingTarget(event.target) || !activeAnnotationPanel()) return;
+    event.preventDefault();
+    annotationSpaceHeld = true;
+    markAnnotationLock(false);
+  }, true);
+  window.addEventListener("keyup", (event) => {
+    if (event.code === "Space") releaseTemporaryAnnotationView();
+  }, true);
+  window.addEventListener("blur", releaseTemporaryAnnotationView, true);
+  window.addEventListener("pointerdown", (event) => {
+    if (!activeAnnotationPanel() || annotationSpaceHeld) return;
+    const navigatingViewport = inside(event.target, VIEWPORT_CANVAS);
+    const navigatingOverInk = inside(event.target, ANNOTATION_CANVAS) && event.button !== 0;
+    if (!navigatingViewport && !navigatingOverInk) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    markAnnotationLock(true);
+  }, true);
+  window.addEventListener("wheel", (event) => {
+    if (!activeAnnotationPanel() || annotationSpaceHeld ||
+      (!inside(event.target, VIEWPORT_CANVAS) && !inside(event.target, ANNOTATION_CANVAS))) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    markAnnotationLock(true);
+  }, { capture: true, passive: false });
+  window.addEventListener("contextmenu", (event) => {
+    if (!activeAnnotationPanel() || annotationSpaceHeld ||
+      (!inside(event.target, VIEWPORT_CANVAS) && !inside(event.target, ANNOTATION_CANVAS))) return;
+    event.preventDefault();
+  }, true);
+
+  const observer = new MutationObserver(() => markAnnotationLock(activeAnnotationPanel() !== null && !annotationSpaceHeld));
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
 export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "aria-label"> & {
   icon: ModelToolIcon;
   label: string;
@@ -39,8 +140,12 @@ export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "
 
 /** A local toolbar control; the caller continues to own its action and state. */
 export function ModelToolButton({ icon, label, shortcut, className, type = "button", ...props }: ModelToolButtonProps) {
+  useEffect(() => { installAnnotationViewLock(); }, []);
+  if (HIDDEN_FROM_STAGE1_TOOLBAR.has(icon)) return null;
+
   return (
-    <button {...props} type={type} aria-label={label} className={`model-tool-button${className ? ` ${className}` : ""}`}>
+    <button {...props} type={type} aria-label={label} data-tool-icon={icon}
+      className={`model-tool-button${className ? ` ${className}` : ""}`}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
         <path d={paths[icon]} />

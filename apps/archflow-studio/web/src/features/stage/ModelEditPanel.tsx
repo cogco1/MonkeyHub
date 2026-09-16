@@ -1,9 +1,10 @@
-import { useRef, useState, type RefObject } from "react";
+import { useRef, type RefObject } from "react";
 import { usePreferences } from "../settings/preferences";
 import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import type { SketchVector } from "./sketch";
 import { ModelToolButton } from "./ModelToolButton";
 import "./ModelEditPanel.css";
+import { TRANSLATION_CONSTRAINTS, isTranslationConstraint, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
 
 export type DirectModelTool = "pushPull" | "move" | "rotate" | "scale" | "copy";
 export type DirectModelAction =
@@ -27,7 +28,9 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     onChange(value: string): void;
     onCommit(distance: number): void;
   };
-  move?: {
+  move: {
+    constraint: TranslationConstraint | null;
+    onConstraint(constraint: TranslationConstraint): void;
     inputs: readonly RefObject<HTMLInputElement | null>[];
     hint: string;
     onChange(index: number, value: string): void;
@@ -53,15 +56,10 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
 }) {
   const { language } = usePreferences();
   const zh = language === "zh-CN";
-  const [values, setValues] = useState<[string, string, string]>(["1", "0", "0"]);
   const fallbackInput = useRef<HTMLInputElement>(null);
   const titles = zh
     ? { pushPull: "推拉 P", move: "移动 M", rotate: "旋转 Q", scale: "缩放 S", copy: "复制" }
     : { pushPull: "Push/Pull P", move: "Move M", rotate: "Rotate Q", scale: "Scale S", copy: "Copy" };
-  const vector = tool === "move" || tool === "copy";
-  const count = vector ? 3 : 1;
-  const valid = values.slice(0, count).every((value) => value.trim() !== "" && Number.isFinite(Number(value))) &&
-    (tool !== "pushPull" || Number(values[0]) !== 0);
   if (tool === "scale") return <form className="model-edit-panel model-edit-panel--pushpull model-edit-panel--move" aria-label={titles[tool]}
     onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
@@ -100,15 +98,20 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
     </div>
     {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
   </form>;
-  if ((tool === "move" || tool === "copy") && move) return <form className="model-edit-panel model-edit-panel--pushpull model-edit-panel--move" aria-label={titles[tool]}
+  if (tool === "move" || tool === "copy") return <form className="model-edit-panel model-edit-panel--pushpull model-edit-panel--move" aria-label={titles[tool]}
     onKeyDown={(event) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
     }} onSubmit={(event) => { event.preventDefault(); if (!busy && subject) move.onCommit(); }}>
     <div className="model-edit-panel__distance">
       <ModelToolButton icon="help" label={move.hint} />
+      <select aria-label={zh ? "世界坐标约束" : "World constraint"} value={move.constraint ?? ""} disabled={busy}
+        onChange={(event) => { if (isTranslationConstraint(event.target.value)) move.onConstraint(event.target.value); }}>
+        <option value="" disabled>{zh ? "选择轴/平面" : "Axis / plane"}</option>
+        {TRANSLATION_CONSTRAINTS.map(axis => <option key={axis} value={axis}>{axis}</option>)}
+      </select>
       {move.inputs.map((input, index) => <label key={index}>
         <span className="quiet">{["X", "Y", "Z"][index]}</span>
-        <input ref={input} aria-label={`${["X", "Y", "Z"][index]} m`} type="number" step="any" defaultValue="0" disabled={busy}
+        <input ref={input} aria-label={`${["X", "Y", "Z"][index]} m`} type="number" step="any" defaultValue="0" disabled={busy || !move.constraint?.includes("XYZ"[index]!)}
           onFocus={(event) => event.currentTarget.select()} onChange={(event) => move.onChange(index, event.target.value)} />
       </label>)}
       <span className="quiet" aria-hidden="true">m</span>
@@ -145,24 +148,5 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
       {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
     </form>;
   }
-  return <form className="model-edit-panel" aria-label={titles[tool]} onKeyDown={(event) => {
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
-  }} onSubmit={(event) => {
-    event.preventDefault();
-    if (busy || !subject || !valid) return;
-    const nums = values.map(Number) as [number, number, number];
-    onApply({ kind: tool, translation: nums });
-  }}>
-    <div className="model-edit-panel__heading"><strong>{titles[tool]}</strong><ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} /></div>
-    <p className="model-edit-panel__subject">{subject ?? (zh ? "先在模型中点击选择对象或面" : "Select an object or face in the model")}</p>
-    <div className="model-edit-panel__fields">
-      {Array.from({ length: count }, (_, index) => <label key={index}>
-        {vector ? ["X", "Y", "Z"][index] : (zh ? "距离 m" : "Distance m")}
-        <input type="number" step="any" autoFocus={index === 0} value={values[index]} disabled={busy} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setValues((current) => current.map((value, i) => i === index ? event.target.value : value) as [string, string, string])} />
-      </label>)}
-    </div>
-    <small>{zh ? "用于绘制体和平面，Z 向上。旋转、缩放以对象中心为基点。" : "For drawn solids and faces. Z is up; rotate/scale around the object centre."}</small>
-    {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
-    <button className="model-edit-panel__apply" type="submit" disabled={busy || !subject || !valid}>{busy ? (zh ? "正在生成模型…" : "Building model…") : (zh ? "应用" : "Apply")}</button>
-  </form>;
+  return null;
 }

@@ -3,6 +3,29 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-137",
+      "stream": "interaction",
+      "status": "active",
+      "goal": "Deliver V1 true Top/Front/Right orthographic views, explicit Perspective mode and Fit Selected through the same active-camera boundary on stacked #136 T1; N1 signed-normal Push/Pull and S1 scene-wide snapping remain later slices.",
+      "depends_on": [
+        "GH-136"
+      ],
+      "branch": "codex/137-standard-views",
+      "worktree": "workspace/worktrees/codex-137-standard-views",
+      "base_ref": "6e6089ec78af2feb3a7e40dfefe0a6cde6cedeea",
+      "contributor": "ChatGPT",
+      "reviewer": "Repository owner",
+      "write_scope": [
+        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
+        "apps/archflow-studio/web/src/i18n/messages.en.ts",
+        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/cameraProjection.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/translationGizmo.ts",
+        "apps/archflow-studio/web/test/cameraProjection.test.ts"
+      ]
+    },
+    {
       "id": "GH-73",
       "stream": "study",
       "status": "active",
