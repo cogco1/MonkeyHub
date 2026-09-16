@@ -707,6 +707,10 @@ limitation remains; this HTTP collaboration path does not depend on an SSE conne
 
 ## MonkeyHub project runtime
 
+The runtime's process contract — what the Hub supplies, what it owns, identity, isolation and
+the direct development start — is [PROJECT_RUNTIME.md](PROJECT_RUNTIME.md); this section is its
+wire protocol on the Hub side.
+
 The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
 runtime view: exact project/path binding, published P036 version/digest, reachable design
 Stages, owned worker identity/health, chats and operation status. `POST /api/runtime/projects/open`

@@ -341,8 +341,8 @@ function Close-Splash {
 function Invoke-Quiet {
     # Run a native command and hand back its exit code and its combined output. Native stderr
     # under $ErrorActionPreference = 'Stop' is a terminating NativeCommandError in 5.1: one
-    # deprecation warning from python or one progress line from npm would otherwise abort the
-    # launcher with the warning as its message. Lower the preference for the call only.
+    # deprecation or advice line from git or python would otherwise abort the launcher with
+    # that warning as its message. Lower the preference for the call only.
     param([string]$Exe, [string[]]$Arguments)
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'

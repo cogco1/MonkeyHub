@@ -24,7 +24,7 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 新 Codex 对话通过锁定版本的 ACP SDK 与上游适配器保持连接，旧 CLI 对话仍可续接。
 源码环境的一次依赖安装见 [Hub README](../apps/monkeyhub/README.md#python-entry-and-development)；
 权限请求直接呈现在工具活动中，停止会取消仍待回答的请求。
-每个项目使用独立的 Studio 进程与端口，右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用服务。
+每个项目使用独立的 Project Runtime 进程与端口（代码仍在 `apps/archflow-studio/api`，契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)），右侧的 MonkeyArch、MonkeyDiagram、MonkeyBoard 在同一项目内共用这一个进程。
 不同项目可以并行聊天与建模；切换项目不停止其他项目，也不改写默认项目配置。已打开的工具页直接切换，保留加载状态。
 候选成功读回后立即打开模型，无需等待聊天整轮结束；再次打开同一候选复用页面。
 旧对话可以归档并恢复，原消息和原生 CLI 会话保留；运行中的对话需完成或停止后归档。
@@ -36,7 +36,7 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 | 开发代码的 Agent | 定位源码与任务，再按下表查询 owner 或工具箱契约 | 复用 `devctl module`、`hgs skills list/show`，它们是开发与检索工具 |
 
 已运行的 Hub 以自己的设置和实际健康检查为准，不通过源码目录里的配置猜测其项目。
-源码开发单独启动 Studio 时，才读取那次启动明确指定的 runtime 配置。
+源码开发单独启动 Project Runtime 时，配置只来自那次启动显式给出的 `-ProjectDir` 与环境变量。
 
 ### Agent 按任务检索
 
@@ -357,14 +357,14 @@ YYYYMMDD[-NN]_项目名称[_内容或图种][_RNN].扩展名
 `project.json`、`HEAD`、runner 固定文件、run/record ID、内容寻址对象与
 `viewport-<sha256>.png` 继续按协议命名；原始输入和历史产物不批量重命名。
 
-## 5. Studio C/S：一条 API 边界，三层权责
+## 5. Project Runtime：一条 API 边界，三层权责
 
 ```text
 React / Vite / three.js / rhino3dm-wasm
   apps/archflow-studio/web
                 │ OpenAPI-generated SDK
                 ▼
-FastAPI BFF
+Project Runtime（FastAPI）
   apps/archflow-studio/api/archflow_studio_api
   transport → routes → application → adapters
                 │ 调用现有 Python owner / 项目存储接口
@@ -376,6 +376,8 @@ ArchFlow kernel + 项目存储
 显式绑定的 <project-root>
 ```
 
+浏览器层今天是迁移中的旧 Studio 前端壳与三个工作区（#127 分阶段并入 MonkeyHub）；本节的 API 边界与三层权责不变，进程契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)。
+
 ### 浏览器 `web/`
 
 - 负责交互、视口、显示状态和本机 UI 偏好。
@@ -386,7 +388,7 @@ ArchFlow kernel + 项目存储
 本地用户默认值通过 `GET/PUT /api/settings/user` 保存语言、主题、字号、intent provider、model 和 timeout；
 `developerMode` 是额外的浏览器本地偏好。`GET /api/settings` 读取进程运行设置，不是用户默认值的保存入口。
 
-### 本地 FastAPI BFF `api/`
+### Project Runtime `api/`
 
 - 负责请求验证、transport DTO、统一错误体、鉴权/CORS、SSE、任务生命周期和 HTTP 资源。
 - `StudioSettings.project_dir` 或 `--project-dir` 必须显式绑定一个带 `project.json` 的项目目录；
