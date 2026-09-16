@@ -38,8 +38,8 @@ Command (`applications.py`, `_command`; `workers.py` appends the port and the ma
              --port <port> --managed-stdin --managed-instance-id <uuid>
 ```
 
-Environment: every inherited `ARCHFLOW_STUDIO_*` variable is removed first, then exactly
-these are set (`applications.py`, `_command`):
+Environment: the inherited environment minus every `ARCHFLOW_STUDIO_*` variable, plus exactly
+these (`applications.py`, `_command`):
 
 | Variable | Source |
 | --- | --- |
@@ -133,7 +133,9 @@ at handshake (PROTOCOL.md §1).
 In production only through the Hub's forwarding path
 `/api/runtime/projects/{runtime_id}/studio/{path}` (`monkeyhub_api/main.py`, `runtime.py`
 `forward`): path allowlist (`/api/...` and `/openapi.json` only), project id checked in query
-and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations, `X-Monkey-Candidate`
+and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — every request that is
+not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and
+`POST /api/pick/resolve` (`runtime.py`, `forward`) — `X-Monkey-Candidate`
 and `X-Monkey-Worker` for candidate-producing requests, an allowlist of forwarded request
 headers, and a hand-piped SSE relay for `/api/events`. Chat tools use the same path. A
 runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access

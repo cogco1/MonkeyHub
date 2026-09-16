@@ -4490,7 +4490,6 @@
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
         "operator-configured actor authentication with explicit project read/propose/accept/release grants; shared-project service role excludes local computation; Runtime upstream settings contain no project authority",
-        "Browser entry for the editable work model: the stage's own view tools offer it wherever the viewer is, embedded in the Hub included, bound to the exact STEP of the delivery on screen and never to the editing base, the newest run or one seat of a picture that shows several",
         "ActorAttribution and request_attribution: who caused one request and through which surface (studio, or a Hub-managed process), read from the middleware's resolved actor and this process's own launch settings and never from a request body or header"
       ],
       "does_not_own": [
@@ -4595,11 +4594,8 @@
         "remote servers do not advertise user-settings and answer authenticated settings routes with 404; saving preferences never changes the running compiler or project, and null clears a saved override",
         "Managed stop refuses new jobs, ends SSE and drains accepted work before normal process exit; standalone startup remains supported",
         "Hub application launch choices do not replace user appearance or provider preferences, and never write project state",
-        "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
-        "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts",
         "One optional host UsageLog records compiler, candidate, export, client wait and Stage-save diagnostics; logging never changes or repeats business operations",
         "Optional operation-diagnostics records client interaction and wait spans; per-request operation/parent headers cross sync routes and candidate workers without process-global request state; pure model inference time stays unknown",
-        "Tasks use only the project and provider actually bound to the connected Studio server. Task history is personal browser storage, never project authority or implicit model input; refresh does not replay model requests or reuse old continuation tokens, and tasks do not overwrite the shared editing-base preference",
         "configured actors never fall back to the legacy token; authorization uses the authenticated actor and actual project binding; shared services reject computation before route execution; accept grants do not imply release",
         "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery",
         "an actor identity a caller supplies is never an actor: attribution comes from the authenticated actor the middleware resolved, or states the local unauthenticated boundary's own identity; no credential byte leaves this module",
@@ -4615,7 +4611,7 @@
         "apps/archflow-studio/api/tests/test_monitoring.py",
         "apps/archflow-studio/api/tests/test_collaboration_auth.py"
       ],
-      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/archflow-studio/web/src/api/connection.ts is the client boundary. EXTEND: Studio already owns the user settings boundary and its browser preferences, interpolation, translation and styles. apps/shared-web extracts only these facilities for the real Hub and Monitor consumers, without a second preference writer. Shared JavaScript exports are listed with their source paths; the registry's symbol checker inspects Python only.",
+      "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/archflow-studio/web/src/api/connection.ts is the client boundary. The runtime serves the settings routes MonkeyHub mounts; browser preferences, interpolation, translation and styles are studio.web.shell's until #127 moves them into the Hub.",
       "files": [
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",
@@ -4646,7 +4642,8 @@
         "Browser-local project/task navigation, transcript and editing-base pointers; independent mounted task views keep in-flight responses and pending exchanges in their originating task",
         "SettingsPanel and UserPreferencesProvider: browser preferences and the offer to save server-backed defaults through the runtime's settings routes",
         "The en and zh-CN catalogs, useT, BilingualText",
-        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web"
+        "Shared browser display validation and application, launch-URL display choices, message interpolation, browser English-to-Chinese translation and base style/control tokens in apps/shared-web",
+        "Browser entry for the editable work model: the stage's own view tools offer it wherever the viewer is, embedded in the Hub included, bound to the exact STEP of the delivery on screen and never to the editing base, the newest run or one seat of a picture that shows several"
       ],
       "does_not_own": [
         "Product navigation, chat, projects, settings authority, launch and lifecycle (hub.shell)",
@@ -4671,7 +4668,10 @@
       "invariants": [
         "No new product-level behavior: navigation, settings authority, chat and lifecycle belong to hub.shell; this shell only shrinks until #127 deletes it",
         "Server-backed defaults are the Hub's authority; browser-local values are conveniences and never select a project, executable, CAD backend or credential",
-        "The shell holds projections and view state, never a second store of canonical state, candidates or documents"
+        "The shell holds projections and view state, never a second store of canonical state, candidates or documents",
+        "Shared browser modules import no React or backend runtime and do not persist preferences; each host retains its existing settings boundary, and explicit launch-URL appearance does not imply shared localStorage across ports",
+        "Browser translation preserves technical tokens and retains source text when unavailable or unsuccessful; applications keep their own message catalogs and layouts",
+        "Tasks use only the project and provider actually bound to the connected Studio server. Task history is personal browser storage, never project authority or implicit model input; refresh does not replay model requests or reuse old continuation tokens, and tasks do not overwrite the shared editing-base preference"
       ],
       "status": "provisional",
       "reason": "Legacy application shell kept until #127 has moved the workspaces into MonkeyHub; each migration lane moves files out of this list and the last one deletes the module.",
@@ -4682,7 +4682,7 @@
         "apps/archflow-studio/web/test/settingsPanel.browser.mjs",
         "apps/archflow-studio/web/test/taskSidebar.browser.mjs"
       ],
-      "notes": "Registered so that ~20k LOC of apps/archflow-studio/web/src has a declared owner and a declared direction. Workspace files under web/src/workspaces/ stay with their workspace modules (studio.board lists its tests; monkeyarch and monkeydiagram web files are declared by the #127 lanes that move them).",
+      "notes": "Registered so that ~20k LOC of apps/archflow-studio/web/src has a declared owner and a declared direction. Workspace files under web/src/workspaces/ stay with their workspace modules (studio.board lists its tests; monkeyarch and monkeydiagram web files are declared by the #127 lanes that move them). Shared JavaScript exports are listed with their source paths; the registry's symbol checker inspects Python only.",
       "files": [
         "apps/archflow-studio/web/src/main.tsx",
         "apps/archflow-studio/web/src/app/Connected.tsx",
