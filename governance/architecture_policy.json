@@ -508,7 +508,7 @@
         "probes",
         "archive"
       ],
-      "reason": "The Studio API (P108, FastAPI BFF) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
+      "reason": "The Project Runtime (archflow_studio_api) validates requests, streams events and manages task lifecycle; design state, dependencies, validation, geometry and commit are calls into archflow. Geometry mathematics, graphs, .3dm writing and state schemas live in archflow and are imported, never reimplemented beside it. Pydantic models here are transport shapes, not a second canonical state."
     },
     {
       "source": "archflow",

@@ -29,6 +29,11 @@ from archflow.contracts.fields import (
     refs as _refs,
     text as _text,
 )
+from archflow.project.version_refs import (
+    register as _register_version_refs,
+    register_derived as _register_derived_fields,
+    register_structural as _register_structural_version_ref,
+)
 
 
 FootprintCell = tuple[int, int]
@@ -1400,3 +1405,17 @@ class SchematicOptionSet:
                 SchematicOption.from_dict(item) for item in options
             ),
         )
+
+
+# ``SpatialOptionProposal@2`` states no canonical base of its own: the option
+# it proposes is identified by content. The option *set* does, and the design
+# branch both of them travel with keeps the two-field form, declared once here
+# as the shape it is rather than on every record that embeds one.
+VERSION_REF_POINTERS = {"SchematicOptionSet@1": ("/base",)}
+
+_register_version_refs(VERSION_REF_POINTERS)
+_register_derived_fields("SchematicOptionSet@1", ())
+_register_derived_fields("SpatialOptionProposal@2", ())
+_register_structural_version_ref(
+    ("project_id", "run_id", "base", "branch_id", "epoch"), "base",
+)

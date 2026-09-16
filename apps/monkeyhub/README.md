@@ -10,7 +10,7 @@ A new conversation starts from those defaults; an existing conversation keeps th
 
 Each conversation has an archive button in the sidebar. Archived chats are hidden from the current list and remain available through Archived chats, where their full messages and candidate links can be read and the conversation restored. Restore a chat before sending its next message. A running reply must finish or be explicitly stopped before its chat can be archived. Archiving preserves the native CLI session and its transcript in the same saved chat file, including across a Hub restart.
 
-Before a message or tool page opens, Hub binds its managed Studio to that chat's project. Each project has its own Studio, so other projects can keep working while a chat runs. Chat tools inspect the actual Studio schema and call its existing deterministic proposal/candidate and drawing APIs; they do not call the intent model a second time. Available domain actions remain limited to those APIs. Review, endorsement and formal issue retain their existing application flows.
+Before a message or tool page opens, Hub binds its managed Studio to that chat's project. Each project has its own Studio, so other projects can keep working while a chat runs. That managed Studio process is the project's **Project Runtime**; [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md) states what the Hub gives it and what it owns. Chat tools inspect the actual Studio schema and call its existing deterministic proposal/candidate and drawing APIs; they do not call the intent model a second time. Available domain actions remain limited to those APIs. Review, endorsement and formal issue retain their existing application flows.
 
 Each of those calls stays in the conversation as one row: the tool, its method and path, and the CLI's own word for how it ended. Both installed CLIs are read the same way — Codex reports one MCP item per call, Claude reports a `tool_use` block answered later by a `tool_result`, joined by its tool id — and a CLI's own file tools appear as the activity they are. Only this adapter's bound tools speak for the project: a result from anything else, or from a failed call, never names a candidate. A refused or failed call remains visible instead of disappearing. The diagnostics under a row are collapsed and bounded — the values a person can act on, or a short preview with the remaining length stated; a whole state or schema document is never copied into the transcript. The rows are saved with the conversation, so reloading the page or reopening Hub shows the same history.
 
@@ -40,7 +40,15 @@ The root OPEN_MONKEYHUB.cmd calls this entry:
 .\apps\monkeyhub\launch-hub.ps1 -Python "$PWD\_runtime\python\python.exe" -RuntimeRoot "$env:LOCALAPPDATA\MonkeyHub" -HubWebDir "$PWD\apps\monkeyhub\web\dist" -StudioWebDir "$PWD\apps\archflow-studio\web\dist" -HideConsole
 ```
 
-The wrapper reuses the Studio launcher's splash, tray, logs and monitoring. Quit MonkeyHub requests normal shutdown and waits for its applications; accepted candidate jobs finish and event streams close. It does not force-close a busy application or stop a process found on an occupied port.
+`launch-hub.ps1` is the browser-mode launcher and, with the desktop window, one of the two
+production entries — both start only the Hub. It shows a launch window while the Hub comes up,
+verifies the Hub's source revision and instance identity on `/api/health`, opens the browser,
+and leaves a tray icon whose **Quit MonkeyHub** requests normal shutdown and waits for the
+applications: accepted candidate jobs finish and event streams close. It does not force-close a
+busy application or stop a process found on an occupied port. Its logs are under
+`<runtime root>/logs`. Every Studio and Monitor process is started, monitored and stopped by the
+Hub itself; Studio has no launcher, configuration file or tray of its own (a development start
+on an explicit project is `scripts/dev/run-project-runtime.ps1`).
 
 ## Python entry and development
 
@@ -121,7 +129,7 @@ The source identity comes from root source-version.txt in a package, or the actu
 
 ## Project runtime and recovery
 
-Hub keeps one runtime for each exact project identity and resolved path. Switching or reopening a page attaches to that runtime; it does not stop another project or restart a crashed worker. `GET /api/runtime` reports project bindings, the published P036 position, committed Stage history, owned worker health, attached chats, and active/recent operations. `GET /api/runtime/events` streams changes and begins every connection with a fresh snapshot, including after an old or foreign event cursor.
+Hub keeps one runtime for each exact project identity and resolved path. Switching or reopening a page attaches to that runtime; it does not stop another project or restart a crashed worker. `GET /api/runtime` reports project bindings, the published P036 position, committed Stage history, owned worker health, attached chats, and active/recent operations. `GET /api/runtime/events` streams changes and begins every connection with a fresh snapshot, including after an old or foreign event cursor. The runtime process contract itself is [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md); this section is the Hub's side of it.
 
 Worker and session observation continues every second. Retained history refreshes for active work, submitted mutations, attachment and worker changes; an idle runtime reuses its current projection and checks external project changes every 30 seconds. Status reads verify retained receipts and exact sources without rebuilding candidate previews. The Hub entry point closes SSE subscriptions before draining accepted HTTP work and owned processes during shutdown.
 

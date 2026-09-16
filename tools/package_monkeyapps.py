@@ -58,7 +58,7 @@ from tools.workspace import (
 SOURCE_PATHS = (
     "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor",
     "apps/archflow-studio/api", "apps/archflow-studio/web",
-    "apps/archflow-studio/assets", "apps/archflow-studio/launch-studio.ps1",
+    "apps/archflow-studio/assets",
     "apps/monkeyhub", "apps/monkeyfab", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
     "governance/module_registry.json",
@@ -269,7 +269,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     # The capability index the Studio serves at /api/capabilities is read from
     # this registry beside the application, so the installed product answers
     # from the same file the checkout does instead of an embedded copy.
-    for relative in ("apps/archflow-studio/launch-studio.ps1", "apps/monkeyhub/run.py",
+    for relative in ("apps/monkeyhub/run.py",
                      "apps/monkeyhub/launch-hub.ps1", "OPEN_MONKEYHUB.cmd", "pyproject.toml",
                      # The security-reporting route travels with the distributed bundle,
                      # not only with a checkout of the public repository.

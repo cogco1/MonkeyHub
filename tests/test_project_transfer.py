@@ -375,6 +375,86 @@ class ProjectTransferTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_DEPENDENCY_MISSING"):
             self.shared.export_transfer()
 
+    # ---- exports/ is a root the closure passes through, never one it packs
+
+    def _retained_export(self, name: str, body: bytes) -> tuple[str, str]:
+        """Put a file under exports/ and have a retained receipt name it."""
+
+        import hashlib as _hashlib
+
+        path = self.shared.layout.root / "exports" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+        return f"exports/{name}", _hashlib.sha256(body).hexdigest()
+
+    def _name_export_from_a_record(self, relative: str, digest: str) -> None:
+        run = self.shared.load_run("source")
+        self.shared.put_json(
+            run=run,
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="source"),
+            record_kind=DRAWING_PROJECTION_RECEIPT,
+            payload={
+                "schema": "DrawingProjectionReceipt@1",
+                "run": run.to_dict(),
+                "sheet": {
+                    "project_id": run.project_id,
+                    "relative_path": relative,
+                    "sha256": digest,
+                    "media_type": "application/json",
+                },
+            },
+        )
+
+    def test_a_retained_reference_carries_one_export_and_leaves_the_rest(self):
+        """The closure follows a typed edge into exports/; it never walks it."""
+
+        referenced, digest = self._retained_export("sheet.json", b'{"sheet": 1}\n')
+        unreferenced, _ = self._retained_export("scratch.json", b'{"scratch": 1}\n')
+        self._name_export_from_a_record(referenced, digest)
+
+        transfer = self.shared.export_transfer(include_all_runs=True)
+        carried = {row["path"] for row in transfer["files"]}
+
+        self.assertIn(referenced, carried)
+        self.assertNotIn(unreferenced, carried)
+        restored = FilesystemProjectRepository.bootstrap_transfer(
+            self.root / "with-export", transfer, expected_project_id="building",
+        )
+        self.assertEqual(
+            (restored.layout.root / referenced).read_bytes(),
+            (self.shared.layout.root / referenced).read_bytes(),
+        )
+        self.assertFalse((restored.layout.root / unreferenced).exists())
+
+    def test_a_referenced_export_is_readable_one_file_at_a_time(self):
+        """The archive writer and the sync route read the manifest row by row."""
+
+        referenced, digest = self._retained_export("sheet.json", b'{"sheet": 3}\n')
+        self._name_export_from_a_record(referenced, digest)
+
+        transfer = self.shared.export_transfer(include_contents=False, include_all_runs=True)
+        self.assertIn(referenced, {row["path"] for row in transfer["files"]})
+        # Every listed row has to be servable, or --export-archive fails on a
+        # file the manifest it just wrote says is part of the project.
+        for row in transfer["files"]:
+            self.assertEqual(
+                len(self.shared.read_transfer_file(row["path"], row["sha256"])),
+                row["size"], row["path"],
+            )
+
+    def test_a_referenced_export_that_is_missing_still_fails_closed(self):
+        referenced, digest = self._retained_export("gone.json", b'{"sheet": 2}\n')
+        self._name_export_from_a_record(referenced, digest)
+        (self.shared.layout.root / referenced).unlink()
+
+        with self.assertRaisesRegex(ProjectIntegrityError, "TRANSFER_DEPENDENCY_MISSING"):
+            self.shared.export_transfer(include_all_runs=True)
+
+    def test_an_export_no_record_names_is_not_readable_as_a_transfer_file(self):
+        unreferenced, digest = self._retained_export("private.json", b'{"private": 1}\n')
+        with self.assertRaises(ProjectIntegrityError):
+            self.shared.read_transfer_file(unreferenced, digest)
+
     def test_shared_workspace_artifact_survives_when_only_another_run_refers_to_it(self):
         # A retained run may hold the bytes while the only receipt naming them
         # lives in a different retained run. Export follows that reference by

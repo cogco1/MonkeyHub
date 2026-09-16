@@ -1,8 +1,11 @@
 # ArchFlow Studio
 
-Users enter through **MonkeyHub** and choose Modeling, Drawings or Presentation.
-MonkeyArch is the modeling workspace; Studio is their shared implementation host.
-The standalone launch commands below are for source development and focused diagnostics.
+Users enter through **MonkeyHub**; MonkeyHub is the application. This directory holds two
+things. `api/` is the **Project Runtime** — the project-scoped backend MonkeyHub starts once
+per open project; its contract is [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md).
+`web/` is the legacy Studio browser shell and the MonkeyArch, MonkeyDiagram and MonkeyBoard
+workspaces, which are being folded into the MonkeyHub frontend (#127); it takes no new
+product-level behaviour. The direct-start commands below are for development and focused diagnostics.
 See the [unified Hub entry](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
 
 For scoped model requests, advisory context budgets and the offline size benchmark,
@@ -79,7 +82,7 @@ into run areas of the bound project — which is what running a candidate is.
 
 For a first installation, follow the [onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#82-获取代码并在本机运行)
 to choose a source checkout, create an external Python environment and project,
-and fill the [shared configuration template](runtime.example.json).
+and open that project through MonkeyHub.
 The production command `python tools/create_project.py --project <external-project-dir>`
 runs from the source root in that Python environment. It creates a version-0 P036
 project with an empty authored record, not a model or run. To initialize with your
@@ -93,65 +96,37 @@ needs a real run. Opening a local Rhino file does not supply those project recor
 the original file can remain outside the project while managed copies and outputs
 use the existing [P036 storage](../../archflow/project/README.md).
 
-**One click.** The application is called **MonkeyArch**; the methodology and the protocol it
-runs are still ArchFlow. `OPEN_MONKEYARCH.bat` — or the Desktop shortcut
-`make-desktop-shortcut.ps1` writes, `打开 MonkeyArch.lnk` — starts both halves and opens the
-browser at the web client. **There is no console.** The .bat starts Windows PowerShell hidden
-(`powershell.exe` and not `pwsh`: a WinForms message loop needs an STA thread, and pwsh runs
-MTA on Windows), and the shortcut is saved with window style 7 so the cmd window that hands
-over is never painted. What you see instead is a matte launch surface — a static, line-drawn
-monkey hanging from its keystone like a maker's mark, the wordmark, and a two-pixel progress
-rail that follows the real eight steps: validating runtime.json, python and
-fastapi, web dependencies, starting the API,
-`/api/health`, starting the web client, its first answer, opening the browser. **A refusal turns
-that same window red**, with the launcher's own sentence in it and a Close button; nothing waits
-in a console for a keypress.
+**Start it.** The application is called **MonkeyArch**; the methodology and the protocol it
+runs are still ArchFlow. **MonkeyHub is the only production entry**: the desktop package or
+`OPEN_MONKEYHUB.cmd` starts the Hub, and the Hub starts one Studio process per project —
+project, CAD backend and reference run from its application settings; intent provider, model
+and timeout from your saved preferences — and embeds MonkeyArch, MonkeyDiagram and
+MonkeyBoard from it. There is no second launcher, configuration file, tray icon or shortcut
+for Studio; what the Hub starts, the Hub monitors and stops (see the
+[Hub guide](../monkeyhub/README.md)).
 
-Its input is a machine-local runtime configuration. Copy `runtime.example.json` to
-`runtime.json` beside the launcher on a fresh installation, or keep the filled copy
-outside the checkout, such as `<RuntimeRoot>/config/studio.json`, and pass
-`-RuntimeConfig <path>`. The adjacent `runtime.json` is Git-ignored; keep an existing
-local configuration instead of overwriting it with the template. A missing file
-produces a setup message naming the template and the fields to fill in.
-Before pulling this change into an older clone that still tracks `runtime.json`,
-copy that local configuration to your external Runtime's `config/` and use
-`-RuntimeConfig`; the incoming Git deletion can remove the formerly tracked file.
+**Start it by itself** for development and tests — an API smoke run, Playwright, a fixture
+regression, a MonkeyDiagram change you want to see without going through the Hub:
 
-Set `project_dir` to the existing P036 project and `python` to its installed Python
-environment's executable. The template leaves the project blank and uses `python`
-from PATH, `intent_provider: deterministic` and `cad_export: off`. The other keys are
-`reference_run`, `cad_export`
-(`occt` | `rhino` | `off`; forwarded as `ARCHFLOW_STUDIO_CAD_EXPORT`, see "Exported
-candidates" below), `powershell`, `intent_provider` and `codex` (the environment variables
-the sections below describe), `python` (an interpreter command or executable path), `api_port`,
-`web_port` and `open_browser`. A `runtime.json` written before `cad_export` existed may still
-carry `rhino_export: true|false`; the launcher keeps forwarding that boolean as it always did
-(`true` turns export on, `false` keeps it off) until the line is replaced by `cad_export`, and
-a file naming neither leaves the API to its default, which is `occt`. Two optional keys name the agent more exactly: `intent_model` (the model the
-provider runs, forwarded as `ARCHFLOW_STUDIO_INTENT_MODEL`) and `intent_timeout_s` (how long one
-compile may take, default 120, forwarded as `ARCHFLOW_STUDIO_INTENT_TIMEOUT_S`). Fill project
-and interpreter paths for each machine; share the template rather than a local configuration.
-This file binds one application process, not a global workspace manifest.
-The launcher validates all of it before it starts anything, so a `project_dir` with no
-`project.json` in it, a port already held, or a Python that cannot import FastAPI is a refusal
-naming the reason — never a half-started pair.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runtime.ps1 -ProjectDir '<a P036 project directory>'
+```
 
-**Quitting.** Once the browser is open the splash goes and a **tray icon** stays: "Open
-MonkeyArch" reopens the tab, "Show logs" opens `.runtime/`, and **"Quit MonkeyArch" stops the
-API and the web client together** and exits the launcher; double-clicking the icon opens the
-app. Windows 11 hides a tray icon nobody has pinned yet — it is under the notification area's
-chevron until you drag it out. If one of the two servers dies on its own, the launcher says so
-in a balloon tip, shows the tail of that server's log in the same red window, stops the other
-server and exits. Each start writes `api-<stamp>.out.log`, `api-<stamp>.err.log` and the same
-pair for the web client into `apps/archflow-studio/.runtime/` (git-ignored); that is where a
-server which would not start says why, and the launcher quotes the tail of it in the window
-rather than making you go looking. `launch-studio.ps1` takes `-NoBrowser`,
-`-RuntimeConfig <path>` and `-HideConsole` (what the .bat passes), so a second project can be
-launched without editing the one beside it, and running the script by hand from a console gives
-you the console output as well as the splash. Windows PowerShell 5.1 is the floor: WinForms
-only, no WPF, no extra runtime.
+`scripts/dev/run-project-runtime.ps1` is deliberately thin: it requires `-ProjectDir`, puts
+the checkout and `apps/archflow-studio/api` on `PYTHONPATH`, and runs
+`python -m archflow_studio_api.main --project-dir <dir> --host 127.0.0.1 --port 8000` in the
+foreground until Ctrl+C. `-Port` picks another port, `-WebDir apps/archflow-studio/web/dist`
+serves a prebuilt web client from the same port, and `-Python` names an interpreter other than
+the `python` on PATH. It has no configuration file, no default project, no launch window and
+no tray; the CAD backend, intent provider, model and timeout are the `ARCHFLOW_STUDIO_*`
+environment variables the sections below describe, set in the shell that runs it. For the web
+client with hot reload, run `npm --prefix apps/archflow-studio/web run dev` beside it (its
+`/api` proxy targets port 8000, or `ARCHFLOW_STUDIO_API_URL`). The same starts are the
+`studio-api-dev`, `studio-web-dev` and `studio-api-smoke` profiles in `.claude/launch.json`.
+"Independently runnable" is not "independent product entry": in production, Studio's
+lifecycle belongs to MonkeyHub alone.
 
-The icon on the shortcut, on the splash window and in the tray is `assets/monkeyarch.ico` —
+The icon on MonkeyHub's shortcut, launch window and tray is `assets/monkeyarch.ico` —
 a monkey hanging by one arm from the amber keystone of a limestone arch, ink tile, drawn at
 16, 24, 32, 48, 64, 128 and 256 px by `assets/make_icon.py` (Pillow), each size from its own
 spec rather than downscaled from one image. It is the animal that is spent down as the tile
@@ -159,13 +134,10 @@ shrinks, not the arch: below 48 px the eyes, the free hand and one leg go, below
 arm and the swing go and the figure hangs straight under the keystone, and at 16 px the tail
 goes too. `assets/monkeyarch-icon-512.png` is the same drawing at 512 px, for anywhere an
 `.ico` will not do. Redraw both with
-`py -3.12 apps/archflow-studio/assets/make_icon.py`; the shortcut points at the `.ico` by
-absolute path, so an existing shortcut picks up a redraw without being rewritten, but a
-shortcut written before the MonkeyArch icon arrived names the retired `archflow.ico` and has
-to be written again with `make-desktop-shortcut.ps1`. Cold loading uses a reduced **Draft
+`py -3.12 apps/archflow-studio/assets/make_icon.py`. Cold loading uses a reduced **Draft
 Monkey** rather than another full illustration: one quiet geometric line mark keeps the arch,
 keystone, hanging arm, ears and curled tail, with no face, hammer, sparks or character loop.
-The Windows launch surface draws it natively and reports its real eight startup steps on a
+MonkeyHub's launch window draws it natively and reports its startup steps on a
 determinate two-pixel rail. The browser draws the same mark as inline SVG, keeps the
 workshop-graphite palette and exact caller status, and uses a CSS-only indeterminate rail because
 API and local 3DM waits do not expose an honest percentage. The mark stays still; the rail is the
@@ -313,7 +285,7 @@ values in this browser client. They are stored as one versioned value in `localS
 remembered. Project, model,
 geometry, server and diagnostic rows are read-only facts from `GET /api/project` or
 `GET /api/protocol`; a value those routes do not expose is labelled as unavailable rather
-than inferred from `runtime.json` or the host machine.
+than inferred from the launch environment or the host machine.
 
 Client-owned labels come from complete typed `en` and `zh-CN` catalogs. For caller-approved
 English prose that arrives at runtime, the client may use Chrome's on-device Translator API

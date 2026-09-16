@@ -42,3 +42,7 @@
 设置、协议与错误相关 57 项检查通过，包含临时 APPDATA／runtime 下的实际 PowerShell 与 Python 子进程读取。
 前端保存与恢复回归通过；API 全套、核心测试、archcheck、主检出构建和 OpenAPI 客户端一致性检查通过。
 现用设置面板已更新，验证没有改动用户真实偏好文件、项目输入或凭据。
+
+> 2026-09-15（#126）：独立启动器及其 `runtime.json` 桥已退役。同样三个偏好（intentProvider / intentModel /
+> intentTimeoutS）由 MonkeyHub 读取 `%APPDATA%\MonkeyArch\settings.json` 并在启动 Studio 子进程时注入环境
+> （`apps/monkeyhub/api/monkeyhub_api/applications.py`），验收见 `apps/monkeyhub/api/tests/test_applications.py`。

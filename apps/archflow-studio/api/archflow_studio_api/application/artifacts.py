@@ -82,8 +82,9 @@ JPEG_MEDIA_TYPE = "image/jpeg"
 PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
 DOCUMENT_UPLOAD_RUN_ID = "studio-documents"
 
-# Where one registered image page's editable copy lives, below the run that
-# holds the page it was made from. A speculative workspace file, never truth.
+# Where one registered document's editable copy lives, below the run that
+# holds the registration it was made from. A speculative workspace file,
+# never truth.
 WORK_COPY_WORKSPACE = "studio-documents/work"
 
 # The receipts that certify an exported file, and the schema that tells the
@@ -207,8 +208,6 @@ class ViewportCapture:
 
 MAX_DOCUMENT_BYTES = 32 * 1024 * 1024
 DOCUMENT_MEDIA_TYPES = ("application/pdf", PNG_MEDIA_TYPE, JPEG_MEDIA_TYPE)
-# The one shape a person can be handed an editable copy of: one image, one page.
-DOCUMENT_IMAGE_MEDIA_TYPES = (PNG_MEDIA_TYPE, JPEG_MEDIA_TYPE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +218,15 @@ class DocumentPage:
     width: float
     height: float
     rotation: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentReplacementTarget:
+    """The one registered document an upload replaces, whole."""
+
+    run_id: str
+    asset_sha256: str
+    revision_ref: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +407,11 @@ def _validate_page_replacements(
     replacements: tuple[DocumentPageReplacement, ...], documents: tuple[SourceDocument, ...],
 ) -> None:
     old_pages: set[tuple[str, str, str | None, int]] = set()
+    new_pages: set[int] = set()
+    # Reading a registered source verifies its bytes against its digest, which
+    # for a 32 MiB original is not free. Every page of one document shares one
+    # source, so verify each distinct registration once, not once per page.
+    verified: set[tuple[str, str, str | None]] = set()
     for replacement in replacements:
         identity = (replacement.run_id, replacement.asset_sha256, replacement.revision_ref)
         old_page = (*identity, replacement.page_index)
@@ -416,7 +429,15 @@ def _validate_page_replacements(
         new = next((page for page in pages if page.page_index == replacement.new_page_index), None)
         if old is None or new is None:
             raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Both replacement page indices must exist in their documents.")
-        _registered_document_bytes(binding, previous)
+        # A page of this upload can answer for one old page only; otherwise two
+        # different pages would resolve to the same image and one of them would
+        # be lost inside an immutable record.
+        if replacement.new_page_index in new_pages:
+            raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Each page of the upload may replace only one old page.")
+        new_pages.add(replacement.new_page_index)
+        if identity not in verified:
+            _registered_document_bytes(binding, previous)
+            verified.add(identity)
         if not math.isclose(old.width / old.height, new.width / new.height, rel_tol=0, abs_tol=0.001):
             raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID", "Replacement pages must have the same visible aspect ratio to preserve board marks.")
     for document in documents:
@@ -427,14 +448,54 @@ def _validate_page_replacements(
             raise StudioError(409, "DOCUMENT_REPLACEMENT_CONFLICT", "An old page already has a registered replacement; replace that newer page instead.")
 
 
+def _whole_document_replacement(
+    target: DocumentReplacementTarget, mime_type: str, pages: tuple[DocumentPage, ...],
+    documents: tuple[SourceDocument, ...],
+) -> tuple[DocumentPageReplacement, ...]:
+    """Page i of the named document, replaced by page i of this upload.
+
+    The declaration is what makes the refusals possible: a file standing for a
+    whole document has to be the same kind of file and have the same pages, so
+    a page added in some editor is named here rather than registered into a
+    record where nothing would ever show it.
+    """
+
+    previous = next((row for row in documents if (
+        row.run_id, row.asset_sha256, row.revision_ref,
+    ) == (target.run_id, target.asset_sha256, target.revision_ref)), None)
+    if previous is None:
+        raise StudioError(404, "DOCUMENT_NOT_FOUND",
+                          f"Run {target.run_id} has no source document {target.asset_sha256}.")
+    if mime_type != previous.mime_type:
+        raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID",
+                          "This is a different kind of file from the document it replaces.")
+    if len(pages) != len(previous.pages):
+        raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID",
+                          f"This file has {_pages_phrase(len(pages))}; "
+                          f"the document it replaces has {_pages_phrase(len(previous.pages))}.")
+    return tuple(DocumentPageReplacement(
+        run_id=previous.run_id, asset_sha256=previous.asset_sha256, revision_ref=previous.revision_ref,
+        page_index=page.page_index, new_page_index=new.page_index,
+    ) for page, new in zip(previous.pages, pages))
+
+
 def save_document(
     binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
     replaces_pages: tuple[DocumentPageReplacement, ...] = (),
     *, drawing_id: str | None = None, source_stage_ref: str | None = None,
     view_recipe: dict[str, Any] | None = None, generated_at: str | None = None,
+    replaces_document: DocumentReplacementTarget | None = None,
 ) -> SourceDocument:
-    """Retain original bytes in a named run or the project's source-document run."""
+    """Retain original bytes in a named run or the project's source-document run.
+
+    ``replaces_document`` says the upload takes the place of one registered
+    document whole — the shape a work copy has, one file for one document. It
+    is not a shorthand for a page list: because the caller has declared the
+    whole file, a file that has gained or lost a page, or changed kind, is
+    wrong and is refused here, where the architect can see it, rather than
+    registering with pages that answer for nothing and are placed on no board.
+    """
 
     run = binding.load_run(run_id) if run_id is not None else None
     if model_source is not None:
@@ -443,6 +504,9 @@ def save_document(
         raise StudioError(422, "DOCUMENT_INVALID", "Provide a file name, not a server path.")
     if mime_type not in DOCUMENT_MEDIA_TYPES:
         raise StudioError(422, "DOCUMENT_INVALID", "Only PDF, PNG and JPEG source documents are supported.")
+    if replaces_document is not None and replaces_pages:
+        raise StudioError(422, "DOCUMENT_REPLACEMENT_INVALID",
+                          "Name either the whole document this replaces or the individual pages, not both.")
     if len(content_base64) > 4 * ((MAX_DOCUMENT_BYTES + 2) // 3):
         raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
     try:
@@ -455,9 +519,11 @@ def save_document(
     digest = hashlib.sha256(data).hexdigest()
     with _document_source_lock:
         target_run_id = run_id if run_id is not None else DOCUMENT_UPLOAD_RUN_ID
-        documents = list_documents(binding) if replaces_pages else ()
+        documents = list_documents(binding) if (replaces_pages or replaces_document) else ()
+        if replaces_document is not None:
+            replaces_pages = _whole_document_replacement(replaces_document, mime_type, pages, documents)
         _validate_page_replacements(binding, target_run_id, digest, pages, replaces_pages, documents)
-        existing_documents = documents if replaces_pages else (
+        existing_documents = documents if (replaces_pages or replaces_document) else (
             list_documents(binding, target_run_id) if target_run_id in binding.run_ids() else ()
         )
         existing = next((row for row in existing_documents
@@ -529,32 +595,37 @@ def bind_document_model_source(
 
 @dataclass(frozen=True, slots=True)
 class DocumentWorkCopy:
-    """An editable copy of one registered image page, and the page it answers for.
+    """An editable copy of one registered document, and the document it answers for.
 
     Two identities, as everywhere else here. The *origin* four fields are the
-    copy's own identity: they never move, so the same page always resolves to
-    the same file across restarts. The *head* four are the page the copy
+    copy's own identity: they never move, so the same document always resolves
+    to the same file across restarts. The *head* four are the document the copy
     currently answers for — the newest registered replacement of the origin —
-    and they move whenever that page is replaced, from this copy or from the
-    Board's own upload.
+    and they move whenever that document is replaced, from this copy or from
+    the Board's own upload.
+
+    ``refusal`` is the whole editability answer, decided here where the row is
+    derived, so the one caller that opens a copy and the one that watches the
+    copies on disk can never disagree about which files are live. A row with a
+    refusal is still a row: its file may well exist and hold someone's work.
     """
 
     project_id: str
     run_id: str
     asset_sha256: str
     revision_ref: str | None
-    page_index: int
     file_name: str
-    mime_type: str
+    mime_type: str              # the kind of file this copy holds: the origin's
     path: Path                  # the editable file itself
     relative_path: str          # project-relative POSIX path, for display
     head_run_id: str
     head_asset_sha256: str
     head_revision_ref: str | None
-    head_page_index: int
     # Every digest already registered in this page's replacement chain. Bytes
     # equal to one of them are that history, not evidence of a new revision.
     known_sha256: frozenset[str]
+    # Why no one file can stand for this document right now, or None.
+    refusal: str | None = None
 
 
 # One page, as every replacement names it: which run and registered asset it
@@ -593,36 +664,115 @@ def _chain_head(links: dict[_PageId, _PageId], origin: _PageId) -> tuple[_PageId
         known.add(head[1])
 
 
+def _whole_document_head(
+    links: dict[_PageId, _PageId], origin: SourceDocument,
+) -> tuple[_PageId, frozenset[str], str | None]:
+    """The one document every page of ``origin`` is currently answered for by.
+
+    A work copy is a file, so it can only stand for pages that still travel
+    together: page ``i`` of the origin must resolve to page ``i`` of one and the
+    same registered document. Two different things break that, and they are
+    worth telling apart because they look nothing alike to the person holding
+    the file: the pages can end up in several documents, or they can all end up
+    in one document at other page numbers — page 1 becoming page 2 of a longer
+    PDF, which is what the Board's own replacement dialog does.
+
+    Returns the head of page 0, every digest along the way, and the reason no
+    single file can stand for the origin, or ``None`` when one still can.
+    """
+
+    heads = [_chain_head(links, (origin.run_id, origin.asset_sha256, origin.revision_ref, page.page_index))
+             for page in origin.pages]
+    first, known = heads[0]
+    for _, digests in heads[1:]:
+        known |= digests
+    reason = None
+    if any(head[:3] != first[:3] for head, _ in heads):
+        reason = ("Pages of this document are answered for by different documents now, "
+                  "so no single file can stand for it.")
+    else:
+        moved = next(((page, head) for page, (head, _) in zip(origin.pages, heads)
+                      if head[3] != page.page_index), None)
+        if moved is not None:
+            page, head = moved
+            reason = (f"Page {page.page_index + 1} of this document is now page {head[3] + 1} of another "
+                      "document, so no single file can stand for it.")
+    return first, frozenset(known), reason
+
+
 # What P036 accepts as one workspace path segment (archflow/project/refs.py).
 _WORK_COPY_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$")
+
+
+_WORK_COPY_EXTENSIONS = {PNG_MEDIA_TYPE: ".png", JPEG_MEDIA_TYPE: ".jpg", "application/pdf": ".pdf"}
 
 
 def _work_copy_segment(document: SourceDocument) -> str:
     """The copy's own file name on disk: the registered one when P036 can hold it.
 
     A registered document may be called ``研究图纸.png`` and a P036 workspace
-    path segment must be portable ASCII. The copy is then named after the page
-    it belongs to, deterministically, so the same page always resolves to the
-    same file and an accented name costs nobody their edits.
+    path segment must be portable ASCII. The copy is then named after the
+    document it belongs to, deterministically, so the same registration always
+    resolves to the same file and an accented name costs nobody their edits.
     """
 
     if _WORK_COPY_SEGMENT.fullmatch(document.file_name):
         return document.file_name
-    return f"{document.asset_sha256[:32]}{'.png' if document.mime_type == PNG_MEDIA_TYPE else '.jpg'}"
+    # A media type this build has no editable copy for is refused on the row,
+    # not raised: one hand-written record must not cost a whole project its
+    # other work copies. The path stays derivable so nothing else has to care.
+    return f"{document.asset_sha256[:32]}{_WORK_COPY_EXTENSIONS.get(document.mime_type, '')}"
+
+
+def _pages_phrase(count: int) -> str:
+    """``1 page``/``3 pages``: the counts appear in sentences people read."""
+
+    return f"{count} page" if count == 1 else f"{count} pages"
+
+
+def _work_copy_refusal(
+    origin: SourceDocument, head_document: SourceDocument, split: str | None,
+) -> str | None:
+    """Why this document has no single editable file, in one accurate sentence.
+
+    One predicate, one wording. The copy's name and path come from the origin
+    and never move, so the file can only honestly hold bytes of the origin's
+    own kind and shape; when what it answers for has become something else,
+    that is what is said, rather than a file quietly holding the wrong thing
+    under the right name.
+
+    A registered document is read back from its own retained payload, so an
+    unreadable media type is a refusal like any other. Nothing here may raise:
+    one hand-written record must not cost a project every other work copy.
+    """
+
+    if not origin.pages:
+        return "This registered document has no pages."
+    if origin.mime_type not in _WORK_COPY_EXTENSIONS:
+        return f"This document is registered as {origin.mime_type}, which has no editable copy."
+    if split is not None:
+        return split
+    if len(head_document.pages) != len(origin.pages):
+        return (f"The current replacement has {_pages_phrase(len(head_document.pages))}; "
+                f"this document has {_pages_phrase(len(origin.pages))}.")
+    if head_document.mime_type != origin.mime_type:
+        return "The current replacement is a different kind of file from this document."
+    return None
 
 
 def _work_copy(
     binding: ProjectBinding, origin: SourceDocument, links: dict[_PageId, _PageId],
     documents: tuple[SourceDocument, ...],
 ) -> DocumentWorkCopy:
-    """The deterministic copy row for one registered single-page image.
+    """The deterministic copy row for one registered document, refusal and all.
 
-    No IO: the path is derived from the origin page's own identity, so the
-    caller only has to ask whether that one file is there. The media type is
-    the *head's*, because that is the page these bytes answer for.
+    No IO: the path is derived from the origin's own identity, so the caller
+    only has to ask whether that one file is there. Every reason this document
+    cannot have one editable file is decided here, once, and carried on the
+    row — a refused row is still returned, because its file may already exist
+    and hold work nobody may lose sight of.
     """
 
-    page_index = origin.pages[0].page_index
     registration_path = origin.asset_sha256
     if origin.revision_ref is not None:
         revision = record_ref_from_uri(origin.revision_ref, binding.project_id)
@@ -630,26 +780,33 @@ def _work_copy(
         # the existing record's complete path, including its run, so asking for
         # one registration never opts another into watching the same file.
         registration_path += f"/revisions/{revision.relative_path}"
-    workspace_relative = f"{WORK_COPY_WORKSPACE}/{registration_path}/{_work_copy_segment(origin)}"
-    head, known = _chain_head(links, (origin.run_id, origin.asset_sha256, origin.revision_ref, page_index))
+    head, known, split = ((origin.run_id, origin.asset_sha256, origin.revision_ref, 0),
+                          frozenset({origin.asset_sha256}), None)
+    if origin.pages:
+        head, known, split = _whole_document_head(links, origin)
     head_document = next((row for row in documents if (
         row.run_id, row.asset_sha256, row.revision_ref) == head[:3]), origin)
+    refusal = _work_copy_refusal(origin, head_document, split)
+    if refusal is not None:
+        # Its own registration is the only thing a refused row can answer for.
+        head, known = (origin.run_id, origin.asset_sha256, origin.revision_ref, 0), frozenset({origin.asset_sha256})
+    workspace_relative = f"{WORK_COPY_WORKSPACE}/{registration_path}/{_work_copy_segment(origin)}"
     return DocumentWorkCopy(
         project_id=binding.project_id, run_id=origin.run_id, asset_sha256=origin.asset_sha256,
-        revision_ref=origin.revision_ref, page_index=page_index, file_name=origin.file_name,
-        mime_type=head_document.mime_type,
+        revision_ref=origin.revision_ref,
+        file_name=origin.file_name, mime_type=origin.mime_type,
         path=binding.repository.layout.run(origin.run_id).workspaces / Path(
             *PurePosixPath(workspace_relative).parts),
         relative_path=f"runs/{origin.run_id}/workspaces/{workspace_relative}",
-        head_run_id=head[0], head_asset_sha256=head[1], head_revision_ref=head[2], head_page_index=head[3],
-        known_sha256=known,
+        head_run_id=head[0], head_asset_sha256=head[1], head_revision_ref=head[2],
+        known_sha256=known, refusal=refusal,
     )
 
 
 def open_document_work_copy(
     binding: ProjectBinding, run_id: str, asset_sha256: str, *, revision_ref: str | None = None,
 ) -> DocumentWorkCopy:
-    """Give this registered image page an editable file, once, and say where.
+    """Give this registered document an editable file, once, and say where.
 
     Explicitly requested: nothing materialises a copy by observing a project or
     a board. The three values name one exact registration — ``revision_ref``
@@ -657,7 +814,7 @@ def open_document_work_copy(
     carries none, so a plain upload and a retained drawing revision that happen
     to share a run and digest are never confused for one another.
 
-    The bytes come from the page the copy has to answer for, through the
+    The bytes come from the document the copy has to answer for, through the
     registered reader, which already refuses an unreadable or mismatched
     registration. A copy that is already there is returned untouched: a
     returning architect must not lose their edits to a second click.
@@ -671,16 +828,17 @@ def open_document_work_copy(
             row.run_id, row.asset_sha256, row.revision_ref) == (run_id, asset_sha256, revision_ref)), None)
         if origin is None:
             raise StudioError(404, "DOCUMENT_NOT_FOUND", f"Run {run_id} has no source document {asset_sha256}.")
-        if origin.mime_type not in DOCUMENT_IMAGE_MEDIA_TYPES or len(origin.pages) != 1:
-            raise StudioError(422, "DOCUMENT_NOT_EDITABLE",
-                              "Only a single-page PNG or JPEG document has an editable work copy.")
         copy = _work_copy(binding, origin, _page_replacements(documents), documents)
+        if copy.refusal is not None:
+            # An existing file is someone's work. Never refuse without saying
+            # where it is, or an edited copy is orphaned out of sight.
+            detail = copy.refusal
+            if copy.path.is_file():
+                detail += f" The copy already made is still at {copy.relative_path}."
+            raise StudioError(422, "DOCUMENT_NOT_EDITABLE", detail)
         head_document = next(row for row in documents if (
             row.run_id, row.asset_sha256, row.revision_ref
         ) == (copy.head_run_id, copy.head_asset_sha256, copy.head_revision_ref))
-        if head_document.mime_type not in DOCUMENT_IMAGE_MEDIA_TYPES or len(head_document.pages) != 1:
-            raise StudioError(422, "DOCUMENT_NOT_EDITABLE",
-                              "The current replacement is not a single-page PNG or JPEG document.")
         if copy.path.is_file():
             return copy
         # document_bytes(..., revision_ref=None) is a legacy wildcard lookup.
@@ -706,25 +864,24 @@ def open_document_work_copy(
 
 
 def list_document_work_copies(binding: ProjectBinding) -> tuple[DocumentWorkCopy, ...]:
-    """Every registered image page that currently has an editable file.
+    """Every registered document that currently has an editable file.
 
-    Derived and restart-safe: each registered single-page image names exactly
-    one possible copy path, and the row exists only when that one file does.
-    This is an existence check per registered document, not a walk of the
-    workspace — nothing here discovers a file the project does not already
-    account for, and no second store remembers which copies were made.
+    Derived and restart-safe: each registered document names exactly one
+    possible copy path, and the row exists only when that one file does. This
+    is an existence check per registered document, not a walk of the workspace
+    — nothing here discovers a file the project does not already account for,
+    and no second store remembers which copies were made.
+
+    A row whose ``refusal`` is set is listed like any other. A file on disk
+    does not stop existing because the page it answered for moved, and a
+    watcher that dropped it would silently discard every later save; the
+    refusal travels with the row so it can be reported instead.
     """
 
     documents = list_documents(binding)
     links = _page_replacements(documents)
-    copies = []
-    for document in documents:
-        if document.mime_type not in DOCUMENT_IMAGE_MEDIA_TYPES or len(document.pages) != 1:
-            continue
-        copy = _work_copy(binding, document, links, documents)
-        if copy.path.is_file():
-            copies.append(copy)
-    return tuple(copies)
+    copies = [_work_copy(binding, document, links, documents) for document in documents]
+    return tuple(copy for copy in copies if copy.path.is_file())
 
 
 def save_viewport_capture(

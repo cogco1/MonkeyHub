@@ -1,8 +1,9 @@
-"""The ArchFlow Studio API: a product shell in front of the archflow kernel.
+"""The Project Runtime: the project-scoped backend MonkeyHub starts once per open project.
 
-The package sits outside ``archflow`` on purpose. It validates requests, shapes
-transport payloads and manages task lifecycle; design state, dependencies,
-validation, geometry and commit are calls *into* the kernel, never a second
+Historically the ArchFlow Studio API; the package name is kept, the product name is not
+(contract: docs/PROJECT_RUNTIME.md). The package sits outside ``archflow`` on purpose. It
+validates requests, shapes transport payloads and manages task lifecycle; design state,
+dependencies, validation, geometry and commit are calls *into* the kernel, never a second
 implementation beside it.
 
 Importing this package puts the repository root on ``sys.path`` so ``import
