@@ -53,6 +53,11 @@ export class TranslationGizmo {
     this.controls.attach(this.proxy);
   }
 
+  setCamera(camera: Camera): void {
+    this.controls.camera = camera;
+    this.update();
+  }
+
   set(spec: TranslationGizmoSpec): void {
     if (![...spec.origin, ...spec.translation].every(Number.isFinite)) throw new Error("Invalid transform coordinates.");
     this.origin.fromArray(spec.origin);

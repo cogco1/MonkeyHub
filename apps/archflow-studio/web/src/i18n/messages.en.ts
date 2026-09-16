@@ -675,6 +675,7 @@ export const messagesEn = {
   "stage.view.front": "Front",
   "stage.view.right": "Right",
   "stage.view.iso": "Isometric",
+  "stage.view.perspective": "Perspective",
   "stage.sketch.firstCorner": "Click the first corner",
   "stage.sketch.secondCorner": "Click the opposite corner, or type width,depth (for example 3,2)",
   "stage.sketch.pull": "Pull along the plane normal, or type a height; 0 makes a face",

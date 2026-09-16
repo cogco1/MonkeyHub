@@ -646,6 +646,7 @@ export const messagesZhCN = {
   "stage.view.front": "正面",
   "stage.view.right": "右侧",
   "stage.view.iso": "轴测",
+  "stage.view.perspective": "透视",
   "stage.sketch.firstCorner": "点第一个角",
   "stage.sketch.secondCorner": "点对角，或输入宽、深（如 3,2）",
   "stage.sketch.pull": "沿工作面法向推拉，或输入高度；输入 0 生成面",
