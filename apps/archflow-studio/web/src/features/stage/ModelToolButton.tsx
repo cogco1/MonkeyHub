@@ -31,6 +31,26 @@ const paths = {
 
 export type ModelToolIcon = keyof typeof paths;
 
+/**
+ * MonkeyArch's visible Stage 1 surface is intentionally smaller than its
+ * implementation. Keep the capable tools underneath for shortcuts, tests and
+ * later contextual exposure, but do not make the primary toolbar another CAD
+ * command shelf.
+ *
+ * Stage 1 is for massing correction and spatial steering: draw a simple
+ * profile, move it, push/pull it, then mark what the agent should understand.
+ */
+const HIDDEN_FROM_STAGE1_TOOLBAR = new Set<ModelToolIcon>([
+  "freehand",
+  "arc",
+  "rotate",
+  "scale",
+  "copy",
+  "measure",
+  "fit",
+  "front",
+]);
+
 export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "aria-label"> & {
   icon: ModelToolIcon;
   label: string;
@@ -39,8 +59,11 @@ export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "
 
 /** A local toolbar control; the caller continues to own its action and state. */
 export function ModelToolButton({ icon, label, shortcut, className, type = "button", ...props }: ModelToolButtonProps) {
+  if (HIDDEN_FROM_STAGE1_TOOLBAR.has(icon)) return null;
+
   return (
-    <button {...props} type={type} aria-label={label} className={`model-tool-button${className ? ` ${className}` : ""}`}>
+    <button {...props} type={type} aria-label={label} data-tool-icon={icon}
+      className={`model-tool-button${className ? ` ${className}` : ""}`}>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
         strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
         <path d={paths[icon]} />
