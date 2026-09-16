@@ -121,3 +121,42 @@ export function fitOrthographicBox(
   camera.updateMatrixWorld();
   return center;
 }
+
+/**
+ * Frame caller-supplied bounds while preserving the current view direction.
+ * The caller decides what is selected; this projection owner only knows Box3.
+ */
+export function frameBoxKeepingView(
+  camera: ViewCamera,
+  target: Vector3,
+  box: Box3,
+  aspect: number,
+): Vector3 {
+  if (box.isEmpty()) throw new Error("Cannot frame empty bounds.");
+  if (!Number.isFinite(aspect) || aspect <= 0) throw new Error("Viewport aspect must be positive.");
+  const direction = camera.position.clone().sub(target);
+  if (direction.lengthSq() < EPS) direction.copy(camera.getWorldDirection(new Vector3())).negate();
+  if (direction.lengthSq() < EPS) direction.set(1, -1, 0.78);
+  direction.normalize();
+
+  if (camera instanceof OrthographicCamera) {
+    return fitOrthographicBox(camera, box, aspect, direction, camera.up);
+  }
+
+  const center = box.getCenter(new Vector3());
+  const radius = box.getSize(new Vector3()).length() / 2;
+  const vertical = camera.fov * Math.PI / 180;
+  const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect);
+  const distance = 1.15 * Math.max(
+    radius / Math.max(Math.tan(vertical / 2), EPS),
+    radius / Math.max(Math.tan(horizontal / 2), EPS),
+    1,
+  );
+  camera.position.copy(center).addScaledVector(direction, distance);
+  camera.near = Math.max(distance / 1000, 0.01);
+  camera.far = Math.max(distance * 100, 1000);
+  camera.lookAt(center);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  return center;
+}

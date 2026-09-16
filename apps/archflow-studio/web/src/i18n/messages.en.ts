@@ -583,6 +583,7 @@ export const messagesEn = {
     "Back to the model this stage opened on: the reference run left no export, so this is the last export listed, from run {runId}",
   "stage.tools.home": "Home",
   "stage.tools.fit": "Fit",
+  "stage.tools.fitSelected": "Fit selected",
   "stage.tools.front": "Front",
   "stage.tools.screenshot": "Screenshot",
   "stage.tools.screenshotTitle": "Save the current 3D view as a PNG",

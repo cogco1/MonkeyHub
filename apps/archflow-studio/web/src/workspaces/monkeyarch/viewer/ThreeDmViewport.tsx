@@ -70,6 +70,7 @@ import { fitDistance } from "./fitCamera";
 import {
   configureOrthographicAspect,
   fitOrthographicBox,
+  frameBoxKeepingView,
   projectionMode,
   standardViewFrame,
   transferProjectionPose,
@@ -280,6 +281,8 @@ export interface ViewportController {
   translationGizmo(spec: TranslationGizmoSpec | null): void;
   translationPointer(kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null;
   fitView(): void;
+  /** Frame the resolved current selection through the active camera. */
+  fitSelection(): boolean;
   frontView(): void;
   standardView(view: StandardView): void;
   /** Encode the current rendered canvas for its caller; never writes the project. */
@@ -901,6 +904,19 @@ function standardRuntime(runtime: ViewportRuntime, view: StandardView): void {
 
 function frontRuntime(runtime: ViewportRuntime): void {
   standardRuntime(runtime, "front");
+}
+
+function fitSelectedRuntime(runtime: ViewportRuntime): boolean {
+  const box = new Box3();
+  for (const object of runtime.highlighted) {
+    if (object.visible) box.union(new Box3().setFromObject(object));
+  }
+  if (box.isEmpty()) return false;
+  const center = frameBoxKeepingView(runtime.camera, runtime.controls.target, box, runtimeAspect(runtime));
+  runtime.controls.target.copy(center);
+  runtime.controls.update();
+  runtime.render();
+  return true;
 }
 
 function errorMessage(error: unknown): string {
@@ -1861,6 +1877,10 @@ export const ThreeDmViewport = forwardRef<
       fitView: () => {
         const runtime = runtimeRef.current;
         if (runtime) fitRuntime(runtime);
+      },
+      fitSelection: () => {
+        const runtime = runtimeRef.current;
+        return runtime ? fitSelectedRuntime(runtime) : false;
       },
       frontView: () => {
         const runtime = runtimeRef.current;

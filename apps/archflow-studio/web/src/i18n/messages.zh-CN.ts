@@ -558,6 +558,7 @@ export const messagesZhCN = {
     "回到打开时的模型：参考运行没有导出，这是列表中最后一个导出，来自运行 {runId}",
   "stage.tools.home": "回到初始模型",
   "stage.tools.fit": "适合窗口",
+  "stage.tools.fitSelected": "聚焦选中",
   "stage.tools.front": "正视图",
   "stage.tools.screenshot": "截图",
   "stage.tools.screenshotTitle": "将当前三维视图保存为 PNG",

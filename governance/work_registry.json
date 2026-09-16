@@ -6,7 +6,7 @@
       "id": "GH-137",
       "stream": "interaction",
       "status": "active",
-      "goal": "Deliver V1 true Top/Front/Right orthographic views and explicit Perspective mode on the stacked #136 T1 viewport; N1 signed-normal Push/Pull and S1 scene-wide snapping remain later slices.",
+      "goal": "Deliver V1 true Top/Front/Right orthographic views, explicit Perspective mode and Fit Selected through the same active-camera boundary on stacked #136 T1; N1 signed-normal Push/Pull and S1 scene-wide snapping remain later slices.",
       "depends_on": [
         "GH-136"
       ],
