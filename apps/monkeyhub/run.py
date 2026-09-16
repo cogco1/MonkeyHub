@@ -115,7 +115,8 @@ def _progress_chat_store():
             # Let the existing fail-closed parser decide whether this call really
             # succeeded and whether a candidate is actually readable.
             super()._tool_message(session, item, kind, environment)
-            if item.get("server") != "monkeyhub":
+            # Reading a PUT/POST schema is not performing the operation it names.
+            if item.get("server") != "monkeyhub" or item.get("tool") != "studio_request":
                 return
             arguments = item.get("arguments") if isinstance(item.get("arguments"), dict) else {}
             method = str(arguments.get("method") or "").upper()
@@ -125,7 +126,8 @@ def _progress_chat_store():
             running = kind in {"item.started", "item.updated"} and status not in _TERMINAL_TOOL_STATES
             message_id = f"{chat_module._turn_id(session)}:{item.get('id') or 'tool'}"
             message = next((row for row in session.messages if row.id == message_id), None)
-            failed = message is not None and message.status == "failed"
+            failed = (status in {"failed", "cancelled", "interrupted"}
+                      or (message is not None and message.status == "failed"))
             zh = self._zh(session)
 
             if running:
@@ -144,7 +146,13 @@ def _progress_chat_store():
                 self._progress(session, "runtime", text, status="failed")
                 return
 
-            if message is not None and message.candidateId:
+            # End of an event is not proof of a successful operation. Require an
+            # explicit completed call, a result, and the retained parser's success.
+            if (status != "completed" or item.get("result") is None
+                    or message is None or message.status != "complete"):
+                return
+
+            if message.candidateId:
                 candidate = message.candidateId
                 text = (f"候选 {candidate} 已经生成，可以去建模页面审核；我这边可以继续推进后续工作。" if zh else
                         f"Candidate {candidate} is ready to review in Modeling; I can keep the remaining work moving.")

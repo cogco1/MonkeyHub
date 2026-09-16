@@ -88,6 +88,58 @@ class ChatProgressProjectionTests(unittest.TestCase):
         self.assertIn("这一步没有完成", text)
         self.assertNotIn("已经同步到 Board", text)
 
+    def test_schema_queries_never_narrate_project_writes(self):
+        for kind, status in (("item.started", "in_progress"), ("item.completed", "completed")):
+            with self.subTest(kind=kind):
+                item = {
+                    "id": "board-schema", "server": "monkeyhub", "tool": "studio_schema",
+                    "arguments": {"method": "PUT", "path": "/api/board"},
+                    "status": status, "error": None,
+                    "result": {"content": [{"type": "text", "text": "{}"}]},
+                }
+                self.store._tool_message(self.session, item, kind, {})
+                self.assertEqual([], self.visible_progress())
+        self.assertTrue(any("studio_schema" in row.content for row in self.session.messages))
+
+    def test_cancelled_and_interrupted_writes_never_narrate_success(self):
+        for status in ("cancelled", "interrupted"):
+            with self.subTest(status=status):
+                self.store._progress_rows.pop(self.session.id, None)
+                item = {
+                    "id": f"board-{status}", "server": "monkeyhub", "tool": "studio_request",
+                    "arguments": {"method": "PUT", "path": "/api/board"},
+                    "status": status, "error": None,
+                    "result": {"content": [{"type": "text", "text": "{}"}]},
+                }
+                self.store._tool_message(self.session, item, "item.completed", {})
+                text = "\n".join(row.content for row in self.visible_progress())
+                self.assertIn("这一步没有完成", text)
+                self.assertNotIn("已经同步到 Board", text)
+
+    def test_completion_without_a_confirmed_result_never_narrates_success(self):
+        for status, result in (("", None), ("in_progress", {}), ("completed", None)):
+            with self.subTest(status=status, result=result):
+                self.store._progress_rows.pop(self.session.id, None)
+                item = {
+                    "id": f"unconfirmed-{status}", "server": "monkeyhub", "tool": "studio_request",
+                    "arguments": {"method": "PUT", "path": "/api/board"},
+                    "status": status, "result": result, "error": None,
+                }
+                self.store._tool_message(self.session, item, "item.completed", {})
+                self.assertNotIn("已经同步到 Board", "\n".join(row.content for row in self.visible_progress()))
+
+    def test_mcp_error_envelope_never_narrates_success(self):
+        item = {
+            "id": "board-mcp-error", "server": "monkeyhub", "tool": "studio_request",
+            "arguments": {"method": "PUT", "path": "/api/board"},
+            "status": "completed", "error": None,
+            "result": {"isError": True, "content": [{"type": "text", "text": "write refused"}]},
+        }
+        self.store._tool_message(self.session, item, "item.completed", {})
+        text = "\n".join(row.content for row in self.visible_progress())
+        self.assertIn("这一步没有完成", text)
+        self.assertNotIn("已经同步到 Board", text)
+
     def test_candidate_ready_requires_successful_verified_readback(self):
         good = {
             "id": "candidate-good", "server": "monkeyhub", "tool": "studio_request",
