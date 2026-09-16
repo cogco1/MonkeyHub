@@ -54,7 +54,12 @@ const HIDDEN_FROM_STAGE1_TOOLBAR = new Set<ModelToolIcon>([
 const ANNOTATION_PANEL = "#annotation-tools";
 const VIEWPORT_CANVAS = ".viewport-canvas";
 const ANNOTATION_CANVAS = ".annotate";
-let annotationViewLockInstalled = false;
+const LEGACY_STAGE_SURFACE_LABELS = new Set([
+  "Frame", "Framework", "框架",
+  "Massing", "Mass", "体量",
+  "Program", "Brief", "任务书",
+]);
+let stageToolbarPolicyInstalled = false;
 let annotationSpaceHeld = false;
 
 function activeAnnotationPanel(): HTMLElement | null {
@@ -85,6 +90,29 @@ function releaseTemporaryAnnotationView(): void {
 }
 
 /**
+ * Frame / Massing / Program are retained runtime concepts, not normal product
+ * modes. Keep their APIs and project data available to Sync/Agent/evaluators,
+ * but remove the obsolete Studio-era launch controls from MonkeyArch.
+ *
+ * This small compatibility guard lives at the existing toolbar owner while the
+ * Hub/Project-Runtime consolidation (#127) removes the legacy panel wiring. It
+ * deliberately changes no retained project data and does not disable the
+ * underlying runtime capabilities.
+ */
+function retireLegacyStageSurfaces(): void {
+  const panel = document.querySelector<HTMLElement>("#view-tools");
+  if (!panel) return;
+  for (const button of panel.querySelectorAll<HTMLButtonElement>("button")) {
+    const label = button.textContent?.trim() ?? "";
+    if (!LEGACY_STAGE_SURFACE_LABELS.has(label)) continue;
+    button.hidden = true;
+    button.tabIndex = -1;
+    button.setAttribute("aria-hidden", "true");
+    button.dataset.retiredProductSurface = "true";
+  }
+}
+
+/**
  * Annotation ink is screen-space evidence tied to one recorded camera. Keep
  * navigation locked while the annotation palette is open; Space is a
  * hold-to-inspect escape hatch and releasing it restores the lock.
@@ -92,9 +120,9 @@ function releaseTemporaryAnnotationView(): void {
  * Install at the existing Stage toolbar boundary so this policy does not add a
  * second interaction owner or persisted state.
  */
-function installAnnotationViewLock(): void {
-  if (annotationViewLockInstalled || typeof window === "undefined") return;
-  annotationViewLockInstalled = true;
+function installStageToolbarPolicy(): void {
+  if (stageToolbarPolicyInstalled || typeof window === "undefined") return;
+  stageToolbarPolicyInstalled = true;
 
   window.addEventListener("keydown", (event) => {
     if (event.code !== "Space" || event.repeat || writingTarget(event.target) || !activeAnnotationPanel()) return;
@@ -128,8 +156,12 @@ function installAnnotationViewLock(): void {
     event.preventDefault();
   }, true);
 
-  const observer = new MutationObserver(() => markAnnotationLock(activeAnnotationPanel() !== null && !annotationSpaceHeld));
+  const observer = new MutationObserver(() => {
+    markAnnotationLock(activeAnnotationPanel() !== null && !annotationSpaceHeld);
+    retireLegacyStageSurfaces();
+  });
   observer.observe(document.body, { childList: true, subtree: true });
+  retireLegacyStageSurfaces();
 }
 
 export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "aria-label"> & {
@@ -140,7 +172,7 @@ export type ModelToolButtonProps = Omit<ComponentProps<"button">, "children" | "
 
 /** A local toolbar control; the caller continues to own its action and state. */
 export function ModelToolButton({ icon, label, shortcut, className, type = "button", ...props }: ModelToolButtonProps) {
-  useEffect(() => { installAnnotationViewLock(); }, []);
+  useEffect(() => { installStageToolbarPolicy(); }, []);
   if (HIDDEN_FROM_STAGE1_TOOLBAR.has(icon)) return null;
 
   return (
