@@ -159,7 +159,11 @@ try {
   const copied = await snapshot();
   assert.deepEqual(copied.objects.map(o=>o.id),["source","copy-2"]);
   assert.deepEqual(copied.objects[0].spec.plane.origin,[-1.23456789,0,0]);
-  assert.deepEqual(copied.objects[1].spec.plane.origin,[-1.23456789,2.5,0]);
+  // The retained transform recomputes a point relative to its pivot. IEEE-754
+  // cancellation may change a final bit; typed actions and untouched source
+  // snapshots still compare exactly, derived coordinates use 1e-12 metres.
+  copied.objects[1].spec.plane.origin.forEach((value,i) => assert.ok(Math.abs(value-[-1.23456789,2.5,0][i]) < 1e-12));
+  assert.deepEqual(await page.evaluate(()=>window.actions.map(a=>a.translation)),[[-1.23456789,0,0],[0,2.5,0]]);
   await page.keyboard.press("Control+z"); await page.waitForFunction(()=>window.snapshot().index===1);
   assert.equal((await snapshot()).objects.length,1);
   await page.keyboard.press("Control+Shift+z"); await page.waitForFunction(()=>window.snapshot().index===2);
