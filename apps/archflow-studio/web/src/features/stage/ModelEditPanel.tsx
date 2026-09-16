@@ -130,9 +130,10 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
         event.preventDefault();
         const value = inputRef.current?.value ?? "";
         const distance = Number(value);
-        if (busy || !subject || !value.trim() || !Number.isFinite(distance) || Math.abs(distance) < 1e-9) return;
-        if (pushPull?.active) pushPull.onCommit(distance);
-        else onApply({ kind: "pushPull", distance });
+        // A form without a captured, supported face must not fall back to a
+        // directionless server edit (which could modify a different face).
+        if (busy || !subject || !pushPull?.active || !value.trim() || !Number.isFinite(distance) || Math.abs(distance) < 1e-9) return;
+        pushPull.onCommit(distance);
       }}>
       <div className="model-edit-panel__distance">
         <ModelToolButton icon="help" label={hint} />
@@ -142,7 +143,7 @@ export function ModelEditPanel({ tool, subject, busy, error, onApply, onClose, p
             onChange={(event) => pushPull?.onChange(event.target.value)} />
         </label><span className="quiet" aria-hidden="true">m</span>
         <ModelToolButton icon="check" label={busy ? (zh ? "正在生成模型…" : "Building model…") : (zh ? "应用" : "Apply")}
-          shortcut="Enter" type="submit" disabled={busy || !subject} />
+          shortcut="Enter" type="submit" disabled={busy || !subject || !pushPull?.active} />
         <ModelToolButton icon="close" label={zh ? "关闭工具" : "Close tool"} shortcut="Esc" onClick={onClose} />
       </div>
       {error && <p role="alert" className="model-edit-panel__error">{error}</p>}
