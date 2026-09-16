@@ -1656,7 +1656,8 @@ export function Stage({
             {tool && activeTool && <span className="viewtools__hint quiet">{t("stage.tools.drawingHint", { tool: t(activeTool.labelKey) })}</span>}
           </div>}
           {viewToolsOpen && <div id="view-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.viewOptions")}>
-          {(["top", "front", "right", "iso"] as const).map((view) => <button type="button" key={view}
+          <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
+          {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
             onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
           <button
             type="button"

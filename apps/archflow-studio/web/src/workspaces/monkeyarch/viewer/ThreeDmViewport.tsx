@@ -29,6 +29,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  OrthographicCamera,
   PerspectiveCamera,
   Plane,
   Raycaster,
@@ -66,6 +67,17 @@ import {
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
+import {
+  configureOrthographicAspect,
+  fitOrthographicBox,
+  frameBoxKeepingView,
+  projectionMode,
+  standardViewFrame,
+  transferProjectionPose,
+  type ProjectionMode,
+  type StandardView,
+  type ViewCamera,
+} from "./cameraProjection";
 import { TranslationGizmo, type TranslationGizmoSpec, type TranslationSample } from "./translationGizmo";
 import {
   candidatesOf,
@@ -177,7 +189,10 @@ export interface CameraState {
   position: Vec3;
   target: Vec3;
   up: Vec3;
+  /** Perspective lens retained for tools that already record it. */
   fov: number;
+  projection: ProjectionMode;
+  zoom: number;
 }
 
 export interface ViewportLoadOptions {
@@ -266,8 +281,10 @@ export interface ViewportController {
   translationGizmo(spec: TranslationGizmoSpec | null): void;
   translationPointer(kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null;
   fitView(): void;
+  /** Frame the resolved current selection through the active camera. */
+  fitSelection(): boolean;
   frontView(): void;
-  standardView(view: "top" | "front" | "right" | "iso"): void;
+  standardView(view: StandardView): void;
   /** Encode the current rendered canvas for its caller; never writes the project. */
   capturePng(): Promise<Blob | null>;
   /** Remove temporary display projections and restore the loaded file exactly. */
@@ -300,7 +317,10 @@ interface ThreeDmViewportProps {
 
 interface ViewportRuntime {
   scene: Scene;
-  camera: PerspectiveCamera;
+  /** The only camera every viewport consumer reads. */
+  camera: ViewCamera;
+  perspectiveCamera: PerspectiveCamera;
+  orthographicCamera: OrthographicCamera;
   renderer: WebGLRenderer;
   controls: OrbitControls;
   model: Object3D | null;
@@ -805,74 +825,98 @@ function groupOf(models: readonly Object3D[]): Group {
   return group;
 }
 
+function boundsForRuntime(runtime: ViewportRuntime): Box3 {
+  const box = runtime.model ? new Box3().setFromObject(runtime.model) : new Box3();
+  if (runtime.draftObjects.size) box.union(new Box3().setFromObject(runtime.draftRoot));
+  return box;
+}
+
+function runtimeAspect(runtime: ViewportRuntime): number {
+  const rect = runtime.renderer.domElement.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0 ? rect.width / rect.height : runtime.perspectiveCamera.aspect;
+}
+
 function fitRuntime(runtime: ViewportRuntime): void {
+  // Keep this callback self-contained: viewportFit.test.ts executes the
+  // production function in isolation to protect #135's no-refit contract.
   const box = runtime.model ? new Box3().setFromObject(runtime.model) : new Box3();
   if (runtime.draftObjects.size) box.union(new Box3().setFromObject(runtime.draftRoot));
   if (box.isEmpty()) return;
+  if ((runtime.camera as OrthographicCamera).isOrthographicCamera === true) {
+    const camera = runtime.camera as OrthographicCamera;
+    const direction = camera.position.clone().sub(runtime.controls.target);
+    if (direction.lengthSq() < 1e-8) direction.set(1, -1, 0.78);
+    const rect = runtime.renderer.domElement.getBoundingClientRect();
+    const aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : runtime.perspectiveCamera.aspect;
+    const center = fitOrthographicBox(camera, box, aspect, direction, camera.up);
+    runtime.controls.target.copy(center);
+    runtime.controls.update();
+    runtime.render();
+    return;
+  }
+  const camera = runtime.camera as PerspectiveCamera;
   const center = box.getCenter(new Vector3());
-  // The whole model, whichever way it is turned: the bounding sphere is the
-  // one radius that holds under orbit, and both frame angles decide how far
-  // back the camera has to stand for it.
   const radius = box.getBoundingSphere(new Sphere()).radius;
-  const distance = fitDistance({
-    radius, fovDegrees: runtime.camera.fov, aspect: runtime.camera.aspect,
-  });
+  const distance = fitDistance({ radius, fovDegrees: camera.fov, aspect: camera.aspect });
   const direction = new Vector3(1, -1, 0.78).normalize();
 
-  runtime.camera.up.set(0, 0, 1);
-  runtime.camera.position.copy(center).addScaledVector(direction, distance);
-  runtime.camera.near = Math.max(distance / 1000, 0.01);
-  runtime.camera.far = Math.max(distance * 100, 1000);
-  runtime.camera.updateProjectionMatrix();
+  camera.up.set(0, 0, 1);
+  camera.position.copy(center).addScaledVector(direction, distance);
+  camera.near = Math.max(distance / 1000, 0.01);
+  camera.far = Math.max(distance * 100, 1000);
+  camera.updateProjectionMatrix();
+  runtime.controls.target.copy(center);
+  runtime.controls.update();
+  runtime.render();
+}
+
+function activateProjection(runtime: ViewportRuntime, projection: ProjectionMode): void {
+  const next = projection === "orthographic" ? runtime.orthographicCamera : runtime.perspectiveCamera;
+  if (runtime.camera === next) return;
+  transferProjectionPose(runtime.camera, next, runtime.controls.target, runtimeAspect(runtime));
+  runtime.camera = next;
+  runtime.controls.object = next;
+  runtime.translation?.setCamera(next);
+  runtime.controls.update();
+}
+
+function standardRuntime(runtime: ViewportRuntime, view: StandardView): void {
+  if (!runtime.model && !runtime.draftObjects.size) return;
+  if (view === "perspective") {
+    activateProjection(runtime, "perspective");
+    runtime.render();
+    return;
+  }
+  if (view === "iso") {
+    activateProjection(runtime, "perspective");
+    fitRuntime(runtime);
+    return;
+  }
+  activateProjection(runtime, "orthographic");
+  const box = boundsForRuntime(runtime);
+  if (box.isEmpty()) return;
+  const frame = standardViewFrame(view);
+  const center = fitOrthographicBox(runtime.orthographicCamera, box, runtimeAspect(runtime), frame.direction, frame.up);
   runtime.controls.target.copy(center);
   runtime.controls.update();
   runtime.render();
 }
 
 function frontRuntime(runtime: ViewportRuntime): void {
-  if (!runtime.model) return;
-  const box = new Box3().setFromObject(runtime.model);
-  if (box.isEmpty()) return;
-  const center = box.getCenter(new Vector3());
-  const size = box.getSize(new Vector3());
-  const direction = runtime.camera.position
-    .clone()
-    .sub(runtime.controls.target);
-  direction.z = 0;
-  if (direction.lengthSq() < 1e-8) direction.set(1, -1, 0);
-  direction.normalize();
-  const screenRight = new Vector3(-direction.y, direction.x, 0);
-  const verticalFieldOfView = (runtime.camera.fov * Math.PI) / 180;
-  const horizontalFieldOfView =
-    2 * Math.atan(Math.tan(verticalFieldOfView / 2) * runtime.camera.aspect);
-  const tangentVertical = Math.tan(verticalFieldOfView / 2);
-  const tangentHorizontal = Math.tan(horizontalFieldOfView / 2);
-  const halfSize = size.multiplyScalar(0.5);
-  let distance = 1;
+  standardRuntime(runtime, "front");
+}
 
-  for (const x of [-halfSize.x, halfSize.x]) {
-    for (const y of [-halfSize.y, halfSize.y]) {
-      for (const z of [-halfSize.z, halfSize.z]) {
-        const offset = new Vector3(x, y, z);
-        const depthTowardCamera = offset.dot(direction);
-        distance = Math.max(
-          distance,
-          depthTowardCamera + Math.abs(offset.dot(screenRight)) / tangentHorizontal,
-          depthTowardCamera + Math.abs(z) / tangentVertical,
-        );
-      }
-    }
+function fitSelectedRuntime(runtime: ViewportRuntime): boolean {
+  const box = new Box3();
+  for (const object of runtime.highlighted) {
+    if (object.visible) box.union(new Box3().setFromObject(object));
   }
-  distance *= 1.1;
-
-  runtime.camera.up.set(0, 0, 1);
-  runtime.camera.position.copy(center).addScaledVector(direction, distance);
-  runtime.camera.near = Math.max(distance / 1000, 0.01);
-  runtime.camera.far = Math.max(distance * 100, 1000);
-  runtime.camera.updateProjectionMatrix();
+  if (box.isEmpty()) return false;
+  const center = frameBoxKeepingView(runtime.camera, runtime.controls.target, box, runtimeAspect(runtime));
   runtime.controls.target.copy(center);
   runtime.controls.update();
   runtime.render();
+  return true;
 }
 
 function errorMessage(error: unknown): string {
@@ -1520,7 +1564,15 @@ export const ThreeDmViewport = forwardRef<
       // within eight screen pixels so zoom never turns a wire into a wide band.
       const farDepth = Math.max(1, ...[runtime.modelBounds, runtime.draftBounds].filter((bounds): bounds is Sphere => bounds !== null)
         .map((bounds) => runtime.camera.position.distanceTo(bounds.center) + bounds.radius));
-      raycaster.params.Line.threshold = 2 * farDepth * Math.tan(runtime.camera.fov * Math.PI / 360) * 8 / rect.height;
+      // Keep this callback self-contained too: modelDisplay.test.ts extracts
+      // hitAt directly. Orthographic screen tolerance is depth independent;
+      // perspective keeps the existing depth-scaled eight-pixel reach.
+      const active = runtime.camera;
+      const worldUnitsPerPixel = (active as OrthographicCamera).isOrthographicCamera === true
+        ? ((active as OrthographicCamera).top - (active as OrthographicCamera).bottom)
+          / Math.max(active.zoom, 1e-9) / rect.height
+        : 2 * farDepth * Math.tan((active as PerspectiveCamera).fov * Math.PI / 360) / rect.height;
+      raycaster.params.Line.threshold = worldUnitsPerPixel * 8;
       const intersections: Intersection[] = [];
       for (const root of [runtime.model, runtime.draftRoot]) root?.traverse((object) => {
         if (!isDisplayed(object)) return;
@@ -1700,7 +1752,9 @@ export const ThreeDmViewport = forwardRef<
       position: [camera.position.x, camera.position.y, camera.position.z],
       target: [controls.target.x, controls.target.y, controls.target.z],
       up: [camera.up.x, camera.up.y, camera.up.z],
-      fov: camera.fov,
+      fov: runtime.perspectiveCamera.fov,
+      projection: projectionMode(camera),
+      zoom: camera.zoom,
     };
   }, []);
 
@@ -1824,22 +1878,17 @@ export const ThreeDmViewport = forwardRef<
         const runtime = runtimeRef.current;
         if (runtime) fitRuntime(runtime);
       },
+      fitSelection: () => {
+        const runtime = runtimeRef.current;
+        return runtime ? fitSelectedRuntime(runtime) : false;
+      },
       frontView: () => {
         const runtime = runtimeRef.current;
         if (runtime) frontRuntime(runtime);
       },
       standardView: (view) => {
         const runtime = runtimeRef.current;
-        if (!runtime?.model) return;
-        runtime.camera.up.set(0, 0, 1);
-        fitRuntime(runtime);
-        if (view === "iso") return;
-        const distance = runtime.camera.position.distanceTo(runtime.controls.target);
-        const direction = view === "top" ? new Vector3(0, 0, 1) : view === "front" ? new Vector3(0, -1, 0) : new Vector3(1, 0, 0);
-        if (view === "top") runtime.camera.up.set(0, 1, 0);
-        runtime.camera.position.copy(runtime.controls.target).addScaledVector(direction, distance);
-        runtime.controls.update();
-        runtime.render();
+        if (runtime) standardRuntime(runtime, view);
       },
       capturePng: () => {
         const runtime = runtimeRef.current;
@@ -1894,9 +1943,16 @@ export const ThreeDmViewport = forwardRef<
     const scene = new Scene();
     const background = new Color(themeColours().viewport);
     scene.background = background;
-    const camera = new PerspectiveCamera(38, 1, 0.01, 10000);
-    camera.up.set(0, 0, 1);
-    camera.position.set(8, -8, 6);
+    const perspectiveCamera = new PerspectiveCamera(38, 1, 0.01, 10000);
+    perspectiveCamera.up.set(0, 0, 1);
+    perspectiveCamera.position.set(8, -8, 6);
+    const orthographicCamera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 10000);
+    orthographicCamera.up.set(0, 0, 1);
+    orthographicCamera.position.copy(perspectiveCamera.position);
+    configureOrthographicAspect(orthographicCamera, 1);
+    // Preserve the long-standing resize callback contract: `camera` is the
+    // perspective lens even while another projection is active.
+    const camera = perspectiveCamera;
 
     const renderer = new WebGLRenderer({
       antialias: true,
@@ -1913,7 +1969,7 @@ export const ThreeDmViewport = forwardRef<
     renderer.domElement.setAttribute("aria-label", "3DM model viewport");
     host.prepend(renderer.domElement);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
+    const controls = new OrbitControls(perspectiveCamera, renderer.domElement);
     controls.enableDamping = false;
     controls.screenSpacePanning = true;
     controls.target.set(0, 0, 0);
@@ -1928,7 +1984,8 @@ export const ThreeDmViewport = forwardRef<
     let grid = buildGrid(themeColours());
     scene.add(grid);
 
-    const render = () => renderer.render(scene, camera);
+    let runtime: ViewportRuntime;
+    const render = () => renderer.render(scene, runtime.camera);
 
     // The tokens can change under a running canvas — a theme toggle, or the OS
     // switching at dusk — and the grid's colours are baked into its vertices,
@@ -1967,9 +2024,11 @@ export const ThreeDmViewport = forwardRef<
       attributes: true,
       attributeFilter: ["data-theme"],
     });
-    const runtime: ViewportRuntime = {
+    runtime = {
       scene,
-      camera,
+      camera: perspectiveCamera,
+      perspectiveCamera,
+      orthographicCamera,
       renderer,
       controls,
       model: null,
@@ -2004,8 +2063,20 @@ export const ThreeDmViewport = forwardRef<
       const width = Math.max(host.clientWidth, 1);
       const height = Math.max(host.clientHeight, 1);
       renderer.setSize(width, height, false);
-      camera.aspect = width / height;
+      const aspect = width / height;
+      // This callback is deliberately self-contained: #135 regression tests
+      // execute it outside the component. Resize changes projection extents
+      // only; neither active camera position nor target/up/zoom is touched.
+      camera.aspect = aspect;
       camera.updateProjectionMatrix();
+      const orthographic = runtime.orthographicCamera;
+      if (orthographic) {
+        orthographic.left = -aspect;
+        orthographic.right = aspect;
+        orthographic.top = 1;
+        orthographic.bottom = -1;
+        orthographic.updateProjectionMatrix();
+      }
       // Selection/inspectors can resize this host. Only the frame aspect
       // follows that layout; position, target, up and lens stay user-owned.
       // Initial model loading and explicit view commands already fit above.
