@@ -318,8 +318,6 @@ interface ViewportRuntime {
   original: WeakMap<Mesh | Line, Material | Material[]>;
   /** The clones themselves, so they are disposed rather than leaked. */
   clones: Material[];
-  /** True while the camera still stands where a fit put it, nobody having moved it. */
-  fitted: boolean;
   /** The drawing in progress. It is shown and thrown away; nothing saves it. */
   sketch: Group | null;
   draftRoot: Group;
@@ -824,9 +822,6 @@ function fitRuntime(runtime: ViewportRuntime): void {
   runtime.camera.updateProjectionMatrix();
   runtime.controls.target.copy(center);
   runtime.controls.update();
-  // The frame now holds the model; a later resize may keep it that way until
-  // somebody moves the camera themselves.
-  runtime.fitted = true;
   runtime.render();
 }
 
@@ -873,8 +868,6 @@ function frontRuntime(runtime: ViewportRuntime): void {
   runtime.camera.updateProjectionMatrix();
   runtime.controls.target.copy(center);
   runtime.controls.update();
-  // An explicitly chosen elevation is not the fit view; a resize keeps it.
-  runtime.fitted = false;
   runtime.render();
 }
 
@@ -1811,7 +1804,6 @@ export const ThreeDmViewport = forwardRef<
         if (view === "top") runtime.camera.up.set(0, 1, 0);
         runtime.camera.position.copy(runtime.controls.target).addScaledVector(direction, distance);
         runtime.controls.update();
-        runtime.fitted = false;
         runtime.render();
       },
       capturePng: () => {
@@ -1955,7 +1947,6 @@ export const ThreeDmViewport = forwardRef<
       highlighted: [],
       original: new WeakMap(),
       clones: [],
-      fitted: false,
       sketch: null,
       draftRoot: new Group(),
       draftObjects: new Map(),
@@ -1967,10 +1958,8 @@ export const ThreeDmViewport = forwardRef<
     runtimeRef.current = runtime;
     const changedCamera = () => { clearHover(false); render(); };
     controls.addEventListener("change", changedCamera);
-    // Orbiting, panning or zooming is a chosen view; from then on a resize
-    // reframes nothing. OrbitControls raises this for real input only.
-    const userTookTheCamera = () => { runtime.fitted = false; clearHover(); };
-    controls.addEventListener("start", userTookTheCamera);
+    const startCameraInteraction = () => { clearHover(); };
+    controls.addEventListener("start", startCameraInteraction);
 
     const resize = () => {
       clearHover(false);
@@ -1979,11 +1968,10 @@ export const ThreeDmViewport = forwardRef<
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      // A panel that just became narrower sees less across than it did. The
-      // fit view is recomputed for the frame it is now in; a hand-placed
-      // camera is left alone.
-      if (runtime.fitted && runtime.model) fitRuntime(runtime);
-      else render();
+      // Selection/inspectors can resize this host. Only the frame aspect
+      // follows that layout; position, target, up and lens stay user-owned.
+      // Initial model loading and explicit view commands already fit above.
+      render();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(host);
@@ -1996,7 +1984,7 @@ export const ThreeDmViewport = forwardRef<
       interaction.current.press = null;
       runtime.preselection?.dispose();
       controls.removeEventListener("change", changedCamera);
-      controls.removeEventListener("start", userTookTheCamera);
+      controls.removeEventListener("start", startCameraInteraction);
       controls.dispose();
       // Give the highlighted meshes their own materials back, so what is
       // disposed below is the file's and the clones go with the mark.
