@@ -105,6 +105,8 @@ try {
     await page.evaluate(({ortho,position})=>{
       window.viewport.current.standardView(ortho ? "top" : "perspective");
       const r = window.readRuntime(); r.camera.position.fromArray(position); r.camera.up.set(0,0,1);
+      // Leave screen space for signed excursions after changing a fitted Top into an oblique view.
+      if (ortho) { r.camera.zoom = .2; r.camera.updateProjectionMatrix(); }
       r.controls.target.set(2,1.5,1.5); r.camera.lookAt(r.controls.target); r.controls.update(); r.camera.updateMatrixWorld(); r.render();
     }, {ortho,position});
   };
@@ -128,6 +130,9 @@ try {
     assert.equal(await page.locator(".stage-pushpull svg line").count(),1);
     for (const distance of [.6,-.4,.3]) {
       const to = await page.evaluate(point=>window.projectPoint(point),c.point.map((x,i)=>x+distance*c.normal[i]));
+      const box = page.viewportSize();
+      assert.ok(to[0]>20 && to[0]<box.width-20 && to[1]>20 && to[1]<box.height-130,
+        `The synthetic pointer target must stay inside the unobstructed viewport: ${to}`);
       await page.mouse.move(...to,{steps:5});
       await page.waitForFunction(expected=>Math.abs(Number(document.querySelector('.model-edit-panel input').value)-expected)<.015,distance);
       assert.equal(await count(),0); assert.deepEqual(await snapshot(),initial);
