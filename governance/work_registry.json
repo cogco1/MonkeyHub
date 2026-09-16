@@ -40,7 +40,7 @@
     {
       "id": "GH-138",
       "stream": "cleanup",
-      "status": "active",
+      "status": "done",
       "goal": "Finish retiring the legacy Frame, Massing and Program product surfaces from normal MonkeyArch: remove dead App/Stage plumbing and display modes, delete orphan panel code, keep real datum/Program/massing runtime capabilities, and prevent #127 from migrating the dead Studio UI.",
       "depends_on": [],
       "branch": "gpt/138-closeout",
@@ -62,6 +62,22 @@
         "apps/archflow-studio/web/test/programOptions.browser.mjs",
         "docs/PROJECT_RUNTIME.md",
         "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+      ]
+    },
+    {
+      "id": "GH-145",
+      "stream": "interaction",
+      "status": "active",
+      "goal": "Finish the architect-facing Tracing Paper product term without changing annotation/gesture persistence or the already-landed camera-lock behavior.",
+      "depends_on": [],
+      "branch": "gpt/145-146-tracing-paper-board",
+      "worktree": "cloud/gpt-145-146-tracing-paper-board",
+      "base_ref": "1291931c98d1062c5c9222fe63c3e588c61527b0",
+      "contributor": "GPT-5.6 Sol",
+      "reviewer": "Repository owner",
+      "write_scope": [
+        "apps/archflow-studio/web/src/i18n/messages.en.ts",
+        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts"
       ]
     },
     {
