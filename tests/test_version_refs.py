@@ -278,14 +278,15 @@ class EveryDeclaredKindIsBuiltByItsOwnerTests(unittest.TestCase):
     def built(self) -> dict[str, dict]:
         """One payload per declared schema, produced the way the project does.
 
-        Most come from the owner's own writer. Four have no constructor of
-        their own - ``ProjectRun@1`` is written by
+        Most come from the owner's own writer. Three have no constructor of
+        their own - ``ProjectRun@1`` is built inline by
         ``FilesystemProjectRepository.create_run``, ``PromotionDecision@1`` by
         ``archflow.project.issue`` and ``DrawingProjectionReceipt@1`` by
         ``monkeydiagram`` - so those three are the literal each of those
-        writers emits, copied from it. All three, and every other declared
-        schema, are also written by their real writer inside a real project by
-        the round-trip test in ``tests/test_project_format_migration.py``.
+        writers emits, copied from it. The round-trip test in
+        ``tests/test_project_format_migration.py`` writes every one of these
+        schemas into a real project and migrates it; the same three are
+        literals there too, for the same reason.
         """
 
         base = self.version_ref()

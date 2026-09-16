@@ -36,11 +36,13 @@ from archflow.project.record_kinds import (
     require_registered,
 )
 from archflow.project.version_refs import (
+    replace_digests as _replace_digests,
     content_digest_of as _content_digest_of,
     locations as _declared_locations,
     covered_pointers as _covered_pointers,
     derived_fields as _derived_fields,
     closure_check as _closure_check,
+    file_reference_child as _file_reference_child,
     read_back as _read_back,
     recompute as _recompute_derived,
     register as _register_version_refs,
@@ -886,25 +888,24 @@ def _rewrite_references(
 ) -> Any:
     """Move every reference that names a record which moved.
 
-    A record is named three ways: as the exact ``ProjectRecordRef`` mapping, as
-    a ``project://`` URI, and - where its owner declares one - as a content
-    digest. All three move together or the migrated project names a file that
-    is not there.
+    A record is named several ways: as one of the file-reference shapes its
+    owner declares - which carry the path, the digest and sometimes the uri
+    together - as a ``project://`` URI, and, where an owner states one, as a
+    bare content digest. A content digest may also be wrapped in a longer
+    string, exactly as a version digest may be. Every spelling moves together
+    or the migrated project names a file that is not there.
     """
 
     if isinstance(payload, Mapping):
-        if _RECORD_REF_KEYS <= set(payload) <= (_RECORD_REF_KEYS | {"project_id"}):
-            relative = payload.get("relative_path")
-            if isinstance(relative, str) and relative in renames:
-                moved = renames[relative]
-                return {
-                    **{
-                        key: _rewrite_references(value, project_id, renames, digests)
-                        for key, value in payload.items()
-                    },
-                    "relative_path": moved,
-                    "sha256": parse_record_file_name(PurePosixPath(moved).name)[1],
-                }
+        moved = _moved_file_reference(payload, renames)
+        if moved is not None:
+            return {
+                **{
+                    key: _rewrite_references(value, project_id, renames, digests)
+                    for key, value in payload.items()
+                },
+                **moved,
+            }
         return {
             key: _rewrite_references(value, project_id, renames, digests)
             for key, value in payload.items()
@@ -912,14 +913,44 @@ def _rewrite_references(
     if isinstance(payload, list):
         return [_rewrite_references(item, project_id, renames, digests) for item in payload]
     if isinstance(payload, str):
-        if payload in digests:
-            return digests[payload]
         prefix = f"project://{project_id}/"
         if payload.startswith(prefix):
             relative = payload[len(prefix):]
             if relative in renames:
                 return prefix + renames[relative]
+        # A content digest is cited bare, but also wrapped: ``record:<sha>``,
+        # ``artifact:sha256:<sha>``, a file name. It moves in every one of them
+        # or the citation dangles in silence.
+        return _replace_digests(payload, digests)
     return payload
+
+
+def _moved_file_reference(
+    payload: Mapping[str, Any], renames: Mapping[str, str],
+) -> dict[str, Any] | None:
+    """The fields of a declared file reference that move, if the file it names did.
+
+    Keyed off the shapes ``register_file_reference`` declares, so the two-field
+    form and the one that also carries a ``uri`` move like the exact record
+    reference does rather than being called covered and left behind.
+    """
+
+    if _file_reference_child(payload) is None:
+        return None
+    relative = payload.get("relative_path")
+    if not isinstance(relative, str) or relative not in renames:
+        return None
+    moved = renames[relative]
+    fields: dict[str, Any] = {"relative_path": moved}
+    try:
+        _, digest = parse_record_file_name(PurePosixPath(moved).name)
+    except ValueError:  # pragma: no cover - every renamed file is content-addressed
+        return fields
+    fields["sha256"] = digest
+    uri = payload.get("uri")
+    if isinstance(uri, str) and relative in uri:
+        fields["uri"] = uri.replace(relative, moved)
+    return fields
 
 
 def _canonical_snapshot_moves(
@@ -1154,20 +1185,21 @@ def _require_consistent_migration(
     """Every retained record reads, resolves and still digests to what it says.
 
     ``verify()`` proves the published chain and the design history; this proves
-    the rest of the closure: that no record names a legacy version, that every
-    record reference resolves to a file whose bytes match, and that a record
-    whose owner derives a digest from its own contents still agrees with that
-    owner after the restatement.
+    the rest of the closure: that no record names a legacy version in any
+    spelling, that every record reference resolves to a file whose bytes match,
+    that a record whose owner derives a digest from its own contents still
+    agrees with that owner, that no citation kept a digest the cascade moved,
+    and finally that every owner's own rule about the records it names still
+    holds when those records are resolved across the migrated closure.
     """
 
     # Every version the migration replaced. A migrated record naming one of
     # these anywhere - in a typed reference or as the value of a CAD user
     # string - is a location the cascade did not reach.
     legacy = {digest: 0 for digest in mapping}
-    # What each record says its own content digest is, and every 64-character
-    # value the closure holds: a citation of a record that moved has to have
-    # moved with it, or the next stage to check its binding is where it shows.
-    owned: dict[str, str] = {}
+    # Every place the closure still names a digest some record had before this
+    # migration: a citation that did not move with the record it names is where
+    # the next stage to check a binding would fail instead.
     cited: dict[str, set[str]] = {}
     documents: dict[str, Mapping[str, Any]] = {}
     for entry in closure["files"]:
@@ -1199,14 +1231,14 @@ def _require_consistent_migration(
             # The envelope was written by this build's own writers rather than
             # cascaded, so there is no earlier derivation of it to go stale.
             _require_self_derived_fields_agree(path, payload)
-            declared = _content_digest_of(payload)
-            if declared is not None:
-                owned[path] = declared
         for _, value in _strings_in(payload):
-            if len(value) == 64:
-                cited.setdefault(value.lower(), set()).add(path)
+            # Wrapped or upper-cased, a citation is still a citation: indexing
+            # only bare 64-character strings is how one goes unnoticed.
+            for digest in moved_digests:
+                if digest.lower() in value.lower():
+                    cited.setdefault(digest.lower(), set()).add(path)
         documents[path] = payload
-    _require_citations_resolve(owned, cited, moved_digests)
+    _require_citations_resolve(cited, moved_digests)
     _require_cross_record_rules(migrated.layout.project_id, documents)
 
 
@@ -1245,18 +1277,17 @@ def _require_cross_record_rules(
 
 
 def _require_citations_resolve(
-    owned: Mapping[str, str],
-    cited: Mapping[str, set[str]],
-    moved_digests: Mapping[str, str],
+    cited: Mapping[str, set[str]], moved_digests: Mapping[str, str],
 ) -> None:
     """No citation still names a record by a digest that record no longer has.
 
     A record restated by the cascade digests differently afterwards, and the
     cascade moves every citation of the old value with it. Anything that kept
-    the old value is pointing at a version of that record which does not
-    exist - ``require_stage_exit_binding`` would call it stale or
-    cross-scoped, long after the migration reported success - and anything a
-    record claims about itself has to be what the closure cites.
+    the old value points at a version of that record which does not exist -
+    ``require_stage_exit_binding`` would call it stale or cross-scoped, long
+    after the migration reported success. What a record claims about *itself*
+    is checked by its owner's reader and by the owners of the records citing
+    it, not here.
     """
 
     for old, new in sorted(moved_digests.items()):
@@ -1264,12 +1295,6 @@ def _require_citations_resolve(
             raise ProjectIntegrityError(
                 f"MIGRATION_VERIFY: {path} still cites {old[:12]}, the digest a "
                 f"record had before this migration; it is now {new[:12]}"
-            )
-    current = {digest.lower() for digest in owned.values()}
-    for path, digest in sorted(owned.items()):
-        if digest.lower() not in current:  # pragma: no cover - defensive
-            raise ProjectIntegrityError(
-                f"MIGRATION_VERIFY: {path} does not digest to what it claims"
             )
 
 

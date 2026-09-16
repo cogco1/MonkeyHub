@@ -526,7 +526,7 @@ def _substitute(
         return
     value = parent.get(field)
     if isinstance(value, str):
-        replaced = _replace_digests(value, mapping)
+        replaced = replace_digests(value, mapping)
         if replaced != value:
             parent[field] = replaced
         return
@@ -541,7 +541,7 @@ def _substitute(
         value["state_sha256"] = mapping[digest]
 
 
-def _replace_digests(value: str, mapping: Mapping[str, str]) -> str:
+def replace_digests(value: str, mapping: Mapping[str, str]) -> str:
     """Replace every mapped digest inside ``value``, whatever else it holds.
 
     A retained field may hold the digest alone, or wrapped: ``record:<sha>``,

@@ -60,7 +60,7 @@ from archflow.project.repository import (
 from archflow.state.operational_state import DesignObligation
 from archflow.adapters.cad_execution import RhinoCadProgramBinding
 from archflow.adapters.three_dm_inspector import ThreeDmInspection
-from archflow.project.refs import BranchRef, RunRef
+from archflow.project.refs import BranchRef, ProjectRecordRef, RunRef
 from archflow.state.spatial import (
     SchematicOption,
     SchematicOptionSet,
@@ -1195,8 +1195,11 @@ class ProjectFormatPlannerTests(unittest.TestCase):
             run=run,
             destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=name),
             record_kind=STATE_RECORD,
-            payload={"schema": "StateRecord@1", "run": run.to_dict(),
-                     "draft": "the record the stage executes"},
+            # Through its own constructor, so the stage executes a record its
+            # owner would accept rather than a shape written here.
+            payload=replace(
+                state_record_fixture(), project_id=run.project_id,
+            ).bound_to(run).to_dict(),
         )
         workflow = repository.put_json(
             run=run,
@@ -1250,6 +1253,9 @@ class ProjectFormatPlannerTests(unittest.TestCase):
             record_kind="s0-geometry-program",
             payload={"schema": "CompiledGeometryProgram@3", "stage_id": "s0"},
         )
+        # Its program_ref names a record in a branch area, and the state
+        # record it shares a run with is restated, so the binding has to move
+        # with it: the five-field shape carries path, digest and uri together.
         binding = RhinoCadProgramBinding(
             program_ref=program,
             branch=BranchRef(run=run, branch_id="main", epoch=1),
@@ -1273,6 +1279,9 @@ class ProjectFormatPlannerTests(unittest.TestCase):
                      "project_id": run.project_id, "run_id": name,
                      "base": head.to_dict(),
                      "source": {"run_id": name, "base": head.to_dict()}},
+            # DrawingProjectionReceipt@1 and PromotionDecision@1 have no
+            # constructor of their own: monkeydiagram and archflow.project.issue
+            # build these literals inline, and these are copied from them.
         )
         repository.put_json(
             run=run,
@@ -1657,6 +1666,115 @@ class ProjectFormatPlannerTests(unittest.TestCase):
         self.assertIn("stage-exit-binding", message)
         self.assertIn("envelope digest", message)
         self.assertFalse(target.exists())
+
+    def test_a_record_digest_citation_moves_in_every_spelling(self) -> None:
+        """A version digest was found everywhere; a record digest only bare."""
+
+        for label, wrap in (
+            ("bare", lambda digest: digest),
+            ("record uri", lambda digest: f"record:{digest}"),
+            ("artifact uri", lambda digest: f"artifact:sha256:{digest}"),
+            ("inside a path", lambda digest: f"exports/notes/{digest}.json"),
+            ("upper case", lambda digest: digest.upper()),
+        ):
+            with self.subTest(spelling=label):
+                case_root = self.root / f"cite-{label.replace(' ', '-')}"
+                case_root.mkdir()
+                repository = self.legacy_project_in(case_root, "legacy-building")
+                self.stage_bound_run(repository, "bound")
+                envelope = StageRunEnvelope.from_dict(json.loads(
+                    next(repository.layout.run("bound").records
+                         .glob("stage-run-envelope-*.json")).read_text(encoding="utf-8")
+                ))
+                before = envelope.envelope_digest
+                data = _json_bytes({"schema": "StateRecord@1", "cites": wrap(before)})
+                _write_immutable(
+                    repository.layout.run("bound").records
+                    / record_file_name(STATE_RECORD, _sha256(data)), data,
+                )
+                target = case_root / "migrated" / "legacy-building"
+
+                FilesystemProjectRepository.migrate_project_format(
+                    repository.layout.root, target,
+                )
+
+                after = StageRunEnvelope.from_dict(json.loads(
+                    next((target / "runs" / "bound" / "records")
+                         .glob("stage-run-envelope-*.json")).read_text(encoding="utf-8")
+                )).envelope_digest
+                text = "".join(
+                    path.read_text(encoding="utf-8")
+                    for path in sorted((target / "runs" / "bound" / "records")
+                                       .glob("state-record-*.json"))
+                )
+                self.assertNotIn(before.lower(), text.lower(), label)
+                self.assertIn(after, text, label)
+
+    def test_every_declared_file_reference_shape_moves_with_its_file(self) -> None:
+        """Covered and unmoved is worse than uncovered: the planner goes quiet."""
+
+        for label, shape in (
+            ("two field", lambda ref: {
+                "relative_path": ref.relative_path, "sha256": ref.sha256,
+            }),
+            ("with a uri", lambda ref: {
+                "project_id": ref.project_id, "relative_path": ref.relative_path,
+                "sha256": ref.sha256, "media_type": ref.media_type, "uri": ref.uri,
+            }),
+        ):
+            with self.subTest(shape=label):
+                case_root = self.root / f"shape-{label.replace(' ', '-')}"
+                case_root.mkdir()
+                repository = self.legacy_project_in(case_root, "legacy-building")
+                self.stage_bound_run(repository, "bound")
+                envelope = next(repository.layout.run("bound").records
+                                .glob("stage-run-envelope-*.json"))
+                relative = envelope.relative_to(repository.layout.root).as_posix()
+                reference = ProjectRecordRef(
+                    project_id="legacy-building", relative_path=relative,
+                    sha256=_sha256(envelope.read_bytes()),
+                    media_type="application/json",
+                )
+                data = _json_bytes({"schema": "StateRecord@1", "names": shape(reference)})
+                _write_immutable(
+                    repository.layout.run("bound").records
+                    / record_file_name(STATE_RECORD, _sha256(data)), data,
+                )
+                target = case_root / "migrated" / "legacy-building"
+
+                # The planner and the migration have to agree about this.
+                plan = plan_project_migration(repository.layout.root)
+                self.assertEqual(plan.blockers, ())
+                FilesystemProjectRepository.migrate_project_format(
+                    repository.layout.root, target,
+                )
+
+                named = next(
+                    json.loads(path.read_text(encoding="utf-8"))["names"]
+                    for path in (target / "runs" / "bound" / "records").glob("state-record-*.json")
+                    if "names" in path.read_text(encoding="utf-8")
+                )
+                self.assertNotEqual(named["relative_path"], relative)
+                resolved = target / named["relative_path"]
+                self.assertTrue(resolved.is_file())
+                self.assertEqual(_sha256(resolved.read_bytes()), named["sha256"])
+                if "uri" in named:
+                    self.assertIn(named["relative_path"], named["uri"])
+
+    def test_the_planner_and_the_migration_agree_on_the_binding_fixture(self) -> None:
+        """The invariant the two sites exist to keep."""
+
+        repository = self.legacy_project()
+        self.stage_bound_run(repository, "bound")
+
+        plan = plan_project_migration(repository.layout.root)
+
+        self.assertTrue(plan.planned)
+        self.assertEqual(plan.blockers, ())
+        result = FilesystemProjectRepository.migrate_project_format(
+            repository.layout.root, self.root / "migrated" / "legacy-building",
+        )
+        self.assertEqual(result.embedded_legacy_references, ())
 
     # ---- the CLI consumer
 
