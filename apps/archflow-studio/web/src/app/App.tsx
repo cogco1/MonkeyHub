@@ -44,18 +44,11 @@ import type {
   ModelGestureDto,
   ModelSourceDto,
   WorkingCopyOptionDto,
-  MassingOptionRequestDto,
-  OptionsDto,
   PendingIntentDto,
-  FrameDto,
-  ProgramDto,
-  ProgramSheetDto,
   ProjectArtifactDto,
   ProposalDto,
-  SemanticsDto,
   StateProjectionDto,
   ValidationDto,
-  VolumesDto,
 } from "../api/generated";
 import type { GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
@@ -77,11 +70,9 @@ import type { Choice } from "../features/conversation/cards/QuestionCard";
 import type { Selection } from "../features/conversation/Composer";
 import { EvidenceDrawer } from "../features/evidence/EvidenceDrawer";
 import { useStudioEvents } from "../features/events/EventStream";
-import { OptionsPanel } from "../workspaces/monkeyarch/OptionsPanel";
 import { honestyCount } from "../features/evidence/HonestyTab";
 import { SettingsPanel } from "../features/settings/SettingsPanel";
 import { usePreferences } from "../features/settings/preferences";
-import { FrameEditor } from "../features/stage/FrameEditor";
 import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
 import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
@@ -107,11 +98,6 @@ function unsynced(session: LocalModelSession): boolean {
 }
 
 import type { FinishedSketch } from "../features/stage/sketch";
-import {
-  ProgramPanel,
-  edited,
-  type SpaceEdit,
-} from "../workspaces/monkeyarch/ProgramPanel";
 import { SourceChip, type ViewState } from "../features/stage/SourceChip";
 import {
   Stage,
@@ -130,11 +116,7 @@ import {
   type ViewportPick,
   type ViewportStatus,
 } from "../workspaces/monkeyarch/viewer/ThreeDmViewport";
-import {
-  nextModelDisplayMode,
-  semanticObjectNames,
-  type ModelDisplayMode,
-} from "../workspaces/monkeyarch/viewer/modelDisplay";
+import { semanticObjectNames } from "../workspaces/monkeyarch/viewer/modelDisplay";
 import { AppShell, embeddedInHost } from "./AppShell";
 import { ErrorPanel } from "./ErrorPanel";
 import { EVIDENCE_PINNED_KEY, type EvidenceTab } from "./evidence";
@@ -456,35 +438,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   // never reads a stale transcript.
   const verdictsRef = useRef<Set<string>>(new Set());
 
-  // The record's frame — its levels and axes — read once per projection while
-  // the panel is open. It is a read of the record, not of the picture, so it
-  // is fetched on demand rather than at boot.
-  const [frame, setFrame] = useState<Loadable<FrameDto>>(idle);
-  const [displayMode, setDisplayMode] = useState<ModelDisplayMode>("model");
-  const frameOpen = displayMode === "framework";
-
-  // The massing on the table: the record's own volumes, and the options this
-  // server process is holding beside them. Read on demand like the frame, and
-  // read again whenever the record underneath moves — a card measuring a
-  // record the tab has left is a number about a different building.
-  const [optionsTable, setOptionsTable] = useState<Loadable<OptionsDto>>(idle);
-  const [volumes, setVolumes] = useState<Loadable<VolumesDto>>(idle);
-  const optionsReadRef = useRef(0);
-  const optionsOpen = displayMode === "massing";
-  const [optionsBusy, setOptionsBusy] = useState(false);
-  // The program sheet: what the server answered, and the copy this tab is
-  // editing. They are two values on purpose — `program` is the server's
-  // document and stays as it was answered, `sheet` is what will be sent back,
-  // and keeping one would lose the ability to say what has been changed.
-  const [program, setProgram] = useState<Loadable<ProgramDto>>(idle);
-  const [programOpen, setProgramOpen] = useState(false);
-  const [sheet, setSheet] = useState<ProgramSheetDto | null>(null);
-  const [applyingProgram, setApplyingProgram] = useState(false);
-  const programReadRef = useRef(0);
-  // The record's semantic vocabulary, read once: it is the framework's, not
-  // this project's, so it does not change when the record does.
-  const [semantics, setSemantics] = useState<Loadable<SemanticsDto>>(idle);
-
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidencePinned, setEvidencePinned] = useState(readPinned);
   const [evidenceTab, setEvidenceTab] = useState<EvidenceTab>("honesty");
@@ -554,8 +507,8 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     } }, pendingIntentRef.current);
   }, [task, project, projection, changingBase, draft, selection, sourceRunId, transcript.entries, initialTask]);
   useEffect(() => {
-    task?.setBusy(modelSyncBusy || proposalBusy || candidateBusy || drawingBusy || historyBusy || optionsBusy || applyingProgram || selectingWorkingCopy || refiningEntryId !== null);
-  }, [task, modelSyncBusy, proposalBusy, candidateBusy, drawingBusy, historyBusy, optionsBusy, applyingProgram, selectingWorkingCopy, refiningEntryId]);
+    task?.setBusy(modelSyncBusy || proposalBusy || candidateBusy || drawingBusy || historyBusy || selectingWorkingCopy || refiningEntryId !== null);
+  }, [task, modelSyncBusy, proposalBusy, candidateBusy, drawingBusy, historyBusy, selectingWorkingCopy, refiningEntryId]);
   const [viewerProjection, setViewerProjection] = useState<StateProjectionDto | null>(null);
   const modelSources = useMemo(() => {
     const options = workingCopies.flatMap((copy) => copy.options.map((option) => ({
@@ -817,19 +770,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     }
   }, [append, blendState, loadedArtifact?.runId]);
 
-  const chooseDisplayMode = useCallback(
-    (requested: ModelDisplayMode) => {
-      const next = nextModelDisplayMode(displayMode, requested);
-      setDisplayMode(next);
-      if (next === "model") {
-        setGhostProposalId(null);
-        clearComparison();
-        viewportRef.current?.showOriginal();
-      }
-    },
-    [clearComparison, displayMode],
-  );
-
   /** A semantic target lights only the exact object names in this run's catalog. */
   const selectSemanticTarget = useCallback((componentId: string, elementId: string | null) => {
     setSelection({ componentId, elementId });
@@ -951,159 +891,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     void loadArtifacts(true);
     void refreshWorkingCopies().catch(() => { /* The existing choices remain usable. */ });
   }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies]);
-
-  // Read while the panel is open, and read again when the record underneath it
-  // changes: a frame from a record the tab has left is a picture of a building
-  // that is no longer the one on screen.
-  useEffect(() => {
-    if (!frameOpen || projection === null) return;
-    let current = true;
-    setFrame(loading);
-    void studio.frame(sourceRunId ?? undefined).then(
-      (answer) => { if (current) setFrame(ready(answer)); },
-      (cause) => { if (current) setFrame(failed(asStudioApiError(cause))); },
-    );
-    return () => { current = false; };
-  }, [frameOpen, projection?.recordDigest, sourceRunId]);
-
-  useEffect(() => {
-    if (!optionsOpen || projection === null) return;
-    let current = true;
-    const source = sourceRunId;
-    const expectedStateDigest = projection.stateDigest;
-    optionsReadRef.current += 1;
-    setOptionsTable(loading);
-    setVolumes(loading);
-    void studio.options(source).then(
-      (answer) => {
-        if (!current) return;
-        if (
-          (answer.sourceRunId ?? null) !== source ||
-          answer.stateDigest !== expectedStateDigest
-        ) {
-          setOptionsTable(failed(asStudioApiError(new Error(
-            "The options no longer match the editing source. Read them again before making a massing change.",
-          ))));
-          return;
-        }
-        setOptionsTable(ready(answer));
-      },
-      (cause) => { if (current) setOptionsTable(failed(asStudioApiError(cause))); },
-    );
-    void studio.volumes(source ?? undefined).then(
-      (answer) => { if (current) setVolumes(ready(answer)); },
-      (cause) => { if (current) setVolumes(failed(asStudioApiError(cause))); },
-    );
-    return () => { current = false; };
-  }, [optionsOpen, projection?.stateDigest, sourceRunId]);
-
-  const loadProgram = useCallback(async () => {
-    const read = ++programReadRef.current;
-    const source = sourceRunId;
-    const expectedStateDigest = projection?.stateDigest ?? null;
-    setProgram(loading);
-    setSheet(null);
-    try {
-      const answer = await studio.program(source);
-      if (read !== programReadRef.current) return;
-      if ((answer.sourceRunId ?? null) !== source || answer.stateDigest !== expectedStateDigest) {
-        throw new Error("The program sheet no longer matches the editing source. Read it again before applying changes.");
-      }
-      setProgram(ready(answer));
-      // The edited copy is replaced by what the server just said. Anything
-      // typed and not applied is lost, and that is the honest outcome: the
-      // sheet on screen has to be one the server would accept back.
-      setSheet(answer.sheet);
-    } catch (cause) {
-      if (read === programReadRef.current) setProgram(failed(asStudioApiError(cause)));
-    }
-  }, [projection?.stateDigest, sourceRunId]);
-
-  useEffect(() => {
-    if (!programOpen || projection === null) return;
-    void loadProgram();
-  }, [programOpen, projection?.recordDigest, sourceRunId, loadProgram]);
-
-  useEffect(() => {
-    if (!programOpen || semantics.status !== "idle") return;
-    setSemantics(loading);
-    void (async () => {
-      try {
-        setSemantics(ready(await studio.semantics()));
-      } catch (cause) {
-        setSemantics(failed(asStudioApiError(cause)));
-      }
-    })();
-  }, [programOpen, semantics.status]);
-
-  /**
-   * Send the edited sheet to be run as a candidate.
-   *
-   * It appends a system line rather than a candidate card: a card polls
-   * `GET /api/candidates/{id}`, which reads a candidate *against its
-   * proposal*, and a sheet is not a proposal. The line names the run and
-   * repeats the server's own honesty verbatim.
-   */
-  const applyProgram = useCallback(
-    async (current: ProgramSheetDto, saveInput: boolean) => {
-      if (
-        stateDigest === null ||
-        !editingModelSourceReady ||
-        program.status !== "ready" ||
-        (program.value.sourceRunId ?? null) !== sourceRunId ||
-        program.value.stateDigest !== stateDigest ||
-        current.stateDigest !== program.value.sheet.stateDigest ||
-        current.recordDigest !== program.value.sheet.recordDigest ||
-        current.recordDigest !== projection?.recordDigest
-      ) return;
-      const read = programReadRef.current;
-      const requestedLoad = modelLoadRequest.current;
-      const sourceIsCurrent = () => read === programReadRef.current && requestedLoad === modelLoadRequest.current &&
-        documentEditingRef.current.projectId === project?.projectId &&
-        sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
-        sameModelSource(currentViewSourceRef.current, loadedModelSource);
-      setApplyingProgram(true);
-      const preview = beginCandidatePreview();
-      try {
-        const answer = await studio.applyProgram({
-          sourceStageRef: projection?.sourceStageRef,
-          stateDigest,
-          sheet: current,
-          saveInput,
-          ...(sourceRunId === null ? {} : { sourceRunId }),
-          ...(editingModelSource === null ? {} : { modelSource: editingModelSource }),
-        });
-        if (autoShowRef.current === preview) preview.candidateId = answer.candidateId;
-        append({ kind: "candidate", candidateId: answer.candidateId, jobId: answer.jobId,
-          proposalId: null, status: answer.status });
-        append({
-          kind: "system",
-          ...systemText([
-            { kind: "prose", text: "Program applied as candidate " },
-            { kind: "technical", text: answer.candidateId },
-            { kind: "prose", text: " · job " },
-            { kind: "technical", text: answer.jobId },
-            {
-              kind: "prose",
-              text: answer.savedInput ? " · sheet saved" : " · sheet not saved",
-            },
-          ]),
-        });
-        for (const line of answer.honesty) {
-          append({ kind: "system", ...systemText([{ kind: "prose", text: line }]) });
-        }
-      } catch (cause) {
-        if (autoShowRef.current === preview) autoShowRef.current = null;
-        const error = asStudioApiError(cause);
-        if (sourceIsCurrent()) recoverFromStaleBase(error);
-        append({ kind: "refusal", error, what: "POST /api/program" });
-      } finally {
-        setApplyingProgram(false);
-      }
-    },
-    [append, beginCandidatePreview, editingModelSource, editingModelSourceReady, loadedModelSource, program, project?.projectId,
-      projection?.recordDigest, projection?.sourceStageRef, recoverFromStaleBase, sourceRunId, stateDigest],
-  );
 
   const openLocalFile = useCallback((file: File) => {
     finishEditTiming(activeEditTiming.current, "cancelled");
@@ -1464,7 +1251,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     pickRequestRef.current += 1;
     if (!pendingIntentRef.current?.documentContext) pendingIntentRef.current = null;
     setSourceLabel(label);
-    setDisplayMode("model");
     setLoadedArtifacts(
       label === null || label === LOCAL_SOURCE_LABEL
         ? []
@@ -1909,7 +1695,7 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
   );
 
   const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string, keepDocument = false) => {
-    if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy) return null;
+    if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null) return null;
     pickRequestRef.current += 1;
     const selectedSource = modelSource ?? (loadedModelSource?.runId === runId ? loadedModelSource : null);
     const group = selectedSource ? workingCopies.find((copy) => copy.options.some((option) =>
@@ -1940,8 +1726,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
         documentEditingRef.current = { projectId: next.project.projectId, modelSource: selectedSource };
       }
       manualLoadRef.current = true;
-      setProgramOpen(false);
-      setDisplayMode("model");
       viewportRef.current?.showOriginal();
       clearComparison();
       if (selectedSource && artifacts.status === "ready" &&
@@ -1969,7 +1753,7 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
       }
     }
     return next;
-  }, [applyingProgram, artifacts, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, optionsBusy, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
+  }, [artifacts, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
@@ -2656,114 +2440,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     viewportRef.current?.highlight(null);
   }, []);
 
-  /**
-   * One massing option, made by the server and put on the table.
-   *
-   * The browser computes nothing here: the transform and its parameters go to
-   * the server, which applies it to the record's own pack, measures the
-   * result, and refuses a massing the kernel would not build. A refusal is
-   * shown as itself.
-   */
-  const makeOption = useCallback(
-    async (body: MassingOptionRequestDto) => {
-      if (
-        stateDigest === null ||
-        !editingModelSourceReady ||
-        body.stateDigest !== stateDigest ||
-        optionsTable.status !== "ready" ||
-        (optionsTable.value.sourceRunId ?? null) !== sourceRunId ||
-        optionsTable.value.stateDigest !== stateDigest
-      ) return;
-      const read = optionsReadRef.current;
-      const source = sourceRunId;
-      const requestedLoad = modelLoadRequest.current;
-      const sourceIsCurrent = () => read === optionsReadRef.current && requestedLoad === modelLoadRequest.current &&
-        documentEditingRef.current.projectId === project?.projectId &&
-        sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
-        sameModelSource(currentViewSourceRef.current, loadedModelSource);
-      setOptionsBusy(true);
-      try {
-        await studio.makeOption({
-          ...body,
-          sourceStageRef: projection?.sourceStageRef,
-          sourceRunId: source ?? undefined,
-          modelSource: editingModelSource,
-        });
-        if (!sourceIsCurrent()) return;
-        const answer = await studio.options(source);
-        if (
-          sourceIsCurrent() &&
-          (answer.sourceRunId ?? null) === source &&
-          answer.stateDigest === body.stateDigest
-        ) setOptionsTable(ready(answer));
-      } catch (cause) {
-        const error = asStudioApiError(cause);
-        if (sourceIsCurrent()) recoverFromStaleBase(error);
-        append({ kind: "refusal", error, what: "POST /api/options" });
-      } finally {
-        setOptionsBusy(false);
-      }
-    },
-    [append, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
-      projection?.sourceStageRef, recoverFromStaleBase, sourceRunId, stateDigest],
-  );
-
-  /**
-   * Run one option as a candidate. It joins the transcript as the candidate
-   * card every other run gets — same job, same polling, same verdict — because
-   * a selected massing *is* a candidate run and a second kind of card for it
-   * would be a second vocabulary for one thing.
-   */
-  const selectOption = useCallback(
-    async (optionId: string) => {
-      const option = optionsTable.status === "ready"
-        ? optionsTable.value.options.find((row) => row.optionId === optionId)
-        : undefined;
-      if (
-        stateDigest === null ||
-        !editingModelSourceReady ||
-        option === undefined ||
-        !sameModelSource(option.modelSource, editingModelSource) ||
-        (optionsTable.status === "ready" &&
-          ((optionsTable.value.sourceRunId ?? null) !== sourceRunId ||
-            optionsTable.value.stateDigest !== stateDigest ||
-            option.stateDigest !== stateDigest))
-      ) return;
-      const read = optionsReadRef.current;
-      const requestedLoad = modelLoadRequest.current;
-      const sourceIsCurrent = () => read === optionsReadRef.current && requestedLoad === modelLoadRequest.current &&
-        documentEditingRef.current.projectId === project?.projectId &&
-        sameModelSource(documentEditingRef.current.modelSource, editingModelSource) &&
-        sameModelSource(currentViewSourceRef.current, loadedModelSource);
-      setOptionsBusy(true);
-      const preview = beginCandidatePreview();
-      try {
-        const accepted = await studio.selectOption(optionId);
-        if (autoShowRef.current === preview) preview.candidateId = accepted.candidateId;
-        append({
-          kind: "candidate",
-          candidateId: accepted.candidateId,
-          jobId: accepted.jobId,
-          proposalId: optionId,
-          status: accepted.status,
-        });
-      } catch (cause) {
-        if (autoShowRef.current === preview) autoShowRef.current = null;
-        const error = asStudioApiError(cause);
-        if (sourceIsCurrent()) recoverFromStaleBase(error);
-        append({
-          kind: "refusal",
-          error,
-          what: `POST /api/options/${optionId}/select`,
-        });
-      } finally {
-        setOptionsBusy(false);
-      }
-    },
-    [append, beginCandidatePreview, editingModelSource, editingModelSourceReady, loadedModelSource, optionsTable, project?.projectId,
-      recoverFromStaleBase, sourceRunId, stateDigest],
-  );
-
   // The shell observes jobs independently of whichever cards are visible.
   const entriesRef = useRef(transcript.entries);
   entriesRef.current = transcript.entries;
@@ -3018,23 +2694,6 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
           : !hasSubject
             ? t("shell.pickFirst")
             : null;
-  const optionsCanAct =
-    stateDigest !== null &&
-    editingModelSourceReady &&
-    optionsTable.status === "ready" &&
-    (optionsTable.value.sourceRunId ?? null) === sourceRunId &&
-    optionsTable.value.stateDigest === stateDigest;
-  const programCanApply =
-    stateDigest !== null &&
-    editingModelSourceReady &&
-    program.status === "ready" &&
-    sheet !== null &&
-    (program.value.sourceRunId ?? null) === sourceRunId &&
-    program.value.stateDigest === stateDigest &&
-    sheet.stateDigest === program.value.sheet.stateDigest &&
-    sheet.recordDigest === program.value.sheet.recordDigest &&
-    sheet.recordDigest === projection?.recordDigest;
-
   // CURRENT / GHOST PREVIEW / VALIDATED — what the picture is, with the
   // server's word as its detail. A candidate's export is VALIDATED only once
   // its verdict was read; before that it is a candidate export, and says so.
@@ -3414,7 +3073,7 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
               acceptedModelSources,
               currentModelSource: loadedModelSource,
               candidates: retainedCandidates,
-              busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy || applyingProgram || optionsBusy,
+              busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy,
               error: historyError,
               onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },
               onStage: (stage) => { void openDesignStage(stage); },
@@ -3446,77 +3105,12 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
             explicitBase={sourceRunId !== null}
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}
-            baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || applyingProgram || optionsBusy || selectingWorkingCopy}
+            baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || selectingWorkingCopy}
             onContinue={(runId) => void changeEditingBase(runId)}
             onDefaultBase={() => void changeEditingBase(null)}
             evidenceCounts={evidenceCounts}
             review={review}
             drawer={developerMode && evidencePinned ? null : drawer}
-            displayMode={displayMode}
-            onDisplayMode={chooseDisplayMode}
-            framePanel={
-              frameOpen ? (
-                <FrameEditor
-                  frame={frame}
-                  projection={projection}
-                  onPick={(componentId, elementId) => {
-                    selectSemanticTarget(componentId, elementId);
-                    append({
-                      kind: "system",
-                      ...systemText([
-                        { kind: "prose", text: "Talking about " },
-                        { kind: "technical", text: elementId ?? componentId },
-                        {
-                          kind: "prose",
-                          text: " · chosen from the frame's closure",
-                        },
-                      ]),
-                    });
-                  }}
-                  onClose={() => chooseDisplayMode("model")}
-                />
-              ) : null
-            }
-            optionsPanel={
-              optionsOpen ? (
-                <OptionsPanel
-                  table={optionsTable}
-                  volumes={volumes}
-                  stateDigest={optionsCanAct ? stateDigest : null}
-                  busy={optionsBusy}
-                  canSelect={(option) => sameModelSource(option.modelSource, editingModelSource)}
-                  onMake={(body) => void makeOption(body)}
-                  onSelect={(optionId) => void selectOption(optionId)}
-                  onClose={() => chooseDisplayMode("model")}
-                />
-              ) : null
-            }
-            programOpen={programOpen}
-            onToggleProgram={() => setProgramOpen((open) => !open)}
-            programPanel={
-              programOpen ? (
-                <ProgramPanel
-                  program={program}
-                  semantics={semantics}
-                  sheet={sheet}
-                  applying={applyingProgram}
-                  canApply={programCanApply}
-                  // Only a local studio writes the architect's own file; a
-                  // remote server refuses, so the box is not offered there.
-                  canSave={server.mode === "local"}
-                  onEdit={(edit: SpaceEdit) =>
-                    setSheet((current) =>
-                      current === null ? current : edited(current, edit),
-                    )
-                  }
-                  onApply={(current, saveInput) =>
-                    void applyProgram(current, saveInput)
-                  }
-                  onReread={() => void loadProgram()}
-                  onClose={() => setProgramOpen(false)}
-                />
-              ) : null
-            }
             onInspection={setInspection}
             onStatus={(status, message) => {
               viewerStatusRef.current = status;
@@ -3568,10 +3162,7 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
               });
               void loadRunIntoViewer(rows, runSourceLabel(group.runId, rows));
             }}
-            onShowHome={() => {
-              chooseDisplayMode("model");
-              showHome(true);
-            }}
+            onShowHome={() => { showHome(true); }}
             home={homeArtifacts}
             loadedRunId={loadedArtifact?.runId ?? null}
             onCompareVersion={(artifact) => void compareVersions(artifact)}

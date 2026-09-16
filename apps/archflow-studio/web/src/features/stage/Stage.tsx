@@ -18,7 +18,6 @@ import { LoadingOverlay } from "../../app/LoadingOverlay";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
 import type { SceneInspection } from "../../workspaces/monkeyarch/viewer/sceneInspection";
-import type { ModelDisplayMode } from "../../workspaces/monkeyarch/viewer/modelDisplay";
 import {
   ThreeDmViewport,
   type ViewportController,
@@ -135,13 +134,6 @@ export function Stage({
   evidenceCounts,
   review,
   drawer,
-  framePanel,
-  optionsPanel,
-  displayMode,
-  onDisplayMode,
-  programPanel,
-  programOpen,
-  onToggleProgram,
   tool,
   gestures,
   onTool,
@@ -220,16 +212,6 @@ export function Stage({
   review: ReviewSummary;
   /** The drawer, when it overlays the stage rather than standing beside it. */
   drawer: ReactNode;
-  /** The frame panel, mounted over the stage while the toolbar button is on. */
-  framePanel: ReactNode;
-  optionsPanel: ReactNode;
-  /** The one global projection shown over the original model. */
-  displayMode: ModelDisplayMode;
-  onDisplayMode(mode: ModelDisplayMode): void;
-  /** The program sheet, mounted the same way and beside it. */
-  programPanel: ReactNode;
-  programOpen: boolean;
-  onToggleProgram(): void;
   /** The armed drawing tool; null is the orbit. */
   tool: GestureTool | null;
   /** The marks made on this picture, not yet sent with a sentence. */
@@ -1659,46 +1641,6 @@ export function Stage({
           <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
           {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
             onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
-          <button
-            type="button"
-            aria-pressed={displayMode === "model"}
-            title={t("stage.tools.modelShow")}
-            onClick={() => onDisplayMode("model")}
-          >
-            {t("stage.tools.model")}
-          </button>
-          {/* The frame: what every element on this picture is placed
-              against. A panel, not a camera tool, but this is the row an
-              architect reaches for when the model is the question. */}
-          <button
-            type="button"
-            aria-pressed={displayMode === "framework"}
-            title={t("frame.openTitle")}
-            onClick={() => onDisplayMode("framework")}
-          >
-            {t("frame.open")}
-          </button>
-          {/* The massing projection: what the building *is*, over the same
-              original picture the frame reads against. */}
-          <button
-            type="button"
-            aria-pressed={displayMode === "massing"}
-            title={t("options.openTitle")}
-            onClick={() => onDisplayMode("massing")}
-          >
-            {t("options.open")}
-          </button>
-          {/* The brief, beside the frame: the two documents an architect
-              reads the model against. */}
-          <button
-            type="button"
-            aria-pressed={programOpen}
-            disabled={changingBase}
-            title={t("program.openTitle")}
-            onClick={onToggleProgram}
-          >
-            {t("program.open")}
-          </button>
           {drawing && <>
             <span className="viewtools__sep" aria-hidden="true" />
             <select aria-label={t("stage.drawing.direction")} value={elevationView} disabled={drawing.busy}
@@ -1951,9 +1893,6 @@ export function Stage({
       </div>
 
 
-      {framePanel}
-      {optionsPanel}
-      {programPanel}
       {drawer}
       </div>
       <div className="stage__foot">
