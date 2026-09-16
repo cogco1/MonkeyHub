@@ -110,7 +110,9 @@
         "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
         "apps/archflow-studio/web/src/workspaces/monkeyboard/boardScene.ts",
         "apps/archflow-studio/web/test/boardScene.test.ts",
-        "apps/archflow-studio/web/test/annotate.test.ts"
+        "apps/archflow-studio/web/test/annotate.test.ts",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx"
       ]
     },
     {
