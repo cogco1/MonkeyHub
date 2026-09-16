@@ -134,7 +134,7 @@ export const messagesZhCN = {
   "nav.evidence": "依据",
   "conversation.openComposer": "描述修改",
   "stage.base.sameSource": "以此模型为修改起点",
-  "stage.tools.annotate": "批注",
+  "stage.tools.annotate": "Tracing Paper",
   "stage.tools.viewOptions": "视图工具",
   "stage.versions.open": "版本",
   "stage.versions.new": "有新版本",

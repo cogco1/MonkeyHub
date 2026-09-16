@@ -132,7 +132,7 @@ export const messagesEn = {
   "nav.evidence": "Evidence",
   "conversation.openComposer": "Describe a change",
   "stage.base.sameSource": "Editing this model",
-  "stage.tools.annotate": "Annotate",
+  "stage.tools.annotate": "Tracing Paper",
   "stage.tools.viewOptions": "View tools",
   "stage.versions.open": "Versions",
   "stage.versions.new": "New",
