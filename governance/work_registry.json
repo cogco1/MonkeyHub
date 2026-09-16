@@ -605,26 +605,6 @@
             "apps/monkeyhub/api/tests/test_chat_progress.py"
           ],
           "depends_on": []
-        },
-        {
-          "id": "stage1-closeout",
-          "issue": "#145 Stage 1 toolbar simplification and annotation-view lock",
-          "status": "active",
-          "branch": "gpt/interaction-closeout",
-          "worktree": "cloud/gpt-interaction-closeout",
-          "base_ref": "776b67511d2a98228cae86baed00254e0b22440c",
-          "contributor": "GPT-5.6 Sol",
-          "reviewer": "Repository owner",
-          "handoff": null,
-          "modules": [
-            "studio.web.shell"
-          ],
-          "write_scope": [
-            "apps/archflow-studio/web/src/features/stage/ModelToolButton.tsx",
-            "apps/archflow-studio/web/src/main.tsx",
-            "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/annotationViewLock.ts"
-          ],
-          "depends_on": []
         }
       ]
     },
