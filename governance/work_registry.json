@@ -834,6 +834,27 @@
         "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes.",
         "2026-09-15: the standalone launcher and its runtime.json bridge retired with #126; the Hub injects intentProvider/intentModel/intentTimeoutS into the Studio child environment (applications.py, covered by apps/monkeyhub/api/tests/test_applications.py)."
       ]
+    },
+    {
+      "id": "GH-134",
+      "stream": "modeling",
+      "status": "active",
+      "goal": "Explicit grid-free wall placement and actionable modeling errors through existing owners, with one checkpoint and exact-base continuation.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
+        "apps/archflow-studio/api/tests/test_frame.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "docs/SYSTEM_MAP.md",
+        "governance/module_registry.json",
+        "monkeyarch/capabilities/element_producers.py",
+        "monkeyarch/capabilities/reference_resolver.py",
+        "tests/test_grid_free_wall.py",
+        "apps/archflow-studio/api/tests/test_grid_free_wall.py",
+        "apps/monkeyhub/api/tests/test_modeling_errors.py",
+        "apps/archflow-studio/web/src/api/generated/",
+        "apps/monkeyhub/web/src/api/generated/"
+      ]
     }
   ]
 }
