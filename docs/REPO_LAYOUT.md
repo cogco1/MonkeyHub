@@ -11,7 +11,7 @@
 | **ArchFlow** | 共享项目身份、文件与记录保存、版本引用、建筑事实与语义契约、真实共用的计算和外部工具接口、正式 issue | 具体建模方法、图纸布局、某一工作流的界面与交互 |
 | **MonkeyArch** | 3D 建模与空间修改：任务解释、构件与空间构造、模型候选、几何编译、关系检查、模型检查与续改 | 图纸字形、笔迹、二维图形、版面及图纸集组织 |
 | **MonkeyDiagram** | 图纸与图解：平立剖、家具与节点表达、PDF／图片批注、二维内容编辑、文字尺寸、视图与图形表达、排版及导出 | 隐式改变模型空间或构件；建立第二套项目保存与发布权威 |
-| **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；独立本地页面与 CLI | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
+| **MonkeyMonitor** | 跨应用用量、费用估算、调用耗时与通用算法预算建议；保留 CLI/API，用量页面由 MonkeyHub 承载 | 建筑评价、执行候选、设计接受、正式发布及项目资产存储 |
 
 | **MonkeyFab** | 闭合网格的等比缩放、打印空间内封闭拆件、装配清单，以及已切片任务上传；源码在 `apps/monkeyfab/`，界面由 Hub 承载 | 建筑状态修改、项目持久化、切片和自动启动打印 |
 
@@ -24,8 +24,8 @@ MonkeyArch 和 MonkeyDiagram 是平行工作流。ArchFlow 提供它们共同依
 
 ## 2. 当前源码目录
 
-下列 Python 模块随同一 Hub 发行版本安装；Fab 保留独立 CLI，两个设计 Web 工作区由同一 Studio 宿主装配。
-MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适配器与之连接。
+下列 Python 模块随同一 Hub 发行版本安装；Fab 保留独立 CLI，设计 Web 工作区由项目级 Runtime 装配。
+MonkeyMonitor 的诊断服务由 Hub 管理；Hub 的 Usage 页面读取同一服务，Runtime 通过可选用量适配器记录诊断。
 
 ```text
 <source-root>/
@@ -38,9 +38,9 @@ MonkeyMonitor 在自己的目录中独立启动；Studio 通过可选用量适�
 │  └─ adapters/                  两条工作流实际共用的技术适配
 ├─ monkeyarch/                   3D producer、solver、编译及运行编排
 ├─ monkeydiagram/                图纸投影编排、SVG 与 PNG 表达
-├─ monkeymonitor/                用量、计价、算法建议接口及独立 web 页面
+├─ monkeymonitor/                用量、计价、算法建议接口及诊断 CLI/API
 ├─ apps/monkeyfab/               制造算法、CLI、参数和测试，默认随 Hub 打包
-├─ apps/monkeyhub/               统一应用入口，承载 Fab 页面与桌面宿主
+├─ apps/monkeyhub/               统一应用入口，承载 Fab、Usage 页面与桌面宿主
 ├─ apps/archflow-studio/         Project Runtime（api/，历史目录名）与迁移中的旧 Studio 前端壳（web/）
 │  ├─ api/                       Project Runtime：HTTP、鉴权、DTO、路由及工作流装配；每个打开的项目一个进程，由 Hub 启动
 │  └─ web/src/
@@ -89,7 +89,7 @@ Project Runtime      → monkeyarch / monkeydiagram / archflow
 MonkeyArch 工作区    → monkeyarch    → archflow
 MonkeyDiagram 工作区 → monkeydiagram → archflow
                      共同宿主负责装配
-MonkeyMonitor 独立页 → monkeymonitor ← Studio 元数据适配器
+MonkeyHub Usage 页   → monkeymonitor ← Project Runtime 元数据适配器
 ```
 
 - ArchFlow 不导入两个工作流的内部代码；底座所需领域行为通过已有或实际需要的明确接口传入。
