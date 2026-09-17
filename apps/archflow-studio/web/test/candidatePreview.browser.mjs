@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -22,7 +22,7 @@ const allArtifacts = [], models = new Map(), jobs = new Map(), candidates = new 
 const workingCopies = [];
 const candidateStartQueues = new Map();
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
-let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0, nextProgram = null;
+let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0;
 let historyEnabled = false, acceptFailure = false, annotationFailure = false, lastDrawing = null, nextCombined = null;
 let drawingFailure = false, drawingGate = null, monitorFailure = false, historyGate = null;
 let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
@@ -84,12 +84,6 @@ function projection(runId = currentHome.runId, stageRef = null) {
       objects: [{ name: element.elementId, componentId: element.componentId, producerOp: "floor", elementId: element.elementId, status: "bound", detail: "fixture" }],
       coverage: { objects: 1, bound: 1, unbound: 0, ambiguous: 0, unknownComponent: 0 }, inspectionRun: runId, honesty: [],
     } };
-}
-const totals = { targetAreaM2: 0, mappedAreaM2: 0, spaces: 0, mappedSpaces: 0, adjacencyCount: 0 };
-function program(runId) {
-  return { sourceRunId: runId, source: "derived", stateDigest: stateDigest(runId),
-    sheet: { schema: "ProgramSheet@1", projectId, recordDigest: digest(`record:${runId}`), stateDigest: stateDigest(runId),
-      departments: [], adjacencies: [], totals, honesty: [] } };
 }
 function prepare(id) {
   if (diagnosticsEnabled && historyEnabled) candidateBases.set(id, historyDto().stages[0].stageRef);
@@ -211,14 +205,13 @@ try {
         assert.equal(source.split(marker).length, 2);
         return { code: source.replace(marker, marker + `
           (window as unknown as { __candidatePreview: unknown }).__candidatePreview = {
-            run: runCandidate, program: applyProgram, readProgram: loadProgram, changeBase: changeEditingBase, reload, propose,
+            camera: () => viewportRef.current?.camera(), run: runCandidate, changeBase: changeEditingBase, reload, propose,
             view: (artifact: ProjectArtifactDto) => { manualLoadRef.current = true; return loadArtifactIntoViewer(artifact, artifact.fileName); },
             snapshot: { loadedRunId: loadedArtifact?.runId, loadedFileName: loadedArtifact?.fileName, status: viewerStatus, loadingSha: artifactLoadingSha,
               projectId: project?.projectId, editingRunId: projection?.referenceRun.runId, changingBase, runs: candidateRuns.runs,
               sourceStageRef: projection?.sourceStageRef, history: designHistory, historyError, drawingError, documentView,
               loadedModelSource, editingModelSource, baseError: baseError?.code ?? null,
               artifacts: artifacts.status === "ready" ? artifacts.value.artifacts.map((row) => row.runId) : [],
-              program: program.status === "ready" ? program.value.sheet : null,
               entries: transcript.entries.map((entry) => entry.kind === "system" ? entry.text : entry.kind),
               candidateEntries: candidateEntries.map((entry) => ({ candidateId: entry.candidateId, proposalId: entry.proposalId })) }
           };`), map: null };
@@ -231,7 +224,8 @@ try {
   await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${http.address().port}`;
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ? pathToFileURL(process.env.PLAYWRIGHT_MODULE).href : "playwright");
-  browser = await chromium.launch({ headless: true, channel: "chrome" });
+  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_EXECUTABLE
+    ? { executablePath: process.env.CHROMIUM_EXECUTABLE } : { channel: "chrome" }) });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en-US" });
   await context.addInitScript(({ projectId, runId }) => {
     localStorage.setItem("archflow-studio.user-preferences", JSON.stringify({ version: 1, language: "en", theme: "light", fontScale: 1,
@@ -258,8 +252,9 @@ try {
       const json = (body, status = 200) => route.fulfill({ status, json: body });
       if (method === "GET") {
         if (name === "/api/protocol") return await json({ protocol: "archflow/2", server: "fixture", serverVersion: "test", mode: "local",
-          capabilities: ["working-copies", "model-annotations", "events", "program", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
+          capabilities: ["working-copies", "model-annotations", "events", "operation-timing", ...(diagnosticsEnabled ? ["operation-diagnostics"] : []), ...(historyEnabled ? ["design-history", "drawing-elevations", "document-visual-input"] : [])] });
         if (name === "/api/project") return await json(binding());
+        if (name === "/api/drawings/styles") return await json({ styles: [] });
         if (name === "/api/state") {
           const runId = projectionOnly ? "studio-projection" : url.searchParams.get("run") ?? currentHome.runId;
           const gate = stateGates.get(runId); if (gate) { gate.requested = true; await gate.promise; }
@@ -314,7 +309,6 @@ try {
         if (name === "/api/model-annotations") return await json({ projectId, modelSource: {
           runId: url.searchParams.get("runId"), stateDigest: url.searchParams.get("stateDigest"), assetSha256: url.searchParams.get("assetSha256"),
         }, revisionSha256: null, annotations: [], comment: "" });
-        if (name === "/api/program") return await json(program(url.searchParams.get("run") ?? currentHome.runId));
       }
       if (method === "PUT" && name === "/api/document-annotations") {
         if (annotationFailure) return await json({ code: "SAVE_UNAVAILABLE", detail: "Save failed; keep this page open." }, 503);
@@ -381,12 +375,6 @@ try {
         const candidate = candidateStartQueues.get(id)?.shift() ?? [...candidates.values()].find((row) => row.proposalId === id);
         assert.ok(candidate);
         return await json({ candidateId: candidate.candidateId, jobId: candidate.jobId, status: "running" }, 202);
-      }
-      if (method === "POST" && name === "/api/program") {
-        assert.ok(nextProgram); const candidate = nextProgram; nextProgram = null;
-        const body = request.postDataJSON();
-        assert.equal(body.sourceRunId, home.runId); assert.deepEqual(body.modelSource, home.modelSource);
-        return await json({ candidateId: candidate.candidateId, jobId: candidate.jobId, status: "running", totals, savedInput: false, honesty: [] }, 202);
       }
       assert.fail(`Unexpected request: ${method} ${name}`);
     } catch (error) {
@@ -532,15 +520,8 @@ try {
     assert.equal(requests.some((row) => row.name === `/api/artifacts/${older.artifacts[0].sha256}/bytes`), false);
   });
 
-  await step("Program candidates are observed and shown with the conversation closed", async () => {
-    await view(home); await conversation(false);
-    await page.evaluate(() => window.__candidatePreview.readProgram());
-    await until(snapshot, (value) => value.program !== null, "The actual Program read did not finish");
-    const candidate = prepare("program-result"); candidate.proposalId = null; nextProgram = candidate;
-    await page.evaluate(() => window.__candidatePreview.program(window.__candidatePreview.snapshot.program, false));
-    await until(snapshot, (value) => value.runs[candidate.candidateId]?.job.status === "ready", "Program returned a job that was not watched");
-    await complete(candidate); await rendered(candidate.candidateId);
-    assert.equal((await snapshot()).candidateEntries.find((row) => row.candidateId === candidate.candidateId).proposalId, null);
+  await step("normal modeling does not call retired Program/Massing panel endpoints", async () => {
+    assert.deepEqual(requests.filter(({ name }) => /^\/api\/(program|options|semantics)(?:\/|$)/.test(name)), []);
   });
 
   await step("changing editing Stage blocks a candidate from the previous context", async () => {
@@ -740,6 +721,56 @@ try {
     await until(snapshot, (value) => value.editingRunId === combined.candidateId, "Combined preview was not editable");
     assert.equal((await snapshot()).sourceStageRef, s0.stageRef); assert.equal(branches.size, 2);
     assert.deepEqual(unselectedStateReads(), [], "Previewing the combined result must not load the unviewed source candidates");
+  });
+
+  await step("Versions yields to viewport tools without changing the camera or model", async () => {
+    const state = async () => ({ camera: await page.evaluate(() => window.__candidatePreview.camera()),
+      source: (await snapshot()).loadedModelSource, editing: (await snapshot()).editingModelSource,
+      stage: (await snapshot()).sourceStageRef });
+    const assertReachable = async (button, label) => {
+      assert.equal(await button.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return rect.width > 0 && rect.height > 0 && element.contains(hit);
+      }), true, `${label} is occluded by another overlay`);
+    };
+    for (const size of [{ width: 1440, height: 900 }, { width: 1024, height: 768 }, { width: 800, height: 720 }]) {
+      await page.setViewportSize(size);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const before = await state();
+      const requestStart = requests.length;
+      for (const [selector, panel, label] of [
+        ['button[aria-controls="view-tools"]', '#view-tools', 'View tools'],
+        ['button[aria-controls="annotation-tools"]', '#annotation-tools', 'Tracing Paper'],
+        ['button[data-tool-icon="select"]', null, 'Select'],
+      ]) {
+        await openVersions();
+        await page.locator('#stage-versions-panel').waitFor();
+        const button = page.locator(selector);
+        await assertReachable(button, label);
+        const separation = await page.evaluate(() => {
+          const history = document.querySelector('#stage-versions-panel').getBoundingClientRect();
+          const tools = document.querySelector('.viewtools-wrap').getBoundingClientRect();
+          return { historyBottom: history.bottom, toolsTop: tools.top, historyTop: history.top };
+        });
+        assert.ok(separation.historyBottom <= separation.toolsTop - 4,
+          `${label} and version history physically overlap at ${size.width}px`);
+        assert.ok(separation.historyTop >= 0, 'Version history must stay inside the visible page');
+        await button.click();
+        assert.equal(await page.locator('#stage-versions-panel').count(), 0);
+        if (panel) await page.locator(panel).waitFor();
+        assert.deepEqual(await state(), before, `${label} changed camera or source at ${size.width}px`);
+      }
+      await openVersions();
+      const close = page.locator('#stage-versions-panel').getByRole('button', { name: 'Close', exact: true });
+      await assertReachable(close, 'Close versions');
+      await close.click();
+      assert.equal(await page.locator('#stage-versions-panel').count(), 0);
+      assert.deepEqual(await state(), before);
+      assert.deepEqual(requests.slice(requestStart).filter(row => row.method !== 'GET'), [],
+        'Switching overlay panels must not submit project changes');
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
   });
 
   await step("drawing errors stay above the viewport, dismiss, reset on direction changes, and ignore stale replies", async () => {
@@ -1117,6 +1148,14 @@ try {
 
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);
+} catch (error) {
+  if (process.env.CANDIDATE_PREVIEW_EVIDENCE && page) {
+    const destination = path.resolve(process.env.CANDIDATE_PREVIEW_EVIDENCE);
+    await mkdir(destination, { recursive: true });
+    await page.screenshot({ path: path.join(destination, 'candidate-preview.png') }).catch(() => {});
+    await writeFile(path.join(destination, 'candidate-preview.html'), await page.content()).catch(() => {});
+  }
+  throw error;
 } finally {
   historyGate?.resolve();
   drawingGate?.resolve();

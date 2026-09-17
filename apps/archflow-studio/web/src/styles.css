@@ -1231,12 +1231,15 @@ button.chip:hover {
 
 .stage__versions-panel {
   position: absolute;
-  bottom: calc(100% + 8px);
+  /* Leave the measured toolbar below the history; neither overlay may
+     intercept the other's buttons when tools or the footer wrap. */
+  bottom: calc(100% + var(--stage-toolbar-height, 54px) + 24px);
   left: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: min(720px, 100%);
-  max-height: min(55vh, 480px);
+  max-height: min(55vh, 480px, max(0px, calc(var(--stage-workspace-height, 100vh)
+    - var(--stage-footer-height, 36px) - var(--stage-toolbar-height, 54px) - 52px)));
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--panel);
@@ -2700,7 +2703,9 @@ button.chip:hover {
 }
 
 .viewtools-wrap > .viewtools.model-tools { max-width: 100%; justify-content: center; }
-.stage[data-footer="true"] .viewtools-wrap { bottom: 62px; }
+.stage[data-footer="true"] .viewtools-wrap {
+  bottom: calc(26px + var(--stage-footer-height, 36px));
+}
 .model-tools .model-tools__plane { max-width: 78px; min-height: 40px; padding-inline: 4px; border: 0; border-radius: var(--radius); color: var(--ink-2); }
 .stage-pushpull { cursor: ns-resize; }
 @media (max-width: 800px) {
