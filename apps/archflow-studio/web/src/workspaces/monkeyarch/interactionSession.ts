@@ -1,6 +1,7 @@
 import { IDLE, type SketchState } from "../../features/stage/sketch";
 import type { LocalHit } from "./viewer/preselection";
 import type { DrawnShapeDto } from "../../api/generated";
+import type { NormalDragController } from "./viewer/normalDrag";
 import type { PreparedPushPull } from "../../features/stage/pushPull";
 import type { PlanPoint, SketchPlane, SnapCandidate } from "../../features/stage/sketch";
 import type { ModelSnap, SketchPreview } from "./viewer/ThreeDmViewport";
@@ -13,6 +14,8 @@ export interface PushPullTarget {
 
 export interface PushPullGesture {
   readonly target: PushPullTarget;
+  readonly sourceKey: string;
+  readonly constraint: NormalDragController;
   readonly face: SketchPlane;
   readonly prepared: PreparedPushPull;
   distance: number;

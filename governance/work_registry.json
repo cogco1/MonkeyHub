@@ -6,24 +6,26 @@
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
-      "goal": "V1 true Top/Front/Right orthographic views, explicit Perspective mode and Fit Selected are delivered; N1 signed-normal Push/Pull and S1 scene-wide snapping remain later slices after the legacy-surface cleanup.",
+      "goal": "V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1.",
       "depends_on": [
-        "GH-136"
+        "GH-146"
       ],
-      "branch": "codex/137-standard-views",
-      "worktree": "workspace/worktrees/codex-137-standard-views",
-      "base_ref": "6e6089ec78af2feb3a7e40dfefe0a6cde6cedeea",
-      "contributor": "ChatGPT",
+      "branch": "codex/137-signed-normal",
+      "worktree": "workspace/worktrees/codex-137-signed-normal",
+      "base_ref": "26e87b99d97dd45b0c80e3b1e5721d73f2b1d90e",
+      "contributor": "GPT-6 Astra Pro",
       "reviewer": "Repository owner",
       "write_scope": [
         "apps/archflow-studio/web/src/features/stage/Stage.tsx",
-        "apps/archflow-studio/web/src/i18n/messages.en.ts",
-        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts",
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/interactionSession.ts",
         "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/cameraProjection.ts",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/translationGizmo.ts",
-        "apps/archflow-studio/web/test/cameraProjection.test.ts"
-      ]
+        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/normalDrag.ts",
+        "apps/archflow-studio/web/test/normalDrag.test.ts",
+        "apps/archflow-studio/web/test/pushPull.browser.mjs",
+        "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
+        "apps/archflow-studio/web/test/translationGizmo.browser.mjs"
+      ],
+      "handoff": "PR #155 is merged at cb614f6f8e5f7322af0d039539ed1f38552eff17. Release the completed N1 frontend claim while GH-146 finishes Tracing Paper integration. Resume only the remaining #137 scope after this closeout, in one coordinated frontend lane."
     },
     {
       "id": "GH-73",
