@@ -3,13 +3,28 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-156",
+      "stream": "interaction",
+      "status": "active",
+      "goal": "Fix version-history interception of existing viewport tools and retire only stale manual Program fixture hooks; preserve candidate, Stage, camera and source boundaries.",
+      "depends_on": [],
+      "branch": "codex/viewport-toolbar-closeout",
+      "worktree": "cloud/codex-viewport-toolbar-closeout",
+      "base_ref": "8de3e7dd211c68bcfd610283ed4dbbefadbdaefe",
+      "contributor": "ChatGPT",
+      "reviewer": "Repository owner",
+      "write_scope": [
+        "apps/archflow-studio/web/src/styles.css",
+        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
+        "apps/archflow-studio/web/test/candidatePreview.browser.mjs"
+      ]
+    },
+    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
       "goal": "V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1.",
-      "depends_on": [
-        "GH-146"
-      ],
+      "depends_on": [],
       "branch": "codex/137-signed-normal",
       "worktree": "workspace/worktrees/codex-137-signed-normal",
       "base_ref": "26e87b99d97dd45b0c80e3b1e5721d73f2b1d90e",
@@ -25,7 +40,7 @@
         "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
         "apps/archflow-studio/web/test/translationGizmo.browser.mjs"
       ],
-      "handoff": "PR #155 is merged at cb614f6f8e5f7322af0d039539ed1f38552eff17. Release the completed N1 frontend claim while GH-146 finishes Tracing Paper integration. Resume only the remaining #137 scope after this closeout, in one coordinated frontend lane."
+      "handoff": "V1 and N1 are merged (#147/#155); Tracing Paper integration #153 is now merged. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane; GH-156 only fixes toolbar/version-panel access."
     },
     {
       "id": "GH-73",
@@ -37,84 +52,6 @@
         "apps/archflow-studio/api/archflow_studio_api/application/study.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
-      ]
-    },
-    {
-      "id": "GH-138",
-      "stream": "cleanup",
-      "status": "done",
-      "goal": "Finish retiring the legacy Frame, Massing and Program product surfaces from normal MonkeyArch: remove dead App/Stage plumbing and display modes, delete orphan panel code, keep real datum/Program/massing runtime capabilities, and prevent #127 from migrating the dead Studio UI.",
-      "depends_on": [],
-      "branch": "gpt/138-closeout",
-      "worktree": "cloud/gpt-138-closeout",
-      "base_ref": "5cbb8271d9c04af8c1764734948ed9000218047d",
-      "contributor": "GPT-5.6 Sol",
-      "reviewer": "Repository owner",
-      "write_scope": [
-        "apps/archflow-studio/web/src/app/App.tsx",
-        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
-        "apps/archflow-studio/web/src/features/stage/FrameEditor.tsx",
-        "apps/archflow-studio/web/src/features/stage/ModelToolButton.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/OptionsPanel.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/ProgramPanel.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/modelDisplay.ts",
-        "apps/archflow-studio/web/src/i18n/messages.en.ts",
-        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts",
-        "apps/archflow-studio/web/test/modelDisplay.test.ts",
-        "apps/archflow-studio/web/test/programOptions.browser.mjs",
-        "docs/PROJECT_RUNTIME.md",
-        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
-      ]
-    },
-    {
-      "id": "GH-145",
-      "stream": "interaction",
-      "status": "done",
-      "goal": "Finish the architect-facing Tracing Paper product term without changing annotation/gesture persistence or the already-landed camera-lock behavior.",
-      "depends_on": [],
-      "branch": "gpt/145-146-tracing-paper-board",
-      "worktree": "cloud/gpt-145-146-tracing-paper-board",
-      "base_ref": "1291931c98d1062c5c9222fe63c3e588c61527b0",
-      "contributor": "GPT-5.6 Sol",
-      "reviewer": "Repository owner",
-      "write_scope": [
-        "apps/archflow-studio/web/src/i18n/messages.en.ts",
-        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts"
-      ]
-    },
-    {
-      "id": "GH-146",
-      "stream": "interaction",
-      "status": "active",
-      "goal": "Promote an explicitly sent, immutable Tracing Paper review snapshot into the existing SourceDocument/MonkeyBoard feedback pipeline without turning ordinary annotation saves into Agent requests.",
-      "depends_on": [
-        "GH-145"
-      ],
-      "branch": "gpt/145-146-tracing-paper-board",
-      "worktree": "cloud/gpt-145-146-tracing-paper-board",
-      "base_ref": "20694af0a68663865cc9d7fdfd1137d14dfe73de",
-      "contributor": "GPT-5.6 Sol",
-      "reviewer": "Repository owner",
-      "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
-        "apps/archflow-studio/api/tests/test_documents.py",
-        "apps/archflow-studio/web/src/api/client.ts",
-        "apps/archflow-studio/web/src/api/generated/index.ts",
-        "apps/archflow-studio/web/src/api/generated/sdk.gen.ts",
-        "apps/archflow-studio/web/src/api/generated/types.gen.ts",
-        "apps/archflow-studio/web/src/app/App.tsx",
-        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
-        "apps/archflow-studio/web/src/i18n/messages.en.ts",
-        "apps/archflow-studio/web/src/i18n/messages.zh-CN.ts",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/Annotate.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx",
-        "apps/archflow-studio/web/src/workspaces/monkeyboard/boardScene.ts",
-        "apps/archflow-studio/web/test/boardScene.test.ts",
-        "apps/archflow-studio/web/test/annotate.test.ts",
-        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
-        "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx"
       ]
     },
     {
