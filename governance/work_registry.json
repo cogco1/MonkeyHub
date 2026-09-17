@@ -3,24 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-162",
-      "stream": "regression",
-      "status": "active",
-      "goal": "Restore existing drawing, model sync and Windows collaboration regression checks without changing production behavior.",
-      "depends_on": [],
-      "branch": "codex/main-regression-september17",
-      "worktree": "workspace/worktrees/codex-main-regression-september17",
-      "base_ref": "5cdb2a548348717e1754552af6c47f1e8970e4d4",
-      "contributor": "Codex",
-      "reviewer": null,
-      "write_scope": [
-        "apps/archflow-studio/web/test/annotate.browser.mjs",
-        "apps/archflow-studio/web/test/modelSync.browser.mjs",
-        "apps/archflow-studio/api/tests/test_collaboration_http.py"
-      ],
-      "handoff": "Independent review, affected browser and collaboration tests, then required CI before merging."
-    },
-    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
