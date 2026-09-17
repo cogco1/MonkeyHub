@@ -270,7 +270,10 @@ try {
           }
           return await json(historyDto(branchId));
         }
-        if (name === "/api/documents") return await json({ projectId, runId: url.searchParams.get("runId"), documents: documents.filter((doc) => doc.runId === url.searchParams.get("runId")) });
+        if (name === "/api/documents") {
+  const runId = url.searchParams.get("runId");
+  return await json({ projectId, runId, documents: runId === null ? documents : documents.filter((doc) => doc.runId === runId) });
+}
         if (name === "/api/document-comments") return await json({ projectId, runId: url.searchParams.get("runId"), comments: [] });
         if (name === "/api/document-annotations") {
           const runId = url.searchParams.get("runId"), assetSha256 = url.searchParams.get("assetSha256"), pageIndex = Number(url.searchParams.get("pageIndex"));
@@ -866,7 +869,7 @@ try {
     await page.locator('[data-design-stage="S1"]').getByRole("button", { name: "S1 · 当前提交", exact: true }).click();
     await rendered(historyA.candidateId);
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
-    assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), latest.revisionRef);
+    assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), JSON.stringify([latest.runId, latest.assetSha256, latest.revisionRef]));
     assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, latest.revisionRef);
   });
 
@@ -944,15 +947,15 @@ try {
     await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyDiagram · Drawings", exact: true }).click();
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
     const picker = page.getByRole("combobox", { name: "Source document", exact: true });
-    assert.equal(await picker.inputValue(), older.revisionRef, "A newer drawing of another exact model must not become this Stage's default");
+    assert.equal(await picker.inputValue(), JSON.stringify([older.runId, older.assetSha256, older.revisionRef]), "A newer drawing of another exact model must not become this Stage's default");
     await page.locator("#document-comment").fill("Keep the older drawing note.");
     await until(() => [...annotations.values()].some((item) => item.drawingRevisionRef === older.revisionRef && item.comment === "Keep the older drawing note."), Boolean, "The old drawing draft was not saved to its own revision");
-    await picker.selectOption(newer.revisionRef);
+    await picker.selectOption(JSON.stringify([newer.runId, newer.assetSha256, newer.revisionRef]));
     await until(async () => page.locator("#document-comment").isEnabled(), Boolean, "The newer revision draft did not load");
     assert.equal(await page.locator("#document-comment").inputValue(), "", "Same PNG bytes must not share another revision's draft");
     await page.locator("#document-comment").fill("Separate newer drawing note.");
     await until(() => [...annotations.values()].some((item) => item.drawingRevisionRef === newer.revisionRef && item.comment === "Separate newer drawing note."), Boolean, "The new drawing draft was not saved separately");
-    await picker.selectOption(older.revisionRef);
+    await picker.selectOption(JSON.stringify([older.runId, older.assetSha256, older.revisionRef]));
     await until(async () => page.locator("#document-comment").inputValue(), (value) => value === "Keep the older drawing note.", "Returning to the old revision lost its own note");
     await page.getByRole("button", { name: "Submit page note", exact: true }).click();
     await until(() => requests.findLast((row) => row.name === "/api/intents" && row.body?.utterance === "Keep the older drawing note."), Boolean, "The old drawing never reached the real App intent boundary");
