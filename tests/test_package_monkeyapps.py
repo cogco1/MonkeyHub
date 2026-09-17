@@ -281,7 +281,7 @@ class DesktopPackageTests(unittest.TestCase):
                             "apps/archflow-studio/web/dist/index.html",
                             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml"]
                 if desktop:
-                    required.extend(("MonkeyArch.exe", "_runtime/desktop-Cargo.lock"))
+                    required.extend(("MonkeyHub.exe", "_runtime/desktop-Cargo.lock"))
                 for relative in required:
                     path = bundle / relative
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -304,21 +304,21 @@ class DesktopPackageTests(unittest.TestCase):
                 installed_entry = local / "MonkeyHub/versions" / name / required[-1]
                 retained[installed_entry] = installed_entry.read_bytes()
                 if desktop:
-                    (bundle / "MonkeyArch.exe").unlink()
+                    (bundle / "MonkeyHub.exe").unlink()
                     missing = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
                     self.assertNotEqual(missing.returncode, 0)
-                    self.assertIn("MonkeyArch.exe", missing.stdout + missing.stderr)
+                    self.assertIn("MonkeyHub.exe", missing.stdout + missing.stderr)
             self.assertTrue((local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd").is_file())
             installed = local / "MonkeyHub/versions" / (commit[:12] + "-desktop")
             browser_entry = installed / "OPEN_MONKEYHUB.cmd"
-            desktop_entry = installed / "MonkeyArch.exe"
+            desktop_entry = installed / "MonkeyHub.exe"
             self.assertTrue(browser_entry.is_file())
             self.assertTrue(desktop_entry.is_file())
             self.assertFalse((shortcuts / "MonkeyHub.lnk").exists())
-            self.assertTrue((shortcuts / "MonkeyArch.lnk").exists())
+            self.assertTrue((shortcuts / "MonkeyHub.lnk").exists())
             inspect = root / "inspect.ps1"
             inspect.write_text("param($Directory)\n$shell = New-Object -ComObject WScript.Shell\n"
-                               "@('MonkeyArch.lnk') | ForEach-Object { "
+                               "@('MonkeyHub.lnk') | ForEach-Object { "
                                "$link = $shell.CreateShortcut((Join-Path $Directory $_)); "
                                "[PSCustomObject]@{Target=$link.TargetPath; WindowStyle=$link.WindowStyle} } "
                                "| ConvertTo-Json -Compress\n", encoding="utf-8")
@@ -337,7 +337,7 @@ class DesktopPackageTests(unittest.TestCase):
             (desktop / "Cargo.toml").write_text('[package]\nversion="0.1.0"\n', encoding="utf-8")
             (desktop / "Cargo.lock").write_text('version = 4\n', encoding="utf-8")
             (bundle / "_runtime").mkdir(parents=True)
-            executable = build / "desktop-target/release/MonkeyArch.exe"
+            executable = build / "desktop-target/release/MonkeyHub.exe"
             executable.parent.mkdir(parents=True)
             executable.write_bytes(b"fixture native executable")
             cargo = build / "cargo.exe"
@@ -348,7 +348,7 @@ class DesktopPackageTests(unittest.TestCase):
                                               "--target-dir", str(build / "desktop-target")])
             self.assertEqual(command.kwargs["cwd"], desktop)
             self.assertEqual(command.kwargs["environment"]["ARCHFLOW_SOURCE_REVISION"], "a" * 40)
-            self.assertEqual((bundle / "MonkeyArch.exe").read_bytes(), executable.read_bytes())
+            self.assertEqual((bundle / "MonkeyHub.exe").read_bytes(), executable.read_bytes())
             self.assertEqual((bundle / "_runtime/desktop-Cargo.lock").read_bytes(), (desktop / "Cargo.lock").read_bytes())
             self.assertEqual(result["sourceCommit"], "a" * 40)
             self.assertEqual(result["executableSha256"], builder.sha256(executable))
@@ -460,7 +460,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "version": "0.1.0", "sourceCommit": "c" * 40, "cargoVersion": "cargo fixture",
             "cargoLockSha256": "a" * 64, "executableSha256": "b" * 64})
         lock = self.bundle / "_runtime/desktop-Cargo.lock"
-        lock.write_text('version = 4\n\n[[package]]\nname = "monkeyarch-desktop"\nversion = "0.1.0"\n\n'
+        lock.write_text('version = 4\n\n[[package]]\nname = "monkeyhub-desktop"\nversion = "0.1.0"\n\n'
                         '[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
                         f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
         document = self.sbom(build_info)
@@ -490,12 +490,12 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(components["pkg:cargo/tauri@2.11.5"]["hashes"],
                          [{"alg": "SHA-256", "content": "9" * 64}])
         self.assertEqual(components["pkg:cargo/tauri@2.11.5"]["properties"], [
-            {"name": builder.BUILD_INPUT, "value": "_runtime/desktop-Cargo.lock -> MonkeyArch.exe"}])
-        self.assertNotIn("pkg:cargo/monkeyarch-desktop@0.1.0", components)
+            {"name": builder.BUILD_INPUT, "value": "_runtime/desktop-Cargo.lock -> MonkeyHub.exe"}])
+        self.assertNotIn("pkg:cargo/monkeyhub-desktop@0.1.0", components)
         # Only the executable itself is claimed as shipped.
-        self.assertEqual(components["monkeyhub:MonkeyArch.exe"]["properties"],
-                         [{"name": builder.SHIPPED_IN, "value": "MonkeyArch.exe"}])
-        self.assertEqual(components["monkeyhub:MonkeyArch.exe"]["hashes"],
+        self.assertEqual(components["monkeyhub:MonkeyHub.exe"]["properties"],
+                         [{"name": builder.SHIPPED_IN, "value": "MonkeyHub.exe"}])
+        self.assertEqual(components["monkeyhub:MonkeyHub.exe"]["hashes"],
                          [{"alg": "SHA-256", "content": "b" * 64}])
         meanings = {row["name"] for row in document["metadata"]["properties"]}
         self.assertIn(f"{builder.BUILD_INPUT}:meaning", meanings)
@@ -792,7 +792,7 @@ class ReleaseCandidateNormalizationTests(unittest.TestCase):
             "Metadata-Version: 2.4\nName: rhino3dm\nVersion: 8.32.1\nLicense-Expression: MIT\n",
             encoding="utf-8")
         (self.bundle / "_runtime/desktop-Cargo.lock").write_text(
-            'version = 4\n\n[[package]]\nname = "monkeyarch-desktop"\nversion = '
+            'version = 4\n\n[[package]]\nname = "monkeyhub-desktop"\nversion = '
             f'"{self.VERSION}"\n\n[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
             f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
         for locked, tree in (("apps/monkeyhub", self.bundle / "apps/monkeyhub"),

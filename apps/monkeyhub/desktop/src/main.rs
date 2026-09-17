@@ -1,6 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
-use monkeyarch_desktop::{
+use monkeyhub_desktop::{
     is_status_url, DiagnosticLog, ExpectedIdentity, HealthError, LaunchConfig, OwnedRuntime,
     SOURCE_REVISION,
 };
@@ -65,7 +65,7 @@ fn show_status(
         detail: detail.into(),
         log: log.path.display().to_string(),
     };
-    let _ = window.set_title(&format!("MonkeyArch · {title}"));
+    let _ = window.set_title(&format!("MonkeyHub · {title}"));
     if window.url().is_ok_and(|url| is_status_url(&url)) {
         paint_status(window, shared);
     } else {
@@ -102,7 +102,7 @@ fn open_owned_page(
     let label = format!("page-{}", Uuid::new_v4());
     match WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
         .window_features(features) // Reuse the opener's WebView2 environment and cache.
-        .title("MonkeyArch · 项目视图")
+        .title("MonkeyHub · 项目视图")
         .inner_size(1200.0, 800.0)
         .devtools(false)
         .disable_drag_drop_handler()
@@ -243,7 +243,7 @@ fn supervise(
                             runtime.request_stop();
                         } else {
                             log.state("ready", "Owned Hub identity and health verified");
-                            let _ = window.set_title("MonkeyArch");
+                            let _ = window.set_title("MonkeyHub");
                             ready = true;
                         }
                     } else if recovering {
@@ -252,7 +252,7 @@ fn supervise(
                             "ready",
                             "Owned Hub health recovered without reloading the page",
                         );
-                        let _ = window.set_title("MonkeyArch");
+                        let _ = window.set_title("MonkeyHub");
                         recovering = false;
                     }
                     outage = None;
@@ -279,7 +279,7 @@ fn supervise(
                         if since.elapsed() >= Duration::from_secs(3) && !recovering {
                             recovering = true;
                             log.state("recovering", "Owned Hub is alive but health is unavailable; preserving the current page");
-                            let _ = window.set_title("MonkeyArch · 正在等待运行时响应");
+                            let _ = window.set_title("MonkeyHub · 正在等待运行时响应");
                         }
                     }
                 }
@@ -328,7 +328,7 @@ fn run() -> Result<(), String> {
             let popup_shared = setup_shared.clone();
             let popup_log = setup_log.clone();
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("MonkeyArch").inner_size(1360.0, 900.0).min_inner_size(900.0, 600.0)
+                .title("MonkeyHub").inner_size(1360.0, 900.0).min_inner_size(900.0, 600.0)
                 .data_directory(data_directory).devtools(false).disable_drag_drop_handler()
                 .on_navigation(move |url| {
                     if is_status_url(url) { return true; }
@@ -389,7 +389,7 @@ fn main() {
                 ) -> i32;
             }
             let message: Vec<u16> = error.encode_utf16().chain(Some(0)).collect();
-            let title: Vec<u16> = "MonkeyArch · 启动失败"
+            let title: Vec<u16> = "MonkeyHub · 启动失败"
                 .encode_utf16()
                 .chain(Some(0))
                 .collect();

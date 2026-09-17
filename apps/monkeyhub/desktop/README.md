@@ -1,4 +1,4 @@
-# MonkeyArch desktop host
+# MonkeyHub desktop host
 
 This Windows Tauri 2 host opens the existing MonkeyHub/Studio UI. It starts one
 Hub root through `apps/monkeyhub/run.py`; Hub continues to own Studio, Monitor,
@@ -15,14 +15,14 @@ cargo test --locked
 cargo build --locked --release
 ```
 
-`target/release/MonkeyArch.exe` is the native host. It is **not a standalone
+`target/release/MonkeyHub.exe` is the native host. It is **not a standalone
 application bundle**. `tools/package_monkeyapps.py` owns the distribution tree,
 Python dependencies, existing Hub/Studio frontend builds and package validation.
 The package places this EXE at its root alongside `source-version.txt`,
 `apps/monkeyhub/run.py` and `_runtime/python/python.exe`. It supplies
 `ARCHFLOW_SOURCE_REVISION` when building from an exact source archive. Checkout
 builds resolve the actual Git HEAD. The EXE refuses a different runtime source
-revision. `MonkeyArch.exe --version` prints its version and source revision as
+revision. `MonkeyHub.exe --version` prints its version and source revision as
 JSON without opening a window.
 
 From the repository root, inspect the saved packaging locations with
@@ -30,10 +30,10 @@ From the repository root, inspect the saved packaging locations with
 desktop candidate with `python tools/package_monkeyapps.py --source-ref HEAD --desktop`.
 This uses the existing external staging/cache/output roots and adds the EXE to
 that same bundle; the browser entry remains included. Double-click the bundled
-`MonkeyArch.exe`. A checkout build still needs the explicit options below.
+`MonkeyHub.exe`. A checkout build still needs the explicit options below.
 
-When shortcuts are selected, the desktop installer keeps one `MonkeyArch.lnk`
-pointing at this bundle's `MonkeyArch.exe` and removes a recognized older
+When shortcuts are selected, the desktop installer keeps one `MonkeyHub.lnk`
+pointing at this bundle's `MonkeyHub.exe` and removes a recognized older
 `MonkeyHub.lnk` browser launcher. The bundle still includes `OPEN_MONKEYHUB.cmd`
 for browser access; both surfaces use the same frontend, Python and applications.
 The default version directory has a `-desktop` suffix. Existing installation
@@ -48,7 +48,7 @@ argument is needed. For source mode, install `apps/monkeyfab[send]` into the
 For explicit source development (both frontend `dist` directories must exist):
 
 ```powershell
-& ./target/release/MonkeyArch.exe `
+& ./target/release/MonkeyHub.exe `
   --source-root C:/absolute/ARCHFLOW_V4 `
   --python C:/absolute/python.exe `
   --runtime-root C:/absolute/isolated-monkeyhub-runtime

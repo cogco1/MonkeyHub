@@ -1,14 +1,14 @@
 [package]
-name = "monkeyarch-desktop"
+name = "monkeyhub-desktop"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
-name = "monkeyarch_desktop"
+name = "monkeyhub_desktop"
 
 [[bin]]
-name = "MonkeyArch"
+name = "MonkeyHub"
 path = "src/main.rs"
 
 [build-dependencies]

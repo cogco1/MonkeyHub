@@ -87,7 +87,7 @@ python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提�
   说明它与本包的关系，两者强度不同：
   - `monkeyhub:shippedIn`：该构件以文件形式在包内的位置。包括内置 Python 的 site-packages
     实际安装的发行包、包内 `apps/monkeyhub/node_modules`、内置 Python/Node 运行时，
-    以及 `MonkeyArch.exe` 本身。
+    以及 `MonkeyHub.exe` 本身。
   - `monkeyhub:buildInput`：某个 lock 文件为指定构建产物钉住的依赖，**不断言该构件确实进入
     了那个产物**。前端生产依赖由打包器决定哪些真正进入 `dist`；一份 `Cargo.lock` 覆盖所有
     目标平台、feature 和 build script。把它们写成「已编译进二进制」是没有证据的说法。

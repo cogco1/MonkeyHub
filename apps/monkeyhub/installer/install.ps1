@@ -389,7 +389,7 @@ function Complete-Installation([string]$Directory) {
         $shell = New-Object -ComObject WScript.Shell
         # The native package has one app shortcut; its browser launcher remains in the bundle.
         $entries = if ($desktopBuild) {
-            @(@{ Link = 'MonkeyArch.lnk'; Entry = 'MonkeyArch.exe'; WindowStyle = 1 })
+            @(@{ Link = 'MonkeyHub.lnk'; Entry = 'MonkeyHub.exe'; WindowStyle = 1 })
         } else {
             @(@{ Link = 'MonkeyHub.lnk'; Entry = 'OPEN_MONKEYHUB.cmd'; WindowStyle = 7 })
         }
@@ -470,7 +470,7 @@ try {
     $buildInfo = Get-Content -LiteralPath (Join-Path $packageRoot 'build-info.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($buildInfo.sourceCommit -ne $version) { throw 'The package build metadata does not match its source commit.' }
     $desktopBuild = $null -ne $buildInfo.desktop
-    $entryName = if ($desktopBuild) { 'MonkeyArch.exe' } else { 'OPEN_MONKEYHUB.cmd' }
+    $entryName = if ($desktopBuild) { 'MonkeyHub.exe' } else { 'OPEN_MONKEYHUB.cmd' }
     if ($desktopBuild -and $buildInfo.desktop.sourceCommit -ne $version) {
         throw 'The desktop host metadata does not match the bundled Hub source.'
     }
@@ -485,7 +485,7 @@ try {
         'apps\monkeyhub\web\dist\index.html', 'apps\archflow-studio\web\dist\index.html',
         'apps\monkeyfab\src\monkeyfab\__main__.py', 'apps\monkeyfab\pyproject.toml'
     )
-    if ($desktopBuild) { $required += @('MonkeyArch.exe', '_runtime\desktop-Cargo.lock') }
+    if ($desktopBuild) { $required += @('MonkeyHub.exe', '_runtime\desktop-Cargo.lock') }
     foreach ($relative in $required) {
         if (-not (Test-Path -LiteralPath (Join-Path $packageRoot $relative) -PathType Leaf)) {
             throw "The extracted package is incomplete: $relative"

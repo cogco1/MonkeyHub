@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MonkeyArch",
+  "productName": "MonkeyHub",
   "version": "0.1.0",
-  "identifier": "com.archflow.monkeyarch",
+  "identifier": "com.archflow.monkeyhub",
   "build": { "frontendDist": "status" },
   "app": {
     "windows": [],
