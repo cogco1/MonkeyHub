@@ -22,7 +22,8 @@
         "apps/archflow-studio/web/src/workspaces/monkeyarch/viewer/normalDrag.ts",
         "apps/archflow-studio/web/test/normalDrag.test.ts",
         "apps/archflow-studio/web/test/pushPull.browser.mjs",
-        "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx"
+        "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
+        "apps/archflow-studio/web/test/translationGizmo.browser.mjs"
       ]
     },
     {
