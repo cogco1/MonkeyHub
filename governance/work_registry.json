@@ -605,31 +605,6 @@
             "apps/monkeyhub/api/tests/test_chat_progress.py"
           ],
           "depends_on": []
-        },
-        {
-          "id": "desktop-branding",
-          "issue": "#164",
-          "status": "active",
-          "branch": "gpt/164-monkeyhub-desktop-branding",
-          "worktree": "cloud/gpt-164-monkeyhub-desktop-branding",
-          "base_ref": "main",
-          "contributor": "ChatGPT",
-          "reviewer": "Repository owner",
-          "handoff": "Rename only the shipped Windows host/shortcut/release evidence to MonkeyHub; MonkeyArch remains the modeling workspace and #127 is not started.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            ".github/workflows/desktop.yml",
-            "apps/monkeyhub/desktop/",
-            "apps/monkeyhub/installer/",
-            "tools/package_monkeyapps.py",
-            "tests/test_package_monkeyapps.py",
-            "tests/test_installer_signed_release.py",
-            "governance/module_registry.json",
-            "governance/work_registry.json"
-          ],
-          "depends_on": []
         }
       ]
     },
