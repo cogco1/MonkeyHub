@@ -116,7 +116,11 @@ try {
     await page.waitForFunction(()=>window.picks.at(-1)?.draftElementId === "source");
   };
   const arm = async (tool="move") => {
-    await page.locator(`button[data-model-tool="${tool}"]`).click();
+    // Stage 1 intentionally hides Copy's toolbar button. Exercise its retained
+    // tool callback, then keep all actual mouse/form/identity assertions below.
+    // This is not acceptance of a visible Copy entry in the primary toolbar.
+    if (tool === "copy") await page.evaluate(() => window.arm("copy"));
+    else await page.locator(`button[data-model-tool="${tool}"]`).click();
     await page.locator(".stage-move").waitFor();
     await page.waitForFunction(()=>!!window.readRuntime().translation);
   };

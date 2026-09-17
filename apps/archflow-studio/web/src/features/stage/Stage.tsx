@@ -38,6 +38,7 @@ import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/inte
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
+import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
 import { constrainedTranslation, type TranslationConstraint } from "../../workspaces/monkeyarch/viewer/translationGizmo";
 import { draftTransformCenter, previewDirectModel, specFromDrawnShape } from "./modelDraft";
 import {
@@ -386,6 +387,7 @@ export function Stage({
   const pushPullInput = useRef<HTMLInputElement>(null);
   const pushPullNeedsFace = useRef(false);
   const [pushPullActive, setPushPullActive] = useState(false);
+  const [pushPullGuide, setPushPullGuide] = useState<NormalDragController | null>(null);
   const [pushPullError, setPushPullError] = useState<string | null>(null);
   const pushPullErrorRef = useRef<string | null>(null);
   const reportPushPullError = useCallback((message: string | null) => {
@@ -398,18 +400,19 @@ export function Stage({
     if (interaction.current.pushPull) viewportRef.current?.sketchPreview(null);
     interaction.current.pushPull = null;
     setPushPullActive(false);
+    setPushPullGuide(null);
     reportPushPullError(null);
   }, [reportPushPullError, viewportRef]);
   // Keep the gesture bound to the source visible when it was armed. A render
   // may publish a new base before passive effects run; completion must refuse
   // the old gesture synchronously, not rely on a later visual cleanup.
-  const moveSourceKey = JSON.stringify([editingBaseRunId, loadedRunId,
+  const directSourceKey = JSON.stringify([editingBaseRunId, loadedRunId,
     editingModelSource?.runId, editingModelSource?.stateDigest, editingModelSource?.assetSha256,
     viewedModelSource?.runId, viewedModelSource?.stateDigest, viewedModelSource?.assetSha256]);
-  const moveAvailable = !documentOpen && !changingBase && !baseActionBusy && loadingSha === null &&
+  const directAvailable = !documentOpen && !changingBase && !baseActionBusy && loadingSha === null &&
     status !== "loading" && status !== "error" && !model?.interactionBlocked && !model?.busy;
-  const moveContextRef = useRef({ sourceKey: moveSourceKey, available: moveAvailable });
-  moveContextRef.current = { sourceKey: moveSourceKey, available: moveAvailable };
+  const directContextRef = useRef({ sourceKey: directSourceKey, available: directAvailable });
+  directContextRef.current = { sourceKey: directSourceKey, available: directAvailable };
   const [moveInputs] = useState(() => [createRef<HTMLInputElement>(), createRef<HTMLInputElement>(), createRef<HTMLInputElement>()]);
   const [movePhase, setMovePhase] = useState<"anchor" | "target" | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -626,7 +629,7 @@ export function Stage({
   const commitMove = useCallback(() => {
     const current = interaction.current.move, keys = modelKeysRef.current;
     if (!current || !current.constraint || !keys?.onApply) return;
-    if (!moveContextRef.current.available || current.sourceKey !== moveContextRef.current.sourceKey ||
+    if (!directContextRef.current.available || current.sourceKey !== directContextRef.current.sourceKey ||
         keys.directTool !== current.tool || keys.pushPullTarget !== current.target) {
       closeDirectTool(); return;
     }
@@ -654,18 +657,18 @@ export function Stage({
   }, [paintMove, viewportRef]);
   useLayoutEffect(() => {
     stopMove();
-    if ((model?.directTool !== "move" && model?.directTool !== "copy") || !moveAvailable) return;
+    if ((model?.directTool !== "move" && model?.directTool !== "copy") || !directAvailable) return;
     const target = model.pushPullTarget;
     if (!target) { setMoveError("Select a drawn solid or face before moving or copying."); return; }
     const spec = specFromDrawnShape(target.shape), origin = draftTransformCenter(spec);
-    interaction.current.move = { target, tool: model.directTool, sourceKey: moveSourceKey, spec, origin, constraint: null,
+    interaction.current.move = { target, tool: model.directTool, sourceKey: directSourceKey, spec, origin, constraint: null,
       pointerId: null, translation: [0, 0, 0], typed: null };
     interaction.current.pointer = null;
     moveInputs.forEach(input => { if (input.current) input.current.value = "0"; });
     viewportRef.current?.translationGizmo({ origin, translation: [0, 0, 0], constraint: null });
     setMovePhase("anchor");
     return stopMove;
-  }, [model?.directTool, model?.pushPullTarget, moveAvailable, moveSourceKey, moveInputs, stopMove, viewportRef]);
+  }, [model?.directTool, model?.pushPullTarget, directAvailable, directSourceKey, moveInputs, stopMove, viewportRef]);
   useEffect(() => {
     if (model?.directTool !== "move" && model?.directTool !== "copy") return;
     const listen = (event: KeyboardEvent) => {
@@ -684,6 +687,9 @@ export function Stage({
   const paintPushPull = useCallback(() => {
     const current = interaction.current.pushPull;
     if (!current) return;
+    if (!directContextRef.current.available || current.sourceKey !== directContextRef.current.sourceKey || !current.constraint.isCurrent()) {
+      closeDirectTool(); return;
+    }
     const value = current.typed === null ? current.distance : Number(current.typed);
     if (current.typed === null && pushPullInput.current) pushPullInput.current.value = String(Number(value.toFixed(4)));
     try {
@@ -693,11 +699,14 @@ export function Stage({
       viewportRef.current?.sketchPreview(null);
       reportPushPullError(error instanceof Error ? error.message : String(error));
     }
-  }, [reportPushPullError, viewportRef]);
+  }, [closeDirectTool, reportPushPullError, viewportRef]);
   const commitPushPull = useCallback((distance?: number) => {
     const current = interaction.current.pushPull;
     const keys = modelKeysRef.current;
-    if (!current || !keys?.onApply || keys.busy || keys.directTool !== "pushPull" || current.target !== keys.pushPullTarget) return;
+    if (!current || !keys?.onApply) return;
+    if (!directContextRef.current.available || current.sourceKey !== directContextRef.current.sourceKey || !current.constraint.isCurrent()
+        || keys.directTool !== "pushPull" || current.target !== keys.pushPullTarget) { closeDirectTool(); return; }
+    if (current.typed !== null && !current.typed.trim()) return;
     const value = distance ?? (current.typed === null ? current.distance : Number(current.typed));
     try {
       if (!Number.isFinite(value) || Math.abs(value) < 1e-9 || !current.prepared.preview(value)) return;
@@ -708,24 +717,29 @@ export function Stage({
     } catch (error) {
       reportPushPullError(error instanceof Error ? error.message : String(error));
     }
-  }, [reportPushPullError, stopPushPull]);
-  useEffect(() => {
+  }, [closeDirectTool, reportPushPullError, stopPushPull]);
+  useLayoutEffect(() => {
     stopPushPull();
     if (model?.directTool !== "pushPull") pushPullNeedsFace.current = false;
     if (pushPullNeedsFace.current) return;
-    if (model?.directTool !== "pushPull" || !model.pushPullTarget || documentOpen || model.interactionBlocked) return;
+    if (model?.directTool !== "pushPull" || !model.pushPullTarget || !directAvailable) return;
     const face = viewportRef.current?.workPlaneFromSelection();
     if (!face) return;
     try {
-      const prepared = preparePushPull(model.pushPullTarget.shape, face.normal);
-      interaction.current.pushPull = { target: model.pushPullTarget, face, prepared, distance: 0, typed: null };
+      const constraint = viewportRef.current?.beginNormalDrag([...face.origin], [...face.normal]);
+      if (!constraint) return;
+      const capturedFace = { ...face, origin: [...face.origin] as [number, number, number], normal: constraint.normal };
+      const prepared = preparePushPull(model.pushPullTarget.shape, capturedFace.normal);
+      interaction.current.pushPull = { target: model.pushPullTarget, sourceKey: directSourceKey,
+        face: capturedFace, constraint, prepared, distance: 0, typed: null };
+      setPushPullGuide(constraint);
       if (pushPullInput.current) pushPullInput.current.value = "0";
       setPushPullActive(true);
     } catch (error) {
       reportPushPullError(error instanceof Error ? error.message : String(error));
     }
     return stopPushPull;
-  }, [model?.directTool, model?.pushPullTarget, model?.interactionBlocked, documentOpen, reportPushPullError, stopPushPull, viewportRef]);
+  }, [model?.directTool, model?.pushPullTarget, directAvailable, directSourceKey, reportPushPullError, stopPushPull, viewportRef]);
   useEffect(() => {
     if (model?.directTool !== "pushPull") return;
     const listen = (event: KeyboardEvent) => {
@@ -737,8 +751,9 @@ export function Stage({
           (target.closest("button, a") && !target.closest('button[data-model-tool="pushPull"]')))) return;
       event.preventDefault(); commitPushPull();
     };
-    window.addEventListener("keydown", listen);
-    return () => window.removeEventListener("keydown", listen);
+    const blur = () => { if (interaction.current.pushPull) closeDirectTool(); };
+    window.addEventListener("keydown", listen); window.addEventListener("blur", blur);
+    return () => { window.removeEventListener("keydown", listen); window.removeEventListener("blur", blur); };
   }, [closeDirectTool, commitPushPull, documentOpen, model?.directTool]);
   // How far a snap reaches, in world units: a fifth of what the last drawn
   // rectangle spans, so it stays usable at any size the project is drawn at.
@@ -1315,12 +1330,30 @@ export function Stage({
         onPointerMove={(event) => {
           const current = interaction.current.pushPull;
           if (!current || current.typed !== null || event.buttons) return;
-          const point = viewportRef.current?.pointAlongAxis(event.clientX, event.clientY, [...current.face.origin], [...current.face.normal]);
-          if (!point) return;
-          current.distance = point.reduce((sum, value, index) => sum + (value - current.face.origin[index]!) * current.face.normal[index]!, 0);
+          if (!current.constraint.isCurrent()) { closeDirectTool(); return; }
+          const distance = current.constraint.distance(event.clientX, event.clientY);
+          if (distance === null) return;
+          current.distance = distance;
           scheduleInteractionFrame(interaction.current, "pushPull", paintPushPull);
         }}
-        onClick={(event) => { if (event.button === 0) commitPushPull(); }} />}
+        onPointerCancel={closeDirectTool}
+        onLostPointerCapture={closeDirectTool}
+        onClick={(event) => { if (event.button === 0) commitPushPull(); }}>
+        {pushPullGuide?.numericOnly && <div role="status" style={{ position: "absolute", top: 12, left: 12,
+          pointerEvents: "none", padding: "6px 10px", background: "var(--panel)", color: "var(--text)" }}>
+          {zh ? "法线接近视线方向 · 请输入正负距离" : "Face normal is nearly end-on · Enter a signed distance"}
+        </div>}
+        {pushPullGuide && <svg aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "hidden" }}>
+          {!pushPullGuide.numericOnly && <>
+            <line x1={pushPullGuide.guide.negative[0]} y1={pushPullGuide.guide.negative[1]}
+              x2={pushPullGuide.guide.positive[0]} y2={pushPullGuide.guide.positive[1]}
+              stroke="var(--accent)" strokeWidth="2" strokeDasharray="5 4" />
+            <text x={pushPullGuide.guide.positive[0] + 5} y={pushPullGuide.guide.positive[1]} fill="var(--accent)" fontSize="18">+</text>
+            <text x={pushPullGuide.guide.negative[0] + 5} y={pushPullGuide.guide.negative[1]} fill="var(--accent)" fontSize="18">−</text>
+          </>}
+          <circle cx={pushPullGuide.guide.origin[0]} cy={pushPullGuide.guide.origin[1]} r="5" fill="none" stroke="var(--accent)" strokeWidth="2" />
+        </svg>}
+      </div>}
       {measuring && (
         /* Two points off the loaded model, and the distance between them. It
            reads geometry and writes nothing: no candidate, no record. */
@@ -1879,7 +1912,9 @@ export function Stage({
               }, onCommit: commitMove }}
             pushPull={{ inputRef: pushPullInput, active: pushPullActive,
               hint: pushPullActive
-                ? (zh ? "移动鼠标推拉；输入精确距离覆盖。单击或 Enter 确认，Esc 取消。" : "Move to push/pull; type an exact distance to override. Click or Enter to apply, Esc to cancel.")
+                ? (pushPullGuide?.numericOnly
+                  ? (zh ? "此面法线接近视线方向，请输入正负距离。Enter 确认，Esc 取消。" : "Face normal is nearly end-on: enter a signed distance. Enter applies, Esc cancels.")
+                  : (zh ? "沿所选面的法线推拉：+ 向外，− 向内。输入精确距离覆盖；单击或 Enter 确认，Esc 取消。" : "Along the picked face normal: + outward, − inward. Type to override; click or Enter applies, Esc cancels."))
                 : model.pushPullReason || (zh ? "先选择一个面，再移动鼠标或输入距离。" : "Select a face, then move the pointer or enter a distance."),
               onChange: (value) => {
                 const current = interaction.current.pushPull;

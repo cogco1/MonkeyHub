@@ -67,6 +67,7 @@ import {
   type SemanticHighlightTarget,
 } from "./modelDisplay";
 import { fitDistance } from "./fitCamera";
+import { captureNormalDrag, type NormalDragController } from "./normalDrag";
 import {
   configureOrthographicAspect,
   fitOrthographicBox,
@@ -259,6 +260,8 @@ export interface ViewportController {
   pointOnWorkPlane(clientX: number, clientY: number, height: number): Vec3 | null;
   pointOnSketchPlane(clientX: number, clientY: number, plane: SketchPlane): Vec3 | null;
   pointAlongAxis(clientX: number, clientY: number, origin: Vec3, axis: Vec3): Vec3 | null;
+  /** One frozen face-normal pointer constraint; source and commit stay with Stage. */
+  beginNormalDrag(origin: Vec3, normal: Vec3): NormalDragController | null;
   workPlaneFromSelection(): SketchPlane | null;
   /**
    * The point on the loaded model a pointer is really over: the end or the
@@ -1860,6 +1863,15 @@ export const ThreeDmViewport = forwardRef<
       pointAlongAxis,
       translationGizmo,
       translationPointer,
+      beginNormalDrag: (origin, normal) => {
+        const runtime = runtimeRef.current;
+        if (!runtime) return null;
+        const canvas = runtime.renderer.domElement;
+        runtime.camera.updateMatrixWorld(true);
+        const constraint = captureNormalDrag(runtime.camera, canvas.getBoundingClientRect(), origin, normal);
+        return { ...constraint, isCurrent: () => runtimeRef.current === runtime
+          && constraint.matches(runtime.camera, canvas.getBoundingClientRect()) };
+      },
       workPlaneFromSelection: () => {
         const picked = pickedPlaneRef.current;
         const runtime = runtimeRef.current;
