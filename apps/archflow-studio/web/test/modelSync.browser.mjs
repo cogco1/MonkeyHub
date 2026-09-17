@@ -792,7 +792,10 @@ for(const mouseButton of ['right','middle'])await page.mouse.click(empty.x,empty
 state=await snap();assert.equal(state.picked,block);assert.equal(state.selection,block);
 await page.mouse.move(empty.x,empty.y);await page.mouse.down();await page.mouse.move(empty.x+40,empty.y+25,{steps:8});await page.mouse.up();
 state=await snap();assert.notDeepEqual(state.view.camera,selected.view.camera);assert.equal(state.picked,block);
-await button('Fit').click();
+// Reframe through the current view menu; the primary Fit button was retired.
+await button('View tools').click();
+await page.locator('#view-tools').getByRole('button',{name:'Isometric',exact:true}).click();
+await button('View tools').click();
 const typing=await blank();await button('Rectangle').click();await page.mouse.click(typing.x,typing.y);
 const textEntry=page.locator('.sketch-entry input'),beforeText=(await snap()).index;
 await textEntry.fill('12');await textEntry.press('Delete');await textEntry.press('Backspace');await textEntry.press('Control+z');

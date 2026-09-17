@@ -87,7 +87,12 @@ class _Service:
             try:
                 status, health = self.request("GET", "/api/health", timeout=1)
                 if status == 200 and health.get("managedInstanceId") == self.instance_id:
-                    assert health["processId"] == self.process.pid, health
+                    # Windows venv Python may launch the serving process through
+                    # a redirector; the private instance id above still binds it.
+                    owned_pid = health["processId"] == self.process.pid or (
+                        sys.platform == "win32" and health["parentProcessId"] == self.process.pid
+                    )
+                    assert owned_pid, health
                     return
             except (URLError, OSError, TimeoutError):
                 pass
