@@ -268,7 +268,30 @@ class DesktopPackageTests(unittest.TestCase):
             local, shortcuts = root / "local", root / "shortcuts"
             shortcuts.mkdir()
             environment = dict(os.environ, LOCALAPPDATA=str(local))
+            make_link = root / "make-link.ps1"
+            make_link.write_text(
+                "param($Link, $Target)\n$shell = New-Object -ComObject WScript.Shell\n"
+                "$shortcut = $shell.CreateShortcut($Link)\n$shortcut.TargetPath = $Target\n"
+                "$shortcut.Save()\n", encoding="utf-8")
+
+            def shortcut(name, target):
+                subprocess.run(["powershell.exe", "-NoProfile", "-File", str(make_link),
+                                str(shortcuts / name), str(target)],
+                               capture_output=True, text=True, timeout=15, check=True)
+
+            legacy = local / "MonkeyHub/versions/legacy-desktop"
+            (legacy / "apps/monkeyhub").mkdir(parents=True)
+            (legacy / "apps/monkeyhub/run.py").write_bytes(b"fixture - never executed")
+            (legacy / "MonkeyArch.exe").write_bytes(b"old native executable")
+            (legacy / "source-version.txt").write_text("c" * 40, encoding="utf-8")
+            (legacy / "build-info.json").write_text(
+                json.dumps({"sourceCommit": "c" * 40, "desktop": {"sourceCommit": "c" * 40}}),
+                encoding="utf-8")
+            shortcut("MonkeyArch.lnk", legacy / "MonkeyArch.exe")
             retained = {}
+            for path in legacy.rglob("*"):
+                if path.is_file():
+                    retained[path] = path.read_bytes()
             for relative in ("project/HEAD", "local/MonkeyHub/config/applications.json", "local/MonkeyHub/chats/retained.json"):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -314,7 +337,7 @@ class DesktopPackageTests(unittest.TestCase):
             desktop_entry = installed / "MonkeyHub.exe"
             self.assertTrue(browser_entry.is_file())
             self.assertTrue(desktop_entry.is_file())
-            self.assertFalse((shortcuts / "MonkeyHub.lnk").exists())
+            self.assertFalse((shortcuts / "MonkeyArch.lnk").exists())
             self.assertTrue((shortcuts / "MonkeyHub.lnk").exists())
             inspect = root / "inspect.ps1"
             inspect.write_text("param($Directory)\n$shell = New-Object -ComObject WScript.Shell\n"
@@ -327,6 +350,25 @@ class DesktopPackageTests(unittest.TestCase):
             link = json.loads(result.stdout)
             self.assertTrue(Path(link["Target"]).samefile(desktop_entry), link)
             self.assertEqual(link["WindowStyle"], 1)
+
+            # A familiar filename without our package metadata is not ours to replace.
+            foreign = root / "another application"
+            foreign.mkdir()
+            (bundle / "MonkeyHub.exe").write_bytes(b"fixture - never executed")
+            for entry in ("MonkeyHub.exe", "OPEN_MONKEYHUB.cmd", "MonkeyArch.exe"):
+                target = foreign / entry
+                target.write_bytes(b"unrelated application")
+                name = "MonkeyArch.lnk" if entry == "MonkeyArch.exe" else "MonkeyHub.lnk"
+                if name == "MonkeyArch.lnk":
+                    shortcut("MonkeyHub.lnk", desktop_entry)
+                shortcut(name, target)
+                before = (shortcuts / name).read_bytes()
+                result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual((shortcuts / name).read_bytes(), before, entry)
+                self.assertEqual(target.read_bytes(), b"unrelated application")
+            for path, before in retained.items():
+                self.assertEqual(path.read_bytes(), before, path)
 
     def test_desktop_is_built_from_snapshot_with_bound_revision_and_external_target(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -32,7 +32,7 @@ impl Fixture {
         .unwrap();
         fs::write(source.join("source-version.txt"), "a".repeat(40)).unwrap();
         fs::write(source.join("fixture.json"), options.to_string()).unwrap();
-        let python = std::env::var_os("MONKEYARCH_TEST_PYTHON").unwrap_or_else(|| "python".into());
+        let python = std::env::var_os("MONKEYHUB_TEST_PYTHON").unwrap_or_else(|| "python".into());
         let output = Command::new(python)
             .args(["-c", "import sys; print(sys.executable)"])
             .output()

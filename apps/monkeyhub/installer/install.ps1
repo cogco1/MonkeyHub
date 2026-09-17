@@ -370,6 +370,24 @@ function Write-TrustNotice($Signed, [int]$InstalledFiles) {
     }
 }
 
+function Test-InstalledHubEntry([string]$Target, [string]$Entry) {
+    if ([IO.Path]::GetFileName($Target) -ne $Entry -or
+        -not (Test-Path -LiteralPath $Target -PathType Leaf)) { return $false }
+    $directory = [IO.Path]::GetDirectoryName($Target)
+    $metadata = Join-Path $directory 'build-info.json'
+    $versionFile = Join-Path $directory 'source-version.txt'
+    if (-not (Test-Path -LiteralPath $metadata -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $versionFile -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $directory 'apps/monkeyhub/run.py') -PathType Leaf)) {
+        return $false
+    }
+    try {
+        $build = Get-Content -LiteralPath $metadata -Raw -Encoding UTF8 | ConvertFrom-Json
+        $source = (Get-Content -LiteralPath $versionFile -Raw -Encoding UTF8).Trim()
+        return $source -match '^[0-9a-f]{40}$' -and $build.sourceCommit -eq $source
+    } catch { return $false }
+}
+
 function Complete-Installation([string]$Directory) {
     $entry = Join-Path $Directory $entryName
     $makeShortcut = $CreateDesktopShortcut.IsPresent
@@ -396,9 +414,13 @@ function Complete-Installation([string]$Directory) {
         foreach ($item in $entries) {
             $link = Join-Path $desktop $item.Link
             $shortcut = $shell.CreateShortcut($link)
-            if ((Test-Path -LiteralPath $link) -and [IO.Path]::GetFileName($shortcut.TargetPath) -ne $item.Entry) {
-                Write-Warning "The existing shortcut points to another application and was left alone: $link"
-                continue
+            if (Test-Path -LiteralPath $link) {
+                $ownedEntry = Test-InstalledHubEntry $shortcut.TargetPath $item.Entry
+                $oldBrowser = $desktopBuild -and (Test-InstalledHubEntry $shortcut.TargetPath 'OPEN_MONKEYHUB.cmd')
+                if (-not $ownedEntry -and -not $oldBrowser) {
+                    Write-Warning "The existing shortcut points to another application and was left alone: $link"
+                    continue
+                }
             }
             $target = Join-Path $Directory $item.Entry
             $shortcut.TargetPath = $target
@@ -414,12 +436,11 @@ function Complete-Installation([string]$Directory) {
             }
             Write-Host "Desktop shortcut: $link"
             if ($desktopBuild) {
-                $browserLink = Join-Path $desktop 'MonkeyHub.lnk'
-                if (Test-Path -LiteralPath $browserLink -PathType Leaf) {
-                    $browserTarget = $shell.CreateShortcut($browserLink).TargetPath
-                    if ([IO.Path]::GetFileName($browserTarget) -eq 'OPEN_MONKEYHUB.cmd' -and
-                        (Test-Path -LiteralPath (Join-Path ([IO.Path]::GetDirectoryName($browserTarget)) 'build-info.json') -PathType Leaf)) {
-                        Remove-Item -LiteralPath $browserLink
+                $legacyLink = Join-Path $desktop 'MonkeyArch.lnk'
+                if (Test-Path -LiteralPath $legacyLink -PathType Leaf) {
+                    $legacyTarget = $shell.CreateShortcut($legacyLink).TargetPath
+                    if (Test-InstalledHubEntry $legacyTarget 'MonkeyArch.exe') {
+                        Remove-Item -LiteralPath $legacyLink
                     }
                 }
             }

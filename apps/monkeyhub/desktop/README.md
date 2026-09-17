@@ -33,8 +33,9 @@ that same bundle; the browser entry remains included. Double-click the bundled
 `MonkeyHub.exe`. A checkout build still needs the explicit options below.
 
 When shortcuts are selected, the desktop installer keeps one `MonkeyHub.lnk`
-pointing at this bundle's `MonkeyHub.exe` and removes a recognized older
-`MonkeyHub.lnk` browser launcher. The bundle still includes `OPEN_MONKEYHUB.cmd`
+pointing at this bundle's `MonkeyHub.exe`, updates a recognized older
+`MonkeyHub.lnk` browser launcher, and removes a recognized legacy `MonkeyArch.lnk`.
+Unrelated shortcuts are preserved. The bundle still includes `OPEN_MONKEYHUB.cmd`
 for browser access; both surfaces use the same frontend, Python and applications.
 The default version directory has a `-desktop` suffix. Existing installation
 files and user data are retained; missing desktop or Fab files fail installation.
@@ -108,7 +109,7 @@ browser development entry and Three.js viewport remain unchanged.
 occupied-port refusal, spawn failure, child crash, stdin/EOF shutdown, operation
 drain, independent-root isolation, reopen and bounded child-window origins.
 Tests use disposable source and runtime directories plus a small Python child;
-set `MONKEYARCH_TEST_PYTHON` when `python` is not on the test runner's PATH.
+set `MONKEYHUB_TEST_PYTHON` when `python` is not on the test runner's PATH.
 The Windows workflow builds the complete ZIP through `package_monkeyapps.py
 --desktop`, checks its checksum and runs the existing installer in a private
 directory. Native lifecycle tests then run with the installed embedded Python

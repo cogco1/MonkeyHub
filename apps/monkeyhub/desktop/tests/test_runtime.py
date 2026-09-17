@@ -649,7 +649,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         if INSTALLED:
             # Run the actual package installer after project use and before
             # reopening. Existing user settings and P036 bytes must survive.
-            installer = Path(os.environ["MONKEYARCH_PACKAGE_ROOT"]) / "apps/monkeyhub/installer/install.ps1"
+            installer = Path(os.environ["MONKEYHUB_PACKAGE_ROOT"]) / "apps/monkeyhub/installer/install.ps1"
             result = subprocess.run([
                 "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(installer),
                 "-InstallDirectory", str(APPLICATION_ROOT),

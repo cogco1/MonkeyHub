@@ -3,6 +3,28 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-164",
+      "stream": "desktop",
+      "status": "active",
+      "goal": "Complete MonkeyHub desktop branding and upgrade existing owned shortcuts while preserving unrelated desktop entries and project data.",
+      "depends_on": [],
+      "branch": "gpt/164-monkeyhub-desktop-branding",
+      "worktree": "workspace/worktrees/codex-164-closeout",
+      "base_ref": "0f73c467e3a5505943e457c76969a05a70595aca",
+      "contributor": "Codex",
+      "reviewer": null,
+      "write_scope": [
+        "apps/monkeyhub/installer/install.ps1",
+        "apps/monkeyhub/installer/README.md",
+        "apps/monkeyhub/desktop/tests/test_runtime.py",
+        "apps/monkeyhub/desktop/tests/lifecycle.rs",
+        "apps/monkeyhub/desktop/README.md",
+        "tests/test_package_monkeyapps.py",
+        ".github/workflows/desktop.yml"
+      ],
+      "handoff": "Focused Windows installer tests, independent review and protected PR checks before merging #165."
+    },
+    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
