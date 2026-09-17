@@ -55,6 +55,10 @@ class CameraDto(BaseModel):
     target: Vector3
     up: Vector3
     fov: float
+    # Missing fields stay absent for historical annotation records; no migration
+    # invents a projection/zoom for ink that never recorded them.
+    projection: Literal["perspective", "orthographic"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    zoom: float | None = Field(default=None, gt=0, allow_inf_nan=False, exclude_if=lambda value: value is None)
 
 
 class GestureDto(BaseModel):

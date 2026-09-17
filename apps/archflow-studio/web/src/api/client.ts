@@ -47,6 +47,7 @@ import {
   createDocumentApiDocumentsPost,
   createDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPost,
   createProposalApiProposalsPost,
+  createTracingPaperReviewApiTracingPaperReviewsPost,
   createViewportCaptureApiCapturesPost,
   exportBoardApiBoardExportPost,
   getUserSettingsApiSettingsUserGet,
@@ -127,6 +128,7 @@ import type {
   SourceDocumentDto,
   SourceDocumentListDto,
   SourceDocumentRequestDto,
+  TracingPaperReviewRequestDto,
   StateProjectionDto,
   UserSettingsDto,
   ValidationDto,
@@ -317,6 +319,11 @@ export const studio = {
 
   recordClientTiming(body: ClientTimingDto): Promise<MonitorWriteDto> {
     return call("POST /api/events/timing", recordClientTimingApiEventsTimingPost({ body, keepalive: true }));
+  },
+
+  async createTracingPaperReview(body: Omit<TracingPaperReviewRequestDto, "pngBase64">, png: Blob): Promise<SourceDocumentDto> {
+    const pngBase64 = base64Of(await png.arrayBuffer());
+    return call("POST /api/tracing-paper/reviews", createTracingPaperReviewApiTracingPaperReviewsPost({ body: { ...body, pngBase64 } }));
   },
 
   /** Retain this browser-rendered PNG in the loaded run's P036 workspace. */

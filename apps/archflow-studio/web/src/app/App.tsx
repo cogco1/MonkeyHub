@@ -50,7 +50,7 @@ import type {
   StateProjectionDto,
   ValidationDto,
 } from "../api/generated";
-import type { GestureTool } from "../workspaces/monkeyarch/Annotate";
+import { renderTracingPaperSnapshotPng, captureTracingPaperReview, type GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
@@ -632,6 +632,11 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     projectId: project?.projectId ?? "", modelSource: persistentAnnotations ? loadedModelSource : null,
   }, modelAnnotationsController);
   const gestures = modelAnnotations.annotations;
+  const tracingPaperSignature = useMemo(() => JSON.stringify(gestures), [gestures]);
+  const tracingPaperSending = useRef(false);
+  const [tracingPaperSend, setTracingPaperSend] = useState<{ busy: boolean; sent: boolean; error: string | null }>({ busy: false, sent: false, error: null });
+  useEffect(() => { setTracingPaperSend({ busy: false, sent: false, error: null }); },
+    [loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, tracingPaperSignature]);
   const editGestures = (change: (current: readonly ModelGestureDto[]) => readonly ModelGestureDto[]) => {
     modelAnnotations.changeAnnotations(change(gestures));
   };
@@ -743,6 +748,35 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
     setCaptureState("idle");
     setCapturePath(null);
   }, [loadedArtifact?.runId, sourceLabel]);
+
+  const sendTracingPaperToBoard = useCallback(async () => {
+    const viewport = viewportRef.current;
+    if (!viewport || tracingPaperSending.current || !project || !loadedModelSource || !persistentAnnotations || !modelAnnotations.ready || gestures.length === 0) return;
+    tracingPaperSending.current = true;
+    setTracingPaperSend({ busy: true, sent: false, error: null });
+    const modelSource = { ...loadedModelSource };
+    const acceptedStage = designHistory?.stages.find((stage) => sameModelSource(stage.modelSource, modelSource));
+    const sourceStageRef = acceptedStage?.stageRef ?? (sameModelSource(loadedArtifact?.modelSource, modelSource)
+      ? loadedArtifact?.sourceStageRef ?? null : null);
+    try {
+      const capture = await captureTracingPaperReview(viewport, gestures, modelAnnotations.save);
+      const png = await renderTracingPaperSnapshotPng(capture.viewportPng, capture.saved.annotations);
+      const review = await studio.createTracingPaperReview({
+        projectId: project.projectId, modelSource, sourceStageRef,
+        annotationRevisionSha256: capture.saved.revisionSha256!, camera: capture.camera, screenSize: capture.screenSize,
+      }, png);
+      if (sameModelSource(currentViewSourceRef.current, modelSource)) {
+        setTracingPaperSend({ busy: false, sent: true, error: null });
+      }
+      append({ kind: "system", text: `Tracing Paper review sent to Board · ${review.fileName}` });
+    } catch (cause) {
+      if (sameModelSource(currentViewSourceRef.current, modelSource)) {
+        setTracingPaperSend({ busy: false, sent: false, error: asStudioApiError(cause).detail });
+      }
+    } finally {
+      tracingPaperSending.current = false;
+    }
+  }, [append, designHistory, gestures, loadedArtifact, loadedModelSource, modelAnnotations, persistentAnnotations, project]);
 
   const captureViewport = useCallback(async () => {
     const runId = loadedArtifact?.runId;
@@ -3034,6 +3068,9 @@ export default function App({ server, initialDocumentIntent, initialSketchReques
             modelAnnotations={persistentAnnotations ? modelAnnotations : null}
             annotationsReady={modelAnnotations.ready && !modelLoading &&
               (loadedArtifacts.length > 0 || sourceLabel === LOCAL_SOURCE_LABEL)}
+            tracingPaperReview={{ enabled: persistentAnnotations && modelAnnotations.ready && gestures.length > 0 && !modelLoading && loadedModelSource !== null,
+              busy: tracingPaperSend.busy, sent: tracingPaperSend.sent, error: tracingPaperSend.error,
+              onSend: () => void sendTracingPaperToBoard() }}
             onEraseGestures={(indices) => editGestures((current) => current.filter((_, index) => !indices.includes(index)))}
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}

@@ -134,3 +134,41 @@ test("whole-stroke erasing intersects actual ink across fast cursor moves", asyn
   assert.equal(annotationIntersectsEraser(arc, [75, 25], [75, 25], 1), false, "the third-point sample must not add an eraser chord");
   assert.equal(annotationIntersectsEraser({ ...line, kind: "remove", screen: [[20, 20]] }, [30, 20], [30, 20], 1), true, "remove remains a visible semantic mark, erasable like other ink");
 });
+
+
+test("Tracing Paper framing includes orthographic zoom when the live gesture carries it", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { tracingPaperViewMatches } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
+  const camera = { position: [1, 2, 3], target: [0, 0, 0], up: [0, 0, 1], fov: 50, projection: "orthographic", zoom: 2 };
+  const gesture = { id: "g", kind: "circle", screen: [[0, 0]], hits: [], screenSize: [100, 100], camera: { ...camera } };
+  assert.equal(tracingPaperViewMatches(camera, [gesture]), true);
+  assert.equal(tracingPaperViewMatches({ ...camera, zoom: 3 }, [gesture]), false);
+  assert.equal(tracingPaperViewMatches({ ...camera, projection: "perspective" }, [gesture]), false);
+});
+
+
+test("Tracing Paper captures before an asynchronous save and refuses unknown or resized framing", async (t) => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false, logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { captureTracingPaperReview, tracingPaperViewMatches } = await vite.ssrLoadModule("/src/workspaces/monkeyarch/Annotate.tsx");
+  const camera = { position: [1, 2, 3], target: [0, 0, 0], up: [0, 0, 1], fov: 50, projection: "orthographic", zoom: 2 };
+  const ink = [{ id: "g", kind: "circle", screen: [[10, 10]], hits: [], screenSize: [100, 80], camera: structuredClone(camera) }];
+  const legacy = [{ ...ink[0], camera: { position: camera.position, target: camera.target, up: camera.up, fov: 50 } }];
+  assert.equal(tracingPaperViewMatches(camera, legacy), false, "unknown historical zoom must not mean any current zoom");
+  let saved!: (value: unknown) => void;
+  const save = new Promise((resolve) => { saved = resolve; });
+  const original = new Blob(["original-view"]);
+  let captures = 0;
+  const viewport = { camera: () => camera, viewportSize: () => [100, 80], capturePng: () => { captures++; return Promise.resolve(original); } };
+  const review = captureTracingPaperReview(viewport, ink, () => save);
+  assert.equal(captures, 1, "capture starts now, not when the save completes");
+  camera.zoom = 7;
+  saved({ revisionSha256: "a".repeat(64), annotations: ink });
+  const result = await review;
+  assert.equal(result.camera.zoom, 2);
+  assert.equal(result.viewportPng, original);
+  camera.zoom = 2;
+  await assert.rejects(captureTracingPaperReview({ ...viewport, viewportSize: () => [120, 80] }, ink, () => { throw new Error("must not save"); }), /registered to this view/);
+  assert.equal(captures, 1, "resized ink cannot be silently stretched onto a new capture");
+});

@@ -171,3 +171,12 @@ test("a new drawing is placed beyond existing visible work without repositioning
   assert.deepEqual(elements, before);
   assert.deepEqual(nextDocumentPosition([]), { x: 80, y: 80 });
 });
+
+
+test("Tracing Paper reviews are named as review items on Board", async (t) => {
+  const { boardDocumentFrameName } = await harness(t);
+  const review = document({ fileName: "Tracing Paper - abc.png", mimeType: "image/png", pageCount: 1,
+    pages: [{ pageIndex: 0, width: 120, height: 80, rotation: 0 }],
+    viewRecipe: { schema: "TracingPaperSnapshot@1", kind: "tracing-paper-review" } });
+  assert.equal(boardDocumentFrameName(review, 0), "Tracing Paper review · Tracing Paper - abc.png · 1/1");
+});

@@ -231,6 +231,8 @@ export interface ViewportController {
   sampleAt(clientX: number, clientY: number): SampleHit | null;
   /** The camera as it stands, or null before the renderer exists. */
   camera(): CameraState | null;
+  /** CSS viewport dimensions, paired with the camera for screen-space ink. */
+  viewportSize(): [number, number] | null;
   /**
    * A client-space point carried into the world on the plane facing the
    * camera through ``through`` (or through the orbit target when null): how
@@ -1901,6 +1903,10 @@ export const ThreeDmViewport = forwardRef<
       standardView: (view) => {
         const runtime = runtimeRef.current;
         if (runtime) standardRuntime(runtime, view);
+      },
+      viewportSize: () => {
+        const rect = runtimeRef.current?.renderer.domElement.getBoundingClientRect();
+        return rect ? [Math.round(rect.width), Math.round(rect.height)] : null;
       },
       capturePng: () => {
         const runtime = runtimeRef.current;

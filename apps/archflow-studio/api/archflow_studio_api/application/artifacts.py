@@ -42,7 +42,9 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import struct
 import threading
+import zlib
 from typing import Any, Iterable, Mapping, NamedTuple
 
 from PIL import Image, ImageOps
@@ -479,13 +481,26 @@ def _whole_document_replacement(
     ) for page, new in zip(previous.pages, pages))
 
 
+
+def _png_with_content_identity(data: bytes, identity: str) -> bytes:
+    """Add a deterministic ancillary chunk without changing rendered pixels."""
+
+    if not SHA256_HEX.fullmatch(identity) or not data.endswith(PNG_END):
+        raise StudioError(422, "DOCUMENT_INVALID", "The review image identity is invalid.")
+    chunk_type = b"tEXt"
+    payload = b"MonkeyHub-Review\x00" + identity.encode("ascii")
+    chunk = struct.pack(">I", len(payload)) + chunk_type + payload
+    chunk += struct.pack(">I", zlib.crc32(chunk_type + payload) & 0xFFFFFFFF)
+    return data[:-len(PNG_END)] + chunk + PNG_END
+
+
 def save_document(
     binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
     replaces_pages: tuple[DocumentPageReplacement, ...] = (),
     *, drawing_id: str | None = None, source_stage_ref: str | None = None,
     view_recipe: dict[str, Any] | None = None, generated_at: str | None = None,
-    replaces_document: DocumentReplacementTarget | None = None,
+    replaces_document: DocumentReplacementTarget | None = None, content_identity: str | None = None,
 ) -> SourceDocument:
     """Retain original bytes in a named run or the project's source-document run.
 
@@ -515,6 +530,10 @@ def save_document(
         raise StudioError(422, "DOCUMENT_INVALID", "The source document is not valid base64 data.") from exc
     if len(data) > MAX_DOCUMENT_BYTES:
         raise StudioError(413, "DOCUMENT_TOO_LARGE", "Source documents may contain at most 32 MiB.")
+    if content_identity is not None:
+        if mime_type != PNG_MEDIA_TYPE:
+            raise StudioError(422, "DOCUMENT_INVALID", "A review snapshot must be a PNG image.")
+        data = _png_with_content_identity(data, content_identity)
     pages = _document_pages(data, mime_type)
     digest = hashlib.sha256(data).hexdigest()
     with _document_source_lock:
@@ -560,8 +579,10 @@ def save_document(
                         "model_source", "model_source_binding_ref", "drawing_id", "revision_ref", "source_stage_ref", "view_recipe", "generated_at",
                     )
                 }, **({"modelSource": model_source.to_dict()} if model_source else {}),
-                **({"drawingId": drawing_id, "sourceStageRef": source_stage_ref,
-                    "viewRecipe": view_recipe, "generatedAt": generated_at} if drawing_id is not None else {})},
+                **({"drawingId": drawing_id} if drawing_id is not None else {}),
+                **({"sourceStageRef": source_stage_ref} if source_stage_ref is not None else {}),
+                **({"viewRecipe": view_recipe} if view_recipe is not None else {}),
+                **({"generatedAt": generated_at} if generated_at is not None else {})},
             )
         except (ProjectRepositoryError, OSError) as exc:
             raise StudioError(409, "DOCUMENT_WRITE_FAILED", "The source document could not be retained in its project.") from exc
