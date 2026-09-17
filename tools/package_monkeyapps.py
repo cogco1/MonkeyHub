@@ -350,20 +350,20 @@ def build_desktop(source: Path, bundle: Path, commit: str, cargo: Path,
     build_environment = dict(environment, ARCHFLOW_SOURCE_REVISION=commit)
     run([str(cargo), "build", "--locked", "--release", "--target-dir", str(target)],
         cwd=desktop, environment=build_environment)
-    executable = target / "release/MonkeyArch.exe"
+    executable = target / "release/MonkeyHub.exe"
     if not executable.is_file():
         raise ValueError(f"The desktop host was not built: {executable}")
     identity = json.loads(run([str(executable), "--version"], capture=True, environment=build_environment))
     package_info = tomllib.loads((desktop / "Cargo.toml").read_text(encoding="utf-8"))["package"]
     if identity.get("sourceRevision") != commit or identity.get("version") != package_info["version"]:
         raise ValueError("The desktop executable does not match the selected source snapshot/version.")
-    shutil.copy2(executable, bundle / "MonkeyArch.exe")
+    shutil.copy2(executable, bundle / "MonkeyHub.exe")
     shutil.copy2(desktop / "Cargo.lock", bundle / "_runtime/desktop-Cargo.lock")
     return {
         "version": package_info["version"], "sourceCommit": commit,
         "cargoVersion": run([str(cargo), "--version"], capture=True, environment=build_environment),
         "cargoLockSha256": sha256(desktop / "Cargo.lock"),
-        "executableSha256": sha256(bundle / "MonkeyArch.exe"),
+        "executableSha256": sha256(bundle / "MonkeyHub.exe"),
     }
 
 
@@ -504,13 +504,13 @@ def rust_components(bundle: Path, desktop: dict[str, str]) -> list[dict[str, obj
     """
     locked = tomllib.loads((bundle / "_runtime/desktop-Cargo.lock").read_text(encoding="utf-8"))
     components = [sbom_component(
-        "application", "MonkeyArch.exe", desktop["version"], "monkeyhub:MonkeyArch.exe",
-        (SHIPPED_IN, "MonkeyArch.exe"),
+        "application", "MonkeyHub.exe", desktop["version"], "monkeyhub:MonkeyHub.exe",
+        (SHIPPED_IN, "MonkeyHub.exe"),
         hashes=[{"alg": "SHA-256", "content": desktop["executableSha256"]}])]
-    place = (BUILD_INPUT, "_runtime/desktop-Cargo.lock -> MonkeyArch.exe")
+    place = (BUILD_INPUT, "_runtime/desktop-Cargo.lock -> MonkeyHub.exe")
     for crate in locked.get("package", ()):
         if not str(crate.get("source", "")).startswith(CRATES_IO):
-            continue  # The local desktop crate ships as MonkeyArch.exe itself.
+            continue  # The local desktop crate ships as MonkeyHub.exe itself.
         fields: dict[str, object] = {}
         if isinstance(crate.get("checksum"), str):
             fields["hashes"] = [{"alg": "SHA-256", "content": crate["checksum"]}]
@@ -894,7 +894,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="overrides <workspace-root>/cache/package-monkeyapps; otherwise defaults to <staging-dir>/cache")
     parser.add_argument("--node", type=Path, default=Path(shutil.which("node") or "node.exe"))
     parser.add_argument("--npm-cli", type=Path, help="path to npm/bin/npm-cli.js; no shell or npm.cmd interpolation")
-    parser.add_argument("--desktop", action="store_true", help="build MonkeyArch.exe from the same snapshot using Rust/MSVC")
+    parser.add_argument("--desktop", action="store_true", help="build MonkeyHub.exe from the same snapshot using Rust/MSVC")
     parser.add_argument("--cargo", type=Path, default=Path(shutil.which("cargo") or "cargo.exe"),
                         help="Cargo executable for --desktop; build dependencies stay outside the source checkout")
     args = parser.parse_args(argv)

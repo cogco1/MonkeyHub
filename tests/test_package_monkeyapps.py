@@ -268,7 +268,30 @@ class DesktopPackageTests(unittest.TestCase):
             local, shortcuts = root / "local", root / "shortcuts"
             shortcuts.mkdir()
             environment = dict(os.environ, LOCALAPPDATA=str(local))
+            make_link = root / "make-link.ps1"
+            make_link.write_text(
+                "param($Link, $Target)\n$shell = New-Object -ComObject WScript.Shell\n"
+                "$shortcut = $shell.CreateShortcut($Link)\n$shortcut.TargetPath = $Target\n"
+                "$shortcut.Save()\n", encoding="utf-8")
+
+            def shortcut(name, target):
+                subprocess.run(["powershell.exe", "-NoProfile", "-File", str(make_link),
+                                str(shortcuts / name), str(target)],
+                               capture_output=True, text=True, timeout=15, check=True)
+
+            legacy = local / "MonkeyHub/versions/legacy-desktop"
+            (legacy / "apps/monkeyhub").mkdir(parents=True)
+            (legacy / "apps/monkeyhub/run.py").write_bytes(b"fixture - never executed")
+            (legacy / "MonkeyArch.exe").write_bytes(b"old native executable")
+            (legacy / "source-version.txt").write_text("c" * 40, encoding="utf-8")
+            (legacy / "build-info.json").write_text(
+                json.dumps({"sourceCommit": "c" * 40, "desktop": {"sourceCommit": "c" * 40}}),
+                encoding="utf-8")
+            shortcut("MonkeyArch.lnk", legacy / "MonkeyArch.exe")
             retained = {}
+            for path in legacy.rglob("*"):
+                if path.is_file():
+                    retained[path] = path.read_bytes()
             for relative in ("project/HEAD", "local/MonkeyHub/config/applications.json", "local/MonkeyHub/chats/retained.json"):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,7 +304,7 @@ class DesktopPackageTests(unittest.TestCase):
                             "apps/archflow-studio/web/dist/index.html",
                             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml"]
                 if desktop:
-                    required.extend(("MonkeyArch.exe", "_runtime/desktop-Cargo.lock"))
+                    required.extend(("MonkeyHub.exe", "_runtime/desktop-Cargo.lock"))
                 for relative in required:
                     path = bundle / relative
                     path.parent.mkdir(parents=True, exist_ok=True)
@@ -304,21 +327,21 @@ class DesktopPackageTests(unittest.TestCase):
                 installed_entry = local / "MonkeyHub/versions" / name / required[-1]
                 retained[installed_entry] = installed_entry.read_bytes()
                 if desktop:
-                    (bundle / "MonkeyArch.exe").unlink()
+                    (bundle / "MonkeyHub.exe").unlink()
                     missing = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
                     self.assertNotEqual(missing.returncode, 0)
-                    self.assertIn("MonkeyArch.exe", missing.stdout + missing.stderr)
+                    self.assertIn("MonkeyHub.exe", missing.stdout + missing.stderr)
             self.assertTrue((local / "MonkeyHub/versions" / ("a" * 12) / "OPEN_MONKEYHUB.cmd").is_file())
             installed = local / "MonkeyHub/versions" / (commit[:12] + "-desktop")
             browser_entry = installed / "OPEN_MONKEYHUB.cmd"
-            desktop_entry = installed / "MonkeyArch.exe"
+            desktop_entry = installed / "MonkeyHub.exe"
             self.assertTrue(browser_entry.is_file())
             self.assertTrue(desktop_entry.is_file())
-            self.assertFalse((shortcuts / "MonkeyHub.lnk").exists())
-            self.assertTrue((shortcuts / "MonkeyArch.lnk").exists())
+            self.assertFalse((shortcuts / "MonkeyArch.lnk").exists())
+            self.assertTrue((shortcuts / "MonkeyHub.lnk").exists())
             inspect = root / "inspect.ps1"
             inspect.write_text("param($Directory)\n$shell = New-Object -ComObject WScript.Shell\n"
-                               "@('MonkeyArch.lnk') | ForEach-Object { "
+                               "@('MonkeyHub.lnk') | ForEach-Object { "
                                "$link = $shell.CreateShortcut((Join-Path $Directory $_)); "
                                "[PSCustomObject]@{Target=$link.TargetPath; WindowStyle=$link.WindowStyle} } "
                                "| ConvertTo-Json -Compress\n", encoding="utf-8")
@@ -327,6 +350,25 @@ class DesktopPackageTests(unittest.TestCase):
             link = json.loads(result.stdout)
             self.assertTrue(Path(link["Target"]).samefile(desktop_entry), link)
             self.assertEqual(link["WindowStyle"], 1)
+
+            # A familiar filename without our package metadata is not ours to replace.
+            foreign = root / "another application"
+            foreign.mkdir()
+            (bundle / "MonkeyHub.exe").write_bytes(b"fixture - never executed")
+            for entry in ("MonkeyHub.exe", "OPEN_MONKEYHUB.cmd", "MonkeyArch.exe"):
+                target = foreign / entry
+                target.write_bytes(b"unrelated application")
+                name = "MonkeyArch.lnk" if entry == "MonkeyArch.exe" else "MonkeyHub.lnk"
+                if name == "MonkeyArch.lnk":
+                    shortcut("MonkeyHub.lnk", desktop_entry)
+                shortcut(name, target)
+                before = (shortcuts / name).read_bytes()
+                result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual((shortcuts / name).read_bytes(), before, entry)
+                self.assertEqual(target.read_bytes(), b"unrelated application")
+            for path, before in retained.items():
+                self.assertEqual(path.read_bytes(), before, path)
 
     def test_desktop_is_built_from_snapshot_with_bound_revision_and_external_target(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -337,7 +379,7 @@ class DesktopPackageTests(unittest.TestCase):
             (desktop / "Cargo.toml").write_text('[package]\nversion="0.1.0"\n', encoding="utf-8")
             (desktop / "Cargo.lock").write_text('version = 4\n', encoding="utf-8")
             (bundle / "_runtime").mkdir(parents=True)
-            executable = build / "desktop-target/release/MonkeyArch.exe"
+            executable = build / "desktop-target/release/MonkeyHub.exe"
             executable.parent.mkdir(parents=True)
             executable.write_bytes(b"fixture native executable")
             cargo = build / "cargo.exe"
@@ -348,7 +390,7 @@ class DesktopPackageTests(unittest.TestCase):
                                               "--target-dir", str(build / "desktop-target")])
             self.assertEqual(command.kwargs["cwd"], desktop)
             self.assertEqual(command.kwargs["environment"]["ARCHFLOW_SOURCE_REVISION"], "a" * 40)
-            self.assertEqual((bundle / "MonkeyArch.exe").read_bytes(), executable.read_bytes())
+            self.assertEqual((bundle / "MonkeyHub.exe").read_bytes(), executable.read_bytes())
             self.assertEqual((bundle / "_runtime/desktop-Cargo.lock").read_bytes(), (desktop / "Cargo.lock").read_bytes())
             self.assertEqual(result["sourceCommit"], "a" * 40)
             self.assertEqual(result["executableSha256"], builder.sha256(executable))
@@ -460,7 +502,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "version": "0.1.0", "sourceCommit": "c" * 40, "cargoVersion": "cargo fixture",
             "cargoLockSha256": "a" * 64, "executableSha256": "b" * 64})
         lock = self.bundle / "_runtime/desktop-Cargo.lock"
-        lock.write_text('version = 4\n\n[[package]]\nname = "monkeyarch-desktop"\nversion = "0.1.0"\n\n'
+        lock.write_text('version = 4\n\n[[package]]\nname = "monkeyhub-desktop"\nversion = "0.1.0"\n\n'
                         '[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
                         f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
         document = self.sbom(build_info)
@@ -490,12 +532,12 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(components["pkg:cargo/tauri@2.11.5"]["hashes"],
                          [{"alg": "SHA-256", "content": "9" * 64}])
         self.assertEqual(components["pkg:cargo/tauri@2.11.5"]["properties"], [
-            {"name": builder.BUILD_INPUT, "value": "_runtime/desktop-Cargo.lock -> MonkeyArch.exe"}])
-        self.assertNotIn("pkg:cargo/monkeyarch-desktop@0.1.0", components)
+            {"name": builder.BUILD_INPUT, "value": "_runtime/desktop-Cargo.lock -> MonkeyHub.exe"}])
+        self.assertNotIn("pkg:cargo/monkeyhub-desktop@0.1.0", components)
         # Only the executable itself is claimed as shipped.
-        self.assertEqual(components["monkeyhub:MonkeyArch.exe"]["properties"],
-                         [{"name": builder.SHIPPED_IN, "value": "MonkeyArch.exe"}])
-        self.assertEqual(components["monkeyhub:MonkeyArch.exe"]["hashes"],
+        self.assertEqual(components["monkeyhub:MonkeyHub.exe"]["properties"],
+                         [{"name": builder.SHIPPED_IN, "value": "MonkeyHub.exe"}])
+        self.assertEqual(components["monkeyhub:MonkeyHub.exe"]["hashes"],
                          [{"alg": "SHA-256", "content": "b" * 64}])
         meanings = {row["name"] for row in document["metadata"]["properties"]}
         self.assertIn(f"{builder.BUILD_INPUT}:meaning", meanings)
@@ -792,7 +834,7 @@ class ReleaseCandidateNormalizationTests(unittest.TestCase):
             "Metadata-Version: 2.4\nName: rhino3dm\nVersion: 8.32.1\nLicense-Expression: MIT\n",
             encoding="utf-8")
         (self.bundle / "_runtime/desktop-Cargo.lock").write_text(
-            'version = 4\n\n[[package]]\nname = "monkeyarch-desktop"\nversion = '
+            'version = 4\n\n[[package]]\nname = "monkeyhub-desktop"\nversion = '
             f'"{self.VERSION}"\n\n[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
             f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
         for locked, tree in (("apps/monkeyhub", self.bundle / "apps/monkeyhub"),

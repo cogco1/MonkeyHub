@@ -12,7 +12,7 @@
 2. 双击 `INSTALL_MONKEYHUB.cmd`。默认复制到 `%LOCALAPPDATA%\MonkeyHub\versions\<源码版本>`，不需要管理员权限；
    版本目录使用 Hub 提交前缀，桌面包另带 `-desktop` 后缀。
 3. 安装完成后，选择是否创建桌面快捷方式、是否立即打开 MonkeyHub。按 Enter 接受显示的选项，输入 `n` 跳过。
-4. 桌面包只保留 `MonkeyArch` App 快捷方式，并清理已识别的旧 `MonkeyHub` 网页快捷方式。纯网页包创建 `MonkeyHub` 快捷方式；也可运行安装目录中的 `OPEN_MONKEYHUB.cmd`。
+4. 桌面包创建指向 `MonkeyHub.exe` 的 `MonkeyHub` 快捷方式，将已识别的旧 `MonkeyHub` 网页入口更新为应用入口，并移除已识别的旧 `MonkeyArch` 快捷方式。无关快捷方式保留。纯网页包创建 `MonkeyHub` 网页快捷方式；也可运行安装目录中的 `OPEN_MONKEYHUB.cmd`。
    Hub 可在没有项目时打开；MonkeyArch、MonkeyDiagram 和 MonkeyBoard 通过已选真实项目共用 Studio 服务，MonkeyMonitor 可独立启动。
 
 安装目录也可在 PowerShell 中明确指定，例如：
@@ -87,7 +87,7 @@ python tools/package_monkeyapps.py --source-ref <三条线集成后的完整提�
   说明它与本包的关系，两者强度不同：
   - `monkeyhub:shippedIn`：该构件以文件形式在包内的位置。包括内置 Python 的 site-packages
     实际安装的发行包、包内 `apps/monkeyhub/node_modules`、内置 Python/Node 运行时，
-    以及 `MonkeyArch.exe` 本身。
+    以及 `MonkeyHub.exe` 本身。
   - `monkeyhub:buildInput`：某个 lock 文件为指定构建产物钉住的依赖，**不断言该构件确实进入
     了那个产物**。前端生产依赖由打包器决定哪些真正进入 `dist`；一份 `Cargo.lock` 覆盖所有
     目标平台、feature 和 build script。把它们写成「已编译进二进制」是没有证据的说法。

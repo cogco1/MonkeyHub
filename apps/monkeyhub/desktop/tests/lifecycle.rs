@@ -1,4 +1,4 @@
-use monkeyarch_desktop::{
+use monkeyhub_desktop::{
     available_port, fetch_health, hub_reports_worker_origin, is_status_url, verify_source_revision,
     DiagnosticLog, ExpectedIdentity, HealthError, HubHealth, LaunchConfig, OwnedRuntime,
     SOURCE_REVISION,
@@ -20,7 +20,7 @@ struct Fixture {
 }
 impl Fixture {
     fn new(options: serde_json::Value) -> Self {
-        let root = std::env::temp_dir().join(format!("monkeyarch-desktop-test-{}", Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("monkeyhub-desktop-test-{}", Uuid::new_v4()));
         let source = root.join("source");
         let runtime = root.join("runtime");
         fs::create_dir_all(source.join("apps/monkeyhub")).unwrap();
@@ -32,7 +32,7 @@ impl Fixture {
         .unwrap();
         fs::write(source.join("source-version.txt"), "a".repeat(40)).unwrap();
         fs::write(source.join("fixture.json"), options.to_string()).unwrap();
-        let python = std::env::var_os("MONKEYARCH_TEST_PYTHON").unwrap_or_else(|| "python".into());
+        let python = std::env::var_os("MONKEYHUB_TEST_PYTHON").unwrap_or_else(|| "python".into());
         let output = Command::new(python)
             .args(["-c", "import sys; print(sys.executable)"])
             .output()

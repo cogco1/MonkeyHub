@@ -67,15 +67,15 @@ jobs:
             $cargoToml = 'apps/monkeyhub/desktop/Cargo.toml'
             $cargoLock = 'apps/monkeyhub/desktop/Cargo.lock'
             $toml = Get-Content -LiteralPath $cargoToml -Raw
-            $match = [regex]::Match($toml, '(?ms)^\[package\]\s+name = "monkeyarch-desktop"\s+version = "([^"]+)"')
+            $match = [regex]::Match($toml, '(?ms)^\[package\]\s+name = "monkeyhub-desktop"\s+version = "([^"]+)"')
             if (-not $match.Success) { throw 'Cannot find the desktop package version in Cargo.toml' }
             $oldVersion = $match.Groups[1].Value
             $toml = $toml.Remove($match.Groups[1].Index, $match.Groups[1].Length).Insert($match.Groups[1].Index, $version)
             Set-Content -LiteralPath $cargoToml -Value $toml -NoNewline -Encoding utf8
             $lock = Get-Content -LiteralPath $cargoLock -Raw
-            $lockPattern = '(?ms)(\[\[package\]\]\s+name = "monkeyarch-desktop"\s+version = ")' + [regex]::Escape($oldVersion) + '"'
+            $lockPattern = '(?ms)(\[\[package\]\]\s+name = "monkeyhub-desktop"\s+version = ")' + [regex]::Escape($oldVersion) + '"'
             $lockMatch = [regex]::Match($lock, $lockPattern)
-            if (-not $lockMatch.Success) { throw "Cannot find monkeyarch-desktop $oldVersion in Cargo.lock" }
+            if (-not $lockMatch.Success) { throw "Cannot find monkeyhub-desktop $oldVersion in Cargo.lock" }
             $lock = [regex]::Replace($lock, $lockPattern, ('${1}' + $version + '"'), 1)
             Set-Content -LiteralPath $cargoLock -Value $lock -NoNewline -Encoding utf8
 
@@ -104,7 +104,7 @@ jobs:
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: MonkeyArch-release-commit-${{ github.sha }}
+          name: MonkeyHub-release-commit-${{ github.sha }}
           path: ${{ runner.temp }}/release-commit.bundle
           retention-days: 7
           if-no-files-found: error
@@ -245,7 +245,7 @@ jobs:
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
         shell: pwsh
         run: |
-          $identity = & "$env:PACKAGE_BUILD/desktop-target/release/MonkeyArch.exe" --version
+          $identity = & "$env:PACKAGE_BUILD/desktop-target/release/MonkeyHub.exe" --version
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $parsed = $identity | ConvertFrom-Json
           if ($parsed.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
@@ -272,29 +272,32 @@ jobs:
           if ((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'ZIP checksum mismatch' }
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath "$root/extracted"
           $package = Get-ChildItem -LiteralPath "$root/extracted" -Directory | Select-Object -First 1
-          $installed = Join-Path $root 'installed/MonkeyArch'
+          if (Test-Path -LiteralPath "$($package.FullName)/MonkeyArch.exe") {
+            throw 'The desktop package still contains the retired MonkeyArch.exe'
+          }
+          $installed = Join-Path $root 'installed/MonkeyHub'
           $env:LOCALAPPDATA = Join-Path $root 'installer-user'
           & "$($package.FullName)/apps/monkeyhub/installer/install.ps1" -InstallDirectory $installed
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          "MONKEYARCH_PACKAGE_ROOT=$($package.FullName)" >> $env:GITHUB_ENV
-          "MONKEYARCH_INSTALLED_ROOT=$installed" >> $env:GITHUB_ENV
-          "MONKEYARCH_DESKTOP_EXE=$installed/MonkeyArch.exe" >> $env:GITHUB_ENV
+          "MONKEYHUB_PACKAGE_ROOT=$($package.FullName)" >> $env:GITHUB_ENV
+          "MONKEYHUB_INSTALLED_ROOT=$installed" >> $env:GITHUB_ENV
+          "MONKEYHUB_DESKTOP_EXE=$installed/MonkeyHub.exe" >> $env:GITHUB_ENV
       - name: Installed native lifecycle, reinstall and isolated project restart
         shell: pwsh
         run: |
           $env:PYTHONUTF8 = '1'
-          # The suite skips itself when MONKEYARCH_DESKTOP_EXE is missing, which
+          # The suite skips itself when MONKEYHUB_DESKTOP_EXE is missing, which
           # would report a green gate having run nothing.
-          if (-not $env:MONKEYARCH_DESKTOP_EXE -or -not (Test-Path -LiteralPath $env:MONKEYARCH_DESKTOP_EXE)) {
-            throw 'The installed MonkeyArch.exe is missing; the runtime suite would skip instead of running'
+          if (-not $env:MONKEYHUB_DESKTOP_EXE -or -not (Test-Path -LiteralPath $env:MONKEYHUB_DESKTOP_EXE)) {
+            throw 'The installed MonkeyHub.exe is missing; the runtime suite would skip instead of running'
           }
-          & "$env:MONKEYARCH_INSTALLED_ROOT/_runtime/python/python.exe" -B apps/monkeyhub/desktop/tests/test_runtime.py -v
+          & "$env:MONKEYHUB_INSTALLED_ROOT/_runtime/python/python.exe" -B apps/monkeyhub/desktop/tests/test_runtime.py -v
           exit $LASTEXITCODE
       - name: Verify installed release identity
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
         shell: pwsh
         run: |
-          $identity = (& "$env:MONKEYARCH_DESKTOP_EXE" --version) | ConvertFrom-Json
+          $identity = (& "$env:MONKEYHUB_DESKTOP_EXE" --version) | ConvertFrom-Json
           if ($identity.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
             throw "Installed desktop version $($identity.version) does not match release $env:MONKEYHUB_RELEASE_VERSION"
           }
@@ -305,7 +308,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MonkeyArch-package-${{ github.sha }}
+          name: MonkeyHub-package-${{ github.sha }}
           path: ${{ runner.temp }}/mhp/output/*
           compression-level: 0
           retention-days: 7
@@ -314,8 +317,8 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: MonkeyArch-desktop-${{ github.sha }}
-          path: ${{ runner.temp }}/mhp/installed/MonkeyArch/MonkeyArch.exe
+          name: MonkeyHub-desktop-${{ github.sha }}
+          path: ${{ runner.temp }}/mhp/installed/MonkeyHub/MonkeyHub.exe
           retention-days: 7
           if-no-files-found: warn
       - name: Package and native shortcut selection
@@ -365,11 +368,11 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          name: MonkeyArch-release-commit-${{ github.sha }}
+          name: MonkeyHub-release-commit-${{ github.sha }}
           path: ${{ runner.temp }}/release-commit
       - uses: actions/download-artifact@v4
         with:
-          name: MonkeyArch-package-${{ github.sha }}
+          name: MonkeyHub-package-${{ github.sha }}
           path: ${{ runner.temp }}/output
       - uses: actions/setup-python@v5
         with:
@@ -410,10 +413,10 @@ jobs:
             throw "Release commit was not written by the release bot: $author"
           }
           $toml = (git show "${expected}:apps/monkeyhub/desktop/Cargo.toml") -join "`n"
-          $tomlPattern = '(?ms)^\[package\]\s+name = "monkeyarch-desktop"\s+version = "' + [regex]::Escape($version) + '"'
+          $tomlPattern = '(?ms)^\[package\]\s+name = "monkeyhub-desktop"\s+version = "' + [regex]::Escape($version) + '"'
           if ($toml -notmatch $tomlPattern) { throw "Release commit does not declare desktop version $version" }
           $lock = (git show "${expected}:apps/monkeyhub/desktop/Cargo.lock") -join "`n"
-          $lockPattern = '(?ms)\[\[package\]\]\s+name = "monkeyarch-desktop"\s+version = "' + [regex]::Escape($version) + '"'
+          $lockPattern = '(?ms)\[\[package\]\]\s+name = "monkeyhub-desktop"\s+version = "' + [regex]::Escape($version) + '"'
           if ($lock -notmatch $lockPattern) { throw "Release commit does not lock desktop version $version" }
       - name: Admit only the verified release assets
         shell: pwsh
@@ -509,7 +512,7 @@ jobs:
           - Release source: $env:MONKEYHUB_SOURCE_SHA
           - Promoted main/base commit: ${{ github.sha }}
           - Trust: candidate-unsigned
-          - Package ZIP, ReleaseManifest@1, CycloneDX SBOM, and MonkeyArch.exe report one release version.
+          - Package ZIP, ReleaseManifest@1, CycloneDX SBOM, and MonkeyHub.exe report one release version.
           - This is a prerelease for clean-machine acceptance; it is not a signed production release.
           "@
           gh release create $tag $assetPaths --repo $env:GITHUB_REPOSITORY --prerelease --title "MonkeyHub $tag · Windows candidate" --notes $notes

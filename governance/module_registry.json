@@ -6098,7 +6098,7 @@
         "POST /api/runtime/projects/{runtime_id}/recover",
         "POST /api/runtime/projects/{runtime_id}/close",
         "/api/runtime/projects/{runtime_id}/studio/{path}",
-        "MonkeyArch.exe [--source-root PATH --python PATH] [--runtime-root PATH] [--port PORT] [--startup-timeout-seconds SECONDS] [--version]",
+        "MonkeyHub.exe [--source-root PATH --python PATH] [--runtime-root PATH] [--port PORT] [--startup-timeout-seconds SECONDS] [--version]",
         "GET /api/chat/usage-sources",
         "ChatStore.usage_sources",
         "WorkerSupervisor.verified_origins"
@@ -6234,7 +6234,7 @@
         "Exact-commit source collection for Hub and its included Fab module, frontend build, locked ACP adapter and embedded Python/Node runtimes in external staging/cache",
         "Source-version and build metadata, native import smoke, candidate ZIP and checksum delivery; all applications share the selected Hub source commit",
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell",
-        "Optional --desktop builds and verifies MonkeyArch.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
+        "Optional --desktop builds and verifies MonkeyHub.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
         "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests",
         "Installer-side verification of a detached publisher signature over that same manifest, and the binding of the verified manifest to the candidate archive and extracted package before any installation"
       ],

@@ -1,7 +1,7 @@
 """Opt-in Windows EXE lifecycle tests against real isolated Hub/Studio workers.
 
 Build the production web clients and desktop EXE from this checkout, then set
-MONKEYARCH_DESKTOP_EXE to its absolute path and run this file with unittest or
+MONKEYHUB_DESKTOP_EXE to its absolute path and run this file with unittest or
 pytest. The Python interpreter running the tests supplies the Hub dependencies.
 These checks observe a native window, completed WebView navigation, an unsent
 chat draft through Windows UI Automation, identity-verified HTTP and process
@@ -34,9 +34,9 @@ from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[4]
-INSTALLED = os.environ.get("MONKEYARCH_INSTALLED_ROOT")
+INSTALLED = os.environ.get("MONKEYHUB_INSTALLED_ROOT")
 APPLICATION_ROOT = Path(INSTALLED) if INSTALLED else ROOT
-EXE = os.environ.get("MONKEYARCH_DESKTOP_EXE")
+EXE = os.environ.get("MONKEYHUB_DESKTOP_EXE")
 START = re.compile(r"event=start pid=(\d+) url=(\S+) instance=(\S+) source=([0-9a-f]{40})")
 STATE = re.compile(r"event=state state=(\w+) detail=(.*)")
 PAGE_LOADED = re.compile(r"event=page-loaded url=(\S+)")
@@ -231,7 +231,7 @@ class WindowsProcesses:
             if owner.value == pid and self.user.IsWindowVisible(hwnd):
                 caption = ctypes.create_unicode_buffer(512)
                 self.user.GetWindowTextW(hwnd, caption, len(caption))
-                if caption.value.startswith("MonkeyArch"):
+                if caption.value.startswith("MonkeyHub"):
                     found.append((hwnd, caption.value))
             return True
 
@@ -269,7 +269,7 @@ class WindowsProcesses:
             raise failure
 
 
-@unittest.skipUnless(os.name == "nt" and EXE, "Set MONKEYARCH_DESKTOP_EXE to run the real Windows EXE tests")
+@unittest.skipUnless(os.name == "nt" and EXE, "Set MONKEYHUB_DESKTOP_EXE to run the real Windows EXE tests")
 class DesktopRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(Path(EXE).is_absolute() and Path(EXE).is_file(), EXE)
@@ -285,7 +285,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         self.revision = source_revision(APPLICATION_ROOT)
         self.assertIsNotNone(self.revision)
         # Explicit cleanup below waits for this instance's asynchronous WebView exit.
-        temporary = tempfile.TemporaryDirectory(prefix="MonkeyArch desktop 测试 ", delete=False)
+        temporary = tempfile.TemporaryDirectory(prefix="MonkeyHub desktop 测试 ", delete=False)
         self.addCleanup(self.cleanup_temporary, temporary)
         self.root = Path(temporary.name)
         self.runtime = self.root / "local/MonkeyHub" if INSTALLED else self.root / "runtime"
@@ -441,8 +441,8 @@ class DesktopRuntimeTests(unittest.TestCase):
         for pid in self.pids:
             self.native.track(pid)
         self.ports = {urlsplit(self.url).port}
-        wait_for(lambda: any(title == "MonkeyArch" for _, title in self.native.windows(self.shell.pid)),
-                 "The ready EXE did not expose its native MonkeyArch window")
+        wait_for(lambda: any(title == "MonkeyHub" for _, title in self.native.windows(self.shell.pid)),
+                 "The ready EXE did not expose its native MonkeyHub window")
         wait_for(lambda: self.url in PAGE_LOADED.findall(self.log_text()),
                  lambda: f"The native WebView did not finish loading the verified Hub root page: {self.log_text()}")
         self.assertEqual(request(self.url, raw=True), (APPLICATION_ROOT / "apps/monkeyhub/web/dist/index.html").read_bytes())
@@ -649,7 +649,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         if INSTALLED:
             # Run the actual package installer after project use and before
             # reopening. Existing user settings and P036 bytes must survive.
-            installer = Path(os.environ["MONKEYARCH_PACKAGE_ROOT"]) / "apps/monkeyhub/installer/install.ps1"
+            installer = Path(os.environ["MONKEYHUB_PACKAGE_ROOT"]) / "apps/monkeyhub/installer/install.ps1"
             result = subprocess.run([
                 "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(installer),
                 "-InstallDirectory", str(APPLICATION_ROOT),
@@ -691,7 +691,7 @@ $pattern.Current.Value | ConvertTo-Json -Compress
         # The root may fail its bind before the host reads the foreign health.
         # Both routes must produce a concrete diagnostic without loading it.
         failure_titles = {
-            "MonkeyArch · 启动失败", "MonkeyArch · 运行时身份验证失败", "MonkeyArch · 运行时已退出",
+            "MonkeyHub · 启动失败", "MonkeyHub · 运行时身份验证失败", "MonkeyHub · 运行时已退出",
         }
         wait_for(lambda: any(title in failure_titles for _, title in self.native.windows(self.shell.pid)),
                  "Occupied-port failure did not appear in the native window title")
