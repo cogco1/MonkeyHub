@@ -169,7 +169,12 @@ try {
     await page.keyboard.press("Enter"); await page.mouse.up(); assert.equal(await count(),0,`${cancellation} cannot commit an old gesture`);
     await page.setViewportSize({width:1280,height:850});
   }
+  console.log("PASS all seven cancellation paths leave no typed action");
   await reset(); await setView(false,[12,-15,10]);
+  // Clear the viewport pick through a real empty-space click before selecting
+  // the object without a face, as an object-tree selection would do.
+  await page.mouse.click(24,24);
+  assert.equal(await page.evaluate(()=>window.viewport.current.workPlaneFromSelection()),null);
   await page.evaluate(()=>window.selectWithoutFace());
   await page.waitForFunction(()=>window.selection === "source");
   await page.evaluate(()=>window.arm("pushPull"));
