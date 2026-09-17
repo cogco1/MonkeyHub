@@ -56,31 +56,6 @@
       ],
       "lanes": [
         {
-          "id": "runtime-contract",
-          "issue": "#127 Phase 1",
-          "status": "done",
-          "branch": "claude/gh127-runtime-contract",
-          "worktree": "workspace/worktrees/claude-gh127-runtime-contract",
-          "base_ref": "a7c56b92d4fe4088f271e607f82941a98f7a0ef6",
-          "contributor": "Claude Opus worker",
-          "reviewer": "Claude Fable, then the repository owner",
-          "handoff": "Landed: docs/PROJECT_RUNTIME.md, studio.shell redefined as the runtime, studio.web.shell registered, hub.shell states it is the application, AGENTS/REPO_LAYOUT/guide updated. Next: shell-infra (2a move, then 2b), after #113, #115 and #116 merge.",
-          "modules": [
-            "studio.shell",
-            "hub.shell"
-          ],
-          "write_scope": [
-            "docs/PROJECT_RUNTIME.md",
-            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
-            "apps/monkeyhub/README.md",
-            "apps/archflow-studio/README.md",
-            "apps/archflow-studio/api/archflow_studio_api/__init__.py",
-            "apps/monkeyhub/launch-hub.ps1",
-            "apps/monkeyhub/installer/README.md"
-          ],
-          "depends_on": []
-        },
-        {
           "id": "shell-infra",
           "issue": "#127 Phase 2",
           "status": "planned",
@@ -89,7 +64,7 @@
           "base_ref": null,
           "contributor": null,
           "reviewer": "Claude Fable, then the repository owner",
-          "handoff": "2a: move apps/archflow-studio/web to apps/monkeyhub/web with the Hub shell folded in, behavior unchanged, but do not carry retired Frame/Massing/Program product panels from #138. 2b: one URL router, ProjectContext with one runtime client per open project, one settings authority, one catalog pair, one failure and loading surface. Starts after runtime-contract is done and PRs #113, #115 and #116 have merged.",
+          "handoff": "2a: move apps/archflow-studio/web to apps/monkeyhub/web with the Hub shell folded in, behavior unchanged, but do not carry retired Frame/Massing/Program product panels from #138. 2b: one URL router, ProjectContext with one runtime client per open project, one settings authority, one catalog pair, one failure and loading surface. Ready to claim: runtime-contract landed in PR #133; prerequisite PRs #113, #115 and #116 are merged, and #138 is closed. No implementation branch or contributor has been assigned.",
           "modules": [
             "hub.shell",
             "studio.web.shell",
@@ -97,9 +72,7 @@
             "studio.intent"
           ],
           "write_scope": [],
-          "depends_on": [
-            "GH-127/runtime-contract"
-          ]
+          "depends_on": []
         },
         {
           "id": "board",
@@ -586,27 +559,7 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": [
-        {
-          "id": "chat-progress",
-          "issue": "#130 continuous user-facing work narrative projection",
-          "status": "active",
-          "branch": "gpt/gh130-progress-narrative",
-          "worktree": "cloud/gpt-gh130-progress-narrative",
-          "base_ref": "main",
-          "contributor": "GPT-5.6 Sol",
-          "reviewer": "Repository owner",
-          "handoff": null,
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/run.py",
-            "apps/monkeyhub/api/tests/test_chat_progress.py"
-          ],
-          "depends_on": []
-        }
-      ]
+      "lanes": []
     },
     {
       "id": "P105",
@@ -827,35 +780,6 @@
       ],
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
-      ]
-    },
-    {
-      "id": "P114",
-      "stream": "planning",
-      "status": "blocked",
-      "goal": "User settings the launcher can read: GET/PUT /api/settings/user (language, theme, fontScale, model defaults) backed by %APPDATA%\\MonkeyArch\\settings.json in local mode only (remote mode neither declares the user-settings capability nor serves it), the launcher translating that file into environment variables at start, and the settings panel's save wired to the PUT with a user source badge. No remote multi-user.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/settings.py",
-        "apps/archflow-studio/api/archflow_studio_api/protocol.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/settings.py",
-        "apps/archflow-studio/api/tests/test_settings.py",
-        "apps/archflow-studio/web/src/features/settings/",
-        "governance/architecture_policy.json",
-        "docs/PROTOCOL.md",
-        "docs/mapping/",
-        "governance/work_registry.json"
-      ],
-      "card": "docs/mapping/planning/P114-user-settings-bridge.md",
-      "acceptance": [
-        "API tests: local-mode read/write round trip; remote mode answers 404 and its capabilities omit user-settings; a corrupt file returns 422 without crashing.",
-        "Launcher: after writing one setting and restarting, the process environment agrees with it (manual check, recorded in the receipt).",
-        "archcheck with the write site registered, spine and api suites pass; PROTOCOL.md gains the two provisional resource rows."
-      ],
-      "notes": [
-        "2026-09-08: local implementation and verification are complete; active work is the coherent source handoff with P108. GET/PUT /api/settings/user persists language, theme, fontScale, intentProvider, intentModel and intentTimeoutS. developerMode remains a browser preference.",
-        "2026-09-08: feature follow-ups wait for P115 namespace/workspace migration. P108/P114 source handoff is frozen at b5e6677; its verification does not certify later migration changes.",
-        "2026-09-15: the standalone launcher and its runtime.json bridge retired with #126; the Hub injects intentProvider/intentModel/intentTimeoutS into the Studio child environment (applications.py, covered by apps/monkeyhub/api/tests/test_applications.py)."
       ]
     }
   ]
