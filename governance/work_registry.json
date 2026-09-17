@@ -3,23 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-156",
-      "stream": "interaction",
-      "status": "active",
-      "goal": "Fix version-history interception of existing viewport tools and retire only stale manual Program fixture hooks; preserve candidate, Stage, camera and source boundaries.",
-      "depends_on": [],
-      "branch": "codex/viewport-toolbar-closeout",
-      "worktree": "cloud/codex-viewport-toolbar-closeout",
-      "base_ref": "8de3e7dd211c68bcfd610283ed4dbbefadbdaefe",
-      "contributor": "ChatGPT",
-      "reviewer": "Repository owner",
-      "write_scope": [
-        "apps/archflow-studio/web/src/styles.css",
-        "apps/archflow-studio/web/src/features/stage/Stage.tsx",
-        "apps/archflow-studio/web/test/candidatePreview.browser.mjs"
-      ]
-    },
-    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
@@ -40,7 +23,7 @@
         "apps/archflow-studio/web/src/features/stage/ModelEditPanel.tsx",
         "apps/archflow-studio/web/test/translationGizmo.browser.mjs"
       ],
-      "handoff": "V1 and N1 are merged (#147/#155); Tracing Paper integration #153 is now merged. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane; GH-156 only fixes toolbar/version-panel access."
+      "handoff": "V1 and N1 are merged (#147/#155), Tracing Paper integration #153 is merged, and the #156/#157 viewport/document closeout is complete. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane."
     },
     {
       "id": "GH-73",

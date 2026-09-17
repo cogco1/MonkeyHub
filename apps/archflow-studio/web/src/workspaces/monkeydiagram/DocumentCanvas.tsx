@@ -562,7 +562,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
       const linked = available.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
       const generated = available.filter((item) => item.generatedAt && Number.isFinite(Date.parse(item.generatedAt)));
       const linkedGenerated = generated.filter((item) => sameModelSource(item.modelSource ?? null, editingModelSource));
-      const reviewChoices = linkedGenerated.length > 0 ? linkedGenerated : generated;
+      const reviewChoices = editingModelSource === null ? generated : linkedGenerated;
       const latestTime = Math.max(...reviewChoices.map((item) => Date.parse(item.generatedAt!)));
       const newest = reviewChoices.filter((item) => Date.parse(item.generatedAt!) === latestTime);
       const preferred = newest.length === 1 ? newest[0] : linked.length === 1 ? linked[0] : null;

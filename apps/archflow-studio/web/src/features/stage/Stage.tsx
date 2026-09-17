@@ -346,6 +346,35 @@ export function Stage({
   const [viewToolsOpen, setViewToolsOpen] = useState(false);
   const [lineToolsOpen, setLineToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
+  const stageElement = useRef<HTMLElement>(null);
+  const workspaceElement = useRef<HTMLDivElement>(null);
+  const toolsElement = useRef<HTMLDivElement>(null);
+  const footerElement = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const stage = stageElement.current, workspace = workspaceElement.current;
+    const tools = toolsElement.current, footer = footerElement.current;
+    if (!stage || !workspace || !tools || !footer) return;
+    // Keep the floating history above the tools, including wrapped rows and
+    // larger fonts, without resizing the model canvas or changing its camera.
+    const properties = [
+      ["--stage-toolbar-height", tools],
+      ["--stage-footer-height", footer],
+      ["--stage-workspace-height", workspace],
+    ] as const;
+    const measure = () => {
+      for (const [name, element] of properties) {
+        const value = `${Math.ceil(element.getBoundingClientRect().height)}px`;
+        if (stage.style.getPropertyValue(name) !== value) stage.style.setProperty(name, value);
+      }
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    for (const [, element] of properties) observer?.observe(element);
+    return () => {
+      observer?.disconnect();
+      for (const [name] of properties) stage.style.removeProperty(name);
+    };
+  }, []);
   // One drawing action at a time, entirely local until it is finished.
   const [sketch, setSketch] = useState(() => sketchControls(SKETCH_IDLE));
   const [workPlaneName, setWorkPlaneName] = useState<"xy" | "xz" | "yz" | "face">("xy");
@@ -1094,7 +1123,7 @@ export function Stage({
     </div>}
   </>;
   return (
-    <section className="stage" data-footer={!embedded || developerMode} aria-label={t("stage.ariaLabel")}
+    <section ref={stageElement} className="stage" data-footer={!embedded || developerMode} aria-label={t("stage.ariaLabel")}
       onPointerDownCapture={() => modelKeysRef.current?.onInteraction?.()}
       onKeyDownCapture={() => modelKeysRef.current?.onInteraction?.()}>
       {(!embedded || picked !== null || onReturnToBoard) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")} data-embedded={String(embedded)}>
@@ -1139,7 +1168,7 @@ export function Stage({
         </div>
         <button type="button" className="btn btn--small" onClick={drawing.dismissError} aria-label={t("stage.drawing.dismiss")}>{t("common.close")}</button>
       </div>}
-      <div className="stage-workspace">
+      <div ref={workspaceElement} className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         /* Undo and redo are decided in one place - the keyboard effect above -
            so that one Ctrl+Z reaches exactly one owner. The ink's undo is still
@@ -1582,7 +1611,7 @@ export function Stage({
             />
           )}
         </div>
-        <div className="viewtools-wrap">
+        <div ref={toolsElement} className="viewtools-wrap">
           <div className="viewtools model-tools">
             <div className="model-tools__group" role="group" aria-label={zh ? "选择与绘制" : "Select and draw"}>
             <ModelToolButton icon="select" label={t("stage.sketch.select")} shortcut="Space" aria-pressed={sketch.tool === null && !measuring && !model?.directTool && !tool && !eraser}
@@ -1939,7 +1968,7 @@ export function Stage({
 
       {drawer}
       </div>
-      <div className="stage__foot">
+      <div ref={footerElement} className="stage__foot">
         {/* Embedded, the host states the project's published version and Stage
             beside the conversation; a second permanent strip here would be a
             second answer to the same question. */}
