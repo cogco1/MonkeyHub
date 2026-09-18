@@ -6065,6 +6065,7 @@
         "validate_action",
         "action_payload",
         "target_payload",
+        "redacted_text",
         "ResolvedTarget",
         "WindowInfo",
         "build_receipt",

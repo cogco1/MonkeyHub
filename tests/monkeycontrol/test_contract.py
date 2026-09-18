@@ -151,6 +151,46 @@ class ValidateActionTests(unittest.TestCase):
             validate_action({**CLICK, "action": {"type": "type"}})
         self.assertIn("action.text", str(caught.exception))
 
+    def test_set_value_may_clear_a_field_but_typing_may_not(self) -> None:
+        action = validate_action({**CLICK, "action": {"type": "set_value", "text": ""}})
+        self.assertEqual(action.text, "")
+        with self.assertRaises(ContractError) as caught:
+            validate_action({**CLICK, "action": {"type": "type", "text": ""}})
+        self.assertEqual(caught.exception.code, "ACTION_INVALID")
+        self.assertIn("action.text", str(caught.exception))
+
+    def test_drag_needs_a_destination(self) -> None:
+        with self.assertRaises(ContractError) as caught:
+            validate_action({**CLICK, "action": {"type": "drag"}})
+        self.assertEqual(caught.exception.code, "ACTION_INVALID")
+        self.assertIn("action.to", str(caught.exception))
+        action = validate_action(
+            {
+                **CLICK,
+                "action": {
+                    "type": "drag",
+                    "to": {"controlType": "ListItem", "name": "Drop here"},
+                },
+            }
+        )
+        self.assertEqual(
+            action.to, TargetSpec(control_type="ListItem", name="Drop here")
+        )
+
+    def test_scroll_needs_a_non_zero_delta(self) -> None:
+        payload = {**without("target"), "action": {"type": "scroll"}}
+        with self.assertRaises(ContractError) as caught:
+            validate_action(payload)
+        self.assertEqual(caught.exception.code, "ACTION_INVALID")
+        self.assertIn("action.delta", str(caught.exception))
+        with self.assertRaises(ContractError) as caught:
+            validate_action({**payload, "action": {"type": "scroll", "delta": 0}})
+        self.assertIn("action.delta", str(caught.exception))
+        self.assertEqual(
+            validate_action({**payload, "action": {"type": "scroll", "delta": -3}}).delta,
+            -3,
+        )
+
     def test_window_and_name_regex_must_compile(self) -> None:
         with self.assertRaises(ContractError) as caught:
             validate_action({**CLICK, "window": "Save ("})

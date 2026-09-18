@@ -4,7 +4,7 @@ import unittest
 
 from archflow.contracts.canonical import canonical_digest
 
-from monkeycontrol.contract import RECEIPT_SCHEMA, validate_action
+from monkeycontrol.contract import RECEIPT_SCHEMA, ContractError, validate_action
 from monkeycontrol.trace import ResolvedTarget, WindowInfo, build_receipt
 
 WINDOW = WindowInfo(197002, "Untitled - Notepad", 4242, "notepad", (0, 0, 800, 600))
@@ -151,6 +151,41 @@ class BuildReceiptTests(unittest.TestCase):
         )
         self.assertEqual(built["action"]["text"], "<redacted 6 chars>")
         self.assertNotIn("s3cret", str(built))
+
+    def test_a_sensitive_value_is_redacted_inside_the_verification(self) -> None:
+        built = receipt(
+            {
+                **CLICK,
+                "action": {
+                    "type": "set_value",
+                    "text": "s3cret-pass",
+                    "sensitive": True,
+                },
+            },
+            verification={
+                "expect": "element",
+                "status": "passed",
+                "detail": "value is s3cret-pass",
+                "state": {"value": "s3cret-pass"},
+                "duration_ms": 40,
+            },
+        )
+        self.assertNotIn("s3cret-pass", str(built))
+        self.assertEqual(built["verification"]["detail"], "<redacted 11 chars>")
+        self.assertEqual(
+            built["verification"]["state"]["value"], "<redacted 11 chars>"
+        )
+        self.assertEqual(built["verification"]["duration_ms"], 40)
+        without_digest = {k: v for k, v in built.items() if k != "digest"}
+        self.assertEqual(built["digest"], canonical_digest(without_digest))
+
+    def test_a_verification_outcome_must_name_its_expectation_and_status(self) -> None:
+        with self.assertRaises(ContractError):
+            receipt(verification={"expect": "window", "status": "maybe"})
+        with self.assertRaises(ContractError):
+            receipt(verification={"status": "passed"})
+        with self.assertRaises(ContractError):
+            receipt(verification="passed")
 
     def test_an_unknown_status_or_refusal_code_is_refused(self) -> None:
         with self.assertRaises(ValueError):

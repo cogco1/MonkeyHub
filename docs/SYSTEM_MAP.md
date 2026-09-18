@@ -589,7 +589,7 @@ Engineering usage, trace, exact decimal token pricing and bounded algorithm reco
 Model-agnostic desktop automation: an action names a semantic Windows UI target, the runtime shows it, acts, verifies the declared post-condition and records an inspectable receipt under a caller-supplied diagnostics directory.
 - owns: ComputerAction@1 / ComputerActionReceipt@1 contracts, semantic Windows UI Automation target resolution, demo-mode overlays, verification of declared post-conditions, action trace and recording under a caller-supplied diagnostics directory
 - does not own: Canonical design state, P036 records or any project write; Conversation, permission prompts and navigation (MonkeyHub owns them); Browser automation (interface reserved), vision target proposal, cross-platform hosts
-- api: `ACTION_SCHEMA`, `RECEIPT_SCHEMA`, `ACTION_TYPES`, `EXPECTATIONS`, `REFUSALS`, `ContractError`, `TargetSpec`, `Verification`, `Action`, `validate_action`, `action_payload`, `target_payload`, `ResolvedTarget`, `WindowInfo`, `build_receipt`, `ActionTraceStore`
+- api: `ACTION_SCHEMA`, `RECEIPT_SCHEMA`, `ACTION_TYPES`, `EXPECTATIONS`, `REFUSALS`, `ContractError`, `TargetSpec`, `Verification`, `Action`, `validate_action`, `action_payload`, `target_payload`, `redacted_text`, `ResolvedTarget`, `WindowInfo`, `build_receipt`, `ActionTraceStore`
 - invariants: A coordinate is only ever an execution projection: without a UIA resolution the receipt says visual-fallback; No input is sent while the foreground window belongs to another process; Nothing is written outside the supplied trace directory
 
 ## hub

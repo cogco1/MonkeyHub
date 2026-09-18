@@ -61,7 +61,6 @@ TARGET_REQUIRED = frozenset(
         "highlight",
     }
 )
-TEXT_REQUIRED = frozenset({"type", "set_value"})
 ELEMENT_STATE = {"value": str, "enabled": bool, "toggled": bool}
 DEFAULT_TIMEOUT_MS = 5000
 MAX_TIMEOUT_MS = 60000
@@ -172,6 +171,14 @@ def _mapping(value: object, name: str) -> Mapping:
     return value
 
 
+def _string(value: object, name: str) -> str:
+    """Any text, including the empty string a ``set_value`` clears a field with."""
+
+    if not isinstance(value, str):
+        raise ContractError(f"{name} must be text")
+    return value
+
+
 def _text(value: object, name: str, *, maximum: int | None = None) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ContractError(f"{name} must be non-empty text")
@@ -230,6 +237,13 @@ def _bounds(value: object, name: str) -> tuple[int, int, int, int]:
     if right <= left or bottom <= top:
         raise ContractError(f"{name} must have a positive width and height")
     return (left, top, right, bottom)
+
+
+def _ticks(value: object, name: str) -> int:
+    ticks = _integer(value, name)
+    if ticks == 0:
+        raise ContractError(f"{name} must be a non-zero number of wheel ticks")
+    return ticks
 
 
 def _command(value: object, name: str) -> tuple[str, ...]:
@@ -348,8 +362,10 @@ def validate_action(payload: object) -> Action:
 
     Unknown keys are refused rather than ignored, defaults are applied here so
     every caller sees the same action, and each action type must carry what it
-    needs: a target for the element actions, ``keys`` for a keypress,
-    ``command`` for a launch, ``ms`` for a wait, ``text`` for typing.
+    needs: a target for the element actions, a destination for a drag, wheel
+    ticks for a scroll, ``keys`` for a keypress, ``command`` for a launch,
+    ``ms`` for a wait, ``text`` for typing. ``set_value`` may carry an empty
+    string, which is how a field is cleared.
     """
 
     body = _mapping(payload, "the action payload")
@@ -360,9 +376,11 @@ def validate_action(payload: object) -> Action:
     _known(verb, _VERB_KEYS, "action.")
     kind = _choice(verb.get("type"), "action.type", ACTION_TYPES)
     target = _optional(body, "target", "", _target)
-    text = _optional(verb, "text", "action.", _text)
+    destination = _optional(verb, "to", "action.", _target)
+    text = _optional(verb, "text", "action.", _string)
     keys = _optional(verb, "keys", "action.", _text)
     command = _optional(verb, "command", "action.", _command)
+    delta = _optional(verb, "delta", "action.", _ticks)
     milliseconds = _optional(
         verb,
         "ms",
@@ -371,12 +389,18 @@ def validate_action(payload: object) -> Action:
     )
     if kind in TARGET_REQUIRED and target is None:
         raise ContractError(f"target is required for a {kind} action")
-    if kind in TEXT_REQUIRED and text is None:
-        raise ContractError(f"action.text is required for a {kind} action")
+    if kind == "drag" and destination is None:
+        raise ContractError("action.to is required for a drag action")
+    if kind == "type" and not (text and text.strip()):
+        raise ContractError("action.text is required for a type action")
+    if kind == "set_value" and text is None:
+        raise ContractError("action.text is required for a set_value action")
     if kind == "keypress" and keys is None:
         raise ContractError("action.keys is required for a keypress action")
     if kind == "launch" and command is None:
         raise ContractError("action.command is required for a launch action")
+    if kind == "scroll" and delta is None:
+        raise ContractError("action.delta is required for a scroll action")
     if kind == "wait" and milliseconds is None:
         raise ContractError("action.ms is required for a wait action")
     return Action(
@@ -396,13 +420,19 @@ def validate_action(payload: object) -> Action:
         text=text,
         sensitive=_optional(verb, "sensitive", "action.", _flag, False),
         keys=keys,
-        to=_optional(verb, "to", "action.", _target),
-        delta=_optional(verb, "delta", "action.", _integer),
+        to=destination,
+        delta=delta,
         ms=milliseconds,
         command=command,
         verification=_optional(body, "verification", "", _verification),
         capture=_optional(body, "capture", "", _flag, False),
     )
+
+
+def redacted_text(text: str) -> str:
+    """How sensitive text appears outside this package: its length, never itself."""
+
+    return f"<redacted {len(text)} chars>"
 
 
 def target_payload(target: TargetSpec | None) -> dict | None:
@@ -443,7 +473,7 @@ def action_payload(action: Action) -> dict:
     }
     if action.text is not None:
         payload["text"] = (
-            f"<redacted {len(action.text)} chars>" if action.sensitive else action.text
+            redacted_text(action.text) if action.sensitive else action.text
         )
     if action.keys is not None:
         payload["keys"] = action.keys
