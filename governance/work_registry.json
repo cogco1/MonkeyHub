@@ -682,6 +682,38 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-127",
+      "stream": "architecture",
+      "status": "active",
+      "goal": "Finish the installed native lifecycle regression against the single Hub frontend.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/desktop/tests/test_runtime.py"
+      ],
+      "lanes": [
+        {
+          "id": "shell-infra",
+          "issue": "#127 Phase 2",
+          "status": "active",
+          "branch": "codex/127-hub-workspaces-final",
+          "worktree": "workspace/worktrees/codex-127-hub-workspaces",
+          "base_ref": "0c61d69cce75e4bd0e3c86621728153fa4b67afd",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": "Remove the retired Studio frontend precondition from the existing installed lifecycle tests; keep all actual native, project, restart and shutdown behavior checks.",
+          "modules": [
+            "hub.shell",
+            "studio.board",
+            "studio.intent"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/desktop/tests/test_runtime.py"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }
