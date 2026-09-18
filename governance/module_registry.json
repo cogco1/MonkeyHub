@@ -6035,6 +6035,68 @@
       ]
     },
     {
+      "module_id": "monkeycontrol",
+      "owner_path": "monkeycontrol/contract.py",
+      "purpose": "Model-agnostic desktop automation: an action names a semantic Windows UI target, the runtime shows it, acts, verifies the declared post-condition and records an inspectable receipt under a caller-supplied diagnostics directory.",
+      "owns": [
+        "ComputerAction@1 / ComputerActionReceipt@1 contracts, semantic Windows UI Automation target resolution, demo-mode overlays, verification of declared post-conditions, action trace and recording under a caller-supplied diagnostics directory"
+      ],
+      "does_not_own": [
+        "Canonical design state, P036 records or any project write",
+        "Conversation, permission prompts and navigation (MonkeyHub owns them)",
+        "Browser automation (interface reserved), vision target proposal, cross-platform hosts"
+      ],
+      "inputs": [
+        "Validated ComputerAction@1 values, an explicit trace directory, an explicit process allow-list"
+      ],
+      "outputs": [
+        "ComputerActionReceipt@1 receipts, recordings with regenerable overlays"
+      ],
+      "public_api": [
+        "ACTION_SCHEMA",
+        "RECEIPT_SCHEMA",
+        "ACTION_TYPES",
+        "EXPECTATIONS",
+        "REFUSALS",
+        "ContractError",
+        "TargetSpec",
+        "Verification",
+        "Action",
+        "validate_action",
+        "action_payload",
+        "target_payload",
+        "ResolvedTarget",
+        "WindowInfo",
+        "build_receipt",
+        "ActionTraceStore"
+      ],
+      "depends_on": [
+        "contracts.canonical"
+      ],
+      "used_by": [
+        "hub.shell"
+      ],
+      "invariants": [
+        "A coordinate is only ever an execution projection: without a UIA resolution the receipt says visual-fallback",
+        "No input is sent while the foreground window belongs to another process",
+        "Nothing is written outside the supplied trace directory"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/monkeycontrol/test_contract.py",
+        "tests/monkeycontrol/test_trace.py",
+        "tests/monkeycontrol/test_store.py",
+        "tests/monkeycontrol/test_boundaries.py"
+      ],
+      "notes": "CREATE: no registered owner covers desktop UI observation or actuation — adapters.* own CAD backends, monkeymonitor owns usage accounting and explicitly does not own execution, hub.shell owns conversation and lifecycle.",
+      "files": [
+        "monkeycontrol/__init__.py",
+        "monkeycontrol/contract.py",
+        "monkeycontrol/trace.py",
+        "monkeycontrol/store.py"
+      ]
+    },
+    {
       "module_id": "hub.shell",
       "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
       "status": "canonical",

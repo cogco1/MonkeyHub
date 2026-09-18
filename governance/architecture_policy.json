@@ -6,6 +6,7 @@
     "monkeyarch",
     "monkeydiagram",
     "monkeymonitor",
+    "monkeycontrol",
     "tools",
     "apps/archflow-studio/api",
     "tests",
@@ -224,6 +225,48 @@
       "reason": "Create the caller-selected diagnostics directory and shared Hub/Studio journal lock file; no project authority."
     },
     {
+      "path": "monkeycontrol/store.py",
+      "function": "_prepare",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeycontrol",
+      "reason": "Create the caller-supplied desktop-automation trace directory; monkeycontrol has no default location and no project authority."
+    },
+    {
+      "path": "monkeycontrol/store.py",
+      "function": "append",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeycontrol",
+      "reason": "Append one canonical ComputerActionReceipt@1 line to the action trace inside that directory."
+    },
+    {
+      "path": "monkeycontrol/store.py",
+      "function": "save_bytes",
+      "operations": [
+        "open_write",
+        "replace"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeycontrol",
+      "reason": "Write screenshots and recording frames under a temporary name and move them into place inside that directory."
+    },
+    {
+      "path": "monkeycontrol/store.py",
+      "function": "write_json",
+      "operations": [
+        "open_write",
+        "replace"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeycontrol",
+      "reason": "Write recording manifests and other canonical JSON documents atomically inside that directory."
+    },
+    {
       "path": "apps/monkeyhub/api/monkeyhub_api/workers.py",
       "function": "start",
       "operations": [
@@ -362,7 +405,8 @@
       "targets": [
         "labs",
         "monkeymonitor",
-        "monkeyfab"
+        "monkeyfab",
+        "monkeycontrol"
       ],
       "reason": "labs/ is interest-driven exploration: a lab may import the spine, the spine may never import a lab. A lab graduates by becoming a card with an owner in the module registry, and the lab copy is retired in the same change (labs/README.md)."
     },
@@ -395,7 +439,8 @@
         "tools",
         "archive",
         "monkeymonitor",
-        "monkeyfab"
+        "monkeyfab",
+        "monkeycontrol"
       ],
       "reason": "Reusable framework code cannot import repository tooling, tests, or documentation modules. Probe imports are rejected by the dedicated probe reverse-import rule."
     },
@@ -537,7 +582,8 @@
         "monkeyarch",
         "monkeydiagram",
         "monkeymonitor",
-        "monkeyfab"
+        "monkeyfab",
+        "monkeycontrol"
       ],
       "reason": "The shared ArchFlow core provides facts, persistence and CAD contracts; it cannot depend on either workflow."
     },
@@ -552,7 +598,8 @@
         "probes",
         "archive",
         "monkeymonitor",
-        "monkeyfab"
+        "monkeyfab",
+        "monkeycontrol"
       ],
       "reason": "The 3D workflow uses ArchFlow contracts and ports; the host coordinates drawing handoffs. Project-specific data and tooling are not runtime dependencies."
     },
@@ -567,7 +614,8 @@
         "probes",
         "archive",
         "monkeymonitor",
-        "monkeyfab"
+        "monkeyfab",
+        "monkeycontrol"
       ],
       "reason": "The drawing workflow consumes retained source contracts through ArchFlow; it cannot import 3D workflow internals or project-specific code."
     },
@@ -595,7 +643,8 @@
         "archflow_studio_api",
         "probes",
         "archive",
-        "monkeyfab"
+        "monkeyfab",
+        "monkeycontrol"
       ],
       "reason": "The independent usage and pricing tool receives plain values; project and workflow execution remain with their owners."
     },
@@ -609,9 +658,28 @@
         "archflow_studio_api",
         "monkeyhub_api",
         "probes",
-        "archive"
+        "archive",
+        "monkeycontrol"
       ],
       "reason": "Fab owns print preparation and upload-only CLI behavior; the Hub composes applications and P036 alone owns project state."
+    },
+    {
+      "source": "monkeycontrol",
+      "targets": [
+        "monkeyarch",
+        "monkeydiagram",
+        "monkeymonitor",
+        "monkeyfab",
+        "archflow_studio_api",
+        "monkeyhub_api",
+        "probes",
+        "archive",
+        "tools",
+        "tests",
+        "labs",
+        "docs"
+      ],
+      "reason": "Desktop automation receives plain action values and writes only receipts under a caller-supplied diagnostics directory; the spine, both workflows and the Hub never become its dependencies."
     }
   ],
   "authority_symbol_patterns": [
