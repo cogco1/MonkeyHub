@@ -617,7 +617,7 @@ py -3.12 -m venv "$RuntimeRoot\venv"
 $Python = "$RuntimeRoot\venv\Scripts\python.exe"
 $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
 & $Python -m pip install -e '.[cad-inspection]'
-& $Python -m pip install -r apps/archflow-studio/api/requirements.txt httpx2
+& $Python -m pip install -r apps/archflow-studio/api/requirements.txt -r apps/monkeyhub/api/requirements.txt httpx2
 & $Python -m pip check
 npm.cmd ci --prefix apps/monkeyhub/web
 npm.cmd ci --prefix apps/monkeyhub/web/workspaces/tools/openapi-ts
