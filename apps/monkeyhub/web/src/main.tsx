@@ -1,3 +1,5 @@
+import { useT } from "../workspaces/src/i18n/useT";
+import { UserPreferencesProvider, usePreferences } from "../workspaces/src/features/settings/preferences";
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { appearanceFromSearch, applyAppearance, DEFAULT_APPEARANCE, resolveAppearance, type AppearancePreferences, type Language } from "../../../shared-web/src/appearance.js";
@@ -16,52 +18,7 @@ const hubClient = createClient({ baseUrl: window.location.origin });
 const initialLaunch: ApplicationSettingsDto = { projectDir: null, referenceRun: null, cadExport: "occt", studioPort: 8789, monitorPort: 8788 };
 type ChatDefaults = { chatProvider: UserSettingsDto["chatProvider"]; chatModel: string | null };
 const NO_CHAT_DEFAULTS: ChatDefaults = { chatProvider: null, chatModel: null };
-const copy = {
-  "zh-CN": {
-    apps: "工作区", settings: "设置", refresh: "刷新", connected: "Hub 已连接", connecting: "正在连接", disconnected: "无法读取工作区状态",
-    closeNote: "关闭此网页不会停止工作区。请使用停止按钮，或从托盘退出 MonkeyHub。",
-    archTitle: "建模", diagramTitle: "图纸", monitorTitle: "用量", boardTitle: "展示", fabTitle: "制作",
-    arch: "三维建模与空间修改", diagram: "图纸、图片与批注", monitor: "调用用量与费用估算", board: "白板排图、圈注与会议投屏", fab: "打印模型缩放、拆件与文件发送",
-    shared: "建模、图纸与展示共用项目和运行服务，停止任一项会同时停止这三个工作区。",
-    stopped: "未启动", starting: "正在启动", running: "运行中", stopping: "正在停止", error: "启动失败", unavailable: "未随此版本提供", ready: "可用",
-    open: "进入工作区", start: "启动", stop: "停止", stopShared: "停止共享服务", details: "详细信息", noProject: "尚未选择项目",
-    project: "项目目录", projectHelp: "选择一个已有项目，用于建模、图纸与展示。查看用量和制作无需项目。", projectPlaceholder: "已有项目的完整路径，可留空",
-    reference: "参考运行（可选）", launch: "启动设置", advanced: "更多启动选项", cad: "模型导出", occt: "OCCT", rhino: "Rhino（兼容）", off: "关闭导出",
-    studioPort: "Studio 端口", monitorPort: "Monitor 端口", saveLaunch: "保存启动设置", saved: "已保存", unsaved: "有未保存修改", saving: "正在保存…",
-    launchHelp: "项目与端口修改在下次启动时生效；运行中的工作区需要先停止。", appearance: "显示设置", language: "语言", theme: "主题",
-    system: "跟随系统", dark: "深色", light: "浅色", size: "字号", compact: "紧凑", normal: "标准", large: "较大", saveAppearance: "保存显示设置",
-    appearanceHelp: "从 Hub 进入工作区时继承当前显示偏好；已打开的工作区不会自动切换。", working: "处理中…",
-    chatDefaults: "新对话默认连接", chatProvider: "默认 CLI", chatModel: "默认模型", cliDefault: "CLI 默认模型", cliUnset: "未设置（使用 Codex CLI）", chatDefaultsHelp: "用于新建对话；已有对话继续使用原连接、模型与会话。",
-    recheck: "重新检测", checking: "正在检测…", notInstalled: "未安装", signedIn: "已登录", signedOut: "未登录", signInUnknown: "登录状态未知",
-    notConfigured: "未配置", customModel: "自定义模型 ID…", modelsFrom: "模型来源",
-    catalogReady: "模型目录来自这个 CLI 自己的列表。", catalogNoList: "这个 CLI 不提供模型目录；可以手填模型 ID。",
-    catalogSignIn: "登录这个 CLI 后才能读取它的模型目录。", catalogChecking: "正在向这个 CLI 读取可用模型…",
-    workspace: "工作区", workspaceDir: "新项目所在文件夹", saveSettings: "保存显示与连接", saveWorkspace: "保存工作区与启动",
-    workspaceHelp: "「新建项目」会在这个文件夹里创建项目。留空则使用当前项目所在的文件夹。",
-  },
-  en: {
-    apps: "Workspaces", settings: "Settings", refresh: "Refresh", connected: "Hub connected", connecting: "Connecting", disconnected: "Cannot read workspace status",
-    closeNote: "Closing this page does not stop workspaces. Use their Stop buttons, or quit MonkeyHub from the system tray.",
-    archTitle: "Modeling", diagramTitle: "Drawings", monitorTitle: "Usage", boardTitle: "Presentation", fabTitle: "Fabrication",
-    arch: "3D modelling and spatial changes", diagram: "Drawings, images and annotations", monitor: "Call usage and cost estimates", board: "Drawing board, markup and meeting presentation", fab: "Print model scaling, splitting and file upload",
-    shared: "Modeling, drawings and presentation share one project and service. Stopping any one stops all three workspaces.",
-    stopped: "Stopped", starting: "Starting", running: "Running", stopping: "Stopping", error: "Failed", unavailable: "Not included in this version", ready: "Ready",
-    open: "Enter workspace", start: "Start", stop: "Stop", stopShared: "Stop shared service", details: "Details", noProject: "No project selected",
-    project: "Project directory", projectHelp: "Choose one existing project for modeling, drawings and presentation. Usage and fabrication do not require a project.", projectPlaceholder: "Full path to an existing project, optional",
-    reference: "Reference run (optional)", launch: "Launch settings", advanced: "More launch options", cad: "Model export", occt: "OCCT", rhino: "Rhino (compatibility)", off: "Export off",
-    studioPort: "Studio port", monitorPort: "Monitor port", saveLaunch: "Save launch settings", saved: "Saved", unsaved: "Unsaved changes", saving: "Saving…",
-    launchHelp: "Project and port changes apply on the next start. Stop running workspaces before saving them.", appearance: "Display settings", language: "Language", theme: "Theme",
-    system: "System", dark: "Dark", light: "Light", size: "Text size", compact: "Compact", normal: "Standard", large: "Larger", saveAppearance: "Save display settings",
-    appearanceHelp: "Workspaces opened from Hub inherit these display choices. Already open workspaces do not change automatically.", working: "Working…",
-    chatDefaults: "New conversation defaults", chatProvider: "Default CLI", chatModel: "Default model", cliDefault: "CLI default model", cliUnset: "Not set (use Codex CLI)", chatDefaultsHelp: "Applies to new conversations. Existing conversations keep their connection, model and session.",
-    recheck: "Check again", checking: "Checking…", notInstalled: "Not installed", signedIn: "Signed in", signedOut: "Not signed in", signInUnknown: "Sign-in state unknown",
-    notConfigured: "Not configured", customModel: "Custom model id…", modelsFrom: "Model list",
-    catalogReady: "The model list comes from this CLI's own catalogue.", catalogNoList: "This CLI offers no model list; a model id can be entered by hand.",
-    catalogSignIn: "Sign in to this CLI to read its model list.", catalogChecking: "Reading the available models from this CLI…",
-    workspace: "Workspace", workspaceDir: "Folder for new projects", saveSettings: "Save display and connection", saveWorkspace: "Save workspace and launch",
-    workspaceHelp: "New projects are created in this folder. Left empty, the folder of the current project is used.",
-  },
-} as const;
+import { hubCopyCatalog as copy } from "./i18n/catalogs";
 type CopyKey = keyof typeof copy.en;
 const knownErrors: Record<string, string> = {
   PROJECT_REQUIRED: "请先选择包含 project.json 的完整项目目录。", APPS_RUNNING: "请先停止正在运行的工作区，再保存启动设置。",
@@ -98,6 +55,16 @@ function ErrorMessage({ issue, language }: { issue: Issue | null; language: Lang
   }, [issue?.detail, language]);
   if (!issue) return null;
   return <div className="error-message" role="alert"><p>{language === "zh-CN" ? knownErrors[issue.code] ?? translated ?? issue.detail : issue.detail}</p><details><summary>{copy[language].details}</summary><code>{issue.code}</code><p>{translated ?? issue.detail}</p></details></div>;
+}
+
+function WorkspaceDiagnosticsSettings() {
+  const t = useT();
+  const { developerMode, setDeveloperMode, eventStreamVisible, setEventStreamVisible } = usePreferences();
+  return <div>
+    <label><input type="checkbox" checked={developerMode} onChange={(event) => setDeveloperMode(event.target.checked)} /> {t("settings.fields.developerMode")}</label>
+    <p className="help">{t("settings.developerMode.help")}</p>
+    {developerMode && <label><input type="checkbox" checked={eventStreamVisible} onChange={(event) => setEventStreamVisible(event.target.checked)} /> {t("settings.fields.eventStreamVisible")}</label>}
+  </div>;
 }
 
 function App() {
@@ -283,7 +250,8 @@ function App() {
             onChange={(event) => changeLaunch({ workspaceDir: event.target.value || null })} /></label>
         <p className="help">{t("workspaceHelp")}</p>
         <details className="advanced"><summary>{t("advanced")}</summary>
-          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Studio · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
+          <WorkspaceDiagnosticsSettings />
+          <div className="chat-service-settings">{(apps ?? []).filter((app) => app.appId === "monkeyarch").map((app) => <div key={app.appId}><span>Project Runtime · {t(app.state)}</span><button className="btn" disabled={!connected || busyServices.has(app.serviceId) || app.state === "starting" || app.state === "stopping"} onClick={() => void act(app)}>{t(app.state === "running" ? "stop" : "start")}</button><ErrorMessage issue={actionIssues[app.appId] ?? app.error ?? null} language={preferences.language} /></div>)}</div>
           <div className="settings-fields">
             <label>{t("reference")}<input id="reference-run" value={launchDraft.referenceRun ?? ""} onChange={(event) => changeLaunch({ referenceRun: event.target.value || null })} /></label>
             <label>{t("cad")}<select id="cad-export" value={launchDraft.cadExport} onChange={(event) => changeLaunch({ cadExport: event.target.value as ApplicationSettingsDto["cadExport"] })}><option value="occt">{t("occt")}</option><option value="rhino">{t("rhino")}</option><option value="off">{t("off")}</option></select></label>
@@ -304,9 +272,9 @@ function App() {
         </div>
       </div>
     </section></>;
-  return <ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
+  return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
-    workspace={workspace} apps={statusIssue ? null : apps} />;
+    workspace={workspace} apps={statusIssue ? null : apps} /></UserPreferencesProvider>;
 }
 const root = document.getElementById("root");
 if (!root) throw new Error("MonkeyHub root is missing.");

@@ -887,13 +887,13 @@ class ChatTests(unittest.TestCase):
             with self.store.project_configuration(str(self.other)):
                 self.fail("A running chat must retain its project.")
         with self.assertRaises(HubFailure):
-            with self.store.application_lifecycle("monkeydiagram", stopping=True, project_dir=str(self.project)):
+            with self.store.application_lifecycle("monkeyboard", stopping=True, project_dir=str(self.project)):
                 self.fail("A running chat must retain its shared Studio.")
         self.assertEqual(self.store.stop(first.id).status, "interrupted")
         self.assertEqual(self.store.get(second.id).status, "running")
         self.store.stop(second.id)
         self.assertEqual(self.store.get(other.id).status, "running")
-        with self.store.application_lifecycle("monkeydiagram", stopping=True, project_dir=str(self.project)):
+        with self.store.application_lifecycle("monkeyboard", stopping=True, project_dir=str(self.project)):
             pass  # B remains admitted while A can close.
         self.store.stop(other.id)
 
@@ -1043,7 +1043,7 @@ class ChatTests(unittest.TestCase):
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
             if path.startswith("/api/apps?"):
-                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -1089,7 +1089,7 @@ class ChatTests(unittest.TestCase):
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
             if path.startswith("/api/apps?"):
-                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -1311,7 +1311,7 @@ class ChatTests(unittest.TestCase):
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
             if path.startswith("/api/apps?"):
-                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -1367,7 +1367,7 @@ class ChatTests(unittest.TestCase):
                 return {"projectDir": str(self.project)}
             if path.startswith("/api/apps?"):
                 return [{"appId": "monkeyarch", "state": "running",
-                         "url": "http://127.0.0.1:8791/", "processId": 123}]
+                         "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -1634,7 +1634,7 @@ class ChatTests(unittest.TestCase):
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
             if path.startswith("/api/apps?"):
-                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -1682,7 +1682,7 @@ class ChatTests(unittest.TestCase):
                 if path.startswith("/api/apps?"):
                     target = parse_qs(urlsplit(path).query)["projectDir"][0]
                     address, pid, _ = services[target]
-                    return [{"appId": "monkeyarch", "state": "running", "url": address + "/", "processId": pid}]
+                    return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": address + "/", "processId": pid}]
                 self.assertEqual(path, "/api/health", "binding must not depend on global project settings")
                 return {"sourceRevision": "revision"}
             _, pid, session = next(row for row in services.values() if row[0] == base)
@@ -1716,7 +1716,7 @@ class ChatTests(unittest.TestCase):
             if path == "/api/settings/apps":
                 return {"projectDir": str(self.project)}
             if path.startswith("/api/apps?"):
-                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8791/", "processId": 123}]
+                return [{"appId": "monkeyarch", "state": "running", "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": studio_pid, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -1726,7 +1726,7 @@ class ChatTests(unittest.TestCase):
             return {"projectId": "chat-project", "initialized": True}
 
         app = create_app(HubSettings(self.runtime))
-        ready = AppStatus(appId="monkeyarch", title="MonkeyArch", serviceId="studio", state="running", url="http://127.0.0.1:8791/", processId=123)
+        ready = AppStatus(appId="monkeyarch", title="MonkeyArch", serviceId="studio", state="running", url="http://127.0.0.1:8790/?view=arch", apiUrl="http://127.0.0.1:8791/", processId=123)
         with patch.object(app.state.applications, "start", return_value=ready), TestClient(app, base_url="http://127.0.0.1:8790") as client, patch.object(chat, "_request_json", side_effect=request):
             prepared = client.post("/api/project/modeling", params={"projectDir": str(self.project)}, json={"projectId": "chat-project"})
             self.assertEqual(prepared.status_code, 200, prepared.text)
@@ -2089,7 +2089,7 @@ class ChatTests(unittest.TestCase):
                 return self.store.get(session.id).model_dump()
             if path.startswith("/api/apps?"):
                 return [{"appId": "monkeyarch", "state": "running",
-                         "url": "http://127.0.0.1:8791/", "processId": 123}]
+                         "url": "http://127.0.0.1:8790/?view=arch", "apiUrl": "http://127.0.0.1:8791/", "processId": 123}]
             if path == "/api/health":
                 return {"processId": 123, "sourceRevision": "same-revision"}
             if path == "/api/project":
@@ -2239,7 +2239,7 @@ class ChatTests(unittest.TestCase):
                     self.answer(json.loads(saved.model_dump_json()))
                 elif path == "/api/apps":
                     self.answer([{"appId": "monkeyarch", "state": "running",
-                                  "url": store.hub_url, "processId": 123}])
+                                  "url": store.hub_url, "apiUrl": store.hub_url, "processId": 123}])
                 elif path == "/api/health":
                     self.answer({"processId": 123, "sourceRevision": "same-revision"})
                 elif path == "/api/project":

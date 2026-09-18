@@ -166,7 +166,7 @@ class PackageAdapterTests(unittest.TestCase):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("fixture", encoding="utf-8")
-        for relative in ("apps/archflow-studio/web", "apps/monkeyhub/web"):
+        for relative in ("apps/monkeyhub/web",):
             web = self.source / relative
             (web / "dist").mkdir(parents=True)
             (web / "dist/index.html").write_text("fixture", encoding="utf-8")
@@ -198,6 +198,8 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertIn("ci", installs[0].args[0])
         self.assertIn("--omit=dev", installs[0].args[0])
         self.assertIn("--omit=optional", installs[0].args[0])
+        builds = [call.kwargs["cwd"] for call in run.call_args_list if "build" in call.args[0]]
+        self.assertEqual(builds, [self.source / "apps/monkeyhub/web"])
 
     def test_bundle_contains_adapter_node_registry_and_exact_release_notices(self) -> None:
         def upstream(url, **kwargs):
@@ -217,6 +219,8 @@ class PackageAdapterTests(unittest.TestCase):
         self.assertEqual((self.bundle / "apps/monkeyfab/src/monkeyfab/__main__.py").read_text(), "fixture")
         self.assertEqual((self.bundle / "apps/monkeyfab/pyproject.toml").read_text(), "fixture")
         self.assertFalse((self.bundle / "apps/monkeyfab/tests").exists())
+        self.assertEqual((self.bundle / "apps/monkeyhub/web/dist/index.html").read_text(), "fixture")
+        self.assertFalse((self.bundle / "apps/archflow-studio/web").exists())
         urls = {call.args[0] for call in fetched.call_args_list}
         self.assertEqual(urls, {
             "https://raw.githubusercontent.com/nodejs/node/v24.14.0/LICENSE",
@@ -237,7 +241,7 @@ class DesktopPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source, bundle = root / "source", root / "bundle"
-            for name in ("monkeyhub", "archflow-studio"):
+            for name in ("monkeyhub",):
                 lock = source / f"apps/{name}/web/package-lock.json"
                 lock.parent.mkdir(parents=True)
                 lock.write_bytes(b'{"lockfileVersion": 3}')
@@ -257,9 +261,10 @@ class DesktopPackageTests(unittest.TestCase):
             self.assertEqual(inventory["nodeVersion"], "v24.14.0")
             self.assertEqual(inventory["acpAdapter"]["version"], "1.11.0")
             self.assertEqual(inventory["pythonRequirements"]["sha256"], builder.sha256(requirements))
-            for name in ("monkeyhub", "archflow-studio"):
+            for name in ("monkeyhub",):
                 asset = f"apps/{name}/web/dist/index.html"
                 self.assertEqual(inventory["frontends"][name]["files"], {asset: builder.sha256(bundle / asset)})
+            self.assertEqual(set(inventory["frontends"]), {"monkeyhub"})
 
     @unittest.skipUnless(sys.platform == "win32", "Windows installer and shortcut behavior")
     def test_desktop_install_preserves_data_and_keeps_only_latest_app_shortcut(self):
@@ -301,7 +306,6 @@ class DesktopPackageTests(unittest.TestCase):
                 bundle = root / (("desktop" if desktop else "browser") + commit[:1])
                 required = ["OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "apps/monkeyhub/run.py",
                             "apps/monkeyhub/launch-hub.ps1", "apps/monkeyhub/web/dist/index.html",
-                            "apps/archflow-studio/web/dist/index.html",
                             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml"]
                 if desktop:
                     required.extend(("MonkeyHub.exe", "_runtime/desktop-Cargo.lock"))
@@ -445,8 +449,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         for locked, tree, packages in (
             ("apps/monkeyhub", self.bundle / "apps/monkeyhub",
              (("@agentclientprotocol/codex-acp", "1.11.0", "Apache-2.0"),)),
-            ("apps/monkeyhub/web", self.source / "apps/monkeyhub/web", (("react", "19.2.0", "MIT"),)),
-            ("apps/archflow-studio/web", self.source / "apps/archflow-studio/web",
+            ("apps/monkeyhub/web", self.source / "apps/monkeyhub/web",
              (("react", "19.2.0", "MIT"), ("three", "0.181.0", "MIT"))),
         ):
             entries = {}
@@ -521,8 +524,6 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(adapter["properties"], [{"name": builder.SHIPPED_IN,
                                                   "value": "apps/monkeyhub/node_modules"}])
         self.assertEqual(components["pkg:npm/react@19.2.0"]["properties"], [
-            {"name": builder.BUILD_INPUT,
-             "value": "apps/archflow-studio/web/package-lock.json -> apps/archflow-studio/web/dist"},
             {"name": builder.BUILD_INPUT,
              "value": "apps/monkeyhub/web/package-lock.json -> apps/monkeyhub/web/dist"},
         ])
@@ -838,8 +839,7 @@ class ReleaseCandidateNormalizationTests(unittest.TestCase):
             f'"{self.VERSION}"\n\n[[package]]\nname = "tauri"\nversion = "2.11.5"\n'
             f'source = "{builder.CRATES_IO}"\nchecksum = "{"9" * 64}"\n', encoding="utf-8")
         for locked, tree in (("apps/monkeyhub", self.bundle / "apps/monkeyhub"),
-                             ("apps/monkeyhub/web", self.source / "apps/monkeyhub/web"),
-                             ("apps/archflow-studio/web", self.source / "apps/archflow-studio/web")):
+                             ("apps/monkeyhub/web", self.source / "apps/monkeyhub/web")):
             package = tree / "node_modules/react"
             package.mkdir(parents=True)
             (package / "package.json").write_text(

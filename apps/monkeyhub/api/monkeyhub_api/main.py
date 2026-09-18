@@ -116,7 +116,6 @@ class HubSettings:
     runtime_root: Path
     port: int = 8790
     hub_web_dir: Path | None = None
-    studio_web_dir: Path | None = None
     web_origin: str | None = None
     managed_instance_id: str | None = None
     mode: str = "local"
@@ -133,7 +132,7 @@ class HubSettings:
 
 
 def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> FastAPI:
-    applications = Applications(source_root, settings.runtime_root, settings.studio_web_dir, settings.port)
+    applications = Applications(source_root, settings.runtime_root, settings.port)
     fabrication = Fabrication(source_root)
     chats = ChatStore(settings.runtime_root, f"http://127.0.0.1:{settings.port}", applications=applications)
     runtimes = ProjectRuntimeManager(applications, chats)
@@ -240,7 +239,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/apps/{app_id}/start", response_model=AppStatus, status_code=202, responses=error_responses)
     def start_app(app_id: AppId, projectDir: str | None = None) -> AppStatus:
         runtime = None
-        if app_id in {"monkeyarch", "monkeydiagram", "monkeyboard"}:
+        if app_id in {"monkeyarch", "monkeyboard"}:
             target = projectDir or read_application_settings(settings.runtime_root).project_dir
             if target:
                 project_id, target = chat_tools._project(target)
@@ -507,7 +506,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--port", type=int, default=8790)
     parser.add_argument("--hub-web-dir", type=Path)
-    parser.add_argument("--studio-web-dir", type=Path)
     parser.add_argument("--web-origin", help="One explicit loopback web development origin")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--managed-stdin", action="store_true")
@@ -524,10 +522,9 @@ def main(argv: list[str] | None = None) -> None:
     hub_web = args.hub_web_dir
     if hub_web is None and (SOURCE_ROOT / "apps/monkeyhub/web/dist/index.html").is_file():
         hub_web = SOURCE_ROOT / "apps/monkeyhub/web/dist"
-    studio_web = args.studio_web_dir or SOURCE_ROOT / "apps/archflow-studio/web/dist"
     settings = HubSettings(
         runtime_root=runtime_root, port=args.port, hub_web_dir=hub_web,
-        studio_web_dir=studio_web, web_origin=args.web_origin,
+        web_origin=args.web_origin,
         managed_instance_id=str(args.managed_instance_id) if args.managed_instance_id else None,
     )
     if sys.platform == "win32":

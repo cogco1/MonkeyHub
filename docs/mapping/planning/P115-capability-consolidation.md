@@ -64,7 +64,7 @@ Board 负责多稿并置、自由勾画和讨论；现有 DocumentCanvas 负责�
 MonkeyArch 继续承担可编辑 3D 候选。同一 Studio App 的 Stage 已挂载 documents 视图并保留切换状态，
 Hub 的 monkeyarch/monkeydiagram 入口却会分别加载两份 App。应合并重复入口，复用现有两种画布。
 依据：`apps/monkeyhub/api/monkeyhub_api/applications.py`、`apps/monkeyhub/web/src/ChatShell.tsx`、
-`apps/archflow-studio/web/src/features/stage/Stage.tsx`。
+`apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx`。
 
 Board 已有图片导入、精确图页来源与文档链接，但还没有双击编辑链路。
 其 scene 保存元素、标题与已发现图纸，缩放、滚动和选中状态目前留在前端。
@@ -72,15 +72,15 @@ Board 已有图片导入、精确图页来源与文档链接，但还没有双�
 第一片优先保持 Board 挂载；同时不能直接套用当前 `openTool(id, view)`：它修改 iframe revision 并重载目标 App，
 会丢失目标页的临时状态。需沿现有 hostBridge 加入受 origin/window 校验的打开精确图页消息，
 由现有 App 更新 documents 视图；首次加载仍使用已有 URL 参数。出图、从模型打开图纸、来源绑定与独立浏览器入口保留。
-依据：`apps/shared-web/src/hostBridge.js`、`apps/archflow-studio/web/src/app/App.tsx`、
-`apps/archflow-studio/web/src/app/Connected.tsx`。
+依据：`apps/shared-web/src/hostBridge.js`、`apps/monkeyhub/web/workspaces/src/app/App.tsx`、
+`apps/monkeyhub/web/workspaces/src/app/Connected.tsx`。
 
 **画板标记与图页批注目前不会双向自动同步。** Board 的 Excalidraw 元素只在提交设计意见时，
 经 `createBoardFeedback` 转换、`mergeBoardAnnotations` 合并和 CAS 保存成为图页批注；
 Diagram 墨迹也没有叠入 Board 当前的空批注缩略图。双击前应复用这段转换和保存，
 将它从需要已绑定模型的设计提交中分出，允许尚未起模的草图进入单页编辑。
 无法转换的曲线箭头等标记明确留在 Board；保存冲突保留草稿。返回后刷新对应页的批注显示，避免两处看见不同版本。
-依据：`apps/archflow-studio/web/src/workspaces/monkeyboard/boardFeedback.ts`、
+依据：`apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardFeedback.ts`、
 `boardFeedbackGeometry.ts`、`Board.tsx`。
 
 图片传给模型、line/arrow 端点拖拽、页坐标批注及 `/api/proposals/sketch` 已有实现，
@@ -89,7 +89,7 @@ Diagram 墨迹也没有叠入 Board 当前的空批注缩略图。双击前应�
 图纸生成、原图字节、精确来源、页批注 revision 与已有候选机制均应继续复用。
 依据：`apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py`、`gestures.py`、
 `apps/archflow-studio/api/archflow_studio_api/transport/proposal.py`、
-`apps/archflow-studio/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx`。
+`apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx`。
 
 最小描图路径是：导入 PNG/JPG → Agent 给出可叠回原图的几何解释 → 局部拖点/纠正 →
 以识别或确认的尺度、方向和层高转换 → 沿现有 sketch/proposal 路径生成候选 → 继续修改。
@@ -229,7 +229,7 @@ PR #26、#27、#30 已合入。`P115/board` 在 bb66 worktree 的 `codex/board-a
 覆盖图像／图框／多图歧义、裁切比例与位置批注保持、原资料栏入口、Crit／撤销／重开、
 取消焦点和一次预期 CAS 拒绝；完整真实白板浏览器同时通过（63 次请求、2 次显式反馈交接）。
 
-生产修改限 `apps/archflow-studio/web/src/workspaces/monkeyboard/Board.tsx` 与 `boardScene.ts`，
+生产修改限 `apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx` 与 `boardScene.ts`，
 扩展既有 `boardScene.test.ts` 和 `boardReplacement.browser.mjs`，不改变公开 API／DTO 或模块契约。
 共享卡片和登记保留其他 lanes，独立 PR 由协调任务审查准确 head 与 CI 后合并。
 

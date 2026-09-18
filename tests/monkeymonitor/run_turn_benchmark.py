@@ -100,8 +100,7 @@ def main():
             projectDir=str(project), referenceRun=fixture.REFERENCE_RUN_ID, cadExport="occt",
             studioPort=ports[1], monitorPort=ports[2],
         ))
-        app = create_app(HubSettings(runtime_root=runtime, port=ports[0],
-                                    studio_web_dir=ROOT / "apps/archflow-studio/web/dist"))
+        app = create_app(HubSettings(runtime_root=runtime, port=ports[0]))
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=ports[0], log_level="error"))
         worker = threading.Thread(target=server.run, daemon=True)
         worker.start()

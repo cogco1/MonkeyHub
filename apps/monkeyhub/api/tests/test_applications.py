@@ -34,11 +34,8 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         self.project = self.root / "project"
         self.project.mkdir()
         (self.project / "project.json").write_text("{}", encoding="utf-8")
-        self.web = self.root / "studio dist"
-        self.web.mkdir()
-        (self.web / "index.html").write_text("<title>fixture</title>", encoding="utf-8")
         self.appdata = self.root / "roaming"
-        self.applications = Applications(self.root / "source", self.root / "runtime", self.web, hub_port=18790)
+        self.applications = Applications(self.root / "source", self.root / "runtime", hub_port=18790)
         # What a developer's shell may carry: the Hub must replace all of it.
         self.inherited = {
             "APPDATA": str(self.appdata),
@@ -61,7 +58,7 @@ class StudioChildEnvironmentTests(unittest.TestCase):
             command, environment = self.applications._command("studio", self.settings())
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(Path(command[1]), (self.root / "source").resolve() / "apps/monkeyhub/run.py")
-        self.assertEqual(command[2:], ["--service", "studio", "--host", "127.0.0.1", "--web-dir", str(self.web.resolve())])
+        self.assertEqual(command[2:], ["--service", "studio", "--host", "127.0.0.1"])
         studio = {key: value for key, value in environment.items() if key.startswith("ARCHFLOW_STUDIO_")}
         self.assertEqual(studio, {
             "ARCHFLOW_STUDIO_MODE": "local",
@@ -87,16 +84,15 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         self.assertEqual(environment["ARCHFLOW_STUDIO_INTENT_MODEL"], "gpt-5")
         self.assertEqual(float(environment["ARCHFLOW_STUDIO_INTENT_TIMEOUT_S"]), 45.5)
 
-    def test_a_folder_without_a_manifest_or_a_missing_web_build_is_refused(self):
+    def test_a_folder_without_a_manifest_is_refused_but_no_web_build_is_required(self):
         (self.project / "project.json").unlink()
         with patch.dict(os.environ, self.inherited, clear=True), self.assertRaises(HubFailure) as refused:
             self.applications._command("studio", self.settings())
         self.assertEqual(refused.exception.error.code, "PROJECT_REQUIRED")
         (self.project / "project.json").write_text("{}", encoding="utf-8")
-        (self.web / "index.html").unlink()
-        with patch.dict(os.environ, self.inherited, clear=True), self.assertRaises(HubFailure) as refused:
-            self.applications._command("studio", self.settings())
-        self.assertEqual(refused.exception.error.code, "STUDIO_WEB_MISSING")
+        with patch.dict(os.environ, self.inherited, clear=True):
+            command, _ = self.applications._command("studio", self.settings())
+        self.assertNotIn("--web-dir", command)
 
 
 if __name__ == "__main__":

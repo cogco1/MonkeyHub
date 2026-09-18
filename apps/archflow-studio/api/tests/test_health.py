@@ -178,18 +178,17 @@ asyncio.run(check())
         with tempfile.TemporaryDirectory() as directory:
             self.assertIsNone(_source_revision(Path(directory)))
 
-    def test_cli_serves_prebuilt_web_and_retains_api_priority(self) -> None:
+    def test_cli_is_api_only_and_needs_no_web_build(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             web = Path(directory)
-            (web / "index.html").write_text("<html>Studio fixture</html>", encoding="utf-8")
             environment = {"ARCHFLOW_STUDIO_PROJECT_DIR": str(web / "missing-project")}
             with patch.dict(os.environ, environment, clear=True), patch(
                 "archflow_studio_api.main.uvicorn.run"
             ) as serve, patch("archflow_studio_api.main._source_revision", return_value="b" * 40):
-                main(["--web-dir", str(web)])
+                main([])
             app = serve.call_args.args[0]
             with TestClient(app) as client:
-                self.assertEqual(client.get("/?view=documents").text, "<html>Studio fixture</html>")
+                self.assertEqual(client.get("/").status_code, 404)
                 health = client.get("/api/health").json()
                 self.assertEqual(health["serverVersion"], SERVER_VERSION)
                 self.assertEqual(health["processId"], os.getpid())

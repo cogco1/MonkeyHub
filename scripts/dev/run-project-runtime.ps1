@@ -4,18 +4,16 @@ Internal development only. MonkeyHub is the sole production launcher.
 Start one project runtime (today: the ArchFlow Studio API, archflow_studio_api) on an
 explicit project, in the foreground, for tests and development: an API smoke run,
 Playwright, a fixture regression, a MonkeyDiagram change you want to see without going
-through Hub -> project -> child process -> iframe.
+through Hub project navigation.
 
 Nothing else: no launch window, no tray, no configuration file, no default project, no
 lifecycle management. Ctrl+C stops it. Every other setting is the environment the API
 already reads (ARCHFLOW_STUDIO_CAD_EXPORT, ARCHFLOW_STUDIO_INTENT_PROVIDER, ...; see
-apps/archflow-studio/README.md). Pair it with `npm --prefix apps/archflow-studio/web run dev`
-for the web client, or pass -WebDir to serve a prebuilt bundle from the same port.
+apps/archflow-studio/README.md). This process serves project APIs only; workspace UI belongs to MonkeyHub.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$ProjectDir,
     [ValidateRange(1, 65535)][int]$Port = 8000,
-    [string]$WebDir,
     [string]$Python = 'python'
 )
 $ErrorActionPreference = 'Stop'
@@ -29,6 +27,5 @@ if ($env:PYTHONPATH) { $pythonPath += $env:PYTHONPATH }
 $env:PYTHONPATH = $pythonPath -join [IO.Path]::PathSeparator
 $env:PYTHONUNBUFFERED = '1'
 $arguments = @('-m', 'archflow_studio_api.main', '--project-dir', $ProjectDir, '--host', '127.0.0.1', '--port', "$Port")
-if ($WebDir) { $arguments += @('--web-dir', (Resolve-Path -LiteralPath $WebDir).ProviderPath) }
 & $Python @arguments
 exit $LASTEXITCODE

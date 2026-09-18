@@ -1,300 +1,65 @@
-# ArchFlow Studio
+# Project Runtime
 
-Users enter through **MonkeyHub**; MonkeyHub is the application. This directory holds two
-things. `api/` is the **Project Runtime** — the project-scoped backend MonkeyHub starts once
-per open project; its contract is [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md).
-`web/` is the legacy Studio browser shell and the MonkeyArch, MonkeyDiagram and MonkeyBoard
-workspaces, which are being folded into the MonkeyHub frontend (#127); it takes no new
-product-level behaviour. The direct-start commands below are for development and focused diagnostics.
-See the [unified Hub entry](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#0-monkeyhub-统一入口).
+MonkeyHub is the application. This directory retains the internal Python package
+`archflow_studio_api` and shared artwork; its historical name is not a second product.
+The [Project Runtime contract](../../docs/PROJECT_RUNTIME.md) defines project binding,
+process identity, lifecycle and API forwarding.
 
-For scoped model requests, advisory context budgets and the offline size benchmark,
-see [Dependency-aware context compilation](../../docs/CONTEXT_COMPILATION.md).
+Board and Arch render directly inside the Hub frontend. Diagram is the page editor
+opened from Board. Their source is in `../monkeyhub/web/workspaces/src/`; there is no
+Studio web server, standalone browser shell, iframe boundary or second frontend build.
+Application settings, navigation and language catalogs belong to Hub.
 
-## 1. What it is
+## 1. Runtime responsibilities
 
-MonkeyArch is the modeling environment used to test how people and AI can carry
-a design task through modeling, related changes and checking. People should be able
-to work directly on a model, inspect what the machine understood, see what remains
-to be addressed, and take over when necessary. An independent interface does not
-require a new geometry engine; the environment must demonstrate what it adds to
-existing tools.
+The FastAPI adapter validates requests, streams progress and owns candidate jobs.
+State, geometry, validation and project writes continue through the registered
+`archflow`, `monkeyarch`, `monkeydiagram` and P036 owners. The runtime binds exactly
+one explicit project; separate open projects use separate Hub-managed processes.
 
-**Continue from this version** uses the displayed run's retained record for the
-next edit. Viewing a model alone does not change the editing base. Continuing a
-candidate, endorsing a design direction and formally issuing a project version
-are distinct actions. The editing-base choice is tab-local; after reopening, show
-the retained run and choose Continue again. See the [vision](../../docs/VISION.md) for the
-long-term direction and the [dynamic map](../../docs/DYNAMIC_MAP.md) for development.
+Viewing a candidate does not change the editing base. Continuing a candidate,
+endorsing a direction and formally issuing a version remain separate actions.
+The workspace retains local view state and drafts; it does not own canonical project data.
 
-ArchFlow Studio is the shared host for **MonkeyArch** (3D modeling) and
-**MonkeyDiagram** (drawings and diagrams). Their browser code lives in
-`web/src/workspaces/monkeyarch/` and `web/src/workspaces/monkeydiagram/`; project
-connection, conversation, settings and the generated client stay shared. The
-existing model/document switch opens the two workspaces. A drawing's model-edit
-submission is still an explicit modeling action; automatic redraw is separate work.
-See [file ownership](../../docs/REPO_LAYOUT.md).
+## 2. Development and configuration
 
-The host has two programs:
-
-- **`api/`** — a FastAPI **BFF** (`archflow_studio_api`). It validates requests, streams
-  progress, owns the candidate job lifecycle, and shapes answers for the wire. Every design
-  question — state, dependencies, impact, geometry, validation — calls its registered
-  owner in `archflow`, `monkeyarch` or `monkeydiagram`. It
-  re-derives no kernel answer, and a machine-enforced firewall keeps `rhino3dm`, `numpy`,
-  `networkx`, `OCP`, `build123d`, `shapely`, `trimesh`, `scipy`, `tests`, `tools` and
-  `probes` out of it.
-- **`web/`** — a React 19 / three.js / rhino3dm-wasm browser client (Vite) that talks to
-  that API through an **OpenAPI-generated SDK**. Nothing in `web/src` declares a DTO: the
-  request and response shapes in `web/src/api/generated/` are the server's own schema,
-  regenerated and diffed by `npm run api:check`.
-
-  The shell is two surfaces and a drawer. The ruling behind it (2026-09-03): the
-  shell serves demo first and daily work second; conclusions stay on screen, evidence lives
-  one click away in a drawer that never abridges. Below 900 px the two columns become one,
-  with the model on top and the conversation below. A **conversation** column
-  on the left: what you said, and what the server answered — a typed-proposal card, a
-  question card (`BLOCKED_NEEDS_HUMAN`, the question verbatim, the accepted forms as quick
-  replies), a refusal card (code and detail verbatim), a candidate card that follows its job,
-  a review-readiness card (the server's word, the five clause chips, the three relation chips). The
-  **stage** on the right: the 3DM viewer (three.js + rhino3dm, unchanged from the previous
-  shell), a source chip (`RUN` / `CANDIDATE` / `LOCAL`), the last resolved pick, the camera
-  tools, and a versions strip of every exported model the receipts certify. The **evidence
-  drawer** (bottom right, or pinned as a third column): every honesty line, the identities,
-  the candidate and validation receipts and the event stream, verbatim and one click away.
-  The visual system is dark-first in the register of the Unreal Editor; the light theme is
-  served from the same tokens; the fonts are Roboto and Roboto Mono from Google Fonts with
-  system fallbacks.
-
-The round-1 boundary, verbatim from the plan:
-
-> **Round-1 boundary:** one server-configured project root (env `ARCHFLOW_STUDIO_PROJECT_DIR`
-> or `--project-dir`; no default path in code); proposal-only; canonical write, live model
-> providers, login identity disabled; missing data → `BLOCKED_NEEDS_HUMAN` with a concrete
-> question.
-
-Nothing in round 1 commits. The chain ends at a validation receipt and server review readiness; no
-route issues anything, writes `canonical/` or `input/`, or calls `compare_and_swap`. The
-only writes the API performs are `repository.create_run(...)` and `repository.put_json(...)`
-into run areas of the bound project — which is what running a candidate is.
-
-## 2. Run it
-
-For a first installation, follow the [onboarding guide](../../docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#82-获取代码并在本机运行)
-to choose a source checkout, create an external Python environment and project,
-and open that project through MonkeyHub.
-The production command `python tools/create_project.py --project <external-project-dir>`
-runs from the source root in that Python environment. It creates a version-0 P036
-project with an empty authored record, not a model or run. To initialize with your
-own design inputs, add `--state-record <path> --seats-file <path>`; the record's
-project id must match the directory name and its `base` must be null or omitted. Use a complete
-project copy when continuing an existing run.
-
-An empty project supports connection and state inspection. Program and modeling
-candidates need suitable design inputs and execution seats, and PDF persistence
-needs a real run. Opening a local Rhino file does not supply those project records;
-the original file can remain outside the project while managed copies and outputs
-use the existing [P036 storage](../../archflow/project/README.md).
-
-**Start it.** The application is called **MonkeyArch**; the methodology and the protocol it
-runs are still ArchFlow. **MonkeyHub is the only production entry**: the desktop package or
-`OPEN_MONKEYHUB.cmd` starts the Hub, and the Hub starts one Studio process per project —
-project, CAD backend and reference run from its application settings; intent provider, model
-and timeout from your saved preferences — and embeds MonkeyArch, MonkeyDiagram and
-MonkeyBoard from it. There is no second launcher, configuration file, tray icon or shortcut
-for Studio; what the Hub starts, the Hub monitors and stops (see the
-[Hub guide](../monkeyhub/README.md)).
-
-**Start it by itself** for development and tests — an API smoke run, Playwright, a fixture
-regression, a MonkeyDiagram change you want to see without going through the Hub:
+Normal use starts through MonkeyHub. For API tests and isolated development:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runtime.ps1 -ProjectDir '<a P036 project directory>'
 ```
 
-`scripts/dev/run-project-runtime.ps1` is deliberately thin: it requires `-ProjectDir`, puts
-the checkout and `apps/archflow-studio/api` on `PYTHONPATH`, and runs
-`python -m archflow_studio_api.main --project-dir <dir> --host 127.0.0.1 --port 8000` in the
-foreground until Ctrl+C. `-Port` picks another port, `-WebDir apps/archflow-studio/web/dist`
-serves a prebuilt web client from the same port, and `-Python` names an interpreter other than
-the `python` on PATH. It has no configuration file, no default project, no launch window and
-no tray; the CAD backend, intent provider, model and timeout are the `ARCHFLOW_STUDIO_*`
-environment variables the sections below describe, set in the shell that runs it. For the web
-client with hot reload, run `npm --prefix apps/archflow-studio/web run dev` beside it (its
-`/api` proxy targets port 8000, or `ARCHFLOW_STUDIO_API_URL`). The same starts are the
-`studio-api-dev`, `studio-web-dev` and `studio-api-smoke` profiles in `.claude/launch.json`.
-"Independently runnable" is not "independent product entry": in production, Studio's
-lifecycle belongs to MonkeyHub alone.
+`-Port` selects the API port and `-Python` selects the interpreter. There is no HTML
+hosting option or default project. Install this directory's API requirements and
+root `.[cad-occt]` in the chosen Python environment for normal geometry export.
 
-The icon on MonkeyHub's shortcut, launch window and tray is `assets/monkeyarch.ico` —
-a monkey hanging by one arm from the amber keystone of a limestone arch, ink tile, drawn at
-16, 24, 32, 48, 64, 128 and 256 px by `assets/make_icon.py` (Pillow), each size from its own
-spec rather than downscaled from one image. It is the animal that is spent down as the tile
-shrinks, not the arch: below 48 px the eyes, the free hand and one leg go, below 32 px the
-arm and the swing go and the figure hangs straight under the keystone, and at 16 px the tail
-goes too. `assets/monkeyarch-icon-512.png` is the same drawing at 512 px, for anywhere an
-`.ico` will not do. Redraw both with
-`py -3.12 apps/archflow-studio/assets/make_icon.py`. Cold loading uses a reduced **Draft
-Monkey** rather than another full illustration: one quiet geometric line mark keeps the arch,
-keystone, hanging arm, ears and curled tail, with no face, hammer, sparks or character loop.
-MonkeyHub's launch window draws it natively and reports its startup steps on a
-determinate two-pixel rail. The browser draws the same mark as inline SVG, keeps the
-workshop-graphite palette and exact caller status, and uses a CSS-only indeterminate rail because
-API and local 3DM waits do not expose an honest percentage. The mark stays still; the rail is the
-only continuous motion. Reduced-motion mode freezes that rail to a static status mark, and stage
-loading leaves the viewport visible under a compact matte readout without repeating the brand.
-No raster loading assets or React animation timer are involved.
+The runtime reads `ARCHFLOW_STUDIO_PROJECT_DIR`, `ARCHFLOW_STUDIO_CAD_EXPORT`,
+`ARCHFLOW_STUDIO_REFERENCE_RUN` and intent configuration from its launching environment.
+Hub resolves user/application preferences before starting it. Explicit `--project-dir`
+overrides the project environment variable. An explicitly requested run must exist;
+an unset reference run uses the newest complete non-harness runner receipt.
 
-**Install** (from the repo root):
+Local mode binds loopback. Remote mode still requires `ARCHFLOW_STUDIO_TOKEN` and
+explicit `ARCHFLOW_STUDIO_ORIGINS`; API callers send the bearer token. Health and
+protocol are public, and the remaining API routes require authentication. Hub workspace
+clients use the same-origin project forwarding path, with their own protocol identity,
+SDK client and mutation idempotency keys; they do not read tokens from browser URLs.
+
+Build or develop the single frontend from `apps/monkeyhub/web`:
 
 ```powershell
-$RuntimeRoot = 'D:\ArchFlowRuntime\first-trial'
-py -3.12 -m venv "$RuntimeRoot\venv"
-$Python = "$RuntimeRoot\venv\Scripts\python.exe"
-$env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
-& $Python -m pip install -r apps/archflow-studio/api/requirements.txt
-& $Python -m pip install -e ".[cad-occt]"   # the ordinary export: cadquery-ocp and rhino3dm
-& $Python -m pip install httpx2        # tests only, for fastapi.testclient
+npm ci
+npm ci --prefix workspaces/tools/openapi-ts
+npm run api:check
+npm test
+npm run build
+npm run dev
 ```
 
-The `cad-occt` extra is what the default candidate export runs on (OCCT in process, no Rhino);
-without it a candidate with `cad_export` at its default fails its export and says so in the
-job's own sentence, and `cad_export: off` runs candidates with no geometry written at all.
-
-**The API** — from `apps/archflow-studio/api`:
-
-```powershell
-$env:ARCHFLOW_STUDIO_PROJECT_DIR = "<a P036 project directory>"
-$env:ARCHFLOW_STUDIO_REFERENCE_RUN = ""   # set an actual retained run only when needed
-& $Python -m archflow_studio_api.main                # 127.0.0.1:8000
-```
-
-`main` takes `--host`, `--port` and `--project-dir` (which overrides the env var). There is
-no default project root anywhere in the code: an unset `ARCHFLOW_STUDIO_PROJECT_DIR` is a
-startup refusal, because an API that guessed a root could bind — and then write a run into —
-a project nobody chose.
-
-`ARCHFLOW_STUDIO_REFERENCE_RUN` names which run the projection answers for. Unset, the rule
-chooses: the newest **complete, non-harness** runner receipt in the project. A project with
-no such run binds to the run id `studio-projection`, which claims nothing. A request may
-override both with `GET /api/state?run=<runId>`, and a run named explicitly must exist.
-
-**Local mode and remote mode.** The API serves a named, versioned boundary — the open ArchFlow
-protocol (`docs/PROTOCOL.md`), stated at `GET /api/protocol`. Which side of it this process is
-on is `ARCHFLOW_STUDIO_MODE`:
-
-| variable | default | what it does |
-| --- | --- | --- |
-| `ARCHFLOW_STUDIO_MODE` | `local` | `local` is the pair the launcher starts here: one user, no token, no CORS — nothing about it changes. `remote` is the same API reached over a network. |
-| `ARCHFLOW_STUDIO_BIND` | `127.0.0.1` | the interface the listener binds. `--host` overrides it; left out, these settings decide. |
-| `ARCHFLOW_STUDIO_TOKEN` | *(unset)* | the bearer token remote mode requires. Never read in local mode. |
-| `ARCHFLOW_STUDIO_ORIGINS` | *(unset)* | comma-separated list of the origins a browser client is served from; the CORS policy remote mode adds. |
-
-In `remote` mode the process **refuses to start** without either of the last two — a remote
-server with no token would answer anyone who found the port, and one that guessed which sites
-may call it would be guessing about a browser's security. `StudioSettings` will not construct
-such a process at all. With both, every `/api` route except `GET /api/health`
-and `GET /api/protocol` requires `Authorization: Bearer <token>` and answers
-`401 UNAUTHENTICATED` without it, unknown paths included, so an anonymous caller learns nothing
-about which paths exist. Local mode is unchanged in every respect.
-
-The web client picks its server up the same way: `VITE_ARCHFLOW_API_URL` at build time (else the
-origin it was served from), an optional `?token=` on the first load which it reads once and
-removes from the address bar, and `GET /api/protocol` before anything else — a server whose
-protocol major is not 2 gets a refusal screen. `archflow/2` replaces the validation and event
-field `advance` with `reviewReady`; client and server must both speak this major before the
-client reads design responses.
-
-**Exported candidates.** One setting, `ARCHFLOW_STUDIO_CAD_EXPORT`, says what a candidate does
-with each seat's compiled program:
-
-| value | what a candidate leaves | lane |
-| --- | --- | --- |
-| `occt` (default) | per seat, in process and without any host: one **exact STEP** file (`<stage>@<program digest>.step`, ISO 10303-21 B-rep, named solids or explicitly uncapped loft surfaces and semantic layers; a linear array groups its repeated solids under one object identity) and one **mesh `.3dm` preview** of the same model (`….preview.3dm`, what the viewer shows; object names, layers and `archflow:*` user text; a render mesh, never a NURBS/B-rep delivery), retained as `seat-occt-execution` with the cold readback of the STEP file | parallel, like any kernel work |
-| `rhino` | the supervised Rhino host export (slow — roughly 37 s per seat, and it drives Rhino); needs `ARCHFLOW_STUDIO_POWERSHELL`; retained as `seat-rhino-execution` | exclusive: one Rhino at a time |
-| `off` | nothing written: the candidate is compiled and relation-checked only | parallel |
-
-Rhino is never started unless `rhino` is named. An operation the in-process executor does not
-realize (a radial array, a revolve, a sweep, an asset) fails that seat's export by name
-before any file is written; nothing falls back to Rhino and no stand-in model is produced.
-The current OCCT slice supports boxes, polyline extrusions, capped or uncapped polyline lofts,
-union/difference/intersection and linear arrays. Changed programs receive a full rebuild; incremental OCCT
-patch execution is not implemented. STEP readback uses a fresh reader over saved bytes in
-the same process. Synthetic geometry and temporary P036 candidate continuation have been
-verified; this delivery has not rerun the real Villa project or established whole-building
-coverage.
-A direct `loft` Element can set `cap_ends: false` to retain an open surface with no
-invented thickness. Its profiles are closed polygons in the building's x/z plan and
-y-up frame, with y relative to its base datum. Saved readback distinguishes these
-surfaces from closed solids and reports their volume as unavailable. Interpolated
-profiles remain unsupported; the short demo defers those details in its input.
-The straight-stair producer now creates one complete stepped solid from its declared
-endpoints, rise, going and width. Positive `thickness` still means separate thin treads
-and is refused by this whole-flight producer. Windows have one closed frame with an
-aperture and a separate pane. Their existing FRAME/GLAZING roles assign native preview
-materials: the frame uses its declared component material or a shaded layer colour;
-glass currently uses a light-tinted fallback with 60% transparency. The viewer reads these
-saved materials and preserves their original opacity through version crossfades. Objects
-saved hidden remain hidden when loading, restoring or comparing models and cannot intercept
-picks, including when an ancestor is hidden.
-Reading or reopening a candidate never runs an export: the listing reads the retained receipts
-and re-hashes the files they certify. The older `ARCHFLOW_STUDIO_RHINO_EXPORT` is still read
-when the new variable is unset — `1` turns export on (through `occt`), anything else it was set
-to keeps it off — and it never selects Rhino.
-
-```powershell
-$env:ARCHFLOW_STUDIO_CAD_EXPORT = "rhino"            # only to export through Rhino
-$env:ARCHFLOW_STUDIO_POWERSHELL = "<path to powershell.exe>"
-```
-
-Running a candidate **writes a run into the bound project**. Bind the API to a temporary copy
-of the inputs whenever you are exercising the candidate step; never point it at a real
-project you are not prepared to have a new run directory in.
-
-**The web client** — from `apps/archflow-studio/web`:
-
-```powershell
-npm install
-npm --prefix tools/openapi-ts install   # isolated generator, pinned to TypeScript 5
-npm run dev                             # http://127.0.0.1:5174, /api proxied to :8000
-```
-
-The other scripts:
-
-| script | what it does |
-| --- | --- |
-| `npm run api:dump` | writes `.generated/openapi.json` from `create_app(...).openapi()` — the app itself, in process; it touches no filesystem and binds no project, so no server need be running |
-| `npm run api:generate` | dumps, then regenerates `src/api/generated/` from that schema |
-| `npm run api:check` | regenerates into a temp directory and diffs; exit 1 on drift |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run sync` | copies the rhino3dm runtime into `.generated/public/`; `dev` and `build` run it first |
-| `npm run build` | syncs that runtime, typechecks, then `vite build` |
-
-`@hey-api/openapi-ts` crashes under TypeScript 7, so the generator lives in
-`web/tools/openapi-ts/` with its own `package.json`, its own `node_modules` and its own
-TypeScript 5. The app itself is built with TypeScript 7. There is **no committed OpenAPI
-snapshot**: the one description of this API is the FastAPI app, and `api:check` is what keeps
-the committed client honest to it.
-
-### Language and settings
-
-The toolbar's **Settings** dialog has six operator-facing categories. Language, theme,
-interface size and event-stream visibility are browser preferences and are the only editable
-values in this browser client. They are stored as one versioned value in `localStorage`; a
-`?lang=en` or `?lang=zh-CN` query overrides the stored language at startup and is then
-remembered. Project, model,
-geometry, server and diagnostic rows are read-only facts from `GET /api/project` or
-`GET /api/protocol`; a value those routes do not expose is labelled as unavailable rather
-than inferred from the launch environment or the host machine.
-
-Client-owned labels come from complete typed `en` and `zh-CN` catalogs. For caller-approved
-English prose that arrives at runtime, the client may use Chrome's on-device Translator API
-as a progressive enhancement. The English source and Chinese translation occupy the same
-layout cell: changing language hides the inactive layer but does not replace the source in
-React state or the DOM. Unsupported browsers, unavailable language packs and translation
-failures fall back to the English source. Codes, paths, hashes, identifiers, protocol strings
-and accepted command forms remain verbatim, and translations are display-only: they never
-enter an API request, proposal, receipt or project artifact.
+The development frontend forwards `/api` to `MONKEYHUB_API_URL` (default port 8790).
+Workspace browser regressions may instead mount the test-only fixture with
+`npx vite --config workspaces/test/vite.config.ts --port 5174`, targeting an explicit
+`ARCHFLOW_STUDIO_API_URL`. That fixture is not included in production builds.
 
 ## 3. The API
 
@@ -611,7 +376,7 @@ py -3.12 -m unittest discover -s apps/archflow-studio/api/tests -t apps/archflow
 py -3.12 -m unittest discover -s tests
 ```
 
-From `apps/archflow-studio/web`:
+From `apps/monkeyhub/web`:
 
 ```powershell
 npm test
@@ -624,7 +389,7 @@ npm run build
 a lint. The API tests run on real fixtures — a real P036 project via
 `FilesystemProjectRepository.initialize` — and there are no mocks in them.
 
-The web shell has focused unit tests for restoring the original model after display projections,
+The Hub workspaces have focused unit tests for restoring the original model after display projections,
 semantic carrier matching, viewport PNG encoding, and which listed artifact the viewer is handed
 (the `3dm` preview, never the exact STEP). Its end-to-end acceptance remains a live
 smoke against a **temporary copy** of a project with export on: bind → choose or pick a component → propose → run the candidate →
@@ -632,7 +397,7 @@ preview its export under the `CANDIDATE` chip → read the review-readiness card
 sentence and get a question card → open the evidence drawer; then the light theme and the
 900 px fold.
 
-Optional browser smoke scripts (`web/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts need a running Studio and are separate from `npm test`.
+Optional browser smoke scripts (`../monkeyhub/web/workspaces/test/*.browser.mjs`) use an installed `playwright` package, or a filesystem module path supplied through `PLAYWRIGHT_MODULE`. `documentCanvas.browser.mjs` also requires `DOCUMENT_FIXTURES` pointing to its disposable PDF/image fixtures; these scripts use an explicit Project Runtime and the test-only workspace fixture and are separate from `npm test`.
 
 ## Local Runtime and shared project collaboration
 

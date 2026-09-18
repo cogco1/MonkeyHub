@@ -25,7 +25,7 @@ MonkeyArch 不应继续以“左侧聊天 + 右侧模型 + 底部版本条 + 多
 ### 2.1 当前仓库事实
 
 - UI 实现 checkout 为 `codex/monkeyarch-ui-ux`，基线为主仓库 `1e4d9ca`。
-- Studio 已采用 `apps/archflow-studio/web`（React 19、three.js、rhino3dm-wasm）与 app-local FastAPI BFF；浏览器 DTO 由 OpenAPI 生成。
+- Studio 已采用 `apps/monkeyhub/web/workspaces`（React 19、three.js、rhino3dm-wasm）与 app-local FastAPI BFF；浏览器 DTO 由 OpenAPI 生成。
 - 当前 Web 壳是固定 `400px + 1fr`：左侧常驻 `Conversation`，右侧 `Stage`；Evidence 固定后成为第三列。
 - `ThreeDmViewport`、3DM picking、semantic user strings、Z-up、fit/front、ghost、compare、annotations 都是可保留资产。
 - API 已有：

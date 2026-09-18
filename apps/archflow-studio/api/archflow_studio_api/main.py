@@ -23,7 +23,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
-from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
@@ -358,7 +357,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--managed-stdin", action="store_true", help="Stop gracefully on stdin stop or EOF.")
     parser.add_argument("--managed-instance-id", default=None, help="The owning Hub's unique launch identifier.")
-    parser.add_argument("--web-dir", type=Path, default=None, help="Serve a prebuilt Studio web directory.")
     parser.add_argument(
         "--project-dir",
         type=Path,
@@ -379,10 +377,6 @@ def main(argv: list[str] | None = None) -> None:
     app.state.parent_process_id = os.getppid()
     app.state.source_revision = _source_revision()
     app.state.managed_instance_id = args.managed_instance_id
-    if args.web_dir is not None:
-        if not (args.web_dir / "index.html").is_file():
-            parser.error("--web-dir must contain the prebuilt Studio index.html")
-        app.mount("/", StaticFiles(directory=args.web_dir, html=True), name="studio-web")
     if not args.managed_stdin:
         uvicorn.run(app, host=settings.bind_host, port=args.port)
         return

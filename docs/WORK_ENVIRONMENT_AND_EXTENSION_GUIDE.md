@@ -119,7 +119,7 @@ Git 源码仓 / worktree
   archflow/                  公共项目底座、建筑事实和技术接口
   monkeyarch/                三维建模算法与运行编排
   monkeydiagram/             图纸投影与表达
-  apps/archflow-studio/      共同宿主；面向两个平行工作流
+  apps/archflow-studio/api/  项目运行时；API-only，历史目录名保留
   governance/                owner、依赖与架构防火墙
   docs/                      人读文档，不是实时项目状态
   tests/                     测试代码；运行时只产生可丢弃的临时输出
@@ -314,7 +314,7 @@ python tools/package_monkeyapps.py --source-ref HEAD
 | 可重建下载、编译缓存 | 外部 `cache/` | 可删除 |
 | 一次性诊断缓冲 | 外部 `temp/` 或测试临时目录 | 可删除且不得作为证据 |
 | Studio 进程日志 | `apps/archflow-studio/.runtime/`（git ignored） | 本机诊断，不是项目证据 |
-| Web 同步和构建产物 | `apps/archflow-studio/web/.generated/`、`dist/` | 可重建 |
+| Web 同步和构建产物 | `apps/monkeyhub/web/workspaces/.generated/`、`dist/` | 可重建 |
 
 **旧规则的分层修正。**
 早期工作区的 `GENERATION_RECORD_SPEC.md`（不在本仓库内）第八节原本把“预览模型、截图、审查包”统一
@@ -361,7 +361,7 @@ YYYYMMDD[-NN]_项目名称[_内容或图种][_RNN].扩展名
 
 ```text
 React / Vite / three.js / rhino3dm-wasm
-  apps/archflow-studio/web
+  apps/monkeyhub/web/workspaces
                 │ OpenAPI-generated SDK
                 ▼
 Project Runtime（FastAPI）
@@ -376,7 +376,7 @@ ArchFlow kernel + 项目存储
 显式绑定的 <project-root>
 ```
 
-浏览器层今天是迁移中的旧 Studio 前端壳与三个工作区（#127 分阶段并入 MonkeyHub）；本节的 API 边界与三层权责不变，进程契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)。
+浏览器层只有 MonkeyHub：Board 和 Arch 直接渲染，Diagram 是 Board 内的图页编辑器；本节的 API 边界与三层权责不变，进程契约见 [docs/PROJECT_RUNTIME.md](PROJECT_RUNTIME.md)。
 
 ### 浏览器 `web/`
 
@@ -461,24 +461,20 @@ Python 代码按 [PEP 8](https://peps.python.org/pep-0008/#package-and-module-na
 | **ArchFlow** | 共享项目底座、建筑事实、技术契约与正式发布 | `archflow/` |
 | **MonkeyHub** | 唯一对外应用入口；启动、工作区切换、服务管理与共享设置，Agent 接入也沿此入口 | `apps/monkeyhub/`；`OPEN_MONKEYHUB.cmd` |
 | **MonkeyArch** | 三维建模、模型候选与续改 | `monkeyarch/`；Hub `appId: monkeyarch` |
-| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Hub `appId: monkeydiagram`；Studio `?view=documents` |
-| **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；Studio `?view=board` |
+| **MonkeyDiagram** | 图纸、图解、平立剖表达与单页批注 | `monkeydiagram/`；Board 双击已登记图页进入精确页面编辑 |
+| **MonkeyBoard** | 图版排布、方案比较、会议展示与画布批注 | Hub `appId: monkeyboard`；同页项目工作区 |
 | **MonkeyMonitor** | 用量、费用、耗时与计算过程查看 | `monkeymonitor/`；Hub `appId: monkeymonitor` |
 | **MonkeyFab** | 制作与打印准备；当前支持分件及已切片文件发送 | 同仓 `apps/monkeyfab/` CLI；Hub `appId: monkeyfab`、`?view=fab` |
 
-**ArchFlow Studio / Studio** 指 `apps/archflow-studio/` 这个共同宿主；MonkeyArch、
-MonkeyDiagram、MonkeyBoard 是 MonkeyHub 中的建模、图纸和展示工作区。工作区名称不要求各自启动一个进程：
-这三个入口当前共用 Studio 服务，MonkeyMonitor 独立运行，MonkeyFab 页面由 Hub 承载。
-名称和应用列表以 [Hub 实现](../apps/monkeyhub/api/monkeyhub_api/applications.py) 及
-[启动说明](../apps/monkeyhub/README.md) 对照；现有目录、`appId`、模块 ID 与 API 不因显示名变化而迁移。
-另行约定的 **MonkeyMinecraft** 用于 Minecraft 建筑模组项目，不列作当前 Hub 已接入的应用。
-启动与 Agent 接入由 Hub 提供；MonkeyArch 是工作区名称。
-ArchFlow 保持底层技术与源码名称，Studio 保持实现名称；普通使用流程只介绍 Hub、项目和工作区。
+**Studio** 是项目运行时保留的服务、协议和 Python 包标识，源码在
+`apps/archflow-studio/api/`。产品入口和唯一生产前端均为 MonkeyHub；建模、画板直接在
+Hub 中渲染，Diagram 是画板中的图页编辑器。每个项目拥有独立运行时和客户端，
+MonkeyMonitor 诊断服务仍独立运行，Usage 与 MonkeyFab 页面由 Hub 承载。
 
 在 MonkeyBoard 中双击一页已登记图纸，会在**同一个标签页内**打开现有的图纸编辑器
-（`?view=documents` 加该页的 run / asset / revision / page 参数），批注与来源绑定沿用原有 owner；
+（通过项目上下文传递该页的 run / asset / revision / page），批注与来源绑定沿用原有 owner；
 编辑器里的 MonkeyBoard 入口先写回该页批注再返回，恢复离开时的画板视角与选中。
-这条往返只改写当前标签页的地址，不重新加载 Studio，也不触碰 Hub 中其他工作区页面
+这条往返仅切换同一项目中的图页编辑与画板，不卸载模型或画布，也不触碰其他项目工作区
 （MonkeyArch 未同步的模型草稿保持不变）。图纸能力仍归 `monkeydiagram/`，Board 不再复制一套编辑器。
 
 设计历史统一使用以下用语，详细动作与存储约定见
@@ -539,7 +535,7 @@ ArchFlow 继续复用现有 FastAPI/OpenAPI 与生成客户端，外部模块从
 
 ### 第 5 步：DTO 改动后生成客户端
 
-在 `apps/archflow-studio/web`：
+在 `apps/monkeyhub/web/workspaces`：
 
 ```powershell
 npm run api:generate
@@ -623,8 +619,8 @@ $env:PATH = "$RuntimeRoot\venv\Scripts;" + $env:PATH
 & $Python -m pip install -e '.[cad-inspection]'
 & $Python -m pip install -r apps/archflow-studio/api/requirements.txt httpx2
 & $Python -m pip check
-npm.cmd ci --prefix apps/archflow-studio/web
-npm.cmd ci --prefix apps/archflow-studio/web/tools/openapi-ts
+npm.cmd ci --prefix apps/monkeyhub/web
+npm.cmd ci --prefix apps/monkeyhub/web/workspaces/tools/openapi-ts
 python -c "import sys; print(sys.executable)"
 ```
 
@@ -678,11 +674,10 @@ Program 和建模候选需要相应的完整设计输入与执行分工，PDF �
 `apps/monkeyhub/launch-hub.ps1`（见 [Hub 说明](../apps/monkeyhub/README.md)）：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkeyhub\launch-hub.ps1" -Python $Python -RuntimeRoot "$RuntimeRoot\hub" -HubWebDir "$SourceRoot\apps\monkeyhub\web\dist" -StudioWebDir "$SourceRoot\apps\archflow-studio\web\dist"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkeyhub\launch-hub.ps1" -Python $Python -RuntimeRoot "$RuntimeRoot\hub" -HubWebDir "$SourceRoot\apps\monkeyhub\web\dist"
 ```
 
-两个 `dist` 目录来自 `npm --prefix apps/monkeyhub/web run build` 与
-`npm --prefix apps/archflow-studio/web run build`。Hub 启动后在其设置里选择 8.3 创建的项目、CAD 后端
+唯一的前端 `dist` 目录来自 `npm --prefix apps/monkeyhub/web run build`。Hub 启动后在其设置里选择 8.3 创建的项目、CAD 后端
 （默认 `occt`，需要 `.[cad-occt]`；未安装时选 `off`）和参考 run；意图 provider、模型与超时来自 Hub 的
 用户偏好。每个项目的 Studio 进程由 Hub 创建、监控和关闭；退出走托盘的 `Quit MonkeyHub`。
 不要与下面的手动方式同时使用同一组端口。
@@ -693,7 +688,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\apps\monkey
 
 #### 开发时直接启动项目运行时
 
-改一个工作区 UI、跑 API smoke、Playwright 或 fixture 回归时，不必经过 Hub → 项目 → 子进程 → iframe：
+API smoke 与隔离的工作区浏览器回归可以直接启动显式项目的 API-only 运行时：
 
 ```powershell
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
@@ -704,7 +699,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$SourceRoot\scripts\dev
 这个脚本只做一件事：要求显式 `-ProjectDir`，把源码根与 `apps/archflow-studio/api` 放进 `PYTHONPATH`，
 前台运行 `archflow_studio_api.main`，Ctrl+C 结束。它没有配置文件、没有默认项目、没有启动窗口和托盘，
 也不管理任何生命周期；其余设置全部是 API 本来就读取的 `ARCHFLOW_STUDIO_*` 环境变量。
-“可独立运行”不等于“独立产品入口”：生产环境里 Studio 的生命周期只属于 MonkeyHub。
+“可独立运行”不等于“独立产品入口”：生产环境里项目运行时的生命周期只属于 MonkeyHub。工作区测试页位于
+`apps/monkeyhub/web/workspaces/test/`，不进入生产构建；实际产品交互通过 Hub 验收。
 
 #### 手动联调
 
@@ -724,12 +720,12 @@ $env:ARCHFLOW_STUDIO_RHINO_EXPORT = '0'
 
 ```powershell
 $SourceRoot = 'D:\code\ARCHFLOW_V4'
-Set-Location "$SourceRoot\apps\archflow-studio\web"
+Set-Location "$SourceRoot\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
-npm.cmd run dev -- --port 15174
+npx.cmd vite --config workspaces/test/vite.config.ts --port 15174
 ```
 
-打开 `http://127.0.0.1:15174`。这组端口与默认的一键启动端口分开；端口被占用时一起改 API 端口和
+打开测试页 `http://127.0.0.1:15174/test/workspace.html`（仅隔离回归，不进入生产构建）。这组端口与默认的一键启动端口分开；端口被占用时一起改 API 端口和
 代理地址，不停止别人的服务。新建空项目没有导出模型，空视口是预期结果；通过上述建模准备入口后可创建首个候选。
 完成后在两个终端分别按 Ctrl+C。
 
@@ -795,7 +791,7 @@ Set-Location $SourceRoot
 & $Python tools/archcheck.py
 Set-Location "$SourceRoot\apps\archflow-studio\api"
 & $Python -m unittest tests.test_health tests.test_protocol tests.test_candidate
-Set-Location "$SourceRoot\apps\archflow-studio\web"
+Set-Location "$SourceRoot\apps\monkeyhub\web"
 npm.cmd test
 npm.cmd run api:check
 npm.cmd run build  # 包含 typecheck

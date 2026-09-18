@@ -8,6 +8,8 @@ import socket
 import subprocess
 import sys
 import threading
+from urllib.parse import urlencode
+from uuid import uuid5, NAMESPACE_URL
 
 from archflow.project.manifest import ProjectManifest
 from archflow_studio_api.settings import read_application_settings, read_user_settings, save_application_settings
@@ -19,7 +21,6 @@ from .workers import WorkerLaunch, WorkerSnapshot, WorkerSupervisor, project_key
 
 APPS = {
     "monkeyarch": ("MonkeyArch", "studio"),
-    "monkeydiagram": ("MonkeyDiagram", "studio"),
     "monkeymonitor": ("MonkeyMonitor", "monitor"),
     "monkeyboard": ("MonkeyBoard", "studio"),
     "monkeyfab": ("MonkeyFab", "hub"),
@@ -44,10 +45,9 @@ def source_revision(root: Path) -> str | None:
 
 
 class Applications:
-    def __init__(self, source_root: Path, runtime_root: Path, studio_web_dir: Path | None, hub_port: int):
+    def __init__(self, source_root: Path, runtime_root: Path, hub_port: int):
         self.source_root = source_root.resolve()
         self.runtime_root = runtime_root.resolve()
-        self.studio_web_dir = studio_web_dir.resolve() if studio_web_dir else None
         self.hub_port = hub_port
         self.source_revision = source_revision(self.source_root)
         self.supervisor = WorkerSupervisor()
@@ -117,13 +117,13 @@ class Applications:
             url = None
             if state == "running":
                 url = child.url
-                if app_id == "monkeydiagram":
-                    url += "?view=documents"
-                elif app_id == "monkeyboard":
-                    url += "?view=board"
+                if service == "studio":
+                    runtime_id = str(uuid5(NAMESPACE_URL, f"{child.project_id}:{self._project_key(child.project_dir)}"))
+                    query = urlencode({"view": "board" if app_id == "monkeyboard" else "arch", "runtimeId": runtime_id})
+                    url = f"http://127.0.0.1:{self.hub_port}/?{query}"
             return AppStatus(
                 appId=app_id, title=title, serviceId=service, state=state,
-                url=url, processId=child.process_id,
+                url=url, apiUrl=child.url if state == "running" else None, processId=child.process_id,
                 error=child.error,
             )
 
@@ -183,12 +183,10 @@ class Applications:
             return args + ["serve", "--data-dir", str(diagnostics), "--codex-bindings-url",
                            f"http://127.0.0.1:{self.hub_port}/api/chat/usage-sources"], environ
         if settings.project_dir is None:
-            raise HubFailure(409, "PROJECT_REQUIRED", "Choose a complete project folder before opening MonkeyArch or MonkeyDiagram.")
+            raise HubFailure(409, "PROJECT_REQUIRED", "Choose a complete project folder before opening a project workspace.")
         project = Path(settings.project_dir)
         if not (project / "project.json").is_file():
             raise HubFailure(409, "PROJECT_REQUIRED", "The selected folder does not contain project.json. Choose a complete project folder.")
-        if self.studio_web_dir is None or not (self.studio_web_dir / "index.html").is_file():
-            raise HubFailure(503, "STUDIO_WEB_MISSING", "The Studio web build is missing. Prepare the selected version package or build its web client.")
         preferences = read_user_settings()
         # The same preference owner supplies defaults; unrelated shell environment
         # must not silently select a different project, remote listener or compiler.
@@ -208,7 +206,7 @@ class Applications:
             environ["ARCHFLOW_STUDIO_INTENT_MODEL"] = preferences.intent_model
         if preferences.intent_timeout_s is not None:
             environ["ARCHFLOW_STUDIO_INTENT_TIMEOUT_S"] = str(preferences.intent_timeout_s)
-        return args + ["--host", "127.0.0.1", "--web-dir", str(self.studio_web_dir)], environ
+        return args + ["--host", "127.0.0.1"], environ
 
     def stop(self, app_id: AppId, *, project_dir: str | None = None) -> AppStatus:
         _, service = APPS[app_id]

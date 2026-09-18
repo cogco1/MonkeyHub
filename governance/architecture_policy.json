@@ -333,6 +333,17 @@
       "kind": "fabrication_output",
       "owner": "monkeyfab",
       "reason": "Exports print-derived meshes and their assembly table only into the explicitly supplied new or empty output directory. Does not mutate input geometry or P036 project state."
+    },
+    {
+      "path": "apps/monkeyhub/web/workspaces/scripts/dump-openapi.py",
+      "function": "main",
+      "operations": [
+        "mkdir",
+        "write_text"
+      ],
+      "kind": "generated_client_schema",
+      "owner": "hub.shell",
+      "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under the two explicit .generated directories; never project data."
     }
   ],
   "forbidden_layer_imports": [

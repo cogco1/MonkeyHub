@@ -272,10 +272,7 @@ class StudioWorkerRecoveryTests(LocalHubCase):
         fixture = project_fixture()
         fixture.make_project(self.root / "projects")
         project = self.root / "projects" / fixture.PROJECT_ID
-        web = self.root / "web"
-        web.mkdir()
-        (web / "index.html").write_text("<html>Recovery fixture</html>", encoding="utf-8")
-        applications = Applications(ROOT, self.runtime, web, self.hub_port)
+        applications = Applications(ROOT, self.runtime, self.hub_port)
         self.addCleanup(applications.shutdown)
         applications.start("monkeyarch", project_dir=str(project))
 
@@ -291,14 +288,14 @@ class StudioWorkerRecoveryTests(LocalHubCase):
         # The verified service PID may be a Windows venv launcher's Python child.
         os.kill(original.processId, signal.SIGTERM)
         process.wait(timeout=5)
-        crashed = applications.status("monkeydiagram", project_dir=str(project))
+        crashed = applications.status("monkeyboard", project_dir=str(project))
         self.assertEqual(crashed.state, "error")
         self.assertIsNone(crashed.processId)
         applications.recover(project_dir=str(project))
         recovered = wait_for(ready, "Studio did not recover")
         self.assertEqual(recovered.url, original.url)
         self.assertNotEqual(recovered.processId, original.processId)
-        binding = http_json(recovered.url + "api/project")
+        binding = http_json(recovered.apiUrl + "api/project")
         self.assertEqual(binding["projectId"], fixture.PROJECT_ID)
         self.assertEqual(Path(binding["projectDir"]).resolve(), project.resolve())
         after = {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*") if path.is_file()}

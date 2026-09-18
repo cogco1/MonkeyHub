@@ -13,15 +13,15 @@
       "port": 8000
     },
     {
-      "name": "studio-web-dev",
+      "name": "monkeyhub-web-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "--prefix",
-        "apps/archflow-studio/web",
+        "apps/monkeyhub/web",
         "run",
         "dev"
       ],
-      "port": 5174
+      "port": 5175
     },
     {
       "name": "studio-api-smoke",
@@ -29,7 +29,7 @@
       "runtimeArgs": [
         "-3.12",
         "-c",
-        "import os, sys; from pathlib import Path; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; from archflow_studio_api.settings import read_application_settings; project = os.environ.get('ARCHFLOW_STUDIO_PROJECT_DIR') or read_application_settings(Path(os.environ['LOCALAPPDATA']) / 'MonkeyHub').project_dir or sys.exit('Set ARCHFLOW_STUDIO_PROJECT_DIR, or choose a project in MonkeyHub once (LOCALAPPDATA/MonkeyHub/config/applications.json).'); main(['--project-dir', str(project), '--port', '8001', '--web-dir', 'apps/archflow-studio/web/dist'])"
+        "import os, sys; from pathlib import Path; sys.path.insert(0, 'apps/archflow-studio/api'); from archflow_studio_api.main import main; from archflow_studio_api.settings import read_application_settings; project = os.environ.get('ARCHFLOW_STUDIO_PROJECT_DIR') or read_application_settings(Path(os.environ['LOCALAPPDATA']) / 'MonkeyHub').project_dir or sys.exit('Set ARCHFLOW_STUDIO_PROJECT_DIR, or choose a project in MonkeyHub once (LOCALAPPDATA/MonkeyHub/config/applications.json).'); main(['--project-dir', str(project), '--port', '8001'])"
       ],
       "port": 8001
     },
@@ -39,7 +39,7 @@
       "runtimeArgs": [
         "-3.12",
         "-c",
-        "import os, runpy, sys; sys.argv = ['apps/monkeyhub/run.py', '--runtime-root', os.path.join(os.environ['LOCALAPPDATA'], 'MonkeyHub-dev'), '--port', '8790', '--hub-web-dir', 'apps/monkeyhub/web/dist', '--studio-web-dir', 'apps/archflow-studio/web/dist', '--no-browser']; runpy.run_path(sys.argv[0], run_name='__main__')"
+        "import os, runpy, sys; sys.argv = ['apps/monkeyhub/run.py', '--runtime-root', os.path.join(os.environ['LOCALAPPDATA'], 'MonkeyHub-dev'), '--port', '8790', '--hub-web-dir', 'apps/monkeyhub/web/dist', '--no-browser']; runpy.run_path(sys.argv[0], run_name='__main__')"
       ],
       "port": 8790
     }

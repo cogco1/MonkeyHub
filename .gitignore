@@ -14,7 +14,7 @@ venv/
 *.egg-info/
 config/runtime.json
 # Existing machine-local Python installation, not application source.
-apps/archflow-studio/web/Python/
+apps/monkeyhub/web/workspaces/Python/
 apps/monkeyhub/node_modules/
 .claude/
 !.claude/launch.json

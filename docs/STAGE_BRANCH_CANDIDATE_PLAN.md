@@ -56,7 +56,7 @@ Conversation 挂载
 
 `Conversation` 受 `conversationOpen` 控制，默认关闭。基线中的全局 `candidate.succeeded` 事件只触发版本和文件刷新，没有接管候选完成、验证与自动预览。后台刷新还会在请求成功前标记事件已处理，并忽略读取错误，首次失败后可能等到下一事件才恢复。另有一处提前报告：App 在调用模型加载前就写入“model is on screen”。
 
-改造位置是现有 [App](../apps/archflow-studio/web/src/app/App.tsx)、[CandidateCard](../apps/archflow-studio/web/src/features/conversation/cards/CandidateCard.tsx)、[VerdictCard](../apps/archflow-studio/web/src/features/conversation/cards/VerdictCard.tsx) 和已有 viewer：
+改造位置是现有 [App](../apps/monkeyhub/web/workspaces/src/app/App.tsx)、[CandidateCard](../apps/monkeyhub/web/workspaces/src/features/conversation/cards/CandidateCard.tsx)、[VerdictCard](../apps/monkeyhub/web/workspaces/src/features/conversation/cards/VerdictCard.tsx) 和已有 viewer：
 
 1. 把任务完成回收放在工作台常驻逻辑。复用已有事件流；事件丢失或不支持时由同一任务状态逻辑轮询、重新查询。后台读取失败时保留待刷新状态，有限重试后显示可重试错误，不能静默消费完成事件。卡片消费状态，删除原轮询副本，不再拥有生成生命周期。
 2. 收到完成结果后，读取该 Candidate 的确切可视模型来源，优先其完整 composed model；不能拿全项目最后一个文件或任意 seat 导出代替完整结果。
@@ -211,7 +211,7 @@ Checkout 旧 Stage 只读。若从当前 head 做局部墙体修改，保留完�
 - [WorkingCopy / episodes](../apps/archflow-studio/api/archflow_studio_api/application/episodes.py)：common base、scope、A/B 和保存选择；[candidate](../apps/archflow-studio/api/archflow_studio_api/application/candidate.py)：先完整 native 执行、后 composed 合成。
 - [jobs](../apps/archflow-studio/api/archflow_studio_api/application/jobs.py)、[proposals](../apps/archflow-studio/api/archflow_studio_api/application/proposals.py)、[runner](../monkeyarch/runtime/project_runner.py)、[cad_patch](../archflow/adapters/cad_patch.py)：并发冲突、复用与增量执行边界。
 - [project ports](../archflow/project/ports.py)、[repository](../archflow/project/repository.py)、[layout](../archflow/project/layout.py)、[issue](../archflow/project/issue.py)：现有持久化范围、原子发布和本方案需要补充的设计 branch 引用。
-- [App](../apps/archflow-studio/web/src/app/App.tsx)、[VersionsStrip](../apps/archflow-studio/web/src/features/stage/VersionsStrip.tsx)、[Stage](../apps/archflow-studio/web/src/features/stage/Stage.tsx)、[DocumentCanvas](../apps/archflow-studio/web/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：当前视图、来源和显示生命周期。
+- [App](../apps/monkeyhub/web/workspaces/src/app/App.tsx)、[VersionsStrip](../apps/monkeyhub/web/workspaces/src/features/stage/VersionsStrip.tsx)、[Stage](../apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx)、[DocumentCanvas](../apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx)：当前视图、来源和显示生命周期。
 - [drawing_elevation](../monkeydiagram/drawing_elevation.py)、[既有出图方案](DRAWING_MODULE_ARCHITECTURE_PLAN.md)、[SYSTEM_MAP](SYSTEM_MAP.md)：已实现立面消费者和其他能力边界。
 
 ## 12. 本地实施结果（2026-09-09）

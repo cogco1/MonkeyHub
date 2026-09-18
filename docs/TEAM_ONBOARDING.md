@@ -137,8 +137,8 @@ $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
 & $ArchPython -m pip install -e '.[cad-inspection]'
 & $ArchPython -m pip install -r apps/archflow-studio/api/requirements.txt httpx2
 & $ArchPython -m pip check
-npm.cmd ci --prefix apps/archflow-studio/web
-npm.cmd ci --prefix apps/archflow-studio/web/tools/openapi-ts
+npm.cmd ci --prefix apps/monkeyhub/web
+npm.cmd ci --prefix apps/monkeyhub/web/workspaces/tools/openapi-ts
 
 Set-Location "$ArchSource\apps\archflow-studio\api"
 $env:ARCHFLOW_ONBOARDING_PROJECTS = "$ArchRuntime\workspace\projects"
@@ -165,12 +165,12 @@ $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
 
 ```powershell
 $ArchSource = 'D:\code\ARCHFLOW_V4'
-Set-Location "$ArchSource\apps\archflow-studio\web"
+Set-Location "$ArchSource\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:18080'
-npm.cmd run dev -- --port 15174
+npx.cmd vite --config workspaces/test/vite.config.ts --port 15174
 ```
 
-打开 `http://127.0.0.1:15174`。端口已占用时改用空闲端口并同步代理地址，不停止别人的服务。首次采用手动入口；生产入口是 MonkeyHub，开发时也可用 `scripts/dev/run-project-runtime.ps1 -ProjectDir <项目目录>` 直接启动。结束时在两个终端按 Ctrl+C。
+打开测试页 `http://127.0.0.1:15174/test/workspace.html`（仅隔离回归，不进入生产构建）。端口已占用时改用空闲端口并同步代理地址，不停止别人的服务。首次采用手动入口；生产入口是 MonkeyHub，开发时也可用 `scripts/dev/run-project-runtime.ps1 -ProjectDir <项目目录>` 直接启动。结束时在两个终端按 Ctrl+C。
 
 ### 从 Web 代理完成候选回路
 
@@ -216,7 +216,7 @@ $ArchPython = "$ArchRuntime\venv\Scripts\python.exe"
 $env:PATH = "$ArchRuntime\venv\Scripts;" + $env:PATH
 Set-Location "$ArchSource\apps\archflow-studio\api"
 & $ArchPython -m unittest tests.test_health tests.test_protocol tests.test_candidate
-Set-Location "$ArchSource\apps\archflow-studio\web"
+Set-Location "$ArchSource\apps\monkeyhub\web"
 npm.cmd test
 npm.cmd run api:check
 npm.cmd run build
@@ -236,7 +236,7 @@ npm.cmd run build
 | --- | --- | --- |
 | 研究命令、输入与运行记录 | 工具箱 `src/hgr/cli.py`、`runner.py`、`store.py` | 对应 `tests/` 行为测试 |
 | 图表、报告、来源与归档 | 工具箱 `src/hgr/projections.py`，相关 `skills/<id>/` | 合成演示；只有改动涉及恢复/重建时再跑 benchmark |
-| MonkeyArch 交互 | ArchFlow `apps/archflow-studio/web/src/`，先查对应 feature | 交互测试、类型与构建；DTO 变化另查生成客户端 |
+| MonkeyArch 交互 | ArchFlow `apps/monkeyhub/web/workspaces/src/`，先查对应 feature | 交互测试、类型与构建；DTO 变化另查生成客户端 |
 | API 用例与项目绑定 | ArchFlow `apps/archflow-studio/api/archflow_studio_api/` | 对应路由与用例测试，保留项目及候选绑定 |
 | 几何、依赖、验证或项目存储 | ArchFlow [SYSTEM_MAP.md](SYSTEM_MAP.md) 的现有模块 | registry 中该模块的测试与 `tools/archcheck.py` |
 

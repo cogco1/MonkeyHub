@@ -88,7 +88,7 @@ $script:Children = @(); $script:LaunchLocks = @(); $script:PumpCount = 0
 try {
     if ($settings.Action -eq 'hub') {
         $repoRoot = Split-Path (Split-Path (Split-Path $Launcher -Parent) -Parent) -Parent
-        $RuntimeRoot = $settings.RuntimeRoot; $HubWebDir = $settings.HubWebDir; $StudioWebDir = $settings.StudioWebDir
+        $RuntimeRoot = $settings.RuntimeRoot; $HubWebDir = $settings.HubWebDir
         $Python = $settings.Executable; $Port = $settings.Port
         $logRoot = Join-Path $RuntimeRoot 'logs'; $stamp = 'private-test'
         New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
@@ -201,7 +201,7 @@ try {
         self.assertEqual(self.invoke(Action="revision")["Revision"], "a" * 40)
 
     def test_hub_launch_starts_and_stops_only_its_private_service(self) -> None:
-        for name in ("hub dist", "studio dist"):
+        for name in ("hub dist",):
             directory = self.root / name
             directory.mkdir()
             (directory / "index.html").write_text("<title>Private launcher test</title>", encoding="utf-8")
@@ -210,7 +210,7 @@ try {
             port = selection.getsockname()[1]
         runtime = self.root / "external runtime"
         answer = self.invoke(Action="hub", RuntimeRoot=str(runtime), HubWebDir=str(self.root / "hub dist"),
-                             StudioWebDir=str(self.root / "studio dist"), Port=port)
+                             Port=port)
         self.assertEqual(answer["ExitCode"], 0, answer)
         self.assertEqual(answer["Url"], f"http://127.0.0.1:{port}")
         self.assertTrue(Path(answer["OutputLog"]).is_relative_to(runtime))

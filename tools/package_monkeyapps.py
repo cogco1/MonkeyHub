@@ -57,7 +57,7 @@ from tools.workspace import (
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
     "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor",
-    "apps/archflow-studio/api", "apps/archflow-studio/web",
+    "apps/archflow-studio/api",
     "apps/archflow-studio/assets",
     "apps/monkeyhub", "apps/monkeyfab", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
     "README.md", "SECURITY.md", "pyproject.toml", "tools/create_project.py", "tools/run_project.py",
@@ -145,7 +145,7 @@ def build_web(source: Path, node: Path, npm_cli: Path, environment: dict[str, st
     # optional native Codex copies are not needed in the Hub distribution.
     run([str(node), str(npm_cli), "ci", "--omit=dev", "--omit=optional", "--no-audit", "--no-fund"],
         cwd=source / "apps/monkeyhub", environment=environment)
-    for relative in ("apps/archflow-studio/web", "apps/monkeyhub/web"):
+    for relative in ("apps/monkeyhub/web",):
         web = source / relative
         run([str(node), str(npm_cli), "ci", "--no-audit", "--no-fund"], cwd=web, environment=environment)
         run([str(node), str(npm_cli), "run", "build"], cwd=web, environment=environment)
@@ -177,7 +177,6 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
     rows = []
     copied: dict[tuple[str, str], list[tuple[str, str]]] = {}
     for application, relative_root in (
-        ("archflow-studio", "apps/archflow-studio/web"),
         ("monkeyhub", "apps/monkeyhub/web"),
         ("monkeyhub ACP", "apps/monkeyhub"),
     ):
@@ -264,7 +263,7 @@ def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) 
     shutil.copy2(node, node_runtime / "node.exe")
     shutil.copytree(source / "apps/monkeyhub/node_modules", bundle / "apps/monkeyhub/node_modules",
                     ignore=shutil.ignore_patterns(".bin"))
-    for relative in ("apps/archflow-studio/web/dist", "apps/monkeyhub/web/dist"):
+    for relative in ("apps/monkeyhub/web/dist",):
         shutil.copytree(source / relative, bundle / relative)
     # The capability index the Studio serves at /api/capabilities is read from
     # this registry beside the application, so the installed product answers
@@ -384,7 +383,7 @@ def runtime_inventory(source: Path, bundle: Path) -> dict[str, object]:
             "packageLockSha256": sha256(source / f"apps/{name}/web/package-lock.json"),
             "files": {path.relative_to(bundle).as_posix(): sha256(path)
                       for path in sorted((bundle / f"apps/{name}/web/dist").rglob("*")) if path.is_file()},
-        } for name in ("monkeyhub", "archflow-studio")},
+        } for name in ("monkeyhub",)},
         "externalDependencies": ["Microsoft Edge WebView2 (desktop)", "Codex or Claude CLI and provider credentials",
                                  "Rhino/Blender when that backend is selected"],
     }
@@ -479,8 +478,6 @@ def node_components(source: Path, bundle: Path) -> list[dict[str, object]]:
         ("apps/monkeyhub", bundle / "apps/monkeyhub", (SHIPPED_IN, "apps/monkeyhub/node_modules")),
         ("apps/monkeyhub/web", source / "apps/monkeyhub/web",
          (BUILD_INPUT, "apps/monkeyhub/web/package-lock.json -> apps/monkeyhub/web/dist")),
-        ("apps/archflow-studio/web", source / "apps/archflow-studio/web",
-         (BUILD_INPUT, "apps/archflow-studio/web/package-lock.json -> apps/archflow-studio/web/dist")),
     ):
         for _, package in installed_node_packages(source / locked, tree, locked):
             name, version = package["name"], package["version"]

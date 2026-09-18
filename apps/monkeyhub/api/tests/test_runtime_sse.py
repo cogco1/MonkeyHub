@@ -17,10 +17,7 @@ from monkeyhub_api.main import HubServer, HubSettings, create_app
 class RuntimeSseTests(LocalHubCase):
     @contextmanager
     def serving(self):
-        web = self.root / "web"
-        web.mkdir(exist_ok=True)
-        (web / "index.html").write_text("<html>SSE shutdown fixture</html>", encoding="utf-8")
-        app = create_app(HubSettings(runtime_root=self.runtime, port=self.hub_port, studio_web_dir=web), source_root=ROOT)
+        app = create_app(HubSettings(runtime_root=self.runtime, port=self.hub_port), source_root=ROOT)
         server = HubServer(uvicorn.Config(app, host="127.0.0.1", port=self.hub_port, log_level="error"))
         thread = threading.Thread(target=server.run, daemon=True)
         self.server, self.server_thread = server, thread

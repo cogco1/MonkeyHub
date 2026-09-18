@@ -42,7 +42,7 @@ Versions below come from the distributed fonts' name tables.
   Excalidraw's old 1.05. `OFL.txt` and [AUTHORS](Liberation/AUTHORS) are unmodified
   originals from the [TTF archive linked by the official release](https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz).
   The original TTF and the losslessly compressed WOFF2 are retained in
-  `apps/archflow-studio/web/assets/board-fonts/`; its README records source,
+  `apps/monkeyhub/web/workspaces/assets/board-fonts/`; its README records source,
   hashes and conversion. All font tables and metadata were verified unchanged
   except the WOFF2 `head` checksum/compression flag. No glyph subsetting was
   applied. This font uses its original OFL copyrights and reserved names;

@@ -110,8 +110,10 @@ branch by exact Stage compare-and-swap. Formal issue alone advances canonical
 and its remaining product validation.
 
 Entry points: `tools/run_project.py` (a run of one project), `tools/verify_state_record.py`
-(replay equivalence), `tools/freeze_project_stage_workflow.py`, `tools/issue_project.py`, and the Studio
-(`apps/archflow-studio`: FastAPI `api/` as a thin shell over the kernel, `web/` as the client).
+(replay equivalence), `tools/freeze_project_stage_workflow.py`, `tools/issue_project.py`, and MonkeyHub.
+Its single frontend at `apps/monkeyhub/web/` renders Arch and Board directly; Diagram opens a
+Board page. The API-only Project Runtime remains at `apps/archflow-studio/api/` under its
+historical package name, with one process and one client binding per open project.
 
 Shared foundations: `archflow/project/refs.py` (the four references), `archflow/contracts/`
 (canonical JSON, digests, field parsing), `archflow/validation/{model,engine}.py`
