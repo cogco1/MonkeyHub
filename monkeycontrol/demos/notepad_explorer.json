@@ -1,0 +1,213 @@
+{
+  "schema": "ComputerActionScript@1",
+  "about": [
+    "One end-to-end demo on nothing but Windows' own applications: open Notepad,",
+    "type, save through the Save As dialog, close it, then show the saved file in",
+    "Explorer. Every target is named by a UI Automation property, never by a",
+    "coordinate, and every step declares what must be true afterwards.",
+    "Titles and control names are matched in both English and Chinese, because a",
+    "Windows 11 desktop can show the tabbed Notepad in one language and the common",
+    "file dialog in another. The second step opens a fresh tab on purpose: Notepad",
+    "restores the previous session, and a demo must never type into somebody's",
+    "restores the previous session, and a demo must never type into somebody's restored document; the tab it made is closed again before the window is."
+  ],
+  "policy": {
+    "allowed_processes": [
+      "notepad",
+      "explorer"
+    ],
+    "mode": "demo",
+    "highlight_ms": 900
+  },
+  "actions": [
+    {
+      "intent": "open the editor this demo will drive",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "action": {
+        "type": "launch",
+        "command": [
+          "notepad.exe"
+        ]
+      },
+      "verification": {
+        "expect": "window",
+        "title": "Notepad|记事本",
+        "timeout_ms": 15000
+      }
+    },
+    {
+      "intent": "let Notepad finish restoring its tabs before a chord is sent",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "action": {
+        "type": "wait",
+        "ms": 2000
+      }
+    },
+    {
+      "intent": "start a fresh tab so no restored document is touched",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "action": {
+        "type": "keypress",
+        "keys": "ctrl+n"
+      },
+      "verification": {
+        "expect": "window",
+        "title": "Untitled|无标题",
+        "timeout_ms": 8000
+      }
+    },
+    {
+      "intent": "type the demo line into the document",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "target": {
+        "controlType": "Document"
+      },
+      "action": {
+        "type": "type",
+        "text": "MonkeyHub computer-use demo"
+      },
+      "verification": {
+        "expect": "element",
+        "state": {
+          "value": "computer-use"
+        },
+        "timeout_ms": 8000
+      }
+    },
+    {
+      "intent": "ask Notepad where the file should go",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "action": {
+        "type": "keypress",
+        "keys": "ctrl+s"
+      },
+      "verification": {
+        "expect": "window",
+        "title": "Save As|另存为",
+        "timeout_ms": 15000
+      }
+    },
+    {
+      "intent": "name the file in the save dialog",
+      "application": "notepad",
+      "window": "Save As|另存为",
+      "target": {
+        "automationId": "1001",
+        "className": "Edit"
+      },
+      "action": {
+        "type": "set_value",
+        "text": "${TEMP}\\monkeycontrol-demo.txt"
+      },
+      "verification": {
+        "expect": "element",
+        "timeout_ms": 8000
+      }
+    },
+    {
+      "intent": "save the file where the script said",
+      "application": "notepad",
+      "window": "Save As|另存为",
+      "target": {
+        "automationId": "1",
+        "className": "Button"
+      },
+      "action": {
+        "type": "click"
+      },
+      "verification": {
+        "expect": "file",
+        "path": "${TEMP}\\monkeycontrol-demo.txt",
+        "timeout_ms": 15000
+      }
+    },
+    {
+      "intent": "close the tab this demo made, so nothing of it is restored later",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "action": {
+        "type": "keypress",
+        "keys": "ctrl+w"
+      },
+      "verification": {
+        "expect": "absent",
+        "title": "monkeycontrol-demo",
+        "timeout_ms": 10000
+      }
+    },
+    {
+      "intent": "close the editor now that the file is on disk",
+      "application": "notepad",
+      "window": "Notepad|记事本",
+      "action": {
+        "type": "keypress",
+        "keys": "alt+f4"
+      },
+      "verification": {
+        "expect": "absent",
+        "title": "Notepad|记事本",
+        "timeout_ms": 15000
+      }
+    },
+    {
+      "intent": "show the saved file in its folder",
+      "application": "explorer",
+      "window": "^Temp( - |$)",
+      "action": {
+        "type": "launch",
+        "command": [
+          "explorer.exe",
+          "/select,${TEMP}\\monkeycontrol-demo.txt"
+        ]
+      },
+      "verification": {
+        "expect": "window",
+        "title": "^Temp( - |$)",
+        "timeout_ms": 15000
+      }
+    },
+    {
+      "intent": "point at the file the demo just wrote",
+      "application": "explorer",
+      "window": "^Temp( - |$)",
+      "target": {
+        "controlType": "ListItem",
+        "nameRegex": "monkeycontrol-demo"
+      },
+      "action": {
+        "type": "highlight"
+      },
+      "verification": {
+        "expect": "element",
+        "timeout_ms": 10000
+      }
+    },
+    {
+      "intent": "keep a still of the result",
+      "application": "explorer",
+      "window": "^Temp( - |$)",
+      "action": {
+        "type": "screenshot"
+      }
+    },
+    {
+      "intent": "close the folder window",
+      "application": "explorer",
+      "window": "^Temp( - |$)",
+      "action": {
+        "type": "keypress",
+        "keys": "alt+f4"
+      },
+      "verification": {
+        "expect": "absent",
+        "title": "^Temp( - |$)",
+        "timeout_ms": 10000
+      }
+    }
+  ]
+}
