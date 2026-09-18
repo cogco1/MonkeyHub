@@ -814,8 +814,14 @@ project id, never by the caller or the file name. `project` in the restore reply
 
 Refusals carry the usual `{code, detail}`. `404 PROJECT_NOT_FOUND`: the export folder holds no
 readable project manifest. `422 ARCHIVE_PATH_INVALID`: a relative path, a name that is not `.zip`,
-an export target inside the project, an archive file that already exists, or a restore source that
-cannot be opened. `422 ARCHIVE_INVALID`: the manifest, a member digest or the restored project did
-not verify. `409 ARCHIVE_TARGET_OCCUPIED`: the restore folder already holds files, which are left
-untouched. A corrupt archive is refused before the restore folder is created; when verification
-fails after it was created, Hub deletes nothing and the detail names the folder to remove first.
+an export target inside the project, an archive file that already exists, a restore source that
+cannot be opened, or a location the operating system itself refuses — a missing drive, a vanished
+or unwritable folder, a parent that is a file. `422 ARCHIVE_INVALID`: the manifest, a member digest
+or the restored project did not verify. `409 ARCHIVE_TARGET_OCCUPIED`: the restore folder already
+holds files, which are left untouched. `409 ARCHIVE_SOURCE_CHANGED` (export only): a retained file
+moved between building the manifest and reading it, so nothing was installed and the same export
+can be asked again.
+
+A corrupt archive is refused before the restore folder is created. When verification fails with
+bytes already written, Hub deletes nothing and the detail names the folder to remove before
+retrying — whether the restore created that folder or found it empty and filled it.

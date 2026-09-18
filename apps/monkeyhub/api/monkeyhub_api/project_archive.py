@@ -48,6 +48,18 @@ def _refusal(exc: ArchiveError, detail: str | None = None) -> HubFailure:
     return HubFailure(_ARCHIVE_STATUS.get(exc.code, 422), exc.code, detail or str(exc))
 
 
+def _unusable_path(exc: OSError) -> HubFailure:
+    """A location the operating system itself would not let the archive use.
+
+    A vanished folder, a missing drive, a name Windows refuses, a parent that
+    is a file. It is the caller's path that is wrong, not this Hub's own
+    settings or logs, so it is answered here instead of as a local IO failure.
+    """
+
+    return HubFailure(422, "ARCHIVE_PATH_INVALID",
+                      f"The archive or target path could not be used: {exc.strerror or exc}.")
+
+
 def _folder(value: str, detail: str) -> Path:
     """One absolute location the request named, refused rather than guessed."""
 
@@ -62,6 +74,15 @@ def _archive_file(value: str, detail: str) -> Path:
     if path.suffix.lower() != ".zip":
         raise HubFailure(422, "ARCHIVE_PATH_INVALID", detail)
     return path
+
+
+def _holds_files(target: Path) -> bool:
+    """Whether a failed restore left anything behind in that folder."""
+
+    try:
+        return target.is_dir() and any(target.iterdir())
+    except OSError:
+        return False
 
 
 def summary_dto(summary: ArchiveSummary) -> ProjectArchiveSummary:
@@ -100,6 +121,15 @@ def export_archive(request: ProjectArchiveExportRequest) -> ProjectArchiveSummar
         return summary_dto(write_project_archive(repository, archive_path))
     except ArchiveError as exc:
         raise _refusal(exc) from exc
+    except OSError as exc:
+        raise _unusable_path(exc) from exc
+    except RuntimeError as exc:
+        # P036 refuses a retained file whose digest no longer matches the
+        # manifest this export just built. The project moved under the read;
+        # nothing was installed, and the same export can simply be asked again.
+        raise HubFailure(409, "ARCHIVE_SOURCE_CHANGED",
+                         "The project changed while the archive was being read. "
+                         "Retry the export.") from exc
 
 
 def restore_archive(
@@ -127,16 +157,18 @@ def restore_archive(
         # that archive's problem, not a Hub fault the caller cannot act on.
         raise HubFailure(422, "ARCHIVE_INVALID",
                          "This file could not be read as a project archive.") from exc
-    existed = target.exists()
     try:
         repository, summary = restore_project_archive(target, archive_path)
     except ArchiveError as exc:
         detail = str(exc)
-        if exc.code == "ARCHIVE_INVALID" and not existed and target.exists():
-            # The archive failed its own verification after the folder existed.
-            # Hub never deletes a folder, so say which one is now in the way.
+        if exc.code == "ARCHIVE_INVALID" and _holds_files(target):
+            # The archive failed its own verification with bytes already in the
+            # folder. Hub deletes nothing, so say which folder is in the way —
+            # whether the restore created it or found it empty and filled it.
             detail = f"{detail}. Remove {target} before retrying."
         raise _refusal(exc, detail) from exc
+    except OSError as exc:
+        raise _unusable_path(exc) from exc
     project_id, project_dir = _project(str(repository.layout.root))
     version, stage = _position(project_dir)
     return ProjectArchiveRestoreResult(
