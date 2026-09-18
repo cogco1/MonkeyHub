@@ -85,6 +85,34 @@ class ActionTraceStore:
         os.replace(temporary, destination)
         return relative.as_posix()
 
+    def append_json(self, relative_path: str, payload: dict) -> str:
+        """Add one canonical JSON line to any NDJSON file in the trace.
+
+        :meth:`append` owns the receipt trace and nothing else; a recorder's
+        frame index and timeline are journals of the same shape, written line
+        by line while the recording runs, so they come through here rather
+        than through a second writer outside this file.
+        """
+
+        relative = self._relative(relative_path)
+        destination = self._directory / relative
+        self._prepare(destination.parent)
+        with destination.open("a", encoding="utf-8", newline="\n") as stream:
+            stream.write(canonical_json(payload) + "\n")
+        return relative.as_posix()
+
+    def read_lines(self, relative_path: str) -> list[dict]:
+        """Every JSON line of one NDJSON file; ``[]`` while it does not exist."""
+
+        path = self._directory / self._relative(relative_path)
+        if not path.is_file():
+            return []
+        return [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
     def write_json(self, relative_path: str, payload: dict) -> None:
         """Write one canonical JSON document, replacing any earlier version."""
 

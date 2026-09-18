@@ -246,6 +246,16 @@
     },
     {
       "path": "monkeycontrol/store.py",
+      "function": "append_json",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "diagnostics",
+      "owner": "monkeycontrol",
+      "reason": "Append one canonical JSON line to a recording's frame index or timeline journal inside that directory."
+    },
+    {
+      "path": "monkeycontrol/store.py",
       "function": "save_bytes",
       "operations": [
         "open_write",

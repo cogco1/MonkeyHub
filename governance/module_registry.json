@@ -6077,7 +6077,16 @@
         "ResolutionError",
         "UiaProvider",
         "VisualFallbackProvider",
-        "PresentationProvider"
+        "PresentationProvider",
+        "ComputerUseRuntime",
+        "RuntimePolicy",
+        "RuntimeRefusal",
+        "verify_action",
+        "Recorder",
+        "encode_video",
+        "PROJECTIONS",
+        "render_overlays",
+        "python -m monkeycontrol"
       ],
       "depends_on": [
         "contracts.canonical"
@@ -6098,7 +6107,11 @@
         "tests/monkeycontrol/test_boundaries.py",
         "tests/monkeycontrol/test_host.py",
         "tests/monkeycontrol/test_providers.py",
-        "tests/monkeycontrol/test_desktop_windows.py"
+        "tests/monkeycontrol/test_desktop_windows.py",
+        "tests/monkeycontrol/test_runtime.py",
+        "tests/monkeycontrol/test_record.py",
+        "tests/monkeycontrol/test_overlay.py",
+        "tests/monkeycontrol/test_cli.py"
       ],
       "notes": "CREATE: no registered owner covers desktop UI observation or actuation — adapters.* own CAD backends, monkeymonitor owns usage accounting and explicitly does not own execution, hub.shell owns conversation and lifecycle.",
       "files": [
@@ -6113,7 +6126,13 @@
         "monkeycontrol/providers/base.py",
         "monkeycontrol/providers/uia.py",
         "monkeycontrol/providers/visual.py",
-        "monkeycontrol/providers/presentation.py"
+        "monkeycontrol/providers/presentation.py",
+        "monkeycontrol/verify.py",
+        "monkeycontrol/runtime.py",
+        "monkeycontrol/record.py",
+        "monkeycontrol/overlay.py",
+        "monkeycontrol/__main__.py",
+        "monkeycontrol/demos/notepad_explorer.json"
       ]
     },
     {

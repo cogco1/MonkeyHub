@@ -56,7 +56,9 @@ class WindowInfo:
     bounds: tuple[int, int, int, int]
 
 
-def _window_payload(window: WindowInfo | None) -> dict | None:
+def window_payload(window: WindowInfo | None) -> dict | None:
+    """One window as JSON values, for a receipt or a caller's own answer."""
+
     if window is None:
         return None
     return {
@@ -157,7 +159,7 @@ def build_receipt(
         "intent": action.intent,
         "application": action.application,
         "mode": mode,
-        "window": _window_payload(window),
+        "window": window_payload(window),
         "target": {
             "requested": target_payload(action.target),
             "resolved": _resolved_payload(target),

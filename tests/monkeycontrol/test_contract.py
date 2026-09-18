@@ -234,6 +234,22 @@ class ValidateActionTests(unittest.TestCase):
             )
         self.assertIn("verification.state.colour", str(caught.exception))
 
+    def test_an_absence_must_say_what_is_gone(self) -> None:
+        keypress = {
+            "intent": "close it",
+            "application": "notepad",
+            "action": {"type": "keypress", "keys": "alt+f4"},
+        }
+        with self.assertRaises(ContractError) as caught:
+            validate_action({**keypress, "verification": {"expect": "absent"}})
+        self.assertIn("absent", str(caught.exception))
+        # An element action already names what should be gone.
+        self.assertIsNotNone(
+            validate_action(
+                {**CLICK, "verification": {"expect": "absent"}}
+            ).verification
+        )
+
     def test_an_explicit_null_reads_as_an_absent_optional(self) -> None:
         action = validate_action(
             {

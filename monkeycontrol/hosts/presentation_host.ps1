@@ -30,15 +30,26 @@ public static class MonkeyControlOverlay
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll", SetLastError = true)] public static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll", SetLastError = true)] public static extern int SetWindowLong(IntPtr hwnd, int index, int value);
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
 
     public const int GWL_EXSTYLE = -20;
     // Transparent lets every click through, layered makes that reliable,
     // toolwindow keeps the overlay out of Alt-Tab, noactivate out of focus.
     public const int CLICK_THROUGH = 0x00000020 | 0x00080000 | 0x00000080 | 0x08000000;
+    // Windows 10 2004 and later leave this window out of a capture entirely,
+    // showing what is behind it rather than a black rectangle.
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
 
     public static void MakeClickThrough(IntPtr hwnd)
     {
         SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | CLICK_THROUGH);
+    }
+
+    // A recording has to show the desktop, not the explanation drawn over it:
+    // the raw frames stay replayable under any overlay projection, or none.
+    public static bool ExcludeFromCapture(IntPtr hwnd)
+    {
+        return SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
     }
 }
 '@
@@ -50,6 +61,9 @@ $script:DpiAware = [MonkeyControlOverlay]::IsProcessDPIAware()
 $script:Codes = @('HOST_ERROR', 'BACKEND_UNAVAILABLE')
 $script:Overlay = $null
 $script:Canvas = $null
+# Whether this desktop honoured the request to keep the overlay out of
+# captures; null until the overlay window exists.
+$script:Excluded = $null
 $script:ScaleX = 1.0
 $script:ScaleY = 1.0
 $script:BadgeColors = @{ info = '#2D6CDF'; ok = '#1F9D55'; fail = '#C62828' }
@@ -129,6 +143,10 @@ function Get-Overlay() {
     $window.Show()
     $handle = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
     [MonkeyControlOverlay]::MakeClickThrough($handle)
+    $script:Excluded = [MonkeyControlOverlay]::ExcludeFromCapture($handle)
+    if (-not $script:Excluded) {
+        [Console]::Error.WriteLine('SetWindowDisplayAffinity refused: the overlay may appear in captures')
+    }
     $source = [System.Windows.PresentationSource]::FromVisual($window)
     if ($null -ne $source) {
         $script:ScaleX = [double]$source.CompositionTarget.TransformToDevice.M11
@@ -282,8 +300,8 @@ function Invoke-Op([string]$op, $payload) {
             }
         }
         'screenshot' { return (Invoke-Screenshot $payload) }
-        'highlight' { Show-Highlight $payload; return [ordered]@{} }
-        'badge' { Show-Badge $payload; return [ordered]@{} }
+        'highlight' { Show-Highlight $payload; return [ordered]@{ excluded_from_capture = $script:Excluded } }
+        'badge' { Show-Badge $payload; return [ordered]@{ excluded_from_capture = $script:Excluded } }
         'clear' { Clear-Overlay; return [ordered]@{} }
         default { throw "HOST_ERROR: $op is not a presentation host op" }
     }

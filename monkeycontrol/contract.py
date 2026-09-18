@@ -403,6 +403,19 @@ def validate_action(payload: object) -> Action:
         raise ContractError("action.delta is required for a scroll action")
     if kind == "wait" and milliseconds is None:
         raise ContractError("action.ms is required for a wait action")
+    verification = _optional(body, "verification", "", _verification)
+    # An element expectation falls back to the action's own target; absence
+    # has nothing to fall back to unless a title or a target says what is gone.
+    if (
+        verification is not None
+        and verification.expect == "absent"
+        and verification.title is None
+        and verification.target is None
+        and target is None
+    ):
+        raise ContractError(
+            "verification.title or a target is required for an absent expectation"
+        )
     return Action(
         step_id=_optional(body, "step_id", "", _text),
         intent=_text(body.get("intent"), "intent", maximum=MAX_INTENT),
@@ -424,7 +437,7 @@ def validate_action(payload: object) -> Action:
         delta=delta,
         ms=milliseconds,
         command=command,
-        verification=_optional(body, "verification", "", _verification),
+        verification=verification,
         capture=_optional(body, "capture", "", _flag, False),
     )
 
