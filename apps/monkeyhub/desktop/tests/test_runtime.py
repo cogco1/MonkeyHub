@@ -273,8 +273,7 @@ class WindowsProcesses:
 class DesktopRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(Path(EXE).is_absolute() and Path(EXE).is_file(), EXE)
-        for client in ("monkeyhub", "archflow-studio"):
-            self.assertTrue((APPLICATION_ROOT / f"apps/{client}/web/dist/index.html").is_file(), f"Build {client} web first")
+        self.assertTrue((APPLICATION_ROOT / "apps/monkeyhub/web/dist/index.html").is_file(), "Build the Hub frontend first")
         for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "apps/archflow-studio/api", APPLICATION_ROOT / "apps/monkeyhub/api"):
             if str(directory) not in sys.path:
                 sys.path.insert(0, str(directory))
