@@ -6069,7 +6069,14 @@
         "ResolvedTarget",
         "WindowInfo",
         "build_receipt",
-        "ActionTraceStore"
+        "ActionTraceStore",
+        "HostError",
+        "HostProcess",
+        "Provider",
+        "ResolutionError",
+        "UiaProvider",
+        "VisualFallbackProvider",
+        "PresentationProvider"
       ],
       "depends_on": [
         "contracts.canonical"
@@ -6087,14 +6094,25 @@
         "tests/monkeycontrol/test_contract.py",
         "tests/monkeycontrol/test_trace.py",
         "tests/monkeycontrol/test_store.py",
-        "tests/monkeycontrol/test_boundaries.py"
+        "tests/monkeycontrol/test_boundaries.py",
+        "tests/monkeycontrol/test_host.py",
+        "tests/monkeycontrol/test_providers.py",
+        "tests/monkeycontrol/test_desktop_windows.py"
       ],
       "notes": "CREATE: no registered owner covers desktop UI observation or actuation — adapters.* own CAD backends, monkeymonitor owns usage accounting and explicitly does not own execution, hub.shell owns conversation and lifecycle.",
       "files": [
         "monkeycontrol/__init__.py",
         "monkeycontrol/contract.py",
         "monkeycontrol/trace.py",
-        "monkeycontrol/store.py"
+        "monkeycontrol/store.py",
+        "monkeycontrol/host.py",
+        "monkeycontrol/hosts/execution_host.ps1",
+        "monkeycontrol/hosts/presentation_host.ps1",
+        "monkeycontrol/providers/__init__.py",
+        "monkeycontrol/providers/base.py",
+        "monkeycontrol/providers/uia.py",
+        "monkeycontrol/providers/visual.py",
+        "monkeycontrol/providers/presentation.py"
       ]
     },
     {

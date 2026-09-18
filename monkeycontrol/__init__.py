@@ -16,6 +16,14 @@ from .contract import (
     Verification,
     validate_action,
 )
+from .host import HostError, HostProcess
+from .providers import (
+    PresentationProvider,
+    Provider,
+    ResolutionError,
+    UiaProvider,
+    VisualFallbackProvider,
+)
 from .store import ActionTraceStore
 from .trace import ResolvedTarget, WindowInfo, build_receipt
 
@@ -25,9 +33,16 @@ __all__ = [
     "Action",
     "ActionTraceStore",
     "ContractError",
+    "HostError",
+    "HostProcess",
+    "PresentationProvider",
+    "Provider",
+    "ResolutionError",
     "ResolvedTarget",
     "TargetSpec",
+    "UiaProvider",
     "Verification",
+    "VisualFallbackProvider",
     "WindowInfo",
     "build_receipt",
     "validate_action",
