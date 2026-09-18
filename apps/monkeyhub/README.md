@@ -146,3 +146,49 @@ Hub workspaces and chat mutations use this project-scoped forwarding path. Each 
 Hub assigns candidate run ids before dispatch, so a lost 202 cannot hide which retained run to inspect. A completed candidate requires the existing complete runner/composed-model readback. Stage acceptance is reported committed only when the matching candidate, branch and exact parent Stage are reachable from the retained branch. A prepared Stage file alone is not a commit. An interrupted request without that proof stays `needs_recovery`; recovery never resends it. A confirmed refusal before dispatch remains a failure even if an older candidate exists.
 
 Operation admissions and HTTP replies live in the Hub process. Restarting Hub reconstructs retained candidates, committed Stages and saved chats, but does not restore proposals/jobs or requests that never reached a retained run. Reusing a candidate operation UUID after a Hub restart refuses an already existing run and directs the caller to read it. This is not a durable background task queue. Warm provider/geometry reuse remains inside the existing Studio/ACP owners; external Rhino bridges and other processes Hub does not own are not automatically restarted. Installed-package and second-machine validation remain separate from this source change.
+
+## Project archive: export, restore, rehearsal
+
+A project archive is one ZIP holding a `ProjectArchiveManifest@1` and the retained bytes that manifest names. It is a transport container around the existing project format, never a second one, and it is how a project moves to another folder, user or machine.
+
+Each project card carries **Export archive…** and **Restore archive…**. Export takes the full path of a new `.zip` outside the project folder and answers with the summary of what travelled: the project and its published version, the archive size, how many retained files and runs, the included categories, the five omissions, the external dependencies the archive did not embed, and the file it wrote. Restore takes the folder to restore into — the Hub workspace by default, so the restored project stays listed here — and answers with the folder it created and an offer to open the restored project. Both accept a pasted Windows path with the quotes Explorer copies. Neither dialog interprets a refusal: `ARCHIVE_PATH_INVALID`, `ARCHIVE_INVALID`, `ARCHIVE_TARGET_OCCUPIED` and `ARCHIVE_SOURCE_CHANGED` are shown with the API's own sentence.
+
+| Request | Result |
+| --- | --- |
+| POST /api/project/archive/export with `projectDir`, `archivePath` | 201 `ProjectArchiveSummary` for the archive written |
+| POST /api/project/archive/restore with `archivePath`, `targetParent` | 201 `{summary, project}`; `project` is the same row GET /api/chat/projects lists, and `targetParent: null` restores into this Hub's workspace |
+
+The restored folder is named by the archive's own project id, never by the caller or the file name. Hub chooses no location: it normalizes the paths the request named and hands them to `archflow.project.archive`, which installs every byte through the existing immutable project writer. The summary fields and every refusal are [docs/PROTOCOL.md, "Project archives"](../../docs/PROTOCOL.md#project-archives).
+
+The same two operations without the Hub, for a scripted backup or a machine with no Hub installed:
+
+```powershell
+python tools/create_project.py --project <project folder> --export-archive <path of a new .zip>
+python tools/create_project.py --project <empty folder named by the project id> --restore-archive <archive .zip>
+```
+
+What travels: every retained run including unaccepted candidates, HEAD with its canonical and event chain, retained records and receipts, Board revisions, registered documents with their original bytes, the workspace files retained receipts name, and the authored State Record, seats and program sheet. What does not: credentials and tokens, process and runtime state, runtime caches, rebuildable previews, unbounded logs and telemetry, and anything under `exports/` that no retained record names. A restored project needs nothing from the source machine's runtime root, chats, application settings or logs.
+
+Rehearse the whole move with one command, on a project you can afford to copy:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-archive-rehearsal.ps1 -Python <python.exe> -SourceProject <project folder> -ArchivePath <path of a new .zip> -RestoreParent <empty folder> [-Port 8111] [-EnvironmentLabel '<how this environment is described>']
+```
+
+The wrapper exports and restores, starts one project runtime on the restored copy ([scripts/dev/run-project-runtime.ps1](../../scripts/dev/run-project-runtime.ps1)), waits for its health route, asks the driver to verify, and stops the runtime again. The driver behind it is `tools/rehearse_project_archive.py`: it records the source project's identities before the export, exports and restores through `tools/create_project.py`, re-reads the restored copy with the ordinary project readers, and asks the runtime for one bounded, non-destructive candidate from the restored base — a proposal that sets a number the record already declares to the number it already holds. It prints exactly the summary block issue #56 asks for, and nothing else, on stdout:
+
+```text
+source build: <sha>
+archive sha256: <sha>
+archive size: <bytes>
+restore environment: <label>
+project identity: MATCH
+...
+post-restore candidate from exact restored base: PASS
+runtime/config/chat transported: NO
+source project changed by export: NO
+```
+
+Identities only — digests, counts and ids — so the block can be posted without carrying a local path, a file name or any project content; paths and refusal detail go to stderr. A category the source project genuinely lacks (no Board, no documents, no drawings, no accepted Stage) is reported `SKIPPED (absent in source)` and never answered MATCH. The exit code is 0 when nothing was refused, 1 when something was, and 2 when the rehearsal could not be carried out at all. `--phase export-restore` and `--phase verify` are the two halves the wrapper needs in order to start a runtime between them; run the driver alone with `--phase all` when no runtime is wanted.
+
+Running this on your own machine is a dress rehearsal, not the acceptance. The acceptance is the owner running the same wrapper on a **clean Windows user** — an empty project root and an empty `%LOCALAPPDATA%/MonkeyHub`, with no path back to the source project — against a **real project**, where only the archive file was carried across.
