@@ -5869,6 +5869,60 @@
       "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer. The --export-archive/--restore-archive flags stay here and delegate to project.archive, which the Hub API calls directly."
     },
     {
+      "module_id": "tools.rehearse_project_archive",
+      "owner_path": "tools/rehearse_project_archive.py",
+      "purpose": "Rehearse one project archive end to end: capture the source project identities, export and restore through the landed create-project command, re-read the restored copy with normal readers, and continue one bounded candidate from the restored base.",
+      "owns": [
+        "the fresh-environment archive rehearsal: the content-free source-side evidence file, the restored-copy comparison and the acceptance summary block GH-56 receives",
+        "the bounded non-destructive continuation a restored project is asked for: one restatement proposal, its candidate and the base that candidate names"
+      ],
+      "does_not_own": [
+        "the archive container, its manifest and its validation (project.archive)",
+        "exporting or restoring a project: both go through the tools.create_project command line as a subprocess",
+        "project readers, verification and record identity (project.repository)",
+        "starting or stopping a project runtime; the rehearsal is handed one URL or none"
+      ],
+      "inputs": [
+        "CLI arguments: the source project, the archive path, the restore parent, the interpreter, an environment label, an optional runtime URL and the phase",
+        "its own evidence file, when the verify phase runs in a second process"
+      ],
+      "outputs": [
+        "the acceptance summary block on stdout, identities only",
+        "one ProjectArchiveRehearsalEvidence@1 file beside the restored project",
+        "process exit code: 0 accepted, 1 refused, 2 not carried out"
+      ],
+      "public_api": [
+        "CHECKS",
+        "RehearsalError",
+        "RehearsalReport",
+        "identities",
+        "source_build",
+        "export_and_restore",
+        "verify_restored",
+        "rehearse",
+        "main"
+      ],
+      "depends_on": [
+        "project.repository",
+        "project.ports",
+        "project.record_kinds"
+      ],
+      "used_by": [
+        "scripts/dev/run-archive-rehearsal.ps1",
+        "apps/monkeyhub/README.md"
+      ],
+      "invariants": [
+        "a category the source project genuinely lacks is reported SKIPPED and never answered MATCH",
+        "the rehearsal writes nothing inside either project; the only file it writes is its own evidence file beside the restored copy",
+        "stdout carries the summary block alone, so no local path or project content can travel into the issue"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_rehearse_project_archive.py"
+      ],
+      "notes": "CREATE for GH-56's remaining acceptance: the repository had the archive and its routes but no way to run the fresh-environment rehearsal the issue closes on. Export and restore are not reimplemented here; the driver runs the landed CLI so the rehearsal exercises what a user runs."
+    },
+    {
       "module_id": "monkeymonitor",
       "owner_path": "monkeymonitor/usage.py",
       "purpose": "Engineering usage, trace, exact decimal token pricing and bounded algorithm recommendations for Hub/Studio observations and explicit Codex session files; MonkeyHub owns the visible Usage page.",
