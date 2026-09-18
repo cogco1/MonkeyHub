@@ -6002,7 +6002,8 @@
         "observing the editable work copies this project explicitly opened: a settled, re-stat-validated change is offered to studio.artifacts as the next revision of the whole document that copy answers for, and its refusal is reported on the runtime's existing error surface; a copy studio.artifacts no longer considers editable is left on disk and still watched, reported only once its own bytes have moved, and the edit it holds keeps its place until the refusal goes away; an untouched copy never rolls a page the Board replaced elsewhere back, and a copy that will not read or register never marks the retained projection stale",
         "the visible Usage page and its browser-side presentation of MonkeyMonitor events, traces, explicit diagnostic sources and manual rate estimates; Monitor remains the data/algorithm owner behind the loopback API",
         "Mounted workspace view state and local drafts survive tool and project switches; Board page visits keep exact source/page/revision and return to the same canvas. These are UI projections, not a second project store.",
-        "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds."
+        "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
+        "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6057,6 +6058,8 @@
         "POST /api/chat/sessions/{id}/permissions/{permission_id}",
         "POST /api/chat/sessions/{id}/stop",
         "POST /api/project/modeling",
+        "POST /api/project/archive/export",
+        "POST /api/project/archive/restore",
         "ProjectRuntimeManager",
         "WorkerSupervisor",
         "OperationManager",
@@ -6112,6 +6115,7 @@
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
@@ -6170,6 +6174,7 @@
         "apps/monkeyhub/api/tests/test_runtime_operations.py",
         "apps/monkeyhub/api/tests/test_runtime_sse.py",
         "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/test_project_archive.py",
         "apps/monkeyhub/desktop/tests/test_runtime.py",
         "apps/monkeyhub/web/test/monitorData.test.ts",
         "apps/monkeyhub/web/workspaces/test/connection.test.ts",
@@ -6187,7 +6192,8 @@
         "monkeymonitor",
         "contracts.canonical",
         "monkeyfab",
-        "studio.artifacts"
+        "studio.artifacts",
+        "project.archive"
       ]
     },
     {
