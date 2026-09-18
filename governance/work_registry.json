@@ -682,40 +682,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-127",
-      "stream": "architecture",
-      "status": "active",
-      "goal": "Complete the single-Hub-frontend packaging checks while preserving the existing locked dependency versions.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/web/package-lock.json",
-        "apps/monkeyhub/installer/third-party/web-supplement/README.md"
-      ],
-      "lanes": [
-        {
-          "id": "shell-infra",
-          "issue": "#127 Phase 2",
-          "status": "active",
-          "branch": "codex/127-hub-workspaces-final",
-          "worktree": "workspace/worktrees/codex-127-hub-workspaces",
-          "base_ref": "bdf8e3ef9188f68d0bd62259673bff854cb1c99f",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": "CI found an incidental canvas dependency upgrade during lockfile consolidation; retain the previously audited resolutions and validate package notice collection.",
-          "modules": [
-            "hub.shell",
-            "studio.board",
-            "studio.intent"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/package-lock.json",
-            "apps/monkeyhub/installer/third-party/web-supplement/README.md"
-          ],
-          "depends_on": []
-        }
-      ]
     }
   ]
 }
