@@ -18,6 +18,7 @@ from .contract import (
 )
 from .host import HostError, HostProcess
 from .providers import (
+    FocusError,
     PresentationProvider,
     Provider,
     ResolutionError,
@@ -33,6 +34,7 @@ __all__ = [
     "Action",
     "ActionTraceStore",
     "ContractError",
+    "FocusError",
     "HostError",
     "HostProcess",
     "PresentationProvider",

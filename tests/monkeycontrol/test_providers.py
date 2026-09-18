@@ -14,6 +14,7 @@ import unittest
 from monkeycontrol.contract import ContractError, TargetSpec
 from monkeycontrol.host import HostError
 from monkeycontrol.providers import (
+    FocusError,
     PresentationProvider,
     Provider,
     ResolutionError,
@@ -233,6 +234,50 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "TARGET_UNRESOLVED")
         self.assertEqual(caught.exception.candidates, [])
 
+    def test_a_pattern_list_the_host_unrolled_is_read_back_as_a_list(self) -> None:
+        """PowerShell renders no patterns as ``{}`` and one as a bare string.
+
+        Left alone, a one-pattern element turns ``"Value" in patterns`` into
+        substring matching, which quietly says yes to ``RangeValue``.
+        """
+
+        for sent, expected in (
+            ("RangeValue", ["RangeValue"]),
+            ({}, []),
+            (None, []),
+            (["Invoke", "Value"], ["Invoke", "Value"]),
+        ):
+            with self.subTest(sent=sent):
+                node = candidate("Slider", patterns=sent)
+                host = FakeHost(
+                    find=lambda **args: {"candidates": [dict(node)]},
+                    inspect=lambda **args: {
+                        "window": NOTEPAD,
+                        "nodes": [dict(node)],
+                        "truncated": False,
+                    },
+                )
+                provider = UiaProvider(host)
+                tree = provider.inspect(self.window())
+                self.assertEqual(tree["nodes"][0]["patterns"], expected)
+                with self.assertRaises(ResolutionError) as caught:
+                    provider.resolve(
+                        self.window(), TargetSpec(control_type="Button", index=9)
+                    )
+                self.assertEqual(caught.exception.candidates[0]["patterns"], expected)
+
+    def test_an_unrolled_candidate_or_window_list_is_still_a_list(self) -> None:
+        one = candidate("Save")
+        host = FakeHost(
+            find=lambda **args: {"candidates": one},
+            windows=lambda **args: {"windows": NOTEPAD},
+        )
+        provider = UiaProvider(host)
+        self.assertEqual(
+            provider.resolve(self.window(), TargetSpec(name="Save")).name, "Save"
+        )
+        self.assertEqual([window.pid for window in provider.windows("notepad")], [91])
+
     def test_read_is_the_hosts_element_state(self) -> None:
         state = {
             "value": "monkeycontrol",
@@ -279,17 +324,48 @@ class ActuationTests(unittest.TestCase):
             host.args("set_value"), {"runtime_id": "42.7", "text": "hello"}
         )
 
+    def window(self) -> WindowInfo:
+        return WindowInfo(4242, "Untitled - Notepad", 91, "notepad", (0, 0, 10, 10))
+
     def test_focus_names_the_window_and_the_element(self) -> None:
-        host = FakeHost(focus=lambda **args: {})
-        window = WindowInfo(4242, "Untitled - Notepad", 91, "notepad", (0, 0, 10, 10))
-        UiaProvider(host).focus(window, self.target())
+        host = FakeHost(
+            focus=lambda **args: {"foreground": True, "element_focused": True}
+        )
+        UiaProvider(host).focus(self.window(), self.target())
         self.assertEqual(host.args("focus"), {"handle": 4242, "runtime_id": "42.7"})
 
     def test_focus_without_an_element_is_the_window_alone(self) -> None:
-        host = FakeHost(focus=lambda **args: {})
-        window = WindowInfo(4242, "Untitled - Notepad", 91, "notepad", (0, 0, 10, 10))
-        UiaProvider(host).focus(window, None)
+        host = FakeHost(
+            focus=lambda **args: {"foreground": True, "element_focused": None}
+        )
+        UiaProvider(host).focus(self.window(), None)
         self.assertEqual(host.args("focus"), {"handle": 4242, "runtime_id": None})
+
+    def test_a_window_that_would_not_come_forward_is_raised(self) -> None:
+        host = FakeHost(
+            focus=lambda **args: {"foreground": False, "element_focused": None}
+        )
+        with self.assertRaises(FocusError) as caught:
+            UiaProvider(host).focus(self.window(), None)
+        self.assertEqual(caught.exception.code, "FOCUS_LOST")
+        self.assertIn("Untitled - Notepad", str(caught.exception))
+        self.assertIn("91", str(caught.exception))
+
+    def test_an_element_that_would_not_take_focus_is_raised(self) -> None:
+        host = FakeHost(
+            focus=lambda **args: {"foreground": True, "element_focused": False}
+        )
+        with self.assertRaises(FocusError) as caught:
+            UiaProvider(host).focus(self.window(), self.target())
+        self.assertEqual(caught.exception.code, "FOCUS_LOST")
+        self.assertIn("came forward", str(caught.exception))
+        self.assertIn("Save", str(caught.exception))
+
+    def test_a_host_that_says_nothing_about_focus_is_a_lost_focus(self) -> None:
+        # An older or partial reply must not read as success.
+        host = FakeHost(focus=lambda **args: {})
+        with self.assertRaises(FocusError):
+            UiaProvider(host).focus(self.window(), None)
 
     def test_every_input_op_reaches_the_host_verbatim(self) -> None:
         host = FakeHost(

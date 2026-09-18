@@ -8,12 +8,13 @@ provider draws and captures, and resolves nothing at all.
 
 from __future__ import annotations
 
-from .base import Provider, ResolutionError
+from .base import FocusError, Provider, ResolutionError
 from .presentation import PresentationProvider
 from .uia import UiaProvider
 from .visual import VisualFallbackProvider
 
 __all__ = [
+    "FocusError",
     "PresentationProvider",
     "Provider",
     "ResolutionError",

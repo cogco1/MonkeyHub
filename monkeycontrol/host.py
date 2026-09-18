@@ -3,8 +3,9 @@
 MonkeyControl reaches the Windows desktop through two long-lived PowerShell
 hosts: an MTA one that holds UI Automation and SendInput, and an STA one that
 holds the WPF overlay and screen capture. This module owns the transport only
--- spawning, framing, id matching, timeouts and a single transparent restart --
-and nothing about what an op means. It writes no file: every byte MonkeyControl
+-- spawning, framing, id matching, timeouts, and replacing a worker that died,
+replaying the request only when repeating it could change nothing -- and
+nothing about what an op means. It writes no file: every byte MonkeyControl
 keeps goes through :mod:`monkeycontrol.store`.
 """
 
@@ -25,6 +26,23 @@ HOSTS = Path(__file__).resolve().parent / "hosts"
 EXECUTION_HOST = HOSTS / "execution_host.ps1"
 PRESENTATION_HOST = HOSTS / "presentation_host.ps1"
 APARTMENTS = {"mta": "-Mta", "sta": "-Sta"}
+#: The ops of both hosts that only look, so asking a restarted worker again
+#: cannot repeat anything that reached the screen. Every other op -- the whole
+#: of actuation, and the overlay, which a viewer would see twice -- is refused
+#: after a crash instead of replayed.
+OBSERVATIONS = frozenset(
+    {
+        "hello",
+        "windows",
+        "inspect",
+        "find",
+        "read",
+        "foreground",
+        "process",
+        "screenshot",
+        "clear",
+    }
+)
 #: How long ``stop`` waits for the host to leave its loop before terminating it.
 EXIT_GRACE_S = 2.0
 _DIAGNOSTICS = 40
@@ -105,6 +123,16 @@ class HostProcess:
         self._counter = 0
         self._hello: dict = {}
         self._lock = threading.Lock()
+        # Its own lock: the reader threads append here while a request that is
+        # already holding ``_lock`` reads the tail for an error message.
+        self._notes = threading.Lock()
+
+    def __enter__(self) -> "HostProcess":
+        self.start()
+        return self
+
+    def __exit__(self, *_exception) -> None:
+        self.stop()
 
     @property
     def script(self) -> Path:
@@ -121,9 +149,18 @@ class HostProcess:
         return self._process is not None and self._process.poll() is None
 
     def start(self) -> dict:
-        """Spawn the host and greet it; the greeting is its capabilities."""
+        """Spawn the host and greet it; the greeting is its capabilities.
+
+        Starting a worker that is already running is not a second worker: the
+        greeting it already gave is returned. A worker that has since exited is
+        cleaned up first, so no handle is ever left dangling.
+        """
 
         with self._lock:
+            if self._process is not None:
+                if self._process.poll() is None:
+                    return dict(self._hello)
+                self._terminate()
             self._spawn()
             try:
                 self._hello = self._exchange("hello", {})
@@ -144,9 +181,12 @@ class HostProcess:
 
         A refusal the host expressed is raised with the host's own code, which
         is how ``TARGET_UNRESOLVED`` and ``WINDOW_NOT_FOUND`` reach the caller.
-        A worker that died is restarted once and the request replayed; a worker
-        that merely stayed silent is not replayed, because an action that may
-        already have reached the screen must not be sent twice.
+
+        A worker that died is always replaced, but only an op in
+        :data:`OBSERVATIONS` is asked again: a click or a keystroke may already
+        have reached the screen before the worker went, and sending it twice is
+        worse than saying so. A worker that merely stayed silent is not
+        replayed either, for the same reason.
         """
 
         with self._lock:
@@ -157,6 +197,17 @@ class HostProcess:
                 self._spawn()
                 try:
                     self._hello = self._exchange("hello", {})
+                except _HostGone as exc:
+                    self._terminate()
+                    raise self._dead(op) from exc
+                if op not in OBSERVATIONS:
+                    raise HostError(
+                        "HOST_ERROR",
+                        f"{self._script.name} died while answering {op}, which "
+                        "may or may not have reached the screen; it was not "
+                        "sent again" + self._trailing(),
+                    )
+                try:
                     return self._exchange(op, args)
                 except _HostGone as exc:
                     self._terminate()
@@ -199,7 +250,8 @@ class HostProcess:
         # end-of-file marker into the replies of the one replacing it.
         replies: queue.Queue = queue.Queue()
         self._replies = replies
-        self._diagnostics.clear()
+        with self._notes:
+            self._diagnostics.clear()
         self._counter = 0
         self._process = launcher(
             [
@@ -217,7 +269,7 @@ class HostProcess:
             self._reader(
                 self._process.stdout, lambda line: self._reply(replies, line)
             ),
-            self._reader(self._process.stderr, self._diagnostics.append),
+            self._reader(self._process.stderr, self._note),
         ]
 
     def _reader(self, stream, consume: Callable[[object], None]) -> threading.Thread:
@@ -249,12 +301,12 @@ class HostProcess:
         try:
             message = json.loads(text)
         except ValueError:
-            self._diagnostics.append(text)
+            self._note(text)
             return
         if isinstance(message, dict) and "id" in message:
             replies.put(message)
         else:
-            self._diagnostics.append(text)
+            self._note(text)
 
     def _send(self, request: dict) -> None:
         process = self._process
@@ -308,8 +360,22 @@ class HostProcess:
             f"{self._script.name} died twice while answering {op}" + self._trailing(),
         )
 
+    def _note(self, line: str) -> None:
+        """Keep one line of host diagnostics, from whichever thread read it."""
+
+        with self._notes:
+            self._diagnostics.append(line)
+
     def _trailing(self) -> str:
-        lines = [line.strip() for line in self._diagnostics if line.strip()]
+        """The host's last word, for an error message.
+
+        Snapshotting under the lock matters: a reader thread appends here
+        while the failing request reads it, and a deque mutated mid-iteration
+        would raise over the failure it was meant to explain.
+        """
+
+        with self._notes:
+            lines = [line.strip() for line in self._diagnostics if line.strip()]
         return f"; last host output: {lines[-1]}" if lines else ""
 
     def _terminate(self) -> None:

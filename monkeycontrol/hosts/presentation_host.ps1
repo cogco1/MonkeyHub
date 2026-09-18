@@ -26,6 +26,7 @@ using System.Runtime.InteropServices;
 public static class MonkeyControlOverlay
 {
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern bool IsProcessDPIAware();
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll", SetLastError = true)] public static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll", SetLastError = true)] public static extern int SetWindowLong(IntPtr hwnd, int index, int value);
@@ -42,7 +43,10 @@ public static class MonkeyControlOverlay
 }
 '@
 
-$script:DpiAware = [MonkeyControlOverlay]::SetProcessDPIAware()
+# SetProcessDPIAware answers false when awareness was already set, so the
+# state is read back rather than inferred from the call that asked for it.
+$null = [MonkeyControlOverlay]::SetProcessDPIAware()
+$script:DpiAware = [MonkeyControlOverlay]::IsProcessDPIAware()
 $script:Codes = @('HOST_ERROR', 'BACKEND_UNAVAILABLE')
 $script:Overlay = $null
 $script:Canvas = $null

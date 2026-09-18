@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import queue
 import subprocess
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -76,6 +77,13 @@ class FakeHost:
     def close(self) -> None:
         self._closed = True
 
+    def crash(self) -> None:
+        """Die after having been greeted, the way a real worker would."""
+
+        self._closed = True
+        self.returncode = 1
+        self.stdout.close()
+
     def poll(self) -> int | None:
         return self.returncode
 
@@ -115,6 +123,19 @@ def scripted(**replies):
         return [{"id": ident, "ok": True, "result": replies[request["op"]]}]
 
     return answer
+
+
+class Chatter:
+    """A stderr pipe that never stops talking, like a host logging a loop."""
+
+    def __init__(self) -> None:
+        self._closed = threading.Event()
+
+    def readline(self) -> str:
+        return "" if self._closed.is_set() else "host chatter\n"
+
+    def close(self) -> None:
+        self._closed.set()
 
 
 class Launcher:
@@ -227,15 +248,61 @@ class HostProcessTests(unittest.TestCase):
         self.assertTrue(host.alive)
 
     def test_a_dead_host_is_restarted_once_and_the_retry_is_invisible(self) -> None:
-        dead = FakeHost(scripted(), closed=True)
+        first = FakeHost(scripted())
         live = FakeHost(scripted(process={"name": "notepad"}))
-        launcher = Launcher(dead, live)
+        launcher = Launcher(first, live)
         host = HostProcess(EXECUTION_HOST, apartment="mta", launcher=launcher)
         self.addCleanup(host.stop)
         host.start()
+        first.crash()
         self.assertEqual(host.request("process", pid=7), {"name": "notepad"})
         self.assertEqual(len(launcher.spawned), 2)
         self.assertEqual([entry["op"] for entry in live.written], ["hello", "process"])
+
+    def test_an_action_the_dead_host_may_have_performed_is_not_sent_again(
+        self,
+    ) -> None:
+        first = FakeHost(scripted())
+        live = FakeHost(scripted(click={}))
+        launcher = Launcher(first, live)
+        host = HostProcess(EXECUTION_HOST, apartment="mta", launcher=launcher)
+        self.addCleanup(host.stop)
+        host.start()
+        first.crash()
+        with self.assertRaises(HostError) as caught:
+            host.request("click", x=1, y=2)
+        self.assertEqual(caught.exception.code, "HOST_ERROR")
+        self.assertIn("may or may not have reached the screen", str(caught.exception))
+        # The worker was still replaced, so the next request has one to talk to.
+        self.assertEqual(len(launcher.spawned), 2)
+        self.assertEqual([entry["op"] for entry in live.written], ["hello"])
+        self.assertTrue(host.alive)
+
+    def test_every_op_that_only_looks_may_be_asked_again(self) -> None:
+        for op, args in (
+            ("windows", {"process": "notepad"}),
+            ("find", {"handle": 1}),
+            ("read", {"runtime_id": "1.2"}),
+            ("inspect", {"handle": 1}),
+            ("foreground", {}),
+            ("process", {"pid": 7}),
+            ("screenshot", {"bounds": None}),
+            ("clear", {}),
+        ):
+            with self.subTest(op=op):
+                first = FakeHost(scripted())
+                live = FakeHost(scripted(**{op: {"seen": op}}))
+                launcher = Launcher(first, live)
+                host = HostProcess(
+                    EXECUTION_HOST, apartment="mta", launcher=launcher
+                )
+                self.addCleanup(host.stop)
+                host.start()
+                first.crash()
+                self.assertEqual(host.request(op, **args), {"seen": op})
+                self.assertEqual(
+                    [entry["op"] for entry in live.written], ["hello", op]
+                )
 
     def test_a_second_crash_is_a_host_error(self) -> None:
         first = FakeHost(scripted(), closed=True)
@@ -286,6 +353,62 @@ class HostProcessTests(unittest.TestCase):
         host.stop()
         self.assertTrue(worker.terminated)
         self.assertFalse(host.alive)
+
+    def test_starting_a_running_host_does_not_start_a_second_one(self) -> None:
+        worker = FakeHost(scripted())
+        host, launcher = self.process(worker)
+        self.assertEqual(host.start(), HELLO)
+        self.assertEqual(host.start(), HELLO)
+        self.assertEqual(len(launcher.spawned), 1)
+        self.assertEqual([entry["op"] for entry in worker.written], ["hello"])
+
+    def test_starting_again_after_the_host_exited_replaces_it(self) -> None:
+        first = FakeHost(scripted())
+        second = FakeHost(scripted())
+        launcher = Launcher(first, second)
+        host = HostProcess(EXECUTION_HOST, apartment="mta", launcher=launcher)
+        self.addCleanup(host.stop)
+        host.start()
+        first.terminate()
+        self.assertEqual(host.start(), HELLO)
+        self.assertEqual(len(launcher.spawned), 2)
+        self.assertEqual([entry["op"] for entry in second.written], ["hello"])
+
+    def test_the_host_is_a_context_manager(self) -> None:
+        worker = FakeHost(scripted())
+        launcher = Launcher(worker)
+        with HostProcess(
+            EXECUTION_HOST, apartment="mta", launcher=launcher
+        ) as host:
+            self.assertTrue(host.alive)
+            self.assertEqual(host.hello, HELLO)
+        self.assertFalse(host.alive)
+        self.assertEqual([entry["op"] for entry in worker.written], ["hello", "exit"])
+
+    def test_diagnostics_can_be_read_while_a_reader_is_still_appending(self) -> None:
+        """The failing request reads the tail the stderr thread is writing.
+
+        A deque mutated while it is iterated raises, which would replace the
+        timeout the caller needs to see with an unrelated RuntimeError.
+        """
+
+        def silent(host: FakeHost, request: dict) -> list[dict]:
+            if request["op"] == "hello":
+                return [{"id": request["id"], "ok": True, "result": HELLO}]
+            return []
+
+        worker = FakeHost(silent)
+        worker.stderr = Chatter()
+        launcher = Launcher(worker)
+        host = HostProcess(
+            EXECUTION_HOST, apartment="mta", timeout_s=0.4, launcher=launcher
+        )
+        self.addCleanup(host.stop)
+        host.start()
+        with self.assertRaises(HostError) as caught:
+            host.request("inspect", handle=1)
+        self.assertEqual(caught.exception.code, "HOST_ERROR")
+        self.assertIn("host chatter", str(caught.exception))
 
     def test_a_request_before_start_is_a_host_error(self) -> None:
         host, _ = self.process(FakeHost(scripted()))

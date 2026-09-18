@@ -62,6 +62,7 @@ public static class MonkeyControlDesktop
     private delegate bool EnumProc(IntPtr hwnd, IntPtr param);
 
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern bool IsProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
@@ -276,7 +277,10 @@ public static class MonkeyControlDesktop
 }
 '@
 
-$script:DpiAware = [MonkeyControlDesktop]::SetProcessDPIAware()
+# SetProcessDPIAware answers false when awareness was already set, so the
+# state is read back rather than inferred from the call that asked for it.
+$null = [MonkeyControlDesktop]::SetProcessDPIAware()
+$script:DpiAware = [MonkeyControlDesktop]::IsProcessDPIAware()
 $script:Elements = @{}
 $script:Codes = @('HOST_ERROR', 'WINDOW_NOT_FOUND', 'TARGET_UNRESOLVED', 'BACKEND_UNAVAILABLE')
 $script:Uia = [System.Windows.Automation.AutomationElement]
@@ -342,6 +346,9 @@ function Get-RuntimeId($element) {
 }
 
 function Get-PatternNames($element) {
+    # Every caller wraps this in @(): PowerShell unrolls the array on its way
+    # out, so one pattern would otherwise reach JSON as a bare string and none
+    # as nothing at all.
     $names = @()
     try {
         foreach ($pattern in $element.GetSupportedPatterns()) {
@@ -359,10 +366,10 @@ function New-ElementPayload($element, [string]$path) {
         name = [string]$state.Name
         automationId = [string]$state.AutomationId
         className = [string]$state.ClassName
-        bounds = (Convert-Rect $state.BoundingRectangle)
+        bounds = @(Convert-Rect $state.BoundingRectangle)
         enabled = [bool]$state.IsEnabled
         offscreen = [bool]$state.IsOffscreen
-        patterns = (Get-PatternNames $element)
+        patterns = @(Get-PatternNames $element)
     }
     if ($path) { $payload['path'] = $path }
     if ($payload['runtime_id']) { $script:Elements[$payload['runtime_id']] = $element }
@@ -475,7 +482,7 @@ function Invoke-Read($payload) {
         enabled = [bool]$state.IsEnabled
         toggled = $toggled
         offscreen = [bool]$state.IsOffscreen
-        bounds = (Convert-Rect $state.BoundingRectangle)
+        bounds = @(Convert-Rect $state.BoundingRectangle)
     }
 }
 
@@ -580,10 +587,19 @@ function Invoke-Op([string]$op, $payload) {
         'read' { return (Invoke-Read $payload) }
         'focus' {
             $raised = [MonkeyControlDesktop]::Focus([IntPtr][int64]$payload.handle)
+            # Null when no element was named; otherwise whether it took focus,
+            # which the caller needs because the next keystroke depends on it.
+            $focused = $null
             if ($payload.runtime_id) {
-                try { (Get-Element ([string]$payload.runtime_id) ([int64]$payload.handle)).SetFocus() } catch { }
+                $focused = $false
+                try {
+                    (Get-Element ([string]$payload.runtime_id) ([int64]$payload.handle)).SetFocus()
+                    $focused = $true
+                } catch {
+                    [Console]::Error.WriteLine("SetFocus refused: $($_.Exception.Message)")
+                }
             }
-            return [ordered]@{ foreground = [bool]$raised }
+            return [ordered]@{ foreground = [bool]$raised; element_focused = $focused }
         }
         'invoke' {
             $element = Get-Element ([string]$payload.runtime_id) ([int64]$payload.handle)

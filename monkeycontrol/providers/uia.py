@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from ..contract import BUTTONS, ContractError, TargetSpec
 from ..host import HostProcess
 from ..trace import ResolvedTarget, WindowInfo
-from .base import ResolutionError, bounds_of, window_of
+from .base import FocusError, ResolutionError, as_list, bounds_of, window_of
 
 #: How many candidate names an ambiguity refusal spells out.
 NAMED_CANDIDATES = 5
@@ -58,6 +58,14 @@ def _name(candidate: Mapping) -> str:
     return str(candidate.get("name") or "")
 
 
+def _node(payload: Mapping) -> dict:
+    """One element payload with its list-valued fields read back as lists."""
+
+    node = dict(payload)
+    node["patterns"] = [str(item) for item in as_list(node.get("patterns"))]
+    return node
+
+
 class UiaProvider:
     """Semantic resolution and input, spoken to one execution host."""
 
@@ -79,7 +87,7 @@ class UiaProvider:
         """
 
         result = self._host.request("windows", process=application, title_regex=None)
-        found = [window_of(item) for item in result.get("windows") or ()]
+        found = [window_of(item) for item in as_list(result.get("windows"))]
         if title:
             pattern = re.compile(title)
             found = [window for window in found if pattern.search(window.title)]
@@ -102,11 +110,14 @@ class UiaProvider:
     ) -> dict:
         """The window's element tree, bounded by ``depth`` and ``max_nodes``."""
 
-        return self._host.request(
+        tree = self._host.request(
             "inspect",
             handle=window.handle,
             depth=int(depth),
             max_nodes=int(max_nodes),
+        )
+        return dict(
+            tree, nodes=[_node(node) for node in as_list(tree.get("nodes"))]
         )
 
     def resolve(self, window: WindowInfo, target: TargetSpec) -> ResolvedTarget:
@@ -122,7 +133,7 @@ class UiaProvider:
         result = self._host.request(
             "find", handle=window.handle, criteria=_criteria(target)
         )
-        candidates = [dict(item) for item in result.get("candidates") or ()]
+        candidates = [_node(item) for item in as_list(result.get("candidates"))]
         if target.name_regex:
             pattern = re.compile(target.name_regex, re.IGNORECASE)
             candidates = [item for item in candidates if pattern.search(_name(item))]
@@ -171,13 +182,25 @@ class UiaProvider:
 
     # -- actuation ------------------------------------------------------
     def focus(self, window: WindowInfo, target: ResolvedTarget | None) -> None:
-        """Bring the window forward, then focus the element when there is one."""
+        """Bring the window forward, then focus the element when there is one.
 
-        self._host.request(
+        A focus that did not take is raised, not returned: every input op after
+        this one goes to whatever holds the foreground, so silently carrying on
+        is how a keystroke ends up in somebody else's window.
+        """
+
+        where = f"{window.title!r} (pid {window.pid})"
+        reply = self._host.request(
             "focus",
             handle=window.handle,
             runtime_id=target.runtime_id if target is not None else None,
         )
+        if not reply.get("foreground"):
+            raise FocusError(f"{where} would not come to the foreground")
+        if target is not None and not reply.get("element_focused"):
+            raise FocusError(
+                f"{where} came forward but {target.name!r} would not take focus"
+            )
 
     def invoke(self, target: ResolvedTarget) -> bool:
         """Press the element through InvokePattern; ``False`` when it has none."""

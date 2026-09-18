@@ -15,6 +15,17 @@ from ..contract import ContractError, TargetSpec
 from ..trace import ResolvedTarget, WindowInfo
 
 
+class FocusError(RuntimeError):
+    """Input would not have gone where the caller meant it to.
+
+    A window that refuses to come forward, or an element that refuses focus,
+    is not a detail to log: the very next keystroke would land in somebody
+    else's application, so it is raised rather than returned.
+    """
+
+    code = "FOCUS_LOST"
+
+
 class ResolutionError(LookupError):
     """A target named no element, or more than one; ``code`` says which.
 
@@ -47,6 +58,29 @@ class Provider(Protocol):
 
     def read(self, target: ResolvedTarget) -> dict:
         """``value``, ``enabled``, ``toggled``, ``offscreen`` and ``bounds``."""
+
+
+def as_list(value: object) -> list:
+    """One host field that should be a list, however PowerShell rendered it.
+
+    PowerShell unrolls a collection on its way out of a function, so a field
+    that holds several values arrives as a list, one value arrives as that bare
+    value, and none arrives as null or as an empty object. Reading it back here
+    keeps a single-element list from being mistaken for a string, which is how
+    ``"Value" in patterns`` would quietly start matching ``"RangeValue"``.
+    """
+
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes)):
+        return [value]
+    if isinstance(value, Mapping):
+        # An unrolled empty array is rendered as ``{}`` and an unrolled single
+        # object as that object, so emptiness is what tells the two apart.
+        return [] if not value else [value]
+    if isinstance(value, Sequence):
+        return list(value)
+    return [value]
 
 
 def bounds_of(value: object, what: str) -> tuple[int, int, int, int]:

@@ -25,6 +25,7 @@ from monkeycontrol.host import (
     HostProcess,
 )
 from monkeycontrol.providers import (
+    FocusError,
     PresentationProvider,
     ResolutionError,
     UiaProvider,
@@ -170,8 +171,13 @@ class NotepadTests(DesktopHostTestCase):
             if not live:
                 return
             if self.foreground_pid() != self.window.pid:
-                self.uia.focus(live[0], None)
+                try:
+                    self.uia.focus(live[0], None)
+                except FocusError as refused:
+                    self.fail(f"alt+f4 was not sent: {refused}")
                 settle()
+            # The gate stays, whatever focus claimed: the chord is only sent
+            # when the window this test opened is the one that would get it.
             if self.foreground_pid() != self.window.pid:
                 self.fail("Notepad would not come forward, so alt+f4 was not sent")
             self.uia.keypress("alt+f4")
@@ -217,6 +223,8 @@ class NotepadTests(DesktopHostTestCase):
             and ("Value" in node["patterns"] or "Text" in node["patterns"])
         ]
         self.assertTrue(nodes, "no Document or Edit control is in the Notepad tree")
+        for candidate in nodes:
+            self.assertIsInstance(candidate["patterns"], list)
         node = nodes[0]
         target = TargetSpec(
             control_type=node["controlType"], class_name=node["className"]
@@ -250,6 +258,8 @@ class NotepadTests(DesktopHostTestCase):
         self.assertEqual(resolved.name, item["name"])
         self.assertEqual(resolved.runtime_id, item["runtime_id"])
 
+        # focus raises FocusError rather than returning a window that did not
+        # come forward, so reaching the next line is itself the assertion.
         self.uia.focus(window, None)
         settle()
         self.assertEqual(self.foreground_pid(), window.pid)

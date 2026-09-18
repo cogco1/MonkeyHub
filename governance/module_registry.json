@@ -6070,6 +6070,7 @@
         "WindowInfo",
         "build_receipt",
         "ActionTraceStore",
+        "FocusError",
         "HostError",
         "HostProcess",
         "Provider",
