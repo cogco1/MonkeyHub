@@ -36,6 +36,8 @@ REASON = "set MONKEYCONTROL_DESKTOP_TESTS=1 on Windows to drive the real desktop
 #: The English and Chinese spellings of the button that discards a Notepad tab.
 DISCARD = r"(?i)don.?t save|\u4e0d\u4fdd\u5b58|\u4e0d\u5b58\u6a94"
 TEXT = "monkeycontrol"
+#: Latin-1 and CJK in one string, so the Unicode key path is really used.
+ACCENTED = TEXT + " caf\u00e9 \u6d4b\u8bd5"
 
 
 def settle(seconds: float = 0.4) -> None:
@@ -224,6 +226,50 @@ class NotepadTests(DesktopHostTestCase):
         self.assertEqual(document.backend, "windows-uia")
         return document
 
+    def test_a_menu_item_is_resolved_by_its_own_name_and_invoked(self) -> None:
+        """Invoke against a real pattern, and a name round trip in this locale.
+
+        The name is read back from the tree and sent again as the criterion, so
+        a menu titled in any language proves the protocol carries it unharmed.
+        """
+
+        window = self.named_window()
+        tree = self.uia.inspect(window, depth=10, max_nodes=300)
+        items = [
+            node
+            for node in tree["nodes"]
+            if node["controlType"] == "MenuItem"
+            and "Invoke" in node["patterns"]
+            and node["name"]
+        ]
+        self.assertTrue(items, "Notepad shows no invokable menu item")
+        item = items[0]
+        resolved = self.uia.resolve(
+            window, TargetSpec(control_type="MenuItem", name=item["name"])
+        )
+        self.assertEqual(resolved.name, item["name"])
+        self.assertEqual(resolved.runtime_id, item["runtime_id"])
+
+        self.uia.focus(window, None)
+        settle()
+        self.assertEqual(self.foreground_pid(), window.pid)
+        self.assertTrue(self.uia.invoke(resolved), "InvokePattern was not used")
+        opened = until(
+            lambda: len(
+                [
+                    node
+                    for node in self.uia.inspect(window, depth=12, max_nodes=400)[
+                        "nodes"
+                    ]
+                    if node["controlType"] == "MenuItem"
+                ]
+            )
+            > len([n for n in tree["nodes"] if n["controlType"] == "MenuItem"])
+        )
+        self.assertTrue(opened, "the invoked menu never opened")
+        self.uia.keypress("escape")
+        settle(0.5)
+
     def test_notepad_is_launched_resolved_typed_into_shown_and_closed(self) -> None:
         self.assertEqual(self.window.process.lower(), "notepad")
         window = self.named_window()
@@ -236,9 +282,11 @@ class NotepadTests(DesktopHostTestCase):
         settle()
         self.assertEqual(self.foreground_pid(), window.pid)
 
-        self.uia.type_text(TEXT)
-        typed = until(lambda: TEXT in (self.uia.read(document)["value"] or ""))
-        self.assertTrue(typed, f"{TEXT!r} never reached the document")
+        # Typed as Unicode key events, so the accented and CJK characters a
+        # design tool types survive both the protocol and the keyboard layout.
+        self.uia.type_text(ACCENTED)
+        typed = until(lambda: ACCENTED in (self.uia.read(document)["value"] or ""))
+        self.assertTrue(typed, f"{ACCENTED!r} never reached the document")
         state = self.uia.read(document)
         self.assertTrue(state["enabled"])
         self.assertFalse(state["offscreen"])

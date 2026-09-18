@@ -8,6 +8,11 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+# Console input decodes with the OEM code page unless it is told not to,
+# which would turn every non-ASCII element name and typed character into
+# mojibake before the first op ever runs.
+$script:StdIn = New-Object System.IO.StreamReader(
+    [Console]::OpenStandardInput(), (New-Object System.Text.UTF8Encoding($false)))
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
@@ -282,7 +287,7 @@ function Invoke-Op([string]$op, $payload) {
 
 [Console]::Error.WriteLine('monkeycontrol presentation host ready')
 while ($true) {
-    $line = [Console]::In.ReadLine()
+    $line = $script:StdIn.ReadLine()
     if ($null -eq $line) { break }
     $line = $line.Trim().TrimStart([char]0xFEFF)
     if (-not $line) { continue }
