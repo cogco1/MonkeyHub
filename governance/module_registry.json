@@ -243,7 +243,8 @@
         "one numbered speculative attempt directory inside a caller-supplied export workspace (work_model_workspace), and the reader's own cold check of a saved work model (verify_work_model_geometry)",
         "read-only discovery of the PowerShell that supervises a host export when the caller configured none (discover_powershell); an explicit executable always wins and nothing is launched by discovery",
         "one process-wide Rhino host lock: a candidate's export and an explicitly requested work export are the same machine resource and take the same lock",
-        "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state"
+        "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
+        "Full Blender visualization rebuild from verified OCCT STEP, stable source IDs, explicit presentation settings, independent saved-scene render and source-bound artifact receipt; no geometry authoring"
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -262,7 +263,8 @@
         "material and layer maps",
         "Optional operation_observer and parent event id for actual OCCT reuse checks, geometry, STEP, tessellation and preview stages; no diagnostic write or project authority",
         "named StepEntry shapes, explicit object selection, drawing origin/right/up and linear deflection in the shape's length unit",
-        "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle"
+        "CadExecutionRequest with explicit artifact stem, material/layer maps, observer, optional verified source and backend option mapping; no repository handle",
+        "Successful OCCT CadExecutionResult with its exact CadExecutionRequest, Blender executable and BlenderPresentation"
       ],
       "outputs": [
         "RhinoCadExportPlan",
@@ -272,7 +274,8 @@
         "OcctDrawingPolyline values with object_id, visible/hidden/section kind and 2D points; no writes or receipt",
         "OcctDrawingRegion values with object_id and closed 2D loops for one solid's section, filled together using even-odd; separate solids remain separate values",
         "CadExecutionResult: backend id, exact binding, status, named verified artifacts, stable object/semantic coverage, failures and unchanged backend-specific receipt payload",
-        "BlenderExecutionReceipt@1: a native .blend mesh artifact and independent saved object/bounds/volume/unit/semantic/exact-binding readback; the common result has no 3dm inspection"
+        "BlenderExecutionReceipt@1: a native .blend mesh artifact and independent saved object/bounds/volume/unit/semantic/exact-binding readback; the common result has no 3dm inspection",
+        "BlenderProjectionReceipt@1: exact source binding and STEP hash, Blender version, resolved camera/light/material settings, cold readback, blend/PNG hashes and failure logs"
       ],
       "public_api": [
         "prepare_rhino_three_dm_export",
@@ -317,7 +320,10 @@
         "CAD_BACKEND_REGISTRY",
         "OcctBackend",
         "RhinoBackend",
-        "BlenderBackend"
+        "BlenderBackend",
+        "BlenderPresentation",
+        "execute_blender_projection",
+        "verify_projection_artifacts"
       ],
       "depends_on": [
         "adapters.cad_patch",
@@ -338,7 +344,8 @@
         "archflow.project.record_kinds",
         "project.record_kinds",
         "archflow.adapters.cad_backend",
-        "project.version_refs"
+        "project.version_refs",
+        "archflow.adapters.blender_projection"
       ],
       "used_by": [
         "monkeyarch/runtime/project_runner.py",
@@ -368,7 +375,8 @@
         "only one export drives this machine's Rhino at a time, and a caller that will not wait is told the host is busy rather than queued invisibly",
         "the common result preserves native success/readback evidence and validates exact binding, semantic identity, workspace containment and artifact bytes; it is not a new retained receipt or write authority",
         "Blender supports positive solids and straight extrusions of simple planar profiles in the initial slice; all other operations fail before host execution or workspace writes. Complete rebuilds preserve source artifacts; cached exact requests verify retained proof and bytes without starting a host",
-        "retained polyline curves are verified from cold STEP and native 3DM readback against all authored points, endpoints and length; curve delivery claims no face or solid, and existing solid/surface receipt fields retain their meaning"
+        "retained polyline curves are verified from cold STEP and native 3DM readback against all authored points, endpoints and length; curve delivery claims no face or solid, and existing solid/surface receipt fields retain their meaning",
+        "Blender projection consumes OCCT tessellation without architectural reconstruction; full rebuild preserves source IDs and explicit presentation settings. Geometry edits require MonkeyHub reconcile, never blend-file promotion."
       ],
       "status": "canonical",
       "tests": [
@@ -376,7 +384,8 @@
         "tests/test_cad_patch.py",
         "tests/test_occt_execution.py",
         "tests/test_cad_backend_contract.py",
-        "tests/test_blender_cad.py"
+        "tests/test_blender_cad.py",
+        "tests/test_blender_projection.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
@@ -384,7 +393,8 @@
         "archflow/adapters/occt_backend.py",
         "archflow/adapters/cad_backend.py",
         "archflow/adapters/blender_cad.py",
-        "archflow/adapters/blender_worker.py"
+        "archflow/adapters/blender_worker.py",
+        "archflow/adapters/blender_projection.py"
       ]
     },
     {
@@ -2503,7 +2513,8 @@
         "the retained record kinds (state-record, stage-closure, stage-exit-binding, project-levels, project-grids, selected-spatial-option, discipline-seat, seat-authoring-context, seat-geometry-program, seat-relation-check, seat-handover, seat-round-receipt, runner-run-failure, RunnerRunReceipt@3)",
         "the stage closure and exit binding of a run: the CompositeStageClosureReceipt compiled from the run's own relation checks and seat results, and the StageExitBinding derived from a SATISFIED one",
         "the synthetic bounds that make a Space@1 zone measurable: its volumes' declared min/max, entered in objects_by_element under the zone's entity id",
-        "optional exact source runner receipt for cross-run producer and CAD reuse before execution, including unchanged elements inside a changed seat; the retained source model is located under the running repository's own run workspace, never by the retained absolute path"
+        "optional exact source runner receipt for cross-run producer and CAD reuse before execution, including unchanged elements inside a changed seat; the retained source model is located under the running repository's own run workspace, never by the retained absolute path",
+        "Optional Blender projection after successful OCCT export; retained projection receipt through existing P036 RUN_RECORD, without changing CAD success or canonical HEAD"
       ],
       "does_not_own": [
         "producing geometry - capabilities.element_producers",
@@ -2522,7 +2533,8 @@
         "StateRecord",
         "SeatSpec tuple",
         "RunOptions",
-        "Optional caller-owned operation_observer receives parent-linked production, reuse-check and export intervals, existing input identities, actual backend/path and recomputed/reused object ids; it has no project-write authority"
+        "Optional caller-owned operation_observer receives parent-linked production, reuse-check and export intervals, existing input identities, actual backend/path and recomputed/reused object ids; it has no project-write authority",
+        "RunOptions.blender_projection: explicit executable, timeout and presentation configuration; OCCT export only"
       ],
       "outputs": [
         "RunnerRunReceipt@3 dict",
@@ -2594,7 +2606,8 @@
         "state.stage_workflow",
         "archflow.adapters.occt_backend",
         "monkeyarch.capabilities",
-        "archflow.adapters.cad_backend"
+        "archflow.adapters.cad_backend",
+        "archflow.adapters.blender_projection"
       ],
       "used_by": [
         "tools/run_project.py",
@@ -2628,7 +2641,8 @@
       "tests": [
         "tests/test_project_runner.py",
         "tests/test_state_record.py",
-        "tests/test_cad_backend_contract.py"
+        "tests/test_cad_backend_contract.py",
+        "tests/test_blender_projection_runner.py"
       ],
       "notes": "archflow/state/state_record.py imports SchematicPack/bootstrap_developed_state from here - the state to runtime inversion CANONICAL_SPINE 2.2 folds away."
     },

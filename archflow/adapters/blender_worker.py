@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -51,13 +52,14 @@ def build(plan_path: Path, model_path: Path) -> None:
         mesh = bpy.data.meshes.new(row["object_id"])
         mesh.from_pydata(row["vertices"], [], row["faces"])
         mesh.update()
-        bm = bmesh.new()
-        try:
-            bm.from_mesh(mesh)
-            bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
-            bm.to_mesh(mesh)
-        finally:
-            bm.free()
+        if "projection" not in plan:
+            bm = bmesh.new()
+            try:
+                bm.from_mesh(mesh)
+                bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+                bm.to_mesh(mesh)
+            finally:
+                bm.free()
         mesh.update()
         obj = bpy.data.objects.new(row["object_id"], mesh)
         for key, value in semantics["user_text"].items():
@@ -86,6 +88,9 @@ def build(plan_path: Path, model_path: Path) -> None:
                 materials[material_key] = native
             mesh.materials.append(materials[material_key])
 
+    if "projection" in plan:
+        scene["archflow_projection"] = json.dumps(plan["projection"], sort_keys=True, separators=(",", ":"))
+        _presentation(scene, plan["projection"]["presentation"])
     bpy.context.preferences.filepaths.save_version = 0
     result = bpy.ops.wm.save_as_mainfile(
         filepath=str(model_path), check_existing=False, relative_remap=False,
@@ -150,14 +155,99 @@ def _read_object(obj) -> dict:
     return row
 
 
-def inspect(model_path: Path) -> None:
+def _presentation(scene, settings):
+    import bpy
+    from mathutils import Vector
+
+    points = [obj.matrix_world @ vertex.co for obj in scene.objects if obj.type == "MESH" for vertex in obj.data.vertices]
+    low = Vector([min(p[i] for p in points) for i in range(3)])
+    high = Vector([max(p[i] for p in points) for i in range(3)])
+    target = (low + high) / 2
+    extent = max(high - low)
+    collection = bpy.data.collections.new("Presentation")
+    collection["projection_presentation"] = True
+    scene.collection.children.link(collection)
+    camera_data = bpy.data.cameras.new(settings["camera_id"])
+    camera = bpy.data.objects.new("Projection camera", camera_data)
+    camera["projection_camera_id"] = settings["camera_id"]
+    collection.objects.link(camera)
+    azimuth, elevation = math.radians(settings["azimuth"]), math.radians(settings["elevation"])
+    direction = Vector((math.cos(azimuth) * math.cos(elevation), math.sin(azimuth) * math.cos(elevation), math.sin(elevation)))
+    camera.location = target + direction * extent * 3
+    camera.rotation_euler = (target - camera.location).to_track_quat("-Z", "Y").to_euler()
+    camera_data.type = "ORTHO"
+    camera_data.ortho_scale = extent * 1.8
+    camera_data.clip_end = extent * 20
+    camera_data.clip_start = extent * 0.001
+    scene.camera = camera
+    for name, position, power in (("key", (2, -3, 4), 350), ("fill", (-3, -1, 2), 200)):
+        data = bpy.data.lights.new(name, "AREA")
+        obj = bpy.data.objects.new("Projection " + name, data)
+        obj["projection_light_id"] = name
+        collection.objects.link(obj)
+        obj.location = target + Vector(position) * extent
+        obj.rotation_euler = (target - obj.location).to_track_quat("-Z", "Y").to_euler()
+        data.energy = power * extent * extent
+        data.shape = "DISK"
+        data.size = extent * 3
+    world = bpy.data.worlds.new("Projection world")
+    scene.world = world
+    world.use_nodes = True
+    world.node_tree.nodes["Background"].inputs[0].default_value = (0.16, 0.16, 0.16, 1)
+    world.node_tree.nodes["Background"].inputs[1].default_value = 0.5
+    scene.render.engine = settings["engine"]
+    scene.cycles.device = settings["device"]
+    scene.cycles.samples = settings["samples"]
+    scene.cycles.seed = settings["seed"]
+    scene.cycles.use_denoising = False
+    scene.cycles.use_adaptive_sampling = False
+    scene.render.resolution_x = scene.render.resolution_y = settings["resolution"]
+    scene.render.resolution_percentage = 100
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.image_settings.color_mode = "RGBA"
+    scene.render.film_transparent = False
+    scene.view_settings.view_transform = settings["view_transform"]
+    scene.view_settings.look = "None"
+    scene.view_settings.exposure = 0
+    scene.view_settings.gamma = 1
+    scene["projection_visual_state"] = json.dumps(_visual_state(scene), sort_keys=True)
+
+
+def _visual_state(scene):
+    camera = scene.camera
+    def vector(value):
+        return [float(v) for v in value]
+    lights = sorted((obj for obj in scene.objects if obj.type == "LIGHT"), key=lambda obj: obj.get("projection_light_id", ""))
+    materials = sorted((obj for obj in scene.objects if obj.type == "MESH"), key=lambda obj: obj.get("archflow:object_ref", ""))
+    return {"camera_id": camera.get("projection_camera_id"), "camera_position": vector(camera.location),
+            "camera_rotation": vector(camera.rotation_euler), "camera_type": camera.data.type,
+            "ortho_scale": camera.data.ortho_scale, "clip": [camera.data.clip_start, camera.data.clip_end],
+            "lights": [{"id": o.get("projection_light_id"), "position": vector(o.location),
+                        "rotation": vector(o.rotation_euler), "energy": o.data.energy, "size": o.data.size,
+                        "type": o.data.type, "shape": o.data.shape} for o in lights],
+            "materials": [{"object_id": o.get("archflow:object_ref"),
+                           "base_color": vector(o.active_material.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value)} for o in materials],
+            "engine": scene.render.engine, "device": scene.cycles.device,
+            "samples": scene.cycles.samples, "seed": scene.cycles.seed,
+            "denoising": scene.cycles.use_denoising, "adaptive_sampling": scene.cycles.use_adaptive_sampling,
+            "resolution": [scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage],
+            "format": scene.render.image_settings.file_format, "color_mode": scene.render.image_settings.color_mode,
+            "view_transform": scene.view_settings.view_transform, "exposure": scene.view_settings.exposure,
+            "gamma": scene.view_settings.gamma,
+            "world_color": vector(scene.world.node_tree.nodes["Background"].inputs[0].default_value),
+            "world_strength": scene.world.node_tree.nodes["Background"].inputs[1].default_value}
+
+
+def inspect(model_path: Path, render_path: Path | None = None) -> None:
     import bpy
 
     if not model_path.is_absolute() or not model_path.is_file():
         raise ValueError("inspection requires an existing absolute model path")
     bpy.ops.wm.open_mainfile(filepath=str(model_path), load_ui=False, use_scripts=False)
     scene = bpy.context.scene
-    objects = [_read_object(obj) for obj in scene.objects]
+    projection_json = scene.get("archflow_projection")
+    objects = [_read_object(obj) for obj in scene.objects
+               if not projection_json or obj.type not in ("CAMERA", "LIGHT")]
     objects.sort(key=lambda row: (str(row["object_id"]), row["display_name"]))
     readback = {
         "blender_version": bpy.app.version_string,
@@ -167,6 +257,22 @@ def inspect(model_path: Path) -> None:
         "unit_scale": scene.unit_settings.scale_length,
         "objects": objects,
     }
+    if projection_json:
+        settings = json.loads(projection_json)["presentation"]
+        visual_state = _visual_state(scene)
+        readback.update(projection_json=projection_json, visual_state=visual_state,
+                        presentation_verified=(visual_state == json.loads(scene["projection_visual_state"])
+                            and visual_state["camera_id"] == settings["camera_id"]
+                            and visual_state["engine"] == settings["engine"]
+                            and visual_state["samples"] == settings["samples"]
+                            and visual_state["resolution"] == [settings["resolution"], settings["resolution"], 100]))
+    if render_path is not None:
+        if not projection_json or not readback.get("presentation_verified"):
+            raise ValueError("render requires verified projection presentation")
+        if not render_path.is_absolute() or render_path.parent != model_path.parent or render_path.exists():
+            raise ValueError("render requires a new path beside the scene")
+        scene.render.filepath = str(render_path)
+        bpy.ops.render.render(write_still=True)
     print(READBACK_PREFIX + json.dumps(readback), flush=True)
 
 
@@ -178,11 +284,16 @@ def main(argv=None) -> None:
     build_parser.add_argument("model", type=Path)
     inspect_parser = commands.add_parser("inspect")
     inspect_parser.add_argument("model", type=Path)
+    render_parser = commands.add_parser("render")
+    render_parser.add_argument("model", type=Path)
+    render_parser.add_argument("image", type=Path)
     if argv is None:
         argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else sys.argv[1:]
     args = parser.parse_args(argv)
     if args.command == "build":
         build(args.plan, args.model)
+    elif args.command == "render":
+        inspect(args.model, args.image)
     else:
         inspect(args.model)
 
