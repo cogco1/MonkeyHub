@@ -72,6 +72,21 @@ const projects = [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
 ];
+// What the archive layer always leaves out, in its own words; the Hub carries
+// this list through untouched, so the dialogs must show all five lines.
+const archiveOmissions = [
+  "credentials/tokens",
+  "process/runtime state",
+  "runtime caches",
+  "rebuildable previews and unbounded telemetry/logs",
+  "unreferenced exports: exports/ travels only where a retained record names a file in it",
+];
+const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
+  projectId, formatVersion: 3, version: 3, stateSha256: "b".repeat(64), runCount: 7, fileCount: 42,
+  retainedBytes: 7340032, categories: { artifact: 18, authored_input: 3, design: 4, envelope: 17 },
+  omissions: archiveOmissions, externalDependencies: [],
+  archivePath, archiveBytes: 5242880, archiveSha256: "c".repeat(64), verified: true, projectDir,
+});
 const apps = ["monkeyarch", "monkeyboard", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
 const projectApps = new Map();
 const runtimes = new Map();
@@ -139,6 +154,19 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     }
     runtimes.get(selected.projectDir).projection = modelingFailure ? "unknown" : "ready";
     return modelingFailure ? json(modelingFailure, 409) : json({ projectId: selected.projectId, initialized: true });
+  }
+  if (url.pathname === "/api/project/archive/export") {
+    const body = data(), selected = projects.find((item) => item.projectDir === body.projectDir);
+    assert.ok(selected, "an archive is only written for a project this Hub lists");
+    return json(archiveSummaryFor(selected.projectId, selected.projectDir, body.archivePath), 201);
+  }
+  if (url.pathname === "/api/project/archive/restore") {
+    const body = data();
+    const parent = body.targetParent ?? "D:\\fixture";
+    const restored = { projectId: "restored-demo", projectDir: [parent, "restored-demo"].join("\\"),
+      name: "restored-demo", chatCount: 0, version: 3, stage: "S2" };
+    projects.push(restored);
+    return json({ summary: archiveSummaryFor(restored.projectId, restored.projectDir, body.archivePath), project: restored }, 201);
   }
   if (url.pathname.startsWith("/api/apps/")) {
     const [, , , id, action] = url.pathname.split("/");
@@ -1111,6 +1139,46 @@ try {
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
   assert.equal(new URL(page.url()).searchParams.get("view"), "board");
+
+  // archive export and restore dialogs show the summary — a whole project
+  // leaves and comes back as one file, and each dialog states what that file
+  // actually holds rather than only that something was written.
+  await page.getByRole("button", { name: /Project A/ }).last().click();
+  const archiveCard = page.getByRole("dialog", { name: "Project", exact: true });
+  await archiveCard.getByRole("button", { name: "Export archive…" }).click();
+  const exported = page.getByRole("dialog").filter({ hasText: "Export project archive" });
+  await exported.getByText("Project A · Version 3").waitFor();
+  // Explorer copies a path with its quotes; the API is given the plain path.
+  await exported.getByLabel("Archive file").fill('"D:\\backups\\fixture-A.monkeyhub.zip"');
+  await exported.getByRole("button", { name: "Export", exact: true }).click();
+  await exported.getByText("Archive written").waitFor();
+  assert.deepEqual(writes.at(-1).slice(0, 3), ["POST", "/api/project/archive/export",
+    { projectDir: "D:\\fixture\\A", archivePath: "D:\\backups\\fixture-A.monkeyhub.zip" }]);
+  await exported.getByText("5.0 MiB").waitFor();
+  await exported.getByText("42 retained files").waitFor();
+  await exported.getByText("7 retained runs").waitFor();
+  assert.deepEqual(await exported.locator(".chat-archive-summary li").allInnerTexts(), archiveOmissions);
+  await exported.getByText("None", { exact: true }).waitFor();
+  await exported.getByText("Verified by re-reading the archive").waitFor();
+  await page.screenshot({ path: path.join(temporary, "archive-export.png") });
+  await exported.getByRole("button", { name: "Close", exact: true }).last().click();
+
+  await archiveCard.getByRole("button", { name: "Restore archive…" }).click();
+  const restored = page.getByRole("dialog").filter({ hasText: "Restore project archive" });
+  assert.equal(await restored.getByLabel("Restore into folder").inputValue(), "D:\\fixture",
+    "the restore target starts at the workspace new projects are made in");
+  await restored.getByLabel("Archive file").fill("D:\\backups\\fixture-A.monkeyhub.zip");
+  await restored.getByRole("button", { name: "Restore", exact: true }).click();
+  await restored.getByText("Project restored and verified through normal project readers").waitFor();
+  assert.deepEqual(writes.at(-1).slice(0, 3), ["POST", "/api/project/archive/restore",
+    { archivePath: "D:\\backups\\fixture-A.monkeyhub.zip", targetParent: "D:\\fixture" }]);
+  await restored.getByText("D:\\fixture\\restored-demo").waitFor();
+  await restored.getByRole("button", { name: "Open restored project" }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll(".chat-project__name")]
+    .some((item) => item.textContent === "restored-demo"));
+  await page.screenshot({ path: path.join(temporary, "archive-restored.png") });
+  await restored.getByRole("button", { name: "Close", exact: true }).last().click();
+  await archiveCard.getByRole("button", { name: "Close", exact: true }).click();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

@@ -2,7 +2,7 @@ import "../workspaces/src/styles.css";
 import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
-import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
+import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
@@ -172,8 +172,17 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const [modelBusy, setModelBusy] = useState(false);
   const [permissionBusy, setPermissionBusy] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<HubError | null>(null);
+  // One archive at a time: the path each dialog was given, and what the Hub
+  // answered about the file it actually wrote or read back.
+  const [archivePath, setArchivePath] = useState("");
+  const [restorePath, setRestorePath] = useState("");
+  const [restoreTarget, setRestoreTarget] = useState("");
+  const [archiveSummary, setArchiveSummary] = useState<ProjectArchiveSummary | null>(null);
+  const [restoreResult, setRestoreResult] = useState<ProjectArchiveRestoreResult | null>(null);
   const addDialog = useRef<HTMLDialogElement>(null);
   const newDialog = useRef<HTMLDialogElement>(null);
+  const archiveDialog = useRef<HTMLDialogElement>(null);
+  const restoreDialog = useRef<HTMLDialogElement>(null);
   const settingsDialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -518,6 +527,45 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     } catch (cause) { setDialogError(asFailure(cause)); }
     finally { actionLock.current = false; setBusy(false); }
   };
+  /** A path as it was pasted: Explorer quotes the whole thing, the API does not. */
+  const asPath = (value: string) => value.trim().replace(/^"(.*)"$/, "$1");
+  /** Write this project's retained snapshot to one portable archive file. */
+  const exportArchive = async (event: FormEvent) => {
+    event.preventDefault(); if (actionLock.current || !project || !archivePath.trim()) return;
+    actionLock.current = true; setBusy(true); setDialogError(null); setArchiveSummary(null);
+    try {
+      setArchiveSummary(await request<ProjectArchiveSummary>("/api/project/archive/export",
+        { projectDir: project.projectDir, archivePath: asPath(archivePath) } satisfies ProjectArchiveExportRequest));
+    } catch (cause) { setDialogError(asFailure(cause)); }
+    finally { actionLock.current = false; setBusy(false); }
+  };
+  /** Install one archive as a project of its own, beside the listed ones. */
+  const restoreArchive = async (event: FormEvent) => {
+    event.preventDefault(); if (actionLock.current || !restorePath.trim()) return;
+    actionLock.current = true; setBusy(true); setDialogError(null); setRestoreResult(null);
+    try {
+      const result = await request<ProjectArchiveRestoreResult>("/api/project/archive/restore",
+        { archivePath: asPath(restorePath), targetParent: asPath(restoreTarget) || null } satisfies ProjectArchiveRestoreRequest);
+      setProjects((items) => [...items.filter((item) => item.projectDir !== result.project.projectDir), result.project]);
+      setRestoreResult(result);
+    } catch (cause) { setDialogError(asFailure(cause)); }
+    finally { actionLock.current = false; setBusy(false); }
+  };
+  /** What one archive holds, as both dialogs state it; `target` is where it landed. */
+  const archiveSummaryList = (summary: ProjectArchiveSummary, target?: string) => <>
+    <dl className="chat-archive-summary">
+      <dt>{t.archiveSummaryProject}</dt><dd>{summary.projectId} · {t.versionNumber(summary.version)}</dd>
+      <dt>{t.archiveSummarySize}</dt><dd>{fileSize(summary.archiveBytes)}</dd>
+      <dt>{t.archiveSummaryFiles(summary.fileCount)}</dt><dd>{t.archiveSummaryRuns(summary.runCount)}</dd>
+      <dt>{t.archiveSummaryCategories}</dt><dd>{Object.entries(summary.categories).map(([name, count]) => `${name} ${count}`).join(" · ")}</dd>
+      <dt>{t.archiveSummaryOmitted}</dt><dd><ul>{summary.omissions.map((item) => <li key={item}>{item}</li>)}</ul></dd>
+      <dt>{t.archiveSummaryExternal}</dt><dd>{summary.externalDependencies.length
+        ? <ul>{summary.externalDependencies.map((item) => <li key={item}>{item}</li>)}</ul> : t.archiveSummaryExternalNone}</dd>
+      <dt>{t.path}</dt><dd className="chat-project-card__path">{summary.archivePath}</dd>
+      {target !== undefined && <><dt>{t.archiveSummaryTarget}</dt><dd className="chat-project-card__path">{target}</dd></>}
+    </dl>
+    {summary.verified && <p className="chat-muted">{t.archiveSummaryVerified}</p>}
+  </>;
   /** `view` names what this page should open, such as the candidate a step produced. */
   const openTool = async (id: AppId, view?: Record<string, string>) => {
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
@@ -801,6 +849,14 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             </div>
           </> : <p className="chat-muted">{t.connectionNone}</p>}
         </details>
+        {/* A whole project moved as one file: written from what is retained,
+            and read back into a folder of its own. Neither touches this view. */}
+        <div className="chat-project-card__archive">
+          <button type="button" className="chat-activity__open" disabled={!project || busy}
+            onClick={() => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); archiveDialog.current?.showModal(); }}><Icon name="archive" /><span>{t.archiveProject}</span></button>
+          <button type="button" className="chat-activity__open" disabled={busy}
+            onClick={() => { setDialogError(null); setArchiveSummary(null); setRestoreResult(null); setRestoreTarget(workspace?.workspaceDir ?? ""); restoreDialog.current?.showModal(); }}><Icon name="restore" /><span>{t.restoreProject}</span></button>
+        </div>
       </div>}
       {/* This card answers for the project the conversation is bound to. The
           settings at the bottom left are the Hub's, for every conversation. */}
@@ -825,6 +881,31 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         <button type="submit" className="btn btn--primary" disabled={busy || !projectName.trim()}>{busy ? t.creating : t.create}</button></div>
     </form></dialog>
     <dialog ref={addDialog} className="chat-dialog"><form onSubmit={(event) => void addProject(event)}><div className="chat-dialog__heading"><h2>{t.addExisting}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => addDialog.current?.close()}><Icon name="close" /></button></div><p className="chat-muted">{t.folderHelp}</p><label>{t.folder}<input autoFocus value={folder} placeholder={t.folderPlaceholder} required onChange={(event) => setFolder(event.target.value)} /></label>{dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}<div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => addDialog.current?.close()}>{t.cancel}</button><button type="submit" className="btn btn--primary" disabled={busy || !folder.trim()}>{busy ? t.loading : t.add}</button></div></form></dialog>
+    <dialog ref={archiveDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void exportArchive(event)}>
+      <div className="chat-dialog__heading"><h2>{t.archiveHeading}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => archiveDialog.current?.close()}><Icon name="close" /></button></div>
+      <p className="chat-muted">{t.archiveHelp}</p>
+      {project && <p className="chat-archive-project">{project.name} · {project.version === null || project.version === undefined ? t.versionUnknown : t.versionNumber(project.version)}</p>}
+      <label>{t.archivePath}<input autoFocus value={archivePath} placeholder={t.archivePathPlaceholder} required
+        onChange={(event) => { setArchivePath(event.target.value); setDialogError(null); }} /></label>
+      <p className="chat-muted">{t.archivePathHelp}</p>
+      {archiveSummary && <><p>{t.archiveExported}</p>{archiveSummaryList(archiveSummary)}</>}
+      {dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}
+      <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => archiveDialog.current?.close()}>{t.close}</button>
+        <button type="submit" className="btn btn--primary" disabled={busy || !archivePath.trim()}>{busy ? t.archiveExporting : t.archiveExport}</button></div>
+    </form></dialog>
+    <dialog ref={restoreDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void restoreArchive(event)}>
+      <div className="chat-dialog__heading"><h2>{t.restoreHeading}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => restoreDialog.current?.close()}><Icon name="close" /></button></div>
+      <p className="chat-muted">{t.restoreHelp}</p>
+      <label>{t.archivePath}<input autoFocus value={restorePath} placeholder={t.archivePathPlaceholder} required
+        onChange={(event) => { setRestorePath(event.target.value); setDialogError(null); }} /></label>
+      <label>{t.restoreTarget}<input value={restoreTarget} onChange={(event) => { setRestoreTarget(event.target.value); setDialogError(null); }} /></label>
+      <p className="chat-muted">{t.restoreTargetHelp}</p>
+      {restoreResult && <><p>{t.restored}</p>{archiveSummaryList(restoreResult.summary, restoreResult.summary.projectDir)}
+        <button type="button" className="chat-activity__open" onClick={() => { restoreDialog.current?.close(); selectProject(restoreResult.project); }}><Icon name="folder" /><span>{t.restoredOpen}</span></button></>}
+      {dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}
+      <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
+        <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
+    </form></dialog>
     <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings"><div className="chat-dialog__heading"><h2>{t.settingsHeading}</h2><button className="chat-icon" aria-label={t.close} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button></div>{settings}</dialog>
   </div>;
 }
