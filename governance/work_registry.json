@@ -3,6 +3,33 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-118",
+      "stream": "computer-use",
+      "status": "active",
+      "goal": "Inspectable, model-agnostic desktop automation: semantic UIA targets, demo overlays, receipts and recordings, callable from the Hub's tools, its HTTP routes and a CLI; never a writer of canonical design state.",
+      "depends_on": [],
+      "branch": "codex/118-computer-use-recorder",
+      "worktree": "workspace/worktrees/codex-118-computer-use-recorder",
+      "base_ref": "1036802633ed1dd69a09384b800b381b03fce89b",
+      "contributor": "Claude Opus 5 worker under Claude Fable 5.1 control",
+      "reviewer": "Claude Fable 5.1",
+      "write_scope": [
+        "monkeycontrol/",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
+        "apps/monkeyhub/api/monkeyhub_api/main.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/",
+        "docs/COMPUTER_USE.md",
+        "apps/monkeyhub/README.md",
+        "README.md",
+        "pyproject.toml",
+        "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+      ],
+      "handoff": null
+    },
+    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
