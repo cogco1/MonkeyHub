@@ -860,7 +860,7 @@ export const chatCopy = {
     archivePath: "归档文件", archivePathPlaceholder: "例如 D:\\backups\\my-project.monkeyhub.zip",
     archivePathHelp: "项目文件夹之外的一个新 .zip 文件的完整路径。",
     archiveExport: "导出", archiveExporting: "正在导出…", archiveExported: "归档已写入",
-    archiveSummaryProject: "项目 / 版本", archiveSummarySize: "归档大小",
+    archiveSummaryProject: "项目 / 版本", archiveSummarySize: "归档大小", archiveSummaryContents: "内容",
     archiveSummaryFiles: (count: number) => `${count} 个保留文件`, archiveSummaryRuns: (count: number) => `${count} 个保留运行`,
     archiveSummaryCategories: "已包含", archiveSummaryOmitted: "未包含",
     archiveSummaryExternal: "未嵌入的外部依赖", archiveSummaryExternalNone: "无",

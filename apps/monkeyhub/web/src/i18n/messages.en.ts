@@ -905,7 +905,7 @@ export const chatCopy = {
     archivePath: "Archive file", archivePathPlaceholder: "For example D:\\backups\\my-project.monkeyhub.zip",
     archivePathHelp: "Full path of a new .zip file outside the project folder.",
     archiveExport: "Export", archiveExporting: "Exporting…", archiveExported: "Archive written",
-    archiveSummaryProject: "Project / version", archiveSummarySize: "Archive size",
+    archiveSummaryProject: "Project / version", archiveSummarySize: "Archive size", archiveSummaryContents: "Contents",
     archiveSummaryFiles: (count: number) => `${count} retained files`, archiveSummaryRuns: (count: number) => `${count} retained runs`,
     archiveSummaryCategories: "Included", archiveSummaryOmitted: "Not included",
     archiveSummaryExternal: "External dependencies not embedded", archiveSummaryExternalNone: "None",

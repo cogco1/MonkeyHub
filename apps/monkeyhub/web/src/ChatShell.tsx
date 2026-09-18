@@ -556,12 +556,12 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     <dl className="chat-archive-summary">
       <dt>{t.archiveSummaryProject}</dt><dd>{summary.projectId} · {t.versionNumber(summary.version)}</dd>
       <dt>{t.archiveSummarySize}</dt><dd>{fileSize(summary.archiveBytes)}</dd>
-      <dt>{t.archiveSummaryFiles(summary.fileCount)}</dt><dd>{t.archiveSummaryRuns(summary.runCount)}</dd>
+      <dt>{t.archiveSummaryContents}</dt><dd>{t.archiveSummaryFiles(summary.fileCount)} · {t.archiveSummaryRuns(summary.runCount)}</dd>
       <dt>{t.archiveSummaryCategories}</dt><dd>{Object.entries(summary.categories).map(([name, count]) => `${name} ${count}`).join(" · ")}</dd>
       <dt>{t.archiveSummaryOmitted}</dt><dd><ul>{summary.omissions.map((item) => <li key={item}>{item}</li>)}</ul></dd>
       <dt>{t.archiveSummaryExternal}</dt><dd>{summary.externalDependencies.length
         ? <ul>{summary.externalDependencies.map((item) => <li key={item}>{item}</li>)}</ul> : t.archiveSummaryExternalNone}</dd>
-      <dt>{t.path}</dt><dd className="chat-project-card__path">{summary.archivePath}</dd>
+      <dt>{t.archivePath}</dt><dd className="chat-project-card__path">{summary.archivePath}</dd>
       {target !== undefined && <><dt>{t.archiveSummaryTarget}</dt><dd className="chat-project-card__path">{target}</dd></>}
     </dl>
     {summary.verified && <p className="chat-muted">{t.archiveSummaryVerified}</p>}
@@ -891,7 +891,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       {archiveSummary && <><p>{t.archiveExported}</p>{archiveSummaryList(archiveSummary)}</>}
       {dialogError && <Failure failure={dialogError} language={preferences.language} labels={t} />}
       <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => archiveDialog.current?.close()}>{t.close}</button>
-        <button type="submit" className="btn btn--primary" disabled={busy || !archivePath.trim()}>{busy ? t.archiveExporting : t.archiveExport}</button></div>
+        <button type="submit" className="btn btn--primary" disabled={!project || busy || !archivePath.trim()}>{busy ? t.archiveExporting : t.archiveExport}</button></div>
     </form></dialog>
     <dialog ref={restoreDialog} className="chat-dialog chat-dialog--archive"><form onSubmit={(event) => void restoreArchive(event)}>
       <div className="chat-dialog__heading"><h2>{t.restoreHeading}</h2><button type="button" className="chat-icon" aria-label={t.close} onClick={() => restoreDialog.current?.close()}><Icon name="close" /></button></div>
