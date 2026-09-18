@@ -147,6 +147,13 @@ Own the provider-independent model invocation contracts: request, receipt, statu
 
 ## project
 
+### project.archive — `archflow/project/archive.py`
+One portable archive of a retained project: the ZIP transport container around the existing P036 transfer representation, and the content-free summary of what travelled.
+- owns: Portable ProjectArchiveManifest@1 export/restore wrapper around the P036 transfer representation, its member/hash/manifest validation and its content-free ArchiveSummary
+- does not own: A second project format, migration, cloud sync, signing, the CLI or Hub presentation of the archive
+- api: `ARCHIVE_SCHEMA`, `ARCHIVE_VERSION`, `ARCHIVE_MANIFEST_PATH`, `ARCHIVE_PROJECT_PREFIX`, `ARCHIVE_OMISSIONS`, `ArchiveError`, `ArchiveSummary`, `archive_manifest`, `validate_archive_manifest`, `read_project_archive`, `summarize_archive`, `write_project_archive`, `archive_target`, `restore_project_archive`
+- invariants: Archive bytes are installed only through the P036 immutable writer; Restore refuses an occupied target before creating anything
+
 ### project.containers — `archflow/project/containers.py`
 Naming the four container states of ADR-007 over the layout: which work is in progress, which run is shared, what is published, and what the archive holds.
 - owns: the four container states and the ISO 19650 suitability code each one carries (ContainerState, StatusCode); one container as a value: its state, code, project, run, ref, author, branch and the line a person reads (Container); surveying the authored work-in-progress slots, today the runner's and tomorrow one per author (work_in_progress); surveying the runs as shared containers and awarding S1 or S4 from what each run retains (shared); naming HEAD as the one published container and its issue (published); naming the canonical snapshots HEAD has left behind, oldest issue first (archived)
@@ -478,7 +485,7 @@ Policy-as-code architecture boundary checks over the source roots, driven by gov
 ### tools.create_project — `tools/create_project.py`
 Create one explicitly located external P036 project from empty or supplied authored inputs, before any run.
 - owns: the create-project command line: external project root and optional authored StateRecord/seat-pack input files; checking new project identity and rejecting occupied roots, foreign or bound records and malformed seats before initialization; Read-only --inspect-format and --plan-migration diagnostics over an explicitly located existing project; failed closure planning returns a nonzero exit code; the --migrate-format --into command line: an empty target directory named by the project id; the tool writes no project file of its own and prints the project:// URI of the receipt the repository retained
-- does not own: project format, filesystem writes or HEAD authority (project.repository); StateRecord semantics (state.record) or seat semantics (tools.run_project._seat); creating geometry, a run, a stage or a formal issue; a global workspace registry or runtime installation
+- does not own: project format, filesystem writes or HEAD authority (project.repository); StateRecord semantics (state.record) or seat semantics (tools.run_project._seat); creating geometry, a run, a stage or a formal issue; a global workspace registry or runtime installation; the portable archive container: export, restore, member validation and the archive summary belong to project.archive
 - api: `main`
 - invariants: all project writes go through the existing repository initializer; the source repository and occupied project directories are not initialization targets; imported input identity is preserved; a bound record is not silently detached; empty creation produces no components, seats, model, run or acceptance decision
 

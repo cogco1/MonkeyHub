@@ -579,7 +579,11 @@ class ProjectTransferTests(unittest.TestCase):
         # They are artifacts, not records, so the content-addressed record
         # filename must not be demanded of them — otherwise the receiver
         # refuses an archive this same code just wrote.
-        from tools.create_project import _restore_project_archive, _write_project_archive
+        from archflow.project.archive import (
+            read_project_archive,
+            restore_project_archive,
+            write_project_archive,
+        )
 
         drawing, data = self.workspace_json()
         transfer = self.shared.export_transfer()
@@ -591,10 +595,11 @@ class ProjectTransferTests(unittest.TestCase):
         self.assertEqual(restored.read_transfer_file(drawing.relative_path, drawing.sha256), data)
 
         archive = self.root / "archives" / "building.monkeyhub.zip"
-        _write_project_archive(self.shared, archive)
+        write_project_archive(self.shared, archive)
         home = self.root / "archive-home" / "building"
         home.parent.mkdir(parents=True, exist_ok=True)
-        opened, manifest = _restore_project_archive(home, archive)
+        opened, _ = restore_project_archive(home, archive)
+        manifest, _ = read_project_archive(archive)
         self.assertIn(drawing.relative_path, {row["path"] for row in manifest["transfer"]["files"]})
         self.assertEqual((home / drawing.relative_path).read_bytes(), data)
         self.assertEqual(opened.read_head(), self.shared.read_head())

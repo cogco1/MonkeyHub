@@ -1572,6 +1572,60 @@
       "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/support.py ScriptedProvider."
     },
     {
+      "module_id": "project.archive",
+      "owner_path": "archflow/project/archive.py",
+      "purpose": "One portable archive of a retained project: the ZIP transport container around the existing P036 transfer representation, and the content-free summary of what travelled.",
+      "owns": [
+        "Portable ProjectArchiveManifest@1 export/restore wrapper around the P036 transfer representation, its member/hash/manifest validation and its content-free ArchiveSummary"
+      ],
+      "does_not_own": [
+        "A second project format, migration, cloud sync, signing, the CLI or Hub presentation of the archive"
+      ],
+      "inputs": [
+        "an open FilesystemProjectRepository or one absolute archive path, with the absolute directory the archive is written to or restored into"
+      ],
+      "outputs": [
+        "one deterministic ProjectArchiveManifest@1 ZIP, or one restored and verified project repository, each with its ArchiveSummary"
+      ],
+      "public_api": [
+        "ARCHIVE_SCHEMA",
+        "ARCHIVE_VERSION",
+        "ARCHIVE_MANIFEST_PATH",
+        "ARCHIVE_PROJECT_PREFIX",
+        "ARCHIVE_OMISSIONS",
+        "ArchiveError",
+        "ArchiveSummary",
+        "archive_manifest",
+        "validate_archive_manifest",
+        "read_project_archive",
+        "summarize_archive",
+        "write_project_archive",
+        "archive_target",
+        "restore_project_archive"
+      ],
+      "depends_on": [
+        "project.repository"
+      ],
+      "used_by": [
+        "tools.create_project",
+        "hub.shell"
+      ],
+      "invariants": [
+        "Archive bytes are installed only through the P036 immutable writer",
+        "Restore refuses an occupied target before creating anything"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_archive.py",
+        "tests/test_create_project.py",
+        "tests/test_project_transfer.py"
+      ],
+      "notes": "CREATE: the archive wrapper had no owner besides a CLI; two consumers (CLI and Hub API) now share it.",
+      "files": [
+        "archflow/project/archive.py"
+      ]
+    },
+    {
       "module_id": "project.containers",
       "owner_path": "archflow/project/containers.py",
       "purpose": "Naming the four container states of ADR-007 over the layout: which work is in progress, which run is shared, what is published, and what the archive holds.",
@@ -5771,7 +5825,8 @@
         "project format, filesystem writes or HEAD authority (project.repository)",
         "StateRecord semantics (state.record) or seat semantics (tools.run_project._seat)",
         "creating geometry, a run, a stage or a formal issue",
-        "a global workspace registry or runtime installation"
+        "a global workspace registry or runtime installation",
+        "the portable archive container: export, restore, member validation and the archive summary belong to project.archive"
       ],
       "inputs": [
         "CLI arguments",
@@ -5789,6 +5844,7 @@
         "main"
       ],
       "depends_on": [
+        "project.archive",
         "project.repository",
         "project.refs",
         "state.record",
@@ -5810,7 +5866,7 @@
         "apps/archflow-studio/api/tests/test_create_project.py",
         "tests/test_project_format_migration.py"
       ],
-      "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer."
+      "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer. The --export-archive/--restore-archive flags stay here and delegate to project.archive, which the Hub API calls directly."
     },
     {
       "module_id": "monkeymonitor",
