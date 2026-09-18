@@ -126,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
                              "or rhino (the supervised host export), or blender (closed meshes saved to .blend and cold-read; "
                              "solid/straight-extrusion only; executable on PATH)")
     parser.add_argument("--workspace")
+    parser.add_argument("--blender-projection", metavar="EXECUTABLE", help="after verified OCCT export, rebuild and render a source-bound Blender projection")
     parser.add_argument("--powershell", default=r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", help="used by --cad-backend rhino only")
     parser.add_argument("--relaxed-coverage", action="store_true")
     parser.add_argument("--patch-oracle", action="store_true", help="rhino only: when an export is patched, also rebuild in full and compare the two readbacks")
@@ -166,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     options = RunOptions(commitment_ref=seats_payload["commitment_ref"], live_provider_identity=identity, strict_coverage=not args.relaxed_coverage, export=args.export,
                          cad_backend=args.cad_backend,
+                         blender_projection={"blender_executable": args.blender_projection} if args.blender_projection else None,
                          workspace_root=Path(args.workspace).resolve() if args.workspace else repository.layout.run(args.run).workspaces, powershell=Path(args.powershell),
                          branch_id=stage_guard.envelope.branch_id, branch_epoch=stage_guard.envelope.branch_epoch, patch_oracle=args.patch_oracle)
     if options.export:
@@ -182,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
             artifact = cad.get(artifact_key)
             if artifact:
                 print(f"    {artifact_key}: {artifact.get('relative_path')} sha256={str(artifact.get('sha256'))[:12]}... ({artifact.get('format')})")
+        if cad.get("projection"):
+            print("    Blender projection: " + json.dumps(cad["projection"]))
         for issue in seat_result["issues"][:6]:
             print("    ", issue.get("code"), "|", str(issue.get("detail"))[:200])
     print(f"unowned components: {receipt.get('unowned_components')}")
@@ -191,7 +195,8 @@ def main(argv: list[str] | None = None) -> int:
         print("no exit binding: this stage did not close, so no successor stage may open against this run")
     else:
         print(f"exit_binding={receipt['exit_binding_ref']}")
-    return 0 if receipt["seat_execution_complete"] else 1
+    projections_ok = all((seat.get("cad") or {}).get("projection", {}).get("status", "succeeded") == "succeeded" for seat in receipt["seat_results"])
+    return 0 if receipt["seat_execution_complete"] and projections_ok else 1
 
 
 if __name__ == "__main__":

@@ -407,6 +407,16 @@
       "kind": "generated_client_schema",
       "owner": "hub.shell",
       "reason": "Existing frontend SDK generation writes only disposable OpenAPI schema inputs under the two explicit .generated directories; never project data."
+    },
+    {
+      "path": "archflow/adapters/blender_projection.py",
+      "function": "execute_blender_projection",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "adapter_workspace",
+      "owner": "adapters.cad_execution",
+      "reason": "Writes only transport plan and subprocess logs beside OCCT bytes in the supplied speculative workspace. Existing runner retains projection receipts through P036."
     }
   ],
   "forbidden_layer_imports": [
