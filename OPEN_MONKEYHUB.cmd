@@ -8,5 +8,5 @@ if not exist "%HUB_PYTHON%" (
   pause
   exit /b 2
 )
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%HUB_ROOT%apps\monkeyhub\launch-hub.ps1" -Python "%HUB_PYTHON%" -HubWebDir "%HUB_ROOT%apps\monkeyhub\web\dist" -StudioWebDir "%HUB_ROOT%apps\archflow-studio\web\dist" -HideConsole %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%HUB_ROOT%apps\monkeyhub\launch-hub.ps1" -Python "%HUB_PYTHON%" -HubWebDir "%HUB_ROOT%apps\monkeyhub\web\dist" -HideConsole %*
 exit /b %ERRORLEVEL%

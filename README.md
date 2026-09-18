@@ -48,7 +48,7 @@ from developing an unresolved design.
 
 ## MonkeyArch: a place to test the interaction
 
-**MonkeyArch**, hosted in the shared Studio/Hub environment, is the modeling workspace used to test
+**MonkeyArch**, hosted in MonkeyHub, is the modeling workspace used to test
 these methods. People should be able to work directly on a model, inspect what the
 machine understood, compare proposed changes, and take over when necessary.
 Continuing a candidate, endorsing a direction and formally issuing a project
@@ -76,7 +76,7 @@ The current implementation has three established code owners composed in the sam
 
 - **ArchFlow** holds shared project storage, architectural facts and technical contracts.
 - **MonkeyArch** owns 3D modeling, typed design edits, candidate execution and relation checks.
-- **MonkeyDiagram** owns drawing projection and presentation; its Studio workspace also handles document viewing and annotation.
+- **MonkeyDiagram** owns drawing projection and presentation; its page editor opens from Board for document viewing and annotation.
 
 Product names and design-history terms follow the
 [team naming conventions](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md#产品名称与版本用语),
@@ -107,7 +107,7 @@ design adequacy still need architectural judgment and real project trials. See t
   retained; not a migration plan to execute again.
 - [Work environment](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md) — source,
   runtime and project-data locations; extending an existing capability.
-- [Studio guide](apps/archflow-studio/README.md) — setup, model interaction,
+- [Project Runtime guide](apps/archflow-studio/README.md) — setup, model interaction,
   candidate execution, and validation.
 - [API protocol](docs/PROTOCOL.md) — client/server contracts and versioning.
 - [Project document boundary](archflow/project/README.md) — project identity,
@@ -132,7 +132,7 @@ See the [team setup and review path](docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.m
 
 New contributors must also read and agree to the [`CLA.md`](CLA.md) before a contribution is merged. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the working process.
 
-## Run Studio
+## Run MonkeyHub
 
 For the Windows candidate installation without a system Python or Node.js,
 see the [MonkeyHub installation guide](apps/monkeyhub/installer/README.md).
@@ -152,7 +152,7 @@ existing work, use its complete project directory and selected run. Initializati
 alone creates no model or run.
 
 Open the project through **MonkeyHub** — the desktop package or `OPEN_MONKEYHUB.cmd` — which
-is the only production entry: it starts one Studio process per project with the project, CAD
+is the only production entry: it starts one API-only Project Runtime per project with the project, CAD
 backend and reference run from its application settings and your saved preferences, and
 monitors and stops what it started. For development and tests, start the project runtime on an
 explicit project by itself:
@@ -164,12 +164,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runt
 That development start has no configuration file and no default project; the CAD backend and
 intent provider are the `ARCHFLOW_STUDIO_*` environment variables the API reads (defaults:
 OCCT export and the deterministic provider, so opening a project needs neither an API key nor
-Rhino). See the [Studio guide](apps/archflow-studio/README.md) for interaction and export options.
+Rhino). See the [Project Runtime guide](apps/archflow-studio/README.md) for interaction and export options.
 
 ## Project data
 
 `archflow/` contains shared contracts and project mechanisms; `monkeyarch/` and
-`monkeydiagram/` hold the workflow algorithms. `apps/archflow-studio/` composes the interface. Active building projects live in an explicitly configured
+`monkeydiagram/` hold the workflow algorithms. `apps/monkeyhub/web/` composes the single application interface; `apps/archflow-studio/api/` serves project APIs. Active building projects live in an explicitly configured
 external project root. Promoted regression evidence belongs in `probes/`.
 Both use the same project layout and persistence owner.
 

@@ -273,8 +273,7 @@ class WindowsProcesses:
 class DesktopRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(Path(EXE).is_absolute() and Path(EXE).is_file(), EXE)
-        for client in ("monkeyhub", "archflow-studio"):
-            self.assertTrue((APPLICATION_ROOT / f"apps/{client}/web/dist/index.html").is_file(), f"Build {client} web first")
+        self.assertTrue((APPLICATION_ROOT / "apps/monkeyhub/web/dist/index.html").is_file(), "Build the Hub frontend first")
         for directory in (APPLICATION_ROOT, APPLICATION_ROOT / "apps/archflow-studio/api", APPLICATION_ROOT / "apps/monkeyhub/api"):
             if str(directory) not in sys.path:
                 sys.path.insert(0, str(directory))
@@ -455,14 +454,14 @@ class DesktopRuntimeTests(unittest.TestCase):
             self.assertNotIn(app["state"], ("error", "unavailable"), app)
             return app if app["state"] == "running" else None
         app = wait_for(check, lambda: f"{app_id} not ready: {self.log_text()}")
-        health = request(app["url"] + "api/health")
+        health = request(app["apiUrl"] + "api/health")
         self.assertEqual(health["processId"], app["processId"])
         self.assertEqual(health["sourceRevision"], self.revision)
         self.assertTrue(health["managedInstanceId"])
         for pid in {health["processId"], health["parentProcessId"]} - {self.hub_pid}:
             self.native.track(pid)
             self.pids.add(pid)
-        self.ports.add(urlsplit(app["url"]).port)
+        self.ports.add(urlsplit(app["apiUrl"]).port)
         return app
 
     def open_project(self):
@@ -471,7 +470,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         request(self.url + "api/apps/monkeyarch/start?" + urlencode({"projectDir": str(self.project)}), method="POST")
         studio = self.app_ready("monkeyarch")
         self.assertNotEqual(studio["processId"], self.hub_pid)
-        actual = request(studio["url"] + "api/project")
+        actual = request(studio["apiUrl"] + "api/project")
         self.assertEqual(actual["projectId"], self.fixture.PROJECT_ID)
         self.assertEqual(Path(actual["projectDir"]).resolve(), self.project.resolve())
         self.assertEqual(actual["referenceRun"]["runId"], self.fixture.REFERENCE_RUN_ID)
@@ -486,7 +485,7 @@ class DesktopRuntimeTests(unittest.TestCase):
         # modeling is ready; subsequent responses are under 0.1 s. Bound only
         # this cold asset read; health and ordinary API requests keep 5 s.
         self.assertEqual(request(studio["url"], raw=True, timeout=15),
-                         (APPLICATION_ROOT / "apps/archflow-studio/web/dist/index.html").read_bytes())
+                         (APPLICATION_ROOT / "apps/monkeyhub/web/dist/index.html").read_bytes())
         current = self.project_bytes()
         self.assertEqual({path: current.get(path) for path in self.before}, self.before)
         if self.opened_bytes is None:

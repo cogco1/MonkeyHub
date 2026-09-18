@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createProjectWorkspaceFixture } from "./projectWorkspaceFixture.mjs";
 import { createServer } from "node:http";
 import { readFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,25 +26,25 @@ const server = createServer(async (req, res) => {
     res.write(`retry: 250\nevent: runtime\ndata: ${JSON.stringify({ serverId: "fixture-hub", sequence: runtimeSequence, kind: "snapshot", snapshot: runtimeSnapshot() })}\n\n`);
     req.on("close", () => streams.delete(res)); return;
   }
+  // Chromium's native download bypasses page.route. Serve only the exact
+  // synthetic artifact already registered in this addressed runtime fixture.
+  const download = /^\/api\/runtime\/projects\/([^/]+)\/studio\/api\/artifacts\/([^/]+)\/bytes$/.exec(pathname);
+  if (download) {
+    const runtime = [...runtimes.values()].find((item) => item.runtimeId === download[1]);
+    const asset = runtime && [...(workspaceFixture.projects.get(runtime.projectId)?.assets.values() ?? [])].find((item) => item.dto.sha256 === download[2]);
+    if (!asset) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": asset.bytes.length });
+    res.end(asset.bytes); return;
+  }
   if (pathname === "/tool") {
     toolLoads.push(req.url);
     res.setHeader("Content-Type", "text/html");
-    // The embedded page asks through the real shared contract module.
-    res.end(`<h1>Project tool fixture</h1><label>Unsaved workspace note<textarea id="note"></textarea></label><button id="ask">Start modeling in the conversation</button>
-      <script type="module">
-        import { requestStartModeling } from "/shared/hostBridge.js";
-        document.querySelector("#ask").addEventListener("click", () => requestStartModeling());
-      </script>`);
-    return;
-  }
-  if (pathname === "/shared/hostBridge.js") {
-    res.setHeader("Content-Type", "text/javascript");
-    res.end(await readFile(fileURLToPath(new URL("../../../shared-web/src/hostBridge.js", import.meta.url))));
+    res.end(`<h1>Independent tool fixture</h1>`);
     return;
   }
   const filename = path.resolve(root, `.${pathname === "/" ? "/index.html" : pathname}`);
   if (!filename.startsWith(root)) { res.writeHead(404); res.end(); return; }
-  try { res.setHeader("Content-Type", filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : "text/html"); res.end(await readFile(filename)); }
+  try { res.setHeader("Content-Type", filename.endsWith(".js") ? "text/javascript" : filename.endsWith(".css") ? "text/css" : filename.endsWith(".wasm") ? "application/wasm" : filename.endsWith(".woff2") ? "font/woff2" : "text/html"); res.end(await readFile(filename)); }
   catch { res.writeHead(404); res.end(); }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -71,24 +72,29 @@ const projects = [
   { projectId: "A", projectDir: "D:\\fixture\\A", name: "Project A", chatCount: 0, version: 3, stage: "S2" },
   { projectId: "B", projectDir: "D:\\fixture\\B", name: "Project B", chatCount: 0, version: 0, stage: null },
 ];
-const apps = ["monkeyarch", "monkeydiagram", "monkeyboard", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
+const apps = ["monkeyarch", "monkeyboard", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
 const projectApps = new Map();
 const runtimes = new Map();
+const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions);
 const appsFor = (target) => {
-  if (!projectApps.has(target)) projectApps.set(target, apps.map((app) => app.serviceId === "studio" ? { ...app, state: "stopped", processId: null, url: `${app.url}&project=${encodeURIComponent(target)}` } : app));
+  if (!projectApps.has(target)) projectApps.set(target, apps.map((app) => app.serviceId === "studio" ? { ...app, state: "stopped", processId: null, url: null, apiUrl: null } : app));
   return projectApps.get(target);
 };
 const runtimeSnapshot = () => ({ serverId: "fixture-hub", sequence: runtimeSequence, workers: [], projects: [...runtimes.values()].map((runtime) => {
   const app = appsFor(runtime.projectDir).find((app) => app.appId === "monkeyarch");
   return { ...runtime, workers: app.processId || app.state === "error" ? [{ workerId: runtime.runtimeId, serviceId: "studio", projectId: runtime.projectId,
     projectDir: runtime.projectDir, instanceId: `instance-${app.processId}`, processId: app.processId, desiredState: "running", healthy: app.state === "running",
-    state: app.state === "error" ? "crashed" : app.state === "running" ? "ready" : app.state, url: app.url, error: app.error ?? null }] : [],
+    state: app.state === "error" ? "crashed" : app.state === "running" ? "ready" : app.state, url: app.apiUrl ?? app.url, error: app.error ?? null }] : [],
     sessions: sessions.filter((session) => session.projectId === runtime.projectId) };
 }) });
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   const req = route.request(), url = new URL(req.url()), method = req.method();
   if (url.pathname === "/api/runtime/events") return route.continue();
+  if (/^\/api\/runtime\/projects\/[^/]+\/studio\//.test(url.pathname)) {
+    try { if (await workspaceFixture.handle(route, url)) return; }
+    catch (error) { errors.push(error.message); return route.fulfill({ status: 500, json: { code: "FIXTURE_UNEXPECTED", detail: error.message } }); }
+  }
   const data = () => req.postDataJSON();
   const json = async (body, status = 200) => { await route.fulfill({ json: body, status }); if (method !== "GET") emitRuntime(); };
   if (method !== "GET") writes.push([method, url.pathname, data(), url.searchParams.get("projectDir")]);
@@ -125,7 +131,12 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const currentApps = appsFor(selected.projectDir).filter((item) => item.serviceId === "studio");
     for (const item of currentApps) item.state = "starting";
     await modelingResponseGate;
-    for (const item of currentApps) { item.state = "running"; item.processId = 2000 + [...projectApps.keys()].indexOf(selected.projectDir); }
+    for (const item of currentApps) {
+      item.state = "running"; item.processId = 2000 + [...projectApps.keys()].indexOf(selected.projectDir);
+      const runtimeId = runtimes.get(selected.projectDir).runtimeId;
+      item.url = `${origin}/?view=${item.appId === "monkeyboard" ? "board" : "arch"}&runtimeId=${runtimeId}`;
+      item.apiUrl = `${origin}/api/runtime/projects/${runtimeId}/studio/`;
+    }
     runtimes.get(selected.projectDir).projection = modelingFailure ? "unknown" : "ready";
     return modelingFailure ? json(modelingFailure, 409) : json({ projectId: selected.projectId, initialized: true });
   }
@@ -250,7 +261,43 @@ const boxOf = (selector) => page.evaluate((value) => {
 }, selector);
 const activityRows = (expected) => page.waitForFunction(
   (count) => document.querySelectorAll(".chat-activity").length === count, expected);
-const studioReady = () => page.waitForFunction(() => ["Modeling", "Drawings", "Board"].every(label =>
+const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
+const waitWorkspace = async (kind = "arch") => {
+  await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
+  await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : ".stage canvas").first().waitFor();
+  assert.equal(await page.locator(".chat-project-workspace iframe").count(), 0, "project workspaces mount directly in the Hub");
+};
+const waitCandidate = async (runId) => {
+  await waitWorkspace();
+  await page.waitForFunction(() => !document.querySelector('.chat-project-workspace:not([hidden]) .boot'));
+  const until = Date.now() + 15000;
+  while (!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId === runId)) {
+    if (Date.now() > until) assert.fail(`Candidate model not read: ${runId}; ${JSON.stringify(workspaceFixture.requests.slice(-12))}`);
+    await page.waitForTimeout(50);
+  }
+  await visibleWorkspace().locator(".boot").waitFor({ state: "hidden" });
+  // Read the actual viewer selection, not only a completed model download.
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await visibleWorkspace().locator('.vcard__export[aria-pressed="true"]').filter({ hasText: `${runId}.3dm` }).waitFor();
+  if (/^cand-[AB]-/.test(runId)) {
+    assert.equal((await visibleWorkspace().locator(".editing-base__name").innerText()).trim(), `home-${runId.split("-")[1]}.3dm`,
+      "automatic candidate viewing preserves the exact editing base");
+    assert.equal(await visibleWorkspace().locator('.editing-base').getAttribute("data-source-match"), "different");
+  }
+  if (runId === "cand-A-1") {
+    const editable = workspaceFixture.projects.get("A").assets.get("home-A");
+    const save = visibleWorkspace().locator("[data-work-model-save]").first();
+    assert.equal(await save.getAttribute("href"), `${origin}/api/runtime/projects/${runtimes.get("D:\\fixture\\A").runtimeId}/studio/api/artifacts/${editable.dto.sha256}/bytes`);
+    const downloadReady = page.waitForEvent("download");
+    await save.click();
+    const downloaded = await downloadReady;
+    assert.equal(downloaded.suggestedFilename(), "editable-A.3dm");
+    assert.deepEqual(await readFile(await downloaded.path()), editable.bytes, "version download returns the addressed project's bytes");
+    await page.screenshot({ path: path.join(temporary, "hub-versions.png") });
+  }
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+};
+const studioReady = () => page.waitForFunction(() => ["Modeling", "Board"].every(label =>
   document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
 try {
   await page.goto(origin);
@@ -261,7 +308,7 @@ try {
   // is no second copy of them anywhere.
   const rail = page.getByRole("navigation", { name: "Project tools" });
   await rail.waitFor();
-  for (const label of ["Modeling", "Drawings", "Board", "Fabrication", "Usage"]) {
+  for (const label of ["Modeling", "Board", "Fabrication", "Usage"]) {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
@@ -383,38 +430,35 @@ try {
   // The candidate that step produced opens beside the conversation, which the
   // panel keeps as it was.
   await page.getByRole("button", { name: "Open this candidate on the right" }).first().click();
-  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
-  const opened = await page.locator('iframe:not([hidden])').getAttribute("src");
-  assert.match(opened, /candidate=cand-A-1/);
-  assert.match(opened, /embedded=tool/);
+  await waitCandidate("cand-A-1");
+  const savedEditingBases = await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences"));
+  assert.ok(!savedEditingBases?.includes("cand-A-1"), "viewing a candidate does not save it as an editing choice");
+  await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
+  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
+  await visibleWorkspace().locator("#view-tools button").nth(1).click();
+  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
+  await page.mouse.move(10, 10);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const preservedView = await visibleWorkspace().locator(".stage canvas").first().screenshot();
   const beforePeerWorkspaces = writes.length;
-  for (const [label, id] of [["Drawings", "monkeydiagram"], ["Board", "monkeyboard"], ["Modeling", "monkeyarch"]]) {
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board A retained");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  for (const [label, kind] of [["Board", "board"], ["Modeling", "arch"]]) {
     await page.getByRole("button", { name: label, exact: true }).click();
-    await page.waitForFunction((app) => document.querySelector("iframe:not([hidden])")?.src.includes(`app=${app}`), id);
+    await waitWorkspace(kind);
+    if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
   }
-  assert.equal(writes.length, beforePeerWorkspaces, "the other workspaces reuse the project's running Studio without repeated preparation");
-  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
-  await page.locator('iframe:not([hidden])').evaluate((frame) => { frame.contentWindow.switchMarker = "retained"; });
-  await page.waitForFunction(() => [...document.querySelectorAll("iframe")].every((frame) => frame.contentDocument?.querySelector("#note")));
-  for (const frame of await page.locator("iframe").all()) await frame.evaluate((element) => {
-    element.contentDocument.querySelector("#note").value = new URL(element.src).searchParams.get("app");
-  });
-  const beforeCachedLoads = toolLoads.length;
-  const beforeTabSwitch = writes.length;
-  for (const [label, id] of [["Drawings", "monkeydiagram"], ["Board", "monkeyboard"], ["Modeling", "monkeyarch"]]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await page.waitForFunction((app) => document.querySelector("iframe:not([hidden])")?.src.includes(`app=${app}`), id);
-  }
-  assert.equal(writes.length, beforeTabSwitch, "cached tool switches never restart or prepare the project");
-  assert.equal(toolLoads.length, beforeCachedLoads, "cached workspaces do not reload their documents");
-  for (const frame of await page.locator("iframe").all()) {
-    const dimensions = await frame.evaluate((element) => ({ width: element.getBoundingClientRect().width,
-      height: element.getBoundingClientRect().height, note: element.contentDocument.querySelector("#note").value,
-      app: new URL(element.src).searchParams.get("app") }));
-    assert.ok(dimensions.width > 100 && dimensions.height > 100, "inactive workspace keeps its viewport instead of shrinking to zero");
-    assert.equal(dimensions.note, dimensions.app, "each workspace retains its own unfinished input");
-  }
-  assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.switchMarker), "retained", "switches retain the loaded modeling page");
+  assert.equal(writes.length, beforePeerWorkspaces, "workspace switches never restart or prepare the project");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);
+  await page.mouse.move(10, 10);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), preservedView, "the chosen camera view survives Board/model switches");
+  await page.screenshot({ path: path.join(temporary, "hub-arch.png") });
+  assert.equal(await visibleWorkspace().evaluate((element) => element.switchMarker), "retained", "both workspaces share one mounted project");
+  assert.equal(await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences")), savedEditingBases, "candidate readback and workspace switches do not change editing consent");
   await page.getByRole("heading", { name: "Widen the courtyard", exact: true }).waitFor();
   await activityRows(3);
   // The page's own local address is a connection detail, not permanent chrome:
@@ -426,22 +470,22 @@ try {
   await connection.getByText("Connection details").waitFor();
   assert.equal(await connection.locator("#tool-url").isVisible(), false, "the address stays folded away");
   await connection.getByText("Connection details").click();
-  assert.match(await connection.locator("#tool-url").inputValue(), /candidate=cand-A-1/);
+  assert.match(await connection.locator("#tool-url").inputValue(), /runtimeId=/);
   await connection.getByRole("button", { name: "Reload page" }).click();
   await connection.getByRole("button", { name: "Close" }).click();
-  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
+  await waitWorkspace();
 
   // A — dragging really moves the boundary: the conversation and the tool page
   // both change width, and the conversation keeps its floor.
-  const before = { chat: await boxOf(".chat-main"), frame: await boxOf("iframe:not([hidden])") };
+  const before = { chat: await boxOf(".chat-main"), frame: await boxOf(".chat-project-workspace:not([hidden])") };
   const handle = page.getByRole("separator", { name: "Resize right panel" });
   const bounds = await handle.boundingBox();
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
   await page.mouse.move(bounds.x - 260, bounds.y + bounds.height / 2, { steps: 12 });
   await page.mouse.up();
-  await page.waitForFunction((width) => document.querySelector("iframe:not([hidden])").getBoundingClientRect().width > width + 100, before.frame);
-  const wider = { chat: await boxOf(".chat-main"), frame: await boxOf("iframe:not([hidden])") };
+  await page.waitForFunction((width) => document.querySelector(".chat-project-workspace:not([hidden])").getBoundingClientRect().width > width + 100, before.frame);
+  const wider = { chat: await boxOf(".chat-main"), frame: await boxOf(".chat-project-workspace:not([hidden])") };
   assert.ok(wider.chat < before.chat - 100, "the conversation gives up the width the panel takes");
   assert.ok(wider.frame > before.frame + 100, "the embedded page actually becomes wider");
   // Past the floor the conversation stops shrinking.
@@ -487,25 +531,16 @@ try {
   await assertFitted();
 
   // A — the rail's own control closes and reopens the tool content.
-  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
-  const collapsedFrameCount = await page.locator("iframe").count(), beforeCollapseLoads = toolLoads.length;
-  const beforeCollapseSize = await page.locator('iframe:not([hidden])').evaluate((frame) => {
-    frame.contentDocument.querySelector("#note").value = "Keep the candidate camera, drawing marks and board edits";
-    frame.contentWindow.collapseMarker = "retained";
-    return { width: frame.clientWidth, height: frame.clientHeight };
-  });
+  await waitWorkspace();
+  const mountedProjects = await page.locator(".chat-project-workspace").count();
+  await visibleWorkspace().evaluate((element) => { element.collapseMarker = "retained"; });
   await page.getByRole("button", { name: "Hide tools" }).click();
   await page.locator(".chat-browser").waitFor({ state: "hidden" });
-  assert.equal(await page.locator("iframe").count(), collapsedFrameCount, "collapsing keeps the existing workspace documents mounted");
-  assert.deepEqual(await page.locator('iframe:not([hidden])').evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight })),
-    beforeCollapseSize, "collapsing does not resize the workspace to zero");
-  assert.ok(await railWidth() > 40, "the rail remains after the tool content is closed");
+  assert.equal(await page.locator(".chat-project-workspace").count(), mountedProjects, "collapsing retains project components");
+  assert.ok(await railWidth() > 40);
   await page.getByRole("button", { name: "Show tools" }).click();
-  await page.locator(".chat-browser").waitFor();
-  assert.equal(toolLoads.length, beforeCollapseLoads, `reopening does not reload any workspace: ${JSON.stringify(toolLoads.slice(beforeCollapseLoads))}`);
-  assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.collapseMarker), "retained");
-  assert.equal(await page.frameLocator('iframe:not([hidden])').getByLabel("Unsaved workspace note").inputValue(),
-    "Keep the candidate camera, drawing marks and board edits", "unfinished workspace input survives collapsing and reopening");
+  await waitWorkspace();
+  assert.equal(await visibleWorkspace().evaluate((element) => element.collapseMarker), "retained");
 
   // C — the project gear answers for the bound project, not for the tools.
   await page.getByRole("button", { name: /Project A/ }).last().click();
@@ -611,6 +646,25 @@ try {
   assert.equal(await second.getByText("D:\\fixture\\A").count(), 0, "no stale project is left in the card");
   await second.getByRole("button", { name: "Close" }).click();
 
+  // Two mounted projects keep separate Board state and project API clients.
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B");
+  await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board B retained");
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
+  assert.equal(runningA.status, "running", "Board navigation does not interrupt another project's task");
+  assert.deepEqual(new Set(workspaceFixture.requests.filter((row) => row.name === "/api/board").map((row) => row.projectId)), new Set(["A", "B"]));
+  await page.screenshot({ path: path.join(temporary, "hub-board.png") });
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+
   // A successful candidate opens immediately while the same turn continues
   // working. Neither repeated clicks nor terminal-state polling reload it.
   const completing = sessions[0];
@@ -618,18 +672,40 @@ try {
   completing.messages.push({ id: "final-checkpoint", role: "tool", status: "complete", candidateId: "cand-B-final", content: "Final checkpoint completed" });
   emitRuntime();
   assert.equal(completing.status, "running");
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("candidate=cand-B-final"));
-  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
-  await page.locator('iframe:not([hidden])').evaluate((frame) => { frame.contentWindow.completionMarker = "once"; });
+  await waitCandidate("cand-B-final");
+  await waitWorkspace();
+  await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
   await page.waitForTimeout(1600);
-  assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.completionMarker), "once", "later transcript polls do not reload the completed checkpoint");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "later transcript polls do not reload the completed checkpoint");
   await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
-  assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.completionMarker), "once", "clicking the same candidate preserves the iframe");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "clicking the same candidate preserves the mounted model");
   completing.status = "idle";
   emitRuntime();
   await page.getByRole("button", { name: "Send", exact: true }).waitFor();
-  assert.equal(await page.locator('iframe:not([hidden])').evaluate((frame) => frame.contentWindow.completionMarker), "once", "finishing the chat does not reload the candidate");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once", "finishing the chat does not reload the candidate");
   assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/start")).length, beforeReadbackStarts, "showing a candidate in its existing project never starts the app again");
+
+  // Refreshing a completed readback preserves the user's later camera view.
+  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
+  await visibleWorkspace().locator("#view-tools button").nth(1).click();
+  await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
+  await page.mouse.move(10, 10);
+  const beforeRefreshCanvas = await visibleWorkspace().locator(".stage canvas").first().screenshot();
+  const beforeRefreshBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+  await page.getByRole("button", { name: /Project B/ }).last().click();
+  const refreshConnection = page.getByRole("dialog", { name: "Project", exact: true });
+  await refreshConnection.getByText("Connection details").click();
+  const refreshedListing = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/studio/api/artifacts"));
+  await refreshConnection.getByRole("button", { name: "Reload page", exact: true }).click();
+  await refreshedListing;
+  await refreshConnection.getByRole("button", { name: "Close", exact: true }).click();
+  await page.mouse.move(10, 10);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await visibleWorkspace().evaluate((element) => element.completionMarker), "once");
+  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, beforeRefreshBytes,
+    "refreshing an already shown candidate does not reinstall its model");
+  assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
+    "refreshing keeps the camera chosen after the candidate appeared");
 
   // Refresh and reconnect read the retained operation, without replaying a
   // modification. A crashed worker needs the person's explicit recovery.
@@ -666,7 +742,7 @@ try {
   await page.getByRole("button", { name: "Recover project service", exact: true }).click();
   await studioReady();
   await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
-  await page.waitForFunction(() => document.querySelector('iframe:not([hidden])')?.src.includes("candidate=cand-B-final"));
+  await waitCandidate("cand-B-final");
   const beforeCrash = writes.length;
   for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) {
     app.state = "error"; app.error = { code: "WORKER_EXITED", detail: "Fixture worker exited unexpectedly." };
@@ -678,23 +754,21 @@ try {
   await page.getByRole("button", { name: "Recover project service", exact: true }).waitFor();
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open"), "refreshing a crashed project only reattaches it");
   await page.getByRole("button", { name: "Recover project service", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('iframe:not([hidden])')?.src.includes("candidate=cand-B-final"));
-  await page.frameLocator('iframe:not([hidden])').getByRole("heading", { name: "Project tool fixture" }).waitFor();
-  const restoredUrl = new URL(await page.locator('iframe:not([hidden])').getAttribute("src"));
-  assert.equal(restoredUrl.searchParams.get("hubApi"), `${origin}/api/runtime/projects/${runtimeB.runtimeId}/studio`);
+  await waitCandidate("cand-B-final");
+  await waitWorkspace();
+  assert.ok(workspaceFixture.requests.some((row) => row.runtimeId === runtimeB.runtimeId && row.name === "/api/protocol"), "restored workspace uses the same project runtime prefix");
   assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 1);
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")),
     "recovery never replays modeling, messages, proposals, or commits");
   await studioReady();
-  await page.locator('iframe:not([hidden])').evaluate((frame) => { frame.contentWindow.oldInstanceMarker = true; });
+  await visibleWorkspace().evaluate((element) => { element.oldInstanceMarker = true; });
+  const beforeRecoverReads = workspaceFixture.requests.length;
   for (const app of appsFor(runtimeB.projectDir).filter((app) => app.serviceId === "studio")) app.state = "error";
   emitRuntime();
   await page.getByRole("button", { name: "Recover project service", exact: true }).click();
-  await page.waitForFunction(() => {
-    const frame = document.querySelector('iframe:not([hidden])');
-    return frame?.contentDocument?.querySelector("#note") && !frame.contentWindow.oldInstanceMarker;
-  });
-  assert.match(await page.locator('iframe:not([hidden])').getAttribute("src"), /candidate=cand-B-final/);
+  await waitCandidate("cand-B-final");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.oldInstanceMarker), true, "runtime recovery preserves the mounted workspace and draft");
+  assert.ok(workspaceFixture.requests.slice(beforeRecoverReads).every((row) => row.method === "GET"), "recovery only refreshes workspace reads");
   assert.equal(writes.slice(beforeCrash).filter(([, pathname]) => pathname.endsWith("/recover")).length, 2);
   assert.ok(writes.slice(beforeCrash).every(([, pathname]) => pathname === "/api/runtime/projects/open" || pathname.endsWith("/recover")));
   await page.screenshot({ path: path.join(temporary, "runtime-recovered.png") });
@@ -773,26 +847,26 @@ try {
   assert.match(await banner.locator("pre").innerText(), /CHAT_SOMETHING_NEW: \{"trace":"unrecognised"/);
   await page.screenshot({ path: path.join(temporary, "failure.png") });
 
-  // 3 — an embedded page asks this host for the conversation. It is told which
-  // origin embedded it, the request arrives, and nothing is sent.
+  // Workspaces share the host document and have no second settings surface.
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("embedded=tool"));
-  const embeddedSrc = await page.locator("iframe:not([hidden])").getAttribute("src");
-  assert.ok(embeddedSrc.includes(`host=${encodeURIComponent(origin)}`), embeddedSrc);
-  const sentBefore = writes.filter(([method, pathname]) => pathname.endsWith("/messages")).length;
-  await page.frameLocator("iframe:not([hidden])").getByRole("button", { name: "Start modeling in the conversation" }).click();
-  await page.waitForFunction(() => document.activeElement?.id === "chat-input");
-  const prefilled = await page.locator("#chat-input").inputValue();
-  assert.match(prefilled, /Help me start a massing/, prefilled);
-  assert.equal(await page.locator("#chat-input").isEditable(), true, "the example is the person's to edit");
-  assert.equal(writes.filter(([method, pathname]) => pathname.endsWith("/messages")).length, sentBefore,
-    "asking to start modeling sends nothing");
-  await page.screenshot({ path: path.join(temporary, "handoff.png") });
-  await page.locator("#chat-input").fill("");
+  await waitWorkspace();
+  assert.equal(await page.getByRole("button", { name: "Hub settings", exact: true }).count(), 1);
+  assert.equal(workspaceFixture.requests.filter((row) => row.name === "/api/settings/user").length, 0);
 
   await page.screenshot({ path: path.join(temporary, "desktop.png"), fullPage: true });
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.getByText("More launch options", { exact: true }).click();
+  const diagnostics = page.getByRole("checkbox", { name: "Developer / Research Mode", exact: true });
+  await diagnostics.check();
+  assert.equal(await page.getByRole("checkbox", { name: "Event stream", exact: true }).isVisible(), true);
+  await diagnostics.uncheck();
+  const englishStageLabel = await visibleWorkspace().locator(".stage").getAttribute("aria-label");
   await page.locator("#theme").selectOption("dark");
+  await page.locator("#language").selectOption("zh-CN");
+  assert.equal(await page.locator("html").getAttribute("lang"), "zh-CN");
+  assert.notEqual(await visibleWorkspace().locator(".stage").getAttribute("aria-label"), englishStageLabel, "workspace language follows Hub context");
+  assert.equal(await page.locator("html").getAttribute("data-theme"), "dark");
+  await page.locator("#language").selectOption("en");
   await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   await page.screenshot({ path: path.join(temporary, "dark.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -818,12 +892,12 @@ try {
   let releaseModeling;
   modelingResponseGate = new Promise((resolve) => { releaseModeling = resolve; });
   const delayedStart = page.waitForRequest((req) => req.url().includes("/api/project/modeling"));
-  await page.getByRole("button", { name: "Drawings", exact: true }).click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
   await delayedStart;
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   releaseModeling(); modelingResponseGate = Promise.resolve();
   await page.waitForFunction(() => document.querySelector('.chat-composer-note')?.textContent === "");
-  assert.equal(await page.locator('iframe[src*="app=monkeydiagram"]').count(), 0, "a late response cannot open the old chat's workspace");
+  assert.equal(await page.locator(".chat-project-workspace:visible").count(), 0, "a late response cannot open the old chat workspace");
   // Archiving removes only the sidebar entry. The retained chat is readable,
   // survives a page reload and is explicitly restored before it can continue.
   const archivable = sessions.find((row) => row.projectId === "B");
@@ -879,12 +953,12 @@ try {
   emitRuntime();
   await page.waitForFunction(() => document.querySelector('.chat-rail__tool[aria-label="Modeling"]')?.dataset.state === "stopped");
   const beforeReopen = writes.length;
-  for (const [label, id] of [["Modeling", "monkeyarch"], ["Drawings", "monkeydiagram"], ["Board", "monkeyboard"]]) {
+  for (const [label, id] of [["Modeling", "arch"], ["Board", "board"]]) {
     await page.getByRole("button", { name: label, exact: true }).click();
-    await page.waitForFunction(app => document.querySelector("iframe:not([hidden])")?.src.includes(`app=${app}`), id);
+    await waitWorkspace(id);
   }
   assert.equal(writes.slice(beforeReopen).filter(([, pathname]) => pathname === "/api/project/modeling").length, 1,
-    "an externally stopped Studio is prepared again once and shared by all three workspaces");
+    "an externally stopped Studio is prepared again once and shared by both workspaces");
   // Creation succeeds independently of a temporarily unavailable CLI. An
   // older in-flight discovery response cannot discard the newly selected project.
   let releaseProjectList;
@@ -998,7 +1072,7 @@ try {
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
   // Local validation leaves the already-selected draft untouched.
-  await page.locator('input[type="file"]').setInputFiles(Array.from({ length: 8 }, (_, index) => ({ name: `extra-${index}.txt`, mimeType: "text/plain", buffer: Buffer.from("x") })));
+  await page.locator('.chat-composer input[type="file"]').setInputFiles(Array.from({ length: 8 }, (_, index) => ({ name: `extra-${index}.txt`, mimeType: "text/plain", buffer: Buffer.from("x") })));
   await page.locator(".chat-error").filter({ hasText: "Add up to 8 attachments per message." }).waitFor();
   for (const [sizes, detail] of [[[20 * 1024 * 1024 + 1], "Each attachment must be 20 MiB or smaller."], [[20 * 1024 * 1024, 20 * 1024 * 1024], "Attachments must total 40 MiB or less."]]) {
     await page.locator(".chat-composer").evaluate((composer, sizes) => {
@@ -1009,6 +1083,35 @@ try {
     await page.locator(".chat-error").filter({ hasText: detail }).waitFor();
   }
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["outline.txt"]);
+  // Navigation URLs describe the selected surface. A previous project's
+  // workspace link must not win over a newly selected project or machine tool.
+  for (const session of sessions) session.status = "idle";
+  await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1"));
+  await page.goto(origin);
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  await page.waitForFunction((runtimeId) => new URLSearchParams(location.search).get("runtimeId") === runtimeId, runtimes.get("D:\\fixture\\A").runtimeId);
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.waitForFunction(() => !new URLSearchParams(location.search).has("runtimeId"));
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('.chat-project[data-selected="true"] .chat-project__name')?.textContent === "Project B");
+  assert.equal(await visibleWorkspace().count(), 0, "an unopened B workspace stays unopened after refreshing from A");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  await page.getByRole("button", { name: "Fabrication", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  assert.equal(new URL(page.url()).searchParams.has("runtimeId"), false);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
+  // An explicit link is deliberate navigation, and overrides the previous B/Fab view.
+  await page.goto(`${origin}/?view=board&runtimeId=${runtimes.get("D:\\fixture\\A").runtimeId}`);
+  await waitWorkspace("board");
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
+  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(new URL(page.url()).searchParams.get("view"), "board");
+
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
   projects.splice(0); sessions.splice(0); settings.projectDir = null;
@@ -1028,4 +1131,6 @@ try {
   assert.ok(writes.slice(beforeNoProject).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)));
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
+} catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));
+  await page.screenshot({ path: path.join(temporary, "failure.png") }); throw error;
 } finally { await browser.close(); await new Promise((resolve) => server.close(resolve)); }

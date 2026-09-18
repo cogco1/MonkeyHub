@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-AppId = Literal["monkeyarch", "monkeydiagram", "monkeymonitor", "monkeyboard", "monkeyfab"]
+AppId = Literal["monkeyarch", "monkeymonitor", "monkeyboard", "monkeyfab"]
 
 
 class HubError(BaseModel):
@@ -22,6 +22,7 @@ class AppStatus(BaseModel):
     available: bool = True
     state: Literal["stopped", "starting", "running", "stopping", "error", "unavailable"]
     url: str | None = None
+    apiUrl: str | None = None
     processId: int | None = None
     error: HubError | None = None
 

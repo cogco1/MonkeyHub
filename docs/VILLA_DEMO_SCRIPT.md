@@ -31,7 +31,7 @@ Studio 现有修改链是「提出改动」→「应用」→候选模型，可�
 
 本次使用 `http://127.0.0.1:5175` 和 API 8001。用户已在两个 PowerShell 窗口启动；已验证页面代理的健康接口、A02 状态和 `format=3dm` 的 OCCT 预览均可读取。录制使用此页面，不使用仍运行的旧 5174／8000 服务。
 
-### 独立 Studio 启动命令
+### 隔离 API 与测试工作区命令
 
 在两个 PowerShell 终端分别执行下面两段。已填入本次真实 reference run。演示使用独立的 8001／5175 端口；启动前确认未被占用，不结束已有服务。
 
@@ -56,9 +56,9 @@ $env:ARCHFLOW_STUDIO_CODEX = 'C:\Program Files\nodejs\codex.cmd'
 Web：
 
 ```powershell
-Set-Location -LiteralPath "$SourceRoot\apps\archflow-studio\web"
+Set-Location -LiteralPath "$SourceRoot\apps\monkeyhub\web"
 $env:ARCHFLOW_STUDIO_API_URL = 'http://127.0.0.1:8001'
-& 'C:\Program Files\nodejs\npm.cmd' run dev -- --host 127.0.0.1 --port 5175 --strictPort
+& 'C:\Program Files\nodejs\npx.cmd' vite --config workspaces/test/vite.config.ts --host 127.0.0.1 --port 5175 --strictPort
 ```
 
 以上命令已由用户手动执行，不要重复启动。录制期间保持两个终端打开；演示结束后可分别 Ctrl+C 退出。

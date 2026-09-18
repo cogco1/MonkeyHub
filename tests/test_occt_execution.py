@@ -1274,8 +1274,8 @@ class WindowFrameExecutionTests(unittest.TestCase):
             self.assertEqual((by_name[PANE_ID]["material_name"], by_name[PANE_ID]["material_transparency"]), ("glazing", 0.0))
 
 
-WEB_ROOT = Path(__file__).resolve().parents[1] / "apps" / "archflow-studio" / "web"
-LOADER_TEST = WEB_ROOT / "test" / "rhino3dmMaterials.test.ts"
+WEB_ROOT = Path(__file__).resolve().parents[1] / "apps" / "monkeyhub" / "web"
+LOADER_TEST = WEB_ROOT / "workspaces" / "test" / "rhino3dmMaterials.test.ts"
 WEB_DEPENDENCIES = (
     WEB_ROOT / "node_modules" / "three" / "examples" / "jsm" / "loaders" / "3DMLoader.js",
     WEB_ROOT / "node_modules" / "rhino3dm" / "rhino3dm.wasm",

@@ -88,7 +88,6 @@ impl LaunchConfig {
         for relative in [
             "apps/monkeyhub/run.py",
             "apps/monkeyhub/web/dist/index.html",
-            "apps/archflow-studio/web/dist/index.html",
         ] {
             if !source_root.join(relative).is_file() {
                 return Err(format!(

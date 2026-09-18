@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import "../workspaces/src/styles.css";
+import { ErrorBoundary } from "../workspaces/src/app/ErrorBoundary";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
-import { readHostRequest, START_MODELING } from "../../../shared-web/src/hostBridge.js";
+import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
+const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
 import "./ChatShell.css";
 
@@ -16,87 +19,17 @@ type Props = {
   workspace: ChatWorkspace | null;
   apps: readonly AppStatus[] | null;
 };
-type ToolTab = { id: AppId; url: string; revision: number };
+type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string };
 type SavedTool = { id: AppId; candidate?: string };
 type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
-const words = {
-  "zh-CN": {
-    projects: "项目", add: "添加项目", newChat: "新对话", settings: "Hub 设置", settingsHeading: "Hub 设置（全局）", close: "关闭", cancel: "取消", addProject: "添加项目",
-    folder: "项目文件夹", folderHelp: "选择已有的 ArchFlow 项目，粘贴文件夹完整路径。", folderPlaceholder: "例如 D:\\projects\\my-project",
-    empty: "开始项目对话", emptyHint: "描述你想做的事。需要看模型或图纸时，在右侧打开工具。", noProject: "添加一个项目，开始对话",
-    placeholder: "想在这个项目里做些什么？", send: "发送", stop: "停止", thinking: "正在处理", interrupted: "已中断", failed: "未完成",
-    attach: "添加附件", attachments: "附件", removeAttachment: "移除附件", dropFiles: "松开添加附件",
-    attachmentCount: "每条消息最多添加 8 个附件。", attachmentSize: "每个附件不能超过 20 MiB。", attachmentTotal: "附件合计不能超过 40 MiB。", attachmentRead: "无法读取附件，请重新选择。",
-    working: "正在连接项目…", tools: "项目工具", hideTools: "收起工具", model: "建模", diagram: "图纸", board: "画板", fab: "制作", monitor: "用量",
-    refresh: "刷新页面", browser: "项目浏览器", modelName: "模型（留空使用 CLI 默认值）", defaultModel: "CLI 默认模型", provider: "执行连接",
-    toolEmpty: "项目工具", toolHint: "选择建模、图纸、画板或制作工具。",
-    loading: "正在读取…", toolActivity: "执行过程", retry: "重新读取", projectRequired: "先添加或选择一个项目。", expand: "展开项目栏", collapse: "收起项目栏",
-    openCandidate: "在右侧打开这个候选", candidateHint: "在建模页面查看候选结果。", activityEmpty: "没有更多可显示的内容。",
-    resize: "调整右侧面板宽度", noProvider: "尚无可用的 CLI 连接", emptyProjects: "暂无项目", sessionError: "无法读取对话", complete: "已完成",
-    rail: "项目工具栏", showTools: "展开工具", projectInfo: "项目信息", projectNone: "尚未选择项目", projectNoneHint: "选择左侧的一个项目后，这里显示它的版本与 Stage。",
-    path: "路径", version: "正式版本", versionNumber: (value: number) => `版本 ${value}`, versionUnknown: "未读取到版本", stage: "Stage", stageNone: "尚未确认 Stage",
-    candidate: "本次对话的候选", candidateNone: "尚无候选", notEndorsed: "候选，未认可、未出图", connection: "当前连接", connectionHint: "在左下角的 Hub 设置里更改新对话的默认连接。",
-    connectionDetails: "连接信息", toolUrl: "工具页面地址", connectionNone: "右侧尚未打开工具页面。",
-    modelLabel: "模型", modelCliDefault: "CLI 默认模型", modelCustom: "自定义模型 ID…", modelCustomLabel: "模型 ID",
-    modelChecking: "正在检测可用模型…", modelSaving: "正在切换…", modelRunning: "回复结束后可以更换模型。", modelApply: "使用",
-    modelSince: "改动只影响这个对话之后的消息。",
-    railWorkspaces: "工作区", railSystem: "系统", railProject: "此项目",
-    errorDetails: "技术详情", changeModel: "更换模型",
-    startingDraft: "帮我在这个项目里做一个体量方案：",
-    newProject: "新建项目", newProjectHeading: "新建项目", projectName: "项目名称", projectNamePlaceholder: "例如 harbour-study",
-    projectNameHelp: "用字母、数字、连字符或下划线；这个名称就是项目 id。", workspaceLabel: "工作区", createHere: "将创建于",
-    workspaceChange: "在左下角的 Hub 设置里更改工作区。", create: "创建并开始对话", addExisting: "添加已有项目",
-    creating: "正在创建…", projectAdded: "已添加",
-    archivedChats: "已归档对话", activeChats: "返回当前对话", archive: "归档", restore: "恢复", archiveRunning: "回复结束或停止后可以归档。",
-    archiveEmpty: "暂无已归档对话。", archivedNotice: "这段对话已归档，消息和候选仍保留。恢复后可以继续对话。", restoreChat: "恢复此对话",
-    toolStopped: "按需启动", toolStarting: "启动中", toolRunning: "可用", toolStopping: "停止中", toolError: "连接失败", toolUnavailable: "缺少依赖", toolUnknown: "读取状态中", toolConnect: "连接此项目",
-    reconnecting: "连接中断，正在重新读取项目状态…", workerCrashed: "项目服务已退出", recoverWorker: "恢复项目服务", recovering: "正在恢复…",
-    recoveryHint: "恢复服务后读取已保存结果；未完成的修改需要重新检查。", operationRecovery: "有操作需要检查恢复结果", operationFailed: "有操作未完成", operationStale: "操作基底已过期", runtimeOperations: "项目操作", operationCommitted: "已提交", operationPending: "尚无提交确认",
-    workCopyRefused: "可编辑副本的改动未能登记为新版本",
-  },
-  en: {
-    projects: "Projects", add: "Add project", newChat: "New chat", settings: "Hub settings", settingsHeading: "Hub settings (global)", close: "Close", cancel: "Cancel", addProject: "Add project",
-    folder: "Project folder", folderHelp: "Paste the full path to an existing ArchFlow project folder.", folderPlaceholder: "For example D:\\projects\\my-project",
-    empty: "Start a project conversation", emptyHint: "Describe what you want to do. Open project tools on the right when you need them.", noProject: "Add a project to start a conversation",
-    placeholder: "What would you like to do in this project?", send: "Send", stop: "Stop", thinking: "Working", interrupted: "Interrupted", failed: "Incomplete",
-    attach: "Add attachments", attachments: "Attachments", removeAttachment: "Remove attachment", dropFiles: "Drop to attach files",
-    attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
-    working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", model: "Modeling", diagram: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
-    refresh: "Reload page", browser: "Project browser", modelName: "Model (leave empty for CLI default)", defaultModel: "CLI default model", provider: "Connection",
-    toolEmpty: "Project tools", toolHint: "Choose modeling, drawings, board or fabrication.",
-    loading: "Loading…", toolActivity: "Tool activity", retry: "Reload", projectRequired: "Add or choose a project first.", expand: "Show projects", collapse: "Hide projects",
-    openCandidate: "Open this candidate on the right", candidateHint: "View the candidate in the modeling page.", activityEmpty: "Nothing further to show.",
-    resize: "Resize right panel", noProvider: "No CLI connection is available", emptyProjects: "No projects yet", sessionError: "Could not read the conversation", complete: "Complete",
-    rail: "Project tools", showTools: "Show tools", projectInfo: "Project", projectNone: "No project selected", projectNoneHint: "Choose a project on the left to see its version and Stage here.",
-    path: "Folder", version: "Published version", versionNumber: (value: number) => `Version ${value}`, versionUnknown: "Version not read", stage: "Stage", stageNone: "No confirmed Stage",
-    candidate: "This conversation's candidate", candidateNone: "No candidate yet", notEndorsed: "Candidate — not endorsed, not issued",
-    connection: "Connection", connectionHint: "Change the default connection for new chats in Hub settings, bottom left.",
-    connectionDetails: "Connection details", toolUrl: "Tool page address", connectionNone: "No tool page is open on the right.",
-    modelLabel: "Model", modelCliDefault: "CLI default model", modelCustom: "Custom model id…", modelCustomLabel: "Model id",
-    modelChecking: "Checking which models are available…", modelSaving: "Switching…", modelRunning: "The model can be changed once this reply finishes.", modelApply: "Use",
-    modelSince: "This applies to the next messages in this conversation.",
-    railWorkspaces: "Workspaces", railSystem: "System", railProject: "This project",
-    errorDetails: "Technical details", changeModel: "Change the model",
-    startingDraft: "Help me start a massing for this project: ",
-    newProject: "New project", newProjectHeading: "New project", projectName: "Project name", projectNamePlaceholder: "for example harbour-study",
-    projectNameHelp: "Letters, digits, hyphens or underscores; this name becomes the project id.", workspaceLabel: "Workspace", createHere: "Will be created at",
-    workspaceChange: "Change the workspace in Hub settings, bottom left.", create: "Create and start chatting", addExisting: "Add an existing project",
-    creating: "Creating…", projectAdded: "Added",
-    archivedChats: "Archived chats", activeChats: "Back to current chats", archive: "Archive", restore: "Restore", archiveRunning: "Wait for the reply to finish or stop it before archiving.",
-    archiveEmpty: "No archived chats.", archivedNotice: "This chat is archived. Its messages and candidates are kept. Restore it to continue.", restoreChat: "Restore this chat",
-    toolStopped: "On demand", toolStarting: "Starting", toolRunning: "Ready", toolStopping: "Stopping", toolError: "Failed", toolUnavailable: "Unavailable", toolUnknown: "Checking", toolConnect: "Connect project",
-    reconnecting: "Connection interrupted. Reading the current project state…", workerCrashed: "The project service exited", recoverWorker: "Recover project service", recovering: "Recovering…",
-    recoveryHint: "Recovery reads saved results. Unfinished changes need review.", operationRecovery: "An operation needs recovery review", operationFailed: "An operation did not complete", operationStale: "An operation has an outdated base", runtimeOperations: "Project operations", operationCommitted: "Committed", operationPending: "No commit confirmed",
-    workCopyRefused: "A work copy's change was not registered as a new revision",
-  },
-} as const;
+import { chatCopyCatalog as words } from "./i18n/catalogs";
 /** The rail's two kinds of entry: places you work in this project, and the
     tools that report on the machine rather than on the design. */
 const tools: { id: AppId; label: "model" | "diagram" | "board" | "fab" | "monitor"; icon: string; group: "workspace" | "system" }[] = [
-  { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" }, { id: "monkeydiagram", label: "diagram", icon: "file", group: "workspace" },
+  { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" },
   { id: "monkeyboard", label: "board", icon: "board", group: "workspace" }, { id: "monkeyfab", label: "fab", icon: "fab", group: "workspace" },
   { id: "monkeymonitor", label: "monitor", icon: "chart", group: "system" },
 ];
@@ -283,7 +216,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   // What this connection actually lists, plus whatever is already chosen: a
   // hand-entered id stays selectable even while a catalogue is unreadable.
   const modelOptions = [...new Set([...(availableProvider?.models ?? []), ...(chosenModel ? [chosenModel] : [])])];
-  const selectedTab = tabs.find((item) => item.id === activeTool);
+  const currentTabs = tabs.filter((item) => !item.projectDir || item.projectDir === projectDir);
+  const selectedTab = currentTabs.find((item) => item.id === activeTool);
   // Every candidate this conversation has an entry for, newest first: one of
   // them is usually the one just made, and the earlier ones stay reachable.
   const candidates = [...new Set([...(chat?.id === chatId ? chat.messages ?? [] : [])]
@@ -374,33 +308,23 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   useEffect(() => { void refresh(); }, [archivedView, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar, panel, panelWidth, activeTool,
-    tools: !restoredTools.current && initial.projectDir === projectDir ? initial.tools : tabs.map((item) => ({ id: item.id, candidate: new URL(item.url).searchParams.get("candidate") ?? undefined })),
+    tools: !restoredTools.current && initial.projectDir === projectDir ? initial.tools : currentTabs.map((item) => ({ id: item.id, candidate: item.candidate })),
   })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebar, panel, panelWidth, tabs, activeTool, initial]);
   useEffect(() => { if (messages.current && messages.current.scrollHeight - messages.current.scrollTop - messages.current.clientHeight < 220) messages.current.scrollTop = messages.current.scrollHeight; }, [chat?.messages]);
   useEffect(() => { if (input.current) { input.current.style.height = "auto"; input.current.style.height = `${Math.min(input.current.scrollHeight, 180)}px`; } }, [draft]);
-  // An embedded page asking to come back to the conversation. It moves the
-  // cursor here and offers an example to edit; it never sends anything.
-  useEffect(() => {
-    const listen = (event: MessageEvent) => {
-      const frame = [...document.querySelectorAll("iframe")].find((item) => item.contentWindow === event.source);
-      const tab = frame ? tabs.find((item) => item.url === frame.src) : undefined;
-      if (!tab || readHostRequest(event, { origin: new URL(tab.url).origin, window: frame!.contentWindow }) !== START_MODELING) return;
-      setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? value[draftKey]! : t.startingDraft }));
-      const box = input.current;
-      if (box) { box.focus(); requestAnimationFrame(() => box.setSelectionRange(box.value.length, box.value.length)); }
-    };
-    window.addEventListener("message", listen);
-    return () => window.removeEventListener("message", listen);
-  }, [tabs, draftKey, t.startingDraft]);
+  const focusConversation = () => {
+    setDrafts((value) => ({ ...value, [draftKey]: value[draftKey]?.trim() ? value[draftKey]! : t.startingDraft }));
+    input.current?.focus();
+  };
 
   const selectChat = (item: ChatSummary) => {
-    if (item.projectDir !== projectDir) { setTabs([]); setActiveTool(null); setPanel(false); }
+    if (item.projectDir !== projectDir) { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
     setArchivedView(Boolean(item.archived)); setProjectDir(item.projectDir); setChatId(item.id);
   };
   const selectProject = (item: ChatProject) => {
     const recent = visibleSessions.find((session) => session.projectDir === item.projectDir);
     if (recent) selectChat(recent);
-    else { setProjectDir(item.projectDir); setChatId(null); setTabs([]); setPanel(false); }
+    else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
   };
 
   const startTool = async (appId: AppId, target?: string) => {
@@ -418,7 +342,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     return status.url;
   };
 
-  /** One preparation per managed Studio, shared by navigation, send and all three workspaces. */
+  /** One preparation per managed Studio, shared by navigation, send and project workspaces. */
   const ensureProject = useCallback(async (target: string, projectId: string, appId: AppId = "monkeyarch") => {
     let preparation = projectPreparations.current.get(target);
     if (!preparation) {
@@ -486,14 +410,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     workerInstances.current.set(projectRuntime.runtimeId, studioWorker.instanceId);
     if (!previous || previous === studioWorker.instanceId) return;
     projectPreparations.current.set(projectRuntime.projectDir, { apps: statuses, promise: Promise.resolve(statuses) });
-    setTabs((items) => items.map((item) => {
-      const app = statuses.find((app) => app.appId === item.id && app.serviceId === "studio" && app.url);
-      if (!app?.url) return item;
-      const url = new URL(app.url), selected = new URL(item.url);
-      for (const [key, value] of selected.searchParams) url.searchParams.set(key, value);
-      url.searchParams.set("hubApi", `${window.location.origin}/api/runtime/projects/${projectRuntime.runtimeId}/studio`);
-      return { ...item, url: url.href, revision: item.revision + 1 };
-    }));
+    setTabs((items) => items.map((item) => item.runtimeId === projectRuntime.runtimeId
+      ? { ...item, revision: item.revision + 1 } : item));
   }, [projectRuntime, studioWorker, projectApps, projectDir]);
 
   const addAttachments = (files: File[]) => {
@@ -603,47 +521,77 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   /** `view` names what this page should open, such as the candidate a step produced. */
   const openTool = async (id: AppId, view?: Record<string, string>) => {
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
-    if (needsProject && !projectDir) return;
-    if (!view && tabs.some((item) => item.id === id)) {
+    if (needsProject && !projectDir) return false;
+    const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
+    if (existing) {
+      setTabs((items) => items.map((item) => item === existing ? { ...item, id,
+        candidate: view?.candidate ?? item.candidate,
+        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
-      return;
+      return true;
     }
-    const existing = tabs.find((item) => item.id === id);
-    if (view && existing) {
-      const url = new URL(existing.url);
-      for (const [key, value] of Object.entries(view)) url.searchParams.set(key, value);
-      if (url.href !== existing.url) setTabs((items) => items.map((item) => item.id === id ? { ...item, url: url.href, revision: item.revision + 1 } : item));
-      setPanel(true); setActiveTool(id); setError(null);
-      return;
-    }
-    if (actionLock.current) return;
+    if (actionLock.current) return false;
     setPanel(true);
     const target = projectDir, targetChat = chatId;
     actionLock.current = true; setToolBusy(id); setError(null);
     try {
       const location = needsProject ? await ensureProject(target!, project!.projectId, id)
         : apps?.find((item) => item.appId === id && item.state === "running")?.url ?? await startTool(id);
-      const url = new URL(applicationUrl(location, preferences)); url.searchParams.set("embedded", "tool");
-      // The page is told who embedded it, so it can ask this window - and only
-      // this window - for the conversation it cannot open itself.
-      url.searchParams.set("host", window.location.origin);
+      let tab: ToolTab;
       if (needsProject) {
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
-        url.searchParams.set("hubApi", `${window.location.origin}/api/runtime/projects/${attached.runtimeId}/studio`);
+        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate, revision: 0,
+          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : "arch" })}` };
+      } else {
+        tab = { id, url: applicationUrl(location, preferences), revision: 0 };
       }
-      for (const [key, value] of Object.entries(view ?? {})) url.searchParams.set(key, value);
-      if (needsProject && (selection.current.projectDir !== target || selection.current.chatId !== targetChat)) return;
-      setTabs((items) => items.some((item) => item.id === id && item.url === url.href) ? items : [...items.filter((item) => item.id !== id), { id, url: url.href, revision: 0 }]); setActiveTool(id);
+      // A late result remains attached to the project that requested it.
+      setTabs((items) => [...items.filter((item) => needsProject ? item.projectDir !== target : item.id !== id), tab]);
+      if (!needsProject || (selection.current.projectDir === target && selection.current.chatId === targetChat)) setActiveTool(id);
+      return true;
     } catch (cause) {
       if (!needsProject || (selection.current.projectDir === target && selection.current.chatId === targetChat)) setError(asFailure(cause));
+      return false;
     }
     finally { actionLock.current = false; setToolBusy(null); }
   };
 
+  const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
+  const routeRestored = useRef(initialRuntimeRoute === null);
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const runtimeId = query.get("runtimeId");
+    if (!runtimeId || routeRestored.current || !runtime) return;
+    const attached = runtime.projects.find((item) => item.runtimeId === runtimeId);
+    const match = attached && projects.find((item) => item.projectDir === attached.projectDir && item.projectId === attached.projectId);
+    if (!match) return;
+    if (projectDir !== match.projectDir) { selectProject(match); return; }
+    if (actionLock.current || busy || toolBusy || !attached.workers?.some((worker) => worker.serviceId === "studio" && worker.healthy)) return;
+    const id = query.get("view") === "board" ? "monkeyboard" : "monkeyarch";
+    const saved = initial.projectDir === match.projectDir && initial.activeTool === id
+      ? initial.tools.find((item) => item.id === id) : undefined;
+    void openTool(id, saved?.candidate ? { candidate: saved.candidate } : undefined)
+      .then((opened) => { if (opened) routeRestored.current = true; });
+  }, [runtime, projects, projectDir, busy, toolBusy, initial]);
+  useEffect(() => {
+    // Let an explicit incoming workspace link resolve before reflecting navigation.
+    if (!routeRestored.current) return;
+    const url = new URL(window.location.href);
+    if (selectedTab?.runtimeId) {
+      url.searchParams.set("runtimeId", selectedTab.runtimeId);
+      url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : "arch");
+    } else {
+      url.searchParams.delete("runtimeId");
+      if (["arch", "board"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
+    }
+    window.history.replaceState(null, "", url);
+  }, [selectedTab?.runtimeId, selectedTab?.id, projectDir]);
+
   // Save view choices, not old worker URLs. Reopening always resolves the live host.
   useEffect(() => {
     if (restoredTools.current || !project) return;
+    if (initialRuntimeRoute) { restoredTools.current = true; return; }
     if (!initial.tools.length || initial.projectDir !== projectDir) { restoredTools.current = true; return; }
     if (!studioWorker?.healthy || busy || toolBusy || actionLock.current) return;
     restoredTools.current = true;
@@ -782,9 +730,26 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); setPanelWidth((width) => clampWidth(width + (event.key === "ArrowLeft" ? 32 : -32))); } }}
       onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(clampWidth(window.innerWidth - event.clientX)); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
     {(panel || tabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
-        {selectedTab ? <><div className="chat-browser__pages">{tabs.map((item) => <iframe key={`${item.id}:${item.revision}`} src={item.url} title={`${project?.name ?? ""} · ${t[tools.find((tool) => tool.id === item.id)!.label]}`} hidden={item.id !== activeTool} inert={item.id !== activeTool} allow="clipboard-read; clipboard-write" />)}</div></>
-          : <div className="chat-browser__empty"><Icon name="panel" /><h2>{toolBusy ? t.working : t.toolEmpty}</h2><p>{t.toolHint}</p></div>}
-      </aside>}
+      <div className="chat-browser__pages">{tabs.map((item) => {
+        const visible = panel && item === selectedTab;
+        if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
+          <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
+            <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
+              <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : "arch"} active={visible}
+                expectedProjectId={item.projectId} candidateRunId={item.candidate} refreshKey={item.revision} onChatRequest={focusConversation}
+                onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : "monkeyarch";
+                  setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
+                    url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));
+                  if (selection.current.projectDir === item.projectDir) setActiveTool(id);
+                }} />
+            </Suspense></ErrorBoundary>
+          </ProjectRuntimeProvider>
+        </div>;
+        return <iframe key={`${item.id}:${item.revision}`} src={item.url} title={t[tools.find((tool) => tool.id === item.id)!.label]}
+          hidden={!visible} inert={!visible} allow="clipboard-read; clipboard-write" />;
+      })}</div>
+      {!selectedTab && <div className="chat-browser__empty"><Icon name="panel" /><h2>{toolBusy ? t.working : t.toolEmpty}</h2><p>{t.toolHint}</p></div>}
+    </aside>}
     {/* One column of entries for the whole right-hand side: the tools, this
         conversation's project, and whether the tool content is open at all. */}
     <nav className="chat-rail" aria-label={t.rail}>
@@ -801,7 +766,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             : state === "running" ? t.toolRunning : state === "starting" ? t.toolStarting
             : state === "stopping" ? t.toolStopping : state === "stopped" ? t.toolStopped : t.toolUnknown;
           return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={panel && item.id === activeTool}
-            title={status?.error?.detail ?? stateText} data-state={state} disabled={(needsProject && !project) || (!tabs.some((tab) => tab.id === item.id) && (busy || Boolean(toolBusy)))}
+            title={status?.error?.detail ?? stateText} data-state={state} disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
             onClick={() => void openTool(item.id)}><Icon name={item.icon} /><span>{t[item.label]}</span><small aria-hidden="true">{stateText}</small></button>;
         })}
       </div>)}
@@ -831,7 +796,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             <label className="sr-only" htmlFor="tool-url">{t.toolUrl}</label>
             <input id="tool-url" className="chat-project-card__url" readOnly value={selectedTab.url} onFocus={(event) => event.currentTarget.select()} />
             <div className="chat-project-card__connection-actions">
-              <button type="button" className="chat-activity__open" onClick={() => setTabs((items) => items.map((item) => item.id === activeTool ? { ...item, revision: item.revision + 1 } : item))}><Icon name="refresh" /><span>{t.refresh}</span></button>
+              <button type="button" className="chat-activity__open" onClick={() => setTabs((items) => items.map((item) => item === selectedTab ? { ...item, revision: item.revision + 1 } : item))}><Icon name="refresh" /><span>{t.refresh}</span></button>
               <span className="chat-muted">{t[tools.find((tool) => tool.id === activeTool)!.label]}</span>
             </div>
           </> : <p className="chat-muted">{t.connectionNone}</p>}

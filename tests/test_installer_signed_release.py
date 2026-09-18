@@ -66,7 +66,6 @@ BUILD_INFO = {
 PACKAGE_FILES = (
     "OPEN_MONKEYHUB.cmd", "_runtime/python/python.exe", "apps/monkeyhub/run.py",
     "apps/monkeyhub/launch-hub.ps1", "apps/monkeyhub/web/dist/index.html",
-    "apps/archflow-studio/web/dist/index.html",
     "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
 )
 SUPPORTED_HOSTS = (("PowerShell 7", "pwsh"), ("Windows PowerShell 5.1", "powershell"))

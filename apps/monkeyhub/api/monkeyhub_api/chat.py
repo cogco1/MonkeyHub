@@ -981,7 +981,7 @@ class ChatStore:
     @contextmanager
     def application_lifecycle(self, app_id: str, *, stopping: bool = False, project_dir: str | None = None):
         with self._lock:
-            if app_id in {"monkeyarch", "monkeydiagram", "monkeyboard"} and stopping:
+            if app_id in {"monkeyarch", "monkeyboard"} and stopping:
                 configured = project_dir if project_dir is not None else read_application_settings(self.runtime_root).project_dir
                 target = str(Path(configured).resolve()) if configured else None
                 if any(target is not None and os.path.normcase(self._sessions[key].projectDir) == os.path.normcase(target) for key in self._running):
@@ -1752,9 +1752,9 @@ def _bound_studio(hub: str, chat_id: str | None, timeout: float = 180, *, projec
         "hub_health": (hub, "/api/health"),
     }, left())
     studio = next((row for row in first["apps"] if row.get("appId") == "monkeyarch"), {})
-    if studio.get("state") != "running" or not studio.get("url") or not studio.get("processId"):
+    if studio.get("state") != "running" or not studio.get("apiUrl") or not studio.get("processId"):
         raise HubFailure(409, "CHAT_STUDIO_UNAVAILABLE", "Open MonkeyArch for this project before using a design tool.")
-    base = _url(studio["url"])
+    base = _url(studio["apiUrl"])
     second = _together({
         "health": (base, "/api/health"),
         "binding": (base, "/api/project"),

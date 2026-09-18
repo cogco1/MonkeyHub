@@ -2,7 +2,6 @@
     [Parameter(Mandatory = $true)][string]$Python,
     [string]$RuntimeRoot = (Join-Path $env:LOCALAPPDATA 'MonkeyHub'),
     [Parameter(Mandatory = $true)][string]$HubWebDir,
-    [Parameter(Mandatory = $true)][string]$StudioWebDir,
     [ValidateRange(1, 65535)][int]$Port = 8790,
     [switch]$NoBrowser,
     [switch]$HideConsole
@@ -568,14 +567,13 @@ function Invoke-AppLoop {
 function Invoke-HubLaunch {
     Set-SplashStep 1 'checking the Hub package'
     if (-not $Python -or -not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw 'Hub -Python must name the installed Python executable.' }
-    foreach ($directory in @($HubWebDir, $StudioWebDir)) {
+    foreach ($directory in @($HubWebDir)) {
         if (-not $directory -or -not (Test-Path -LiteralPath (Join-Path $directory 'index.html') -PathType Leaf)) {
             throw "The built web directory is missing its index.html: $directory"
         }
     }
     $Python = (Resolve-Path -LiteralPath $Python).ProviderPath
     $HubWebDir = (Resolve-Path -LiteralPath $HubWebDir).ProviderPath
-    $StudioWebDir = (Resolve-Path -LiteralPath $StudioWebDir).ProviderPath
     $entry = Join-Path $repoRoot 'apps\monkeyhub\run.py'
     if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { throw "The Hub entry is missing: $entry" }
     Lock-LaunchPorts @($Port)
@@ -584,7 +582,7 @@ function Invoke-HubLaunch {
     $hubOut = Join-Path $logRoot "hub-$stamp.out.log"
     $hubErr = Join-Path $logRoot "hub-$stamp.err.log"
     $hubArgs = @('-u', $entry, '--runtime-root', $RuntimeRoot, '--hub-web-dir', $HubWebDir,
-        '--studio-web-dir', $StudioWebDir, '--port', "$Port", '--no-browser',
+        '--port', "$Port", '--no-browser',
         '--managed-stdin', '--managed-instance-id', $instanceId)
     Set-SplashStep 2 'starting MonkeyHub'
     $child = Start-OwnedProcess 'MonkeyHub' $Python $hubArgs $repoRoot $hubOut $hubErr

@@ -327,7 +327,7 @@ fn popup_requires_a_current_healthy_worker_origin() {
 #[test]
 fn invalid_runtime_destination_does_not_modify_source_or_project() {
     let fixture = Fixture::new(serde_json::json!({}));
-    for web in ["apps/monkeyhub/web/dist", "apps/archflow-studio/web/dist"] {
+    for web in ["apps/monkeyhub/web/dist"] {
         fs::create_dir_all(fixture.config.source_root.join(web)).unwrap();
         fs::write(
             fixture.config.source_root.join(web).join("index.html"),

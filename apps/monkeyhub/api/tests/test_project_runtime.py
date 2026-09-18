@@ -24,9 +24,6 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         self.repository, _ = self.fixture.make_project(self.root / "projects")
         self.project_id = self.fixture.PROJECT_ID
         self.project = self.root / "projects" / self.project_id
-        self.web = self.root / "web"
-        self.web.mkdir()
-        (self.web / "index.html").write_text("<html>Project runtime fixture</html>", encoding="utf-8")
 
     def make_parallel_project(self):
         project_id = "parallel-project"
@@ -170,7 +167,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         first = self.png_bytes("white")
         second = self.png_bytes("black")
         third = self.png_bytes("gray")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             manager = client.app.state.runtimes
@@ -230,7 +227,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_work_copy_edit_made_while_hub_is_down_is_registered_after_restart(self):
         first = self.png_bytes("white")
         second = self.png_bytes("navy")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -239,7 +236,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         # The work copy is a project file and outlives the Hub process. Editing
         # it before the next runtime attaches must not be mistaken for a baseline.
         work.write_bytes(second)
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             reopened = self.open_project(client)
             self.assertEqual(reopened, runtime_id)
             replacement = self.wait_document_replacement(client, reopened, original["assetSha256"])
@@ -254,7 +251,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_untouched_work_copy_never_rolls_back_a_page_replaced_elsewhere(self):
         first = self.png_bytes("white")
         second = self.png_bytes("black")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -279,7 +276,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_offline_undo_keeps_current_page_and_reports_restart_conflict(self):
         first = self.png_bytes("white")
         second = self.png_bytes("black")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -291,7 +288,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         # An offline undo and a stale, untouched copy have the same bytes.
         # Neither proves a replacement, but the disagreement must be visible.
         work.write_bytes(first)
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             reopened = self.open_project(client)
             row = self.wait_runtime_error(client, reopened, "WORK_COPY_RESTART_CONFLICT")
             self.assertEqual(row["projection"], "ready")
@@ -309,7 +306,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_work_copy_permission_failure_is_visible_and_recovers_without_resave(self):
         first = self.png_bytes("white")
         second = self.png_bytes("black")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -328,7 +325,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.wait_runtime(client, runtime_id, lambda row: row["error"] is None)
 
     def test_work_copy_retries_failed_source_resolution_without_resave(self):
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, self.png_bytes("white"))
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -345,7 +342,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
 
     def test_work_copy_and_board_upload_share_one_document_writer(self):
         import json
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, self.png_bytes("white"))
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -377,7 +374,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_an_edit_back_to_earlier_bytes_is_reported_rather_than_dropped(self):
         first = self.png_bytes("white")
         second = self.png_bytes("black")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -405,7 +402,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_a_reshaped_work_copy_surfaces_the_aspect_ratio_refusal(self):
         first = self.png_bytes("white")
         reshaped = self.png_bytes("black", size=(40, 40))
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_image(client, runtime_id, first)
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -417,7 +414,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_pdf_work_copy_edit_registers_every_page_without_moving_head(self):
         first = self.pdf_bytes((400, 300), (300, 400), title="first")
         second = self.pdf_bytes((400, 300), (300, 400), title="second")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
             manager = client.app.state.runtimes
@@ -439,7 +436,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         # One page in, one page listed either way: only the declared whole
         # document lets the owner see that the file itself grew.
         first = self.pdf_bytes((400, 300), title="first")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -463,7 +460,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_a_page_replaced_elsewhere_reports_the_copy_only_once_it_is_edited(self):
         first = self.pdf_bytes((400, 300), (300, 400), title="first")
         second = self.pdf_bytes((400, 300), (300, 400), title="second")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
             manager = client.app.state.runtimes
@@ -495,7 +492,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_an_edit_refused_while_the_document_moved_registers_once_it_can(self):
         first = self.pdf_bytes((400, 300), title="first")
         edited = self.pdf_bytes((400, 300), title="edited")
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.upload_document(client, runtime_id, first, "plan.pdf", "application/pdf")
             _, work = self.open_work_copy(client, runtime_id, original)
@@ -527,7 +524,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         other_id, other_project = self.make_parallel_project()
         operation_id = str(uuid4())
         requests = []
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             for project_id, project in ((self.project_id, self.project), (other_id, other_project)):
                 runtime_id = self.open_project(client, project_id, project)
                 state = self.proxy(client, runtime_id, "/api/state").json()
@@ -539,7 +536,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
                 requests.append((project_id, project, runtime_id, body, self.project_bytes(project)))
         # New Hub app/managers and new real workers, sharing only their explicit
         # runtime directory and the original P036 projects.
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             for project_id, project, prior_runtime, body, before in requests:
                 runtime_id = self.open_project(client, project_id, project)
                 self.assertEqual(runtime_id, prior_runtime)
@@ -557,7 +554,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
 
     def test_concurrent_duplicate_submission_parallel_projects_and_page_reopen(self):
         other_id, other_project = self.make_parallel_project()
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             a = self.open_project(client)
             b = self.open_project(client, other_id, other_project)
             workers_before = {row["runtimeId"]: row["workers"][0] for row in client.get("/api/runtime").json()["projects"]}
@@ -618,7 +615,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         return response.json()["modelSource"]
 
     def test_committed_candidate_survives_worker_crash_without_duplicate_modification(self):
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             state = self.proxy(client, runtime_id, "/api/state").json()
             model = self.register_model(client, runtime_id, self.fixture.REFERENCE_RUN_ID, state["stateDigest"])
@@ -673,7 +670,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.assertEqual(self.project_bytes(self.project), before)
 
     def test_wrong_project_and_stale_base_are_refused_without_runs(self):
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             before = self.project_bytes(self.project)
             state = self.proxy(client, runtime_id, "/api/state").json()
@@ -712,7 +709,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             "runpy.run_path(sys.argv[0], run_name='__main__')\n",
             encoding="utf-8",
         )
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             applications = client.app.state.applications
             original_command = applications._command
 
@@ -750,7 +747,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.assertEqual(self.project_bytes(self.project), before)
 
     def test_crashed_worker_can_be_explicitly_stopped_and_started_again(self):
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             original = self.read_runtime(client, runtime_id)["workers"][0]
             before = self.project_bytes(self.project)
@@ -761,7 +758,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.assertEqual(crashed["state"], "crashed")
             self.assertEqual(crashed["desiredState"], "running")
             for _ in range(2):
-                stopped = client.post("/api/apps/monkeydiagram/stop", params={"projectDir": str(self.project)})
+                stopped = client.post("/api/apps/monkeyboard/stop", params={"projectDir": str(self.project)})
                 self.assertEqual(stopped.status_code, 202, stopped.text)
                 self.assertEqual(stopped.json()["state"], "stopped")
                 snapshot = self.read_runtime(client, runtime_id)["workers"][0]
@@ -783,7 +780,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
     def test_same_worker_recovers_readiness_without_rebuilding_unchanged_projection(self):
         from monkeyhub_api.runtime import request_http
 
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             manager = client.app.state.runtimes
             runtime = manager.get(runtime_id)
@@ -804,7 +801,7 @@ class ProjectRuntimeHttpTests(LocalHubCase):
             self.assertEqual(self.project_bytes(self.project), before)
 
     def test_idle_runtime_skips_history_scans_but_refreshes_on_request_and_crash(self):
-        with self.hub(studio_web=self.web) as client:
+        with self.hub() as client:
             runtime_id = self.open_project(client)
             manager = client.app.state.runtimes
             original = self.read_runtime(client, runtime_id)["workers"][0]

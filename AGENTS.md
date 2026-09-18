@@ -41,8 +41,8 @@ its currently implemented limits are described in `docs/ARCHITECTURE.md`.
   owns 3D modeling algorithms; `monkeydiagram/` owns drawing algorithms.
   `apps/monkeyfab/` owns print preparation and upload-only CLI behavior, bundled from the same Hub commit.
   `monkeymonitor/` owns independent engineering usage, pricing and budget advice;
-  its explicitly configured diagnostic logs are not project state. The Studio
-  host composes peer workspaces. Core code imports neither workflow, and the
+  its explicitly configured diagnostic logs are not project state. MonkeyHub
+  composes the project workspaces. Core code imports neither workflow, and the
   workflows do not import one another; see `docs/REPO_LAYOUT.md`.
 - `probes/<project_id>/` contains explicitly promoted, committed building
   inputs and framework-produced evidence used for regression or publication.
@@ -180,8 +180,8 @@ MonkeyHub is the application. The Project Runtime (`docs/PROJECT_RUNTIME.md`, mo
 `studio.shell`) is the project-scoped backend it starts per open project; Board, Arch and
 Diagram are workspace modules. Product behaviour — navigation, settings authority, chat,
 lifecycle — goes to `hub.shell`; project-scoped computation and record access go to the
-runtime; workspace behaviour goes to `workspaces/*`. The legacy Studio web shell
-(`studio.web.shell`) takes no new product-level behaviour while #127 moves it into the Hub.
+runtime; workspace behaviour goes to `workspaces/*`. Board and Arch render directly in the single Hub frontend; Diagram is the Board page editor.
+ProjectRuntimeProvider binds one client per project; do not restore the retired Studio shell.
 
 Keep tests of observable behavior, geometry, persistence/restart, exact-base,
 external effects and retained-data compatibility. Delete assertions that only

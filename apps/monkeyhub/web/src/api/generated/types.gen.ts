@@ -5,13 +5,57 @@ export type ClientOptions = {
 };
 
 /**
+ * AcceptanceEvidenceDto
+ *
+ * The retained acceptance evidence of one Stage, or absent where none is.
+ *
+ * ``acceptedBy`` remains the actor id on the public wire. New retained Stages
+ * may use an opaque internal acceptance principal so the exact winning origin
+ * can be recovered after a crash; that principal is never exposed here.
+ */
+export type AcceptanceEvidenceDto = {
+    /**
+     * Eventid
+     */
+    eventId: string;
+    /**
+     * Occurredat
+     */
+    occurredAt: string;
+    /**
+     * Action
+     */
+    action: string;
+    /**
+     * Status
+     */
+    status: string;
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     */
+    origin: string;
+    /**
+     * Auditref
+     */
+    auditRef: string;
+};
+
+/**
  * AppStatus
  */
 export type AppStatus = {
     /**
      * Appid
      */
-    appId: 'monkeyarch' | 'monkeydiagram' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
+    appId: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
     /**
      * Title
      */
@@ -32,6 +76,10 @@ export type AppStatus = {
      * Url
      */
     url?: string | null;
+    /**
+     * Apiurl
+     */
+    apiUrl?: string | null;
     /**
      * Processid
      */
@@ -621,6 +669,7 @@ export type DesignStageDto = {
      * Acceptedby
      */
     acceptedBy: string;
+    acceptance?: AcceptanceEvidenceDto | null;
 };
 
 /**
@@ -1445,7 +1494,7 @@ export type StartAppApiAppsAppIdStartPostData = {
         /**
          * App Id
          */
-        app_id: 'monkeyarch' | 'monkeydiagram' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
+        app_id: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
     };
     query?: {
         /**
@@ -1488,7 +1537,7 @@ export type StopAppApiAppsAppIdStopPostData = {
         /**
          * App Id
          */
-        app_id: 'monkeyarch' | 'monkeydiagram' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
+        app_id: 'monkeyarch' | 'monkeymonitor' | 'monkeyboard' | 'monkeyfab';
     };
     query?: {
         /**

@@ -5,7 +5,7 @@ FastAPI application (`apps/archflow-studio/api`); this document says what of it 
 rely on, and what version 2 has reserved but not yet built.
 
 ArchFlow is the methodology and this protocol. **MonkeyArch** is one implementation of it: the
-server `monkeyarch-api` and the client in `apps/archflow-studio/web`; a conforming server need
+server `monkeyarch-api` and the client in `apps/monkeyhub/web/workspaces`; a conforming server need
 be neither. Application DTO fields use `camelCase`, `serverVersion` included.
 The project-transfer envelope retains P036's existing `snake_case` fields and reference values.
 
@@ -709,7 +709,11 @@ limitation remains; this HTTP collaboration path does not depend on an SSE conne
 
 The runtime's process contract — what the Hub supplies, what it owns, identity, isolation and
 the direct development start — is [PROJECT_RUNTIME.md](PROJECT_RUNTIME.md); this section is its
-wire protocol on the Hub side.
+wire protocol on the Hub side. The runtime is API-only. One Hub frontend renders Arch and Board
+in place; Diagram opens a registered Board page, not a separate application. `AppStatus.url`
+for Arch/Board points to `/?runtimeId=...&view=arch|board`; `apiUrl` names the actual verified
+runtime API for agent access. Each project workspace has its own client, token and connection
+identity. Navigating between workspaces does not change a model editing base.
 
 The local Hub exposes `GET /api/runtime` and `GET /api/runtime/projects/{runtime_id}` as one
 runtime view: exact project/path binding, published P036 version/digest, reachable design
@@ -730,14 +734,14 @@ than relying on a cursor from a previous Hub process. Subsequent events invalida
 they never replace retained project evidence. Browsers can reconnect and read the snapshot
 without submitting work again.
 
-Embedded tools and chat submit existing Studio API requests through
+Hub workspaces and chat submit existing Project Runtime API requests through
 `/api/runtime/projects/{runtime_id}/studio/api/...`. Mutation requests accept a UUID
 `Idempotency-Key`. It binds the method, full path and exact request bytes within that project
 runtime. A duplicate waits for or returns the existing reply; a changed payload/path/method
 returns `409 OPERATION_ID_CONFLICT`. Lost responses return an explicit recovery state, not an
 automatic retry. `X-Monkey-Operation` remains diagnostic correlation and is not an idempotency key.
 Hub forwards no caller-selected host and checks project ids in query/body and chat attachment.
-Only currently verified owned Studio origins may use this forwarding boundary from an embedded page.
+Same-origin Hub workspaces use this forwarding boundary. The retained compatibility origin check also permits currently verified owned runtime origins; it does not permit arbitrary hosts.
 
 For candidate-producing requests Hub supplies `X-Monkey-Candidate` and `X-Monkey-Worker`.
 Studio accepts that preallocated `hub-cand-<uuid hex>` only for its actual managed instance,

@@ -1,7 +1,7 @@
 # The Project Runtime
 
 MonkeyHub is the application. Everything a user sees — projects, chats, settings, the
-Board, Arch and Diagram workspaces, Monitor, Fab — is MonkeyHub. Behind each open project
+Board and Arch workspaces, the Board page editor, Monitor, Fab — is MonkeyHub. Behind each open project
 the Hub runs one **Project Runtime**: a project-scoped backend process that binds exactly
 one P036 project directory and owns every project-scoped computation and record access for
 it. This document is that runtime's contract: what the Hub gives it, what it owns, what it
@@ -11,7 +11,7 @@ Code: `apps/archflow-studio/api/archflow_studio_api` — the package keeps its h
 registry module `studio.shell` (module ids do not follow product names, [REPO_LAYOUT §3](REPO_LAYOUT.md)).
 The service id `studio`, the server name `monkeyarch-api` and the forwarding path segment
 `/studio/` are process and wire names kept for compatibility; they name this runtime and
-nothing else (§9). Issue #127 records the migration that gives the frontend the same shape;
+nothing else (§9). The workspace modules render directly inside the Hub frontend;
 the wire protocol of the Hub side is [PROTOCOL.md, "MonkeyHub project runtime"](PROTOCOL.md#monkeyhub-project-runtime).
 
 ## 1. One process per open project
@@ -26,15 +26,15 @@ the wire protocol of the Hub side is [PROTOCOL.md, "MonkeyHub project runtime"](
 - Ports: the configured `studioPort` for the configured project, an ephemeral loopback port
   for any other open project (`applications.py`, `start`). A port that is already bound is
   `PORT_IN_USE` (`workers.py`, `start`); a foreign listener is never adopted.
-- MonkeyArch, MonkeyDiagram and MonkeyBoard of one project share that one process
-  (`applications.py`, `APPS`: three app ids, one service id).
+- MonkeyArch and MonkeyBoard, including its Diagram page editor, share that one process
+  (`applications.py`, `APPS`: two workspace app ids, one service id).
 
 ## 2. What MonkeyHub supplies
 
 Command (`applications.py`, `_command`; `workers.py` appends the port and the managed flags):
 
 ```text
-<hub python> apps/monkeyhub/run.py --service studio --host 127.0.0.1 --web-dir <built web dir>
+<hub python> apps/monkeyhub/run.py --service studio --host 127.0.0.1
              --port <port> --managed-stdin --managed-instance-id <uuid>
 ```
 
@@ -60,8 +60,7 @@ and shared-project ones the Hub does not set, is documented in `settings.py`.
 Stdin: `stop` followed by a newline, or EOF, requests a graceful stop that lets accepted work
 finish (`workers.py`; `archflow_studio_api/main.py --managed-stdin`).
 
-`--web-dir`: until Phase 4 of #127 the runtime also serves the legacy Studio web bundle at
-`/`. That is hosting a client, not owning one (§4).
+The runtime serves API routes only. HTML and workspace assets are served by MonkeyHub.
 
 ## 3. What it owns
 
@@ -136,11 +135,10 @@ are unchanged. No new panel replaces the old panels.
   (`apps/monkeyhub/launch-hub.ps1`, `apps/monkeyhub/desktop`).
 - **Monitor.** A separate process (`monkeymonitor`), started by the Hub, coupled to the
   runtime only through `MONKEYMONITOR_DATA_DIR`.
-- **Any user interface.** The legacy Studio web shell (`apps/archflow-studio/web/src/app/*`,
-  `features/settings`, `i18n`, `styles.css`; registry module `studio.web.shell`) is a client of
-  this runtime that is migrating into MonkeyHub (#127). It takes no new product-level
-  behaviour: product behaviour goes to the Hub shell, workspace behaviour to `workspaces/*`,
-  project-scoped backend behaviour here.
+- **Any user interface.** `apps/monkeyhub/web` is the single frontend. Its project-bound
+  `ProjectRuntimeProvider` supplies an independent client to each mounted workspace.
+  `ProjectWorkspace` preserves Board, page and model drafts across navigation; Hub owns
+  the settings and language catalogs. There is no separate Studio shell or iframe route.
 
 ## 5. Identity and health
 
@@ -163,7 +161,8 @@ and body (`PROJECT_MISMATCH`), `Idempotency-Key` admission for mutations — eve
 not `GET`, `HEAD` or `OPTIONS`, except `/api/events/*`, `POST /api/state/closure` and
 `POST /api/pick/resolve` (`runtime.py`, `forward`) — `X-Monkey-Candidate`
 and `X-Monkey-Worker` for candidate-producing requests, an allowlist of forwarded request
-headers, and a hand-piped SSE relay for `/api/events`. Chat tools use the same path. A
+headers, and a hand-piped SSE relay for `/api/events`. Chat tools use the same path. `AppStatus.apiUrl` identifies the runtime API for its
+verified agent connection; `AppStatus.url` opens the corresponding workspace in MonkeyHub. A
 runtime that is not `ready` or `busy` and healthy answers `WORKER_UNAVAILABLE`. Direct access
 to the runtime's own port is for development and tests (§8).
 
@@ -183,7 +182,7 @@ For tests and development — an API smoke run, Playwright, a fixture regression
 change you want to see without going through the Hub:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runtime.ps1 -ProjectDir '<a P036 project directory>' [-Port 8000] [-WebDir apps/archflow-studio/web/dist] [-Python <python.exe>]
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev/run-project-runtime.ps1 -ProjectDir '<a P036 project directory>' [-Port 8000] [-Python <python.exe>]
 ```
 
 or directly `python -m archflow_studio_api.main --project-dir <dir> --host 127.0.0.1 --port 8000`
@@ -200,10 +199,9 @@ development instance, and MonkeyHub remains the only production launcher.
 - Routes and wire shapes are stable. Removing or renaming a stable field or path is a protocol
   major change (PROTOCOL.md).
 - New project-scoped behaviour goes into this package's `application/` owners; new product
-  behaviour goes to the Hub; nothing new goes into the legacy web shell.
+  behaviour goes to the Hub; workspace modules live under its frontend.
 - The names `studio` (service id, worker key prefix, forwarding segment), `monkeyarch-api`
-  (server name) and the `archflow_studio_api` package are renamed together, once, after the
-  legacy shell is gone (#127 Phase 4) — never piecemeal, because clients validate the
-  forwarding path and the server name at handshake.
+  (protocol server name) and the `archflow_studio_api` package are retained compatibility
+  identifiers. They do not imply an application boundary and do not require a cosmetic rename.
 - The runtime never grows a persistent user-settings file, a launcher, a tray or a UI of its
   own.
