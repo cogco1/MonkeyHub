@@ -10,6 +10,7 @@ it may call.
 from contextlib import contextmanager
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -20,6 +21,7 @@ from test_monkeyhub_lifecycle import LocalHubCase, ROOT
 from test_chat import _tools_of
 
 from monkeycontrol.contract import ContractError, validate_action
+from monkeycontrol.host import HostError
 from monkeycontrol.record import NAME as RECORDING_NAME
 from monkeycontrol.runtime import RuntimeRefusal
 from monkeycontrol.trace import ResolvedTarget, WindowInfo, build_receipt
@@ -28,6 +30,7 @@ from monkeyhub_api import chat
 from monkeyhub_api.chat_trace import HubTurnObserver
 from monkeyhub_api.computer_tools import POLICY_PATH, ComputerService, read_policy, tool_definitions
 from monkeyhub_api.main import HubSettings, create_app
+from monkeyhub_api.models import HubFailure
 from monkeymonitor.store import UsageLog
 
 CLICK = {
@@ -62,6 +65,20 @@ def receipt(*, status="succeeded", refusal=None, verification=None):
     )
 
 
+def hub_failure(status: int, payload: dict) -> HubFailure:
+    """What chat._request_json raises for a non-2xx answer, mirrored here.
+
+    The real one keeps the route's own code when the body carries one that
+    looks like a code, and falls back to CHAT_TOOL_FAILED. A fake that simply
+    handed the body back would hide the thing these two tests are about.
+    """
+
+    code = payload.get("code")
+    if not (isinstance(code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code)):
+        code = "CHAT_TOOL_FAILED"
+    return HubFailure(status, code, str(payload.get("detail", ""))[:1200])
+
+
 class FakeRuntime:
     """Every ComputerUseRuntime method the Hub calls, and nothing else."""
 
@@ -80,6 +97,8 @@ class FakeRuntime:
 
     def inspect(self, application, window=None, *, depth=6):
         self.calls.append(("inspect", application, window, depth))
+        if self.raises is not None:
+            raise self.raises
         return {
             "application": application,
             "window": {"title": "Untitled - Notepad"},
@@ -136,6 +155,17 @@ class ComputerHubCase(LocalHubCase):
             encoding="utf-8",
         )
         return path
+
+    def transport(self, client):
+        """chat._request_json over this TestClient, refusing the same way."""
+
+        def request(base, path, method="GET", body=None, timeout=180, **kwargs):
+            answer = client.request(method, path, json=body)
+            if answer.status_code >= 400:
+                raise hub_failure(answer.status_code, answer.json())
+            return answer.json()
+
+        return request
 
     def inject(self, client, **fake):
         """Give this Hub a ComputerService whose runtime is the fake above."""
@@ -282,6 +312,56 @@ class ComputerRouteTests(ComputerHubCase):
         self.assertEqual(other.json()["code"], "COMPUTER_ACTION_REFUSED")
         self.assertIn("APP_NOT_ALLOWED", other.json()["detail"])
 
+    def test_a_backend_that_will_not_start_is_409_not_a_crash(self):
+        # A missing host script, no powershell.exe, a host that died mid-protocol:
+        # inspect answers none of those with a receipt, and both documents
+        # promise the refusal code rather than an internal error.
+        self.enable()
+        with self.hub() as client:
+            self.inject(client, raises=HostError(
+                "BACKEND_UNAVAILABLE", "powershell.exe was not found on this machine"
+            ))
+            response = client.post("/api/computer/inspect", json={"application": "notepad"})
+        self.assertEqual(response.status_code, 409, response.text)
+        body = response.json()
+        self.assertEqual(body["code"], "COMPUTER_ACTION_REFUSED")
+        self.assertIn("BACKEND_UNAVAILABLE", body["detail"])
+        self.assertIn("powershell.exe", body["detail"])
+
+    def test_a_host_that_died_mid_action_is_409_too(self):
+        self.enable()
+        with self.hub() as client:
+            self.inject(client, raises=HostError("HOST_ERROR", "the execution host stopped"))
+            response = client.post("/api/computer/recordings", json={"command": "stop"})
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn("HOST_ERROR", response.json()["detail"])
+
+    def test_a_policy_file_that_is_there_and_invalid_says_so(self):
+        # Fail closed either way, but "there is no policy file" and "your policy
+        # file has a typo in it" are two different things to be told.
+        path = self.runtime / POLICY_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"enabled": True, "allowedProcesses": ["notepad"], "allow_all": True}),
+            encoding="utf-8",
+        )
+        with self.hub() as client:
+            response = client.post("/api/computer/actions", json={"action": CLICK})
+        self.assertEqual(response.status_code, 403, response.text)
+        detail = response.json()["detail"]
+        self.assertEqual(response.json()["code"], "COMPUTER_USE_NOT_ENABLED")
+        self.assertIn(POLICY_PATH, detail)
+        self.assertIn("invalid", detail)
+        self.assertIn("allow_all", detail)
+        self.assertFalse(read_policy(self.runtime).enabled)
+
+    def test_a_missing_policy_file_is_not_reported_as_a_broken_one(self):
+        with self.hub() as client:
+            detail = client.post(
+                "/api/computer/actions", json={"action": CLICK}
+            ).json()["detail"]
+        self.assertNotIn("invalid", detail)
+
     def test_a_changed_policy_replaces_the_runtime_it_built(self):
         # Enabling computer use, or widening it, must not need a Hub restart:
         # the policy is read again on every request and the runtime that was
@@ -345,15 +425,32 @@ class ComputerToolTests(ComputerHubCase):
             self.assertIn(f"mcp__monkeyhub__{name}", approved, name)
         self.assertEqual(approved[: len(chat._CLAUDE_APPROVED)], chat._CLAUDE_APPROVED)
 
+    def test_a_disabled_machine_refuses_the_tool_call_by_its_own_code(self):
+        # No policy file: the tool adds nothing, so what the conversation sees
+        # has to be the route's refusal, carried across as a HubFailure rather
+        # than flattened into a body that reads like an answer.
+        with self.hub() as client:
+            with patch.object(chat, "_request_json") as request:
+                request.side_effect = self.transport(client)
+                with self.assertRaises(HubFailure) as refused:
+                    chat.call_tool(
+                        self.base_url,
+                        "00000000-0000-4000-8000-000000000000",
+                        "computer_inspect",
+                        {"application": "notepad"},
+                    )
+        self.assertEqual(refused.exception.status, 403)
+        self.assertEqual(refused.exception.error.code, "COMPUTER_USE_NOT_ENABLED")
+        self.assertIn(POLICY_PATH, refused.exception.error.detail)
+        self.assertEqual(request.call_args[0][1], "/api/computer/inspect")
+
     def test_a_computer_tool_call_reaches_the_hub_route(self):
         self.enable()
         expected = receipt()
         with self.hub() as client:
             self.inject(client, answer=expected)
             with patch.object(chat, "_request_json") as request:
-                request.side_effect = lambda base, path, method="GET", body=None, **kw: (
-                    client.post(path, json=body).json()
-                )
+                request.side_effect = self.transport(client)
                 answer = chat.call_tool(
                     self.base_url,
                     "00000000-0000-4000-8000-000000000000",

@@ -19,6 +19,7 @@ import threading
 
 from pydantic import ValidationError
 
+from monkeycontrol.host import HostError
 from monkeycontrol.runtime import (
     ComputerUseRuntime,
     RuntimePolicy,
@@ -54,11 +55,32 @@ BOUNDARY = (
 def read_policy(runtime_root: Path) -> ComputerPolicy:
     """What is allowed right now; absent, unreadable and invalid all mean no."""
 
+    return _policy_file(runtime_root)[0]
+
+
+def _policy_file(runtime_root: Path) -> tuple[ComputerPolicy, str | None]:
+    """The policy, and what is wrong with the file when something is.
+
+    Every outcome refuses, but they are not the same news: no file is a machine
+    where nobody asked for computer use, and a file with a typo in it is
+    somebody who did ask and is being told no for a reason they cannot see
+    unless it is said.
+    """
+
+    path = Path(runtime_root) / POLICY_PATH
     try:
-        saved = json.loads((Path(runtime_root) / POLICY_PATH).read_text(encoding="utf-8"))
-        return ComputerPolicy.model_validate(saved)
-    except (OSError, ValueError, ValidationError):
-        return ComputerPolicy()
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ComputerPolicy(), None
+    except (OSError, ValueError) as exc:
+        return ComputerPolicy(), f"{type(exc).__name__}: {exc}"
+    try:
+        return ComputerPolicy.model_validate(saved), None
+    except ValidationError as exc:
+        return ComputerPolicy(), "; ".join(
+            f"{'.'.join(str(part) for part in problem['loc']) or 'the document'}: {problem['msg']}"
+            for problem in exc.errors()[:3]
+        )
 
 
 def _refused(code: str, message: str) -> HubFailure:
@@ -85,7 +107,13 @@ class ComputerService:
 
     # -- permission -----------------------------------------------------
     def _policy(self) -> ComputerPolicy:
-        policy = read_policy(self._root)
+        policy, problem = _policy_file(self._root)
+        if problem is not None:
+            raise HubFailure(
+                403, "COMPUTER_USE_NOT_ENABLED",
+                f"{POLICY_PATH} under the Hub runtime root ({self._root}) is present "
+                f"but invalid, so computer use stays off: {problem}",
+            )
         if not policy.enabled:
             raise HubFailure(
                 403, "COMPUTER_USE_NOT_ENABLED",
@@ -161,13 +189,18 @@ class ComputerService:
         mistake is 422 -- an action that is not a ComputerAction@1, and also a
         recording name it will not take, since this API's own pattern is the
         wider of the two. A refusal with no receipt to carry it is 409, with
-        MonkeyControl's own code in it.
+        MonkeyControl's own code in it: a recording already running, and every
+        way the desktop hosts can refuse an observation that never reaches the
+        execute pipeline at all.
         """
 
         with self._lock:
             try:
                 return getattr(self._for(policy), op)(*args, **kwargs)
-            except RuntimeRefusal as exc:
+            except (RuntimeRefusal, HostError) as exc:
+                # A host that will not start, or one that died, is this
+                # package's own refusal and carries its own code: inspect does
+                # not wrap one in a receipt, so the status has to say it.
                 raise _refused(exc.code, str(exc)) from exc
             except ValueError as exc:  # ContractError is one of these
                 raise HubFailure(422, "COMPUTER_ACTION_INVALID", str(exc)) from exc

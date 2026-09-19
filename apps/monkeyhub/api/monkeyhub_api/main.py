@@ -101,6 +101,19 @@ def complete_interrupted_connection_teardown() -> None:
     Transport._call_connection_lost = _call_connection_lost
 
 
+def _close_computer(app) -> None:
+    """Stop the computer-use runtime under the lock that hands it out.
+
+    Reading the attribute without it could miss a service another thread was
+    still composing, and leave two PowerShell hosts running after the Hub
+    thinks it has closed everything it owns.
+    """
+    with app.state.computer_lock:
+        service, app.state.computer = app.state.computer, None
+        if service is not None:
+            service.close()
+
+
 class HubServer(uvicorn.Server):
     async def shutdown(self, sockets=None):
         # Uvicorn drains HTTP tasks before entering ASGI lifespan shutdown.
@@ -154,8 +167,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
         await asyncio.to_thread(runtimes.shutdown)
-        if app.state.computer is not None:
-            await asyncio.to_thread(app.state.computer.close)
+        await asyncio.to_thread(_close_computer, app)
 
     app = FastAPI(title="MonkeyHub API", version="0.1.0", lifespan=lifespan, servers=[{"url": "/"}])
     app.state.settings = settings
