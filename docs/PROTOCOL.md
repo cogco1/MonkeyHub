@@ -819,12 +819,13 @@ cannot be opened, or a location the operating system itself refuses — a missin
 or unwritable folder, a parent that is a file. `422 ARCHIVE_INVALID`: the manifest, a member digest
 or the restored project did not verify. `409 ARCHIVE_TARGET_OCCUPIED`: the restore folder already
 holds files, which are left untouched, or another restore of the same project id is holding that
-same folder's project head. `409 ARCHIVE_SOURCE_CHANGED` (export only): a retained file
-moved between building the manifest and reading it, so nothing was installed and the same export
-can be asked again. `422 ARCHIVE_SOURCE_INVALID` (export only): the project itself cannot be
-exported — a reference into another project, a dependency no retained run holds, a file no
-retained record names — and the detail carries the retained project's own refusal, so asking
-again changes nothing until the project is repaired.
+same folder's project head. `409 ARCHIVE_SOURCE_CHANGED` (export only): a retained file moved
+between building the manifest and reading it, or another process held the project head for the
+whole of the export's read, so nothing was installed and the same export can be asked again.
+`422 ARCHIVE_SOURCE_INVALID` (export only): the project itself cannot be exported — a reference
+into another project, a dependency no retained run holds, a file no retained record names — and
+the detail carries the retained project's own refusal, so asking again changes nothing until the
+project is repaired.
 
 A corrupt archive is refused before the restore folder is created. When verification fails with
 bytes already written, Hub deletes nothing and the detail names the folder to remove before

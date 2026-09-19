@@ -19,6 +19,7 @@ from archflow.project.archive import (
 )
 from archflow.project.repository import (
     FilesystemProjectRepository,
+    ProjectHeadLocked,
     ProjectRepositoryError,
 )
 from archflow_studio_api.settings import read_application_settings
@@ -67,9 +68,14 @@ def _export_refusal(exc: Exception) -> HubFailure:
     carrying their own sentence, so the sentence is what tells a transient
     conflict from a project this Hub cannot export at all. The caller is told
     which of the two it is, and never told to retry a refusal that stands.
+
+    ``ProjectHeadLocked`` is the one that is known by its type instead: every
+    export reads HEAD and the design branches through the Windows sharing
+    retry, and a head another process kept busy for that whole retry is the
+    plainest case of the project moving under the read.
     """
 
-    if str(exc).startswith(_MOVED_UNDER_THE_READ):
+    if isinstance(exc, ProjectHeadLocked) or str(exc).startswith(_MOVED_UNDER_THE_READ):
         return HubFailure(409, "ARCHIVE_SOURCE_CHANGED",
                           "The project changed while the archive was being read. "
                           "Retry the export.")

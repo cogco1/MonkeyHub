@@ -169,6 +169,19 @@ class ProjectArchiveRoutes(LocalHubCase):
         self.assertEqual(response.json()["code"], "ARCHIVE_SOURCE_CHANGED")
         self.assertFalse(self.archive.exists())
 
+    def test_export_refuses_a_project_whose_head_another_process_is_holding(self):
+        """Every export reads HEAD; a head kept busy is the project moving."""
+
+        busy = ProjectHeadLocked("concurrent HEAD access kept the project head busy: HEAD")
+
+        with self.hub() as client, patch.object(
+                project_archive, "write_project_archive", side_effect=busy):
+            response = self.export(client)
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "ARCHIVE_SOURCE_CHANGED")
+        self.assertFalse(self.archive.exists())
+
     def test_export_refuses_a_project_that_cannot_be_exported_at_all(self):
         """A defect of the project is not the conflict a retry would clear."""
 
