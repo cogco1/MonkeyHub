@@ -36,6 +36,7 @@ import { distanceBetween } from "../../workspaces/monkeyarch/viewer/featureEdges
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
 import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
+import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
 import type { NormalDragController } from "../../workspaces/monkeyarch/viewer/normalDrag";
@@ -329,6 +330,7 @@ export function Stage({
     pushPullTarget?: PushPullTarget | null;
     pushPullReason?: string | null;
     onApply?(action: DirectModelAction): void;
+    elevation?: ElevationControls | null;
   };
   /** A host page already shows the workspace entries and the project's position. */
   active?: boolean;
@@ -345,6 +347,12 @@ export function Stage({
   const [elevationView, setElevationView] = useState<NonNullable<ElevationRequestDto["view"]>>("front");
   const [annotationCancel, setAnnotationCancel] = useState(0);
   const documentOpen = documentView.open;
+  const showElevationReference = useCallback((value: number | null) => viewportRef.current?.elevationGuide(value), [viewportRef]);
+  useEffect(() => {
+    const facts = model?.elevation?.object.elevation;
+    showElevationReference(!documentOpen && !model?.directTool && facts?.baseReference ? facts.base - facts.baseReference.offset : null);
+    return () => showElevationReference(null);
+  }, [model?.elevation?.object, model?.directTool, documentOpen, showElevationReference]);
   useEffect(() => { if (!documentOpen) documentTiming?.finish("cancelled"); }, [documentOpen, documentTiming]);
   const documentMounted = documentView.mounted;
   const documentRunId = documentView.runId ?? editingBaseRunId;
@@ -1229,6 +1237,9 @@ export function Stage({
           )}
         />
       </ErrorBoundary>
+      {!documentOpen && !model?.directTool && !sketch.tool && !tool && model?.elevation &&
+        <ElevationPanel key={model.elevation.object.elementId} controls={model.elevation}
+          busy={model.busy ?? false} error={model.error ?? null} onReference={showElevationReference} />}
       {scalePhase !== null && <div className="stage-sketch stage-scale" data-phase={scalePhase}
         onPointerDown={(event) => {
           if (event.button === 1 || event.button === 2) { closeDirectTool(); transferNavigation(event); }

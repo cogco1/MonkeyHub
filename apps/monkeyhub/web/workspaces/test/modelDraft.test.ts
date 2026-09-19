@@ -193,3 +193,108 @@ test("Sync comparison follows net object state, independently of snapshot identi
   const anotherId = createModelDraft([{ ...sourceObject(), elementId: "another" }]);
   assert.equal(snapshotsEquivalent(currentDraft(initial), currentDraft(anotherId)), false, "geometrically identical objects retain distinct IDs");
 });
+
+const elevationEdit = (history: ModelDraftHistory, elementId: string, action: any, options = {}) =>
+  applyDraftCommand(history, { kind: "elevation", elementId, action, ...options });
+const mass = (elementId: string, base = 0, height = 3): DraftObject => ({ elementId, componentId: "part", created: true,
+  originalObjectNames: [], spec: { profile: [[0, 0], [3, 0], [3, 2], [0, 2]], base, height } });
+
+test("explicit stacked masses propagate while free neighbors, immutable undo and redo stay independent", () => {
+  const initial = createModelDraft([mass("lower"), mass("upper", 8, 2), mass("free", 12)]);
+  const bound = elevationEdit(initial, "upper", "bind-base", { reference: { kind: "element-top", id: "lower", offset: 0 } });
+  near(spec(bound, "upper").base, 3);
+  const changed = elevationEdit(bound, "lower", "set-height", { value: 5 });
+  near(spec(changed, "upper").base, 5); near(spec(changed, "upper").height, 2);
+  near(spec(changed, "free").base, 12); near(spec(initial, "upper").base, 8);
+  assert.equal(currentDraft(undoDraft(changed)), currentDraft(bound));
+  assert.equal(currentDraft(redoDraft(undoDraft(changed))), currentDraft(changed));
+  const detached = elevationEdit(changed, "upper", "detach-base");
+  const moved = elevationEdit(detached, "lower", "set-base", { value: -2 });
+  near(spec(moved, "upper").base, 5); near(spec(moved, "lower").base, -2);
+});
+
+test("datum edits and numeric overrides preserve offsets and height/top algebra", () => {
+  let history = createModelDraft([mass("mass", 1, 3)], [{ levelId: "roof", name: "Roof", elevation: 10 }]);
+  history = elevationEdit(history, "mass", "bind-top", { reference: { kind: "level", id: "roof", offset: 0 } });
+  near(spec(history, "mass").height, 9);
+  history = elevationEdit(history, "mass", "set-top", { value: 11 });
+  assert.equal(currentDraft(history).objects.get("mass")!.elevation!.topReference!.offset, 1);
+  history = elevationEdit(history, "mass", "set-base", { value: 2 });
+  near(spec(history, "mass").height, 9);
+  history = elevationEdit(history, "mass", "set-datum", { levelId: "roof", name: "Roof", value: 12 });
+  near(spec(history, "mass").height, 11);
+  history = elevationEdit(history, "mass", "set-height", { value: 8 });
+  near(spec(history, "mass").height, 8);
+  assert.equal(currentDraft(history).objects.get("mass")!.elevation!.topReference!.offset, -2);
+  const invalid = history;
+  assert.throws(() => elevationEdit(history, "mass", "set-base", { value: 11 }), /Top Z/);
+  assert.equal(history, invalid);
+  assert.equal(currentDraft(undoDraft(history)).levels![0]!.elevation, 12);
+});
+
+test("binding alone is dirty, cycles and dependency deletion are atomic, and datum creation is undoable", () => {
+  const initial = createModelDraft([mass("lower"), mass("upper", 3)]);
+  const bound = elevationEdit(initial, "upper", "bind-base", { reference: { kind: "element-top", id: "lower", offset: 0 } });
+  assert.equal(isDraftDirty(bound), true);
+  assert.throws(() => elevationEdit(bound, "lower", "bind-base", { reference: { kind: "element-top", id: "upper", offset: 0 } }), /cycle/);
+  assert.throws(() => applyDraftCommand(bound, { kind: "delete", elementId: "lower" }), /missing/);
+  near(spec(bound, "upper").base, 3);
+  const datum = elevationEdit(bound, "lower", "set-datum", { levelId: "site", name: "Site low", value: -1.2 });
+  assert.equal(currentDraft(datum).levels![0]!.elevation, -1.2);
+  assert.deepEqual(currentDraft(undoDraft(datum)).levels, []);
+  assert.equal(currentDraft(redoDraft(undoDraft(datum))), currentDraft(datum));
+  const free = elevationEdit(bound, "upper", "detach-base");
+  assert.equal(isDraftDirty(free), false, "bind and detach without moving returns to the original geometry and relationships");
+});
+
+test("retained free copies keep vertical displacement and base-bound direct edits preserve offsets", () => {
+  const original = mass("mass", 2, 3);
+  const free = createModelDraft([{ ...original, elevation: { base: 2, top: 5, height: 3, baseReference: null, topReference: null } }]);
+  const copied = direct(free, { kind: "copy", translation: [1, 0, 4] }, "mass", "copy");
+  near(spec(copied, "copy").base, 6); near(spec(copied, "mass").base, 2);
+  const bound = elevationEdit(createModelDraft([original], [{ levelId: "ground", name: "Ground", elevation: 0 }]),
+    "mass", "bind-base", { reference: { kind: "level", id: "ground", offset: 2 } });
+  const moved = direct(bound, { kind: "move", translation: [1, 0, 4] }, "mass");
+  near(spec(moved, "mass").base, 6);
+  assert.equal(currentDraft(moved).objects.get("mass")!.elevation!.baseReference!.offset, 6);
+  const pulled = direct(moved, { kind: "pushPull", normal: [0, 0, 1], distance: 2 }, "mass");
+  near(spec(pulled, "mass").height, 5);
+  const flat = direct(pulled, { kind: "pushPull", normal: [0, 0, 1], distance: -5 }, "mass");
+  near(spec(flat, "mass").height, 0);
+  const raised = direct(flat, { kind: "pushPull", normal: [0, 0, 1], distance: 2 }, "mass");
+  near(spec(raised, "mass").height, 2);
+  assert.equal(currentDraft(raised).objects.get("mass")!.elevation!.baseReference!.id, "ground");
+});
+
+test("a deleted local source survives replay when earlier elevation bindings need it", () => {
+  let history = applyDraftCommand(createModelDraft(), draw("lower"));
+  history = applyDraftCommand(history, draw("upper"));
+  history = elevationEdit(history, "upper", "bind-base", { reference: { kind: "element-top", id: "lower", offset: 0 } });
+  history = elevationEdit(history, "upper", "detach-base");
+  history = applyDraftCommand(history, { kind: "delete", elementId: "lower" });
+  assert.equal(currentDraft(history).commands.length, 5);
+  assert.equal(currentDraft(history).commands[0]!.kind, "sketch");
+  assert.equal(currentDraft(history).objects.get("lower")!.deleted, true);
+  near(spec(history, "upper").base, 9);
+});
+
+test("top-constrained and supporting-mass transforms refuse locally just as the producer does", () => {
+  const original = createModelDraft([mass("mass"), mass("upper", 4)], [{ levelId: "roof", name: "Roof", elevation: 8 }]);
+  const bound = elevationEdit(original, "mass", "bind-top", { reference: { kind: "level", id: "roof", offset: 0 } });
+  assert.throws(() => direct(bound, { kind: "move", translation: [1, 0, 0] }, "mass"), /top reference/);
+  near(spec(bound, "mass").height, 8);
+  const stack = elevationEdit(original, "upper", "bind-base", { reference: { kind: "element-top", id: "mass", offset: 0 } });
+  assert.throws(() => direct(stack, { kind: "move", translation: [1, 0, 0] }, "mass"), /Other masses/);
+  const taller = direct(stack, { kind: "pushPull", normal: [0, 0, 1], distance: 1 }, "mass");
+  near(spec(taller, "upper").base, 4);
+});
+
+test("a flattened bound face follows datum changes but cannot supply a mass top", () => {
+  const original = createModelDraft([mass("mass")], [{ levelId: "ground", name: "Ground", elevation: 0 }]);
+  const bound = elevationEdit(original, "mass", "bind-base", { reference: { kind: "level", id: "ground", offset: 0 } });
+  const flat = direct(bound, { kind: "pushPull", normal: [0, 0, 1], distance: -3 }, "mass");
+  const moved = elevationEdit(flat, "mass", "set-datum", { levelId: "ground", value: 2 });
+  near(spec(moved, "mass").base, 2); near(spec(moved, "mass").height, 0);
+  const solid = direct(moved, { kind: "pushPull", normal: [0, 0, 1], distance: 4 }, "mass");
+  near(spec(solid, "mass").base, 2); near(spec(solid, "mass").height, 4);
+});

@@ -2548,6 +2548,98 @@ export type ElementDto = {
      * Drawnshapereason
      */
     drawnShapeReason?: string | null;
+    elevation?: ElementElevationDto | null;
+};
+
+/**
+ * ElementElevationDto
+ */
+export type ElementElevationDto = {
+    /**
+     * Base
+     */
+    base: number;
+    /**
+     * Top
+     */
+    top: number;
+    /**
+     * Height
+     */
+    height: number;
+    baseReference: ElevationReferenceDto | null;
+    topReference: ElevationReferenceDto | null;
+};
+
+/**
+ * ElevationEditRequestDto
+ *
+ * A numeric elevation or explicit datum binding at the existing proposal boundary.
+ */
+export type ElevationEditRequestDto = {
+    /**
+     * Sourceproposalid
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Elementid
+     */
+    elementId?: string | null;
+    /**
+     * Action
+     */
+    action: 'set-base' | 'set-top' | 'set-height' | 'bind-base' | 'bind-top' | 'detach-base' | 'detach-top' | 'set-datum';
+    /**
+     * Value
+     */
+    value?: number | null;
+    reference?: ElevationReferenceDto | null;
+    /**
+     * Levelid
+     */
+    levelId?: string | null;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Keep
+     */
+    keep?: Array<string>;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
+ * ElevationReferenceDto
+ */
+export type ElevationReferenceDto = {
+    /**
+     * Kind
+     */
+    kind: 'level' | 'element-top';
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Offset
+     */
+    offset?: number;
 };
 
 /**
@@ -3441,6 +3533,24 @@ export type KeepScopeDto = {
      * Note
      */
     note: string;
+};
+
+/**
+ * LevelDto
+ */
+export type LevelDto = {
+    /**
+     * Levelid
+     */
+    levelId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Elevation
+     */
+    elevation: number;
 };
 
 /**
@@ -5553,7 +5663,10 @@ export type SemanticEditRequestDto = {
                         offset: number | string;
                     };
                 } | {
-                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
                 };
                 top?: {
                     /**
@@ -5707,6 +5820,11 @@ export type SemanticEditRequestDto = {
                     };
                 } | {
                     datum: string;
+                } | {
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
                 };
             };
             params?: {
@@ -6097,7 +6215,10 @@ export type SemanticEditRequestDto = {
                         offset: number | string;
                     };
                 } | {
-                    datum: string;
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
                 };
                 top?: {
                     /**
@@ -6247,6 +6368,11 @@ export type SemanticEditRequestDto = {
                     };
                 } | {
                     datum: string;
+                } | {
+                    /**
+                     * A value in metres, or an explicit @parameter binding.
+                     */
+                    elevation: number | string;
                 };
             };
             params?: {
@@ -6978,6 +7104,10 @@ export type StateProjectionDto = {
      * Elements
      */
     elements: Array<ElementDto>;
+    /**
+     * Levels
+     */
+    levels: Array<LevelDto>;
     /**
      * Parameters
      */
@@ -9382,6 +9512,41 @@ export type CreatePushPullProposalApiProposalsPushPullPostResponses = {
 };
 
 export type CreatePushPullProposalApiProposalsPushPullPostResponse = CreatePushPullProposalApiProposalsPushPullPostResponses[keyof CreatePushPullProposalApiProposalsPushPullPostResponses];
+
+export type CreateElevationProposalApiProposalsElevationPostData = {
+    body: ElevationEditRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/elevation';
+};
+
+export type CreateElevationProposalApiProposalsElevationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateElevationProposalApiProposalsElevationPostError = CreateElevationProposalApiProposalsElevationPostErrors[keyof CreateElevationProposalApiProposalsElevationPostErrors];
+
+export type CreateElevationProposalApiProposalsElevationPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateElevationProposalApiProposalsElevationPostResponse = CreateElevationProposalApiProposalsElevationPostResponses[keyof CreateElevationProposalApiProposalsElevationPostResponses];
 
 export type CreateDeleteProposalApiProposalsDeletePostData = {
     body: DeleteElementRequestDto;

@@ -342,6 +342,50 @@ class PushPullRequestDto(BaseModel):
         return self
 
 
+class ElevationReferenceDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", allow_inf_nan=False)
+
+    kind: Literal["level", "element-top"]
+    id: str = Field(min_length=1)
+    offset: float = 0
+
+
+class ElevationEditRequestDto(BaseModel):
+    """A numeric elevation or explicit datum binding at the existing proposal boundary."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid", allow_inf_nan=False)
+
+    source_proposal_id: str | None = Field(alias="sourceProposalId", default=None, min_length=1)
+    state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
+    element_id: str | None = Field(alias="elementId", default=None, min_length=1)
+    action: Literal["set-base", "set-top", "set-height", "bind-base", "bind-top", "detach-base", "detach-top", "set-datum"]
+    value: float | None = None
+    reference: ElevationReferenceDto | None = None
+    level_id: str | None = Field(alias="levelId", default=None, min_length=1)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    keep: list[str] = Field(default_factory=list)
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def action_parameters(self) -> "ElevationEditRequestDto":
+        if self.action == "set-datum":
+            if self.level_id is None or self.value is None or self.element_id is not None:
+                raise ValueError("set-datum requires levelId and value, without elementId")
+        elif self.element_id is None or self.level_id is not None or self.name is not None:
+            raise ValueError("an element elevation action requires elementId, without levelId or name")
+        if self.action.startswith("set-"):
+            if self.value is None or self.reference is not None:
+                raise ValueError("a numeric elevation action requires only value")
+        elif self.action.startswith("bind-"):
+            if self.reference is None or self.value is not None:
+                raise ValueError("a binding action requires only reference")
+        elif self.value is not None or self.reference is not None:
+            raise ValueError("a detach action preserves the current elevation and takes no value or reference")
+        return self
+
+
 class DeleteElementRequestDto(BaseModel):
     """Remove one element the architect picked, and nothing else.
 

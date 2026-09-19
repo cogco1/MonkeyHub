@@ -134,7 +134,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
         "producer": "prism",
         "label": "轮廓与高度",
         "description": (
-            "A closed profile extruded to a height, anchored to an existing level or another "
+            "A closed profile extruded to a height, anchored to an absolute elevation, an existing level or another "
             "element's published top. An optional work_plane places it on an explicit drawing face. "
             "The profile and the height stay the record's own parameters, so "
             "either can be changed afterwards by authoring the same element again. Rectangular cutouts "
@@ -155,7 +155,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
                                     "description": "Openings through an axis-aligned rectangular profile."},
         }),
         "references": obj({
-            "base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]},
+            "base": {"anyOf": [*elevation["anyOf"], obj({"elevation": scalar}, ("elevation",))]},
             "top": elevation,
         }),
         "requiredParameters": ["profile"],
@@ -168,6 +168,7 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
             "rectangular_cutouts require four ordered axis-aligned profile corners.",
             "Use @parameter bindings for dimensions that subsequent changes must share.",
             "The element this one stands on is named by references.base, never inferred from proximity.",
+            "An absolute references.base.elevation stays fixed when project levels or other elements change.",
             "work_plane axes are orthonormal; origin is relative to the base datum, and height follows normal.",
             "Only a horizontal upward extrusion publishes a horizontal top datum; tilted planes cannot claim one.",
         ],
@@ -256,7 +257,8 @@ def producer_signatures() -> dict[str, dict[str, Any]]:
                 "Metres above references.base, added to that reference's own offset; defaults to zero."},
             "work_plane": work_plane,
         }),
-        "references": obj({"base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",))]}}),
+        "references": obj({"base": {"anyOf": [*elevation["anyOf"], obj({"datum": identifier}, ("datum",)),
+                                               obj({"elevation": scalar}, ("elevation",))]}}),
         "requiredParameters": ["profile"],
         "requiredReferences": ["base"],
         "constraints": [
@@ -541,11 +543,18 @@ def _end_face(point: tuple[float, float], normal: tuple[float, float], half: flo
 
 
 def _base(row: ElementRow, context: ProductionContext) -> tuple[str, float]:
-    """The element's base as (datum id, offset); a level, or a datum another element published."""
+    """The element's base binding; a level, a published top, or its own fixed absolute datum."""
 
     base = row.references.get("base")
     if base is None:
         raise ElementProducerError(f"{row.element_id}: base reference required")
+    if isinstance(base, Mapping) and "elevation" in base:
+        if row.producer not in {"prism", "planar-surface"} or set(base) != {"elevation"}:
+            raise ElementProducerError(f"{row.element_id}: an absolute base belongs to a drawn face or prism")
+        datum_id = f"{row.element_id}-base"
+        context.published[datum_id] = _level_datum(datum_id, f"obj-{row.element_id}",
+                                                  _finite(base["elevation"], "absolute base"), row.basis_refs)
+        return datum_id, 0.0
     if isinstance(base, Mapping) and "datum" in base:
         datum_id = str(base["datum"])
         if datum_id not in context.published and context.references.levels is not None and datum_id not in context.references.level_ids():
@@ -839,6 +848,36 @@ def _profile_on_work_plane(row: ElementRow):
     return [tuple(origin[i] + x * x_axis[i] + y * y_axis[i] for i in range(3)) for x, y in points], checked["normal"]
 
 
+def drawn_element_placement(row: ElementRow, context: ProductionContext) -> dict[str, Any]:
+    """Read a drawn definition through the same datum and height rules used by its producer."""
+
+    if row.producer not in {"prism", "planar-surface"}:
+        raise ElementProducerError(f"{row.element_id}: elevation controls support drawn prisms")
+    if "rectangular_cutouts" in row.params:
+        raise ElementProducerError(f"{row.element_id}: local drawing controls cannot detach panel cutouts")
+    base_id, reference_offset = _base(row, context)
+    offset = reference_offset + _finite(row.params.get("elevation", 0), "elevation")
+    profile, normal = _profile_on_work_plane(row)
+    bottom = min(point[1] for point in profile)
+    horizontal = all(abs(point[1] - bottom) < 1e-8 for point in profile) and abs(normal[1] - 1) < 1e-8
+    if not horizontal and "top" in row.references:
+        raise ElementProducerError(f"{row.element_id}: a tilted or reversed work plane cannot use a horizontal top reference")
+    height = 0.0 if row.producer == "planar-surface" else _height(row, context, base_id, base_offset=offset + bottom)
+    plane = dict(row.params.get("work_plane") or {
+        "origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0],
+        "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, 1.0, 0.0],
+    })
+    world_offset = context.datum_value(base_id) + offset
+    plane["origin"] = [plane["origin"][0], plane["origin"][1] + world_offset, plane["origin"][2]]
+    base = round(world_offset + bottom, 9)
+    if row.producer == "prism" and horizontal:
+        context.published[f"{row.element_id}-top"] = _level_datum(
+            f"{row.element_id}-top", f"obj-{row.element_id}", base + height, row.basis_refs)
+    return {"profile": row.params["profile"], "workPlane": plane, "height": height,
+            "referenceElevation": context.datum_value(base_id) + reference_offset,
+            "base": base, "top": round(base + height, 9), "horizontal": horizontal}
+
+
 def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str,
                        translation=None, axis=None, angle_degrees: float = 0.0,
                        scale=None, origin=None, distance: float = 0.0, normal=None) -> ElementRow:
@@ -1061,7 +1100,8 @@ def produce_planar_surface(row: ElementRow, context: ProductionContext) -> Produ
     operation = GeometryOperation(op_id=row.element_id, kind=GeometryOperationKind.PLANAR_SURFACE,
                                   output_object_ids=(f"obj-{row.element_id}",), input_object_ids=(), frame_id=context.frame_id,
                                   parameters=tuple(parameters), semantic_binding_ids=(row.binding_id,))
-    return ProducedElement((operation,), (_bind(row.element_id, base_datum),))
+    fixed = (context.published[base_datum],) if "elevation" in row.references["base"] else ()
+    return ProducedElement((operation,), (_bind(row.element_id, base_datum),), fixed)
 
 
 def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElement:
@@ -1072,6 +1112,7 @@ def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElemen
 
     p = row.params
     base_datum, base_offset = _base(row, context)
+    fixed = (context.published[base_datum],) if "elevation" in row.references["base"] else ()
     base_offset += _finite(p.get("elevation", 0.0), f"{row.element_id} elevation")
     profile, normal = _profile_on_work_plane(row)
     base_offset += min(point[1] for point in profile)
@@ -1100,16 +1141,17 @@ def produce_prism(row: ElementRow, context: ProductionContext) -> ProducedElemen
                 bindings.append(_bind(op_id, base_datum))
             # A partition or empty panel supplies no whole-prism top datum or
             # whole-prism support claim. A downstream top reference is refused.
-            return ProducedElement(tuple(operations), tuple(bindings))
+            return ProducedElement(tuple(operations), tuple(bindings), fixed)
     op = _extrusion(row.element_id, profile, height, row.binding_id, context.frame_id, base_offset, normal=normal)
     if not horizontal_up:
         # An oriented drawing has an explicit level anchor, not a fabricated
         # horizontal bearing surface. Only a real horizontal upper face can
         # publish the retained <id>-top datum used by supported elements.
-        return ProducedElement((op,), (_bind(row.element_id, base_datum),))
+        return ProducedElement((op,), (_bind(row.element_id, base_datum),), fixed)
     top = _level_datum(f"{row.element_id}-top", f"obj-{row.element_id}", context.datum_value(base_datum) + base_offset + height, row.basis_refs)
     context.published[top.datum_id] = top  # a prism is what other elements sit on: it publishes its top like a beam does
-    return ProducedElement((op,), (_bind(row.element_id, base_datum),), (top,), (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),), None)
+    relations = () if fixed else (ProducedRelation(f"{row.element_id}-stands-on", "support", base_datum, row.element_id, base_datum, _seat_parameters(base_offset)),)
+    return ProducedElement((op,), (_bind(row.element_id, base_datum),), fixed + (top,), relations, None)
 
 
 def produce_ring(row: ElementRow, context: ProductionContext) -> ProducedElement:

@@ -38,6 +38,7 @@ from starlette.requests import Request
 from archflow.state.state_record import apply_state_record_operator
 
 from ..application import episodes
+from ..application.elevation import elevation_proposal
 from ..application.binding import ProjectBinding, bound_project
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
 from ..application.intent import (
@@ -72,6 +73,7 @@ from ..transport.proposal import (
     DocumentTracingRequestDto,
     TransformElementRequestDto,
     PushPullRequestDto,
+    ElevationEditRequestDto,
     episode_dto,
     to_dto,
 )
@@ -292,6 +294,24 @@ def create_push_pull_proposal(request: Request, body: PushPullRequestDto) -> Pro
     """Read the exact element definition and move its selected profile end face."""
 
     return _direct_proposal(request, body, "push_pull", distance=body.distance, normal=body.normal)
+
+
+@router.post("/proposals/elevation", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
+def create_elevation_proposal(request: Request, body: ElevationEditRequestDto) -> ProposalDto:
+    """Edit a prism's elevation or a simple datum through the same exact-base candidate chain."""
+
+    binding, base, projection, previous, body = _proposal_source(request, body)
+    if body.state_digest != projection.state_digest:
+        raise StudioError(409, "STALE_BASE", "The elevation action no longer matches its source. Read /api/state again.")
+    proposal = proposal_from(elevation_proposal(
+        projection, action=body.action, element_id=body.element_id, value=body.value,
+        reference=None if body.reference is None else body.reference.model_dump(),
+        level_id=body.level_id, name=body.name, keep_refs=tuple(body.keep),
+    ))
+    proposal = replace(proposal,
+                       source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
+                       source_stage_ref=projection.source_stage_ref)
+    return _remember_proposal(request, proposal, base, previous)
 
 
 @router.post(
