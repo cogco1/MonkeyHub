@@ -3,6 +3,27 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-174",
+      "stream": "project-data",
+      "status": "active",
+      "goal": "Export retained Studio candidates with inline ephemeral projection sources while rejecting missing retained dependencies; restore and continue from the exact saved binding.",
+      "depends_on": [],
+      "branch": "codex/174-ephemeral-project-export",
+      "worktree": "ab5b/ARCHFLOW_V4",
+      "base_ref": "24fbdb984e634394905745383f66ba535a7fc5e6",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": ["project.repository", "project.archive"],
+      "write_scope": [
+        "archflow/project/repository.py",
+        "archflow/project/archive.py",
+        "tests/test_project_transfer.py",
+        "apps/archflow-studio/api/tests/test_candidate.py",
+        "apps/monkeyhub/api/tests/test_project_archive.py"
+      ],
+      "handoff": "Ready for PR integration: focused tests and two real-project export/restore/replay/continuation rehearsals pass; original projects remain byte-identical. Clean-user archive portability acceptance and CAD export remain separate checks."
+    },
+    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",

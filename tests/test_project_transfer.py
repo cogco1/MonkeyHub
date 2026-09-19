@@ -14,8 +14,9 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.inputs import load_program_sheet_file, write_program_sheet_file
 from archflow.project.record_kinds import (
     DESIGN_STAGE, DRAWING_PROJECTION_RECEIPT, PROMOTION_DECISION, SEAT_OCCT_EXECUTION,
-    STATE_RECORD, STUDIO_SOURCE_DOCUMENT,
+    STATE_RECORD, STUDIO_CANDIDATE_DELTA, STUDIO_SOURCE_DOCUMENT,
 )
+from archflow.project.refs import RunRef
 from archflow.project.repository import (
     FilesystemProjectRepository, ProjectAlreadyExists, ProjectIntegrityError,
     StaleDesignBranch, StaleProjectHead,
@@ -158,6 +159,112 @@ class ProjectTransferTests(unittest.TestCase):
             self.assertEqual((restored.layout.root / row["path"]).read_bytes(),
                              (self.shared.layout.root / row["path"]).read_bytes())
         self.assertFalse((restored.layout.root / noise.relative_to(self.shared.layout.root)).exists())
+
+    def inline_projection_delta(self, repository, **changes):
+        run = repository.create_run("candidate")
+        source = RunRef(run.project_id, "studio-projection", run.base)
+        payload = {
+            "schema": "StudioCandidateDelta@1", "project_id": run.project_id, "run_id": run.run_id,
+            "source_run_ref": source.to_dict(), "source_stage_ref": None,
+            "source_record_ref": None, "source_runner_ref": None, "source_model": None,
+            "source_record": StateRecord(project_id=source.project_id, run_id=source.run_id,
+                                         entities=(), base=source.base).to_dict(),
+        }
+        payload.update(changes)
+        return run, payload
+
+    def retain_delta(self, repository, run, payload):
+        return repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_CANDIDATE_DELTA, payload=payload,
+        )
+
+    def test_inline_projection_keeps_nested_dependencies_and_exact_bytes(self):
+        run, payload = self.inline_projection_delta(self.shared)
+        dependency = self.stage(self.shared, "inline-dependency")
+        payload["source_record"]["evidence_refs"] = [dependency.uri]
+        ref = self.retain_delta(self.shared, run, payload)
+        for all_runs in (False, True):
+            with self.subTest(all_runs=all_runs):
+                transfer = self.shared.export_transfer(
+                    run_id=None if all_runs else run.run_id, include_all_runs=all_runs,
+                )
+                self.assertIn("inline-dependency", transfer["run_ids"])
+                self.assertNotIn("studio-projection", transfer["run_ids"])
+                if all_runs:
+                    restored = FilesystemProjectRepository.bootstrap_transfer(
+                        self.root / "inline-copy", transfer, expected_project_id="building",
+                    )
+                else:
+                    restored = self.clone("inline-candidate-copy")
+                    restored.import_candidate_transfer(transfer)
+                self.assertEqual(restored.load_json(ref), payload)
+                self.assertEqual(restored.load_json(dependency), self.shared.load_json(dependency))
+                self.assertEqual(restored.read_head(), self.shared.read_head())
+
+    def test_projection_exception_requires_an_exact_inline_source(self):
+        cases = ("missing-inline", "different-binding", "foreign-project", "unknown-base",
+                 "retained-source", "other-run", "other-record", "nested-run", "nested-uri")
+        for case in cases:
+            with self.subTest(case=case):
+                repository = FilesystemProjectRepository.initialize(
+                    self.root / case, project_id="building", initial_state={"phase": "design"},
+                )
+                run, payload = self.inline_projection_delta(repository)
+                if case == "missing-inline":
+                    payload["source_record"] = None
+                elif case == "different-binding":
+                    payload["source_record"]["run_id"] = "other"
+                elif case == "foreign-project":
+                    for value in (payload["source_record"], payload["source_run_ref"]):
+                        value["project_id"] = "foreign"
+                        value["base"]["project_id"] = "foreign"
+                elif case == "unknown-base":
+                    for value in (payload["source_record"], payload["source_run_ref"]):
+                        value["base"]["state_sha256"] = "0" * 64
+                elif case == "retained-source":
+                    payload["source_runner_ref"] = {"uri": "project://building/runs/missing"}
+                elif case == "other-run":
+                    for value in (payload["source_record"], payload["source_run_ref"]):
+                        value["run_id"] = "missing-real-run"
+                elif case == "other-record":
+                    payload["schema"] = "OtherRecord@1"
+                elif case == "nested-run":
+                    payload["source_record"]["option"] = {"source": payload["source_run_ref"]}
+                elif case == "nested-uri":
+                    payload["source_record"]["evidence_refs"] = ["project://building/runs/studio-projection"]
+                self.retain_delta(repository, run, payload)
+                with self.assertRaises(ProjectIntegrityError):
+                    repository.export_transfer(include_all_runs=True)
+
+    def test_stored_projection_run_is_not_exempt_from_integrity_checks(self):
+        run, payload = self.inline_projection_delta(self.shared)
+        self.retain_delta(self.shared, run, payload)
+        stored = self.shared.create_run("studio-projection")
+        transfer = self.shared.export_transfer(run_id=run.run_id)
+        self.assertIn(stored.run_id, transfer["run_ids"])
+        manifest = self.shared.layout.run(stored.run_id).root / "run.json"
+        manifest.write_text("not valid JSON", encoding="utf-8")
+        with self.assertRaisesRegex(ProjectIntegrityError, "studio-projection.*run.json"):
+            self.shared.export_transfer(run_id=run.run_id)
+        manifest.unlink()
+        with self.assertRaisesRegex(ProjectIntegrityError, "studio-projection.*run.json"):
+            self.shared.export_transfer(run_id=run.run_id)
+
+    def test_missing_retained_source_names_the_run_and_refuses_restore_before_write(self):
+        run, payload = self.inline_projection_delta(self.shared)
+        self.shared.create_run("studio-projection")
+        dependency = self.stage(self.shared, "retained-parent")
+        payload["source_record"]["evidence_refs"] = [dependency.uri]
+        self.retain_delta(self.shared, run, payload)
+        transfer = self.shared.export_transfer(include_all_runs=True)
+        missing = "runs/retained-parent/run.json"
+        transfer["files"] = [row for row in transfer["files"] if row["path"] != missing]
+        del transfer["contents"][missing]
+        target = self.root / "missing-dependency-copy"
+        with self.assertRaisesRegex(ProjectIntegrityError, "retained-parent.*run.json"):
+            FilesystemProjectRepository.bootstrap_transfer(target, transfer, expected_project_id="building")
+        self.assertFalse(target.exists())
 
     def test_snapshot_restores_authored_program_sheet_through_normal_reader(self):
         sheet = {"schema": "ProgramSheet@1", "project_id": "building", "spaces": []}
