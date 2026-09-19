@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import json
 from pathlib import Path
+import re
 import threading
 
 from pydantic import ValidationError
@@ -186,9 +187,11 @@ class ComputerService:
         A receipt is the answer whatever it says: a refused or failed step is a
         200 body, because the caller has to read the refusal to do anything
         about it. Two things are not receipts. Anything the package calls a
-        mistake is 422 -- an action that is not a ComputerAction@1, and also a
-        recording name it will not take, since this API's own pattern is the
-        wider of the two. A refusal with no receipt to carry it is 409, with
+        mistake is 422 -- an action that is not a ComputerAction@1, a recording
+        name it will not take, since this API's own pattern is the wider of the
+        two, and a window filter that is not a Python regular expression, whose
+        re.error is not a ValueError and would otherwise be a 500. A refusal
+        with no receipt to carry it is 409, with
         MonkeyControl's own code in it: a recording already running, and every
         way the desktop hosts can refuse an observation that never reaches the
         execute pipeline at all.
@@ -202,7 +205,7 @@ class ComputerService:
                 # package's own refusal and carries its own code: inspect does
                 # not wrap one in a receipt, so the status has to say it.
                 raise _refused(exc.code, str(exc)) from exc
-            except ValueError as exc:  # ContractError is one of these
+            except (ValueError, re.error) as exc:  # ContractError is one of these
                 raise HubFailure(422, "COMPUTER_ACTION_INVALID", str(exc)) from exc
 
     def close(self) -> None:

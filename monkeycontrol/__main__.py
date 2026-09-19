@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -147,6 +148,9 @@ def _run(args) -> int:
     except RuntimeRefusal as exc:
         print(f"{exc.code}: {exc}", file=sys.stderr)
         code = REFUSED
+    except ValueError as exc:  # ContractError is one: --record takes a plain name
+        print(str(exc), file=sys.stderr)
+        code = INVALID
     finally:
         runtime.close()
     return code
@@ -182,6 +186,14 @@ def _inspect(args) -> int:
     )
     try:
         answer = runtime.inspect(args.app, args.window, depth=args.depth)
+    except re.error as exc:
+        # --window is a Python regex, and re.error is not a ValueError: without
+        # this, one unbalanced bracket prints a traceback instead of an answer.
+        print(f"--window is not a Python regular expression: {exc}", file=sys.stderr)
+        return INVALID
+    except ValueError as exc:  # ContractError is one of these
+        print(str(exc), file=sys.stderr)
+        return INVALID
     finally:
         runtime.close()
     print(json.dumps(answer, ensure_ascii=False, indent=2))

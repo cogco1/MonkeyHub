@@ -1,6 +1,7 @@
 """The finite application lifecycle exposed by the Hub."""
 
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
@@ -351,6 +352,24 @@ class ComputerInspectRequest(BaseModel):
     application: str = Field(min_length=1, max_length=120)
     window: str | None = Field(default=None, max_length=300)
     depth: int = Field(default=6, ge=1, le=12)
+
+    @field_validator("window")
+    @classmethod
+    def compilable_window(cls, value: str | None) -> str | None:
+        """A window filter is a Python regex, and a bad one is the caller's mistake.
+
+        It is compiled here rather than deep in the provider, where re.error is
+        not a ValueError and would leave this route answering 500 to a typo.
+        """
+
+        if value is not None:
+            try:
+                re.compile(value)
+            except re.error as exc:
+                raise ValueError(
+                    f"window must be a Python regular expression: {exc}"
+                ) from exc
+        return value
 
 
 class ComputerActionRequest(BaseModel):

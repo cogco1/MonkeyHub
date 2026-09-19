@@ -312,6 +312,31 @@ class ComputerRouteTests(ComputerHubCase):
         self.assertEqual(other.json()["code"], "COMPUTER_ACTION_REFUSED")
         self.assertIn("APP_NOT_ALLOWED", other.json()["detail"])
 
+    def test_an_invalid_window_regex_is_422_rather_than_a_500(self):
+        # window is a Python regex compiled deep in the provider, where re.error
+        # is not a ValueError: without the model's own check this route answered
+        # an internal error to one unbalanced bracket.
+        self.enable()
+        with self.hub() as client:
+            built = self.inject(client)
+            response = client.post(
+                "/api/computer/inspect", json={"application": "notepad", "window": "("}
+            )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "COMPUTER_ACTION_INVALID")
+        self.assertEqual(built, [], "a request that is not one never reaches a runtime")
+
+    def test_a_regex_error_from_below_is_422_and_not_an_internal_error(self):
+        # The model guards the one field this API declares; anything further
+        # down that still raises re.error is the caller's mistake too.
+        self.enable()
+        with self.hub() as client:
+            self.inject(client, raises=re.error("missing ), unterminated subpattern"))
+            response = client.post("/api/computer/inspect", json={"application": "notepad"})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "COMPUTER_ACTION_INVALID")
+        self.assertIn("unterminated subpattern", response.json()["detail"])
+
     def test_a_backend_that_will_not_start_is_409_not_a_crash(self):
         # A missing host script, no powershell.exe, a host that died mid-protocol:
         # inspect answers none of those with a receipt, and both documents

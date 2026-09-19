@@ -746,6 +746,17 @@ class RegionTests(RuntimeTestCase):
         with self.assertRaises(ValueError):
             runtime.record_start("demo", region="everything")
 
+    def test_a_name_no_recording_can_have_is_answered_before_any_host_runs(
+        self,
+    ) -> None:
+        # The presentation host was composed to be handed to the Recorder, so
+        # the name was checked after two PowerShell processes had started.
+        runtime = self.runtime()
+        with self.assertRaises(ContractError):
+            runtime.record_start("-demo", interval_ms=10000)
+        self.assertEqual(self.log, [], "nothing was asked of the presentation host")
+        self.assertIsNone(runtime.recording)
+
 
 class BadgeAnchorTests(RuntimeTestCase):
     def test_the_verdict_is_anchored_to_the_target_it_is_about(self) -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from tempfile import TemporaryDirectory
 
 from monkeycontrol import __main__ as cli
 from monkeycontrol.contract import ContractError
+from monkeycontrol.record import NAME
 from monkeycontrol.runtime import RuntimeRefusal
 
 SCRIPT = {
@@ -59,9 +61,18 @@ class FakeRuntime:
         return receipt(f"s-{len(self.payloads):04d}")
 
     def inspect(self, application, window=None, *, depth=6):
+        # The real one compiles the title filter down in the provider, which
+        # is where an unbalanced bracket becomes an re.error rather than a
+        # ValueError; a fake that swallowed it would hide that from the CLI.
+        if window:
+            re.compile(window)
         return {"application": application, "windows": [], "nodes": []}
 
     def record_start(self, name, *, interval_ms=250, region="window-monitor"):
+        if not NAME.match(str(name)):
+            raise ContractError(
+                f"{name!r} must be a plain recording name: letters, digits, - and _"
+            )
         self.recordings.append((name, region))
         return {
             "name": name,
@@ -292,6 +303,23 @@ class RunTests(CliTestCase):
         )
         self.assertEqual(self.made[0].recordings, [("demo", "virtual")])
 
+    def test_a_recording_name_the_package_will_not_take_exits_two(self) -> None:
+        self.install()
+        code, _, err = self.run_cli(
+            "run",
+            self.script(),
+            "--trace-dir",
+            str(self.trace),
+            # Spelled with = because argparse would read a leading dash as the
+            # start of another option rather than as this one's value.
+            "--record=-demo",
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("plain recording name", err)
+        self.assertEqual(self.made[0].recordings, [])
+        self.assertEqual(self.made[0].payloads, [], "no action ran without the film")
+        self.assertTrue(self.made[0].closed)
+
     def test_a_script_that_is_not_a_script_exits_two(self) -> None:
         self.install()
         code, _, err = self.run_cli(
@@ -312,6 +340,28 @@ class InspectTests(CliTestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["application"], "notepad")
+
+    def test_inspect_allow_lists_the_application_it_was_asked_for(self) -> None:
+        self.install()
+        self.run_cli(
+            "inspect", "--app", "Notepad.exe", "--trace-dir", str(self.trace)
+        )
+        self.assertEqual(self.made[0].policy.allowed_processes, ("notepad",))
+
+    def test_an_invalid_window_regex_exits_two_rather_than_tracing_back(self) -> None:
+        self.install()
+        code, _, err = self.run_cli(
+            "inspect",
+            "--app",
+            "notepad",
+            "--window",
+            "(",
+            "--trace-dir",
+            str(self.trace),
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("regular expression", err)
+        self.assertTrue(self.made[0].closed)
 
 
 class RenderTests(CliTestCase):

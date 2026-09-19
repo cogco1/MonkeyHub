@@ -36,7 +36,7 @@ from .providers import (
     UiaProvider,
     VisualFallbackProvider,
 )
-from .record import Recorder
+from .record import NAME as RECORDING_NAME, Recorder
 from .store import ActionTraceStore
 from .trace import (
     ResolvedTarget,
@@ -376,6 +376,13 @@ class ComputerUseRuntime:
 
         if region not in REGIONS:
             raise ValueError(f"region must be one of {', '.join(REGIONS)}")
+        if not RECORDING_NAME.match(str(name)):
+            # The Recorder says this too, but only after the presentation host
+            # has been composed to hand it: a name nobody can write to disk is
+            # a mistake to answer, not two PowerShell processes to start first.
+            raise ContractError(
+                f"{name!r} must be a plain recording name: letters, digits, - and _"
+            )
         if self._recorder is not None:
             raise RuntimeRefusal(
                 "RECORDING_ACTIVE", f"{self._recorder.name!r} is already recording"
