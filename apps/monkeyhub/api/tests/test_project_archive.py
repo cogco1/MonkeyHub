@@ -16,13 +16,17 @@ import zipfile
 from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, free_ports, project_fixture
-from archflow.project.archive import ArchiveError
+from archflow.project.archive import ARCHIVE_OMISSIONS, ArchiveError
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_CANDIDATE_DELTA
+from archflow.project.refs import RunRef
 from archflow.project.repository import (
     FilesystemProjectRepository,
     ProjectHeadLocked,
     ProjectIntegrityError,
 )
 from archflow_studio_api.settings import save_application_settings
+from archflow.state.state_record import StateRecord
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import project_archive
 from monkeyhub_api.main import HubSettings, create_app
@@ -101,8 +105,22 @@ class ProjectArchiveRoutes(LocalHubCase):
         self.assertTrue((target / "project.json").is_file())
 
     def test_export_writes_archive_and_reports_summary(self):
+        repository = FilesystemProjectRepository.open(self.project)
+        run = repository.create_run("candidate")
+        source = RunRef(self.project_id, "studio-projection", run.base)
+        repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=STUDIO_CANDIDATE_DELTA,
+            payload={
+                "schema": "StudioCandidateDelta@1", "project_id": self.project_id, "run_id": run.run_id,
+                "source_run_ref": source.to_dict(), "source_stage_ref": None,
+                "source_record_ref": None, "source_runner_ref": None, "source_model": None,
+                "source_record": StateRecord(project_id=self.project_id, run_id=source.run_id,
+                                             entities=(), base=source.base).to_dict(),
+            },
+        )
         before = fingerprint(self.project)
-        head = FilesystemProjectRepository.open(self.project).read_head()
+        head = repository.read_head()
 
         with self.hub() as client:
             response = self.export(client)
@@ -119,7 +137,8 @@ class ProjectArchiveRoutes(LocalHubCase):
         self.assertEqual(
             summary["archiveSha256"], hashlib.sha256(self.archive.read_bytes()).hexdigest())
         self.assertIs(summary["verified"], True)
-        self.assertEqual(len(summary["omissions"]), 5)
+        self.assertEqual(summary["runCount"], 2)  # fixture reference plus candidate; no synthetic run
+        self.assertEqual(summary["omissions"], list(ARCHIVE_OMISSIONS))
         self.assertEqual(summary["externalDependencies"], [])
         self.assertEqual(summary["projectDir"], str(self.project.resolve()))
         self.assertEqual(fingerprint(self.project), before)
