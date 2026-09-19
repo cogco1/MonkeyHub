@@ -67,6 +67,7 @@ SEAT_HANDOVER = "seat-handover"
 SEAT_RHINO_EXECUTION = "seat-rhino-execution"
 SEAT_OCCT_EXECUTION = "seat-occt-execution"
 SEAT_BLENDER_EXECUTION = "seat-blender-execution"
+BLENDER_PROJECTION = "blender-projection"
 SEAT_3DM_INSPECTION = "seat-3dm-inspection"
 RUNNER_RUN_FAILURE = "runner-run-failure"
 RUNNER_RUN_RECEIPT = "runner-run-receipt"
@@ -286,6 +287,12 @@ _TABLE: tuple[RecordKind, ...] = (
         "one in-process OCCT export: the exact STEP file and the mesh .3dm "
         "preview it wrote into the stage workspace, bound to the exact "
         "run/base/branch/program, with the cold readback of the STEP file",
+    ),
+    RecordKind(
+        BLENDER_PROJECTION,
+        "BlenderProjectionReceipt@1",
+        _RUN_RECORD,
+        "OCCT-bound Blender scene and headless render with independent cold read and artifact hashes",
     ),
     RecordKind(
         SEAT_BLENDER_EXECUTION,

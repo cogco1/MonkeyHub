@@ -280,8 +280,18 @@ class RunOptions:
     # None keeps the first-build and legacy callers on the full path.
     source_run_receipt_ref: ProjectRecordRef | None = None
     cad_backend_options: Mapping[str, object] = field(default_factory=dict)
+    # Optional downstream visualization. It never changes CAD success or HEAD.
+    blender_projection: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
+        if self.blender_projection is not None:
+            from archflow.adapters.blender_projection import BlenderPresentation
+            if not self.export or self.cad_backend != CAD_BACKEND_OCCT:
+                raise ProjectRunnerError("Blender projection requires an enabled OCCT export")
+            unknown = set(self.blender_projection) - {"blender_executable", "timeout_seconds", "presentation"}
+            if unknown or not self.blender_projection.get("blender_executable"):
+                raise ProjectRunnerError("projection requires a Blender executable and known options")
+            BlenderPresentation(**self.blender_projection.get("presentation", {}))
         if self.source_run_receipt_ref is not None and not isinstance(self.source_run_receipt_ref, ProjectRecordRef):
             raise TypeError("source_run_receipt_ref must be ProjectRecordRef")
         try:
@@ -870,6 +880,25 @@ def _execute_cad(repository, run, branch, branch_destination, program, stage_id,
         if result.status == "succeeded" and result.inspection is not None:
             out["inspection_ref"] = repository.put_json(run=run, destination=destination, record_kind=SEAT_3DM_INSPECTION, payload=result.inspection).uri
             out["_bboxes"] = {str(r["name"]): (list(r["bbox"]["min"]), list(r["bbox"]["max"])) for r in result.inspection.get("named_object_bboxes", ())}
+        if options.blender_projection is not None and result.status == "succeeded":
+            from archflow.adapters.blender_projection import BlenderPresentation, execute_blender_projection
+            from archflow.project.record_kinds import BLENDER_PROJECTION
+            configuration = dict(options.blender_projection)
+            configuration["presentation"] = BlenderPresentation(**configuration.get("presentation", {}))
+            stem, attempt = request.artifact_stem, 1
+            while any(workspace.glob(f"{stem}.projection.*")):
+                attempt += 1
+                stem = f"{request.artifact_stem}.p{attempt}"
+            try:
+                projection = execute_blender_projection(replace(request, artifact_stem=stem), result, **configuration)
+            except (ValueError, OSError) as exc:
+                projection = {"schema": "BlenderProjectionReceipt@1", "binding": binding.to_dict(),
+                              "status": "failed", "artifacts": [], "logs": [],
+                              "failures": [{"code": "blender.source_refused", "detail": str(exc)}]}
+            projection["source_execution_ref"] = ref.uri
+            projection_ref = repository.put_json(run=run, destination=destination, record_kind=BLENDER_PROJECTION, payload=projection)
+            out["projection"] = {"receipt_ref": projection_ref.uri, "status": projection["status"],
+                                 "artifacts": projection["artifacts"], "failures": projection["failures"]}
         return out
 
     cache_details = {"input_identity": {"program_digest": program.program_digest, "backend": backend.backend_id}}
