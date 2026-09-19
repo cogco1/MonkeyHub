@@ -36,7 +36,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from archflow_studio_api.application.binding import bound_project, record_kind
-from archflow_studio_api.application.candidate import execute_candidate
+from archflow_studio_api.application.candidate import execute_candidate, replay_candidate
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings
 
@@ -48,12 +48,14 @@ from archflow.ports.model import (
     ModelPhase,
 )
 from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.archive import restore_project_archive, write_project_archive
 from archflow.project.repository import FilesystemProjectRepository
 
 from archflow_studio_api.transport.errors import StudioError
 
 from .support import (
     PROJECT_ID,
+    RECORD_PAYLOAD,
     REFERENCE_RUN_ID,
     RUNNER_RECORD_PATH,
     RUNNER_SEATS_PATH,
@@ -142,6 +144,61 @@ class CandidateTestCase(unittest.TestCase):
             if kind is not None:
                 kinds[kind] = kinds.get(kind, 0) + 1
         return kinds
+
+
+class CandidateArchiveTests(CandidateTestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.repository = FilesystemProjectRepository.initialize(
+            self.root / PROJECT_ID, project_id=PROJECT_ID,
+            initial_state={"project_id": PROJECT_ID, "version": 0},
+            authored_record=RECORD_PAYLOAD, seat_pack=SEATS_PAYLOAD,
+        )
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=self.repository.layout.root))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+
+    def test_projection_source_archive_restores_replays_and_continues(self) -> None:
+        before_head = self.repository.read_head()
+        first, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        first_id = first["candidateId"]
+        original = bound_project(self.app.state)
+        delta = original.candidate_delta(first_id)
+        self.assertEqual(delta["source_run_ref"]["run_id"], "studio-projection")
+        self.assertIsNotNone(delta["source_record"])
+        source_digest = replay_candidate(original, first_id).digest
+        before = {p.relative_to(self.repository.layout.root): p.read_bytes()
+                  for p in self.repository.layout.root.rglob("*") if p.is_file() and p.suffix != ".lock"}
+        archive = self.root / "backup.zip"
+        write_project_archive(self.repository, archive)
+        restored, _ = restore_project_archive(self.root / "restored" / PROJECT_ID, archive)
+        self.repository = restored
+        self.app = create_app(StudioSettings(cad_export="off", project_dir=restored.layout.root))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+        binding = bound_project(self.app.state)
+        self.assertEqual(binding.candidate_delta(first_id), delta)
+        self.assertEqual(replay_candidate(binding, first_id).digest, source_digest)
+        source = self.client.get("/api/state", params={"run": first_id}).json()
+        continued, job = self.run_candidate(
+            "set height to 0.5", elementId="portico-cornice",
+            sourceRunId=first_id, stateDigest=source["stateDigest"],
+        )
+        self.assertEqual(job["status"], "succeeded", job)
+        next_delta = binding.candidate_delta(continued["candidateId"])
+        self.assertEqual(next_delta["source_run_ref"]["run_id"], first_id)
+        self.assertIsNone(next_delta["source_record"])
+        replayed = replay_candidate(binding, continued["candidateId"])
+        heights = {row["entity_id"]: row["fields"]["params"]["height"]
+                   for row in replayed.to_dict()["entities"] if row["schema"] == "Element@1"}
+        self.assertEqual(heights, {"portico-base": 2.2, "portico-cornice": 0.5})
+        self.assertEqual(restored.read_head(), before_head)
+        self.assertEqual(before, {p.relative_to(original.project_dir): p.read_bytes()
+                                  for p in original.project_dir.rglob("*") if p.is_file() and p.suffix != ".lock"})
+        write_project_archive(restored, self.root / "continued.zip")
 
 
 class CandidateRunTests(CandidateTestCase):

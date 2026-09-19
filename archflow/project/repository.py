@@ -2269,7 +2269,12 @@ class FilesystemProjectRepository:
                 require_identifier(value, "transfer run_id")
                 if value in runs:
                     return
-                run = self.load_run(value)
+                try:
+                    run = self.load_run(value)
+                except ProjectRepositoryError as exc:
+                    raise ProjectIntegrityError(
+                        f"TRANSFER_RUN_INVALID: runs/{value}/run.json: {exc}"
+                    ) from exc
                 self.load_version_state(run.base)
                 runs.add(value)
                 add(f"runs/{value}/run.json")
@@ -2301,7 +2306,36 @@ class FilesystemProjectRepository:
                     raise ProjectIntegrityError(f"TRANSFER_DEPENDENCY_MISSING: {current_run}/{name}")
                 add(sorted(matches)[0].relative_to(self.layout.root).as_posix(), digest)
 
-            def references(value: Any, current_run: str | None) -> None:
+            def inline_projection_source(value: Mapping[str, Any], current_run: str | None) -> bool:
+                # Legacy Studio deltas retain an authored source inline, bound
+                # to a synthetic RunRef. Only these two matching bindings name
+                # no stored run; their nested evidence still has to travel.
+                if (value.get("schema") != "StudioCandidateDelta@1"
+                        or value.get("project_id") != self._manifest.project_id
+                        or current_run is None or value.get("run_id") != current_run
+                        or any(value.get(key) is not None for key in (
+                            "source_stage_ref", "source_record_ref", "source_runner_ref", "source_model"))):
+                    return False
+                source, record = value.get("source_run_ref"), value.get("source_record")
+                if (not isinstance(source, Mapping) or not isinstance(record, Mapping)
+                        or source.get("project_id") != self._manifest.project_id
+                        or source.get("run_id") != "studio-projection"
+                        or record.get("schema") != "StateRecord@1"
+                        or any(record.get(key) != source.get(key) for key in ("project_id", "run_id", "base"))):
+                    return False
+                root = self.layout.run("studio-projection").root
+                if root.exists() or root.is_symlink():
+                    return False
+                try:
+                    run = RunRef.from_dict(source)
+                except (TypeError, ValueError) as exc:
+                    raise ProjectIntegrityError("TRANSFER_RUN_INVALID: invalid inline projection binding") from exc
+                # The synthetic run never existed, but its exact published
+                # base must exist in this project's retained history.
+                self.load_version_state(run.base)
+                return True
+
+            def references(value: Any, current_run: str | None, *, inline_projection: bool = False) -> None:
                 if isinstance(value, Mapping):
                     # Uploaded source documents name their object by digest.
                     # Generated drawings instead link a receipt via revisionRef;
@@ -2321,12 +2355,13 @@ class FilesystemProjectRepository:
                     if {"run_id", "project_id", "base"}.issubset(value):
                         if value["project_id"] != self._manifest.project_id:
                             raise ProjectIntegrityError("TRANSFER_PROJECT_MISMATCH: foreign run")
-                        if value["base"] is not None:
+                        if value["base"] is not None and not inline_projection:
                             add_run(value["run_id"])
                     native = value.get("artifact_relative_path")
                     inspection = value.get("inspection")
                     if native and isinstance(inspection, Mapping) and inspection.get("file_sha256"):
                         artifact(native, inspection["file_sha256"], current_run)
+                    inline_source = inline_projection_source(value, current_run)
                     for key, item in value.items():
                         evidence_list = key == "archflow:evidence" or (
                             key == "value" and value.get("key") == "archflow:evidence"
@@ -2338,7 +2373,9 @@ class FilesystemProjectRepository:
                             for source in item.split(","):
                                 references(source, current_run)
                         else:
-                            references(item, current_run)
+                            references(item, current_run, inline_projection=(
+                                inline_source and key in ("source_run_ref", "source_record")
+                            ))
                 elif isinstance(value, (list, tuple)):
                     for item in value:
                         references(item, current_run)
