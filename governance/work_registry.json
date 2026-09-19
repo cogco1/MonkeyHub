@@ -14,6 +14,7 @@
       "contributor": "YNNAP-HelloWorld (PR #169), replayed by Claude Fable 5.1",
       "reviewer": "Repository owner",
       "write_scope": [
+        "archflow/adapters/cad_execution.py",
         "archflow/adapters/blender_projection.py",
         "archflow/adapters/blender_worker.py",
         "archflow/project/record_kinds.py",
