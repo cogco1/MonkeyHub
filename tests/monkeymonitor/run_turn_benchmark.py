@@ -60,11 +60,21 @@ def expected_geometry(readback, scenario):
     return True
 
 
+def candidate_for_readback(detail, runtime):
+    # A partial readback intentionally has no fully-read candidate card. Its
+    # admitted operation still names the run to inspect independently. Accept
+    # only one candidate identity for this fresh, single-turn benchmark chat.
+    candidates = {row["candidateId"] for row in runtime.get("operations", [])
+                  if row.get("sessionId") == detail["id"] and row.get("candidateId") and row.get("jobId")}
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", choices=("simple-create", "incremental-edit"), required=True)
     parser.add_argument("--output", type=Path, required=True, help="Explicit nonproject directory for this benchmark's trace/report")
     parser.add_argument("--timeout", type=int, default=240)
+    parser.add_argument("--model", help="Pin the installed provider's model for comparable runs")
     parser.add_argument("--hold-seconds", type=int, default=0, help="Keep isolated services available briefly for a separate headless preview check")
     parser.add_argument("--no-preview", action="store_true", help="Only measure provider/runtime on a machine without headless Chrome; first visible remains unknown")
     parser.add_argument("--context-pack", action="store_true",
@@ -75,6 +85,8 @@ def main():
     if args.context_pack and args.scenario != "incremental-edit":
         parser.error("--context-pack names one existing object to edit; it applies to incremental-edit only")
     config = json.loads(Path(__file__).with_name("benchmarks.json").read_text())
+    if args.model:
+        config["model"] = args.model
     scenario = next(row for row in config["scenarios"] if row["id"] == args.scenario)
     revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     fixture_revision = subprocess.check_output(["git", "log", "-1", "--format=%H", "--", config["fixture"]], cwd=ROOT, text=True).strip()
@@ -162,12 +174,13 @@ def main():
             else:
                 request(base, f"/api/chat/sessions/{session['id']}/stop", {})
                 raise TimeoutError("The benchmark provider did not finish within its configured timeout")
-            candidate = next((row.get("candidateId") for row in reversed(detail["messages"]) if row.get("candidateId")), None)
-            readback = request(studio["url"].rstrip("/"), f"/api/candidates/{candidate}") if candidate else None
+            runtime_snapshot = request(base, f"/api/runtime/projects/{opened['runtimeId']}")
+            candidate = candidate_for_readback(detail, runtime_snapshot)
+            readback = request(studio["apiUrl"].rstrip("/"), f"/api/candidates/{candidate}") if candidate else None
             readback_ok = bool(readback and readback["status"] == "succeeded" and readback["seatExecutionComplete"]
                                and readback.get("objects") and not readback.get("objectReadbackError"))
             geometry_ok = expected_geometry(readback, scenario["id"])
-            preview_url = studio["url"].rstrip("/") + "/?workspace=monkeyarch&candidate=" + (candidate or "")
+            preview_url = studio["url"] + "&candidate=" + (candidate or "")
             connection = {"monitor_url": monitor, "preview_url": preview_url, "turn_id": turn_id, "candidate_id": candidate}
             (args.output / "connection.json").write_text(json.dumps(connection, indent=2), encoding="utf-8")
             print(json.dumps({"state": detail["status"], **connection}), flush=True)
