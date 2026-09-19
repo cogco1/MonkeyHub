@@ -21,6 +21,11 @@ from .trace import ResolvedTarget
 POLL_S = 0.15
 #: What an element's state answers with; every other key is ignored.
 READABLE = ("value", "enabled", "toggled", "offscreen")
+#: How much of a read-back value the receipt keeps beside the verdict. The
+#: execution host reads up to 4096 characters of a document, and a receipt is
+#: evidence that what was typed arrived, never a copy of what somebody was
+#: editing -- which would also be a copy nobody asked this package to keep.
+VALUE_CHARS = 256
 
 #: ``element(spec)`` resolves one target and reads it, or raises.
 Element = Callable[[TargetSpec], "tuple[ResolvedTarget, dict]"]
@@ -89,6 +94,21 @@ def _state_holds(state: dict, wanted: dict, *, secret: bool) -> tuple[bool, str]
     return True, ""
 
 
+def _kept(state: dict) -> dict:
+    """What the receipt keeps of a read element: the flags, and a bounded value.
+
+    The containment above was decided over the whole string; this is the
+    beginning of it, which is what a reader of the trace needs to see what the
+    field held. Truncation is said with an ellipsis rather than left silent.
+    """
+
+    kept = {key: state.get(key) for key in READABLE if key in state}
+    value = kept.get("value")
+    if isinstance(value, str) and len(value) > VALUE_CHARS:
+        kept["value"] = value[:VALUE_CHARS] + "…"
+    return kept
+
+
 def _check(
     action: Action, windows: Windows, element: Element
 ) -> tuple[bool, str, dict | None]:
@@ -123,8 +143,7 @@ def _check(
     if expectation.expect == "absent":
         return False, f"{resolved.name!r} is still there", None
     held, why = _state_holds(state, expectation.state, secret=action.sensitive)
-    kept = {key: state.get(key) for key in READABLE if key in state}
-    return held, why or f"{resolved.name!r} matched", kept
+    return held, why or f"{resolved.name!r} matched", _kept(state)
 
 
 def verify_action(

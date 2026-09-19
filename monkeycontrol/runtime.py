@@ -29,6 +29,7 @@ from .contract import (
 )
 from .host import EXECUTION_HOST, PRESENTATION_HOST, HostError, HostProcess
 from .providers import (
+    HIGHLIGHT_COLOR,
     FocusError,
     PresentationProvider,
     Provider,
@@ -60,6 +61,11 @@ TYPES_TEXT = frozenset({"type", "set_value"})
 #: Windows file dialog's file name box refuses SetFocus outright, and refusing
 #: to save a file over that would be a guard protecting nothing.
 FOCUS_ELEMENT = frozenset({"type", "keypress"})
+#: What a highlight is drawn in when the element under it was matched visually
+#: rather than resolved: a rectangle a caller handed us is a weaker claim than
+#: a named element, and nobody should have to read a frame twice to see which
+#: of the two the demonstration is touching.
+FALLBACK_COLOR = "#C62828"
 LAUNCH_WINDOW_MS = 10000
 RECORD_INTERVAL_MS = 250
 #: What a recording keeps in frame. The default follows the monitor the
@@ -574,7 +580,13 @@ class ComputerUseRuntime:
         if bounds is None:
             return
         label = self._label(step)
-        self.presentation.highlight(bounds, label=label, kind=step.action.type, ms=0)
+        self.presentation.highlight(
+            bounds,
+            label=label,
+            kind=step.action.type,
+            ms=0,
+            color=FALLBACK_COLOR if step.fallback else HIGHLIGHT_COLOR,
+        )
         step.shown = True
         self._note(step, "highlight", f"{_box(bounds)} {label}")
         self._pause(self._policy.highlight_ms)
@@ -589,10 +601,13 @@ class ComputerUseRuntime:
 
         seen = step.window.title if step.window is not None else ""
         name = step.target.name if step.target is not None else seen
-        return self._safe(
+        label = self._safe(
             f"{step.step_id} {step.action.type.upper()} — "
             f"{name or target_name(step.action.target)}"
         )
+        # Said as well as drawn in another colour, because a still of a frame
+        # says nothing about a palette, and the receipt beside it says backend.
+        return f"{label} (fallback)" if step.fallback else label
 
     def _safe(self, text: str) -> str:
         """Anything this runtime says out loud, with every typed secret out of it."""

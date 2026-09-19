@@ -9,11 +9,12 @@ provider draws and captures, and resolves nothing at all.
 from __future__ import annotations
 
 from .base import FocusError, Provider, ResolutionError
-from .presentation import PresentationProvider
+from .presentation import HIGHLIGHT_COLOR, PresentationProvider
 from .uia import UiaProvider
 from .visual import VisualFallbackProvider
 
 __all__ = [
+    "HIGHLIGHT_COLOR",
     "FocusError",
     "PresentationProvider",
     "Provider",

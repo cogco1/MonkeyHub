@@ -18,12 +18,14 @@ from archflow.contracts.canonical import canonical_digest
 
 from monkeycontrol.contract import ContractError
 from monkeycontrol.host import HostError
-from monkeycontrol.providers import FocusError, ResolutionError
+from monkeycontrol.providers import HIGHLIGHT_COLOR, FocusError, ResolutionError
 from monkeycontrol.runtime import (
+    FALLBACK_COLOR,
     ComputerUseRuntime,
     RuntimePolicy,
     RuntimeRefusal,
 )
+from monkeycontrol.verify import VALUE_CHARS
 from monkeycontrol.trace import ResolvedTarget, WindowInfo
 
 PNG = b"\x89PNG\r\n\x1a\nfake capture"
@@ -178,6 +180,7 @@ class FakePresentation:
     def __init__(self, log: list[str], *, monitors=None) -> None:
         self.log = log
         self.labels: list[str] = []
+        self.colors: list[str] = []
         self.badges: list[str] = []
         self.anchors: list = []
         self.regions: list = []
@@ -204,6 +207,7 @@ class FakePresentation:
     def highlight(self, bounds, *, label, kind="click", ms=600, color="#FF7A00"):
         self.log.append("highlight")
         self.labels.append(label)
+        self.colors.append(color)
 
     def badge(self, text, *, ms=900, kind="info", anchor=None):
         self.log.append("badge")
@@ -479,6 +483,16 @@ class FallbackTests(RuntimeTestCase):
         self.assertEqual(receipt["backend"], "visual-fallback")
         self.assertIs(receipt["fallback"], True)
         self.assertEqual(receipt["execution"]["point"], [20, 30])
+        # A rectangle somebody handed us is a weaker claim than a resolution,
+        # and the demonstration being filmed has to say which one it is.
+        self.assertTrue(self.presentation.labels[0].endswith(" (fallback)"))
+        self.assertEqual(self.presentation.colors, [FALLBACK_COLOR])
+
+    def test_a_resolved_target_keeps_the_ordinary_highlight(self) -> None:
+        runtime = self.runtime()
+        runtime.execute(CLICK)
+        self.assertNotIn("fallback", self.presentation.labels[0])
+        self.assertEqual(self.presentation.colors, [HIGHLIGHT_COLOR])
 
 
 class VerificationTests(RuntimeTestCase):
@@ -513,6 +527,27 @@ class VerificationTests(RuntimeTestCase):
         )
         self.assertEqual(receipt["status"], "succeeded")
         self.assertEqual(receipt["verification"]["status"], "passed")
+
+    def test_a_read_back_value_is_kept_at_a_readable_length(self) -> None:
+        # The host reads up to 4096 characters of a document; a receipt proves
+        # that what was typed arrived, and is not a copy of the file.
+        document = "computer-use " + "x" * 4096
+        runtime = self.runtime(FakeUia(self.log, value=document))
+        receipt = runtime.execute(
+            dict(
+                CLICK,
+                verification={
+                    "expect": "element",
+                    "state": {"value": "computer-use"},
+                    "timeout_ms": 0,
+                },
+            )
+        )
+        kept = receipt["verification"]["state"]["value"]
+        self.assertEqual(receipt["verification"]["status"], "passed")
+        self.assertEqual(len(kept), VALUE_CHARS + 1)
+        self.assertTrue(kept.endswith("…"))
+        self.assertTrue(kept.startswith("computer-use "))
 
     def test_an_element_expectation_falls_back_to_the_actions_own_target(self) -> None:
         runtime = self.runtime()
