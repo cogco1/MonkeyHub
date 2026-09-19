@@ -838,11 +838,13 @@ class ChatTests(unittest.TestCase):
         self.assertFalse(override["unrelated"]["enabled"])
         self.assertFalse(override["remote-unrelated"]["enabled"])
         self.assertTrue(override["monkeyhub"]["enabled"])
-        self.assertEqual(set(override["monkeyhub"]["enabled_tools"]),
-                         {"studio_schema", "studio_request", "fab_request", "attachment_read"})
+        # Computer use is named here like the rest; whether it may actually run
+        # is the policy file's answer, given by the route the tool calls.
+        exposed = ("studio_schema", "studio_request", "fab_request", "attachment_read",
+                   "computer_inspect", "computer_action", "computer_record")
+        self.assertEqual(set(override["monkeyhub"]["enabled_tools"]), set(exposed))
         self.assertEqual(override["monkeyhub"]["tools"], {
-            name: {"approval_mode": "approve"}
-            for name in ("studio_schema", "studio_request", "fab_request", "attachment_read")
+            name: {"approval_mode": "approve"} for name in exposed
         })
 
     def test_process_failure_redacts_credentials_and_keeps_user_message(self):
@@ -2064,7 +2066,9 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(process.returncode, 0, process.stderr)
         replies = [json.loads(row) for row in process.stdout.splitlines()]
         self.assertEqual(replies[0]["result"]["protocolVersion"], "2024-11-05")
-        self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]}, {"studio_schema", "studio_request", "fab_request", "attachment_read"})
+        self.assertEqual({tool["name"] for tool in replies[1]["result"]["tools"]},
+                         {"studio_schema", "studio_request", "fab_request", "attachment_read",
+                          "computer_inspect", "computer_action", "computer_record"})
 
     # ---- a turn that names its own source and focus
 

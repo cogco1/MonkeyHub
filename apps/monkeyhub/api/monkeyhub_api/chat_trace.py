@@ -120,10 +120,12 @@ class HubTurnObserver:
         identifier = f"hub:tool:{self.turn_id}:{identifier}"
         # Only documented names/codes are diagnostic labels. A CLI tool title
         # may contain a command or private text; it is not a safe tool name.
-        safe_name = name if name in {"studio_schema", "studio_request", "fab_request"} else "agent_tool"
+        safe_name = name if name in {"studio_schema", "studio_request", "fab_request",
+                                     "computer_inspect", "computer_action", "computer_record"} else "agent_tool"
         arguments = arguments if isinstance(arguments, dict) else {}
         method, path = arguments.get("method", "GET"), arguments.get("path", "")
-        request_kind = ("schema_read" if safe_name == "studio_schema" else
+        request_kind = ("computer" if safe_name.startswith("computer_") else
+                        "schema_read" if safe_name == "studio_schema" else
                         "state_read" if method == "GET" and path in {"/api/state", "/api/state/frame"} else
                         "readback" if method == "GET" and isinstance(path, str) and path.startswith("/api/candidates/") else
                         "mutation" if method in {"POST", "PUT", "DELETE"} else "tool")

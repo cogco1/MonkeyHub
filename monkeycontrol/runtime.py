@@ -150,6 +150,17 @@ def _refusal_for(exc: Exception) -> _Refused:
     return _Refused(code, str(exc))
 
 
+def build_runtime(trace_dir: Path, policy: RuntimePolicy) -> "ComputerUseRuntime":
+    """Compose one runtime from a trace directory and a policy, and nothing else.
+
+    Every caller composing this package -- the CLI, the Hub -- goes through
+    here, so a test that has to run one without a desktop has one seam to
+    replace instead of one per caller.
+    """
+
+    return ComputerUseRuntime(trace_dir=trace_dir, policy=policy)
+
+
 class ComputerUseRuntime:
     """The composed backend: providers, policy, trace and optional recording."""
 

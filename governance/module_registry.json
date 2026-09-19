@@ -6081,6 +6081,7 @@
         "ComputerUseRuntime",
         "RuntimePolicy",
         "RuntimeRefusal",
+        "build_runtime",
         "verify_action",
         "Recorder",
         "encode_video",
@@ -6160,7 +6161,8 @@
         "the visible Usage page and its browser-side presentation of MonkeyMonitor events, traces, explicit diagnostic sources and manual rate estimates; Monitor remains the data/algorithm owner behind the loopback API",
         "Mounted workspace view state and local drafts survive tool and project switches; Board page visits keep exact source/page/revision and return to the same canvas. These are UI projections, not a second project store.",
         "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
-        "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own."
+        "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
+        "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6229,6 +6231,10 @@
         "POST /api/runtime/projects/{runtime_id}/recover",
         "POST /api/runtime/projects/{runtime_id}/close",
         "/api/runtime/projects/{runtime_id}/studio/{path}",
+        "POST /api/computer/inspect",
+        "POST /api/computer/actions",
+        "POST /api/computer/recordings",
+        "computer_inspect, computer_action, computer_record: MCP tools proxying those routes, approved for a headless turn only where the policy file enables computer use",
         "MonkeyHub.exe [--source-root PATH --python PATH] [--runtime-root PATH] [--port PORT] [--startup-timeout-seconds SECONDS] [--version]",
         "GET /api/chat/usage-sources",
         "ChatStore.usage_sources",
@@ -6261,7 +6267,8 @@
         "Every production Studio and Monitor process is created, monitored and stopped by this Hub; Studio keeps no launcher, configuration file or tray of its own, and a development start is an explicit --project-dir (scripts/dev/run-project-runtime.ps1)",
         "No project workspace iframe or shared mutable API client; a request remains bound to its original project when another project is selected.",
         "Hub controls language, theme and application settings. Workspace preferences only project those values; retained editing-base pointers keep their existing exact project binding.",
-        "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input."
+        "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
+        "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6278,6 +6285,7 @@
         "apps/monkeyhub/launch-hub.ps1",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css",
@@ -6326,6 +6334,7 @@
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "apps/monkeyhub/api/tests/test_acp_session.py",
         "apps/monkeyhub/api/tests/test_acp_chat.py",
+        "apps/monkeyhub/api/tests/test_computer_tools.py",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/api/tests/test_workers.py",
         "apps/monkeyhub/api/tests/test_runtime_operations.py",
@@ -6350,7 +6359,8 @@
         "contracts.canonical",
         "monkeyfab",
         "studio.artifacts",
-        "project.archive"
+        "project.archive",
+        "monkeycontrol"
       ]
     },
     {

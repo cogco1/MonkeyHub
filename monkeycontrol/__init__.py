@@ -27,7 +27,7 @@ from .providers import (
     VisualFallbackProvider,
 )
 from .record import Recorder, encode_video
-from .runtime import ComputerUseRuntime, RuntimePolicy, RuntimeRefusal
+from .runtime import ComputerUseRuntime, RuntimePolicy, RuntimeRefusal, build_runtime
 from .store import ActionTraceStore
 from .trace import ResolvedTarget, WindowInfo, build_receipt
 from .verify import verify_action
@@ -56,6 +56,7 @@ __all__ = [
     "VisualFallbackProvider",
     "WindowInfo",
     "build_receipt",
+    "build_runtime",
     "encode_video",
     "render_overlays",
     "validate_action",

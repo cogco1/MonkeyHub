@@ -26,9 +26,9 @@ from .overlay import PROJECTIONS, render_overlays
 from .runtime import (
     MODES,
     REGIONS,
-    ComputerUseRuntime,
     RuntimePolicy,
     RuntimeRefusal,
+    build_runtime,
 )
 
 SCRIPT_SCHEMA = "ComputerActionScript@1"
@@ -39,12 +39,6 @@ TEMP_TOKEN = "${TEMP}"
 #: 0 every action succeeded, 1 one did not, 2 the action or script is invalid,
 #: 3 the runtime refused to start or stop what was asked of it.
 OK, FAILED, INVALID, REFUSED = 0, 1, 2, 3
-
-
-def build_runtime(trace_dir: Path, policy: RuntimePolicy) -> ComputerUseRuntime:
-    """The seam a test replaces to run the CLI without a desktop."""
-
-    return ComputerUseRuntime(trace_dir=trace_dir, policy=policy)
 
 
 def expanded(payload: dict) -> dict:
