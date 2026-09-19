@@ -115,6 +115,7 @@ NO_VERSION_IDENTITY = {
 # the round-trip test proves it.
 COVERED_INDIRECTLY = {
     "BlenderExecutionReceipt@1": "identity.binding is a RhinoCadProgramBinding@1",
+    "BlenderProjectionReceipt@1": "binding is a RhinoCadProgramBinding@1",
     "OcctExecutionReceipt@1": "identity.binding is a RhinoCadProgramBinding@1",
     "RhinoCadExecutionReceipt@4": "identity.binding is a RhinoCadProgramBinding@1",
     "CompositeStageClosureReceipt@1": "its branch is a design BranchRef",

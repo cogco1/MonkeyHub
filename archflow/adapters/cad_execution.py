@@ -4286,8 +4286,10 @@ __all__ = [
 # The canonical base a CAD execution reaches the adapter with lives in the
 # program binding, and every receipt family carries that binding rather than
 # repeating the base: Rhino, OCCT and Blender receipts all serialise it at
-# ``identity.binding``. Declaring the binding once covers all three, and none
-# of the receipts derives anything from the base.
+# ``identity.binding``, and the Blender projection receipt at ``binding``.
+# Declaring the binding once covers all four, and none of the receipts derives
+# anything from the base: their object digests come from the compiled program,
+# their artifact digests name files, and the base itself is only carried.
 VERSION_REF_POINTERS = {"RhinoCadProgramBinding@1": ("/base",)}
 
 _register_version_refs(VERSION_REF_POINTERS)
@@ -4296,6 +4298,7 @@ for _receipt_schema in (
     "RhinoCadExecutionReceipt@4",
     "OcctExecutionReceipt@1",
     "BlenderExecutionReceipt@1",
+    "BlenderProjectionReceipt@1",
     "RhinoCadExportIdentity@2",
     "OcctCadExportIdentity@1",
 ):
