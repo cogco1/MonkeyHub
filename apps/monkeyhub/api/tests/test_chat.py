@@ -1687,8 +1687,9 @@ class ChatTests(unittest.TestCase):
         benchmark = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(benchmark)
         detail = {"id": "this-chat", "messages": [{"role": "tool", "candidateId": None}]}
-        operation = {"sessionId": "this-chat", "candidateId": "candidate-1"}
-        runtime = {"operations": [operation, {"sessionId": "another-chat", "candidateId": "other"}]}
+        operation = {"sessionId": "this-chat", "candidateId": "candidate-1", "jobId": "job-1"}
+        runtime = {"operations": [operation, {"sessionId": "another-chat", "candidateId": "other", "jobId": "other-job"},
+                                  {"sessionId": "this-chat", "candidateId": "refused", "status": "failed"}]}
         self.assertEqual(benchmark.candidate_for_readback(detail, runtime), "candidate-1")
         self.assertIsNone(benchmark.candidate_for_readback(detail, {"operations": []}))
         runtime["operations"].append({**operation, "candidateId": "candidate-2"})

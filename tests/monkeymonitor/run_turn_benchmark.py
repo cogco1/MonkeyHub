@@ -65,7 +65,7 @@ def candidate_for_readback(detail, runtime):
     # admitted operation still names the run to inspect independently. Accept
     # only one candidate identity for this fresh, single-turn benchmark chat.
     candidates = {row["candidateId"] for row in runtime.get("operations", [])
-                  if row.get("sessionId") == detail["id"] and row.get("candidateId")}
+                  if row.get("sessionId") == detail["id"] and row.get("candidateId") and row.get("jobId")}
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
