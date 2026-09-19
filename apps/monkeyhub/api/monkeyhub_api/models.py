@@ -1,7 +1,8 @@
 """The finite application lifecycle exposed by the Hub."""
 
 from pathlib import Path
-from typing import Literal
+import re
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
@@ -341,3 +342,65 @@ class ChatPermissionRequest(BaseModel):
 
     projectId: str = Field(min_length=1)
     optionId: str | None
+
+
+class ComputerInspectRequest(BaseModel):
+    """Read one window's element tree, without touching anything."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    application: str = Field(min_length=1, max_length=120)
+    window: str | None = Field(default=None, max_length=300)
+    depth: int = Field(default=6, ge=1, le=12)
+
+    @field_validator("window")
+    @classmethod
+    def compilable_window(cls, value: str | None) -> str | None:
+        """A window filter is a Python regex, and a bad one is the caller's mistake.
+
+        It is compiled here rather than deep in the provider, where re.error is
+        not a ValueError and would leave this route answering 500 to a typo.
+        """
+
+        if value is not None:
+            try:
+                re.compile(value)
+            except re.error as exc:
+                raise ValueError(
+                    f"window must be a Python regular expression: {exc}"
+                ) from exc
+        return value
+
+
+class ComputerActionRequest(BaseModel):
+    """One ComputerAction@1 payload; monkeycontrol owns what is inside it."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    action: dict[str, Any]
+    # Absent means the mode the policy file chose for this machine.
+    mode: Literal["fast", "demo"] | None = None
+
+
+class ComputerRecordingRequest(BaseModel):
+    """Start or stop the one recording a runtime may have running."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    command: Literal["start", "stop"]
+    name: str | None = Field(default=None, min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class ComputerPolicy(BaseModel):
+    """What this machine's owner allows, read from a file the Hub only reads.
+
+    It lives at diagnostics/monkeycontrol/policy.json under the Hub's runtime
+    root, beside the trace the runtime writes. Nothing in the Hub creates it:
+    absent, unreadable or disabled all mean the same thing, which is no.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    enabled: bool = False
+    allowedProcesses: list[str] = Field(default_factory=list, max_length=40)
+    mode: Literal["fast", "demo"] = "fast"

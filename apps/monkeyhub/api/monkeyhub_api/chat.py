@@ -40,6 +40,10 @@ if __package__ in {None, ""}:
     for _path in (_source, _source / "apps/archflow-studio/api", Path(__file__).resolve().parents[1]):
         sys.path.insert(0, str(_path))
     __package__ = "monkeyhub_api"
+    # Started as a script this module is __main__, so a sibling importing it by
+    # name would execute a second copy with its own context variables and its
+    # own trace headers. One file is one module, whichever way it was started.
+    sys.modules.setdefault("monkeyhub_api.chat", sys.modules[__name__])
 
 from archflow.project.refs import ProjectRecordRef, require_identifier
 from archflow.project.repository import FilesystemProjectRepository
@@ -180,6 +184,26 @@ _CLAUDE_APPROVED = (
     "mcp__monkeyhub__fab_request",
     "mcp__monkeyhub__attachment_read",
 )
+
+
+def _claude_approved(runtime_root: Path) -> tuple[str, ...]:
+    """The names above, plus computer use on a machine whose policy allows it.
+
+    Driving the desktop is not approved by being installed. The tools are
+    always advertised, because their route answers a disabled machine with the
+    file that turns them on, but a headless turn may only actually use them
+    where the owner of this machine said so.
+    """
+    # Imported inside every caller rather than at the top: computer_tools
+    # reaches its routes through this module's own transport, and one of the
+    # two has to be late for the other to exist.
+    from . import computer_tools
+
+    if not computer_tools.read_policy(runtime_root).enabled:
+        return _CLAUDE_APPROVED
+    return _CLAUDE_APPROVED + tuple(
+        f"mcp__monkeyhub__{name}" for name in computer_tools.TOOL_NAMES
+    )
 
 
 def _source_checkout() -> Path | None:
@@ -385,6 +409,40 @@ def _claude_call(block: Mapping, asked: ChatMessage | None) -> dict:
     }
 
 
+def _computer_line(body: str) -> str | None:
+    """One ComputerActionReceipt@1 as the line a person reads in the transcript.
+
+    What happened on the screen is a verb and the thing it reached, so that is
+    the line: CLICK — Save, with the verdict the action declared beside it. A
+    refusal says its code instead, because there is nothing to tick.
+    """
+    try:
+        receipt = json.loads(body)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(receipt, dict) or receipt.get("schema") != "ComputerActionReceipt@1":
+        return None
+
+    def part(key: str) -> dict:
+        value = receipt.get(key)
+        return value if isinstance(value, dict) else {}
+
+    intent = str(receipt.get("intent") or receipt.get("application") or "")
+    code = part("refusal").get("code")
+    code = code if isinstance(code, str) else None
+    if receipt.get("status") == "refused" and code:
+        return f"REFUSED {code} — {intent}".strip()
+    resolved = part("target").get("resolved")
+    named = ((resolved or {}).get("name") or part("window").get("title")
+             or receipt.get("application") or intent)
+    verdict = part("verification").get("status")
+    said = " ✓" if verdict == "passed" else " ✕" if verdict == "failed" else ""
+    if not said and receipt.get("status") == "failed" and code:
+        # A step that failed without a declared expectation still says so.
+        said = f" ✕ {code}"
+    return f"{str(part('action').get('type') or 'action').upper()} — {named}{said}"
+
+
 def _tool_activity(item: Mapping, environment=None) -> tuple[str, str | None, bool]:
     """One MCP call as a readable line plus collapsible diagnostics.
 
@@ -418,6 +476,10 @@ def _tool_activity(item: Mapping, environment=None) -> tuple[str, str | None, bo
         # A failed call, or one made with the CLI's own tools, names no
         # candidate: reading a record file is not a finished run.
         candidate = None
+    if not failed and item.get("tool") == "computer_action":
+        # A desktop step is one sentence: the verb, what it reached and whether
+        # what it promised held. The receipt itself stays in the trace.
+        head = _computer_line(body) or head
     if named:
         lines = named + ([f"… full result {len(body)} characters"] if len(body) > _ACTIVITY_PREVIEW else [])
     elif body:
@@ -1063,7 +1125,10 @@ class ChatStore:
                 mcp_servers[row["name"]] = {**transport, "enabled": False, "required": False}
         except (ValueError, KeyError, TypeError) as exc:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
-        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read")
+        from . import computer_tools
+
+        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read",
+                      *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
             "enabled_tools": list(tool_names),
@@ -1108,7 +1173,7 @@ class ChatStore:
                        # it with no prompt attached. Named rather than bypassed:
                        # reading, editing and running in the workspace above,
                        # plus this adapter's own tools and nothing else.
-                       "--tools", "default", "--allowedTools", ",".join(_CLAUDE_APPROVED),
+                       "--tools", "default", "--allowedTools", ",".join(_claude_approved(self.runtime_root)),
                        *(("--add-dir", session.projectDir) if workdir != session.projectDir else ()),
                        "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {"monkeyhub": mcp}})]
             command += ["--resume", session.nativeSessionId] if session.nativeSessionId else ["--session-id", session.id]
@@ -1992,6 +2057,8 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
 
 
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
+    from . import computer_tools
+
     if name == "attachment_read":
         if not isinstance(arguments, dict) or set(arguments) - {"attachmentId", "offset", "limit", "page"}:
             raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "Use attachmentId and optional offset, limit, and page only.")
@@ -2008,6 +2075,11 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
         return _request_json(hub, f"/api/chat/sessions/{chat_id}/attachments/{attachment_id}/read?"
                              + urlencode({"offset": offset, "limit": limit, "page": page}))
+    if name in computer_tools.ROUTES:
+        # Nothing is checked twice: the policy gate, the allow-list and every
+        # refusal code belong to the route, so the CLI reads what an HTTP
+        # caller reads. This conversation's project is not involved.
+        return computer_tools.call(hub, name, arguments)
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
@@ -2161,6 +2233,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
 
 
 def _mcp(hub: str, chat_id: str) -> None:
+    from . import computer_tools
+
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
     request_fields = {
@@ -2343,6 +2417,10 @@ def _mcp(hub: str, chat_id: str) -> None:
                  "page": {"type": "integer", "minimum": 1, "default": 1},
              }, "required": ["attachmentId"], "additionalProperties": False,
          }},
+        # Desktop automation is advertised on every machine and permitted on
+        # none: its route answers a machine whose policy file does not enable
+        # it with the file that would.
+        *computer_tools.tool_definitions(),
     ]
     for line in sys.stdin:
         try:

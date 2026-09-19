@@ -6035,6 +6035,108 @@
       ]
     },
     {
+      "module_id": "monkeycontrol",
+      "owner_path": "monkeycontrol/contract.py",
+      "purpose": "Model-agnostic desktop automation: an action names a semantic Windows UI target, the runtime shows it, acts, verifies the declared post-condition and records an inspectable receipt under a caller-supplied diagnostics directory.",
+      "owns": [
+        "ComputerAction@1 / ComputerActionReceipt@1 contracts, semantic Windows UI Automation target resolution, demo-mode overlays, verification of declared post-conditions, action trace and recording under a caller-supplied diagnostics directory"
+      ],
+      "does_not_own": [
+        "Canonical design state, P036 records or any project write",
+        "Conversation, permission prompts and navigation (MonkeyHub owns them)",
+        "Browser automation (interface reserved), vision target proposal, cross-platform hosts"
+      ],
+      "inputs": [
+        "Validated ComputerAction@1 values, an explicit trace directory, an explicit process allow-list"
+      ],
+      "outputs": [
+        "ComputerActionReceipt@1 receipts, recordings with regenerable overlays"
+      ],
+      "public_api": [
+        "ACTION_SCHEMA",
+        "RECEIPT_SCHEMA",
+        "ACTION_TYPES",
+        "EXPECTATIONS",
+        "REFUSALS",
+        "ContractError",
+        "TargetSpec",
+        "Verification",
+        "Action",
+        "validate_action",
+        "action_payload",
+        "target_payload",
+        "redacted_text",
+        "ResolvedTarget",
+        "WindowInfo",
+        "build_receipt",
+        "ActionTraceStore",
+        "FocusError",
+        "HostError",
+        "HostProcess",
+        "Provider",
+        "ResolutionError",
+        "UiaProvider",
+        "VisualFallbackProvider",
+        "PresentationProvider",
+        "ComputerUseRuntime",
+        "RuntimePolicy",
+        "RuntimeRefusal",
+        "build_runtime",
+        "verify_action",
+        "Recorder",
+        "encode_video",
+        "PROJECTIONS",
+        "render_overlays",
+        "python -m monkeycontrol"
+      ],
+      "depends_on": [
+        "contracts.canonical"
+      ],
+      "used_by": [
+        "hub.shell"
+      ],
+      "invariants": [
+        "A coordinate is only ever an execution projection: without a UIA resolution the receipt says visual-fallback",
+        "No input is sent while the foreground window belongs to another process",
+        "Nothing is written outside the supplied trace directory"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/monkeycontrol/test_contract.py",
+        "tests/monkeycontrol/test_trace.py",
+        "tests/monkeycontrol/test_store.py",
+        "tests/monkeycontrol/test_boundaries.py",
+        "tests/monkeycontrol/test_host.py",
+        "tests/monkeycontrol/test_providers.py",
+        "tests/monkeycontrol/test_desktop_windows.py",
+        "tests/monkeycontrol/test_runtime.py",
+        "tests/monkeycontrol/test_record.py",
+        "tests/monkeycontrol/test_overlay.py",
+        "tests/monkeycontrol/test_cli.py"
+      ],
+      "notes": "CREATE: no registered owner covers desktop UI observation or actuation — adapters.* own CAD backends, monkeymonitor owns usage accounting and explicitly does not own execution, hub.shell owns conversation and lifecycle.",
+      "files": [
+        "monkeycontrol/__init__.py",
+        "monkeycontrol/contract.py",
+        "monkeycontrol/trace.py",
+        "monkeycontrol/store.py",
+        "monkeycontrol/host.py",
+        "monkeycontrol/hosts/execution_host.ps1",
+        "monkeycontrol/hosts/presentation_host.ps1",
+        "monkeycontrol/providers/__init__.py",
+        "monkeycontrol/providers/base.py",
+        "monkeycontrol/providers/uia.py",
+        "monkeycontrol/providers/visual.py",
+        "monkeycontrol/providers/presentation.py",
+        "monkeycontrol/verify.py",
+        "monkeycontrol/runtime.py",
+        "monkeycontrol/record.py",
+        "monkeycontrol/overlay.py",
+        "monkeycontrol/__main__.py",
+        "monkeycontrol/demos/notepad_explorer.json"
+      ]
+    },
+    {
       "module_id": "hub.shell",
       "owner_path": "apps/monkeyhub/api/monkeyhub_api/main.py",
       "status": "canonical",
@@ -6059,7 +6161,8 @@
         "the visible Usage page and its browser-side presentation of MonkeyMonitor events, traces, explicit diagnostic sources and manual rate estimates; Monitor remains the data/algorithm owner behind the loopback API",
         "Mounted workspace view state and local drafts survive tool and project switches; Board page visits keep exact source/page/revision and return to the same canvas. These are UI projections, not a second project store.",
         "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
-        "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own."
+        "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
+        "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6128,6 +6231,10 @@
         "POST /api/runtime/projects/{runtime_id}/recover",
         "POST /api/runtime/projects/{runtime_id}/close",
         "/api/runtime/projects/{runtime_id}/studio/{path}",
+        "POST /api/computer/inspect",
+        "POST /api/computer/actions",
+        "POST /api/computer/recordings",
+        "computer_inspect, computer_action, computer_record: MCP tools proxying those routes, approved for a headless turn only where the policy file enables computer use",
         "MonkeyHub.exe [--source-root PATH --python PATH] [--runtime-root PATH] [--port PORT] [--startup-timeout-seconds SECONDS] [--version]",
         "GET /api/chat/usage-sources",
         "ChatStore.usage_sources",
@@ -6160,7 +6267,8 @@
         "Every production Studio and Monitor process is created, monitored and stopped by this Hub; Studio keeps no launcher, configuration file or tray of its own, and a development start is an explicit --project-dir (scripts/dev/run-project-runtime.ps1)",
         "No project workspace iframe or shared mutable API client; a request remains bound to its original project when another project is selected.",
         "Hub controls language, theme and application settings. Workspace preferences only project those values; retained editing-base pointers keep their existing exact project binding.",
-        "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input."
+        "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
+        "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6177,6 +6285,7 @@
         "apps/monkeyhub/launch-hub.ps1",
         "apps/monkeyhub/api/monkeyhub_api/chat.py",
         "apps/monkeyhub/api/monkeyhub_api/chat_trace.py",
+        "apps/monkeyhub/api/monkeyhub_api/computer_tools.py",
         "apps/monkeyhub/api/monkeyhub_api/acp_session.py",
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css",
@@ -6225,6 +6334,7 @@
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "apps/monkeyhub/api/tests/test_acp_session.py",
         "apps/monkeyhub/api/tests/test_acp_chat.py",
+        "apps/monkeyhub/api/tests/test_computer_tools.py",
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/api/tests/test_workers.py",
         "apps/monkeyhub/api/tests/test_runtime_operations.py",
@@ -6249,7 +6359,8 @@
         "contracts.canonical",
         "monkeyfab",
         "studio.artifacts",
-        "project.archive"
+        "project.archive",
+        "monkeycontrol"
       ]
     },
     {

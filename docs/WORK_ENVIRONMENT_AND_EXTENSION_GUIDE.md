@@ -38,6 +38,16 @@ module registry 管软件归口与公开契约，work registry 只管未完成�
 已运行的 Hub 以自己的设置和实际健康检查为准，不通过源码目录里的配置猜测其项目。
 源码开发单独启动 Project Runtime 时，配置只来自那次启动显式给出的 `-ProjectDir` 与环境变量。
 
+**录一段演示：桌面操作默认关闭。** 需要让 Hub 操作本机桌面（录制方法演示，或操作没有 API 的软件）时，
+在该 Hub 运行根目录下手工创建 `diagnostics/monkeycontrol/policy.json`，内容形如
+`{"enabled": true, "allowedProcesses": ["notepad"], "mode": "demo"}`：`allowedProcesses`
+就是允许被驱动和被读取的全部进程，`mode` 取 `fast` 或可见的 `demo`。Hub 每次请求都重新读这个文件，
+开启、扩大或撤销都不需要重启，而且 Hub 只读不写；没有它时 `POST /api/computer/actions` 直接以
+`403 COMPUTER_USE_NOT_ENABLED` 回答并指出该路径。回执、截图、录像与可重放的标注投影都写在同一个
+`diagnostics/monkeycontrol/` 目录下，不进入任何项目目录，也不是项目状态；演示做完后把 `enabled`
+改回 `false`。动作契约、拒绝码、录像目录结构与 `python -m monkeycontrol` 命令行见
+[docs/COMPUTER_USE.md](COMPUTER_USE.md)。
+
 ### Agent 按任务检索
 
 第一次任务只需要确定：**源码检出位置、此次目标，以及涉及设计时的项目目录**。

@@ -39,6 +39,7 @@ from . import chat as chat_tools
 from . import project_archive
 from .applications import Applications
 from .chat import ChatStore
+from .computer_tools import ComputerService
 from .runtime import ProjectRuntimeManager
 from .runtime_models import HubRuntimeDto, ProjectRuntimeDto, OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent
 from .fabrication import Fabrication
@@ -49,6 +50,7 @@ from .models import (
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
     ChatAttachmentContent,
     ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary,
+    ComputerActionRequest, ComputerInspectRequest, ComputerRecordingRequest,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -97,6 +99,19 @@ def complete_interrupted_connection_teardown() -> None:
 
     _call_connection_lost._completes_teardown = True
     Transport._call_connection_lost = _call_connection_lost
+
+
+def _close_computer(app) -> None:
+    """Stop the computer-use runtime under the lock that hands it out.
+
+    Reading the attribute without it could miss a service another thread was
+    still composing, and leave two PowerShell hosts running after the Hub
+    thinks it has closed everything it owns.
+    """
+    with app.state.computer_lock:
+        service, app.state.computer = app.state.computer, None
+        if service is not None:
+            service.close()
 
 
 class HubServer(uvicorn.Server):
@@ -152,6 +167,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
         await asyncio.to_thread(runtimes.shutdown)
+        await asyncio.to_thread(_close_computer, app)
 
     app = FastAPI(title="MonkeyHub API", version="0.1.0", lifespan=lifespan, servers=[{"url": "/"}])
     app.state.settings = settings
@@ -159,6 +175,10 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.chats = chats
     app.state.runtimes = runtimes
     app.state.studio_event_sockets = set()
+    # Desktop automation costs two PowerShell hosts, so it is composed on first
+    # use rather than started with the Hub, and there is only ever one.
+    app.state.computer = None
+    app.state.computer_lock = threading.Lock()
 
     @app.exception_handler(HubFailure)
     async def handle_hub_error(request: Request, exc: HubFailure):
@@ -174,6 +194,11 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         if request.url.path.startswith("/api/fab/"):
             return JSONResponse(
                 {"code": "FAB_REQUEST_INVALID", "detail": "Invalid fabrication request. Check the required paths, field types and options."},
+                status_code=422,
+            )
+        if request.url.path.startswith("/api/computer/"):
+            return JSONResponse(
+                {"code": "COMPUTER_ACTION_INVALID", "detail": "Invalid computer request. Check application/depth, the action object, or command/name."},
                 status_code=422,
             )
         return await request_validation_exception_handler(request, exc)
@@ -376,6 +401,30 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/chat/sessions/{session_id}/permissions/{permission_id}", response_model=ChatDetail)
     def resolve_chat_permission(session_id: str, permission_id: str, body: ChatPermissionRequest):
         return chats.resolve_permission(session_id, permission_id, body)
+
+    computer_errors = {403: {"model": HubError}, 409: {"model": HubError}, 422: {"model": HubError}}
+
+    def computer() -> ComputerService:
+        """The one service this Hub owns, built the first time it is asked for."""
+        with app.state.computer_lock:
+            if app.state.computer is None:
+                app.state.computer = ComputerService(settings.runtime_root)
+            return app.state.computer
+
+    @app.post("/api/computer/inspect", responses=computer_errors)
+    def inspect_computer(body: ComputerInspectRequest) -> dict:
+        return computer().inspect(body)
+
+    @app.post("/api/computer/actions", responses=computer_errors)
+    def act_on_computer(body: ComputerActionRequest) -> dict:
+        # A refused or failed receipt is this body, not a status: the caller
+        # reads the refusal it earned. Only an invalid action and a runtime
+        # level refusal have no receipt to carry them.
+        return computer().act(body)
+
+    @app.post("/api/computer/recordings", responses=computer_errors)
+    def record_computer(body: ComputerRecordingRequest) -> dict:
+        return computer().record(body)
 
     @app.get("/api/runtime", response_model=HubRuntimeDto)
     def read_runtime():

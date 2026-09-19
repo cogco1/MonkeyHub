@@ -145,7 +145,7 @@ class PackageAdapterTests(unittest.TestCase):
         self.node = self.root / "node.exe"
         self.node.write_bytes(b"selected Node runtime")
         for directory in (
-            "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor",
+            "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
             "apps/archflow-studio/api/archflow_studio_api", "apps/archflow-studio/assets",
             "apps/monkeyhub/api", "apps/monkeyhub/installer/third-party",
             "apps/monkeyfab/src/monkeyfab", "apps/monkeyfab/tests",
@@ -162,6 +162,7 @@ class PackageAdapterTests(unittest.TestCase):
             "SECURITY.md",
             "apps/monkeyfab/src/monkeyfab/__main__.py", "apps/monkeyfab/pyproject.toml",
             "apps/monkeyfab/tests/test_cli.py",
+            "monkeycontrol/__init__.py", "monkeycontrol/hosts/execution_host.ps1",
         ):
             target = self.source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -213,6 +214,11 @@ class PackageAdapterTests(unittest.TestCase):
                          (self.hub / self.adapter_relative / "dist/index.js").read_bytes())
         self.assertEqual((self.bundle / "governance/module_registry.json").read_text(), "fixture")
         self.assertIn("governance/module_registry.json", builder.SOURCE_PATHS)
+        # The installed Hub imports monkeycontrol to expose its computer-use
+        # routes, and that package is nothing without its PowerShell hosts.
+        self.assertEqual((self.bundle / "monkeycontrol/__init__.py").read_text(), "fixture")
+        self.assertEqual((self.bundle / "monkeycontrol/hosts/execution_host.ps1").read_text(), "fixture")
+        self.assertIn("monkeycontrol", builder.SOURCE_PATHS)
         # A user holding only the ZIP can still find the security-reporting route.
         self.assertEqual((self.bundle / "SECURITY.md").read_text(), "fixture")
         self.assertIn("SECURITY.md", builder.SOURCE_PATHS)
