@@ -9,7 +9,7 @@
     "Windows 11 desktop can show the tabbed Notepad in one language and the common",
     "file dialog in another. The second step opens a fresh tab on purpose: Notepad",
     "restores the previous session, and a demo must never type into somebody's",
-    "restores the previous session, and a demo must never type into somebody's restored document; the tab it made is closed again before the window is."
+    "restored document; the tab it made is closed again before the window is."
   ],
   "policy": {
     "allowed_processes": [

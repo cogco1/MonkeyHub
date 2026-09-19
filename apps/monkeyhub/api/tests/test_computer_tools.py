@@ -20,6 +20,7 @@ from test_monkeyhub_lifecycle import LocalHubCase, ROOT
 from test_chat import _tools_of
 
 from monkeycontrol.contract import ContractError, validate_action
+from monkeycontrol.record import NAME as RECORDING_NAME
 from monkeycontrol.runtime import RuntimeRefusal
 from monkeycontrol.trace import ResolvedTarget, WindowInfo, build_receipt
 
@@ -249,6 +250,22 @@ class ComputerRouteTests(ComputerHubCase):
         self.assertEqual(response.status_code, 422, response.text)
         self.assertEqual(response.json()["code"], "COMPUTER_ACTION_INVALID")
         self.assertEqual(built, [], "a nameless recording never reaches a runtime")
+
+    def test_a_recording_name_the_package_refuses_is_422_not_a_crash(self):
+        # This API's pattern is the wider of the two: monkeycontrol's recorder
+        # wants a letter or a digit first. The difference has to be an answer.
+        self.assertIsNone(RECORDING_NAME.match("-demo"))
+        self.enable()
+        with self.hub() as client:
+            self.inject(client, raises=ValueError(
+                "'-demo' must be a plain recording name: letters, digits, - and _"
+            ))
+            response = client.post(
+                "/api/computer/recordings", json={"command": "start", "name": "-demo"}
+            )
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "COMPUTER_ACTION_INVALID")
+        self.assertIn("plain recording name", response.json()["detail"])
 
     def test_inspect_reads_an_allowed_application_and_refuses_another(self):
         self.enable()

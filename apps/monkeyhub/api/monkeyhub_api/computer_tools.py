@@ -19,7 +19,6 @@ import threading
 
 from pydantic import ValidationError
 
-from monkeycontrol.contract import ContractError
 from monkeycontrol.runtime import (
     ComputerUseRuntime,
     RuntimePolicy,
@@ -128,50 +127,50 @@ class ComputerService:
                 f"{request.application!r} is not in this machine's allow-list "
                 f"({', '.join(allowed) or 'empty'})",
             )
-        with self._lock:
-            runtime = self._for(policy)
-            return self._answer(
-                runtime.inspect, request.application, request.window, depth=request.depth
-            )
+        return self._answer(
+            policy, "inspect", request.application, request.window, depth=request.depth
+        )
 
     def act(self, request: ComputerActionRequest) -> dict:
         """One action, and the receipt it earned -- including a refused one."""
 
-        policy = self._policy()
-        with self._lock:
-            runtime = self._for(policy)
-            return self._answer(runtime.execute, request.action, mode=request.mode)
+        return self._answer(self._policy(), "execute", request.action, mode=request.mode)
 
     def record(self, request: ComputerRecordingRequest) -> dict:
         """Start or stop the recording beside the trace."""
 
         policy = self._policy()
-        if request.command == "start" and not request.name:
+        if request.command == "stop":
+            return self._answer(policy, "record_stop")
+        if not request.name:
             raise HubFailure(
                 422, "COMPUTER_ACTION_INVALID",
                 "A recording is started with a name of letters, digits, - and _.",
             )
-        with self._lock:
-            runtime = self._for(policy)
-            if request.command == "start":
-                return self._answer(runtime.record_start, request.name)
-            return self._answer(runtime.record_stop)
+        return self._answer(policy, "record_start", request.name)
 
-    def _answer(self, call, *args, **kwargs) -> dict:
-        """One runtime call, with its two raising outcomes given a status.
+    def _answer(self, policy: ComputerPolicy, op: str, *args, **kwargs) -> dict:
+        """Compose the runtime this policy asks for, and run one of its methods.
+
+        Composing and calling are inside the same guard because they refuse the
+        same way, and because one runtime serves one request at a time.
 
         A receipt is the answer whatever it says: a refused or failed step is a
         200 body, because the caller has to read the refusal to do anything
-        about it. Only an action that is not a ComputerAction@1, and a refusal
-        that has no receipt to carry it, become statuses of their own.
+        about it. Two things are not receipts. Anything the package calls a
+        mistake is 422 -- an action that is not a ComputerAction@1, and also a
+        recording name it will not take, since this API's own pattern is the
+        wider of the two. A refusal with no receipt to carry it is 409, with
+        MonkeyControl's own code in it.
         """
 
-        try:
-            return call(*args, **kwargs)
-        except ContractError as exc:
-            raise HubFailure(422, "COMPUTER_ACTION_INVALID", str(exc)) from exc
-        except RuntimeRefusal as exc:
-            raise _refused(exc.code, str(exc)) from exc
+        with self._lock:
+            try:
+                return getattr(self._for(policy), op)(*args, **kwargs)
+            except RuntimeRefusal as exc:
+                raise _refused(exc.code, str(exc)) from exc
+            except ValueError as exc:  # ContractError is one of these
+                raise HubFailure(422, "COMPUTER_ACTION_INVALID", str(exc)) from exc
 
     def close(self) -> None:
         """Stop the runtime this Hub started; closing twice is not an error."""
