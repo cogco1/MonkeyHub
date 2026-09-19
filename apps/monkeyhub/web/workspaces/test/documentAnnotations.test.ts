@@ -18,6 +18,45 @@ const reply = (page: DocumentAnnotationsOptions, annotations: readonly DocumentG
 });
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+test("calibration and corrected contours share page revision, undo, retry and cold reopen", async t => {
+  const h = await harness(t);
+  const contour: DocumentGestureDto = { ...ink("footprint"), kind: "polyline", closed: true,
+    points: [[0.1, 0.2], [0.7, 0.2], [0.5, 0.8]] };
+  const calibration = { origin: [0.1, 0.8] as [number, number], axisPoint: [0.7, 0.8] as [number, number], distance: 6 };
+  let stored = reply(scope, [contour]);
+  let writes = 0, fail = true;
+  t.mock.method(h.studio, "documentAnnotations", async () => structuredClone(stored));
+  t.mock.method(h.studio, "saveDocumentAnnotations", async (body: DocumentAnnotationsRequestDto) => {
+    if (fail) throw new Error("offline");
+    assert.equal(body.baseRevisionSha256, stored.revisionSha256);
+    stored = { ...reply(scope, body.annotations, body.comment, revision(++writes)), tracingCalibration: body.tracingCalibration };
+    return structuredClone(stored);
+  });
+  const page = h.controller.page(scope);
+  await page.load();
+  page.setTracingCalibration(calibration);
+  await assert.rejects(page.save());
+  assert.deepEqual(page.getSnapshot().tracingCalibration, calibration);
+  assert.deepEqual(page.getSnapshot().annotations, [contour]);
+  fail = false;
+  await page.save();
+  const corrected = { ...contour, points: [[0.1, 0.2], [0.8, 0.2], [0.5, 0.8]] };
+  page.changeAnnotations([corrected]);
+  await page.save();
+  page.undo(); await page.save();
+  assert.deepEqual(stored.annotations, [contour]);
+  assert.deepEqual(stored.tracingCalibration, calibration);
+  page.undo(); await page.save();
+  assert.equal(stored.tracingCalibration, null);
+  page.redo(); await page.save();
+  const ref = await page.save();
+  const cold = h.createController().page(scope);
+  await cold.load();
+  assert.deepEqual(cold.getSnapshot().tracingCalibration, calibration);
+  assert.deepEqual(cold.getSnapshot().annotations, [contour]);
+  assert.deepEqual(await cold.save(), ref);
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;

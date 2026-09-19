@@ -245,6 +245,45 @@ class SketchBatchRequestDto(BaseModel):
     sketches: list[SketchActionDto] = Field(min_length=1, description="Ordered drawing actions; later items may reference an earlier item in this batch.")
 
 
+class DocumentTracingSourceDto(BaseModel):
+    """An exact saved page revision and the paths the user explicitly chose."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    run_id: str = Field(alias="runId", min_length=1)
+    asset_sha256: str = Field(alias="assetSha256", pattern=STATE_DIGEST_PATTERN)
+    page_index: int = Field(alias="pageIndex", ge=0)
+    revision_sha256: str = Field(alias="revisionSha256", pattern=STATE_DIGEST_PATTERN)
+    drawing_revision_ref: str | None = Field(alias="drawingRevisionRef", default=None)
+    annotation_ids: list[str] = Field(alias="annotationIds", min_length=1, max_length=128)
+
+
+class DocumentTracingRequestDto(BaseModel):
+    """Read calibrated paths from saved annotations through the existing sketch action."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
+    project_id: str | None = Field(alias="projectId", default=None, min_length=1)
+    source_run_id: str | None = Field(alias="sourceRunId", default=None, min_length=1)
+    source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+    source_proposal_id: str | None = Field(alias="sourceProposalId", default=None, min_length=1)
+    keep: list[str] = Field(default_factory=list)
+    tracing: DocumentTracingSourceDto
+    component_id: str = Field(alias="componentId", min_length=1)
+    parent_component_id: str | None = Field(alias="parentComponentId", default=None, min_length=1)
+    semantic_kind: str | None = Field(alias="semanticKind", default=None, min_length=1)
+    base_level: str | None = Field(alias="baseLevel", default=None, min_length=1)
+    base_datum: str | None = Field(alias="baseDatum", default=None, min_length=1)
+    height: float = Field(ge=0, allow_inf_nan=False,
+        description="Positive pull height in project length units when any closed contour is selected; open paths always become zero-height curves.")
+    summary: str | None = Field(default=None, min_length=1, max_length=240)
+
+    @model_validator(mode="after")
+    def one_base(self) -> DocumentTracingRequestDto:
+        if (self.base_level is None) == (self.base_datum is None):
+            raise ValueError("state exactly one of baseLevel or baseDatum")
+        return self
+
+
 class TransformElementRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     source_proposal_id: str | None = Field(

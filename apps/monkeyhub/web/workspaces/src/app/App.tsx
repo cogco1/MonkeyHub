@@ -49,12 +49,15 @@ import type {
   ProjectArtifactDto,
   ProposalDto,
   StateProjectionDto,
+  FrameLevelDto,
+  DocumentTracingSourceDto,
   ValidationDto,
 } from "../api/generated";
 import { renderTracingPaperSnapshotPng, captureTracingPaperReview, type GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
+import { DocumentTracingContext } from "../workspaces/monkeydiagram/DocumentTracingContext";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import {
@@ -353,6 +356,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const autoShowRef = useRef<{
     candidateId: string | null; context: number; viewRequest: number; started?: boolean;
     timing?: EditTimingTicket | null;
+    preserveDocument?: boolean;
   } | null>(null);
   const monitorDiagnostics = server.capabilities.includes("operation-diagnostics");
   const activeEditTiming = useRef<EditTimingTicket | null>(null);
@@ -2136,7 +2140,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   );
 
   const runCandidate = useCallback(
-    async (proposalId: string) => {
+    async (proposalId: string, preserveDocument = false) => {
       setCandidateBusy(true);
       // The approximation has done its work: from here the picture is the
       // loaded model until the exact geometry arrives.
@@ -2156,6 +2160,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         activeEditTiming.current = timing;
       }
       const preview = beginCandidatePreview(timing);
+      if (autoShowRef.current) autoShowRef.current.preserveDocument = preserveDocument;
       try {
         const accepted = await studio.startCandidate(proposalId, timing?.candidate?.trace);
         setModelRunPending(accepted.candidateId);
@@ -2179,12 +2184,63 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           error,
           what: `POST /api/proposals/${proposalId}/candidate`,
         });
+        if (preserveDocument) throw error;
       } finally {
         setCandidateBusy(false);
       }
     },
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
+
+  const [tracingLevels, setTracingLevels] = useState<FrameLevelDto[]>([]);
+  useEffect(() => {
+    let stopped = false;
+    setTracingLevels([]);
+    if (documentView.mounted && draftSource) void studio.frame(draftSource.sourceRunId ?? undefined)
+      .then(frame => { if (!stopped) setTracingLevels(frame.levels); }).catch(() => { /* Generate reports the exact API refusal. */ });
+    return () => { stopped = true; };
+  }, [documentView.mounted, draftSource?.stateDigest, draftSource?.sourceRunId]);
+  const tracingScopeKey = JSON.stringify([project?.projectId, sourceRunId, documentView.runId,
+    documentView.sourceSha, documentView.revisionRef, documentView.pageIndex, active]);
+  const tracingScope = useRef({ key: tracingScopeKey });
+  if (tracingScope.current.key !== tracingScopeKey) tracingScope.current = { key: tracingScopeKey };
+  const generateDocumentTracing = async (tracing: DocumentTracingSourceDto, height: number, requestedLevel: string) => {
+    if (!project || session.status !== "ready" || changingBase || modelLoading || proposalBusy || candidateBusy) throw new Error(t("document.trace.busy"));
+    if (localModel && unsynced(localModel)) throw new Error(t("document.trace.unsynced"));
+    const scope = tracingScope.current;
+    const epoch = modelInteractionEpoch.current;
+    const viewRequest = modelLoadRequest.current;
+    const isCurrent = () => tracingScope.current === scope && modelInteractionEpoch.current === epoch && modelLoadRequest.current === viewRequest;
+    let base = draftProjection;
+    let traceSource = draftSource;
+    setProposalBusy(true);
+    try {
+      if (!base?.stateDigest && !projection?.stateDigest) {
+        const prepared = await studio.prepareModeling(project.projectId);
+        if (!prepared.initialized || !isCurrent()) throw new Error(t("board.sketch.unmodelled"));
+        const next = await reload();
+        base = next?.projection ?? null;
+        traceSource = next && base?.stateDigest ? { projectId: project.projectId, stateDigest: base.stateDigest,
+          sourceRunId: next.sourceRunId, sourceStageRef: base.sourceStageRef ?? null } : null;
+      }
+      if (!base?.stateDigest || !traceSource || !isCurrent()) throw new Error(t("document.trace.contextChanged"));
+      const frame = await studio.frame(traceSource.sourceRunId ?? undefined);
+      const level = frame.levels.find(row => row.levelId === requestedLevel) ?? (requestedLevel === "" && frame.levels.length === 1 ? frame.levels[0] : null);
+      if (!level) throw new Error(t("document.trace.chooseLevel"));
+      const roots = base.catalog?.components.filter(row => row.parentId === null) ?? [];
+      const selectedComponent = selection?.componentId && base.elements.some(row => row.componentId === selection.componentId)
+        ? selection.componentId : null;
+      const componentId = selectedComponent ?? base.elements[0]?.componentId ?? (roots.length === 1 ? roots[0].componentId : null);
+      if (!componentId) throw new Error(t("stage.sketch.noComponent"));
+      if (!isCurrent()) throw new Error(t("document.trace.contextChanged"));
+      const proposal = await studio.traceDocument({ projectId: project.projectId, stateDigest: base.stateDigest,
+        sourceRunId: traceSource.sourceRunId ?? undefined, sourceStageRef: traceSource.sourceStageRef ?? undefined,
+        tracing, componentId, baseLevel: level.levelId, height, keep: [], summary: t("document.trace.summary") });
+      append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+      if (!isCurrent()) throw new Error(t("document.trace.contextChanged"));
+      await runCandidate(proposal.proposalId, true);
+    } finally { setProposalBusy(false); }
+  };
 
   // A board sketch is submitted exactly once, through the routes a typed sketch
   // already uses: no board geometry is truth until the exact-base candidate has
@@ -2613,7 +2669,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current ? "cancelled" : "failed");
       if (shown && preview.context === previewContext.current.revision) {
         if (designHistoryEnabled) await reload(twin.runId).then((next) => {
-          if (next) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
+          if (next && !preview.preserveDocument) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
         });
         append({
         kind: "system",
@@ -3015,6 +3071,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           />
         ) : null}
         stage={
+          <DocumentTracingContext.Provider value={{ levels: tracingLevels,
+            blockedReason: localModel && unsynced(localModel) ? t("document.trace.unsynced") : null,
+            generate: generateDocumentTracing, showModel: () => setDocumentView(current => ({ ...current, open: false })) }}>
           <Stage
             key={binding?.projectId ?? "unbound"}
             active={active}
@@ -3207,6 +3266,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             workModel={workModelControls}
             onEvidence={openEvidence}
           />
+          </DocumentTracingContext.Provider>
         }
         pinnedDrawer={developerMode && evidencePinned ? drawer : null}
       />

@@ -279,6 +279,25 @@ Pointer movement and completed gestures stay local until manual Sync.
 Snapping copies coordinates and does not infer a lasting host
 or alignment dependency; closed line networks do not yet split existing faces.
 
+The same sketch endpoint accepts a `DocumentTracingRequestDto` with `tracing`
+(`runId`, `assetSha256`, `pageIndex`, `revisionSha256`, optional `drawingRevisionRef`,
+and explicit `annotationIds`), the existing exact model base/keep fields, target
+component, `baseLevel` or `baseDatum`, and `height`. It reads saved line/polyline
+vertices and their calibration itself. It never accepts inferred image geometry or
+client-supplied profiles on this request. Closed contours require positive height;
+selected open paths use zero height. Ordinary arrows, freehand ink and page text are
+not converted. A source image need not already describe a model: this explicit
+action authors new editable sketches and makes no model-source association claim.
+
+Each resulting Element retains `sourceDocumentTrace` with the exact saved page
+reference, annotation id and calibration. Its stable id uses the source run, asset,
+drawing revision, page and annotation id, excluding the annotation revision. Continuing
+from a previous candidate and regenerating a corrected path therefore updates that
+element; unselected or erased page paths do not implicitly delete model elements.
+The candidate worker rechecks the retained source before creating its run. Existing
+proposal continuation, keep protection and exact-base checks still apply; no model
+call, separate persistence store, acceptance or HEAD change occurs here.
+
 ### 5.1 The four outcomes of an intent
 
 An `authoredControlDraft` is diagnostic context on a `MISSING_EDITABLE_CONTROL` answer,
@@ -472,6 +491,18 @@ Document annotation pages, saved annotation references and visual inputs may car
 annotation saving, intent compilation and candidate execution, even when another
 drawing has identical PNG bytes. Annotation heads are separate per drawing revision;
 older records without this optional field keep their existing serialization.
+
+Page annotations also support editable `kind: "polyline"` vertices and an explicit
+`closed` boolean (2–512 distinct points; at least 3 when closed, without repeating the
+first vertex). `tracingCalibration` optionally saves `{origin, axisPoint, distance}`
+in the same annotation revision. Both points use normalized visible-page coordinates;
+distance is positive and finite in project length units. Distinct calibration points
+define the sketch origin and +X direction. Mapping accounts for the registered page's
+width/height, including PDF crop/rotation or image EXIF orientation. The left side of
+that directed axis maps to positive second plan coordinate. Existing producers map
+the internal XZ plan and Y height to the saved model's XY plan and Z height. There is
+no inferred scale, north or perspective correction. Omitting calibration saves a
+page without a tracing scale, and legacy annotations retain their serialized shape.
 
 ## 6. Pick and gesture resolution
 

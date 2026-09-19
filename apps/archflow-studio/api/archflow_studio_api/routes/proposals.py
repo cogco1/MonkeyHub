@@ -31,6 +31,7 @@ from dataclasses import replace
 import json
 
 from fastapi import APIRouter
+from pydantic import ValidationError
 from starlette.datastructures import State
 from starlette.requests import Request
 
@@ -57,6 +58,7 @@ from ..application.projection import (
     require_actionable,
 )
 from ..application.proposals import Proposal, continue_proposal, operator_of, proposal_from
+from ..application.gestures import DocumentAnnotationRef, read_document_tracing
 from ..transport.errors import BlockedNeedsHuman, StudioError
 from ..transport.proposal import (
     EpisodeDto,
@@ -67,6 +69,7 @@ from ..transport.proposal import (
     SketchPrismRequestDto,
     SketchActionDto,
     SketchBatchRequestDto,
+    DocumentTracingRequestDto,
     TransformElementRequestDto,
     PushPullRequestDto,
     episode_dto,
@@ -154,7 +157,7 @@ def create_proposal(
     status_code=201,
 )
 def create_sketch_proposal(
-    request: Request, body: SketchPrismRequestDto | SketchBatchRequestDto
+    request: Request, body: SketchPrismRequestDto | SketchBatchRequestDto | DocumentTracingRequestDto
 ) -> ProposalDto:
     """A finished drawing action becomes the same proposal a sentence would.
 
@@ -174,10 +177,27 @@ def create_sketch_proposal(
             f"{projection.project_id} is at {projection.state_digest}. Read "
             "/api/state again and send the action against the state that answers now.",
         )
-    actions = body.sketches if isinstance(body, SketchBatchRequestDto) else [body]
+    if isinstance(body, DocumentTracingRequestDto):
+        ref = body.tracing
+        rows = read_document_tracing(binding, DocumentAnnotationRef(
+            ref.run_id, ref.asset_sha256, ref.page_index, ref.revision_sha256, ref.drawing_revision_ref,
+        ), ref.annotation_ids)
+        if body.height == 0 and any(row["closed"] for row in rows):
+            raise StudioError(422, "TRACING_HEIGHT_REQUIRED", "Choose a positive height for the selected closed contours.")
+        try:
+            actions = [(SketchActionDto(
+                component_id=body.component_id, parent_component_id=body.parent_component_id,
+                semantic_kind=body.semantic_kind, element_id=row["elementId"], profile=row["profile"],
+                closed=row["closed"], height=body.height if row["closed"] else 0,
+                base_level=body.base_level, base_datum=body.base_datum, summary=body.summary,
+            ), row["sourceDocumentTrace"]) for row in rows]
+        except ValidationError as exc:
+            raise StudioError(422, "TRACING_PROFILE_INVALID", "The calibrated path has repeated or invalid vertices. Correct the saved path before generating again.") from exc
+    else:
+        actions = [(action, None) for action in (body.sketches if isinstance(body, SketchBatchRequestDto) else [body])]
     proposal = previous
-    for action in actions:
-        step = _sketch_proposal(binding, projection, action, tuple(body.keep))
+    for action, trace in actions:
+        step = _sketch_proposal(binding, projection, action, tuple(body.keep), source_document_trace=trace)
         step = replace(
             step, source_run_id=body.source_run_id or (base.run.run_id if base.reference_state_exact else None),
             source_stage_ref=base.source_stage_ref,
@@ -185,19 +205,19 @@ def create_sketch_proposal(
         proposal = step if proposal is None else continue_proposal(base, proposal, step)
         if proposal.status == "conflict":
             # A refused batch never leaves an executable prefix in the store.
-            if isinstance(body, SketchBatchRequestDto):
+            if isinstance(body, (SketchBatchRequestDto, DocumentTracingRequestDto)):
                 raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", "The sketch batch reaches protected refs: " + ", ".join(proposal.impact.conflicts))
             break
         projection = project_proposed_record(base, apply_state_record_operator(base.record, operator_of(proposal, base.record)))
     assert proposal is not None
-    if isinstance(body, SketchBatchRequestDto) and body.summary is not None:
+    if isinstance(body, (SketchBatchRequestDto, DocumentTracingRequestDto)) and body.summary is not None:
         proposal = replace(proposal, utterance=body.summary,
                            semantic_edit={**proposal.semantic_edit, "summary": body.summary})
     return to_dto(request.app.state.proposals.put(proposal))
 
 
 def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
-                     body: SketchActionDto, keep: tuple[str, ...]) -> Proposal:
+                     body: SketchActionDto, keep: tuple[str, ...], *, source_document_trace: dict | None = None) -> Proposal:
     # Which components a seat will actually build. A drawing under any other
     # one would be carried by the record and built by nobody, so it is refused
     # here — with the list — rather than queued into a run that reports success
@@ -215,6 +235,15 @@ def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
             f"no seat builds {target}: draw under one of {list(buildable)}, "
             "or have the project's seat pack own it. Nothing was run.",
         )
+    if source_document_trace is not None:
+        existing = next((entity for entity in projection.record.entities if entity.entity_id == body.element_id), None)
+        identity_keys = ("runId", "assetSha256", "pageIndex", "drawingRevisionRef", "annotationId")
+        if existing is not None and (
+            existing.schema != "Element@1" or existing.parent_id != body.component_id
+            or not isinstance(existing.fields.get("sourceDocumentTrace"), dict)
+            or any(existing.fields["sourceDocumentTrace"].get(key) != source_document_trace.get(key) for key in identity_keys)
+        ):
+            raise StudioError(409, "TRACING_TARGET_MISMATCH", "This traced path already belongs to a different model object or component. Its existing object was preserved.")
     proposal = proposal_from(
         sketch_prism_proposal(
             projection,
@@ -229,6 +258,7 @@ def _sketch_proposal(binding: ProjectBinding, projection: StateProjection,
             semantic_kind=body.semantic_kind,
             summary=body.summary,
             keep_refs=keep,
+            source_document_trace=source_document_trace,
         )
     )
     return proposal
