@@ -656,6 +656,54 @@ class SecrecyTests(RuntimeTestCase):
         for badge in self.presentation.badges:
             self.assertNotIn("hunter2", badge)
 
+    def test_a_typed_secret_is_masked_in_every_later_receipt_note_and_label(
+        self,
+    ) -> None:
+        # Windows 11 titles a Notepad tab after the first line of the document
+        # and the file dialog names its file name box after what is in it, so
+        # the step after a sensitive one reads the secret back off the screen.
+        runtime = self.runtime(FakeUia(self.log, invoked=True))
+        runtime.record_start("demo", interval_ms=10000)
+        runtime.execute(
+            {
+                "intent": "type the password",
+                "application": "notepad",
+                "target": {"controlType": "Edit", "automationId": "1001"},
+                "action": {"type": "type", "text": "hunter2", "sensitive": True},
+            }
+        )
+        titled = WindowInfo(4242, "*hunter2 - Notepad", 91, "notepad", (0, 0, 800, 600))
+        self.uia._windows = [titled]
+        self.uia._foreground = titled
+        self.uia._value = "hunter2"
+        self.uia._target = ResolvedTarget(
+            "Edit", "hunter2", "1002", "Edit", (10, 20, 30, 40), "42.7.2", "windows-uia"
+        )
+        receipt = runtime.execute(
+            {
+                "intent": "press the box the document is named after",
+                "application": "notepad",
+                "target": {"controlType": "Edit", "automationId": "1002"},
+                "action": {"type": "click"},
+                "verification": {"expect": "element", "timeout_ms": 0},
+            }
+        )
+        runtime.record_stop()
+        self.assertNotIn("hunter2", json.dumps(receipt))
+        self.assertEqual(receipt["window"]["title"], "<redacted 7 chars>")
+        self.assertEqual(receipt["target"]["resolved"]["name"], "<redacted 7 chars>")
+        # The words a caller matches on are not prose and survive the masking.
+        self.assertEqual(receipt["status"], "succeeded")
+        self.assertEqual(receipt["verification"]["status"], "passed")
+        self.assertEqual(receipt["action"]["type"], "click")
+        body = {key: value for key, value in receipt.items() if key != "digest"}
+        self.assertEqual(receipt["digest"], canonical_digest(body))
+        for name in ("actions.ndjson", "recordings/demo/timeline.ndjson"):
+            written = (self.trace / name).read_text(encoding="utf-8")
+            self.assertNotIn("hunter2", written, name)
+        for said in self.presentation.labels + self.presentation.badges:
+            self.assertNotIn("hunter2", said)
+
 
 class RegionTests(RuntimeTestCase):
     def test_a_recording_starts_on_the_primary_monitor(self) -> None:

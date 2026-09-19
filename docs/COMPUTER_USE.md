@@ -31,7 +31,7 @@ nothing about what was clicked.
 | `action.type` | `launch`, `click`, `double_click`, `right_click`, `invoke`, `set_value`, `type`, `keypress`, `drag`, `scroll`, `wait`, `screenshot`, `highlight` |
 | `action.button` | `left` (default), `right`, `middle` |
 | `action.text` | Text for `type` and `set_value`; `set_value` may clear a field with `""` |
-| `action.sensitive` | `true` records the text only as its length, everywhere |
+| `action.sensitive` | `true` records the text only as its length, and masks that text in every receipt, timeline note and overlay label this runtime writes from then on |
 | `action.keys` | For `keypress`, e.g. `ctrl+s` |
 | `action.to` | The destination target of a `drag` |
 | `action.delta` | Wheel ticks for `scroll`, non-zero |
@@ -73,6 +73,18 @@ replaced wherever the sensitive text appears in them; `refusal.code`,
 `verification.expect` and `verification.status` keep their words, because they are what a
 caller matches on — typing `LOST` into a field must not turn `FOCUS_LOST` into a
 redaction notice.
+
+It is not only the step that typed. An application repeats what was typed into it —
+Windows 11 titles a Notepad tab after the first line of the document, and the file dialog
+names its file name box after what is in it — so the secret arrives back through the
+*next* step's `window.title`, `target.resolved.name`, candidates and verification detail.
+A runtime therefore remembers every sensitive text it has typed and masks it out of
+everything it writes for the rest of its session: any string carrying one becomes
+`<redacted N chars>` whole, in receipts (before the digest is taken over them), in
+`timeline.ndjson` and in the labels and verdict chips drawn on screen. Only `schema`,
+`step_id`, `status`, `backend`, `mode`, `action.type`, `refusal.code`,
+`verification.expect` and `verification.status` are exempt, for the reason above. The
+frames of a recording are the raw screen and still show whatever the screen showed.
 
 ## Refusal codes
 
@@ -132,7 +144,9 @@ nothing in the product writes it for you.
 4. **Evidence.** Every attempt appends one receipt with a digest over its own content,
    including refusals. Sensitive text leaves the package only as its length — it is
    redacted in the action, in the verification detail and state, and in the refusal that
-   quotes them, before the digest is taken.
+   quotes them, before the digest is taken — and it stays masked in every later receipt,
+   timeline note and overlay label for the life of the runtime, because the screen goes
+   on repeating it. Raw frames are the screen itself and are not masked.
 
 ## Two hosts, one desktop
 

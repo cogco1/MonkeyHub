@@ -38,12 +38,22 @@ from .providers import (
 )
 from .record import Recorder
 from .store import ActionTraceStore
-from .trace import ResolvedTarget, WindowInfo, build_receipt, window_payload
+from .trace import (
+    ResolvedTarget,
+    WindowInfo,
+    build_receipt,
+    mask_secrets,
+    window_payload,
+)
 from .verify import summary, target_name, verify_action
 
 MODES = ("fast", "demo")
 #: How many clicks each pointer action sends.
 POINTER = {"click": 1, "double_click": 2, "right_click": 1}
+#: The actions that put a caller's own text on somebody's screen. What one of
+#: them typed sensitively is remembered for the rest of the session, because
+#: the application writes it back into titles and names afterwards.
+TYPES_TEXT = frozenset({"type", "set_value"})
 #: The actions whose next keystroke depends on one element holding focus.
 #: ``set_value`` is deliberately not one of them: its value pattern needs no
 #: focus at all, and its fallback clicks the element, which focuses it. The
@@ -207,6 +217,10 @@ class ComputerUseRuntime:
         self._recorder: Recorder | None = None
         self._region = WINDOW_MONITOR
         self._counter = 0
+        # Everything this runtime has typed sensitively, kept for as long as
+        # it lives: the screen goes on repeating it after the step that typed
+        # it, so nothing this package writes may repeat it with the screen.
+        self._secrets: tuple[str, ...] = ()
 
     @property
     def store(self) -> ActionTraceStore:
@@ -475,6 +489,7 @@ class ComputerUseRuntime:
             status=step.status,
             refusal=step.refusal,
             screenshots=step.screenshots,
+            secrets=self._secrets,
         )
         self._store.append(receipt)
         return receipt
@@ -551,16 +566,31 @@ class ComputerUseRuntime:
         )
         if bounds is None:
             return
-        seen = step.window.title if step.window is not None else ""
-        name = step.target.name if step.target is not None else seen
-        label = (
-            f"{step.step_id} {step.action.type.upper()} — "
-            f"{name or target_name(step.action.target)}"
-        )
+        label = self._label(step)
         self.presentation.highlight(bounds, label=label, kind=step.action.type, ms=0)
         step.shown = True
         self._note(step, "highlight", f"{_box(bounds)} {label}")
         self._pause(self._policy.highlight_ms)
+
+    def _label(self, step: _Step) -> str:
+        """What the overlay says this step is about, with no secret left in it.
+
+        The name comes from the element or the window, which is to say from the
+        application: a field named after the password that was just typed into
+        it would otherwise put that password on the screen being filmed.
+        """
+
+        seen = step.window.title if step.window is not None else ""
+        name = step.target.name if step.target is not None else seen
+        return self._safe(
+            f"{step.step_id} {step.action.type.upper()} — "
+            f"{name or target_name(step.action.target)}"
+        )
+
+    def _safe(self, text: str) -> str:
+        """Anything this runtime says out loud, with every typed secret out of it."""
+
+        return mask_secrets(str(text), self._secrets)
 
     def _show(self, step: _Step) -> None:
         if step.mode != "demo" or step.action.type in ("wait", "screenshot", "launch"):
@@ -656,6 +686,7 @@ class ComputerUseRuntime:
         self._focus(step)
         uia = self.uia
         point = _centre(step.target.bounds if step.target else step.window.bounds)
+        self._remember(action)
         if kind == "type":
             uia.type_text(action.text)
             self._note(step, "type", self._said(action))
@@ -710,6 +741,19 @@ class ComputerUseRuntime:
         else:  # pragma: no cover - ACTION_TYPES is closed and covered above
             raise _Refused("ACTION_INVALID", f"{kind} has no execution here")
 
+    def _remember(self, action: Action) -> None:
+        """Keep what is about to be typed sensitively, before it is typed.
+
+        Before, rather than after, because a keystroke that raised halfway
+        through has still reached the screen, and what reached the screen is
+        what the next window title will be named after.
+        """
+
+        if action.type not in TYPES_TEXT or not (action.sensitive and action.text):
+            return
+        if action.text not in self._secrets:
+            self._secrets += (action.text,)
+
     def _said(self, action: Action) -> str:
         return redacted_text(action.text) if action.sensitive else action.text
 
@@ -754,7 +798,7 @@ class ComputerUseRuntime:
             }
         if step.mode == "demo":
             self.presentation.badge(
-                f"VERIFY {'✓' if held else '✕'} {said}",
+                self._safe(f"VERIFY {'✓' if held else '✕'} {said}"),
                 ms=0,
                 kind="ok" if held else "fail",
                 anchor=self._anchor(step),
@@ -772,4 +816,4 @@ class ComputerUseRuntime:
     # -- recording ------------------------------------------------------
     def _note(self, step: _Step, event: str, detail: str) -> None:
         if self._recorder is not None:
-            self._recorder.note(event, detail, step_id=step.step_id)
+            self._recorder.note(event, self._safe(detail), step_id=step.step_id)

@@ -227,6 +227,45 @@ class BuildReceiptTests(unittest.TestCase):
         self.assertEqual(built["verification"]["state"]["value"], "<redacted 6 chars>")
         self.assertEqual(built["verification"]["duration_ms"], 12)
 
+    def test_a_session_secret_is_masked_in_a_receipt_that_never_typed_it(
+        self,
+    ) -> None:
+        # The step before this one typed "Save"; this one only pressed a button
+        # the application has since named after it. Nothing in this action is
+        # sensitive, so only the session's own list can take it out.
+        built = receipt(secrets=("Save",))
+        self.assertEqual(built["window"]["title"], "Untitled - Notepad")
+        self.assertEqual(built["target"]["resolved"]["name"], "<redacted 4 chars>")
+        self.assertEqual(
+            built["target"]["requested"]["name"], "<redacted 4 chars>"
+        )
+        self.assertEqual(built["verification"]["detail"], "<redacted 4 chars>")
+        without_digest = {k: v for k, v in built.items() if k != "digest"}
+        self.assertEqual(built["digest"], canonical_digest(without_digest))
+
+    def test_the_words_a_caller_matches_on_survive_a_session_secret(self) -> None:
+        # Every one of these spells something a secret could also spell, and a
+        # receipt nobody can match on is worse than one that says a little.
+        built = receipt(
+            status="refused",
+            refusal={"code": "FOCUS_LOST", "message": "another window"},
+            verification={"expect": "element", "status": "passed", "duration_ms": 1},
+            secrets=(
+                "ComputerActionReceipt@1", "s-0001", "refused", "windows-uia",
+                "demo", "click", "FOCUS_LOST", "element", "passed",
+            ),
+        )
+        self.assertEqual(built["schema"], RECEIPT_SCHEMA)
+        self.assertEqual(built["step_id"], "s-0001")
+        self.assertEqual(built["status"], "refused")
+        self.assertEqual(built["backend"], "windows-uia")
+        self.assertEqual(built["mode"], "demo")
+        self.assertEqual(built["action"]["type"], "click")
+        self.assertEqual(built["refusal"]["code"], "FOCUS_LOST")
+        self.assertEqual(built["verification"]["expect"], "element")
+        self.assertEqual(built["verification"]["status"], "passed")
+        self.assertEqual(built["refusal"]["message"], "another window")
+
     def test_a_verification_outcome_must_name_its_expectation_and_status(self) -> None:
         with self.assertRaises(ContractError):
             receipt(verification={"expect": "window", "status": "maybe"})

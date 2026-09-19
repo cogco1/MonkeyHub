@@ -28,6 +28,23 @@ VERIFICATION_STATUSES = ("passed", "failed", "skipped")
 #: The receipt keys whose value is a word from a closed set rather than prose.
 #: Redaction never rewrites one, however a secret happens to be spelled.
 ENUMERATED = frozenset({"code", "expect", "status"})
+#: The same rule for a whole receipt: the paths session masking leaves alone,
+#: because a caller reads a receipt by matching them and an id this package
+#: issued is not somebody's text. Everything else in a receipt is prose or a
+#: name read off the screen, and either can carry what was typed into it.
+KEPT = frozenset(
+    {
+        ("schema",),
+        ("step_id",),
+        ("status",),
+        ("backend",),
+        ("mode",),
+        ("action", "type"),
+        ("refusal", "code"),
+        ("verification", "expect"),
+        ("verification", "status"),
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +139,53 @@ def _without_secret(action: Action, payload: object) -> object:
     }
 
 
+def mask_secrets(text: str, secrets: Sequence[str]) -> str:
+    """One string with the first secret it carries taken out of it, whole.
+
+    A window title, an element name and a verification detail are written by
+    the application, not by this package, so a secret inside one cannot be cut
+    out and leave something meaningful behind: the whole string goes.
+    """
+
+    for secret in secrets:
+        if secret and secret in text:
+            return redacted_text(secret)
+    return text
+
+
+def _masked(value: object, secrets: Sequence[str], path: tuple[str, ...]) -> object:
+    """Any receipt fragment with every secret this session typed taken out."""
+
+    if isinstance(value, str):
+        return mask_secrets(value, secrets)
+    if isinstance(value, Mapping):
+        return {
+            key: item
+            if (path + (str(key),)) in KEPT
+            else _masked(item, secrets, path + (str(key),))
+            for key, item in value.items()
+        }
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        return [_masked(item, secrets, path) for item in value]
+    return value
+
+
+def _masked_receipt(receipt: dict, secrets: Sequence[str]) -> dict:
+    """The whole receipt, with everything this session has typed out of it.
+
+    Sensitive text typed into one step comes back in the *next* step's window
+    title, element name and verification detail -- Windows 11 titles a Notepad
+    tab after the first line of the document, and the file dialog names its
+    file name box after what is in it -- so a runtime masks what it has typed
+    for as long as it lives, not only in the receipt of the step that typed it.
+    """
+
+    return {
+        key: value if (key,) in KEPT else _masked(value, secrets, (key,))
+        for key, value in receipt.items()
+    }
+
+
 def _verification_payload(action: Action, verification: object) -> dict | None:
     """The verification outcome as the receipt keeps it, with the secret removed.
 
@@ -158,14 +222,18 @@ def build_receipt(
     status: str,
     refusal: dict | None,
     screenshots: dict,
+    secrets: tuple[str, ...] = (),
 ) -> dict:
     """Assemble one ComputerActionReceipt@1 and seal it with its own digest.
 
     Without a resolution the receipt says so: ``backend`` is ``"none"`` and the
     resolved target is absent, so a coordinate can never be read as a semantic
     match. Sensitive text is redacted wherever it appears, including inside the
-    verification outcome and inside the refusal that quotes it. The digest
-    covers every other key, so a trace line cannot be edited without saying so.
+    verification outcome and inside the refusal that quotes it, and ``secrets``
+    -- everything the caller has typed sensitively so far -- is masked out of
+    every string in the receipt but the handful of words a caller matches on.
+    The digest covers every other key and is taken last, so a trace line cannot
+    be edited without saying so and no digest is ever taken over a secret.
     """
 
     if status not in STATUSES:
@@ -208,5 +276,7 @@ def build_receipt(
             "after": (screenshots or {}).get("after"),
         },
     }
+    if secrets:
+        receipt = _masked_receipt(receipt, tuple(secrets))
     receipt["digest"] = canonical_digest(receipt)
     return receipt
