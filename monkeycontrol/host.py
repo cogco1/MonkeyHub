@@ -41,6 +41,7 @@ OBSERVATIONS = frozenset(
         "process",
         "screenshot",
         "clear",
+        "monitor",
     }
 )
 #: How long ``stop`` waits for the host to leave its loop before terminating it.

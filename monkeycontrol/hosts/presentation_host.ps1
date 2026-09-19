@@ -25,9 +25,56 @@ using System.Runtime.InteropServices;
 
 public static class MonkeyControlOverlay
 {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X; public int Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MONITORINFO
+    {
+        public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags;
+    }
+
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern bool IsProcessDPIAware();
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(POINT point, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+
+    private const uint MONITOR_DEFAULTTOPRIMARY = 1;
+    private const uint MONITORINFOF_PRIMARY = 1;
+
+    // The screen one window, or one point, actually lives on: a recording that
+    // followed the whole virtual desktop would keep every unrelated window on
+    // the other monitor, and a badge placed on the virtual screen's centre
+    // would explain a target the viewer is not looking at.
+    private static int[] Describe(IntPtr monitor)
+    {
+        MONITORINFO info = new MONITORINFO();
+        info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+        if (!GetMonitorInfo(monitor, ref info))
+        {
+            return new int[] { 0, 0, GetSystemMetrics(0), GetSystemMetrics(1), 1 };
+        }
+        return new int[] {
+            info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom,
+            (info.dwFlags & MONITORINFOF_PRIMARY) != 0 ? 1 : 0
+        };
+    }
+
+    public static int[] MonitorOfWindow(IntPtr hwnd)
+    {
+        return Describe(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY));
+    }
+
+    public static int[] MonitorOfPoint(int x, int y)
+    {
+        POINT point = new POINT(); point.X = x; point.Y = y;
+        return Describe(MonitorFromPoint(point, MONITOR_DEFAULTTOPRIMARY));
+    }
     [DllImport("user32.dll", SetLastError = true)] public static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll", SetLastError = true)] public static extern int SetWindowLong(IntPtr hwnd, int index, int value);
     [DllImport("user32.dll", SetLastError = true)] public static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
@@ -64,6 +111,8 @@ $script:Canvas = $null
 # Whether this desktop honoured the request to keep the overlay out of
 # captures; null until the overlay window exists.
 $script:Excluded = $null
+# Where the last badge was drawn, in physical pixels.
+$script:LastBadge = $null
 $script:ScaleX = 1.0
 $script:ScaleY = 1.0
 $script:BadgeColors = @{ info = '#2D6CDF'; ok = '#1F9D55'; fail = '#C62828' }
@@ -213,6 +262,17 @@ function Show-Highlight($payload) {
     Complete-Overlay ([int]$payload.ms)
 }
 
+function Get-Monitor($payload) {
+    $handle = 0
+    if ($null -ne $payload.handle) { $handle = [int64]$payload.handle }
+    if ($handle -gt 0) { $found = [MonkeyControlOverlay]::MonitorOfWindow([IntPtr]$handle) }
+    else { $found = [MonkeyControlOverlay]::MonitorOfPoint(0, 0) }
+    return [ordered]@{
+        bounds = @([int]$found[0], [int]$found[1], [int]$found[2], [int]$found[3])
+        primary = ([int]$found[4] -eq 1)
+    }
+}
+
 function Show-Badge($payload) {
     $window = Get-Overlay
     $kind = [string]$payload.kind
@@ -222,8 +282,33 @@ function Show-Badge($payload) {
     $chip = New-Chip ([string]$payload.text) (Get-Brush $script:BadgeColors[$kind] '#2D6CDF') 18
     $chip.Measure((New-Object System.Windows.Size([double]::PositiveInfinity, [double]::PositiveInfinity)))
     $width = $chip.DesiredSize.Width
-    [System.Windows.Controls.Canvas]::SetLeft($chip, [Math]::Max(0.0, ($screen.width / $script:ScaleX - $width) / 2))
-    [System.Windows.Controls.Canvas]::SetTop($chip, 48)
+    $height = $chip.DesiredSize.Height
+    $anchor = @($payload.anchor)
+    if ($anchor.Count -eq 4) {
+        # A verdict belongs next to what it is about: the chip sits under the
+        # rectangle just acted on, kept inside the monitor that rectangle is on
+        # rather than the virtual desktop, which may be another screen away.
+        $middle = ([double]$anchor[0] + [double]$anchor[2]) / 2
+        $box = [MonkeyControlOverlay]::MonitorOfPoint([int]$middle, [int]$anchor[3])
+        $left = ($middle / $script:ScaleX) - ($width / 2)
+        $top = ([double]$anchor[3] / $script:ScaleY) + 14
+        $edge = [double]$box[3] / $script:ScaleY
+        if (($top + $height) -gt $edge) { $top = ([double]$anchor[1] / $script:ScaleY) - $height - 14 }
+        $left = [Math]::Max([double]$box[0] / $script:ScaleX, [Math]::Min($left, ([double]$box[2] / $script:ScaleX) - $width))
+        $top = [Math]::Max([double]$box[1] / $script:ScaleY, $top)
+        [System.Windows.Controls.Canvas]::SetLeft($chip, $left - ($screen.left / $script:ScaleX))
+        [System.Windows.Controls.Canvas]::SetTop($chip, $top - ($screen.top / $script:ScaleY))
+    } else {
+        [System.Windows.Controls.Canvas]::SetLeft($chip, [Math]::Max(0.0, ($screen.width / $script:ScaleX - $width) / 2))
+        [System.Windows.Controls.Canvas]::SetTop($chip, 48)
+    }
+    # Where the chip actually landed, in physical pixels: the overlay is
+    # excluded from every capture, so this reply is the only way a caller can
+    # check that a verdict was said next to the thing it is about.
+    $script:LastBadge = @(
+        [int](([double][System.Windows.Controls.Canvas]::GetLeft($chip) + ($screen.left / $script:ScaleX)) * $script:ScaleX),
+        [int](([double][System.Windows.Controls.Canvas]::GetTop($chip) + ($screen.top / $script:ScaleY)) * $script:ScaleY)
+    )
     [void]$script:Canvas.Children.Add($chip)
     $window.Show()
     Complete-Overlay ([int]$payload.ms)
@@ -301,8 +386,12 @@ function Invoke-Op([string]$op, $payload) {
         }
         'screenshot' { return (Invoke-Screenshot $payload) }
         'highlight' { Show-Highlight $payload; return [ordered]@{ excluded_from_capture = $script:Excluded } }
-        'badge' { Show-Badge $payload; return [ordered]@{ excluded_from_capture = $script:Excluded } }
+        'badge' {
+            Show-Badge $payload
+            return [ordered]@{ excluded_from_capture = $script:Excluded; placed = $script:LastBadge }
+        }
         'clear' { Clear-Overlay; return [ordered]@{} }
+        'monitor' { return (Get-Monitor $payload) }
         default { throw "HOST_ERROR: $op is not a presentation host op" }
     }
 }

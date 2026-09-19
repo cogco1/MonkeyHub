@@ -506,7 +506,7 @@ class PresentationTests(unittest.TestCase):
         return FakeHost(
             screenshot=lambda **args: payload,
             highlight=lambda **args: {},
-            badge=lambda **args: {},
+            badge=lambda **args: {"placed": [10, 80], "excluded_from_capture": True},
             clear=lambda **args: {},
         )
 
@@ -550,9 +550,30 @@ class PresentationTests(unittest.TestCase):
             ),
         )
         self.assertEqual(
-            host.calls[1], ("badge", {"text": "done", "ms": 900, "kind": "ok"})
+            host.calls[1],
+            ("badge", {"text": "done", "ms": 900, "kind": "ok", "anchor": None}),
         )
         self.assertEqual(host.calls[2], ("clear", {}))
+
+    def test_a_badge_carries_the_rectangle_it_is_about(self) -> None:
+        host = self.host()
+        reply = PresentationProvider(host).badge(
+            "VERIFY OK window Save As", kind="ok", anchor=(10, 20, 110, 60)
+        )
+        self.assertEqual(host.args("badge")["anchor"], [10, 20, 110, 60])
+        # The overlay is excluded from every capture, so the reply is the only
+        # way a caller can tell where the chip went.
+        self.assertEqual(reply["placed"], [10, 80])
+
+    def test_a_monitor_is_read_back_as_bounds_and_a_primary_flag(self) -> None:
+        host = FakeHost(
+            monitor=lambda **args: {"bounds": [-2560, 0, 0, 1600], "primary": False}
+        )
+        found = PresentationProvider(host).monitor(4242)
+        self.assertEqual(found, {"bounds": (-2560, 0, 0, 1600), "primary": False})
+        self.assertEqual(host.args("monitor"), {"handle": 4242})
+        with self.assertRaises(HostError):
+            PresentationProvider(FakeHost(monitor=lambda **args: {})).monitor()
 
     def test_an_unknown_badge_kind_is_refused_before_the_host(self) -> None:
         host = self.host()

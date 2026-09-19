@@ -96,6 +96,14 @@ def _redact(value: object, secret: str, mask: str) -> object:
     return value
 
 
+def _without_secret(action: Action, payload: object) -> object:
+    """Any receipt fragment with the action's sensitive text taken out of it."""
+
+    if action.sensitive and action.text and payload is not None:
+        return _redact(payload, action.text, redacted_text(action.text))
+    return payload
+
+
 def _verification_payload(action: Action, verification: object) -> dict | None:
     """The verification outcome as the receipt keeps it, with the secret removed.
 
@@ -114,10 +122,7 @@ def _verification_payload(action: Action, verification: object) -> dict | None:
         raise ContractError(
             "verification.status must be one of " + ", ".join(VERIFICATION_STATUSES)
         )
-    payload = dict(verification)
-    if action.sensitive and action.text:
-        payload = _redact(payload, action.text, redacted_text(action.text))
-    return payload
+    return _without_secret(action, dict(verification))
 
 
 def build_receipt(
@@ -141,8 +146,8 @@ def build_receipt(
     Without a resolution the receipt says so: ``backend`` is ``"none"`` and the
     resolved target is absent, so a coordinate can never be read as a semantic
     match. Sensitive text is redacted wherever it appears, including inside the
-    verification outcome. The digest covers every other key, so a trace line
-    cannot be edited without saying so.
+    verification outcome and inside the refusal that quotes it. The digest
+    covers every other key, so a trace line cannot be edited without saying so.
     """
 
     if status not in STATUSES:
@@ -174,7 +179,12 @@ def build_receipt(
         },
         "verification": verified,
         "status": status,
-        "refusal": dict(refusal) if refusal is not None else None,
+        # A refusal explains itself in prose, and the prose can quote what was
+        # typed or expected, so it is redacted like everything else before the
+        # digest is taken over it.
+        "refusal": _without_secret(
+            action, dict(refusal) if refusal is not None else None
+        ),
         "screenshots": {
             "before": (screenshots or {}).get("before"),
             "after": (screenshots or {}).get("after"),

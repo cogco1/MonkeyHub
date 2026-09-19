@@ -7,11 +7,13 @@ and the rendered PNGs have to differ from what went in.
 
 from __future__ import annotations
 
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
-from monkeycontrol.overlay import PROJECTIONS, render_overlays
+from monkeycontrol.overlay import PASSED, PROJECTIONS, render_overlays
 from monkeycontrol.runtime import RuntimeRefusal
 from monkeycontrol.store import ActionTraceStore
 
@@ -34,7 +36,9 @@ def frame(color: tuple[int, int, int]) -> bytes:
 
 
 @unittest.skipUnless(PILLOW, REASON)
-class RenderTests(unittest.TestCase):
+class RecordingCase(unittest.TestCase):
+    """One two-frame recording built by hand; no test of its own."""
+
     def setUp(self) -> None:
         self._temp = TemporaryDirectory()
         self.addCleanup(self._temp.cleanup)
@@ -78,6 +82,8 @@ class RenderTests(unittest.TestCase):
             },
         )
 
+
+class RenderTests(RecordingCase):
     def test_the_presentation_projection_draws_on_every_frame(self) -> None:
         answer = render_overlays(self.recording, "presentation")
         self.assertEqual(answer["projection"], "presentation")
@@ -114,11 +120,75 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(render_overlays(empty, "clean")["frames"], 0)
 
 
+class PlacementTests(RecordingCase):
+    """Where a projection puts what it draws, read back off the pixels."""
+
+    def test_the_verdict_is_drawn_under_the_rectangle_it_is_about(self) -> None:
+        answer = render_overlays(self.recording, "presentation")
+        with Image.open(Path(answer["out_dir"]) / "000002.png") as image:
+            drawn = image.convert("RGB")
+        # The box is 40,40..180,90 and the passed verdict is green: it belongs
+        # just under the box, not in the corner of the frame.
+        self.assertTrue(self._has(drawn, PASSED, (30, 95, 320, 150)))
+        self.assertFalse(self._has(drawn, PASSED, (0, 0, 320, 35)))
+
+    def test_without_a_rectangle_the_verdict_falls_back_to_the_corner(self) -> None:
+        # A frame whose only active event is the verdict has nothing to sit
+        # under, so the chip goes back to the margin of the captured region.
+        self.store.append_json(
+            "recordings/demo/frames.ndjson",
+            {
+                "index": 3,
+                "t": 4.0,
+                "path": "frames/000003.png",
+                "sha256": "0" * 64,
+                "bytes": 1,
+            },
+        )
+        self.store.save_bytes(
+            "recordings/demo/frames", frame((10, 10, 10)), ".png", name="000003.png"
+        )
+        self.store.append_json(
+            "recordings/demo/timeline.ndjson",
+            {"t": 4.0, "event": "verify", "detail": "passed file demo.txt",
+             "step_id": "s-0002"},
+        )
+        answer = render_overlays(self.recording, "presentation")
+        with Image.open(Path(answer["out_dir"]) / "000003.png") as image:
+            drawn = image.convert("RGB")
+        self.assertTrue(self._has(drawn, PASSED, (0, 0, 320, 80)))
+
+    @staticmethod
+    def _has(image, colour: str, box) -> bool:
+        wanted = tuple(int(colour[index:index + 2], 16) for index in (1, 3, 5))
+        crop = image.crop(box)
+        pixels = (
+            crop.get_flattened_data()
+            if hasattr(crop, "get_flattened_data")
+            else crop.getdata()
+        )
+        return any(
+            abs(pixel[0] - wanted[0]) < 30
+            and abs(pixel[1] - wanted[1]) < 30
+            and abs(pixel[2] - wanted[2]) < 30
+            for pixel in pixels
+        )
+
+
 class BackendTests(unittest.TestCase):
     def test_without_pillow_the_renderer_refuses_by_name(self) -> None:
-        refusal = RuntimeRefusal("BACKEND_UNAVAILABLE")
-        self.assertEqual(refusal.code, "BACKEND_UNAVAILABLE")
         self.assertEqual(PROJECTIONS, ("clean", "presentation", "developer"))
+        with TemporaryDirectory() as temporary:
+            recording = Path(temporary) / "recordings" / "demo"
+            (recording / "frames").mkdir(parents=True)
+            missing = dict.fromkeys(
+                ("PIL", "PIL.Image", "PIL.ImageDraw", "PIL.ImageFont")
+            )
+            with mock.patch.dict(sys.modules, missing):
+                with self.assertRaises(RuntimeRefusal) as caught:
+                    render_overlays(recording, "presentation")
+        self.assertEqual(caught.exception.code, "BACKEND_UNAVAILABLE")
+        self.assertIn("Pillow", str(caught.exception))
 
 
 if __name__ == "__main__":

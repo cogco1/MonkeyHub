@@ -66,18 +66,24 @@ def _missing(exc: Exception) -> bool:
     return isinstance(exc, HostError) and exc.code != "HOST_ERROR"
 
 
-def _state_holds(state: dict, wanted: dict) -> tuple[bool, str]:
+def _state_holds(state: dict, wanted: dict, *, secret: bool) -> tuple[bool, str]:
     """Whether a read element satisfies the declared state.
 
     ``value`` is a containment, because a caller verifies that what was typed
     arrived, not that it is the whole of a document; the flags are equality.
+    A sensitive action's expected value is not named in the answer: the
+    receipt redacts what it can recognise, and the surest way not to leak a
+    secret through a sentence about it is not to put it there.
     """
 
     for key, expected in wanted.items():
         actual = state.get(key)
         if key == "value":
             if not isinstance(actual, str) or expected not in actual:
-                return False, f"value does not contain {expected!r}"
+                said = (
+                    "the expected text" if secret else repr(expected)
+                )
+                return False, f"value does not contain {said}"
         elif bool(actual) is not bool(expected):
             return False, f"{key} is {actual!r}, not {expected!r}"
     return True, ""
@@ -116,7 +122,7 @@ def _check(
         return gone, str(exc), None
     if expectation.expect == "absent":
         return False, f"{resolved.name!r} is still there", None
-    held, why = _state_holds(state, expectation.state)
+    held, why = _state_holds(state, expectation.state, secret=action.sensitive)
     kept = {key: state.get(key) for key in READABLE if key in state}
     return held, why or f"{resolved.name!r} matched", kept
 

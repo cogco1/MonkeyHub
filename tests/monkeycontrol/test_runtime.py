@@ -27,6 +27,8 @@ from monkeycontrol.runtime import (
 from monkeycontrol.trace import ResolvedTarget, WindowInfo
 
 PNG = b"\x89PNG\r\n\x1a\nfake capture"
+PRIMARY = (0, 0, 1920, 1080)
+SECOND = (1920, 0, 3840, 1080)
 NOTEPAD = WindowInfo(4242, "Untitled - Notepad", 91, "notepad", (0, 0, 800, 600))
 SAVE = ResolvedTarget(
     "Button", "Save", "1", "Button", (100, 200, 200, 240), "42.7.1", "windows-uia"
@@ -173,15 +175,19 @@ class FakeVisual(FakeUia):
 class FakePresentation:
     """The overlay and the grabber, with every call kept for assertion."""
 
-    def __init__(self, log: list[str]) -> None:
+    def __init__(self, log: list[str], *, monitors=None) -> None:
         self.log = log
         self.labels: list[str] = []
         self.badges: list[str] = []
+        self.anchors: list = []
+        self.regions: list = []
         self.shots = 0
+        self._monitors = monitors or {}
 
     def screenshot(self, *, bounds=None):
         self.log.append("screenshot")
         self.shots += 1
+        self.regions.append(tuple(bounds) if bounds else None)
         data = PNG + str(self.shots).encode("ascii")
         return {
             "png": data,
@@ -190,13 +196,19 @@ class FakePresentation:
             "bytes": len(data),
         }
 
+    def monitor(self, handle: int = 0):
+        self.log.append("monitor")
+        bounds = self._monitors.get(handle, PRIMARY if handle == 0 else SECOND)
+        return {"bounds": tuple(bounds), "primary": handle == 0}
+
     def highlight(self, bounds, *, label, kind="click", ms=600, color="#FF7A00"):
         self.log.append("highlight")
         self.labels.append(label)
 
-    def badge(self, text, *, ms=900, kind="info"):
+    def badge(self, text, *, ms=900, kind="info", anchor=None):
         self.log.append("badge")
         self.badges.append(text)
+        self.anchors.append(tuple(anchor) if anchor is not None else None)
 
     def clear(self):
         self.log.append("clear")
@@ -209,6 +221,14 @@ class RuntimeTestCase(unittest.TestCase):
         self.trace = Path(self._temp.name) / "trace"
         self.log: list[str] = []
         self.presentation = FakePresentation(self.log)
+
+    def store_lines(self) -> list[dict]:
+        path = self.trace / "actions.ndjson"
+        return [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
     def runtime(self, uia=None, *, mode="demo", allowed=("notepad",), **policy):
         self.uia = uia if uia is not None else FakeUia(self.log)
@@ -391,6 +411,20 @@ class RefusalTests(RuntimeTestCase):
         self.assertEqual(receipt["status"], "refused")
         self.assertEqual(receipt["refusal"]["code"], "BACKEND_UNAVAILABLE")
 
+    def test_an_unexpected_fault_below_this_package_is_still_a_receipt(self) -> None:
+        class Broken(FakeUia):
+            def click(self, point, *, button="left", count=1):
+                raise OSError("the display adapter went away")
+
+        runtime = self.runtime(Broken(self.log))
+        receipt = runtime.execute(CLICK)
+        self.assertEqual(receipt["status"], "failed")
+        self.assertEqual(receipt["refusal"]["code"], "HOST_ERROR")
+        self.assertIn("OSError", receipt["refusal"]["message"])
+        self.assertIn("display adapter", receipt["refusal"]["message"])
+        self.assertEqual(runtime.resolved_count, 0)
+        self.assertEqual(len(self.store_lines()), 1)
+
     def test_an_invalid_action_is_the_only_thing_execute_raises(self) -> None:
         runtime = self.runtime()
         with self.assertRaises(ContractError):
@@ -551,6 +585,99 @@ class SecrecyTests(RuntimeTestCase):
             self.assertNotIn("hunter2", label)
         for badge in self.presentation.badges:
             self.assertNotIn("hunter2", badge)
+
+    def test_a_failed_sensitive_expectation_keeps_the_secret_out_of_the_trace(
+        self,
+    ) -> None:
+        # The element reads back something else, so the refusal has to explain
+        # a mismatch without quoting what was expected.
+        runtime = self.runtime(FakeUia(self.log, invoked=True, value="something else"))
+        receipt = runtime.execute(
+            {
+                "intent": "fill the password box",
+                "application": "notepad",
+                "target": {"controlType": "Edit", "automationId": "1001"},
+                "action": {"type": "set_value", "text": "hunter2", "sensitive": True},
+                "verification": {
+                    "expect": "element",
+                    "state": {"value": "hunter2"},
+                    "timeout_ms": 0,
+                },
+            }
+        )
+        self.assertEqual(receipt["status"], "failed")
+        self.assertEqual(receipt["refusal"]["code"], "VERIFY_FAILED")
+        self.assertNotIn("hunter2", json.dumps(receipt))
+        self.assertNotIn("hunter2", receipt["refusal"]["message"])
+        written = (self.trace / "actions.ndjson").read_text(encoding="utf-8")
+        self.assertNotIn("hunter2", written)
+        for badge in self.presentation.badges:
+            self.assertNotIn("hunter2", badge)
+
+
+class RegionTests(RuntimeTestCase):
+    def test_a_recording_starts_on_the_primary_monitor(self) -> None:
+        runtime = self.runtime()
+        started = runtime.record_start("demo", interval_ms=10000)
+        self.assertEqual(started["region"], "window-monitor")
+        self.assertEqual(started["bounds"], list(PRIMARY))
+        runtime.record_stop()
+
+    def test_the_region_follows_the_monitor_the_window_is_on(self) -> None:
+        runtime = self.runtime()
+        self.presentation._monitors = {0: PRIMARY, NOTEPAD.handle: SECOND}
+        runtime.record_start("demo", interval_ms=10000)
+        runtime.execute(CLICK)
+        self.assertEqual(runtime.recording_region, SECOND)
+        # Every capture after the window was observed asks for that monitor.
+        self.assertIn(SECOND, self.presentation.regions)
+        manifest = runtime.record_stop()
+        self.assertEqual(manifest["region"], "window-monitor")
+        frames = [
+            json.loads(line)
+            for line in (self.trace / "recordings/demo/frames.ndjson")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        # The first frame was taken before any window was known, so it carries
+        # the primary monitor: a frame always says what it actually captured.
+        self.assertTrue(frames)
+        self.assertEqual(frames[0]["bounds"], list(PRIMARY))
+
+    def test_the_virtual_region_captures_everything(self) -> None:
+        runtime = self.runtime()
+        runtime.record_start("demo", interval_ms=10000, region="virtual")
+        runtime.execute(CLICK)
+        self.assertEqual(runtime.record_stop()["region"], "virtual")
+        self.assertEqual(set(self.presentation.regions), {None})
+
+    def test_an_unknown_region_is_a_mistake_not_a_refusal(self) -> None:
+        runtime = self.runtime()
+        with self.assertRaises(ValueError):
+            runtime.record_start("demo", region="everything")
+
+
+class BadgeAnchorTests(RuntimeTestCase):
+    def test_the_verdict_is_anchored_to_the_target_it_is_about(self) -> None:
+        runtime = self.runtime()
+        runtime.execute(CLICK)
+        self.assertEqual(self.presentation.anchors, [SAVE.bounds])
+
+    def test_without_a_target_the_verdict_is_anchored_to_the_window(self) -> None:
+        runtime = self.runtime()
+        runtime.execute(
+            {
+                "intent": "close it",
+                "application": "notepad",
+                "action": {"type": "keypress", "keys": "ctrl+s"},
+                "verification": {
+                    "expect": "window",
+                    "title": "Notepad",
+                    "timeout_ms": 0,
+                },
+            }
+        )
+        self.assertEqual(self.presentation.anchors, [NOTEPAD.bounds])
 
 
 class RecordingTests(RuntimeTestCase):

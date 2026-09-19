@@ -51,6 +51,11 @@ POINTER = {"click": 1, "double_click": 2, "right_click": 1}
 FOCUS_ELEMENT = frozenset({"type", "keypress"})
 LAUNCH_WINDOW_MS = 10000
 RECORD_INTERVAL_MS = 250
+#: What a recording keeps in frame. The default follows the monitor the
+#: acted-on window is on, because the other one is nobody's business here
+#: and costs several megabytes a frame; "virtual" is the whole desktop.
+WINDOW_MONITOR = "window-monitor"
+REGIONS = (WINDOW_MONITOR, "virtual")
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +178,7 @@ class ComputerUseRuntime:
         self._lazy: set[str] = set()
         self._resolved: dict[tuple, ResolvedTarget] = {}
         self._recorder: Recorder | None = None
+        self._region = WINDOW_MONITOR
         self._counter = 0
 
     @property
@@ -186,6 +192,12 @@ class ComputerUseRuntime:
     @property
     def recording(self) -> str | None:
         return None if self._recorder is None else self._recorder.name
+
+    @property
+    def recording_region(self) -> tuple[int, int, int, int] | None:
+        """The rectangle the running recording is capturing, if there is one."""
+
+        return None if self._recorder is None else self._recorder.region
 
     @property
     def resolved_count(self) -> int:
@@ -269,9 +281,17 @@ class ComputerUseRuntime:
         return answer
 
     # -- recording ------------------------------------------------------
-    def record_start(self, name: str, *, interval_ms: int = RECORD_INTERVAL_MS) -> dict:
+    def record_start(
+        self,
+        name: str,
+        *,
+        interval_ms: int = RECORD_INTERVAL_MS,
+        region: str = WINDOW_MONITOR,
+    ) -> dict:
         """Begin capturing frames beside the trace; one recording at a time."""
 
+        if region not in REGIONS:
+            raise ValueError(f"region must be one of {', '.join(REGIONS)}")
         if self._recorder is not None:
             raise RuntimeRefusal(
                 "RECORDING_ACTIVE", f"{self._recorder.name!r} is already recording"
@@ -283,19 +303,48 @@ class ComputerUseRuntime:
                 name,
                 interval_ms=interval_ms,
                 clock=self._clock,
+                region=region,
             )
+            if region == WINDOW_MONITOR:
+                # Nothing has been acted on yet, so start on the primary screen
+                # rather than on everything.
+                recorder.set_region(self._monitor(None))
             recorder.start()
         except HostError as exc:
             raise RuntimeRefusal(
                 exc.code if exc.code in REFUSALS else "HOST_ERROR", str(exc)
             ) from exc
-        self._recorder = recorder
+        self._recorder, self._region = recorder, region
         return {
             "name": recorder.name,
             "interval_ms": interval_ms,
+            "region": region,
+            "bounds": list(recorder.region) if recorder.region else None,
             "directory": recorder.relative_dir,
             "started_at": recorder.started_at,
         }
+
+    def _monitor(self, window: WindowInfo | None) -> tuple[int, int, int, int] | None:
+        """The screen a window is on, or the primary one, when the host can say."""
+
+        ask = getattr(self.presentation, "monitor", None)
+        if ask is None:
+            return None
+        try:
+            return tuple(ask(window.handle if window is not None else 0)["bounds"])
+        except (HostError, KeyError, TypeError, ValueError):
+            return None
+
+    def _follow(self, step: _Step) -> None:
+        """Keep the recording on the screen the action is actually happening on."""
+
+        if self._recorder is None or self._region != WINDOW_MONITOR:
+            return
+        if step.window is None:
+            return
+        bounds = self._monitor(step.window)
+        if bounds is not None and bounds != self._recorder.region:
+            self._recorder.set_region(bounds)
 
     def record_stop(self) -> dict:
         """End the recording and answer its manifest."""
@@ -310,7 +359,8 @@ class ComputerUseRuntime:
         """Run one ComputerAction@1 and return the receipt it earned.
 
         Only an invalid action raises: every other outcome, including every
-        refusal, is a receipt, because that is what the caller reads back.
+        refusal and every unexpected fault below this package, is a receipt,
+        because that is what the caller reads back.
         """
 
         action = validate_action(payload)
@@ -330,6 +380,16 @@ class ComputerUseRuntime:
             step.status, step.refusal = refusal.status, refusal.payload
             if refusal.payload["code"] == "HOST_ERROR":
                 self._resolved.clear()
+        except Exception as exc:
+            # A caller reads receipts, not tracebacks: anything a provider or
+            # the machine underneath it throws is recorded as a failed step
+            # rather than lost with the rest of the script.
+            step.status = "failed"
+            step.refusal = {
+                "code": "HOST_ERROR",
+                "message": f"{type(exc).__name__}: {exc}",
+            }
+            self._resolved.clear()
         self._take_down(step)
         receipt = build_receipt(
             action=action,
@@ -374,6 +434,7 @@ class ComputerUseRuntime:
                     else f"{action.application} has no window",
                 )
             step.window = found[0]
+            self._follow(step)
         if self._recorder is not None or action.capture:
             step.screenshots["before"] = self._capture()
         if action.target is not None:
@@ -396,7 +457,16 @@ class ComputerUseRuntime:
 
     # -- the screen -----------------------------------------------------
     def _capture(self) -> str:
-        png = self.presentation.screenshot()["png"]
+        """One screenshot, kept in the trace, over the recording's own region.
+
+        A receipt's before and after shots are the same picture as a frame, so
+        while a recording is following one monitor they follow it too; without
+        one they are the whole desktop, which is what a caller asking for a
+        single capture has always got.
+        """
+
+        bounds = self._recorder.region if self._recorder is not None else None
+        png = self.presentation.screenshot(bounds=bounds)["png"]
         return self._store.save_bytes("shots", png, ".png")
 
     def _draw(self, step: _Step) -> None:
@@ -515,6 +585,7 @@ class ComputerUseRuntime:
             return
         if kind == "launch":
             step.window = self._launch(step)
+            self._follow(step)
             return
         self._focus(step)
         uia = self.uia
@@ -620,9 +691,17 @@ class ComputerUseRuntime:
                 f"VERIFY {'✓' if held else '✕'} {said}",
                 ms=0,
                 kind="ok" if held else "fail",
+                anchor=self._anchor(step),
             )
             step.shown = True
             self._pause(self._policy.highlight_ms)
+
+    def _anchor(self, step: _Step) -> tuple[int, int, int, int] | None:
+        """The rectangle a verdict is about, so it can be said next to it."""
+
+        if step.target is not None:
+            return step.target.bounds
+        return step.window.bounds if step.window is not None else None
 
     # -- recording ------------------------------------------------------
     def _note(self, step: _Step, event: str, detail: str) -> None:

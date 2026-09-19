@@ -22,6 +22,9 @@ from .store import ActionTraceStore
 PROJECTIONS = ("clean", "presentation", "developer")
 #: Events whose detail starts with a screen rectangle.
 BOXED = ("target_found", "highlight")
+#: Events whose detail starts with the point the pointer was sent to. Text
+#: that happens to begin "12,34" is text, and draws nothing.
+POINTED = ("pointer_move", "click", "drag", "scroll")
 DEFAULT_INTERVAL_MS = 250
 #: The leading "x,y" or "left,top,right,bottom" a geometric detail begins with.
 GEOMETRY = re.compile(r"^(-?\d+(?:,-?\d+)+)\s*(.*)$", re.DOTALL)
@@ -142,7 +145,7 @@ def _paint(image, events: list[dict], projection: str, origin: tuple[int, int]) 
             rectangle = tuple(shift(numbers))
             if event.get("event") == "highlight" or rectangle not in boxes:
                 boxes[rectangle] = _caption(event, rest)
-        elif len(numbers) >= 2:
+        elif len(numbers) >= 2 and event.get("event") in POINTED:
             point = shift(numbers[:2])
             _cursor(draw, (point[0], point[1]), event.get("event") == "click", scale)
             if len(numbers) == 4:  # a drag ends somewhere else
@@ -168,13 +171,21 @@ def _paint(image, events: list[dict], projection: str, origin: tuple[int, int]) 
         return
     step = round(32 * scale)
     margin = round(24 * scale)
+    # A verdict is about the rectangle that was just acted on, so it is said
+    # under it when that rectangle is in this frame, and only otherwise in the
+    # corner of the captured region.
+    where = (margin, margin)
+    if boxes:
+        rectangle = next(iter(boxes))
+        under = min(rectangle[3] + round(14 * scale), image.height - round(40 * scale))
+        where = (max(margin, rectangle[0]), max(margin, under))
     for index, verdict in enumerate(
         event for event in events if event.get("event") == "verify"
     ):
         held = str(verdict.get("detail", "")).startswith("passed")
         _chip(
             draw,
-            (margin, margin + index * step),
+            (where[0], where[1] + index * step),
             f"{verdict.get('step_id', '')} VERIFY {'OK' if held else 'X'} "
             f"{verdict.get('detail', '')}"[:120],
             label,

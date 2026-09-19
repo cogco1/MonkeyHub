@@ -8,6 +8,9 @@ action succeeded. It decides nothing about what an action means.
     python -m monkeycontrol inspect --app notepad --trace-dir DIR
     python -m monkeycontrol run SCRIPT.json --trace-dir DIR --mode demo
     python -m monkeycontrol render RECORDING_DIR --projection presentation
+
+It exits 0 when every action succeeded, 1 when one did not, 2 when the action
+or the script is invalid, and 3 when the runtime refused the request itself.
 """
 
 from __future__ import annotations
@@ -20,14 +23,22 @@ from pathlib import Path
 
 from .contract import ContractError
 from .overlay import PROJECTIONS, render_overlays
-from .runtime import MODES, ComputerUseRuntime, RuntimePolicy, RuntimeRefusal
+from .runtime import (
+    MODES,
+    REGIONS,
+    ComputerUseRuntime,
+    RuntimePolicy,
+    RuntimeRefusal,
+)
 
 SCRIPT_SCHEMA = "ComputerActionScript@1"
 #: The one substitution a script may ask the CLI for, so a demo script can name
 #: a scratch file without hard-coding somebody's user directory. It is a plain
 #: text replacement of this token, not shell or environment expansion.
 TEMP_TOKEN = "${TEMP}"
-OK, FAILED, INVALID = 0, 1, 2
+#: 0 every action succeeded, 1 one did not, 2 the action or script is invalid,
+#: 3 the runtime refused to start or stop what was asked of it.
+OK, FAILED, INVALID, REFUSED = 0, 1, 2, 3
 
 
 def build_runtime(trace_dir: Path, policy: RuntimePolicy) -> ComputerUseRuntime:
@@ -123,9 +134,14 @@ def _run(args) -> int:
     try:
         if args.record:
             started = runtime.record_start(
-                args.record, interval_ms=args.record_interval
+                args.record,
+                interval_ms=args.record_interval,
+                region=args.record_region,
             )
-            print(f"recording {started['name']} every {started['interval_ms']}ms")
+            print(
+                f"recording {started['name']} every {started['interval_ms']}ms "
+                f"over the {started['region']} region {started.get('bounds')}"
+            )
         code = _actions(runtime, script["actions"], args)
         if args.record:
             manifest = runtime.record_stop()
@@ -135,7 +151,7 @@ def _run(args) -> int:
             )
     except RuntimeRefusal as exc:
         print(f"{exc.code}: {exc}", file=sys.stderr)
-        code = INVALID
+        code = REFUSED
     finally:
         runtime.close()
     return code
@@ -182,7 +198,10 @@ def _render(args) -> int:
             args.projection,
             out_dir=Path(args.out) if args.out else None,
         )
-    except (RuntimeRefusal, ValueError) as exc:
+    except RuntimeRefusal as exc:
+        print(f"{exc.code}: {exc}", file=sys.stderr)
+        return REFUSED
+    except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return INVALID
     print(
@@ -194,7 +213,14 @@ def _render(args) -> int:
 
 def parser() -> argparse.ArgumentParser:
     built = argparse.ArgumentParser(
-        prog="python -m monkeycontrol", description=__doc__.splitlines()[0]
+        prog="python -m monkeycontrol",
+        description=__doc__.splitlines()[0],
+        epilog=(
+            "exit codes: 0 every action succeeded, 1 an action failed or was "
+            "refused, 2 the action or the script is invalid, 3 the runtime "
+            "refused the request itself (a recording already running, or a "
+            "backend that is not installed)."
+        ),
     )
     commands = built.add_subparsers(dest="command", required=True)
     look = commands.add_parser("inspect", help="print one window's element tree")
@@ -212,6 +238,13 @@ def parser() -> argparse.ArgumentParser:
     )
     play.add_argument("--record", help="record frames under this name while it runs")
     play.add_argument("--record-interval", type=int, default=250)
+    play.add_argument(
+        "--record-region",
+        choices=REGIONS,
+        default=REGIONS[0],
+        help="what a recording keeps in frame: the monitor the acted-on window "
+        "is on, or the whole virtual desktop",
+    )
     play.add_argument("--stop-on-failure", action="store_true")
     play.set_defaults(handler=_run)
     draw = commands.add_parser("render", help="redraw a recording's frames")

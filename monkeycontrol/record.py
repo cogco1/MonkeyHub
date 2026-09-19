@@ -4,9 +4,9 @@ The recorder captures the raw screen and nothing else. What the demo drew over
 it is deliberately absent from these frames -- the overlay window excludes
 itself from capture -- so the same recording can be replayed under any overlay
 projection later, or under none. Every byte it keeps goes through
-:class:`~monkeycontrol.store.ActionTraceStore`; the one exception is the
-encoded video, which ffmpeg writes itself into the recording directory the
-store handed out, and the manifest says so.
+:class:`~monkeycontrol.store.ActionTraceStore`, the encoded video included:
+ffmpeg is given the frames to read and a pipe to write to, so where a file
+lands stays this package's decision and not a subprocess argument.
 """
 
 from __future__ import annotations
@@ -35,7 +35,11 @@ GIF_MAX_FRAMES = 240
 GIF_MAX_WIDTH = 800
 GIF_COLORS = 128
 MAX_FPS = 30
+#: How long stop() waits for the capture thread before it says it is stuck.
+JOIN_TIMEOUT_S = 30
 ENCODE_TIMEOUT_S = 600
+#: save_bytes writes into the store's own directory with this relative dir.
+HERE = "."
 
 
 def _now() -> str:
@@ -55,6 +59,7 @@ class Recorder:
         *,
         interval_ms: int = 250,
         clock=time.monotonic,
+        region: str = "virtual",
     ) -> None:
         if not NAME.match(str(name)):
             raise ValueError(
@@ -75,6 +80,11 @@ class Recorder:
         self._index = 0
         self._steps: list[str] = []
         self._failures: list[str] = []
+        self._region_name = str(region)
+        # Read by the capture thread and replaced by the runtime between
+        # frames; a tuple is swapped in one assignment, so no frame ever sees
+        # half a rectangle.
+        self._region: tuple[int, int, int, int] | None = None
 
     @property
     def name(self) -> str:
@@ -91,6 +101,29 @@ class Recorder:
     @property
     def frame_count(self) -> int:
         return self._index
+
+    @property
+    def region(self) -> tuple[int, int, int, int] | None:
+        """The rectangle being captured; ``None`` is the whole virtual desktop."""
+
+        return self._region
+
+    def set_region(self, bounds) -> None:
+        """Capture this rectangle from the next frame on.
+
+        A recording that followed the whole desktop would keep whatever is open
+        on the other monitor, which is both somebody's business and several
+        megabytes a frame.
+        """
+
+        if bounds is None:
+            self._region = None
+            return
+        rectangle = tuple(int(item) for item in bounds)
+        wide = len(rectangle) == 4 and rectangle[2] > rectangle[0]
+        if not wide or rectangle[3] <= rectangle[1]:
+            raise ValueError("a capture region must be [left, top, right, bottom]")
+        self._region = rectangle
 
     def start(self) -> None:
         """Begin capturing; capturing twice from one recorder is a mistake."""
@@ -123,9 +156,16 @@ class Recorder:
         """End the capture, encode what can be encoded, write the manifest."""
 
         self._stopping.set()
-        thread, self._thread = self._thread, None
+        thread = self._thread
         if thread is not None:
-            thread.join(timeout=30)
+            thread.join(timeout=JOIN_TIMEOUT_S)
+            if thread.is_alive():
+                # The manifest is written anyway, but a frame written after it
+                # would not be in the count, so the count says it may be short.
+                self._failures.append(
+                    f"the capture thread was still running after {JOIN_TIMEOUT_S}s"
+                )
+        self._thread = None
         directory = self._store.directory / "recordings" / self._name
         manifest = {
             "name": self._name,
@@ -135,6 +175,7 @@ class Recorder:
             "frame_count": self._index,
             "frames": FRAME_INDEX,
             "timeline": TIMELINE,
+            "region": self._region_name,
             "actions": list(self._steps),
             "video": encode_video(directory, self.fps),
         }
@@ -162,7 +203,7 @@ class Recorder:
                 return
 
     def _frame(self) -> None:
-        shot = self._presentation.screenshot()
+        shot = self._presentation.screenshot(bounds=self._region)
         png = shot["png"]
         index = self._index + 1
         name = f"{index:06d}.png"
@@ -192,12 +233,15 @@ def ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
 
 
-def encode_video(recording_dir: Path, fps: int) -> dict:
+def encode_video(recording_dir: Path, fps: int, *, runner=subprocess.run) -> dict:
     """Turn a frame sequence into one file, or say honestly that nothing could.
 
-    ffmpeg is preferred and writes ``raw.mp4`` itself, into the directory the
-    store created for these frames; Pillow's GIF goes back through the store
-    like every other byte this package keeps.
+    ffmpeg is preferred and Pillow's GIF is the fallback, and neither of them
+    is allowed to choose where the bytes land: ffmpeg reads the frames and
+    writes the container to its stdout, and what comes back goes through
+    :class:`~monkeycontrol.store.ActionTraceStore` like every other byte this
+    package keeps. ``runner`` is the seam a test replaces to stand in for a
+    machine that has ffmpeg, or one whose ffmpeg fails.
     """
 
     directory = Path(recording_dir)
@@ -206,16 +250,17 @@ def encode_video(recording_dir: Path, fps: int) -> dict:
         return {"format": None, "reason": "the recording kept no frame to encode"}
     tool = ffmpeg_path()
     if tool:
-        encoded = _encode_mp4(tool, directory, len(frames), fps)
+        encoded = _encode_mp4(tool, directory, len(frames), fps, runner)
         if encoded is not None:
             return encoded
     return _encode_gif(directory, frames, fps)
 
 
-def _encode_mp4(tool: str, directory: Path, count: int, fps: int) -> dict | None:
-    """``raw.mp4`` beside the frames, or ``None`` when ffmpeg would not."""
+def _encode_mp4(
+    tool: str, directory: Path, count: int, fps: int, runner
+) -> dict | None:
+    """``raw.mp4`` through the store, or ``None`` when ffmpeg would not."""
 
-    destination = directory / "raw.mp4"
     command = [
         tool, "-y", "-loglevel", "error",
         "-framerate", str(fps), "-start_number", "1",
@@ -223,22 +268,26 @@ def _encode_mp4(tool: str, directory: Path, count: int, fps: int) -> dict | None
         # H.264 needs even dimensions and a browser-friendly pixel format.
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        str(destination),
+        # A pipe cannot be seeked, so the moov atom has to travel in front of
+        # the media rather than be written back over the head of the file.
+        "-f", "mp4", "-movflags", "frag_keyframe+empty_moov",
+        "pipe:1",
     ]
     try:
-        finished = subprocess.run(
-            command, capture_output=True, text=True, timeout=ENCODE_TIMEOUT_S
-        )
+        finished = runner(command, capture_output=True, timeout=ENCODE_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError):
         return None
-    if finished.returncode != 0 or not destination.is_file():
+    data = getattr(finished, "stdout", None)
+    failed = getattr(finished, "returncode", 1) != 0
+    if failed or not isinstance(data, bytes) or not data:
         return None
+    ActionTraceStore(directory).save_bytes(HERE, data, ".mp4", name="raw.mp4")
     return {
         "format": "mp4",
-        "path": destination.name,
+        "path": "raw.mp4",
         "encoder": "ffmpeg",
         "frames": count,
-        "writer": "ffmpeg, into the recording directory monkeycontrol.store created",
+        "writer": "monkeycontrol.store",
     }
 
 
@@ -275,7 +324,7 @@ def _encode_gif(directory: Path, frames: list[Path], fps: int) -> dict:
         # the frames themselves are still on disk and still replayable.
         return {"format": None, "reason": f"Pillow could not encode the frames: {exc}"}
     store = ActionTraceStore(directory)
-    store.save_bytes(".", buffer.getvalue(), ".gif", name="raw.gif")
+    store.save_bytes(HERE, buffer.getvalue(), ".gif", name="raw.gif")
     return {
         "format": "gif",
         "path": "raw.gif",

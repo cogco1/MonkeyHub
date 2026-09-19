@@ -17,6 +17,7 @@ from tempfile import TemporaryDirectory
 
 from monkeycontrol import __main__ as cli
 from monkeycontrol.contract import ContractError
+from monkeycontrol.runtime import RuntimeRefusal
 
 SCRIPT = {
     "schema": "ComputerActionScript@1",
@@ -60,13 +61,18 @@ class FakeRuntime:
     def inspect(self, application, window=None, *, depth=6):
         return {"application": application, "windows": [], "nodes": []}
 
-    def record_start(self, name, *, interval_ms=250):
-        self.recordings.append(name)
-        return {"name": name, "interval_ms": interval_ms}
+    def record_start(self, name, *, interval_ms=250, region="window-monitor"):
+        self.recordings.append((name, region))
+        return {
+            "name": name,
+            "interval_ms": interval_ms,
+            "region": region,
+            "bounds": [0, 0, 1920, 1080],
+        }
 
     def record_stop(self):
         return {
-            "name": self.recordings[-1],
+            "name": self.recordings[-1][0],
             "frame_count": 3,
             "video": {"format": "gif", "path": "raw.gif", "encoder": "pillow"},
         }
@@ -248,8 +254,43 @@ class RunTests(CliTestCase):
             "demo",
         )
         self.assertEqual(code, 0)
-        self.assertEqual(self.made[0].recordings, ["demo"])
+        self.assertEqual(self.made[0].recordings, [("demo", "window-monitor")])
         self.assertIn("raw.gif", out)
+
+    def test_a_runtime_refusal_is_its_own_exit_code(self) -> None:
+        self.install()
+        original = FakeRuntime.record_start
+
+        def refuse(self, name, *, interval_ms=250, region="window-monitor"):
+            raise RuntimeRefusal("RECORDING_ACTIVE", f"{name!r} is already recording")
+
+        FakeRuntime.record_start = refuse
+        self.addCleanup(setattr, FakeRuntime, "record_start", original)
+        code, _, err = self.run_cli(
+            "run",
+            self.script(),
+            "--trace-dir",
+            str(self.trace),
+            "--record",
+            "demo",
+        )
+        self.assertEqual(code, 3)
+        self.assertIn("RECORDING_ACTIVE", err)
+        self.assertTrue(self.made[0].closed)
+
+    def test_the_recording_region_reaches_the_runtime(self) -> None:
+        self.install()
+        self.run_cli(
+            "run",
+            self.script(),
+            "--trace-dir",
+            str(self.trace),
+            "--record",
+            "demo",
+            "--record-region",
+            "virtual",
+        )
+        self.assertEqual(self.made[0].recordings, [("demo", "virtual")])
 
     def test_a_script_that_is_not_a_script_exits_two(self) -> None:
         self.install()

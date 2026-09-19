@@ -85,14 +85,47 @@ class PresentationProvider:
             color=str(color),
         )
 
-    def badge(self, text: str, *, ms: int = BADGE_MS, kind: str = "info") -> None:
-        """Say one short thing over the screen, in the colour of the outcome."""
+    def badge(
+        self,
+        text: str,
+        *,
+        ms: int = BADGE_MS,
+        kind: str = "info",
+        anchor: Sequence[int] | None = None,
+    ) -> dict:
+        """Say one short thing over the screen, in the colour of the outcome.
+
+        With an ``anchor`` rectangle the chip is placed under it, inside the
+        monitor that rectangle is on, so a verdict about a target on the second
+        screen is not announced on the first one. The reply says where the chip
+        landed, which is the only way to check it: the overlay is excluded from
+        every capture, so no screenshot can show it.
+        """
 
         if kind not in BADGE_KINDS:
             raise ContractError(
                 f"a badge kind must be one of {', '.join(BADGE_KINDS)}, not {kind!r}"
             )
-        self._host.request("badge", text=str(text), ms=int(ms), kind=kind)
+        return self._host.request(
+            "badge",
+            text=str(text),
+            ms=int(ms),
+            kind=kind,
+            anchor=[int(item) for item in anchor] if anchor is not None else None,
+        )
+
+    def monitor(self, handle: int = 0) -> dict:
+        """The screen one window is on, or the primary one when no window is.
+
+        A recording follows the monitor the action is happening on, so this is
+        geometry the caller needs before it captures anything.
+        """
+
+        found = self._host.request("monitor", handle=int(handle))
+        bounds = [int(item) for item in found.get("bounds") or ()]
+        if len(bounds) != 4:
+            raise HostError("HOST_ERROR", "the host described a monitor without bounds")
+        return {"bounds": tuple(bounds), "primary": bool(found.get("primary"))}
 
     def clear(self) -> None:
         """Take the overlay down, whatever it was showing."""
