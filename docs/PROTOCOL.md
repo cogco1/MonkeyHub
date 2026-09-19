@@ -782,3 +782,51 @@ and preparing neither shortens it nor bounds the turn through it.
 The runtime admission/reply map is in-process. Hub cold startup reconstructs retained results
 and saved conversations, not pre-admission requests or lost proposal/job registries. No additional
 project store, canonical writer, dependency graph or persistent queue is introduced.
+
+### Project archives
+
+An archive is one ZIP holding a `ProjectArchiveManifest@1` and the retained bytes that manifest
+names. It is a transport container, never a second project format. Hub chooses no location of its
+own: both routes hand the locations the request named to `archflow.project.archive`, which
+installs every byte through the existing P036 immutable writer.
+
+| method | path | body | returns |
+| --- | --- | --- | --- |
+| POST | `/api/project/archive/export` | `{projectDir, archivePath}` | `201 ProjectArchiveSummary` |
+| POST | `/api/project/archive/restore` | `{archivePath, targetParent}` | `201 {summary, project}` |
+
+`projectDir` is the absolute folder of the project to export; `archivePath` is the absolute path
+of a new `.zip` file outside it, and on restore the absolute path of an existing one. `targetParent`
+is the absolute parent folder to restore into; `null` restores into this Hub's own workspace folder,
+the same one `GET /api/chat/workspace` names. The restored folder is named by the archive's own
+project id, never by the caller or the file name. `project` in the restore reply is the same
+`ChatProject` row `GET /api/chat/projects` lists, so a restored project is immediately selectable.
+
+`ProjectArchiveSummary` states identities, counts and locations only, and no design content.
+
+| field | what it says |
+| --- | --- |
+| `projectId`, `formatVersion`, `version`, `stateSha256` | which project, which format, and the published position the archive carries |
+| `runCount`, `fileCount`, `retainedBytes`, `categories` | how many runs and retained files travelled, their total bytes, and the file count per retained category |
+| `omissions`, `externalDependencies` | what deliberately did not travel, and what the archive still needs from outside it |
+| `archivePath`, `archiveBytes`, `archiveSha256`, `verified` | the archive file itself, and that it was read back and verified |
+| `projectDir` | the normalized absolute folder: the source on export, the restored project on restore |
+
+Refusals carry the usual `{code, detail}`. `404 PROJECT_NOT_FOUND`: the export folder holds no
+readable project manifest. `422 ARCHIVE_PATH_INVALID`: a relative path, a name that is not `.zip`,
+an export target inside the project, an archive file that already exists, a restore source that
+cannot be opened, or a location the operating system itself refuses — a missing drive, a vanished
+or unwritable folder, a parent that is a file. `422 ARCHIVE_INVALID`: the manifest, a member digest
+or the restored project did not verify. `409 ARCHIVE_TARGET_OCCUPIED`: the restore folder already
+holds files, which are left untouched, or another restore of the same project id is holding that
+same folder's project head. `409 ARCHIVE_SOURCE_CHANGED` (export only): a retained file moved
+between building the manifest and reading it, or another process held the project head for the
+whole of the export's read, so nothing was installed and the same export can be asked again.
+`422 ARCHIVE_SOURCE_INVALID` (export only): the project itself cannot be exported — a reference
+into another project, a dependency no retained run holds, a file no retained record names — and
+the detail carries the retained project's own refusal, so asking again changes nothing until the
+project is repaired.
+
+A corrupt archive is refused before the restore folder is created. When verification fails with
+bytes already written, Hub deletes nothing and the detail names the folder to remove before
+retrying — whether the restore created that folder or found it empty and filled it.

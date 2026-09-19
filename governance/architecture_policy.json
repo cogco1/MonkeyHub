@@ -139,6 +139,16 @@
       "reason": "Creates the run's speculative workspace directory under the layout's run root before handing it to the runner."
     },
     {
+      "path": "tools/rehearse_project_archive.py",
+      "function": "_write_evidence",
+      "operations": [
+        "write_text"
+      ],
+      "kind": "rehearsal_evidence",
+      "owner": "tools.rehearse_project_archive",
+      "reason": "Hands the content-free source-side identities of one archive rehearsal to its later verify phase, beside the restored project and never inside a project the repository owns."
+    },
+    {
       "path": "tools/verify_state_record.py",
       "function": "main",
       "operations": [

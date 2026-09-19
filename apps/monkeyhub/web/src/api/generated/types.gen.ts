@@ -1107,6 +1107,118 @@ export type OperationRecord = {
 };
 
 /**
+ * ProjectArchiveExportRequest
+ *
+ * Write one retained project as the portable archive file this names.
+ */
+export type ProjectArchiveExportRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Archivepath
+     */
+    archivePath: string;
+};
+
+/**
+ * ProjectArchiveRestoreRequest
+ *
+ * Restore one archive under this parent folder, or the Hub workspace.
+ */
+export type ProjectArchiveRestoreRequest = {
+    /**
+     * Archivepath
+     */
+    archivePath: string;
+    /**
+     * Targetparent
+     */
+    targetParent?: string | null;
+};
+
+/**
+ * ProjectArchiveRestoreResult
+ *
+ * The restored archive's summary beside the project it is now listed as.
+ */
+export type ProjectArchiveRestoreResult = {
+    summary: ProjectArchiveSummary;
+    project: ChatProject;
+};
+
+/**
+ * ProjectArchiveSummary
+ *
+ * What one archive holds and where it is, said without design content.
+ */
+export type ProjectArchiveSummary = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Formatversion
+     */
+    formatVersion: number;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Statesha256
+     */
+    stateSha256: string;
+    /**
+     * Runcount
+     */
+    runCount: number;
+    /**
+     * Filecount
+     */
+    fileCount: number;
+    /**
+     * Retainedbytes
+     */
+    retainedBytes: number;
+    /**
+     * Categories
+     */
+    categories: {
+        [key: string]: number;
+    };
+    /**
+     * Omissions
+     */
+    omissions: Array<string>;
+    /**
+     * Externaldependencies
+     */
+    externalDependencies: Array<string>;
+    /**
+     * Archivepath
+     */
+    archivePath: string;
+    /**
+     * Archivebytes
+     */
+    archiveBytes: number;
+    /**
+     * Archivesha256
+     */
+    archiveSha256: string;
+    /**
+     * Verified
+     */
+    verified: boolean;
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+};
+
+/**
  * ProjectRuntimeDto
  */
 export type ProjectRuntimeDto = {
@@ -1838,6 +1950,72 @@ export type ChatWorkspaceApiChatWorkspaceGetResponses = {
 };
 
 export type ChatWorkspaceApiChatWorkspaceGetResponse = ChatWorkspaceApiChatWorkspaceGetResponses[keyof ChatWorkspaceApiChatWorkspaceGetResponses];
+
+export type ExportProjectArchiveApiProjectArchiveExportPostData = {
+    body: ProjectArchiveExportRequest;
+    path?: never;
+    query?: never;
+    url: '/api/project/archive/export';
+};
+
+export type ExportProjectArchiveApiProjectArchiveExportPostErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type ExportProjectArchiveApiProjectArchiveExportPostError = ExportProjectArchiveApiProjectArchiveExportPostErrors[keyof ExportProjectArchiveApiProjectArchiveExportPostErrors];
+
+export type ExportProjectArchiveApiProjectArchiveExportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProjectArchiveSummary;
+};
+
+export type ExportProjectArchiveApiProjectArchiveExportPostResponse = ExportProjectArchiveApiProjectArchiveExportPostResponses[keyof ExportProjectArchiveApiProjectArchiveExportPostResponses];
+
+export type RestoreProjectArchiveApiProjectArchiveRestorePostData = {
+    body: ProjectArchiveRestoreRequest;
+    path?: never;
+    query?: never;
+    url: '/api/project/archive/restore';
+};
+
+export type RestoreProjectArchiveApiProjectArchiveRestorePostErrors = {
+    /**
+     * Not Found
+     */
+    404: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type RestoreProjectArchiveApiProjectArchiveRestorePostError = RestoreProjectArchiveApiProjectArchiveRestorePostErrors[keyof RestoreProjectArchiveApiProjectArchiveRestorePostErrors];
+
+export type RestoreProjectArchiveApiProjectArchiveRestorePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProjectArchiveRestoreResult;
+};
+
+export type RestoreProjectArchiveApiProjectArchiveRestorePostResponse = RestoreProjectArchiveApiProjectArchiveRestorePostResponses[keyof RestoreProjectArchiveApiProjectArchiveRestorePostResponses];
 
 export type ChatSessionsApiChatSessionsGetData = {
     body?: never;

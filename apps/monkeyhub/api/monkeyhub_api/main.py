@@ -36,6 +36,7 @@ from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from archflow_studio_api.transport.project import ModelingInitializeDto, ModelingInitializeRequestDto
 
 from . import chat as chat_tools
+from . import project_archive
 from .applications import Applications
 from .chat import ChatStore
 from .runtime import ProjectRuntimeManager
@@ -47,6 +48,7 @@ from .models import (
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
     ChatAttachmentContent,
+    ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary,
 )
 
 SOURCE_ROOT = Path(__file__).resolve().parents[4]
@@ -315,6 +317,18 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.post("/api/chat/projects", response_model=ChatProject, status_code=201)
     def create_chat_project(body: ChatProjectRequest):
         return chats.create_project(body)
+
+    archive_errors = {404: {"model": HubError}, 409: {"model": HubError}, 422: {"model": HubError}}
+
+    @app.post("/api/project/archive/export", response_model=ProjectArchiveSummary, status_code=201,
+              responses=archive_errors)
+    def export_project_archive(body: ProjectArchiveExportRequest) -> ProjectArchiveSummary:
+        return project_archive.export_archive(body)
+
+    @app.post("/api/project/archive/restore", response_model=ProjectArchiveRestoreResult, status_code=201,
+              responses=archive_errors)
+    def restore_project_archive(body: ProjectArchiveRestoreRequest) -> ProjectArchiveRestoreResult:
+        return project_archive.restore_archive(body, runtime_root=settings.runtime_root)
 
     @app.get("/api/chat/sessions", response_model=list[ChatSummary])
     def chat_sessions(projectId: str | None = None, archived: bool = False):

@@ -666,6 +666,15 @@ Program 和建模候选需要相应的完整设计输入与执行分工，PDF �
 目标必须不存在或为空目录；已有项目不会被覆盖。以上两种创建方式只选一种，之后继续使用同一项目。
 若要接着既有 run 工作，使用负责人提供的完整 P036 项目副本，不用其已绑定的单份记录重新初始化。
 
+项目要换机器、换用户或留一份离线备份时，用项目归档，不要手工复制目录：一个归档就是一份
+`ProjectArchiveManifest@1` 加它点名的保留字节，导出与还原在 MonkeyHub 的项目卡片上各有一个对话框，
+命令行是 `tools/create_project.py --export-archive/--restore-archive`；凭据、进程与运行时状态、缓存、
+可重建预览和无界日志不随归档走，还原出来的项目也不需要源机器的 Hub 运行时目录、聊天或配置。
+搬家是否真的成功，用 `scripts/dev/run-archive-rehearsal.ps1` 完整演练一遍：导出、还原到空目录、
+在还原副本上启动一个项目运行时、按正常读取器逐项比对身份，并从还原后的精确 base 跑一个不接受的候选。
+两个对话框、两条路由、命令行开关、演练脚本与驱动，以及“什么会走、什么不会走”的完整说明，见
+[Hub 说明的 “Project archive: export, restore, rehearsal”](../apps/monkeyhub/README.md#project-archive-export-restore-rehearsal)。
+
 ### 8.4 启动前后端
 
 #### 通过 MonkeyHub 启动

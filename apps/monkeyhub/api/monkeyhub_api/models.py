@@ -246,6 +246,51 @@ class ChatProjectRequest(BaseModel):
     workspaceDir: str | None = Field(default=None, min_length=1)
 
 
+class ProjectArchiveExportRequest(BaseModel):
+    """Write one retained project as the portable archive file this names."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectDir: str = Field(min_length=1)
+    archivePath: str = Field(min_length=1)
+
+
+class ProjectArchiveRestoreRequest(BaseModel):
+    """Restore one archive under this parent folder, or the Hub workspace."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    archivePath: str = Field(min_length=1)
+    targetParent: str | None = Field(default=None, min_length=1)
+
+
+class ProjectArchiveSummary(BaseModel):
+    """What one archive holds and where it is, said without design content."""
+
+    projectId: str
+    formatVersion: int
+    version: int
+    stateSha256: str
+    runCount: int
+    fileCount: int
+    retainedBytes: int
+    categories: dict[str, int]
+    omissions: list[str]
+    externalDependencies: list[str]
+    archivePath: str
+    archiveBytes: int
+    archiveSha256: str
+    verified: bool
+    projectDir: str
+
+
+class ProjectArchiveRestoreResult(BaseModel):
+    """The restored archive's summary beside the project it is now listed as."""
+
+    summary: ProjectArchiveSummary
+    project: ChatProject
+
+
 class ChatModelRequest(BaseModel):
     """Which model this conversation's next turns use; null means the CLI default."""
 

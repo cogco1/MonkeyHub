@@ -1572,6 +1572,61 @@
       "notes": "ModelPhase.INTENT_COMPILATION is the Studio's phase; nothing retained carries it yet. The archived P053 control plane held the only other instantiation of these contracts. The spine suite drives the Protocol and the receipt round trip through tests/support.py ScriptedProvider."
     },
     {
+      "module_id": "project.archive",
+      "owner_path": "archflow/project/archive.py",
+      "purpose": "One portable archive of a retained project: the ZIP transport container around the existing P036 transfer representation, and the content-free summary of what travelled.",
+      "owns": [
+        "Portable ProjectArchiveManifest@1 export/restore wrapper around the P036 transfer representation, its member/hash/manifest validation and its content-free ArchiveSummary"
+      ],
+      "does_not_own": [
+        "A second project format, migration, cloud sync, signing, the CLI or Hub presentation of the archive"
+      ],
+      "inputs": [
+        "an open FilesystemProjectRepository or one absolute archive path, with the absolute directory the archive is written to or restored into"
+      ],
+      "outputs": [
+        "one deterministic ProjectArchiveManifest@1 ZIP, or one restored and verified project repository, each with its ArchiveSummary"
+      ],
+      "public_api": [
+        "ARCHIVE_SCHEMA",
+        "ARCHIVE_VERSION",
+        "ARCHIVE_MANIFEST_PATH",
+        "ARCHIVE_PROJECT_PREFIX",
+        "ARCHIVE_OMISSIONS",
+        "ArchiveError",
+        "ArchiveSummary",
+        "archive_manifest",
+        "validate_archive_manifest",
+        "read_project_archive",
+        "summarize_archive",
+        "write_project_archive",
+        "archive_target",
+        "restore_project_archive"
+      ],
+      "depends_on": [
+        "project.repository"
+      ],
+      "used_by": [
+        "tools.create_project",
+        "tools.rehearse_project_archive",
+        "hub.shell"
+      ],
+      "invariants": [
+        "Archive bytes are installed only through the P036 immutable writer",
+        "Restore refuses an occupied target before creating anything"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_project_archive.py",
+        "tests/test_create_project.py",
+        "tests/test_project_transfer.py"
+      ],
+      "notes": "CREATE: the archive wrapper had no owner besides a CLI; two consumers (CLI and Hub API) now share it.",
+      "files": [
+        "archflow/project/archive.py"
+      ]
+    },
+    {
       "module_id": "project.containers",
       "owner_path": "archflow/project/containers.py",
       "purpose": "Naming the four container states of ADR-007 over the layout: which work is in progress, which run is shared, what is published, and what the archive holds.",
@@ -5771,7 +5826,8 @@
         "project format, filesystem writes or HEAD authority (project.repository)",
         "StateRecord semantics (state.record) or seat semantics (tools.run_project._seat)",
         "creating geometry, a run, a stage or a formal issue",
-        "a global workspace registry or runtime installation"
+        "a global workspace registry or runtime installation",
+        "the portable archive container: export, restore, member validation and the archive summary belong to project.archive"
       ],
       "inputs": [
         "CLI arguments",
@@ -5789,6 +5845,7 @@
         "main"
       ],
       "depends_on": [
+        "project.archive",
         "project.repository",
         "project.refs",
         "state.record",
@@ -5810,7 +5867,62 @@
         "apps/archflow-studio/api/tests/test_create_project.py",
         "tests/test_project_format_migration.py"
       ],
-      "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer."
+      "notes": "CREATE only for the requested user-facing initialization command: existing tools operate on retained projects/runs and have no creation entry. Persistence is an EXTEND of project.repository, with no parallel writer. The --export-archive/--restore-archive flags stay here and delegate to project.archive, which the Hub API calls directly."
+    },
+    {
+      "module_id": "tools.rehearse_project_archive",
+      "owner_path": "tools/rehearse_project_archive.py",
+      "purpose": "Rehearse one project archive end to end: capture the source project identities, export and restore through the landed create-project command, re-read the restored copy with normal readers, and continue one bounded candidate from the restored base.",
+      "owns": [
+        "the fresh-environment archive rehearsal: the content-free source-side evidence file, the restored-copy comparison and the acceptance summary block GH-56 receives",
+        "the bounded non-destructive continuation a restored project is asked for: one restatement proposal, its candidate and the base that candidate names"
+      ],
+      "does_not_own": [
+        "the archive container, its manifest and its validation (project.archive), whose reader also names the restored project",
+        "exporting or restoring a project: both go through the tools.create_project command line as a subprocess",
+        "project readers, verification and record identity (project.repository)",
+        "starting or stopping a project runtime; the rehearsal is handed one URL or none"
+      ],
+      "inputs": [
+        "CLI arguments: the source project, the archive path, the restore parent, the interpreter, an environment label, an optional runtime URL and the phase",
+        "its own evidence file, when the verify phase runs in a second process"
+      ],
+      "outputs": [
+        "the acceptance summary block on stdout, identities only",
+        "one ProjectArchiveRehearsalEvidence@1 file beside the restored project",
+        "process exit code: 0 accepted, 1 refused, 2 not carried out"
+      ],
+      "public_api": [
+        "CHECKS",
+        "RehearsalError",
+        "RehearsalReport",
+        "identities",
+        "source_build",
+        "export_and_restore",
+        "verify_restored",
+        "rehearse",
+        "main"
+      ],
+      "depends_on": [
+        "project.archive",
+        "project.repository",
+        "project.ports",
+        "project.record_kinds"
+      ],
+      "used_by": [
+        "scripts/dev/run-archive-rehearsal.ps1",
+        "apps/monkeyhub/README.md"
+      ],
+      "invariants": [
+        "a category the source project genuinely lacks is reported SKIPPED and never answered MATCH",
+        "the rehearsal writes nothing inside either project; the only file it writes is its own evidence file beside the restored copy",
+        "stdout carries the summary block alone, so no local path or project content can travel into the issue"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_rehearse_project_archive.py"
+      ],
+      "notes": "CREATE for GH-56's remaining acceptance: the repository had the archive and its routes but no way to run the fresh-environment rehearsal the issue closes on. Export and restore are not reimplemented here; the driver runs the landed CLI so the rehearsal exercises what a user runs."
     },
     {
       "module_id": "monkeymonitor",
@@ -5946,7 +6058,8 @@
         "observing the editable work copies this project explicitly opened: a settled, re-stat-validated change is offered to studio.artifacts as the next revision of the whole document that copy answers for, and its refusal is reported on the runtime's existing error surface; a copy studio.artifacts no longer considers editable is left on disk and still watched, reported only once its own bytes have moved, and the edit it holds keeps its place until the refusal goes away; an untouched copy never rolls a page the Board replaced elsewhere back, and a copy that will not read or register never marks the retained projection stale",
         "the visible Usage page and its browser-side presentation of MonkeyMonitor events, traces, explicit diagnostic sources and manual rate estimates; Monitor remains the data/algorithm owner behind the loopback API",
         "Mounted workspace view state and local drafts survive tool and project switches; Board page visits keep exact source/page/revision and return to the same canvas. These are UI projections, not a second project store.",
-        "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds."
+        "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
+        "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6001,6 +6114,8 @@
         "POST /api/chat/sessions/{id}/permissions/{permission_id}",
         "POST /api/chat/sessions/{id}/stop",
         "POST /api/project/modeling",
+        "POST /api/project/archive/export",
+        "POST /api/project/archive/restore",
         "ProjectRuntimeManager",
         "WorkerSupervisor",
         "OperationManager",
@@ -6056,6 +6171,7 @@
         "apps/monkeyhub/api/monkeyhub_api/fabrication.py",
         "apps/monkeyhub/api/monkeyhub_api/main.py",
         "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/monkeyhub_api/project_archive.py",
         "apps/monkeyhub/api/monkeyhub_api/applications.py",
         "apps/monkeyhub/run.py",
         "apps/monkeyhub/launch-hub.ps1",
@@ -6114,6 +6230,7 @@
         "apps/monkeyhub/api/tests/test_runtime_operations.py",
         "apps/monkeyhub/api/tests/test_runtime_sse.py",
         "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/test_project_archive.py",
         "apps/monkeyhub/desktop/tests/test_runtime.py",
         "apps/monkeyhub/web/test/monitorData.test.ts",
         "apps/monkeyhub/web/workspaces/test/connection.test.ts",
@@ -6131,7 +6248,8 @@
         "monkeymonitor",
         "contracts.canonical",
         "monkeyfab",
-        "studio.artifacts"
+        "studio.artifacts",
+        "project.archive"
       ]
     },
     {
