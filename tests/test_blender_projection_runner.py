@@ -73,4 +73,3 @@ class ProjectionRunnerTests(unittest.TestCase):
             for key in ("object_id", "vertices", "faces", "bounds", "material"):
                 self.assertEqual(first[key], second[key], key)
         print("Verified architectural projection demo:", root)
-
