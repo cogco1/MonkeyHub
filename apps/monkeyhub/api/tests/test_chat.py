@@ -1681,6 +1681,19 @@ class ChatTests(unittest.TestCase):
             chat._finish("http://127.0.0.1:8791", {"jobId": "job", "candidateId": "candidate"},
                          {"sourceRunId": "before"}, time.monotonic() + 1)
 
+    def test_benchmark_can_inspect_one_admitted_candidate_without_a_complete_readback_card(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("turn_benchmark", ROOT / "tests/monkeymonitor/run_turn_benchmark.py")
+        benchmark = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(benchmark)
+        detail = {"id": "this-chat", "messages": [{"role": "tool", "candidateId": None}]}
+        operation = {"sessionId": "this-chat", "candidateId": "candidate-1"}
+        runtime = {"operations": [operation, {"sessionId": "another-chat", "candidateId": "other"}]}
+        self.assertEqual(benchmark.candidate_for_readback(detail, runtime), "candidate-1")
+        self.assertIsNone(benchmark.candidate_for_readback(detail, {"operations": []}))
+        runtime["operations"].append({**operation, "candidateId": "candidate-2"})
+        self.assertIsNone(benchmark.candidate_for_readback(detail, runtime), "an ambiguous run must not be guessed")
+
     def test_the_wait_belongs_to_the_one_action_that_can_be_seen_through(self):
         session = self.create()
         session.status = "running"

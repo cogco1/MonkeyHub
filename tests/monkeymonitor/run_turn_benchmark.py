@@ -60,6 +60,15 @@ def expected_geometry(readback, scenario):
     return True
 
 
+def candidate_for_readback(detail, runtime):
+    # A partial readback intentionally has no fully-read candidate card. Its
+    # admitted operation still names the run to inspect independently. Accept
+    # only one candidate identity for this fresh, single-turn benchmark chat.
+    candidates = {row["candidateId"] for row in runtime.get("operations", [])
+                  if row.get("sessionId") == detail["id"] and row.get("candidateId")}
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenario", choices=("simple-create", "incremental-edit"), required=True)
@@ -165,7 +174,8 @@ def main():
             else:
                 request(base, f"/api/chat/sessions/{session['id']}/stop", {})
                 raise TimeoutError("The benchmark provider did not finish within its configured timeout")
-            candidate = next((row.get("candidateId") for row in reversed(detail["messages"]) if row.get("candidateId")), None)
+            runtime_snapshot = request(base, f"/api/runtime/projects/{opened['runtimeId']}")
+            candidate = candidate_for_readback(detail, runtime_snapshot)
             readback = request(studio["apiUrl"].rstrip("/"), f"/api/candidates/{candidate}") if candidate else None
             readback_ok = bool(readback and readback["status"] == "succeeded" and readback["seatExecutionComplete"]
                                and readback.get("objects") and not readback.get("objectReadbackError"))

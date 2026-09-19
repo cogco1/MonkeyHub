@@ -2044,7 +2044,10 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         # a successful comparison stand in for a missing candidate. Keep each
         # answer once and direct recovery only to the reads still missing.
         result.update(
-            detail="The run finished. Successful readbacks are included; verification remains incomplete. "
+            detail="The run finished. Completed reads: "
+                   + (", ".join(name for name in reads if name not in errors) or "none")
+                   + ". Completed responses are included below and do not need another read. "
+                   "Only the reads in next are missing; overall verification remains incomplete. "
                    + "; ".join(f"{name}: {reason}" for name, reason in errors.items()),
             readbackErrors=errors,
             next=[f"GET {reads[name][1]}" for name in errors],
