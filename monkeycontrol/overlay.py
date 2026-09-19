@@ -171,21 +171,33 @@ def _paint(image, events: list[dict], projection: str, origin: tuple[int, int]) 
         return
     step = round(32 * scale)
     margin = round(24 * scale)
+    floor = max(margin, image.height - round(40 * scale))
     # A verdict is about the rectangle that was just acted on, so it is said
     # under it when that rectangle is in this frame, and only otherwise in the
-    # corner of the captured region.
+    # corner of the captured region. A rectangle from the other monitor is not
+    # in this frame at all, and a chip anchored to it would be drawn past the
+    # right or the bottom edge, where nobody can read it.
+    seen = [
+        rectangle
+        for rectangle in boxes
+        if rectangle[2] > 0
+        and rectangle[3] > 0
+        and rectangle[0] < image.width
+        and rectangle[1] < image.height
+    ]
     where = (margin, margin)
-    if boxes:
-        rectangle = next(iter(boxes))
-        under = min(rectangle[3] + round(14 * scale), image.height - round(40 * scale))
-        where = (max(margin, rectangle[0]), max(margin, under))
+    if seen:
+        rectangle = seen[0]
+        under = min(rectangle[3] + round(14 * scale), floor)
+        right = max(margin, image.width - round(320 * scale))
+        where = (min(max(margin, rectangle[0]), right), max(margin, under))
     for index, verdict in enumerate(
         event for event in events if event.get("event") == "verify"
     ):
         held = str(verdict.get("detail", "")).startswith("passed")
         _chip(
             draw,
-            (where[0], where[1] + index * step),
+            (where[0], min(where[1] + index * step, floor)),
             f"{verdict.get('step_id', '')} VERIFY {'OK' if held else 'X'} "
             f"{verdict.get('detail', '')}"[:120],
             label,

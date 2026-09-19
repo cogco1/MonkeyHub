@@ -179,6 +179,54 @@ class BuildReceiptTests(unittest.TestCase):
         without_digest = {k: v for k, v in built.items() if k != "digest"}
         self.assertEqual(built["digest"], canonical_digest(without_digest))
 
+    def test_a_refusal_code_survives_a_secret_that_spells_it(self) -> None:
+        # "LOST" is a substring of FOCUS_LOST. Redacting the code would leave a
+        # receipt nobody can match on, which is the one field a caller reads to
+        # find out what stopped the step.
+        built = receipt(
+            {
+                **CLICK,
+                "action": {"type": "type", "text": "LOST", "sensitive": True},
+            },
+            status="refused",
+            verification=None,
+            refusal={
+                "code": "FOCUS_LOST",
+                "message": "typing LOST reached another window",
+                "candidates": [{"name": "LOST and found", "controlType": "Button"}],
+            },
+        )
+        self.assertEqual(built["refusal"]["code"], "FOCUS_LOST")
+        self.assertEqual(built["refusal"]["message"], "<redacted 4 chars>")
+        self.assertEqual(
+            built["refusal"]["candidates"],
+            [{"name": "<redacted 4 chars>", "controlType": "Button"}],
+        )
+        without_digest = {k: v for k, v in built.items() if k != "digest"}
+        self.assertEqual(built["digest"], canonical_digest(without_digest))
+
+    def test_an_expectation_and_a_verdict_survive_a_secret_that_spells_them(
+        self,
+    ) -> None:
+        built = receipt(
+            {
+                **CLICK,
+                "action": {"type": "set_value", "text": "passed", "sensitive": True},
+            },
+            verification={
+                "expect": "element",
+                "status": "passed",
+                "detail": "value is passed",
+                "state": {"value": "passed"},
+                "duration_ms": 12,
+            },
+        )
+        self.assertEqual(built["verification"]["expect"], "element")
+        self.assertEqual(built["verification"]["status"], "passed")
+        self.assertEqual(built["verification"]["detail"], "<redacted 6 chars>")
+        self.assertEqual(built["verification"]["state"]["value"], "<redacted 6 chars>")
+        self.assertEqual(built["verification"]["duration_ms"], 12)
+
     def test_a_verification_outcome_must_name_its_expectation_and_status(self) -> None:
         with self.assertRaises(ContractError):
             receipt(verification={"expect": "window", "status": "maybe"})

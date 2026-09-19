@@ -548,6 +548,15 @@ class TraceTests(RuntimeTestCase):
         self.assertTrue((self.trace / before).is_file())
         self.assertTrue((self.trace / after).is_file())
 
+    def test_a_capture_without_a_recording_follows_the_window_monitor(self) -> None:
+        # Nothing is recording, so the only thing deciding what a capture keeps
+        # is the window being acted on: the other screen stays out of the trace.
+        runtime = self.runtime()
+        self.presentation._monitors = {0: PRIMARY, NOTEPAD.handle: SECOND}
+        receipt = runtime.execute(dict(CLICK, capture=True))
+        self.assertEqual(receipt["status"], "succeeded")
+        self.assertEqual(set(self.presentation.regions), {SECOND})
+
     def test_a_screenshot_action_captures_without_a_target(self) -> None:
         runtime = self.runtime()
         receipt = runtime.execute(

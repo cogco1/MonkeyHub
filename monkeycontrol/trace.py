@@ -25,6 +25,9 @@ from .contract import (
 
 STATUSES = ("succeeded", "failed", "refused")
 VERIFICATION_STATUSES = ("passed", "failed", "skipped")
+#: The receipt keys whose value is a word from a closed set rather than prose.
+#: Redaction never rewrites one, however a secret happens to be spelled.
+ENUMERATED = frozenset({"code", "expect", "status"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,11 +100,26 @@ def _redact(value: object, secret: str, mask: str) -> object:
 
 
 def _without_secret(action: Action, payload: object) -> object:
-    """Any receipt fragment with the action's sensitive text taken out of it."""
+    """Any receipt fragment with the action's sensitive text taken out of it.
 
-    if action.sensitive and action.text and payload is not None:
-        return _redact(payload, action.text, redacted_text(action.text))
-    return payload
+    Only the prose is rewritten. A refusal's ``code`` and a verification's
+    ``expect`` and ``status`` are words from closed sets, and a caller reads a
+    receipt by matching them: a secret that happens to spell one of them --
+    typing "LOST" into a field, with FOCUS_LOST among the refusals -- must not
+    turn the one field that says what happened into a redaction notice. Every
+    other value, including the message, the detail, the state read back and any
+    candidate named beside them, is free text and is redacted wherever it is.
+    """
+
+    if not (action.sensitive and action.text) or payload is None:
+        return payload
+    mask = redacted_text(action.text)
+    if not isinstance(payload, Mapping):
+        return _redact(payload, action.text, mask)
+    return {
+        key: value if key in ENUMERATED else _redact(value, action.text, mask)
+        for key, value in payload.items()
+    }
 
 
 def _verification_payload(action: Action, verification: object) -> dict | None:

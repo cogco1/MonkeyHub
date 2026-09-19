@@ -436,7 +436,7 @@ class ComputerUseRuntime:
             step.window = found[0]
             self._follow(step)
         if self._recorder is not None or action.capture:
-            step.screenshots["before"] = self._capture()
+            step.screenshots["before"] = self._capture(step.window)
         if action.target is not None:
             step.target = self._resolve(step.window, action.target)
             step.fallback = step.target.backend == VISUAL_FALLBACK
@@ -453,19 +453,25 @@ class ComputerUseRuntime:
         if (self._recorder is not None or action.capture) and not step.screenshots.get(
             "after"
         ):
-            step.screenshots["after"] = self._capture()
+            step.screenshots["after"] = self._capture(step.window)
 
     # -- the screen -----------------------------------------------------
-    def _capture(self) -> str:
-        """One screenshot, kept in the trace, over the recording's own region.
+    def _capture(self, window: WindowInfo | None = None) -> str:
+        """One screenshot, kept in the trace, over the screen being acted on.
 
         A receipt's before and after shots are the same picture as a frame, so
-        while a recording is following one monitor they follow it too; without
-        one they are the whole desktop, which is what a caller asking for a
-        single capture has always got.
+        while a recording is running they follow whatever it is following.
+        Without one they follow the monitor the acted-on window is on, for the
+        same reason a recording does: the other screen is nobody's business
+        here, and a single capture of the whole desktop costs several megabytes
+        to say less.
         """
 
-        bounds = self._recorder.region if self._recorder is not None else None
+        bounds = (
+            self._recorder.region
+            if self._recorder is not None
+            else self._monitor(window)
+        )
         png = self.presentation.screenshot(bounds=bounds)["png"]
         return self._store.save_bytes("shots", png, ".png")
 
@@ -576,7 +582,7 @@ class ComputerUseRuntime:
             self._pause(action.ms or 0)
             return
         if kind == "screenshot":
-            step.screenshots["after"] = self._capture()
+            step.screenshots["after"] = self._capture(step.window)
             self._note(step, "screenshot", step.screenshots["after"])
             return
         if kind == "highlight":

@@ -44,7 +44,11 @@ public static class MonkeyControlOverlay
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(POINT point, uint flags);
     [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
 
-    private const uint MONITOR_DEFAULTTOPRIMARY = 1;
+    // Nearest, never primary: a window dragged half off its screen and a
+    // verdict anchored to the bottom edge of one are both points Windows
+    // considers outside every monitor, and answering "the primary one" would
+    // move the recording, or the badge, to a screen nobody is looking at.
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
     private const uint MONITORINFOF_PRIMARY = 1;
 
     // The screen one window, or one point, actually lives on: a recording that
@@ -67,13 +71,13 @@ public static class MonkeyControlOverlay
 
     public static int[] MonitorOfWindow(IntPtr hwnd)
     {
-        return Describe(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY));
+        return Describe(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST));
     }
 
     public static int[] MonitorOfPoint(int x, int y)
     {
         POINT point = new POINT(); point.X = x; point.Y = y;
-        return Describe(MonitorFromPoint(point, MONITOR_DEFAULTTOPRIMARY));
+        return Describe(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST));
     }
     [DllImport("user32.dll", SetLastError = true)] public static extern int GetWindowLong(IntPtr hwnd, int index);
     [DllImport("user32.dll", SetLastError = true)] public static extern int SetWindowLong(IntPtr hwnd, int index, int value);
