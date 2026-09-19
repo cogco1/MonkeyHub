@@ -224,5 +224,12 @@ copying a tool title that might carry private text.
 - **No destructive-key policy.** The allow-list says which applications may be driven, not
   which keystrokes are dangerous inside them: `keypress` will send what it is given, and an
   allow-listed application's own destructive commands are reachable. Keep the list narrow.
+- **One at a time, and three minutes through a conversation.** The Hub holds one runtime
+  behind one lock, so computer requests are served one after another: while a step is
+  running, every other computer call waits, and so does the Hub's shutdown, which closes
+  that runtime. `action.ms` allows a `wait` of up to 600 000 ms, but a call made through
+  the MCP tools travels over `chat._request_json`, whose limit is 180 s — a longer step
+  ends that tool call while the action itself carries on and still writes its receipt.
+  Long waits belong in a script run by the CLI, which has no such limit.
 - **Overlay projections need Pillow.** Without it, `render` refuses by name
   (`BACKEND_UNAVAILABLE`) rather than failing to import.
