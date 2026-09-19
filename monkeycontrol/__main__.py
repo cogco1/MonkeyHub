@@ -29,6 +29,7 @@ from .runtime import (
     RuntimePolicy,
     RuntimeRefusal,
     build_runtime,
+    process_name,
 )
 
 SCRIPT_SCHEMA = "ComputerActionScript@1"
@@ -173,9 +174,11 @@ def _actions(runtime, actions: list, args) -> int:
 
 
 def _inspect(args) -> int:
+    # Inspecting is held to the same allow-list as acting, so asking for one
+    # application is what allows it: the list is this one call's own.
     runtime = build_runtime(
         Path(args.trace_dir),
-        RuntimePolicy(allowed_processes=(args.app.lower(),), mode="fast"),
+        RuntimePolicy(allowed_processes=(process_name(args.app),), mode="fast"),
     )
     try:
         answer = runtime.inspect(args.app, args.window, depth=args.depth)

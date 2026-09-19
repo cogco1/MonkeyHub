@@ -347,6 +347,39 @@ class RefusalTests(RuntimeTestCase):
         self.assertEqual(receipt["refusal"]["code"], "APP_NOT_ALLOWED")
         self.assertIn("explorer", receipt["refusal"]["message"])
 
+    def launch(self, command: str, *, allowed: tuple[str, ...]) -> dict:
+        runtime = self.runtime(allowed=allowed, mode="fast")
+        return runtime.execute(
+            {
+                "intent": "open the editor",
+                "application": "notepad",
+                "action": {"type": "launch", "command": [command]},
+            }
+        )
+
+    def test_a_full_path_is_not_allow_listed_by_the_basename_it_ends_with(
+        self,
+    ) -> None:
+        # The allow-list says notepad; this is somebody else's executable that
+        # happens to be called that, and running it is the whole attack.
+        receipt = self.launch("D:\\anything\\notepad.exe", allowed=("notepad",))
+        self.assertEqual(receipt["status"], "refused")
+        self.assertEqual(receipt["refusal"]["code"], "APP_NOT_ALLOWED")
+        self.assertIn("exact path", receipt["refusal"]["message"])
+        self.assertNotIn("launch", self.log)
+
+    def test_a_full_path_the_allow_list_names_verbatim_is_launched(self) -> None:
+        receipt = self.launch(
+            "D:\\Anything\\Notepad.exe", allowed=("d:\\anything\\notepad.exe",)
+        )
+        self.assertEqual(receipt["status"], "succeeded")
+        self.assertIn("launch", self.log)
+
+    def test_a_bare_executable_name_is_still_matched_by_its_basename(self) -> None:
+        receipt = self.launch("notepad.exe", allowed=("notepad",))
+        self.assertEqual(receipt["status"], "succeeded")
+        self.assertIn("launch", self.log)
+
     def test_no_window_is_a_refusal(self) -> None:
         runtime = self.runtime(FakeUia(self.log, windows=()))
         receipt = runtime.execute(CLICK)
@@ -740,6 +773,15 @@ class InspectTests(RuntimeTestCase):
         answer = runtime.inspect("notepad")
         self.assertEqual(answer["windows"], [])
         self.assertEqual(answer["nodes"], [])
+
+    def test_inspecting_an_application_outside_the_policy_is_refused(self) -> None:
+        # Reading a window tree is still reading somebody's screen, and there
+        # is no receipt to carry this refusal, so it is raised.
+        runtime = self.runtime(allowed=("notepad",))
+        with self.assertRaises(RuntimeRefusal) as caught:
+            runtime.inspect("chrome")
+        self.assertEqual(caught.exception.code, "APP_NOT_ALLOWED")
+        self.assertEqual(self.log, [], "nothing was asked of the desktop")
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ it and decides when it may act.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass, replace
@@ -117,6 +118,21 @@ def process_name(value: str) -> str:
 
     name = re.split(r"[\\/]", str(value))[-1]
     return name[:-4].lower() if name.lower().endswith(".exe") else name.lower()
+
+
+def names_a_path(value: str) -> bool:
+    """Whether this command names a place on disk rather than a program to find."""
+
+    text = str(value)
+    return "/" in text or "\\" in text or bool(os.path.splitdrive(text)[0])
+
+
+def same_path(left: str, right: str) -> bool:
+    """Whether two spellings are the same path, as this platform compares them."""
+
+    return os.path.normcase(os.path.normpath(str(left))) == os.path.normcase(
+        os.path.normpath(str(right))
+    )
 
 
 def _now() -> str:
@@ -269,12 +285,55 @@ class ComputerUseRuntime:
         self._owned.clear()
         self._resolved.clear()
 
+    # -- permission -----------------------------------------------------
+    def _not_allowed(self, named: str) -> str:
+        return (
+            f"{named!r} is not in this runtime's allow-list "
+            f"({', '.join(self._policy.allowed_processes) or 'empty'})"
+        )
+
+    def _allow(self, action: Action) -> None:
+        """Refuse what the allow-list does not name, before anything is found.
+
+        A bare executable name is matched by its basename, which is how a list
+        of process names reads. A command that names a place on disk is not:
+        ``D:\\anything\\notepad.exe`` is not the notepad whoever wrote the list
+        meant, so it is allowed only by appearing in that list as that path.
+        """
+
+        if action.type == "launch" and action.command:
+            command = action.command[0]
+            if names_a_path(command):
+                if any(
+                    same_path(command, entry)
+                    for entry in self._policy.allowed_processes
+                ):
+                    return
+                raise _Refused(
+                    "APP_NOT_ALLOWED",
+                    f"{self._not_allowed(command)}: launch by full path "
+                    "requires that exact path in the allow-list",
+                )
+            wanted = process_name(command)
+        else:
+            wanted = process_name(action.application)
+        if wanted not in self._policy.allowed_processes:
+            raise _Refused("APP_NOT_ALLOWED", self._not_allowed(wanted))
+
     # -- observation ----------------------------------------------------
     def inspect(
         self, application: str, window: str | None = None, *, depth: int = 6
     ) -> dict:
-        """The element tree of the first matching window, or an empty answer."""
+        """The element tree of the first matching window, or an empty answer.
 
+        Held to the same allow-list as an action, because reading a window tree
+        is still reading somebody's screen. There is no receipt to carry this
+        refusal, so it is raised rather than answered.
+        """
+
+        wanted = process_name(application)
+        if wanted not in self._policy.allowed_processes:
+            raise RuntimeRefusal("APP_NOT_ALLOWED", self._not_allowed(wanted))
         found = self.uia.windows(application, window)
         answer: dict = {
             "application": application,
@@ -424,17 +483,7 @@ class ComputerUseRuntime:
         """The eight steps, in the one order a receipt can be trusted from."""
 
         action = step.action
-        wanted = (
-            process_name(action.command[0])
-            if action.type == "launch" and action.command
-            else process_name(action.application)
-        )
-        if wanted not in self._policy.allowed_processes:
-            raise _Refused(
-                "APP_NOT_ALLOWED",
-                f"{wanted!r} is not in this runtime's allow-list "
-                f"({', '.join(self._policy.allowed_processes) or 'empty'})",
-            )
+        self._allow(action)
         if action.type != "launch":
             found = self.uia.windows(action.application, action.window)
             if not found:

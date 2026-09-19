@@ -116,8 +116,15 @@ nothing in the product writes it for you.
    better than a tool that is not there — but Claude's `--allowedTools` for a headless
    turn includes them only where the policy enables them, because there is nobody to ask.
 2. **Allow-list.** Every action's application, and a `launch`'s executable, is checked
-   against `allowedProcesses` before anything is resolved. Inspecting is held to the same
-   list: reading a window tree is still reading somebody's screen.
+   against `allowedProcesses` before anything is resolved. A bare executable name is
+   matched by its basename — `notepad.exe` is `notepad` — but a command that names a
+   place on disk is not, because `D:\anything\notepad.exe` is not the notepad whoever
+   wrote the list meant: it is allowed only by appearing in that list as that exact path
+   (compared normalised and case-insensitively), and refused `APP_NOT_ALLOWED` otherwise.
+   The Hub's policy file spells its entries as process names, so a full path can only be
+   allow-listed by a CLI script's own policy. Inspecting is held to the same list —
+   reading a window tree is still reading somebody's screen — and `inspect --app X`
+   allow-lists X for that one call.
 3. **Focus guard.** Before a keystroke or a click, the runtime focuses the window and
    reads the foreground back. If another process holds it, the step is refused
    `FOCUS_LOST` rather than typed into whatever appeared. (`focus_guard` can be turned
