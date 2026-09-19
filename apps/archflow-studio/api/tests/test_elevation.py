@@ -132,6 +132,56 @@ class ElevationTests(unittest.TestCase):
         self.assertEqual(set((self.project / "runs").iterdir()), before_runs)
         self.assertEqual(self.state(first), original)
 
+    def test_datum_edits_refuse_existing_producer_datums_without_changing_the_source(self):
+        current = self.sketch()
+        current = self.action(current, elementId="mass", action="detach-base")
+        original = self.state(current)
+        proposals = self.client.app.state.proposals.for_state(current["baseStateDigest"])
+        before_runs = set((self.project / "runs").iterdir())
+        before_head = self.repository.read_head()
+        # Both the top and the new absolute base are actual published datums.
+        for level_id in ("mass-top", "mass-base"):
+            with self.subTest(level_id=level_id):
+                response = self.request("/elevation", current, action="set-datum", levelId=level_id, value=10)
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["code"], "ELEVATION_EDIT_INVALID")
+                self.assertIn(level_id, response.json()["detail"])
+                self.assertIn("published datum", response.json()["detail"])
+        self.assertEqual(self.client.app.state.proposals.for_state(current["baseStateDigest"]), proposals)
+        self.assertEqual(self.state(current), original)
+
+        # A previously authored same-valued Level may coexist in retained data;
+        # changing it must not shadow the producer's datum in the next proposal.
+        response = self.request("", current, semanticEdit={"summary": "Existing matching level", "entities": [
+            {"entity_id": "mass-top", "schema": "Level@1", "fields": {"role": "roof", "elevation": 2},
+             "basis_refs": ["studio:intent"]},
+        ]})
+        self.assertEqual(response.status_code, 201, response.text)
+        existing = response.json()
+        original = self.state(existing)
+        proposals = self.client.app.state.proposals.for_state(existing["baseStateDigest"])
+        response = self.request("/elevation", existing, action="set-datum", levelId="mass-top", value=10)
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertIn("published datum", response.json()["detail"])
+        self.assertEqual(self.client.app.state.proposals.for_state(existing["baseStateDigest"]), proposals)
+        self.assertEqual(self.state(existing), original)
+        self.assertEqual(set((self.project / "runs").iterdir()), before_runs)
+        self.assertEqual(self.repository.read_head(), before_head)
+
+    def test_unpublished_datum_names_remain_available_and_bind_at_their_stated_elevation(self):
+        current = self.sketch("flat", height=0)
+        # A planar face publishes no top: a suffix alone does not reserve a name.
+        current = self.action(current, action="set-datum", levelId="flat-top", name="Roof reference", value=10)
+        current = self.action(current, action="set-datum", levelId="flat-top", value=11)
+        current = self.sketch("mass", current, height=1)
+        current = self.action(current, elementId="mass", action="bind-base",
+                              reference={"kind": "level", "id": "flat-top"})
+        self.assertEqual(self.assert_elevation(current, 11, 12, 1)["baseReference"],
+                         {"kind": "level", "id": "flat-top", "offset": 0})
+        job = self.run_candidate(current["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(self.bounds(job["candidateId"], "obj-mass"), ([0, 0, 11], [3, 2, 12]))
+
     def test_keep_is_preserved_and_a_bound_top_cannot_cross_the_base(self):
         first = self.sketch()
         first = self.action(first, action="set-datum", levelId="roof", value=3)

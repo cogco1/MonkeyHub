@@ -5,6 +5,10 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from archflow.state.state_record import project_grids_of, project_levels_of
+from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
+
 from ..transport.errors import StudioError
 from .intent import component_edit_proposal
 from .projection import drawing_context, elevation_reference, reference_value
@@ -20,6 +24,15 @@ def elevation_proposal(projection, *, action: str, element_id: str | None = None
             existing = next((e for e in record.entities if e.entity_id == level_id), None)
             if existing is not None and existing.schema != "Level@1":
                 raise ValueError(f"{level_id} already names a different entity")
+            # Use the producer's actual outputs, including absolute base datums;
+            # a name ending in '-top' alone does not imply a published datum.
+            context = ProductionContext(ReferenceContext(
+                grids=project_grids_of(record),
+                levels=project_levels_of(record) if record.entities_of("Level@1") else None,
+            ), {})
+            produced = produce_rows(element_rows_of(record), context)
+            if any(datum.datum_id == level_id for element in produced for datum in element.datums):
+                raise ValueError(f"{level_id} already names a published datum; choose a different reference name")
             fields = dict(existing.fields) if existing else {"role": level_id}
             fields["elevation"] = value
             if name is not None:
