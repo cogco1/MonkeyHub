@@ -1736,7 +1736,7 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         raise HubFailure(exc.code, code, _redact(str(detail))[:1200]) from exc
 
 
-def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
+def _together(calls: Mapping[str, tuple], timeout: float, *, allow_partial: bool = False) -> dict:
     """Ask for several independent things at once, and wait for all of them.
 
     Only calls that do not depend on each other are passed here, and the threads
@@ -1748,6 +1748,10 @@ def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
     more. A refusal is raised in the order the caller listed the calls, so the
     answer a client gets does not depend on which reply happened to lose the
     race.
+
+    Completion readbacks may keep successful siblings alongside expected read
+    failures. Binding checks retain the default all-or-nothing behavior, and
+    unexpected exceptions always propagate.
     """
 
     ends = time.monotonic() + timeout
@@ -1778,7 +1782,9 @@ def _together(calls: Mapping[str, tuple], timeout: float) -> dict:
         ordered.append((name, answer if answered else
                         TimeoutError(f"no answer for {name} within {timeout:.0f}s")))
     for _, answer in ordered:
-        if isinstance(answer, BaseException):
+        if isinstance(answer, BaseException) and (
+            not allow_partial or not isinstance(answer, (HubFailure, OSError, TimeoutError))
+        ):
             raise answer
     return dict(ordered)
 
@@ -1989,19 +1995,14 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
     reads = {"candidate": (base, f"/api/candidates/{candidate_id}")}
     if against:
         reads["compare"] = (base, f"/api/candidates/{candidate_id}/compare?against={against}")
-    try:
-        answers = _together(reads, left())
-    except (HubFailure, OSError, TimeoutError) as cause:
-        # The run finished; reading it back did not. Both facts travel, and
-        # neither is allowed to stand in for the other.
-        return {**started, "status": "succeeded", "readback": "failed",
-                "detail": f"the run finished and could not be read back: {_reason(cause)}",
-                "next": follow}
-    candidate, comparison = answers["candidate"], answers.get("compare")
-    return {
+    answers = _together(reads, left(), allow_partial=True)
+    errors = {name: _reason(value) for name, value in answers.items() if isinstance(value, BaseException)}
+    candidate = answers["candidate"] if "candidate" not in errors else {}
+    comparison = answers.get("compare") if "compare" not in errors else None
+    result = {
         **started,
         "status": "succeeded",
-        "readback": "ok",
+        "readback": "failed" if errors else "ok",
         "candidate": {
             key: candidate.get(key) for key in
             ("candidateId", "stateDigest", "changedVsProjection", "seatExecutionComplete",
@@ -2038,6 +2039,22 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         # round of the calls this one already made.
         "next": [],
     }
+    if errors:
+        # A missing comparison must not discard objects already read, nor may
+        # a successful comparison stand in for a missing candidate. Keep each
+        # answer once and direct recovery only to the reads still missing.
+        result.update(
+            detail="The run finished. Successful readbacks are included; verification remains incomplete. "
+                   + "; ".join(f"{name}: {reason}" for name, reason in errors.items()),
+            readbackErrors=errors,
+            next=[f"GET {reads[name][1]}" for name in errors],
+        )
+        if "candidate" in errors:
+            for key in ("candidate", "artifacts", "objects", "objectReadbackError"):
+                result.pop(key)
+        if "compare" in errors:
+            result.pop("compare")
+    return result
 
 
 def _reason(cause: BaseException) -> str:
