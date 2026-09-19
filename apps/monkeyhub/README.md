@@ -86,6 +86,7 @@ The default runtime root is LOCALAPPDATA/MonkeyHub; --runtime-root selects anoth
 | Chat transcripts, archive state, project associations and native CLI session ids | runtime-root/chats/; these are conversations, not building state |
 | Chat attachment bytes | runtime-root/chats/<session-id>/attachments/; transcripts retain file metadata only |
 | Optional Studio usage diagnostics read by Monitor | runtime-root/diagnostics/monkeymonitor/ |
+| Computer-use permission, and the receipts, screenshots and recordings it produces | runtime-root/diagnostics/monkeycontrol/policy.json is read by Hub and written by you; everything beside it is written by MonkeyControl |
 | Building data and retained runs | The selected project's existing ArchFlow project interfaces |
 | Print STL parts and assembly table | The new or empty absolute output directory explicitly entered in the Fab page; the independent CLI writes it |
 
@@ -120,12 +121,41 @@ The actual schema is available at GET /openapi.json. Generate a client from this
 | GET /api/fab/profiles | Printer envelopes from the installed MonkeyFab CLI |
 | POST /api/fab/prepare | Prepare a local STL/OBJ in the explicitly selected output directory and return the CLI result |
 | POST /api/fab/send | Validate or upload a sliced file; return the CLI JSON result without starting a print |
+| POST /api/computer/inspect | One window's element tree on this machine; nothing is clicked or typed |
+| POST /api/computer/actions | Run one ComputerAction@1 and return its receipt; a refused receipt is a 200 body |
+| POST /api/computer/recordings | Start or stop the one screen recording kept beside the action trace |
 
 Fab's card has no independent Stop button. Its preparation request requires source units and explicit local paths. Send requires a sliced `.gcode.3mf`, printer address and request-local LAN access code; dry run needs no code and makes no printer connection. The page clears the access-code field when sending, and neither settings nor request errors retain it. Slicing, support selection and printer/material settings remain in Bambu Studio. Actual machine compatibility depends on that printer's LAN interface and firmware.
 
 Default ports are Hub 8790, Studio 8789 and Monitor 8788. Poll GET /api/apps while starting or stopping; open the returned `url` only when state is running. For Arch and Board this is a Hub workspace link; `apiUrl` is the verified project API address used by agent tools. States are stopped, starting, running, stopping, error and unavailable. An application error contains code and detail. Port conflicts, missing projects/builds and wrong service identity are explicit failures, not successful launches.
 
 The source identity comes from root source-version.txt in a package, or the actual checkout HEAD. Missing or malformed identity cannot be presented as a verified launch. A responding child must match its launch UUID, source revision, service version and the owned PID (or its direct child's parent PID, for Windows Python venv redirectors). Stop always uses the owned stdin pipe rather than a reported PID.
+
+## Computer use (demo recorder)
+
+Hub can drive this machine's desktop through MonkeyControl — to record a demonstration of a
+method, or to operate an application that has no API — with semantic UI Automation targets,
+a declared post-condition per step and one receipt per attempt. It is not a way to change a
+building: design writes stay on the existing Studio APIs, and MonkeyControl writes only
+under its own diagnostics directory.
+
+It is off until this machine's owner says otherwise. Create
+`runtime-root/diagnostics/monkeycontrol/policy.json` with
+`{"enabled": true, "allowedProcesses": ["notepad"], "mode": "demo"}`: `enabled` turns it on,
+`allowedProcesses` is the whole list of processes that may be driven or inspected, and `mode`
+is `fast` or the visible `demo`. Hub reads that file on every request, so enabling, widening
+or revoking it takes effect on the next call without a restart — it never writes the file.
+Without it, `POST /api/computer/actions` answers `403 COMPUTER_USE_NOT_ENABLED` naming the
+path. Hub keeps one runtime, rebuilds it when the allow-list or mode changed, and closes it
+with its other children.
+
+The three routes above are the whole surface, and the chat tools `computer_inspect`,
+`computer_action` and `computer_record` proxy them with no second check; a headless Claude
+turn is allowed to use them only where the policy file enables them. Each step appears in the
+transcript as the sentence it is — `CLICK — Save ✓`, `REFUSED APP_NOT_ALLOWED — open the
+folder`. Receipts, screenshots, recordings and their replayable overlay projections, the
+`python -m monkeycontrol` CLI and the limits of this slice are in
+[docs/COMPUTER_USE.md](../../docs/COMPUTER_USE.md).
 
 ## Project runtime and recovery
 

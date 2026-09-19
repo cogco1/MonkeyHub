@@ -88,6 +88,11 @@ retained run evidence. OCCT and explicitly selected Rhino execution use the same
 project storage. A displayed model or drawing keeps its selected source; continuing
 a candidate and formally issuing a project version remain separate actions.
 
+**MonkeyControl** drives this machine's desktop — for a recorded demonstration of a method,
+or an application MonkeyHub has no API for — with semantic targets, verified steps and
+inspectable receipts. It stays off until a local policy file enables it and names the
+applications it may touch, and it writes no project state: see [computer use](docs/COMPUTER_USE.md).
+
 The current implementation does not establish complete architectural reasoning.
 Declared relationships can be checked and propagated, but their completeness and
 design adequacy still need architectural judgment and real project trials. See the

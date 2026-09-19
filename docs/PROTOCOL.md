@@ -830,3 +830,23 @@ project is repaired.
 A corrupt archive is refused before the restore folder is created. When verification fails with
 bytes already written, Hub deletes nothing and the detail names the folder to remove before
 retrying — whether the restore created that folder or found it empty and filled it.
+
+## MonkeyHub computer use
+
+Three Hub routes drive this machine's desktop through MonkeyControl, and none of them is a
+project interface: `POST /api/computer/inspect` `{application, window?, depth?}` answers one
+window's element tree; `POST /api/computer/actions` `{action, mode?}` runs one
+`ComputerAction@1` and answers the `ComputerActionReceipt@1` it earned; `POST
+/api/computer/recordings` `{command: "start"|"stop", name?}` starts or ends the one recording
+a runtime may have running. The contract of both documents, the refusal codes and the trace
+layout are [COMPUTER_USE.md](COMPUTER_USE.md).
+
+A receipt is a `200` body whatever it says, including `status: "refused"` and `status:
+"failed"`: the caller reads the refusal rather than being told the request failed. Only two
+outcomes are statuses of their own — `422 COMPUTER_ACTION_INVALID` when the payload is not a
+`ComputerAction@1`, and `409 COMPUTER_ACTION_REFUSED`, whose detail carries MonkeyControl's
+own code (`RECORDING_ACTIVE`, `RECORDING_NOT_ACTIVE`, `BACKEND_UNAVAILABLE`,
+`APP_NOT_ALLOWED`). Permission comes from `diagnostics/monkeycontrol/policy.json` under the
+Hub's runtime root, read again on every request; without it these routes answer `403
+COMPUTER_USE_NOT_ENABLED` naming that path, and the MCP tools `computer_inspect`,
+`computer_action` and `computer_record` proxy the same three routes with no second check.
