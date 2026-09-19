@@ -1345,7 +1345,7 @@ class ChatTests(unittest.TestCase):
     # ---- one tool call that sees one action through
 
     def _finishing_service(self, session, *, job_states, candidate=None, compare=None,
-                           readback_error=None, barriers=None):
+                           readback_error=None, compare_error=None, barriers=None):
         """A stand-in Hub and Studio that records what was actually sent.
 
         It answers the same shapes the real services answer and nothing more.
@@ -1385,6 +1385,8 @@ class ChatTests(unittest.TestCase):
                     raise HubFailure(503, "CHAT_TOOL_FAILED", readback_error)
                 return candidate
             if path.startswith("/api/candidates/studio-cand-2/compare"):
+                if compare_error:
+                    raise HubFailure(404, "INSPECTION_NOT_FOUND", compare_error)
                 return compare
             raise AssertionError(f"unexpected call: {method} {path}")
 
@@ -1604,6 +1606,94 @@ class ChatTests(unittest.TestCase):
         self.assertIn("refused", answer["detail"])
         self.assertNotIn("candidate", answer, "nothing may stand in for the answer that was not read")
         self.assertIn("GET /api/candidates/studio-cand-2", answer["next"])
+
+    def test_partial_readback_keeps_each_success_and_only_follows_missing_reads(self):
+        session = self.create()
+        session.status = "running"
+        candidate = {"candidateId": "studio-cand-2", "stateDigest": "b" * 64,
+                     "seatExecutionComplete": True, "artifacts": [],
+                     "objects": [{"name": "cornice", "bbox": {"min": [0, 0, 0.6], "max": [4, 2, 1.1]}}],
+                     "relationChecks": {"held": 1, "unchecked": 2},
+                     "honesty": ["two relations were not checked"]}
+        compare = {"against": "studio-cand-1", "changed": 1, "unchanged": 1, "objects": []}
+        for missing in (("compare",), ("candidate",), ("candidate", "compare")):
+            with self.subTest(missing=missing):
+                request, sent = self._finishing_service(
+                    session, job_states=[{"jobId": "job-1", "status": "succeeded"}],
+                    candidate=candidate, compare=compare,
+                    readback_error="candidate unavailable" if "candidate" in missing else None,
+                    compare_error="source inspection missing" if "compare" in missing else None)
+                answer = self._run_with_wait(request, session)
+                self.assertEqual(answer["status"], "succeeded")
+                self.assertEqual(answer["readback"], "failed", "partial evidence is never full verification")
+                self.assertEqual(set(answer["readbackErrors"]), set(missing))
+                expected_next = []
+                if "candidate" in missing:
+                    expected_next.append("GET /api/candidates/studio-cand-2")
+                    for key in ("candidate", "objects", "artifacts", "objectReadbackError"):
+                        self.assertNotIn(key, answer)
+                else:
+                    self.assertEqual(answer["objects"], candidate["objects"])
+                    self.assertEqual(answer["candidate"]["relationChecks"], candidate["relationChecks"])
+                    self.assertEqual(answer["candidate"]["honesty"], candidate["honesty"])
+                if "compare" in missing:
+                    expected_next.append("GET /api/candidates/studio-cand-2/compare?against=studio-cand-1")
+                    self.assertNotIn("compare", answer)
+                else:
+                    self.assertEqual(answer["compare"]["against"], "studio-cand-1")
+                    self.assertEqual(answer["compare"]["unchanged"], 1)
+                self.assertEqual(answer["next"], expected_next)
+                self.assertEqual(len([row for row in sent if row["method"] == "POST"]), 1)
+                self.assertIsNone(chat._tool_values(json.dumps(answer))[1],
+                                  "partial evidence must not become a fully read-back candidate card")
+
+    def test_readback_deadline_preserves_completed_sibling_without_waiting_for_stalled_read(self):
+        release = threading.Event()
+        candidate = {"candidateId": "candidate", "objects": [{"name": "cornice"}], "artifacts": []}
+
+        def request(base, path, **kwargs):
+            if path == "/api/jobs/job":
+                return {"status": "succeeded"}
+            if path == "/api/candidates/candidate":
+                return candidate
+            release.wait(5)
+            return {"changed": 1}
+
+        try:
+            with patch.object(chat, "_request_json", side_effect=request):
+                answer = chat._finish("http://127.0.0.1:8791", {"jobId": "job", "candidateId": "candidate"},
+                                      {"sourceRunId": "before"}, time.monotonic() + 0.2)
+            self.assertFalse(release.is_set())
+            self.assertEqual(answer["objects"], candidate["objects"])
+            self.assertEqual(answer["readback"], "failed")
+            self.assertIn("compare", answer["readbackErrors"])
+            self.assertEqual(answer["next"], ["GET /api/candidates/candidate/compare?against=before"])
+        finally:
+            release.set()
+
+    def test_partial_readback_does_not_swallow_unexpected_errors(self):
+        def request(base, path, **kwargs):
+            if path.startswith("/api/jobs/"):
+                return {"status": "succeeded"}
+            raise AssertionError("unexpected readback defect")
+
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaisesRegex(AssertionError, "defect"):
+            chat._finish("http://127.0.0.1:8791", {"jobId": "job", "candidateId": "candidate"},
+                         {"sourceRunId": "before"}, time.monotonic() + 1)
+
+    def test_benchmark_can_inspect_one_admitted_candidate_without_a_complete_readback_card(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("turn_benchmark", ROOT / "tests/monkeymonitor/run_turn_benchmark.py")
+        benchmark = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(benchmark)
+        detail = {"id": "this-chat", "messages": [{"role": "tool", "candidateId": None}]}
+        operation = {"sessionId": "this-chat", "candidateId": "candidate-1", "jobId": "job-1"}
+        runtime = {"operations": [operation, {"sessionId": "another-chat", "candidateId": "other", "jobId": "other-job"},
+                                  {"sessionId": "this-chat", "candidateId": "refused", "status": "failed"}]}
+        self.assertEqual(benchmark.candidate_for_readback(detail, runtime), "candidate-1")
+        self.assertIsNone(benchmark.candidate_for_readback(detail, {"operations": []}))
+        runtime["operations"].append({**operation, "candidateId": "candidate-2"})
+        self.assertIsNone(benchmark.candidate_for_readback(detail, runtime), "an ambiguous run must not be guessed")
 
     def test_the_wait_belongs_to_the_one_action_that_can_be_seen_through(self):
         session = self.create()
