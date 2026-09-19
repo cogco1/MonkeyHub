@@ -1608,6 +1608,7 @@
       ],
       "used_by": [
         "tools.create_project",
+        "tools.rehearse_project_archive",
         "hub.shell"
       ],
       "invariants": [

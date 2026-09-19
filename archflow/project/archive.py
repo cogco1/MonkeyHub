@@ -51,8 +51,10 @@ _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 class ArchiveError(ValueError):
     """Archive layer refusal, naming which refusal it is in ``code``.
 
-    ``code`` is one of ARCHIVE_PATH_INVALID, ARCHIVE_INVALID,
-    ARCHIVE_TARGET_OCCUPIED and PROJECT_NOT_FOUND. It stays a ValueError so a
+    ``code`` is one of ARCHIVE_PATH_INVALID, ARCHIVE_INVALID and
+    ARCHIVE_TARGET_OCCUPIED. PROJECT_NOT_FOUND is not one of them: opening a
+    project is the caller's own step, so the layer that opens it — the CLI or
+    the Hub — states that refusal itself. This one stays a ValueError so a
     caller that already refuses on one keeps working, and ``str`` is the
     user-facing sentence alone.
     """
