@@ -3,6 +3,22 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-123",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/123",
+      "stream": "research",
+      "status": "active",
+      "goal": "Provide a callable research evaluator over existing StateRecord massing metrics: exact binding, explicit unavailable results, hard constraints, objective vectors and measured sample statistics. No product or persistence changes.",
+      "depends_on": [],
+      "branch": "codex/123-evaluator-slice",
+      "worktree": "codex-worktrees/ec46/ARCHFLOW_V4",
+      "base_ref": "24fbdb984e634394905745383f66ba535a7fc5e6",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": ["state.massing_metrics", "state.record"],
+      "write_scope": ["labs/candidate_evaluation/"],
+      "handoff": "Research-only slice for GH-124 allocator and GH-125 physical evaluator; existing production metric and project authority contracts remain unchanged."
+    },
+    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
