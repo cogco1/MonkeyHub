@@ -25,6 +25,7 @@
         "apps/monkeyhub/README.md",
         "README.md",
         "pyproject.toml",
+        "tools/package_monkeyapps.py",
         "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
       ],
       "handoff": null
