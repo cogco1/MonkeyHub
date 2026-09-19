@@ -25,6 +25,7 @@ import {
   type ViewportPick,
   type ViewportStatus,
   type Vec3,
+  type ModelSnap,
 } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
@@ -32,7 +33,7 @@ import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monke
 import type { ClientTimingSpan } from "../../app/clientTiming";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
-import { distanceBetween } from "../../workspaces/monkeyarch/viewer/featureEdges";
+import { distanceBetween, type SnapConstraint } from "../../workspaces/monkeyarch/viewer/featureEdges";
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
 import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
@@ -423,9 +424,10 @@ export function Stage({
       plane: { origin: next.from, xAxis, yAxis, normal } });
   }, [viewportRef]);
   const stopMeasuring = useCallback(() => {
+    viewportRef.current?.clearSnap();
     showMeasure({ from: null, to: null, kinds: [null, null] });
     setSnapNote(null);
-  }, [showMeasure]);
+  }, [showMeasure, viewportRef]);
   const interaction = useRef(createInteractionSession());
   const sketchEpoch = useRef(0);
   const modelKeysRef = useRef(model);
@@ -445,6 +447,7 @@ export function Stage({
     cancelInteractionFrame(interaction.current, "pushPull");
     if (interaction.current.pushPull) viewportRef.current?.sketchPreview(null);
     interaction.current.pushPull = null;
+    viewportRef.current?.clearSnap();
     setPushPullActive(false);
     setPushPullGuide(null);
     reportPushPullError(null);
@@ -470,7 +473,7 @@ export function Stage({
       viewportRef.current?.sketchPreview(null);
     }
     interaction.current.move = null;
-    interaction.current.modelSnap = null;
+    viewportRef.current?.clearSnap();
     interaction.current.planeSnap = null;
     setMovePhase(null); setMoveError(null); setMoveConstraint(null);
   }, [viewportRef]);
@@ -700,6 +703,7 @@ export function Stage({
     viewportRef.current?.translationPointer("end", 0, 0);
     current.constraint = constraint; current.pointerId = null;
     current.translation = [0, 0, 0]; current.typed = null;
+    viewportRef.current?.clearSnap();
     setMoveConstraint(constraint); setMovePhase("target");
     paintMove();
   }, [paintMove, viewportRef]);
@@ -814,6 +818,40 @@ export function Stage({
       : 0;
     return Math.max(0.2, spans / 5);
   }, []);
+  const snapForSketch = useCallback((x: number, y: number, shift: boolean) => {
+    const current = interaction.current.sketch;
+    if (current.typed.trim()) { viewportRef.current?.clearSnap(); return null; }
+    const plane = current.plane ?? { ...WORK_PLANES.xy, origin: [0, 0, current.base] as Vec3 };
+    let constraint: SnapConstraint = { kind: "plane", origin: plane.origin, direction: plane.normal };
+    const anchor = current.vertices.at(-1) ?? current.anchor;
+    if (current.phase === "height") {
+      const at = heightAnchor(current);
+      if (at) constraint = { kind: "axis", origin: pointFromPlane(at, current.plane, current.base), direction: plane.normal };
+    } else if (anchor) {
+      const raw = viewportRef.current?.pointOnSketchPlane(x, y, plane);
+      const point = raw && pointToPlane(raw, current.plane);
+      const axis = current.axisLock ?? (shift && point ? Math.abs(point[0] - anchor[0]) >= Math.abs(point[1] - anchor[1]) ? "x" : "y" : null);
+      if (axis) constraint = { kind: "axis", origin: pointFromPlane(anchor, current.plane, current.base), direction: axis === "x" ? plane.xAxis : plane.yAxis };
+    }
+    return viewportRef.current?.snapOnModel(x, y, 14, { constraint }) ?? null;
+  }, [viewportRef]);
+  const planCursor = useCallback((current: SketchState, world: Vec3, onModel: ModelSnap | null, shift: boolean) => {
+    const anchor = current.vertices.at(-1) ?? current.anchor;
+    const moved = onModel ? { point: pointToPlane(world, current.plane), snapped: { kind: onModel.kind } }
+      : snapPoint(pointToPlane(world, current.plane), { endpoints: current.plane ? current.vertices : [...snapPoints, ...current.vertices],
+        anchor, radius: snapRadius(), previous: interaction.current.planeSnap });
+    interaction.current.planeSnap = moved.snapped?.kind === "axis" ? moved.snapped : null;
+    const shiftAxis = shift && anchor ? Math.abs(moved.point[0] - anchor[0]) >= Math.abs(moved.point[1] - anchor[1]) ? "x" : "y" : null;
+    return { ...moved, point: anchor ? lockedPoint(moved.point, anchor, current.axisLock ?? shiftAxis) : moved.point };
+  }, [snapPoints, snapRadius]);
+  const sketchAtPoint = (current: SketchState, point: PlanPoint): SketchState => {
+    if (!current.anchor) return current;
+    const profile = current.tool === "circle" ? circleOf(current.anchor, Math.hypot(point[0] - current.anchor[0], point[1] - current.anchor[1]))
+      : current.tool === "arc" ? current.vertices.length < 2 ? [current.anchor, point]
+        : arcOf(current.anchor, current.vertices[1]!, arcBulge(current.anchor, current.vertices[1]!, point))
+      : current.tool === "polygon" || current.tool === "line" ? [...current.vertices, point] : rectangleOf(current.anchor, point);
+    return { ...current, profile, cursor: point };
+  };
   const paintSketch = useCallback(() => {
     const next = interaction.current.sketch;
     viewportRef.current?.sketchPreview(
@@ -829,7 +867,7 @@ export function Stage({
     // Geometry lives in this one disposable session. React only sees controls,
     // and must never copy an older UI snapshot back over the latest pointer.
     if (!pointerMove) {
-      interaction.current.modelSnap = null;
+      viewportRef.current?.clearSnap();
       interaction.current.planeSnap = null;
     }
     interaction.current.sketch = next;
@@ -841,7 +879,7 @@ export function Stage({
       setSketch(sketchControls(next));
       paintSketch();
     }
-  }, [cancelSketchFrame, paintSketch]);
+  }, [cancelSketchFrame, paintSketch, viewportRef]);
   const stopSketching = useCallback(() => {
     sketchEpoch.current += 1;
     setSnapNote(null);
@@ -1346,7 +1384,13 @@ export function Stage({
           if (event.pointerId !== current.pointerId || current.typed !== null) return;
           const sample = viewportRef.current?.translationPointer("move", event.clientX, event.clientY);
           if (!sample) return;
-          current.translation = sample.translation;
+          const axis = sample.constraint.length === 1;
+          const direction = ["X", "Y", "Z"].map(name => Number(axis ? sample.constraint === name : !sample.constraint.includes(name))) as Vec3;
+          const snap = viewportRef.current?.snapOnModel(event.clientX, event.clientY, 14, {
+            constraint: { kind: axis ? "axis" : "plane", origin: current.origin, direction },
+            excludeObjectName: `draft:${current.target.elementId}`,
+          });
+          current.translation = snap ? constrainedTranslation(snap.point.map((value, i) => value - current.origin[i]!), sample.constraint) : sample.translation;
           scheduleInteractionFrame(interaction.current, "move", paintMove);
         }}
         onPointerUp={(event) => {
@@ -1373,7 +1417,12 @@ export function Stage({
           const current = interaction.current.pushPull;
           if (!current || current.typed !== null || event.buttons) return;
           if (!current.constraint.isCurrent()) { closeDirectTool(); return; }
-          const distance = current.constraint.distance(event.clientX, event.clientY);
+          const snap = !current.constraint.numericOnly && viewportRef.current?.snapOnModel(event.clientX, event.clientY, 14, {
+            constraint: { kind: "axis", origin: current.face.origin, direction: current.constraint.normal },
+            excludeObjectName: `draft:${current.target.elementId}`,
+          });
+          const distance = snap ? current.constraint.normal.reduce((sum, value, i) => sum + value * (snap.point[i]! - current.face.origin[i]!), 0)
+            : current.constraint.distance(event.clientX, event.clientY);
           if (distance === null) return;
           current.distance = distance;
           scheduleInteractionFrame(interaction.current, "pushPull", paintPushPull);
@@ -1447,28 +1496,16 @@ export function Stage({
               return;
             }
             if (sketch.tool === "arc" && sketch.vertices.length >= 2 && sketch.typed.trim()) return;
-            const onModel = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
-            const world = onModel && onModel.kind !== "surface"
+            const onModel = snapForSketch(event.clientX, event.clientY, event.shiftKey);
+            const world = onModel
               ? onModel.point
               : sketch.plane ? viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, sketch.plane)
                 : viewportRef.current?.pointOnWorkPlane(event.clientX, event.clientY, sketch.base);
             if (sketch.phase === "profile" && sketch.anchor !== null) {
               if (!world) return;
-              // A corner or a middle of a real edge wins; otherwise the plane
-              // point, still locked to the action's own axes.
-              const moved = onModel && onModel.kind !== "surface"
-                ? { point: pointToPlane(world, sketch.plane), snapped: { kind: onModel.kind } }
-                : snapPoint(pointToPlane(world, sketch.plane), { endpoints: sketch.plane ? sketch.vertices : [...snapPoints, ...sketch.vertices], anchor: sketch.vertices.at(-1) ?? sketch.anchor, radius: snapRadius(), previous: interaction.current.planeSnap });
-              interaction.current.planeSnap = moved.snapped?.kind === "axis" ? moved.snapped : null;
-              const anchor = sketch.vertices.at(-1) ?? sketch.anchor;
-              const shiftAxis = event.shiftKey ? Math.abs(moved.point[0] - anchor[0]) >= Math.abs(moved.point[1] - anchor[1]) ? "x" : "y" : null;
-              const point = lockedPoint(moved.point, anchor, sketch.axisLock ?? shiftAxis);
+              const moved = planCursor(sketch, world, onModel, event.shiftKey);
               if (sketch.tool !== "line" && sketch.tool !== "arc") setSnapNote(moved.snapped ? moved.snapped.kind : null);
-              const profile = sketch.tool === "circle" ? circleOf(sketch.anchor, Math.hypot(point[0] - sketch.anchor[0], point[1] - sketch.anchor[1]))
-                : sketch.tool === "arc" ? sketch.vertices.length < 2 ? [sketch.anchor, point]
-                  : arcOf(sketch.anchor, sketch.vertices[1]!, arcBulge(sketch.anchor, sketch.vertices[1]!, pointToPlane(world, sketch.plane)))
-                : sketch.tool === "polygon" || sketch.tool === "line" ? [...sketch.vertices, point] : rectangleOf(sketch.anchor, point);
-              showSketch({ ...sketch, profile, cursor: point }, true);
+              showSketch(sketchAtPoint(sketch, moved.point), true);
             } else if (sketch.phase === "height") {
               // The plane a height is read on stands through the corner the
               // pointer is already at — the one that was just clicked, which
@@ -1479,9 +1516,9 @@ export function Stage({
               const at = heightAnchor(sketch);
               const origin = at && pointFromPlane(at, sketch.plane, sketch.base);
               const normal: Vec3 = sketch.plane ? [...sketch.plane.normal] : [0, 0, 1];
-              const raised = origin && (sketch.plane
+              const raised = onModel?.point ?? (origin && (sketch.plane
                 ? viewportRef.current?.pointAlongAxis(event.clientX, event.clientY, origin, normal)
-                : viewportRef.current?.unprojectOnPlane(event.clientX, event.clientY, origin, true));
+                : viewportRef.current?.unprojectOnPlane(event.clientX, event.clientY, origin, true)));
               if (!raised) return;
               const height = normal.reduce((sum, value, index) => sum + value * (raised[index]! - origin![index]!), 0);
               showSketch({ ...sketch, height }, true);
@@ -1532,18 +1569,22 @@ export function Stage({
           }}
           onClick={(event) => {
             if (sketchBusy || event.detail > 1) return;
-            const sketch = interaction.current.sketch;
+            let sketch = interaction.current.sketch;
             if (sketch.tool === "freehand") { if (sketch.phase === "height") submitSketch(); return; }
-            const onModel = viewportRef.current?.snapOnModel(event.clientX, event.clientY);
-            const world = onModel && onModel.kind !== "surface"
+            const onModel = snapForSketch(event.clientX, event.clientY, event.shiftKey);
+            const world = onModel
               ? onModel.point
               : sketch.plane ? viewportRef.current?.pointOnSketchPlane(event.clientX, event.clientY, sketch.plane)
                 : viewportRef.current?.pointOnWorkPlane(event.clientX, event.clientY, sketch.base);
+            if (sketch.phase === "profile" && world && !sketch.typed.trim()) {
+              // A modifier/lock can change between the last move and this click.
+              // Commit the same freshly constrained point the marker just used.
+              sketch = sketchAtPoint(sketch, planCursor(sketch, world, onModel, event.shiftKey).point);
+              interaction.current.sketch = sketch;
+            }
             if (sketch.phase === "idle" || sketch.anchor === null) {
               if (!world) return;
-              const start = onModel && onModel.kind !== "surface"
-                ? { point: pointToPlane(world, sketch.plane), snapped: { kind: onModel.kind } }
-                : snapPoint(pointToPlane(world, sketch.plane), { endpoints: sketch.plane ? [] : snapPoints, radius: snapRadius() });
+              const start = planCursor(sketch, world, onModel, event.shiftKey);
               setSnapNote(start.snapped ? start.snapped.kind : null);
               showSketch({ ...sketch, phase: "profile", anchor: start.point, vertices: [start.point], cursor: start.point, profile: [], height: 0, typed: "" });
             } else if (sketch.phase === "profile") {
@@ -1957,6 +1998,7 @@ export function Stage({
                 if (!current?.constraint || !current.constraint.includes("XYZ"[index]!)) return;
                 current.typed ??= current.translation.map(String) as [string, string, string];
                 current.typed[index] = value;
+                viewportRef.current?.clearSnap();
                 cancelInteractionFrame(interaction.current, "move"); paintMove();
               }, onCommit: commitMove }}
             pushPull={{ inputRef: pushPullInput, active: pushPullActive,
@@ -1969,6 +2011,7 @@ export function Stage({
                 const current = interaction.current.pushPull;
                 if (!current) return;
                 current.typed = value;
+                viewportRef.current?.clearSnap();
                 cancelInteractionFrame(interaction.current, "pushPull");
                 paintPushPull();
               }, onCommit: commitPushPull }} />}

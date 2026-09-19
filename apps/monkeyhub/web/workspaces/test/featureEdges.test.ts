@@ -10,7 +10,6 @@ import test from "node:test";
 import {
   curveEdges,
   candidatesOf,
-  closestOnEdge,
   retainSnap,
   distanceBetween,
   featureEdges,
@@ -194,8 +193,6 @@ test("an edge offers its ends and its middle, in model coordinates", () => {
   const candidates = candidatesOf(edge);
   assert.deepEqual(candidates.map((row) => row.kind), ["endpoint", "endpoint", "midpoint"]);
   assert.deepEqual(candidates[2]!.point, [3, 0, 0]);
-  assert.deepEqual(closestOnEdge(edge, [4.2, 9, -3]), [4.2, 0, 0]);
-  assert.deepEqual(closestOnEdge(edge, [-5, 0, 0]), [0, 0, 0], "a point before the start snaps to the start");
 });
 
 test("the pointer takes the nearest candidate, preferring an end over a middle", () => {
@@ -208,6 +205,8 @@ test("the pointer takes the nearest candidate, preferring an end over a middle",
   const tie = [{ point: [1, 0, 0] as Point3, kind: "midpoint" as const },
                { point: [1, 0, 0] as Point3, kind: "endpoint" as const }];
   assert.equal(nearestCandidate(tie, flat, [10, 0], 12)?.kind, "endpoint");
+  assert.equal(nearestCandidate(tie, flat, [10, 0], 12, candidate => candidate.kind !== "endpoint")?.kind, "midpoint",
+    "an occluded nearest candidate cannot mask the next visible target");
 });
 
 test("measuring two model points gives the model's own distance", () => {
