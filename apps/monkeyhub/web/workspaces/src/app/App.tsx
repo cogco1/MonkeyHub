@@ -687,7 +687,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   localEditingRef.current = localModel !== null && (localModel.history.index > 0 ||
     localModel.pending !== null || !snapshotsEquivalent(draftSnapshot!, localModel.synced));
   // The Hub keeps this model workspace mounted while the Board is visible.
-  const returnToBoard = onReturnToBoard && documentView.open ? leaveToBoard : undefined;
+  const returnToBoard = onReturnToBoard && (documentView.open || documentSource !== null) ? leaveToBoard : undefined;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
   const ensureLocalModel = useCallback((): LocalModelSession => {
     if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));

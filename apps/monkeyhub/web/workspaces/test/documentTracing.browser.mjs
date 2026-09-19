@@ -99,7 +99,14 @@ print(json.dumps({"png": base64.b64encode(data.getvalue()).decode()}))
 
   vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe: ["react", "react-dom"] }, logLevel: "error",
     publicDir: "../.generated/public", cacheDir: path.join(root, "vite-cache"),
-    define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, plugins: [react(), workspaceFixture()],
+    define: { "import.meta.env.VITE_ARCHFLOW_API_URL": JSON.stringify("") }, plugins: [react(), workspaceFixture(), {
+      name: "document-tracing-host-appearance",
+      // The production Hub supplies these shared tokens to its embedded workspace.
+      transform(code, id) {
+        if (id.replaceAll("\\", "/").endsWith("/test/workspace-fixture.tsx"))
+          return `import "../../../../shared-web/src/base.css";\n${code}`;
+      },
+    }],
     server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   http.on("request", (request, response) => {
     if (!request.url.startsWith("/api/")) { vite.middlewares(request, response); return; }
@@ -330,16 +337,25 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   assert.equal(updatedEntity.fields.sourceDocumentTrace.revisionSha256, secondPage.revisionSha256);
   assert.deepEqual(updatedEntity.fields.sourceDocumentTrace.calibration, calibrated.tracingCalibration);
   assert.equal(second.state.elements.filter(row => row.elementId === entity.entity_id).length, 1, "Regeneration updates, rather than duplicates, the traced element");
+  assert.ok(second.proposal.change.changes.some(row => row.action === "update"), "The candidate records an update to the existing contour");
   assert.notDeepEqual(updatedEntity.fields.params.profile, profile);
   near(second.state.elements.find(row => row.elementId === entity.entity_id).drawnShape.height, 3.1, "Regenerated height remains editable");
   const curve = second.proposal.change.edits.entities.find(row => row.fields.producer === "curve");
   assert.ok(curve, "An explicitly selected open line becomes a model curve alongside the mass");
   assert.equal(curve.fields.sourceDocumentTrace.annotationId, calibrated.annotations[0].id);
   assert.ok(second.state.elements.some(row => row.elementId === curve.entity_id));
+  for (const untouched of first.state.elements.filter(row => row.elementId !== entity.entity_id))
+    assert.deepEqual(second.state.elements.find(row => row.elementId === untouched.elementId), untouched,
+      `Regeneration preserves the unselected model element ${untouched.elementId}`);
   assert.deepEqual((await call("GET", `/api/state?run=${first.job.candidateId}`)).elements.find(row => row.elementId === entity.entity_id).drawnShape,
     stateElement.drawnShape, "The earlier candidate remains an unchanged revision");
 
   // A fresh browser page re-reads retained vectors and calibration; it does not reuse the editor's React draft.
+  await until(() => generate().isEnabled(), Boolean, "The second candidate left the page busy");
+  await tracing().getByRole("button", { name: "View model and progress", exact: true }).click();
+  await page.locator(".stage-model").waitFor({ state: "visible" });
+  assert.equal(await page.locator(".stage-model").getAttribute("aria-hidden"), "false");
+  if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT.replace(/\.png$/, "-model.png") });
   await page.getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
   await page.locator(".monkeyboard-context").waitFor();
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -355,6 +371,7 @@ print(json.dumps({"unit": str(model.Settings.ModelUnitSystem), "objects": object
   assert.equal(requests.filter(row => row.method === "POST" && row.path === "/api/intents").length, 0,
     "Manual tracing does not claim an image model was called");
   assert.deepEqual(errors, []);
+  if (process.env.BOARD_SCREENSHOT) await page.screenshot({ path: process.env.BOARD_SCREENSHOT });
   console.log(JSON.stringify({ passed: "original PNG, Board editor, closed vector correction and undo, saved scale/direction, exact source revision, real OCCT candidates, editable state and actual 3DM metre coordinates; save/proposal/candidate refusals retain the page; corrected paths update stable element IDs and a selected open curve; fresh page reload; HEAD unchanged", candidateIds: [first.job.candidateId, second.job.candidateId] }));
 } catch (error) {
   console.error(`FAILED: ${error?.stack ?? error}`);

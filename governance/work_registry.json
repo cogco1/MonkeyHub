@@ -5,7 +5,7 @@
     {
       "id": "GH-46",
       "stream": "interaction",
-      "status": "active",
+      "status": "ready",
       "goal": "Correct image traces in the existing Board page editor, calibrate scale and direction, and generate a source-bound editable 3D candidate through the existing sketch path.",
       "depends_on": [],
       "branch": "codex/46-editable-tracing",
@@ -37,7 +37,7 @@
         "apps/monkeyhub/web/workspaces/test/documentAnnotations.test.ts",
         "apps/monkeyhub/web/workspaces/test/documentInk.test.ts"
       ],
-      "handoff": "App.tsx document context/candidate seam coordinated with the integration task; preserve merged GH-148 elevation logic. GH-137/136 Stage and viewport code are outside this lane. Manual tracing is explicit; automatic image interpretation remains open in Issue #46."
+      "handoff": "Ready for independent PR review: corrected PNG paths, exact saved calibration, real OCCT candidate continuation, stable object updates and failure preservation pass against main 32fc10e1. App.tsx integration is coordinated; GH-148 elevation logic is retained and GH-137/136 Stage/viewport paths are unchanged. Automatic image interpretation and broader drawing semantics remain open in Issue #46."
     },
     {
       "id": "GH-137",
