@@ -1,0 +1,16 @@
+.elevation-panel { position: absolute; top: 12px; right: 12px; z-index: 5; width: 280px; max-width: calc(100% - 24px); max-height: calc(100% - 160px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow); font-size: 12px; pointer-events: auto; }
+.elevation-panel strong { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.elevation-panel label { display: grid; gap: 4px; min-width: 0; }
+.elevation-panel input, .elevation-panel select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 34px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-2); color: inherit; font: inherit; }
+.elevation-panel button { min-height: 34px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-2); color: inherit; cursor: pointer; }
+.elevation-panel button:hover:not(:disabled) { border-color: var(--ink-2); }
+.elevation-panel button:disabled { opacity: .5; cursor: default; }
+.elevation-panel__numbers { display: grid; gap: 8px; }
+.elevation-panel__numbers form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; }
+.elevation-panel__reference { margin-top: 12px; }
+.elevation-panel small { display: block; color: var(--ink-2); line-height: 1.5; margin-top: 5px; }
+.elevation-panel details { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.elevation-panel summary { cursor: pointer; padding: 4px 0; }
+.elevation-panel details form, .elevation-panel details > label { display: grid; gap: 8px; margin-top: 8px; }
+.elevation-panel p[role="alert"] { color: var(--violated); margin: 8px 0 0; }
+@media (max-width: 700px) { .elevation-panel { width: 230px; top: 8px; right: 8px; max-height: 50%; } }

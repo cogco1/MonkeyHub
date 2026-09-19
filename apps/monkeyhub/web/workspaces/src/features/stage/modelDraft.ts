@@ -1,9 +1,23 @@
 /** Disposable, local model edits. Only Sync may submit these commands to Studio. */
-import type { DrawnShapeDto } from "../../api/generated/types.gen";
+import type { DrawnShapeDto, ElementElevationDto } from "../../api/generated/types.gen";
 import type { SketchPreview } from "../../workspaces/monkeyarch/viewer/ThreeDmViewport";
 import type { DirectModelAction } from "./ModelEditPanel";
 import type { FinishedSketch, PlanPoint, SketchPlane, SketchVector } from "./sketch";
 import { preparePushPull } from "./pushPull";
+
+export interface ElevationReference { readonly kind: "level" | "element-top"; readonly id: string; readonly offset: number }
+export interface ElevationFacts {
+  readonly base: number; readonly top: number; readonly height: number;
+  readonly baseReference: ElevationReference | null; readonly topReference: ElevationReference | null;
+}
+export interface ElevationDatum { readonly levelId: string; readonly name: string; readonly elevation: number }
+export const elevationFromProjection = (facts: ElementElevationDto | null | undefined): ElevationFacts | null => facts ? {
+  ...facts, baseReference: facts.baseReference && { ...facts.baseReference, offset: facts.baseReference.offset ?? 0 },
+  topReference: facts.topReference && { ...facts.topReference, offset: facts.topReference.offset ?? 0 },
+} : null;
+export type ElevationCommand = { readonly kind: "elevation"; readonly elementId: string;
+  readonly action: "set-base" | "set-top" | "set-height" | "bind-base" | "bind-top" | "detach-base" | "detach-top" | "set-datum";
+  readonly value?: number; readonly reference?: ElevationReference; readonly levelId?: string; readonly name?: string };
 
 export interface DraftObject {
   readonly elementId: string;
@@ -14,14 +28,17 @@ export interface DraftObject {
   readonly originalObjectNames: readonly string[];
   readonly created: boolean;
   readonly parameterBoundFields?: DrawnShapeDto["parameterBoundFields"];
+  readonly elevation?: ElevationFacts | null;
 }
 export type DraftCommand =
+  | ElevationCommand
   | { readonly kind: "sketch"; readonly elementId: string; readonly componentId: string; readonly action: FinishedSketch }
   | { readonly kind: "direct"; readonly elementId: string; readonly action: DirectModelAction; readonly copyElementId?: string }
   | { readonly kind: "delete"; readonly elementId: string };
 export interface DraftSnapshot {
   readonly commands: readonly DraftCommand[];
   readonly objects: ReadonlyMap<string, DraftObject>;
+  readonly levels?: readonly ElevationDatum[];
 }
 export interface ModelDraftHistory {
   readonly snapshots: readonly DraftSnapshot[];
@@ -148,11 +165,12 @@ export function previewDirectModel(object: Pick<DraftObject, "spec" | "parameter
   return result;
 }
 
-export function createModelDraft(objects: readonly DraftObject[] = []): ModelDraftHistory {
+export function createModelDraft(objects: readonly DraftObject[] = [], levels: readonly ElevationDatum[] = []): ModelDraftHistory {
   const captured = new Map(objects.map(object => [object.elementId, Object.freeze({ ...object,
     spec: object.spec && copySpec(object.spec), originalObjectNames: Object.freeze([...object.originalObjectNames]),
+    elevation: object.elevation && structuredClone(object.elevation),
     parameterBoundFields: object.parameterBoundFields && [...object.parameterBoundFields] })]));
-  return { snapshots: [{ commands: [], objects: captured }], index: 0 };
+  return { snapshots: [{ commands: [], objects: captured, levels: structuredClone(levels) }], index: 0 };
 }
 export const currentDraft = (history: ModelDraftHistory): DraftSnapshot => history.snapshots[history.index]!;
 function differs(objects: ReadonlyMap<string, DraftObject>, initial: ReadonlyMap<string, DraftObject>): boolean {
@@ -161,19 +179,53 @@ function differs(objects: ReadonlyMap<string, DraftObject>, initial: ReadonlyMap
     const leftExists = left !== undefined && left.deleted !== true;
     const rightExists = right !== undefined && right.deleted !== true;
     if (leftExists !== rightExists) return true;
-    if (leftExists && rightExists && (left!.componentId !== right!.componentId || !sameSpec(left!.spec, right!.spec))) return true;
+    if (leftExists && rightExists && (left!.componentId !== right!.componentId || !sameSpec(left!.spec, right!.spec) ||
+        JSON.stringify([left!.elevation?.baseReference ?? null, left!.elevation?.topReference ?? null]) !==
+        JSON.stringify([right!.elevation?.baseReference ?? null, right!.elevation?.topReference ?? null]))) return true;
   }
   return false;
 }
-export const snapshotsEquivalent = (left: DraftSnapshot, right: DraftSnapshot): boolean => !differs(left.objects, right.objects);
+export const snapshotsEquivalent = (left: DraftSnapshot, right: DraftSnapshot): boolean => !differs(left.objects, right.objects) &&
+  JSON.stringify(left.levels ?? []) === JSON.stringify(right.levels ?? []);
 export const isDraftDirty = (history: ModelDraftHistory): boolean => !snapshotsEquivalent(currentDraft(history), history.snapshots[0]!);
 export const undoDraft = (history: ModelDraftHistory): ModelDraftHistory => history.index > 0 ? { ...history, index: history.index - 1 } : history;
 export const redoDraft = (history: ModelDraftHistory): ModelDraftHistory => history.index + 1 < history.snapshots.length ? { ...history, index: history.index + 1 } : history;
 
 export function applyDraftCommand(history: ModelDraftHistory, command: DraftCommand): ModelDraftHistory {
   const prior = currentDraft(history), objects = new Map(prior.objects);
+  let levels = prior.levels ?? [];
   const stored = structuredClone(command);
-  if (stored.kind === "sketch") {
+  if (stored.kind === "elevation") {
+    if (stored.action === "set-datum") {
+      if (!stored.levelId || !Number.isFinite(stored.value)) throw new Error("Name a datum and enter a finite elevation.");
+      const current = levels.find(level => level.levelId === stored.levelId);
+      const level = { levelId: stored.levelId, name: stored.name?.trim() || current?.name || stored.levelId, elevation: stored.value! };
+      levels = current ? levels.map(row => row === current ? level : row) : [...levels, level];
+    } else {
+      const object = objects.get(stored.elementId), before = object && elevationOf(object);
+      if (!object || !before || !object.spec || object.deleted) throw new Error("Select an upright mass to edit its elevation.");
+      if (object.parameterBoundFields?.some(field => field === "height" || field === "work_plane"))
+        throw new Error("This mass has parameter controls; edit those controls to preserve its design relationships.");
+      let { base, top, height, baseReference, topReference } = before;
+      const value = stored.value;
+      if (stored.action.startsWith("set-") && !Number.isFinite(value)) throw new Error("Enter a finite elevation or height.");
+      if (stored.action === "set-base") {
+        base = value!;
+        if (baseReference) baseReference = { ...baseReference, offset: baseReference.offset + base - before.base };
+        if (!topReference) top = base + height;
+      } else if (stored.action === "set-top" || stored.action === "set-height") {
+        top = stored.action === "set-top" ? value! : base + value!;
+        if (topReference) topReference = { ...topReference, offset: topReference.offset + top - before.top };
+      } else if (stored.action === "bind-base" || stored.action === "bind-top") {
+        if (!stored.reference || !Number.isFinite(stored.reference.offset)) throw new Error("Choose a valid elevation reference.");
+        if (stored.action === "bind-base") baseReference = stored.reference;
+        else topReference = stored.reference;
+      } else if (stored.action === "detach-base") baseReference = null;
+      else if (stored.action === "detach-top") topReference = null;
+      height = top - base;
+      objects.set(object.elementId, { ...object, elevation: { base, top, height, baseReference, topReference } });
+    }
+  } else if (stored.kind === "sketch") {
     if (objects.has(stored.elementId)) throw new Error("Drawing element id already exists.");
     objects.set(stored.elementId, { elementId: stored.elementId, componentId: stored.componentId,
       spec: specFromSketch(stored.action), originalObjectNames: [], created: true });
@@ -183,13 +235,25 @@ export function applyDraftCommand(history: ModelDraftHistory, command: DraftComm
     if (stored.kind === "delete") objects.set(stored.elementId, { ...object, spec: null, deleted: true });
     else {
       if (!object.spec) throw new Error("This model object has no local face/prism projection for direct edits.");
+      if (object.elevation?.topReference) throw new Error("Use Base Z, Top Z or Height, or detach the top reference before a direct transform.");
+      if (stored.action.kind !== "pushPull" && stored.action.kind !== "copy" && [...objects.values()].some(other =>
+          !other.deleted && [other.elevation?.baseReference, other.elevation?.topReference].some(reference =>
+            reference?.kind === "element-top" && reference.id === object.elementId)))
+        throw new Error("Other masses follow this top. Use its elevation controls or detach those references before transforming it.");
       const spec = previewDirectModel(object, stored.action);
+      const elevation = object.elevation;
+      if (elevation?.baseReference && !sameVector(planeOf(spec).normal, [0, 0, 1]))
+        throw new Error("Detach the base reference before tilting or reversing this mass.");
+      const updated = elevation ? { ...elevation, base: spec.base, height: spec.height, top: spec.base + spec.height,
+        baseReference: elevation.baseReference && { ...elevation.baseReference, offset: elevation.baseReference.offset + spec.base - elevation.base },
+      } : elevation;
       if (stored.action.kind === "copy") {
         if (!stored.copyElementId || objects.has(stored.copyElementId)) throw new Error("Copy needs an unused stable element id.");
-        objects.set(stored.copyElementId, { ...object, elementId: stored.copyElementId, spec, created: true, originalObjectNames: [] });
-      } else objects.set(stored.elementId, { ...object, spec });
+        objects.set(stored.copyElementId, { ...object, elementId: stored.copyElementId, spec, elevation: updated, created: true, originalObjectNames: [] });
+      } else objects.set(stored.elementId, { ...object, spec, elevation: updated });
     }
   }
+  resolveDraftElevations(objects, levels);
   let commands = [...prior.commands, stored];
   // A deleted local object can disappear from replay once no surviving copy
   // requires its creation. Iterate because removing a copy can release its source.
@@ -197,12 +261,60 @@ export function applyDraftCommand(history: ModelDraftHistory, command: DraftComm
   do {
     removed = false;
     for (const [id, object] of objects) {
-      if (!object.created || !object.deleted || commands.some(c => c.kind === "direct" && c.action.kind === "copy" && c.elementId === id)) continue;
-      commands = commands.filter(c => (c.kind === "direct" && c.action.kind === "copy" ? c.copyElementId : c.elementId) !== id);
+      if (!object.created || !object.deleted || commands.some(c =>
+        (c.kind === "direct" && c.action.kind === "copy" && c.elementId === id) ||
+        (c.kind === "elevation" && c.reference?.kind === "element-top" && c.reference.id === id))) continue;
+      commands = commands.filter(c => (c.kind === "elevation" && c.action === "set-datum") ||
+        (c.kind === "direct" && c.action.kind === "copy" ? c.copyElementId : c.elementId) !== id);
       objects.delete(id); removed = true;
     }
   } while (removed);
-  if (!differs(objects, history.snapshots[0]!.objects)) commands = [];
-  const snapshot: DraftSnapshot = { commands, objects };
+  if (snapshotsEquivalent({ commands, objects, levels }, history.snapshots[0]!)) commands = [];
+  const snapshot: DraftSnapshot = { commands, objects, levels };
   return { snapshots: [...history.snapshots.slice(0, history.index + 1), snapshot], index: history.index + 1 };
+}
+
+/** Read only the upright prism subset supported by the server elevation editor. */
+export function elevationOf(object: DraftObject): ElevationFacts | null {
+  if (object.deleted || !object.spec || object.elevation === null) return null;
+  const spec = object.spec, plane = planeOf(spec);
+  if (spec.closed === false || spec.height <= 0 || !sameVector(plane.normal, [0, 0, 1]) ||
+      Math.abs(plane.xAxis[2]) > 1e-9 || Math.abs(plane.yAxis[2]) > 1e-9) return null;
+  if (object.elevation) return object.elevation;
+  return { base: plane.origin[2], top: plane.origin[2] + spec.height, height: spec.height, baseReference: null, topReference: null };
+}
+
+/** Local projection of explicit retained references; Sync rechecks the same intent on the server. */
+function resolveDraftElevations(objects: Map<string, DraftObject>, levels: readonly ElevationDatum[]): void {
+  const resolved = new Set<string>(), visiting = new Set<string>();
+  const factsOf = (object: DraftObject) => elevationOf(object) ?? (!object.deleted && object.elevation &&
+    object.spec?.height === 0 && object.elevation.height === 0 && sameVector(planeOf(object.spec).normal, [0, 0, 1])
+    ? object.elevation : null);
+  const resolve = (id: string): ElevationFacts => {
+    const object = objects.get(id), facts = object && factsOf(object);
+    if (!object || !facts) throw new Error("The referenced mass is missing or cannot supply an upright top.");
+    if (resolved.has(id)) return facts;
+    if (visiting.has(id)) throw new Error("Elevation references cannot form a cycle.");
+    visiting.add(id);
+    const referenceValue = (reference: ElevationReference) => {
+      const host = reference.kind === "element-top" ? resolve(reference.id) : null;
+      if (host && host.height <= 0) throw new Error("A flat face cannot supply a mass top reference.");
+      const value = host ? host.top : levels.find(level => level.levelId === reference.id)?.elevation;
+      if (value === undefined) throw new Error("The selected elevation datum no longer exists.");
+      return value + reference.offset;
+    };
+    const base = facts.baseReference ? referenceValue(facts.baseReference) : facts.base;
+    const top = facts.topReference ? referenceValue(facts.topReference) : base + facts.height;
+    const height = top - base;
+    if (![base, top, height].every(Number.isFinite) || (height <= 1e-9 && !(height === 0 && object.spec!.height === 0)))
+      throw new Error("Top Z must be above Base Z.");
+    const next = { ...facts, base, top, height };
+    const plane = planeOf(object.spec!);
+    const spec = copySpec({ ...object.spec!, base, height, plane: { ...plane, origin: [plane.origin[0], plane.origin[1], base] } });
+    if (!sameSpec(object.spec, spec) || (object.elevation && JSON.stringify(facts) !== JSON.stringify(next)))
+      objects.set(id, { ...object, spec, elevation: next });
+    visiting.delete(id); resolved.add(id);
+    return next;
+  };
+  for (const [id, object] of objects) if (factsOf(object)) resolve(id);
 }

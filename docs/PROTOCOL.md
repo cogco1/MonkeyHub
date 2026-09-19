@@ -241,8 +241,31 @@ For drawn faces and prisms, state element rows also expose optional `drawnShape`
 `profile`, `height`, `workPlane` in building-world Y-up metres, and
 `parameterBoundFields`. Placement includes the recorded base level, reference offset
 and elevation. Reading this projection produces no geometry or project writes.
-Unsupported producers, cutouts, top references and unresolved host datums return
+Unsupported producers, cutouts and unresolved host datums return
 `drawnShape: null` with `drawnShapeReason`; the precision modeling panel remains available.
+
+Upright prisms also expose `elevation: {base, top, height, baseReference, topReference}`
+in metres, with each explicit reference stated as `{kind: "level" | "element-top", id, offset}`.
+A null base reference means absolute placement; a null top reference means height determines
+the top. State `levels[]` projects each retained Level's `levelId`, `name` and `elevation`.
+References are spatial datums and do not classify a mass as a storey, wall or slab.
+
+`POST /api/proposals/elevation` shares the exact state/run/Stage and `sourceProposalId`
+continuation contract of the existing direct model routes. It accepts `set-base`, `set-top`,
+`set-height`, `bind-base`, `bind-top`, `detach-base`, `detach-top` for an `elementId`, or
+`set-datum` with `levelId`, `name` and `value`. Numeric edits preserve the existing reference
+through its offset. Base edits preserve height unless a top is explicitly bound; top/height
+edits preserve the base. Binding a base follows only the named level or mass top; detach
+keeps its current numeric position. A datum change propagates through existing declared
+dependencies. Cycles, missing targets, nonpositive height, protected state and stale bases
+refuse before a candidate is saved.
+
+The contextual elevation fields and datum chooser use the same local draft and undo history.
+Sync sends these intents through the typed route and saves one final candidate. New upright
+drawings detach their initial level placement within that proposal chain, so they remain free
+until explicitly bound. Retained legacy level bindings remain visible and can be detached.
+The reference plane is a disposable viewport guide. Datum snapping during pointer drag is
+not part of this numeric/reference slice; existing drag tools retain their local preview path.
 
 The P gesture uses the exact viewed shape or its current disposable local draft.
 Pointer movement previews cap extrusion or convex-profile side offset locally; an

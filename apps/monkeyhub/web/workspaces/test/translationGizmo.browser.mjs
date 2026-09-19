@@ -14,7 +14,7 @@ const http = createHttpServer(), errors = [], projectCalls = [];
 let browser, vite, page;
 const html = `<!doctype html><html><head><style>
 #root, .stage { height: 100vh; } #root .viewport-state { display: none; }
-</style></head><body><div id="root"></div><script type="module">
+</style></head><body><div id="root" class="project-workspace"></div><script type="module">
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Box3, Mesh, Vector3 } from "three";
@@ -23,6 +23,7 @@ import { UserPreferencesProvider } from "/test/TestProviders.tsx";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec, undoDraft, redoDraft } from "/src/features/stage/modelDraft.ts";
 import { constrainedTranslation } from "/src/workspaces/monkeyarch/viewer/translationGizmo.ts";
 import "/src/styles.css";
+import "/@fs/${fileURLToPath(new URL("../../src/styles.css", import.meta.url)).replaceAll("\\", "/")}";
 const noop = () => {};
 const initial = createModelDraft([{ elementId: "source", componentId: "fixture", created: true, originalObjectNames: [],
   spec: { profile: [[0,0],[4,0],[4,3],[0,3]], base: 0, height: 3 } }]);

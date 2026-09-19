@@ -5,6 +5,7 @@
  */
 
 import type { ServerConnection } from "./connection";
+import type { ElevationEditRequestDto } from "./generated";
 import {
   BLOCKED_NEEDS_HUMAN,
   MISSING_EDITABLE_CONTROL,
@@ -22,6 +23,7 @@ import {
   updateBoardApiBoardPut,
   readCommittedDesignHistoryApiDesignHistoryGet,
   createElevationApiDrawingsElevationsPost,
+  createElevationProposalApiProposalsElevationPost,
   readDrawingStylesApiDrawingsStylesGet,
   createSheetApiDrawingsSheetsPost,
   combineCandidatesApiCandidatesCombinePost,
@@ -458,6 +460,10 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   removeElement(body: DeleteElementRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/delete", createDeleteProposalApiProposalsDeletePost({ client: connection.client, body }));
+  },
+
+  editElevation(body: ElevationEditRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/elevation", createElevationProposalApiProposalsElevationPost({ client: connection.client, body }));
   },
 
   proposal(proposalId: string): Promise<ProposalDto> {

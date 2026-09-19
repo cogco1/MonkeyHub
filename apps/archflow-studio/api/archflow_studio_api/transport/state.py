@@ -12,20 +12,18 @@ from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from archflow.contracts.fields import number
-from archflow.state.state_record import parameter_bindings_of, project_levels_of, resolve_element_bindings
-from monkeyarch.capabilities.reference_resolver import ReferenceContext, parse_reference, resolve_elevation
+from archflow.state.state_record import parameter_bindings_of
 
 from ..application.catalog import Catalog
 from ..application.frame import ClosureAnswer, RecordFrame
-from ..application.projection import StateProjection
+from ..application.projection import StateProjection, drawing_context, elevation_reference
 from .project import (
     ProjectVersionDto,
     ReferenceRunDto,
     project_version_dto,
     reference_run_dto,
 )
-from .proposal import SketchPlaneDto
+from .proposal import ElevationReferenceDto, SketchPlaneDto
 
 
 class ReferenceReceiptDto(BaseModel):
@@ -82,6 +80,24 @@ class DrawnShapeDto(BaseModel):
     )
 
 
+class ElementElevationDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
+
+    base: float
+    top: float
+    height: float = Field(ge=0)
+    base_reference: ElevationReferenceDto | None = Field(alias="baseReference")
+    top_reference: ElevationReferenceDto | None = Field(alias="topReference")
+
+
+class LevelDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, frozen=True, allow_inf_nan=False)
+
+    level_id: str = Field(alias="levelId")
+    name: str
+    elevation: float
+
+
 class ElementDto(BaseModel):
     """One element row and the scalars an intent can target."""
 
@@ -95,6 +111,7 @@ class ElementDto(BaseModel):
     numeric_fields: dict[str, int | float] = Field(alias="numericFields")
     drawn_shape: DrawnShapeDto | None = Field(alias="drawnShape", default=None)
     drawn_shape_reason: str | None = Field(alias="drawnShapeReason", default=None)
+    elevation: ElementElevationDto | None = None
 
 
 class ParameterDto(BaseModel):
@@ -252,6 +269,7 @@ class StateProjectionDto(BaseModel):
     )
     component_tree_error: str | None = Field(alias="componentTreeError")
     elements: list[ElementDto]
+    levels: list[LevelDto]
     parameters: list[ParameterDto]
     dependency_edges: list[DependencyEdgeDto] = Field(alias="dependencyEdges")
     honesty: list[str]
@@ -326,63 +344,45 @@ def catalog_dto(catalog: Catalog) -> CatalogDto:
     )
 
 
-def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto | None, str | None]]:
-    """Read drawing inputs without producing geometry or guessing host datums."""
+def _drawn_shapes(projection: StateProjection) -> dict[str, tuple[DrawnShapeDto | None, str | None, ElementElevationDto | None]]:
+    """Read drawing inputs through the existing in-memory producer datum graph."""
 
     record = projection.record
     elements = record.entities_of("Element@1")
     try:
-        resolved = resolve_element_bindings(record)
-        levels = project_levels_of(record)
+        rows, context, placements = drawing_context(record)
     except (KeyError, TypeError, ValueError) as exc:
-        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}") for entity in elements}
-    elevations = {level.level_id: level.elevation for level in levels.levels}
-    context = ReferenceContext(grids=None, levels=levels)
-    shapes: dict[str, tuple[DrawnShapeDto | None, str | None]] = {}
+        return {entity.entity_id: (None, f"Drawing inputs are unavailable: {exc}", None) for entity in elements}
+    shapes = {}
     for entity in elements:
-        fields = resolved[entity.entity_id]
-        producer = fields["producer"]
+        row = rows[entity.entity_id]
+        producer = row.producer
         if producer not in {"prism", "planar-surface"}:
-            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.")
-            continue
-        params, references = fields.get("params", {}), fields.get("references", {})
-        if "top" in references or "rectangular_cutouts" in params:
-            shapes[entity.entity_id] = (None, "Direct push/pull cannot detach panel cutouts or a top-reference constraint.")
+            shapes[entity.entity_id] = (None, f"Direct push/pull supports drawn faces and prisms, not {producer}.", None)
             continue
         try:
-            base = references["base"]
-            if isinstance(base, Mapping) and "datum" in base:
-                datum_id = str(base["datum"])
-                # Published host tops live in the producer context, not in the
-                # StateProjection. Retain the panel route instead of compiling
-                # geometry on a state read or guessing from an element name.
-                if datum_id not in elevations:
-                    shapes[entity.entity_id] = (None, f"Local preview cannot resolve host datum {datum_id}; use the modeling panel.")
-                    continue
-                offset = number(base.get("offset", 0), "base offset")
-            else:
-                datum_id, offset = resolve_elevation(parse_reference(base), context)
-            elevation = elevations[datum_id] + offset + number(params.get("elevation", 0), "elevation")
-            plane = SketchPlaneDto.model_validate(params.get("work_plane", {
-                "origin": [0, 0, 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1], "normal": [0, 1, 0],
-            }))
-            origin = (plane.origin[0], plane.origin[1] + elevation, plane.origin[2])
-            plane = SketchPlaneDto.model_validate({**plane.model_dump(by_alias=True), "origin": origin})
-            height = 0.0 if producer == "planar-surface" else number(params["height"], "height")
-            if producer == "prism" and height <= 0:
-                raise ValueError("prism height must be positive")
+            placement = placements[entity.entity_id]
+            if isinstance(placement, str):
+                raise ValueError(placement)
             bound_fields = sorted({
                 path[len("params."):].split(".", 1)[0].split("[", 1)[0]
                 for path, _ in parameter_bindings_of(entity, record)
                 if path.startswith("params.")
             } & {"height", "profile", "work_plane"})
-            shape = DrawnShapeDto(profile=params["profile"], work_plane=plane, height=height,
+            shape = DrawnShapeDto(profile=placement["profile"], work_plane=placement["workPlane"], height=placement["height"],
                                  parameter_bound_fields=bound_fields)
             if producer == "planar-surface" and (len(shape.profile) < 4 or shape.profile[0] != shape.profile[-1]):
                 raise ValueError("planar-surface profile must explicitly close at its first point")
-            shapes[entity.entity_id] = (shape, None)
+            elevation = None
+            if placement["horizontal"]:
+                elevation = ElementElevationDto(
+                    base=placement["base"], top=placement["top"], height=placement["height"],
+                    base_reference=elevation_reference(row.references["base"], placement["base"], context),
+                    top_reference=elevation_reference(row.references.get("top"), placement["top"], context),
+                )
+            shapes[entity.entity_id] = (shape, None, elevation)
         except (KeyError, TypeError, ValueError) as exc:
-            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}")
+            shapes[entity.entity_id] = (None, f"Drawing inputs are unavailable: {exc}", None)
     return shapes
 
 
@@ -448,9 +448,14 @@ def to_dto(projection: StateProjection, catalog: Catalog | None = None) -> State
                 numeric_fields=dict(element.numeric_fields),
                 drawn_shape=drawn_shapes[element.element_id][0],
                 drawn_shape_reason=drawn_shapes[element.element_id][1],
+                elevation=drawn_shapes[element.element_id][2],
             )
             for element in projection.elements
         ],
+        levels=[LevelDto(level_id=entity.entity_id,
+                         name=str(entity.fields.get("name") or entity.fields.get("label") or entity.fields["role"]),
+                         elevation=entity.fields["elevation"])
+                for entity in record.entities_of("Level@1")],
         parameters=[
             ParameterDto(
                 key=parameter.key,
