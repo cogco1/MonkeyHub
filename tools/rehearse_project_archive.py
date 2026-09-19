@@ -42,6 +42,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
+from archflow.project.archive import archive_target
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
@@ -51,6 +52,10 @@ EVIDENCE_SCHEMA = "ProjectArchiveRehearsalEvidence@1"
 EVIDENCE_SUFFIX = ".rehearsal-evidence.json"
 ABSENT = "SKIPPED (absent in source)"
 NO_RUNTIME = "SKIPPED (no runtime)"
+# The restored record answered, and what it answered gives this driver nothing
+# it may restate. That is the runtime's side of the rehearsal, not a category
+# the source project lacks, so it says which of the two it is.
+NO_PARAMETER = "SKIPPED (no restatable parameter)"
 UNSTATED = "unstated restore environment"
 # The checked rows of the summary block #56 asks for, in its order; the four
 # value rows above them are the report's own fields.
@@ -71,6 +76,14 @@ MAX_CONTINUATIONS = 6
 
 class RehearsalError(RuntimeError):
     """The rehearsal could not be carried out; nothing is claimed either way."""
+
+
+# What the runtime phase is allowed to raise. A runtime that refuses, drops the
+# connection or answers a shape this driver cannot read is one FAIL row, never
+# a traceback that throws away the identity rows already established.
+RUNTIME_FAILURES = (
+    OSError, ValueError, KeyError, TypeError, RehearsalError, ProjectRepositoryError,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,12 +267,15 @@ def export_and_restore(source_dir: Path, archive_path: Path, restore_parent: Pat
     restore_parent = Path(restore_parent).resolve()
     source = identities(source_dir)
     _export(python, source_dir, archive_path)
-    restored_dir = _restore(python, restore_parent / source["project_id"], archive_path)
+    # Read once from the archive's own manifest: the folder a project sits in
+    # is a location, and both the restored folder and the evidence file beside
+    # it are named by the identity the archive carries.
+    restored_dir = _restore(python, archive_target(restore_parent, archive_path), archive_path)
     return {
         "schema": EVIDENCE_SCHEMA,
         "source_build": source_build(),
         "environment": environment,
-        "project_id": source["project_id"],
+        "project_id": restored_dir.name,
         "archive_path": str(archive_path),
         "archive_sha256": _digest(archive_path),
         "archive_bytes": archive_path.stat().st_size,
@@ -313,6 +329,22 @@ def _continuations(state: Mapping[str, Any], digest: str) -> list[dict[str, Any]
 
 def _continue_design(request: Callable[..., Mapping[str, Any]], head: Mapping[str, Any],
                      notes: list[str]) -> str:
+    """One candidate from the restored base, contained to one row of the block.
+
+    Ten identity rows are already established by the time this runs, and they
+    are the point of the rehearsal; a runtime that refuses, disappears or
+    answers a reply this driver cannot read costs this row and nothing else.
+    """
+
+    try:
+        return _candidate_from_restored_base(request, head, notes)
+    except RUNTIME_FAILURES as exc:
+        notes.append(f"the runtime phase could not be completed: {exc!r}")
+        return "FAIL"
+
+
+def _candidate_from_restored_base(request: Callable[..., Mapping[str, Any]],
+                                  head: Mapping[str, Any], notes: list[str]) -> str:
     """One candidate from the restored base, through the runtime's own routes."""
 
     state = request("GET", "/api/state", None)
@@ -323,11 +355,11 @@ def _continue_design(request: Callable[..., Mapping[str, Any]], head: Mapping[st
     digest = state.get("stateDigest")
     if not isinstance(digest, str):
         notes.append("the restored record states no bound view to propose against")
-        return ABSENT
+        return NO_PARAMETER
     bodies = _continuations(state, digest)
     if not bodies:
-        notes.append("the restored record declares no number to restate")
-        return ABSENT
+        notes.append("the restored record declares no number this driver may restate")
+        return NO_PARAMETER
     proposal: Mapping[str, Any] | None = None
     for body in bodies:
         try:
@@ -439,6 +471,12 @@ def rehearse(source_dir: Path, archive_path: Path, restore_parent: Path, *, pyth
     )
 
 
+def _evidence_path(restore_parent: Path, project_id: str) -> Path:
+    """Beside the restored project, named by the same identity it is named by."""
+
+    return Path(restore_parent).resolve() / f"{project_id}{EVIDENCE_SUFFIX}"
+
+
 def _write_evidence(path: Path, evidence: Mapping[str, Any]) -> None:
     """Hand the source-side identities to a later verify phase, and nothing else."""
 
@@ -467,7 +505,7 @@ def _http_client(base_url: str, timeout: float = 60.0) -> Callable[..., dict[str
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", required=True, type=Path, help="the project directory to export; its name is the project id")
-    parser.add_argument("--archive", required=True, type=Path, help="where to write the archive; outside the project")
+    parser.add_argument("--archive", required=True, type=Path, help="where to write the archive; outside the project. The verify phase reads the project id from it")
     parser.add_argument("--restore-parent", required=True, type=Path, help="the parent folder the archive restores into, under the project id")
     parser.add_argument("--python", default=sys.executable, help="the interpreter that runs tools/create_project.py")
     parser.add_argument("--environment-label", help="how the restore environment is described in the summary block")
@@ -475,9 +513,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--phase", choices=("all", "export-restore", "verify"), default="all",
                         help="all, or the two halves a wrapper needs in order to start a runtime between them")
     args = parser.parse_args(argv)
-    evidence_path = args.restore_parent.resolve() / f"{args.source.resolve().name}{EVIDENCE_SUFFIX}"
     try:
         if args.phase == "verify":
+            # The archive names the project; this phase reads that name from it
+            # rather than from whatever the source folder happens to be called.
+            target = archive_target(args.restore_parent.resolve(), args.archive.resolve())
+            evidence_path = _evidence_path(args.restore_parent, target.name)
             evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
             if evidence.get("schema") != EVIDENCE_SCHEMA:
                 raise RehearsalError(f"not a rehearsal evidence file: {evidence_path}")
@@ -488,6 +529,7 @@ def main(argv: list[str] | None = None) -> int:
                                           python=args.python,
                                           environment=args.environment_label or UNSTATED)
             if args.phase == "export-restore":
+                evidence_path = _evidence_path(args.restore_parent, evidence["project_id"])
                 _write_evidence(evidence_path, evidence)
                 print(f"restored: {evidence['restored_dir']}", file=sys.stderr)
                 print(f"evidence: {evidence_path}", file=sys.stderr)

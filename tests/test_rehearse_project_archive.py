@@ -205,15 +205,32 @@ class RehearsalWithoutRuntimeTests(RehearsalDriverTestCase):
 
 
 class FakeRuntime:
-    """The shapes ``test_candidate.py`` shows, with nothing behind them."""
+    """The shapes ``test_candidate.py`` shows, with nothing behind them.
+
+    ``drop`` removes one field from the reply that carries it, ``raise_on``
+    makes the named path fail the way a runtime that went away does, and
+    ``parameters`` is what the restored record declares.
+    """
 
     def __init__(self, version: int, state_sha256: str) -> None:
         self.version = version
         self.state_sha256 = state_sha256
         self.calls: list[tuple[str, str]] = []
+        self.drop: str | None = None
+        self.raise_on: str | None = None
+        self.parameters: list[dict] = [
+            {
+                "key": "module",
+                "value": 1.2,
+                "epistemicStatus": "declared",
+                "lockAuthority": None,
+            }
+        ]
 
     def __call__(self, method: str, path: str, body=None):
         self.calls.append((method, path))
+        if path == self.raise_on:
+            raise OSError("the project runtime stopped answering")
         published = {"version": self.version, "stateSha256": self.state_sha256}
         if method == "GET" and path == "/api/state":
             return {
@@ -224,26 +241,64 @@ class FakeRuntime:
                     {"componentId": "building", "parentComponentId": None},
                     {"componentId": "portico", "parentComponentId": "building"},
                 ],
-                "parameters": [
-                    {
-                        "key": "module",
-                        "value": 1.2,
-                        "epistemicStatus": "declared",
-                        "lockAuthority": None,
-                    }
-                ],
+                "parameters": list(self.parameters),
                 "elements": [],
             }
         if method == "POST" and path == "/api/proposals":
             assert body["stateDigest"] == "a" * 64, body
             return {"proposalId": "studio-proposal", "status": "proposed"}
         if method == "POST" and path.endswith("/candidate"):
-            return {"jobId": "job-1", "candidateId": "cand-1", "status": "queued"}
+            accepted = {"jobId": "job-1", "candidateId": "cand-1", "status": "queued"}
+            accepted.pop(self.drop, None)
+            return accepted
         if method == "GET" and path == "/api/jobs/job-1":
             return {"jobId": "job-1", "status": "succeeded", "candidateId": "cand-1"}
         if method == "GET" and path == "/api/candidates/cand-1":
             return {"candidateId": "cand-1", "status": "succeeded", "base": published}
         raise AssertionError(f"unexpected request: {method} {path}")
+
+
+class RehearsalRuntimeFailureTests(RehearsalDriverTestCase):
+    """A runtime that fails costs one row, never the ten already established."""
+
+    def assert_only_the_candidate_row_failed(self, report) -> None:
+        self.assertEqual(
+            report.checks["post-restore candidate from exact restored base"], "FAIL"
+        )
+        self.assertFalse(report.ok, report.lines())
+        self.assertEqual(len(report.lines()), 15)
+        self.assertEqual(report.checks["project identity"], "MATCH")
+        self.assertEqual(report.checks["HEAD/state digest"], "MATCH")
+        self.assertEqual(report.checks["retained runs"], "MATCH")
+        self.assertEqual(report.checks["normal-reader reopen"], "PASS")
+
+    def test_a_reply_missing_the_candidate_id_fails_one_row_and_still_prints(self) -> None:
+        runtime = FakeRuntime(self.head.version, self.head.state_sha256)
+        runtime.drop = "candidateId"
+
+        report = self.rehearse(request=runtime)
+
+        self.assert_only_the_candidate_row_failed(report)
+
+    def test_a_runtime_that_disappears_fails_one_row_and_still_prints(self) -> None:
+        runtime = FakeRuntime(self.head.version, self.head.state_sha256)
+        runtime.raise_on = "/api/jobs/job-1"
+
+        report = self.rehearse(request=runtime)
+
+        self.assert_only_the_candidate_row_failed(report)
+
+    def test_a_record_with_no_restatable_number_says_which_side_is_empty(self) -> None:
+        runtime = FakeRuntime(self.head.version, self.head.state_sha256)
+        runtime.parameters = []
+
+        report = self.rehearse(request=runtime)
+
+        self.assertEqual(
+            report.checks["post-restore candidate from exact restored base"],
+            "SKIPPED (no restatable parameter)",
+        )
+        self.assertTrue(report.ok, report.lines())
 
 
 class RehearsalRuntimePhaseTests(RehearsalDriverTestCase):
@@ -333,6 +388,32 @@ class RehearsalCommandLineTests(RehearsalDriverTestCase):
         self.assertIn("project identity: MATCH", printed)
         self.assertIn("source project changed by export: NO", printed)
         self.assertEqual(len(printed), 15)
+
+    def test_the_verify_phase_is_named_by_the_archive_not_the_source_folder(self) -> None:
+        """The project id comes from the archive; a folder is only a location."""
+
+        arguments = [
+            "--archive", str(self.archive),
+            "--restore-parent", str(self.restore_parent),
+            "--python", sys.executable,
+        ]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main([*arguments, "--source", str(self.source), "--phase", "export-restore"])
+        self.assertEqual(code, 0)
+        self.assertTrue(
+            (self.restore_parent / f"{self.source.name}.rehearsal-evidence.json").is_file()
+        )
+
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(io.StringIO()):
+            code = main([
+                *arguments,
+                "--source", str(self.root / "moved-somewhere-else"),
+                "--phase", "verify",
+            ])
+
+        self.assertEqual(code, 0, printed.getvalue())
+        self.assertIn("project identity: MATCH", printed.getvalue().splitlines())
 
 
 if __name__ == "__main__":

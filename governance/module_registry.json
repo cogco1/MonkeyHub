@@ -5877,7 +5877,7 @@
         "the bounded non-destructive continuation a restored project is asked for: one restatement proposal, its candidate and the base that candidate names"
       ],
       "does_not_own": [
-        "the archive container, its manifest and its validation (project.archive)",
+        "the archive container, its manifest and its validation (project.archive), whose reader also names the restored project",
         "exporting or restoring a project: both go through the tools.create_project command line as a subprocess",
         "project readers, verification and record identity (project.repository)",
         "starting or stopping a project runtime; the rehearsal is handed one URL or none"
@@ -5903,6 +5903,7 @@
         "main"
       ],
       "depends_on": [
+        "project.archive",
         "project.repository",
         "project.ports",
         "project.record_kinds"
