@@ -3,25 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-32",
-      "stream": "runtime",
-      "status": "active",
-      "goal": "Preserve successful candidate readback when the independent comparison fails, avoiding repeated reads while retaining explicit incomplete verification.",
-      "depends_on": [],
-      "branch": "codex/32-tool-latency",
-      "worktree": "worktrees/b13c/ARCHFLOW_V4",
-      "base_ref": "24fbdb984e634394905745383f66ba535a7fc5e6",
-      "contributor": "Codex",
-      "reviewer": null,
-      "modules": ["hub.shell"],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/tests/test_chat.py",
-        "tests/monkeymonitor/run_turn_benchmark.py"
-      ],
-      "handoff": "One measured partial-readback slice of #32; independent review and PR integration remain with the coordinating task. No viewport, export or project-storage changes."
-    },
-    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
