@@ -17,7 +17,10 @@ from archflow.project.archive import (
     restore_project_archive,
     write_project_archive,
 )
-from archflow.project.repository import FilesystemProjectRepository
+from archflow.project.repository import (
+    FilesystemProjectRepository,
+    ProjectRepositoryError,
+)
 from archflow_studio_api.settings import read_application_settings
 
 from .chat import _position, _project, _workspace
@@ -36,6 +39,15 @@ _ARCHIVE_STATUS = {
     "ARCHIVE_INVALID": 422,
     "ARCHIVE_TARGET_OCCUPIED": 409,
 }
+# P036 refuses an export for two kinds of reason, and only one of them is
+# worth asking again. A retained digest that no longer matches the manifest
+# this export just built, and a record the operating system would not let it
+# read while another process replaced that file, both mean the project moved
+# under the read: nothing was installed, and the same export can simply be
+# repeated. Every other refusal — a foreign reference, a dependency no run
+# holds, a file no retained record names, a restored project that does not
+# verify — is a defect of the project itself that repeating only repeats.
+_MOVED_UNDER_THE_READ = ("TRANSFER_DIGEST_MISMATCH", "cannot read project record")
 _NEW_ARCHIVE = "Give the full path of a new .zip file outside the project folder."
 _EXISTING_ARCHIVE = "Give the full path of an existing .zip archive."
 _PROJECT_FOLDER = "Give the full path of the project folder to export."
@@ -46,6 +58,22 @@ def _refusal(exc: ArchiveError, detail: str | None = None) -> HubFailure:
     """The archive layer's own refusal, as this API's status and code."""
 
     return HubFailure(_ARCHIVE_STATUS.get(exc.code, 422), exc.code, detail or str(exc))
+
+
+def _export_refusal(exc: Exception) -> HubFailure:
+    """One refusal P036 raised while reading the project this export names.
+
+    ``ProjectIntegrityError`` and its siblings are plain ``RuntimeError``s
+    carrying their own sentence, so the sentence is what tells a transient
+    conflict from a project this Hub cannot export at all. The caller is told
+    which of the two it is, and never told to retry a refusal that stands.
+    """
+
+    if str(exc).startswith(_MOVED_UNDER_THE_READ):
+        return HubFailure(409, "ARCHIVE_SOURCE_CHANGED",
+                          "The project changed while the archive was being read. "
+                          "Retry the export.")
+    return HubFailure(422, "ARCHIVE_SOURCE_INVALID", str(exc))
 
 
 def _unusable_path(exc: OSError) -> HubFailure:
@@ -124,12 +152,7 @@ def export_archive(request: ProjectArchiveExportRequest) -> ProjectArchiveSummar
     except OSError as exc:
         raise _unusable_path(exc) from exc
     except RuntimeError as exc:
-        # P036 refuses a retained file whose digest no longer matches the
-        # manifest this export just built. The project moved under the read;
-        # nothing was installed, and the same export can simply be asked again.
-        raise HubFailure(409, "ARCHIVE_SOURCE_CHANGED",
-                         "The project changed while the archive was being read. "
-                         "Retry the export.") from exc
+        raise _export_refusal(exc) from exc
 
 
 def restore_archive(
@@ -169,6 +192,13 @@ def restore_archive(
         raise _refusal(exc, detail) from exc
     except OSError as exc:
         raise _unusable_path(exc) from exc
+    except ProjectRepositoryError as exc:
+        # The archive layer states the repository refusals it knows how to
+        # name, not the head lock a second restore of the same project id
+        # holds while it writes that very folder. This call installed nothing;
+        # what is in the way is the other restore, so it is the same conflict
+        # an occupied target already is.
+        raise HubFailure(409, "ARCHIVE_TARGET_OCCUPIED", str(exc)) from exc
     project_id, project_dir = _project(str(repository.layout.root))
     version, stage = _position(project_dir)
     return ProjectArchiveRestoreResult(

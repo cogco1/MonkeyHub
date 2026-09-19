@@ -17,7 +17,11 @@ from fastapi.testclient import TestClient
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, free_ports, project_fixture
 from archflow.project.archive import ArchiveError
-from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError
+from archflow.project.repository import (
+    FilesystemProjectRepository,
+    ProjectHeadLocked,
+    ProjectIntegrityError,
+)
 from archflow_studio_api.settings import save_application_settings
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
 from monkeyhub_api import project_archive
@@ -165,6 +169,21 @@ class ProjectArchiveRoutes(LocalHubCase):
         self.assertEqual(response.json()["code"], "ARCHIVE_SOURCE_CHANGED")
         self.assertFalse(self.archive.exists())
 
+    def test_export_refuses_a_project_that_cannot_be_exported_at_all(self):
+        """A defect of the project is not the conflict a retry would clear."""
+
+        broken = ProjectIntegrityError("TRANSFER_DEPENDENCY_MISSING: runs/r-1/records/a.json")
+
+        with self.hub() as client, patch.object(
+                project_archive, "write_project_archive", side_effect=broken):
+            response = self.export(client)
+
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(response.json()["code"], "ARCHIVE_SOURCE_INVALID")
+        self.assertEqual(response.json()["detail"],
+                         "TRANSFER_DEPENDENCY_MISSING: runs/r-1/records/a.json")
+        self.assertFalse(self.archive.exists())
+
     @unittest.skipUnless(os.name == "nt", "a bare drive letter is a Windows path shape")
     def test_export_refuses_an_archive_path_on_a_drive_that_is_not_there(self):
         if Path("Q:/").exists():
@@ -262,6 +281,22 @@ class ProjectArchiveRoutes(LocalHubCase):
             response = self.restore_failing_verification(client, parent)
 
         self.assert_names_the_folder_to_remove(response, target.resolve())
+
+    def test_restore_refuses_a_target_another_restore_is_already_writing(self):
+        """A second restore of the same project id holds that folder's head."""
+
+        self.exported()
+        parent = self.root / "restored"
+        locked = ProjectHeadLocked(
+            f"another process holds the project head lock: {parent / self.project_id}")
+
+        with self.hub() as client, patch.object(
+                project_archive, "restore_project_archive", side_effect=locked):
+            response = self.restore(client, targetParent=str(parent))
+
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(response.json()["code"], "ARCHIVE_TARGET_OCCUPIED")
+        self.assertEqual(response.json()["detail"], str(locked))
 
     def test_restore_refuses_corrupt_archive_before_writing(self):
         self.exported()
