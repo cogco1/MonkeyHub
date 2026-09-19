@@ -155,7 +155,12 @@ The desktop is reached through two long-lived PowerShell workers spoken to in JS
 - `monkeycontrol/hosts/execution_host.ps1` — **MTA**, holds UI Automation and `SendInput`.
 - `monkeycontrol/hosts/presentation_host.ps1` — **STA**, holds the WPF overlay and screen
   capture. The overlay window is click-through, never activated, and excluded from
-  capture, so it can never change what the next click reaches and never appears in a frame.
+  capture, so it can never change what the next click reaches and does not appear in a
+  frame. The last of those is Windows' to grant, not ours: where
+  `SetWindowDisplayAffinity` is refused the host writes a line to its stderr saying so and
+  answers `excluded_from_capture: false` to every `highlight` and `badge`. On that machine
+  the overlay **is** in the frames, and a recording taken there is no longer replayable
+  under another projection — it already has one drawn into it.
 
 They are separate processes because the apartment models are incompatible and because a
 host that dies must not take the runtime with it. When one dies, only *observations*
@@ -179,8 +184,9 @@ recordings/<name>/raw.mp4         through ffmpeg when it is installed, else raw.
 recordings/<name>/overlays/<projection>/  frames re-drawn after the fact
 ```
 
-Frames are the **raw** screen. Nothing is drawn on them while recording, which is what
-makes a recording replayable: `render` re-draws the same frames under a projection —
+Frames are the **raw** screen — on a machine that let the overlay exclude itself from
+capture, which is the caveat above. Nothing else is drawn on them while recording, which
+is what makes a recording replayable: `render` re-draws the same frames under a projection —
 `clean` (pointer only), `presentation` (the step, the target and the verdict) or
 `developer` (the backend, the automation id, the bounds and every timeline event). The
 timeline keeps seconds rather than frame numbers, so a recording taken at any interval can
