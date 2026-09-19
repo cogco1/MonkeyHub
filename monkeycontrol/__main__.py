@@ -148,7 +148,9 @@ def _run(args) -> int:
     except RuntimeRefusal as exc:
         print(f"{exc.code}: {exc}", file=sys.stderr)
         code = REFUSED
-    except ValueError as exc:  # ContractError is one: --record takes a plain name
+    except ContractError as exc:  # --record takes a name a recording can have
+        # Narrow on purpose: this spans the whole run, and a ValueError from
+        # somewhere inside it is a fault to see, not an exit code to print.
         print(str(exc), file=sys.stderr)
         code = INVALID
     finally:

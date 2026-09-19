@@ -133,8 +133,10 @@ nothing in the product writes it for you.
    place on disk is not, because `D:\anything\notepad.exe` is not the notepad whoever
    wrote the list meant: it is allowed only by appearing in that list as that exact path
    (compared normalised and case-insensitively), and refused `APP_NOT_ALLOWED` otherwise.
-   The Hub's policy file spells its entries as process names, so a full path can only be
-   allow-listed by a CLI script's own policy. Inspecting is held to the same list —
+   The Hub reduces every `allowedProcesses` entry to a process name, so a full path
+   written there grants every executable of that basename and never matches a path launch:
+   allow-listing a path is a CLI or runtime-policy feature, not a policy-file one.
+   Inspecting is held to the same list —
    reading a window tree is still reading somebody's screen — and `inspect --app X`
    allow-lists X for that one call.
 3. **Focus guard.** Before a keystroke or a click, the runtime focuses the window and

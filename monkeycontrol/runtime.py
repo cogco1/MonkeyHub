@@ -11,7 +11,7 @@ it and decides when it may act.
 
 from __future__ import annotations
 
-import os
+import ntpath
 import re
 import time
 from dataclasses import dataclass, replace
@@ -140,14 +140,20 @@ def names_a_path(value: str) -> bool:
     """Whether this command names a place on disk rather than a program to find."""
 
     text = str(value)
-    return "/" in text or "\\" in text or bool(os.path.splitdrive(text)[0])
+    return "/" in text or "\\" in text or bool(ntpath.splitdrive(text)[0])
 
 
 def same_path(left: str, right: str) -> bool:
-    """Whether two spellings are the same path, as this platform compares them."""
+    """Whether two spellings are the same path, the way Windows compares them.
 
-    return os.path.normcase(os.path.normpath(str(left))) == os.path.normcase(
-        os.path.normpath(str(right))
+    ``ntpath`` rather than ``os.path`` deliberately: these are the paths of a
+    Windows desktop whatever machine the code is being read or tested on, and a
+    POSIX comparison would hold ``D:\\Anything\\Notepad.exe`` and its own
+    lowercase spelling to be two different programs.
+    """
+
+    return ntpath.normcase(ntpath.normpath(str(left))) == ntpath.normcase(
+        ntpath.normpath(str(right))
     )
 
 
@@ -511,6 +517,10 @@ class ComputerUseRuntime:
         """The eight steps, in the one order a receipt can be trusted from."""
 
         action = step.action
+        # First of all, before a window is found, a target is named or a label
+        # is drawn: an element whose UIA name is already the text about to be
+        # typed into it would otherwise be filmed by the step that types it.
+        self._remember(action)
         self._allow(action)
         if action.type != "launch":
             found = self.uia.windows(action.application, action.window)
@@ -531,8 +541,12 @@ class ComputerUseRuntime:
             self._note(
                 step,
                 "target_found",
+                # The name is the only part of this that can carry what was
+                # typed, and the rectangle in front of it is what a replayed
+                # overlay draws: masking the whole line would cost the box.
                 f"{_box(step.target.bounds)} {step.target.control_type} "
-                f"{step.target.name!r} automationId={step.target.automation_id} "
+                f"{self._safe(repr(step.target.name))} "
+                f"automationId={step.target.automation_id} "
                 f"backend={step.target.backend}",
             )
         self._show(step)
@@ -708,7 +722,6 @@ class ComputerUseRuntime:
         self._focus(step)
         uia = self.uia
         point = _centre(step.target.bounds if step.target else step.window.bounds)
-        self._remember(action)
         if kind == "type":
             uia.type_text(action.text)
             self._note(step, "type", self._said(action))
@@ -764,11 +777,12 @@ class ComputerUseRuntime:
             raise _Refused("ACTION_INVALID", f"{kind} has no execution here")
 
     def _remember(self, action: Action) -> None:
-        """Keep what is about to be typed sensitively, before it is typed.
+        """Keep what is about to be typed sensitively, before anything happens.
 
         Before, rather than after, because a keystroke that raised halfway
-        through has still reached the screen, and what reached the screen is
-        what the next window title will be named after.
+        through has still reached the screen, because the element it is going
+        into may already be named after it, and because what reached the screen
+        is what the next window title will be named after.
         """
 
         if action.type not in TYPES_TEXT or not (action.sensitive and action.text):
@@ -811,7 +825,10 @@ class ComputerUseRuntime:
         )
         held = step.verification["status"] == "passed"
         said = summary(action)
-        self._note(step, "verify", f"{step.verification['status']} {said}")
+        # The phrase is masked rather than the sentence around it: a replayed
+        # overlay reads the verdict off the front of this line, and a timeline
+        # that had become one redaction notice would lose it.
+        self._note(step, "verify", f"{step.verification['status']} {self._safe(said)}")
         if not held:
             step.status = "failed"
             step.refusal = {
@@ -820,7 +837,7 @@ class ComputerUseRuntime:
             }
         if step.mode == "demo":
             self.presentation.badge(
-                self._safe(f"VERIFY {'✓' if held else '✕'} {said}"),
+                f"VERIFY {'✓' if held else '✕'} {self._safe(said)}",
                 ms=0,
                 kind="ok" if held else "fail",
                 anchor=self._anchor(step),

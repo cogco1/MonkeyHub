@@ -698,6 +698,11 @@ class SecrecyTests(RuntimeTestCase):
         # and the file dialog names its file name box after what is in it, so
         # the step after a sensitive one reads the secret back off the screen.
         runtime = self.runtime(FakeUia(self.log, invoked=True))
+        # The file dialog names its file name box after what is in it, so the
+        # element being typed into can carry the secret before the keystroke.
+        self.uia._target = ResolvedTarget(
+            "Edit", "hunter2", "1001", "Edit", (10, 20, 30, 40), "42.7.1", "windows-uia"
+        )
         runtime.record_start("demo", interval_ms=10000)
         runtime.execute(
             {
@@ -707,6 +712,11 @@ class SecrecyTests(RuntimeTestCase):
                 "action": {"type": "type", "text": "hunter2", "sensitive": True},
             }
         )
+        filmed = (self.trace / "recordings/demo/timeline.ndjson").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("hunter2", filmed, "the step that types it films it too")
+        self.assertNotIn("hunter2", self.presentation.labels[0])
         titled = WindowInfo(4242, "*hunter2 - Notepad", 91, "notepad", (0, 0, 800, 600))
         self.uia._windows = [titled]
         self.uia._foreground = titled
@@ -738,6 +748,47 @@ class SecrecyTests(RuntimeTestCase):
             self.assertNotIn("hunter2", written, name)
         for said in self.presentation.labels + self.presentation.badges:
             self.assertNotIn("hunter2", said)
+
+    def test_masking_a_verdict_keeps_the_words_a_replay_reads_off_it(self) -> None:
+        # A note and a badge are composed around the verdict; masking the whole
+        # sentence would take the verdict with it, and the replayed overlay
+        # reads "passed" off the front of that line to draw a tick.
+        runtime = self.runtime(FakeUia(self.log, invoked=True, value="hunter2"))
+        self.uia._target = ResolvedTarget(
+            "Edit", "hunter2", "1001", "Edit", (10, 20, 30, 40), "42.7.1", "windows-uia"
+        )
+        runtime.record_start("demo", interval_ms=10000)
+        runtime.execute(
+            {
+                "intent": "name the file after what was typed",
+                "application": "notepad",
+                "target": {"controlType": "Edit", "automationId": "1001"},
+                "action": {"type": "type", "text": "hunter2", "sensitive": True},
+                "verification": {
+                    "expect": "element",
+                    "target": {"controlType": "Edit", "name": "hunter2"},
+                    "timeout_ms": 0,
+                },
+            }
+        )
+        runtime.record_stop()
+        timeline = [
+            json.loads(line)
+            for line in (self.trace / "recordings/demo/timeline.ndjson")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        said = {entry["event"]: entry["detail"] for entry in timeline}
+        self.assertTrue(said["verify"].startswith("passed "), said["verify"])
+        self.assertTrue(
+            self.presentation.badges[0].startswith("VERIFY "),
+            self.presentation.badges,
+        )
+        # The rectangle a replayed overlay draws survives the same way.
+        self.assertTrue(said["target_found"].startswith("10,20,30,40 "))
+        self.assertNotIn("hunter2", json.dumps(timeline))
+        for shown in self.presentation.labels + self.presentation.badges:
+            self.assertNotIn("hunter2", shown)
 
 
 class RegionTests(RuntimeTestCase):
