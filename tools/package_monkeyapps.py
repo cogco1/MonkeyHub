@@ -56,7 +56,7 @@ from tools.workspace import (
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
-    "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor",
+    "archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol",
     "apps/archflow-studio/api",
     "apps/archflow-studio/assets",
     "apps/monkeyhub", "apps/monkeyfab", "apps/shared-web", "OPEN_MONKEYHUB.cmd",
@@ -218,7 +218,10 @@ def collect_web_notices(source: Path, target: Path, supplemental_links: dict[str
 def collect_application(source: Path, bundle: Path, commit: str, *, node: Path) -> None:
     bundle.mkdir()
     # These trees only contain the committed snapshot, before runtime writes.
-    for name in ("archflow", "monkeyarch", "monkeydiagram", "monkeymonitor"):
+    # monkeycontrol travels with its PowerShell hosts: the installed Hub
+    # imports it to expose the computer-use routes, and without the hosts the
+    # package would be there and still unable to reach a desktop.
+    for name in ("archflow", "monkeyarch", "monkeydiagram", "monkeymonitor", "monkeycontrol"):
         shutil.copytree(source / name, bundle / name)
     for relative in ("apps/archflow-studio/api/archflow_studio_api", "apps/archflow-studio/assets",
                      "apps/monkeyhub/api", "apps/monkeyhub/installer", "apps/monkeyfab"):
@@ -291,7 +294,7 @@ def smoke_runtime(bundle: Path) -> None:
     run([str(python), "-B", "-c", (
         "import sys,ssl,fastapi,uvicorn,pydantic,pypdf,rhino3dm; "
         "from PIL import Image; from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox; "
-        "import archflow,monkeyarch,monkeydiagram,monkeymonitor,archflow_studio_api; "
+        "import archflow,monkeyarch,monkeydiagram,monkeymonitor,monkeycontrol,archflow_studio_api; "
         "assert sys.version_info[:3]==(3,13,15); "
         "assert not BRepPrimAPI_MakeBox(1,2,3).Shape().IsNull(); "
         "assert Image.new('RGB',(2,2)).size==(2,2); "
