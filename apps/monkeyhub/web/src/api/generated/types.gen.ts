@@ -615,6 +615,60 @@ export type ChatWorkspace = {
 };
 
 /**
+ * ComputerActionRequest
+ *
+ * One ComputerAction@1 payload; monkeycontrol owns what is inside it.
+ */
+export type ComputerActionRequest = {
+    /**
+     * Action
+     */
+    action: {
+        [key: string]: unknown;
+    };
+    /**
+     * Mode
+     */
+    mode?: 'fast' | 'demo' | null;
+};
+
+/**
+ * ComputerInspectRequest
+ *
+ * Read one window's element tree, without touching anything.
+ */
+export type ComputerInspectRequest = {
+    /**
+     * Application
+     */
+    application: string;
+    /**
+     * Window
+     */
+    window?: string | null;
+    /**
+     * Depth
+     */
+    depth?: number;
+};
+
+/**
+ * ComputerRecordingRequest
+ *
+ * Start or stop the one recording a runtime may have running.
+ */
+export type ComputerRecordingRequest = {
+    /**
+     * Command
+     */
+    command: 'start' | 'stop';
+    /**
+     * Name
+     */
+    name?: string | null;
+};
+
+/**
  * DesignBranchDto
  */
 export type DesignBranchDto = {
@@ -2358,6 +2412,117 @@ export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionId
 };
 
 export type ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponse = ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses[keyof ResolveChatPermissionApiChatSessionsSessionIdPermissionsPermissionIdPostResponses];
+
+export type InspectComputerApiComputerInspectPostData = {
+    body: ComputerInspectRequest;
+    path?: never;
+    query?: never;
+    url: '/api/computer/inspect';
+};
+
+export type InspectComputerApiComputerInspectPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type InspectComputerApiComputerInspectPostError = InspectComputerApiComputerInspectPostErrors[keyof InspectComputerApiComputerInspectPostErrors];
+
+export type InspectComputerApiComputerInspectPostResponses = {
+    /**
+     * Response Inspect Computer Api Computer Inspect Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type InspectComputerApiComputerInspectPostResponse = InspectComputerApiComputerInspectPostResponses[keyof InspectComputerApiComputerInspectPostResponses];
+
+export type ActOnComputerApiComputerActionsPostData = {
+    body: ComputerActionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/computer/actions';
+};
+
+export type ActOnComputerApiComputerActionsPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type ActOnComputerApiComputerActionsPostError = ActOnComputerApiComputerActionsPostErrors[keyof ActOnComputerApiComputerActionsPostErrors];
+
+export type ActOnComputerApiComputerActionsPostResponses = {
+    /**
+     * Response Act On Computer Api Computer Actions Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ActOnComputerApiComputerActionsPostResponse = ActOnComputerApiComputerActionsPostResponses[keyof ActOnComputerApiComputerActionsPostResponses];
+
+export type RecordComputerApiComputerRecordingsPostData = {
+    body: ComputerRecordingRequest;
+    path?: never;
+    query?: never;
+    url: '/api/computer/recordings';
+};
+
+export type RecordComputerApiComputerRecordingsPostErrors = {
+    /**
+     * Forbidden
+     */
+    403: HubError;
+    /**
+     * Conflict
+     */
+    409: HubError;
+    /**
+     * Unprocessable Entity
+     */
+    422: HubError;
+};
+
+export type RecordComputerApiComputerRecordingsPostError = RecordComputerApiComputerRecordingsPostErrors[keyof RecordComputerApiComputerRecordingsPostErrors];
+
+export type RecordComputerApiComputerRecordingsPostResponses = {
+    /**
+     * Response Record Computer Api Computer Recordings Post
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type RecordComputerApiComputerRecordingsPostResponse = RecordComputerApiComputerRecordingsPostResponses[keyof RecordComputerApiComputerRecordingsPostResponses];
 
 export type ReadRuntimeApiRuntimeGetData = {
     body?: never;
