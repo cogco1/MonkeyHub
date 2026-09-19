@@ -32,16 +32,21 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $driver = Join-Path $repoRoot 'tools\rehearse_project_archive.py'
 $runtimeScript = Join-Path $repoRoot 'scripts\dev\run-project-runtime.ps1'
+# Every path the caller named is made absolute against the location this
+# shell is standing in, before anything is created or handed on. .NET and the
+# driver both read a relative path against the process working directory,
+# which is not the caller's location and is not the same for both of them.
+$SourceProject = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($SourceProject)
+$ArchivePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ArchivePath)
+$RestoreParent = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RestoreParent)
 if (-not (Test-Path -LiteralPath (Join-Path $SourceProject 'project.json') -PathType Leaf)) {
     throw "-SourceProject must name a P036 project directory; there is no project.json in: $SourceProject"
 }
-$SourceProject = (Resolve-Path -LiteralPath $SourceProject).ProviderPath
 if (-not (Test-Path -LiteralPath $RestoreParent)) {
     # Windows PowerShell 5.1's New-Item has no -LiteralPath, and its -Path
     # reads [ ] as a wildcard; this creates exactly the folder that was named.
     [void][IO.Directory]::CreateDirectory($RestoreParent)
 }
-$RestoreParent = (Resolve-Path -LiteralPath $RestoreParent).ProviderPath
 $arguments = @(
     '--source', $SourceProject,
     '--archive', $ArchivePath,
@@ -58,11 +63,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # The archive names the project, the same way the driver and the restore do; a
 # source folder is only a location and may be called anything.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archiveFull = (Resolve-Path -LiteralPath $ArchivePath).ProviderPath
-$zip = [IO.Compression.ZipFile]::OpenRead($archiveFull)
+$zip = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
 try {
     $entry = $zip.GetEntry('manifest.json')
-    if ($null -eq $entry) { throw "the archive holds no manifest.json: $archiveFull" }
+    if ($null -eq $entry) { throw "the archive holds no manifest.json: $ArchivePath" }
     $stream = $entry.Open()
     $reader = New-Object IO.StreamReader($stream)
     try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose(); $stream.Dispose() }
@@ -70,7 +74,7 @@ try {
 finally { $zip.Dispose() }
 $projectId = $manifest.transfer.project_id
 if ([string]::IsNullOrWhiteSpace($projectId)) {
-    throw "the archive manifest names no project: $archiveFull"
+    throw "the archive manifest names no project: $ArchivePath"
 }
 $restored = Join-Path $RestoreParent $projectId
 if (-not (Test-Path -LiteralPath (Join-Path $restored 'project.json') -PathType Leaf)) {
@@ -113,8 +117,14 @@ finally {
     # on this port is that same unreachable start: it is found by the port
     # rather than left holding it.
     if ($null -eq $runtimePid) {
-        $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-        if ($listener) { $runtimePid = ($listener | Select-Object -First 1).OwningProcess }
+        # NetTCPIP is absent on some Windows installations, and a missing
+        # command is a terminating error here. Finding no listener is a reason
+        # to stop looking, never a reason to leave the job behind.
+        try {
+            $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+            if ($listener) { $runtimePid = ($listener | Select-Object -First 1).OwningProcess }
+        }
+        catch { }
     }
     if ($null -ne $runtimePid) {
         try { Stop-Process -Id $runtimePid -Force -ErrorAction Stop } catch { }

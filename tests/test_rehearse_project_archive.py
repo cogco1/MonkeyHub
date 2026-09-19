@@ -389,6 +389,31 @@ class RehearsalCommandLineTests(RehearsalDriverTestCase):
         self.assertIn("source project changed by export: NO", printed)
         self.assertEqual(len(printed), 15)
 
+    def test_only_the_exporting_phases_ask_for_a_source(self) -> None:
+        """Verify reads the archive and the evidence file, so it needs no source."""
+
+        located = [
+            "--archive", str(self.archive),
+            "--restore-parent", str(self.restore_parent),
+            "--python", sys.executable,
+        ]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = main([*located, "--source", str(self.source), "--phase", "export-restore"])
+        self.assertEqual(code, 0)
+
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(io.StringIO()):
+            code = main([*located, "--phase", "verify"])
+        self.assertEqual(code, 0, printed.getvalue())
+        self.assertIn("project identity: MATCH", printed.getvalue().splitlines())
+
+        for phase in ("all", "export-restore"):
+            refused = io.StringIO()
+            with self.assertRaises(SystemExit) as raised,                     contextlib.redirect_stdout(io.StringIO()),                     contextlib.redirect_stderr(refused):
+                main([*located, "--phase", phase])
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn("--source is required", refused.getvalue())
+
     def test_the_verify_phase_is_named_by_the_archive_not_the_source_folder(self) -> None:
         """The project id comes from the archive; a folder is only a location."""
 

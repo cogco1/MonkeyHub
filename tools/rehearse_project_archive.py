@@ -504,15 +504,22 @@ def _http_client(base_url: str, timeout: float = 60.0) -> Callable[..., dict[str
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--source", required=True, type=Path, help="the project directory to export; its name is the project id")
+    parser.add_argument("--source", type=Path, help="the project directory to export; required by the phases that export one")
     parser.add_argument("--archive", required=True, type=Path, help="where to write the archive; outside the project. The verify phase reads the project id from it")
     parser.add_argument("--restore-parent", required=True, type=Path, help="the parent folder the archive restores into, under the project id")
     parser.add_argument("--python", default=sys.executable, help="the interpreter that runs tools/create_project.py")
     parser.add_argument("--environment-label", help="how the restore environment is described in the summary block")
     parser.add_argument("--runtime-url", help="a project runtime already bound to the restored project, e.g. http://127.0.0.1:8111")
     parser.add_argument("--phase", choices=("all", "export-restore", "verify"), default="all",
-                        help="all, or the two halves a wrapper needs in order to start a runtime between them")
+                        help="all, or the two halves a wrapper needs in order to start a runtime "
+                             "between them; verify reads the archive and the evidence file beside "
+                             "the restored project, and never the source")
     args = parser.parse_args(argv)
+    # Only the phases that export need a source. Requiring one of verify would
+    # make a wrapper pass a folder it never reads, and a stale or moved source
+    # would then look like part of what verify checked.
+    if args.phase != "verify" and args.source is None:
+        parser.error("--source is required by --phase all and --phase export-restore")
     try:
         if args.phase == "verify":
             # The archive names the project; this phase reads that name from it
