@@ -76,7 +76,7 @@ import { usePreferences } from "../features/settings/preferences";
 import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
 import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
-  redoDraft, specFromDrawnShape, undoDraft, snapshotsEquivalent,
+  redoDraft, specFromDrawnShape, undoDraft, snapshotsEquivalent, elevationOf, elevationFromProjection,
   type DraftCommand, type DraftObject, type DraftSnapshot, type ModelDraftHistory,
 } from "../features/stage/modelDraft";
 import { createModelDraftSyncAttempt, syncModelDraft,
@@ -694,8 +694,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       spec: element.drawnShape ? specFromDrawnShape(element.drawnShape) : null,
       originalObjectNames: semanticCatalog?.elements.find(row => row.elementId === element.elementId)?.objectNames ?? [],
       created: false, parameterBoundFields: element.drawnShape?.parameterBoundFields,
+      elevation: elevationFromProjection(element.elevation),
     }));
-    const history = createModelDraft(objects);
+    const history = createModelDraft(objects, draftProjection.levels ?? []);
     const session: LocalModelSession = { history, source: draftSource, synced: currentDraft(history),
       pending: null, busy: false, error: null };
     localModels.current.set(draftKey, session);
@@ -2290,6 +2291,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const pickedShape = (picked?.status === "resolved" || picked?.status === "local") && picked.elementId
     ? viewedProjection?.elements.find((row) => row.elementId === picked.elementId) : null;
   const localPickedObject = picked?.elementId ? draftSnapshot?.objects.get(picked.elementId) : null;
+  const elevationObjects = useMemo<readonly DraftObject[]>(() => draftSnapshot ? [...draftSnapshot.objects.values()] :
+    (draftProjection?.elements ?? []).map(element => ({ elementId: element.elementId, componentId: element.componentId,
+      spec: element.drawnShape ? specFromDrawnShape(element.drawnShape) : null,
+      elevation: elevationFromProjection(element.elevation), parameterBoundFields: element.drawnShape?.parameterBoundFields,
+      created: false, originalObjectNames: [] })), [draftSnapshot, draftProjection]);
+  const elevationObject = (picked?.status === "resolved" || picked?.status === "local")
+    ? elevationObjects.find(object => object.elementId === picked.elementId && elevationOf(object)) : null;
   const pushPullTarget = useMemo<PushPullTarget | null>(() => {
     if (!picked?.elementId) return null;
     if (localPickedObject) return localPickedObject.spec && !localPickedObject.deleted && localPickedObject.spec.closed !== false
@@ -3043,6 +3051,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
+              elevation: elevationObject && draftKey ? { object: elevationObject, objects: elevationObjects,
+                levels: draftSnapshot?.levels ?? draftProjection?.levels ?? [], onApply: command => {
+                  if (modelNavigationBusy) return false;
+                  try { commitLocalCommand(command); setDirectError(null); return true; }
+                  catch (cause) { setDirectError(asStudioApiError(cause).detail); return false; }
+                } } : null,
             }}
             viewportRef={viewportRef}
             message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : modelRunPending !== null ? t("stage.sketch.busy") : viewerMessage}

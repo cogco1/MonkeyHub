@@ -62,6 +62,25 @@ def _record() -> StateRecord:
 
 
 class StateRecordTests(unittest.TestCase):
+    def test_simple_level_edits_use_the_same_operator_and_protected_closure(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        level = record.entity("level-piano-nobile")
+        edited = replace(level, fields={**level.fields, "elevation": 4.2})
+        operator = compile_component_edit(record, entities=(edited,))
+        successor = apply_state_record_operator(record, operator)
+        self.assertEqual(successor.entity(level.entity_id).fields["elevation"], 4.2)
+        self.assertEqual(record.entity(level.entity_id).fields["elevation"], 3.57)
+        self.assertEqual(StateRecord.from_dict(successor.to_dict()).digest, successor.digest)
+        self.assertIn("entity:columns-west", successor.closure((level.ref,)))
+        for protected in (level.ref, "entity:columns-west"):
+            with self.subTest(protected=protected), self.assertRaisesRegex(StateRecordError, "protected"):
+                apply_state_record_operator(record, replace(operator, protected=(protected,)))
+        added = Entity("level-roof", "Level@1", {"role": "roof", "elevation": 10}, basis_refs=("reading:plan",))
+        self.assertEqual(apply_state_record_operator(record, compile_component_edit(record, entities=(added,))).entity("level-roof"), added)
+        for invalid in (float("inf"), float("nan"), "not-a-number"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                apply_state_record_operator(record, compile_component_edit(record, entities=(replace(level, fields={**level.fields, "elevation": invalid}),)))
+
     def test_independent_changes_combine_on_original_base_with_protection_checks(self) -> None:
         record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
         wall = apply_state_record_operator(record, self._wall_edit(record))
@@ -314,7 +333,7 @@ class StateRecordTests(unittest.TestCase):
         with self.assertRaisesRegex(StateRecordError, "cannot change schema"):
             apply_state_record_operator(record, compile_component_edit(record, entities=(Entity("columns-west", "Type@1", {}),)))
         with self.assertRaisesRegex(StateRecordError, "cannot edit entity schema"):
-            apply_state_record_operator(record, compile_component_edit(record, entities=(record.entity("level-piano-nobile"),)))
+            apply_state_record_operator(record, compile_component_edit(record, entities=(record.entity("axis-1"),)))
         with self.assertRaisesRegex(StateRecordError, "only edit_components"):
             replace(compile_component_edit(record, remove_entity_ids=("columns-west",)), kind=StateRecordEditKind.REINDEX)
 

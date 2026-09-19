@@ -283,6 +283,7 @@ export interface ViewportController {
    */
   sketchPreview(spec: SketchPreview | null): void;
   draftPreview(spec: { objects: readonly DraftPreviewObject[]; hiddenObjectNames: readonly string[] } | null): void;
+  elevationGuide(elevation: number | null): void;
   translationGizmo(spec: TranslationGizmoSpec | null): void;
   translationPointer(kind: "hover" | "start" | "move" | "end", clientX: number, clientY: number): TranslationSample | null;
   fitView(): void;
@@ -354,6 +355,7 @@ interface ViewportRuntime {
   draftHidden: Map<Object3D, boolean>;
   draftBounds: Sphere | null;
   translation: TranslationGizmo | null;
+  elevationGuide: Group | null;
   render: () => void;
 }
 
@@ -1099,6 +1101,26 @@ export const ThreeDmViewport = forwardRef<
     setHasDraft(runtime.draftObjects.size > 0);
     runtime.render();
   }, [clearHover]);
+
+  const elevationGuide = useCallback((elevation: number | null) => {
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (runtime.elevationGuide) { runtime.elevationGuide.removeFromParent(); disposeScene(runtime.elevationGuide); runtime.elevationGuide = null; }
+    if (elevation !== null && Number.isFinite(elevation)) {
+      const bounds = runtime.draftBounds ?? runtime.modelBounds;
+      const center = bounds?.center ?? runtime.controls.target, radius = Math.max(bounds?.radius ?? 5, 2) * 1.25;
+      const coordinates: number[] = [];
+      for (const fraction of [-1, -0.5, 0, 0.5, 1]) {
+        coordinates.push(center.x - radius, center.y + fraction * radius, elevation, center.x + radius, center.y + fraction * radius, elevation,
+          center.x + fraction * radius, center.y - radius, elevation, center.x + fraction * radius, center.y + radius, elevation);
+      }
+      const group = new Group(); group.name = "elevation-reference";
+      const line = new LineSegments(new BufferGeometry().setAttribute("position", new Float32BufferAttribute(coordinates, 3)),
+        new LineBasicMaterial({ color: accentColour(), transparent: true, opacity: .45, depthWrite: false }));
+      group.add(line); runtime.scene.add(group); runtime.elevationGuide = group;
+    }
+    runtime.render();
+  }, []);
 
   const ghost = useCallback(
     (spec: GhostSpec | null) => {
@@ -1883,6 +1905,7 @@ export const ThreeDmViewport = forwardRef<
       },
       sketchPreview,
       draftPreview,
+      elevationGuide,
       camera: cameraState,
       unprojectOnPlane,
       loadSecondary,
@@ -1937,6 +1960,7 @@ export const ThreeDmViewport = forwardRef<
       cameraState,
       clear,
       draftPreview,
+      elevationGuide,
       clearSecondary,
       ghost,
       highlight,
@@ -2068,6 +2092,7 @@ export const ThreeDmViewport = forwardRef<
       draftHidden: new Map(),
       draftBounds: null,
       translation: null,
+      elevationGuide: null,
       render,
     };
     runtimeRef.current = runtime;
@@ -2121,6 +2146,7 @@ export const ThreeDmViewport = forwardRef<
       if (runtime.model) disposeScene(runtime.model);
       if (runtime.ghost) disposeGhost(runtime.ghost);
       if (runtime.sketch) disposeScene(runtime.sketch);
+      if (runtime.elevationGuide) disposeScene(runtime.elevationGuide);
       if (runtime.secondary) disposeSecondary(runtime.secondary);
       media.removeEventListener("change", applyTheme);
       themeObserver.disconnect();

@@ -810,7 +810,8 @@
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
         "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits",
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
-        "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations"
+        "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
+        "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level."
       ],
       "does_not_own": [
         "turning a reference into a plan coordinate or an elevation datum - capabilities.reference_resolver",
@@ -843,7 +844,8 @@
         "produce_rows",
         "producer_signatures",
         "validate_element_contract",
-        "edit_drawn_element"
+        "edit_drawn_element",
+        "drawn_element_placement"
       ],
       "depends_on": [
         "monkeyarch.capabilities.opening_solver",
@@ -3527,7 +3529,8 @@
         "Type@1 producer defaults combined with Element@1 instance overrides before resolving explicit parameter bindings; the same values and dependencies reach projection and production",
         "plain typed operator serialization for exact-source candidate replay",
         "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates",
-        "lintel_minimum_bearing relation parameters: explicit opening and lintel object ids, x or z span axis, and finite nonnegative minimum_bearing_m"
+        "lintel_minimum_bearing relation parameters: explicit opening and lintel object ids, x or z span axis, and finite nonnegative minimum_bearing_m",
+        "Level@1 upserts through the existing EDIT_COMPONENTS operator with project-level validity, exact-base and protected-dependency checks; a Level remains a spatial reference, not a storey."
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -4074,7 +4077,8 @@
         "committed design history reads and exact Stage projections, including a descendant candidate with a retained matching Stage source",
         "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes",
         "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
-        "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate"
+        "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
+        "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing."
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4145,7 +4149,10 @@
         "POST /api/sync/push",
         "POST /api/project/modeling",
         "initialize_modeling",
-        "project_proposed_record"
+        "project_proposed_record",
+        "drawing_context",
+        "reference_value",
+        "elevation_reference"
       ],
       "depends_on": [
         "project.inputs",
@@ -4164,7 +4171,8 @@
         "capabilities.reference_resolver",
         "contracts.fields",
         "state.design_portfolio",
-        "state.state_record"
+        "state.state_record",
+        "capabilities.element_producers"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -4180,7 +4188,7 @@
         "the project root is never defaulted in code - it comes from the environment or --project-dir",
         "binding happens on the first request that needs it, not at import or app creation",
         "every fact on a reference projection is the kernel's answer from the State Record that run retained; the current authored input is never rebound onto an existing run",
-        "the projection is read-only and states, in honesty lines, what it could not compute; drawnShape resolves only recorded profile/height/placement and parameter bindings without producing geometry, and unavailable placement has an explicit fallback reason",
+        "the projection is read-only and states, in honesty lines, what it could not compute; drawnShape resolves recorded profile/height/placement, explicit prism datum dependencies and parameter bindings without producing geometry, and unavailable placement has an explicit fallback reason",
         "one process answers for one project: the scoped and the unscoped path resolve to the same binding and are shaped by the same function",
         "the catalog derives; it never writes: an object no element names stays MODEL_VISIBLE_CATALOG_MISSING, and no neighbouring element's field is offered in its place",
         "all actionable projections retain exact record and runner binding; historical canonical bases require a verified committed Stage source",
@@ -4417,7 +4425,8 @@
         "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked",
         "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design",
         "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
-        "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage"
+        "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
+        "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history."
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4550,7 +4559,8 @@
         "operator_of",
         "continue_proposal",
         "read_acceptance",
-        "AcceptanceEvidence"
+        "AcceptanceEvidence",
+        "POST /api/proposals/elevation"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4655,7 +4665,9 @@
         "apps/monkeyhub/web/workspaces/test/modelDraft.test.ts",
         "apps/monkeyhub/web/workspaces/test/syncModelDraft.test.ts",
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
-        "apps/archflow-studio/api/tests/test_acceptance_audit.py"
+        "apps/archflow-studio/api/tests/test_acceptance_audit.py",
+        "apps/archflow-studio/api/tests/test_elevation.py",
+        "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4684,7 +4696,10 @@
         "tools/benchmark_intent_context.py",
         "apps/monkeyhub/web/workspaces/src/features/stage/modelDraft.ts",
         "apps/monkeyhub/web/workspaces/src/features/stage/syncModelDraft.ts",
-        "apps/monkeyhub/web/workspaces/src/api/client.ts"
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/archflow-studio/api/archflow_studio_api/application/elevation.py",
+        "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.css"
       ]
     },
     {

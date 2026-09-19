@@ -48,8 +48,12 @@ from archflow.state.state_record import (
     design_components_of,
     developed_design_view,
     parameter_bindings_of,
+    project_grids_of,
+    project_levels_of,
     resolve_element_bindings,
 )
+from monkeyarch.capabilities.element_producers import ProductionContext, drawn_element_placement, element_rows_of
+from monkeyarch.capabilities.reference_resolver import ReferenceContext
 
 from ..transport.errors import StudioError, error_sentence
 from .binding import ProjectBinding, ReferenceRun, STUDIO_RUN_ID
@@ -68,6 +72,49 @@ SELECTION_DECISION_REF = "decision:declared-schematic-selection"
 # not a default for a run: a run states its phase in the envelope it
 # retained, and steps 1-3 of the rule read it there.
 UNSTATED_PHASE = DesignPhase.DESIGN_DEVELOPMENT
+
+
+def drawing_context(record):
+    """Resolve the producer-owned datum graph without CAD or project writes."""
+
+    rows = element_rows_of(record)
+    context = ProductionContext(ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), {})
+    placements = {}
+    for row in rows:
+        if row.producer not in {"prism", "planar-surface"}:
+            continue
+        try:
+            placements[row.element_id] = drawn_element_placement(row, context)
+        except (KeyError, TypeError, ValueError) as exc:
+            placements[row.element_id] = str(exc)
+    return {row.element_id: row for row in rows}, context, placements
+
+
+def reference_value(reference: Mapping[str, Any], context: ProductionContext) -> float:
+    datum_id = reference["id"] + "-top" if reference["kind"] == "element-top" else reference["id"]
+    return context.datum_value(datum_id)
+
+
+def elevation_reference(reference, actual: float, context: ProductionContext):
+    """The actual retained binding and its total offset, including the drawing origin."""
+
+    if reference is None or "elevation" in reference:
+        return None
+    if "level" in reference:
+        kind, target = "level", reference["level"]
+    elif "offset_from" in reference:
+        kind, target = "level", reference["offset_from"]["level"]
+    else:
+        target = reference["datum"]
+        if target in context.references.level_ids():
+            kind = "level"
+        elif target.endswith("-top"):
+            kind, target = "element-top", target[:-4]
+        else:
+            raise ValueError(f"unsupported elevation datum {target}")
+    result = {"kind": kind, "id": target}
+    result["offset"] = round(actual - reference_value(result, context), 9)
+    return result
 
 
 @dataclass(frozen=True, slots=True)
