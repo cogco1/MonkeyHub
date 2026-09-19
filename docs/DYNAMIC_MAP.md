@@ -5,16 +5,15 @@
 
 Phase: Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-159, GH-73, P115
+- active: GH-73, P115
 - ready: none
 - blocked: GH-137, P105, P108, P110, P111, P113
-- next: continue active work: GH-159, GH-73, P115
+- next: continue active work: GH-73, P115
 
 ## Live work
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
-| GH-159 | active | Build a narrow Blender Projection V1 that can take a MonkeyHub design/model source, produce a verifiable Blender scene, render from it headlessly, and update that projection when the source changes. | [GH-159](https://github.com/cogco1/MonkeyHub/issues/159) |
 | GH-137 | blocked | V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1. | [GH-137](https://github.com/cogco1/MonkeyHub/issues/137) |
 | GH-73 | active | Retain exact precedent-page trace evidence, deterministic composition reasoning and falsifiable counterfactuals without creating a second design truth or writing canonical design state. | [GH-73](https://github.com/cogco1/MonkeyHub/issues/73) |
 | P115 | active | Continue the remaining P115 capability consolidation from the completed namespace and Stage/Branch/Candidate baseline. The card retains unfinished method/tool/check work and real project acceptance; delivered preview, history, drawing-source and incremental execution paths are not reopened. The authorized MonkeyMonitor follow-up extends measured candidate/export/load/Stage-save intervals into one visible operation timeline, true provider requests, OCCT/Diagram stages and input/cache comparisons through existing owners. The authorized context-compilation follow-up reduces developer lookup and runtime request size through scoped module reads, three request vocabularies, dependency slicing, bounded context supplements and per-attempt budget diagnostics. The registry-backed goal lookup and existing numeric proposal/candidate path are locally verified: 3.3 to 4.2 m with the canopy preserved, real model readback and continuation to 4.5 m. Selected-object deletion and model undo/redo shortcuts are also locally verified against retained candidates and the viewed source, with text/annotation ownership and the default Z-up rectangle path covered. Six-group interaction expansion remains paused pending the next user decision; broader project acceptance and the remaining browser limitation named in the card remain open. The candidate preview fixture now follows task-bound project refusal, explicitly selected Stage restoration and mutually exclusive panels; all 35 browser scenarios pass without changing those production guards. The authorized execution-latency follow-up keeps native CLI sessions and existing Studio/P036 execution, moves deterministic submit/wait/readback/compare steps out of model round trips, and measures identified project-wide read overhead before choosing scoped fixes. The authorized Git consolidation integrates distinct committed branch behavior into main while preserving uncommitted worktree drafts and independent formal issue. | [P115](mapping/planning/P115-capability-consolidation.md) |

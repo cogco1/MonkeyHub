@@ -3,29 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-159",
-      "stream": "visualization",
-      "status": "active",
-      "goal": "Build a narrow Blender Projection V1 that can take a MonkeyHub design/model source, produce a verifiable Blender scene, render from it headlessly, and update that projection when the source changes.",
-      "depends_on": [],
-      "branch": "codex/159-blender-projection-replay",
-      "worktree": "workspace/worktrees/codex-159-blender-projection-replay",
-      "base_ref": "2938947893d809d34cc4247202df5be0a0c3ef90",
-      "contributor": "YNNAP-HelloWorld (PR #169), replayed by Claude Fable 5.1",
-      "reviewer": "Repository owner",
-      "write_scope": [
-        "archflow/adapters/cad_execution.py",
-        "archflow/adapters/blender_projection.py",
-        "archflow/adapters/blender_worker.py",
-        "archflow/project/record_kinds.py",
-        "monkeyarch/runtime/project_runner.py",
-        "tools/run_project.py",
-        "docs/BLENDER_PROJECTION.md",
-        "probes/blender-projection-v1/"
-      ],
-      "handoff": null
-    },
-    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
