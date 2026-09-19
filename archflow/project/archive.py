@@ -33,6 +33,7 @@ ARCHIVE_OMISSIONS = (
     "runtime caches",
     "rebuildable previews and unbounded telemetry/logs",
     "unreferenced exports: exports/ travels only where a retained record names a file in it",
+    "non-persistent Studio projection runs: candidate inline source records and bindings are retained",
 )
 _TRANSFER_KEYS = {
     "project_id",
