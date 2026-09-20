@@ -246,7 +246,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
         uploadedAttachments.set(id, { ...file, sessionId: session.id });
         return { id, name: file.name, mimeType: file.mimeType, size: Buffer.from(file.data, "base64").length };
       });
-      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments });
+      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments,
+        contextMode: data().contextMode ?? "continue" });
       session.title = session.messages[0].content || session.messages[0].attachments?.[0]?.name; session.status = "running";
       // What the API saves while the CLI works: one row per MCP call, a failed
       // one, and the finished candidate that call reported.
@@ -340,7 +341,11 @@ try {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
-  assert.equal(await page.locator(".chat-browser").count(), 0);
+  assert.equal(await page.locator(".chat-browser:visible").count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  assert.equal(await page.locator(".stage canvas").count(), 0, "reading initial project context does not initialize a hidden viewport");
+  assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
+    "initial chat reads its editing state without loading model files");
   await studioReady();
   assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\A").length, 1,
     "entering the configured project prepares one Studio before the first workspace click or chat");
@@ -386,6 +391,9 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   assert.equal(sessions.length, 2);
+  const firstContext = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2].designContext;
+  assert.equal(firstContext.sourceRunId, "home-A", "the first task is bound before the architect opens any modeling workspace");
+  assert.equal(firstContext.stateDigest, workspaceFixture.projects.get("A").assets.get("home-A").dto.designStateDigest);
   assert.ok(writes.some(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A"),
     "selecting an existing project prepares its base before its first task connects");
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A").length, 1,
@@ -1083,6 +1091,9 @@ try {
   const attachmentPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1);
   assert.equal(attachmentPost[2].content, "");
   assert.equal(attachmentPost[2].projectId, "B");
+  assert.equal(attachmentPost[2].designContext.sourceRunId, "home-B", "switching projects cannot inherit A's editing base or B's viewed candidate");
+  assert.equal(attachmentPost[2].designContext.stateDigest, workspaceFixture.projects.get("B").assets.get("home-B").dto.designStateDigest);
+  assert.equal(attachmentPost[2].designContext.elementId, undefined, "whole-design requests do not invent a focus");
   assert.deepEqual(attachmentPost[2].attachments, [
     { name: "clipboard.png", mimeType: "image/png", data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64") },
     { name: "notes.txt", mimeType: "text/plain", data: Buffer.from("Dropped notes B").toString("base64") },
@@ -1137,6 +1148,8 @@ try {
   await page.goto(`${origin}/?view=board&runtimeId=${runtimes.get("D:\\fixture\\A").runtimeId}`);
   await waitWorkspace("board");
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
   assert.equal(new URL(page.url()).searchParams.get("view"), "board");
 
@@ -1179,6 +1192,42 @@ try {
   await page.screenshot({ path: path.join(temporary, "archive-restored.png") });
   await restored.getByRole("button", { name: "Close", exact: true }).last().click();
   await archiveCard.getByRole("button", { name: "Close", exact: true }).click();
+
+  // The user may reset model context without deleting the visible conversation.
+  // Viewing a prior result stays separate from deliberately continuing it.
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  const projectContext = page.getByRole("checkbox", { name: "Continue from project state (without previous conversation context)" });
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await visibleWorkspace().locator('.vcard__export').filter({ hasText: "cand-A-1.3dm" }).click();
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await projectContext.check();
+  await page.locator("#chat-input").fill("Compare the courtyard from the saved project state");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const resetPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(resetPost.contextMode, "project");
+  assert.equal(resetPost.designContext.sourceRunId, "home-A", "history browsing does not silently become the editing base");
+  assert.equal(resetPost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("home-A").dto.designStateDigest);
+  await page.locator(".chat-message--user").getByText("Project context", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await visibleWorkspace().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  assert.equal(await projectContext.isChecked(), false, "the new-context option applies to one message");
+  await page.locator("#chat-input").fill("Revise this candidate now");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const continuePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(continuePost.contextMode, undefined);
+  assert.equal(continuePost.designContext.sourceRunId, "cand-A-1", "explicit continuation changes the bound context");
+  assert.equal(continuePost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.designStateDigest);
+  assert.equal(await page.locator(".chat-message--user").count(), 2, "starting model context retains the visible chat");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

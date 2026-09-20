@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+import json
 import re
 from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
@@ -346,6 +347,100 @@ def compile_context(message: str, sheet: Mapping[str, Any], *, record: StateReco
     return IntentContext("scalar" if len(fields) == 1 else "component", narrowed, targets, (target["producer"],), fields, refs)
 
 
+def compile_task_context(
+    message: str, sheet: Mapping[str, Any], *, record: StateRecord,
+    element_ids: Sequence[str] = (), context_refs: Sequence[str] = (), context_offset: int = 0,
+) -> IntentContext:
+    """Bound the Hub's read projection without changing the intent write path.
+
+    A numeric request keeps its existing context and preflight. A design task
+    can have several exact anchors, or none; the record's closure supplies the
+    read dependencies. The full validation record never leaves its owner.
+    """
+    context = compile_context(message, sheet, record=record)
+    if len(element_ids) <= 1 and context.tier != "design":
+        return expand_context(context, sheet, context_refs, record=record) if context_refs else context
+    full = context.sheet if context.tier == "design" else _complete_sheet(sheet, record)
+    known = _rows(full)
+    if any(ref not in known for ref in context_refs):
+        raise ValueError("contextRefs contains an unknown exact reference")
+
+    targets = tuple(element_ids) or context.target_ids
+    whole_design = not targets or bool(re.search(
+        r"\b(all|every|entire|whole|building|circulation)\b|全部|所有|整体|整层|整栋|流线|交通组织", message, re.I))
+    seeds = {"entity:" + target for target in targets}
+    seeds.update(ref for ref in known if _has_id(message, ref.split(":", 1)[1]))
+    seeds.update(context_refs)
+    # Other declared record entities can carry project conditions. Their owner
+    # has not supplied a narrower applicability rule, so keep them visible
+    # instead of inferring that an unfamiliar condition is irrelevant.
+    seeds.update(ref for ref, (group, _) in known.items() if group == "contextEntities")
+    if not whole_design:
+        scoped, _ = _slice(full, seeds, record, changed={"entity:" + target for target in targets})
+    else:
+        scoped = full
+    rows = _rows(scoped)
+    # Locks and unresolved/declared conditions precede geometry. Explicit
+    # supplements come first so a missing dependency can be read on demand.
+    conditions = {"obligations", "readings", "contextEntities"}
+    def priority(ref: str) -> tuple[int, str]:
+        group, row = rows[ref]
+        return (0 if ref in context_refs else 1 if group in conditions or row.get("lockAuthority")
+                else 2 if ref in seeds else 3, ref)
+
+    budget = 32768
+    result: dict[str, Any] = {"projectId": full["projectId"], "selection": deepcopy(full.get("selection", {}))}
+    included: list[str] = []
+    omitted: dict[str, int] = {}
+    omitted_conditions = 0
+    for group in ("preferences", "constraints"):
+        for row in scoped.get(group, ()):
+            size = len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
+            if size <= budget:
+                result.setdefault(group, []).append(deepcopy(row))
+                budget -= size
+            else:
+                omitted[group] = omitted.get(group, 0) + 1
+                omitted_conditions += 1
+    for ref in sorted(rows, key=priority):
+        group, row = rows[ref]
+        size = len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
+        if size > budget:
+            omitted[group] = omitted.get(group, 0) + 1
+            omitted_conditions += int(group in conditions or bool(row.get("lockAuthority")))
+            continue
+        result.setdefault(group, []).append(deepcopy(row))
+        included.append(ref)
+        budget -= size
+    for group in ("elements", "components", "parameters", "frame", "types", "readings", "relationships", "obligations"):
+        result.setdefault(group, [])
+    # The paged index covers the source, not just the current dependency slice.
+    # It lets an agent request another precise reference without a full-state
+    # fallback, and never adds that reference to the writable focus.
+    ordered = sorted(known)
+    page = ordered[context_offset:context_offset + 64]
+    result["index"] = {"offset": context_offset, "total": len(ordered),
+                       "nextOffset": context_offset + len(page) if context_offset + len(page) < len(ordered) else None,
+                       "items": [{"ref": ref, "kind": known[ref][0], "label": _display_name(known[ref][1])[:120]} for ref in page]}
+    result["focusElementIds"] = list(targets)
+    result["readOnlyRefs"] = ([ref for ref in included if ref not in {"entity:" + target for target in targets}]
+                              if not whole_design else [])
+    result["coverage"] = {"scope": "project" if whole_design else "selection", "complete": not omitted,
+                          "includedCount": len(included), "omittedCount": sum(omitted.values()),
+                          "omittedByGroup": omitted, "omittedConditionCount": omitted_conditions,
+                          "detailBudgetBytes": 32768}
+    result["supplement"] = {
+        "path": "/api/intents/context",
+        "instruction": "Repeat this exact source, digest, utterance and focus with contextRefs (up to 16 exact index refs) "
+                       "to read missing facts, or contextOffset=nextOffset to page the index. Supplements grant no edits. "
+                       "Incomplete coverage cannot establish that all conditions are satisfied; an individual fact larger "
+                       "than the detail budget remains explicitly omitted.",
+    }
+    return IntentContext("design", full, targets, context.producer_ids,
+                         included_refs=tuple(included), escalation=context.escalation,
+                         supplemental_refs=tuple(context_refs), design_sheet=result)
+
+
 def expand_context(context: IntentContext, sheet: Mapping[str, Any], requested_refs: Sequence[str], *, record: StateRecord | None = None) -> IntentContext:
     """Add exact known read references with bounded retries and no scope grant."""
     if (context.tier == "design" and context.design_sheet is None) or record is None:
@@ -455,7 +550,7 @@ def model_context(context: IntentContext) -> dict[str, Any]:
     if context.tier == "design":
         result = deepcopy(dict(context.design_sheet if context.design_sheet is not None else context.sheet))
         result.pop("producerSignatures", None)  # The response schema supplies authoring vocabulary.
-        if context.design_sheet is not None:
+        if context.design_sheet is not None and "focusElementIds" not in result:
             result["editTargets"] = list(context.target_ids)
         return result
     rows = _rows(context.sheet)

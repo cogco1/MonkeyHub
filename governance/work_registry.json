@@ -3,6 +3,53 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-185",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Compile exact task state and let a fresh native provider session continue from it while preserving visible chat, editing-source identity and read-only candidate observation. This slice inherits the completed implementation of PR #184 at 550ee735; neither PR is merged by this work. Broader design-loop acceptance remains in issue #185.",
+      "depends_on": [],
+      "branch": "codex/185-task-state",
+      "worktree": "workspace/worktrees/codex-185-task-state",
+      "base_ref": "550ee7357bc48497f255de21123e2e4d6e0c6931",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "hub.shell",
+        "studio.shell",
+        "studio.intent",
+        "studio.artifacts"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/api/tests/test_drawings.py",
+        "apps/archflow-studio/api/tests/test_intent_context.py",
+        "apps/archflow-studio/api/tests/test_intents.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_acp_chat.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/workspace-fixture.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css"
+      ],
+      "handoff": "Review the tested first slice: exact editing-source context, bounded dependency facts and MCP supplements, explicit fresh provider sessions preserving visible chat and usage identities, and read-only exact STEP images. Cold Runtime recovery and reversible continuation pass with controlled providers; real-model design quality, automatic stage resets and cost comparison remain open. Based on committed #184, not a mainline merge."
+    },
+    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
@@ -460,31 +507,7 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": [
-        {
-          "id": "design-observation-prompt",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/183",
-          "status": "review",
-          "branch": "codex/183-design-observation-prompt",
-          "worktree": "workspace/worktrees/codex-183-design-observation-prompt",
-          "base_ref": "32fc10e1024a42ff9e8fb3a384686b7abc3a9016",
-          "contributor": "Codex",
-          "reviewer": "Repository owner",
-          "modules": [
-            "hub.shell",
-            "studio.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
-            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
-          ],
-          "depends_on": [],
-          "handoff": "Review the bounded prompt/schema simplification and existing elevation MCP exposure. Chat and elevation tests, generated client and architecture checks passed locally. Issue #183 remains open for selected-source context, actual visual feedback and real design-loop acceptance; this lane does not claim those paths."
-        }
-      ]
+      "lanes": []
     },
     {
       "id": "P105",
