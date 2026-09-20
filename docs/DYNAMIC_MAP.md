@@ -5,16 +5,17 @@
 
 Phase: Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.
 
-- active: GH-183, GH-185, GH-137, P115
+- active: GH-90, GH-183, GH-185, GH-137, P115
 - ready: GH-46
 - blocked: GH-73, P105, P108, P110, P111, P113
-- next: continue active work: GH-183, GH-185, GH-137, P115; independent ready work may start: GH-46
+- next: continue active work: GH-90, GH-183, GH-185, GH-137, P115; independent ready work may start: GH-46
 
 ## Live work
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
 | GH-46 | ready | Correct image traces in the existing Board page editor, calibrate scale and direction, and generate a source-bound editable 3D candidate through the existing sketch path. | [GH-46](https://github.com/cogco1/MonkeyHub/issues/46) |
+| GH-90 | active | Detect stable timestamp-preserving work-copy saves and preserve the update/View notice when a registered source arrives through Board CAS refresh. Wider delivery channels and human workflow acceptance remain on issue #90. | [GH-90](https://github.com/cogco1/MonkeyHub/issues/90) |
 | GH-183 | active | Deliver the bounded headless result display and Board compare-and-swap refresh follow-up. Broader architectural observation and correction acceptance remains on issue #183. | [GH-183](https://github.com/cogco1/MonkeyHub/issues/183) |
 | GH-185 | active | Verify a real Hub provider massing-to-wall design loop, same-source visual revision, and cold-start continuation from exact retained project conditions. Extend existing intent/history owners only for reproduced gaps; issue #183 retains broader design quality acceptance. | [GH-185](https://github.com/cogco1/MonkeyHub/issues/185) |
 | GH-137 | active | Deliver S1 scene-wide endpoint/midpoint/feature-edge/face snapping through existing drawing, Move/Copy and signed-normal Push/Pull constraints. V1 and N1 are delivered; V2 remains separate. | [GH-137](https://github.com/cogco1/MonkeyHub/issues/137) |

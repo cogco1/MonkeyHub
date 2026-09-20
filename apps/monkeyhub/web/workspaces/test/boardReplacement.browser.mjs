@@ -51,6 +51,10 @@ function sourceDocument(bytes, fileName, count, revisionRef, mimeType = "applica
     modelSource: null, modelSourceBindingRef: null, sourceStageRef: null, revisionRef };
 }
 const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-drawing-revision");
+const headlessBytes = pdfBytes([[0.75, 0.3, 0.85]]);
+const headlessDocument = { ...sourceDocument(headlessBytes, "Headless updated.pdf", 1, "headless-drawing-revision"),
+  replacesPages: [{ ...pageSource(oldDocument, 0), newPageIndex: 0 }] };
+let headlessPreviewAvailable = false, headlessPreviewFailures = 0;
 let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
@@ -176,6 +180,15 @@ try {
         if (url.pathname === `/api/documents/${oldDocument.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), oldDocument.revisionRef);
           return await route.fulfill({ contentType: "application/pdf", body: oldBytes });
+        }
+        if (url.pathname === `/api/documents/${headlessDocument.assetSha256}/bytes`) {
+          assert.equal(url.searchParams.get("revisionRef"), headlessDocument.revisionRef);
+          if (!headlessPreviewAvailable) {
+            headlessPreviewFailures++;
+            return await route.fulfill({ status: 503,
+              json: { code: "DOCUMENT_UNAVAILABLE", detail: "The saved preview is temporarily unavailable." } });
+          }
+          return await route.fulfill({ contentType: "application/pdf", body: headlessBytes });
         }
         if (url.pathname === `/api/documents/${uploadedReplacement.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), uploadedReplacement.revisionRef);
@@ -531,10 +544,14 @@ try {
   competingVersion = true;
   // A headless upload saves its source change while the user is still marking
   // this mounted board. The old CAS must recover without disabling submission.
+  // This exact revision has never been previewed: an already-cached document
+  // would conceal the transient read failure the safe merge must withstand.
   const beforeHeadless = await readScene();
-  saved = { ...structuredClone(saved), revisionSha256: "e".repeat(64) };
+  documents = [...documents, headlessDocument];
+  saved = { ...structuredClone(saved), seenDocuments: [...saved.seenDocuments, documentKey(headlessDocument)],
+    revisionSha256: "e".repeat(64) };
   const remotePage = saved.elements.find((element) => element.id === "unmapped-image");
-  remotePage.customData = { ...remotePage.customData, sourceDocument: pageSource(uploadedReplacement, 1) };
+  remotePage.customData = { ...remotePage.customData, sourceDocument: pageSource(headlessDocument, 0) };
   remotePage.fileId = "headless-new-preview"; remotePage.version += 1;
   await page.evaluate(() => {
     const api = window.__boardApi;
@@ -542,8 +559,25 @@ try {
     const added = convertToExcalidrawElements([{ id: "headless-local-note", type: "text", text: "Keep this critique", x: 430, y: 670 }], { regenerateIds: false });
     api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...added], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   });
+  const retryPreviews = page.getByRole("button", { name: "重试预览 / 接收", exact: true });
+  await retryPreviews.waitFor();
+  assert.ok(headlessPreviewFailures > 0, "The uncached remote preview must actually fail before recovery");
+  const failedHeadless = await readScene();
+  assert.deepEqual(byId(failedHeadless, "unmapped-image").customData.sourceDocument,
+    byId(beforeHeadless, "unmapped-image").customData.sourceDocument,
+    "A failed remote preview must retain the currently visible page source");
+  assert.equal(byId(failedHeadless, "unmapped-image").fileId, byId(beforeHeadless, "unmapped-image").fileId,
+    "A failed remote preview must retain the current image bytes");
+  assert.equal(byId(failedHeadless, "headless-local-note").text, "Keep this critique");
+  assert.equal(await page.locator(".monkeyboard-update").count(), 0,
+    "An unreadable replacement must not announce a reviewable update");
+  headlessPreviewAvailable = true;
+  await retryPreviews.click();
   await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
-  await page.waitForFunction((sha) => window.__boardApi.getSceneElements().find((element) => element.id === "unmapped-image")?.customData.sourceDocument.assetSha256 === sha, uploadedReplacement.assetSha256);
+  await page.waitForFunction((source) => {
+    const current = window.__boardApi.getSceneElements().find((element) => element.id === "unmapped-image")?.customData.sourceDocument;
+    return current?.assetSha256 === source.assetSha256 && current?.revisionRef === source.revisionRef;
+  }, pageSource(headlessDocument, 0));
   const afterHeadless = await readScene();
   assert.equal(byId(afterHeadless, "headless-local-note").text, "Keep this critique");
   assert.equal(saved.elements.find((element) => element.id === "headless-local-note").text, "Keep this critique");
@@ -552,6 +586,22 @@ try {
   assert.equal(afterHeadless.scrollX, beforeHeadless.scrollX);
   assert.equal(afterHeadless.scrollY, beforeHeadless.scrollY);
   assert.equal(await chineseUpdate.isEnabled(), true, "Recovered canvas can still submit/upload");
+  const rebasedNotice = page.locator(".monkeyboard-update");
+  await rebasedNotice.waitFor({ timeout: 3000 });
+  assert.match(await rebasedNotice.innerText(), /Headless updated\.pdf.*已更新/,
+    "Receiving a saved source replacement must announce the same update as a document refresh");
+  assert.equal(await rebasedNotice.count(), 1, "A saved replacement produces one coalesced notice");
+  const writesBeforeRebasedView = writes.length;
+  await rebasedNotice.getByRole("button", { name: "查看", exact: true }).click();
+  assert.deepEqual(persisted((await readScene()).elements), persisted(afterHeadless.elements));
+  await page.waitForTimeout(1000);
+  assert.equal(writes.length, writesBeforeRebasedView, "Viewing a rebased page does not write another revision");
+  await rebasedNotice.getByRole("button", { name: "关闭提示", exact: true }).click();
+  // Re-reading the same saved revision cannot bring back a dismissed notice.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(1000);
+  assert.equal(await rebasedNotice.count(), 0);
+  await select(["kept-frame"]);
 
   // A save can rebase while the pointer is still down. The remainder of the
   // same native stroke must reach both the live scene and the retained board.
