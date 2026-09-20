@@ -16,6 +16,7 @@ from urllib.parse import quote
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
+from PIL import Image
 from pypdf import PdfReader
 
 from archflow.adapters import occt_backend
@@ -230,6 +231,49 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(wrong.status_code, 403, wrong.text)
         self.assertEqual(self.files(), before)
 
+    def test_bounded_page_png_uses_crop_rotation_and_exact_source_without_writes(self) -> None:
+        document = self.upload(two_page_pdf())
+        page = {"runId": document["runId"], "assetSha256": document["assetSha256"],
+                "revisionRef": document["revisionRef"], "pageIndex": 1}
+        request = {"projectId": PROJECT_ID, "pages": [page], "format": "png", "zip": False, "maxEdge": 600}
+        before = self.files()
+        response = self.client.post("/api/board/export", json=request)
+        self.assertEqual(response.status_code, 200, response.text[:100])
+        with Image.open(BytesIO(response.content)) as image:
+            self.assertEqual(image.format, "PNG")
+            self.assertEqual(image.size, (500, 600))  # CropBox, then the retained 90-degree rotation.
+            self.assertIsNotNone(Image.eval(image.convert("L"), lambda value: 255 - value).getbbox())
+        for field, value, status in (("pageIndex", 2, 422), ("pageIndex", -1, 422), ("pageIndex", True, 422),
+                                     ("runId", "missing", 404), ("revisionRef", "stale", 404),
+                                     ("assetSha256", "0" * 64, 404)):
+            with self.subTest(field=field, value=value):
+                refused = self.client.post("/api/board/export", json={**request, "pages": [{**page, field: value}]})
+                self.assertEqual(refused.status_code, status, refused.text)
+        for edge in (0, 2049, True, 1.5):
+            self.assertEqual(self.client.post("/api/board/export", json={**request, "maxEdge": edge}).status_code, 422)
+        self.assertEqual(self.client.post("/api/board/export", json={**request, "projectId": "other"}).status_code, 403)
+        self.assertEqual(self.client.post("/api/board/export", json={**request, "format": "merged-pdf"}).status_code, 422)
+        self.assertEqual(self.files(), before)
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_bounded_image_page_respects_exif_and_refuses_changed_source_bytes(self) -> None:
+        document = self.upload(image_bytes("JPEG", orientation=6, size=(1200, 800)), "source.jpg", "image/jpeg")
+        request = {"projectId": PROJECT_ID, "pages": [{"runId": document["runId"],
+                   "assetSha256": document["assetSha256"], "revisionRef": document["revisionRef"], "pageIndex": 0}],
+                   "format": "png", "maxEdge": 600}
+        before = self.files()
+        response = self.client.post("/api/board/export", json=request)
+        self.assertEqual(response.status_code, 200, response.text[:100])
+        with Image.open(BytesIO(response.content)) as image:
+            self.assertEqual(image.size, (400, 600))
+        self.assertEqual(self.files(), before)
+        source = next(path for path in self.root.rglob("*") if path.is_file() and path.read_bytes().startswith(b"\xff\xd8"))
+        source.write_bytes(b"changed")
+        changed = self.files()
+        response = self.client.post("/api/board/export", json=request)
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(self.files(), changed)
+
     def test_concurrent_saves_from_same_revision_keep_one_winner(self) -> None:
         saved = self.save(body([]))
         clients = [self.new_client(), self.new_client()]
@@ -350,6 +394,19 @@ class BoardDrawingTests(CandidateTestCase):
         })
         self.assertEqual(drawing_response.status_code, 201, drawing_response.text)
         drawing = drawing_response.json()
+        export_page = {"runId": drawing["runId"], "assetSha256": drawing["assetSha256"],
+                       "revisionRef": drawing["revisionRef"], "pageIndex": 0}
+        before_export = {path: path.read_bytes() for path in self.repository.layout.root.rglob("*") if path.is_file()}
+        exported = self.client.post("/api/board/export", json={"projectId": PROJECT_ID, "pages": [export_page],
+                                                               "format": "png", "maxEdge": 512})
+        self.assertEqual(exported.status_code, 200, exported.text[:100])
+        with Image.open(BytesIO(exported.content)) as preview:
+            self.assertLessEqual(max(preview.size), 512)
+        for revision in (None, "stale-revision"):
+            refused = self.client.post("/api/board/export", json={"projectId": PROJECT_ID,
+                "pages": [{**export_page, "revisionRef": revision}], "format": "png", "maxEdge": 512})
+            self.assertEqual(refused.status_code, 422 if revision is None else 404, refused.text)
+        self.assertEqual({path: path.read_bytes() for path in self.repository.layout.root.rglob("*") if path.is_file()}, before_export)
         image = image_element(drawing)
         unpinned = deepcopy(image)
         del unpinned["customData"]["sourceDocument"]["revisionRef"]

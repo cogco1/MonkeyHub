@@ -30,6 +30,7 @@ from archflow.state.state_record import (
     ValidatorBinding,
     apply_state_record_operator,
     compile_component_edit,
+    compile_parameter_locks,
     combine_component_changes,
     developed_design_view,
     parameter_bindings_of,
@@ -62,6 +63,68 @@ def _record() -> StateRecord:
 
 
 class StateRecordTests(unittest.TestCase):
+    def test_explicit_parameter_lock_roundtrip_unlock_and_exact_base(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        operator = compile_parameter_locks(record, parameter_keys=("column_diameter",), lock_authority="architect")
+        retained = StateRecordOperator.from_dict(operator.to_dict())
+        locked = apply_state_record_operator(record, retained)
+        self.assertEqual(locked.parameter("column_diameter").lock_authority, "architect")
+        self.assertEqual(locked.entities, record.entities)
+        self.assertEqual(locked.parameters[1], record.parameters[1])
+        with self.assertRaisesRegex(StateRecordError, "stale"):
+            apply_state_record_operator(locked, retained)
+        with self.assertRaisesRegex(StateRecordError, "stale"):
+            apply_state_record_operator(replace(record, run_id="another-run"), retained)
+        unlocked = apply_state_record_operator(locked, compile_parameter_locks(
+            locked, parameter_keys=("column_diameter",), lock_authority=None))
+        self.assertEqual(unlocked, record)
+        for invalid in (replace(operator.parameters[0], value=9),
+                        replace(operator.parameters[0], expr="2 * column_height"),
+                        replace(operator.parameters[0], lock_authority="")):
+            with self.subTest(parameter=invalid), self.assertRaises(StateRecordError):
+                apply_state_record_operator(record, replace(operator, parameters=(invalid,)))
+        for keys in ((), ("missing",), ("column_diameter", "column_diameter")):
+            with self.subTest(keys=keys), self.assertRaises(StateRecordError):
+                apply_state_record_operator(record, compile_parameter_locks(record, parameter_keys=keys, lock_authority="architect"))
+        with self.assertRaisesRegex(StateRecordError, "explicit set_parameter_locks"):
+            apply_state_record_operator(record, compile_component_edit(record, parameters=operator.parameters))
+        with self.assertRaisesRegex(StateRecordError, "locked parameters"):
+            apply_state_record_operator(locked, compile_component_edit(locked, parameters=(record.parameters[0],)))
+        with self.assertRaisesRegex(StateRecordError, "no change"):
+            apply_state_record_operator(locked, compile_parameter_locks(locked, parameter_keys=("column_diameter",), lock_authority="architect"))
+
+    def test_locked_bindings_refuse_detach_rebind_and_delete_but_allow_other_fields_and_new_consumers(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        record = apply_state_record_operator(record, compile_parameter_locks(record, parameter_keys=("wall_height",), lock_authority="architect"))
+        wall = record.entity("wall-new")
+        for height in (3, 4, "@opening_height"):
+            edited = replace(wall, fields={**wall.fields, "params": {**wall.fields["params"], "height": height}})
+            with self.subTest(height=height), self.assertRaisesRegex(StateRecordError, "detaches locked"):
+                apply_state_record_operator(record, compile_component_edit(record, entities=(edited,)))
+        with self.assertRaisesRegex(StateRecordError, "detaches locked"):
+            apply_state_record_operator(record, compile_component_edit(record,
+                remove_entity_ids=("wall-new", "arch-new"), remove_relation_ids=("wall-hosts-arch",)))
+        edited = replace(wall, fields={**wall.fields, "params": {**wall.fields["params"], "thickness": 0.4}})
+        added = replace(edited, entity_id="wall-downstream")
+        successor = apply_state_record_operator(record, compile_component_edit(record, entities=(edited, added)))
+        self.assertEqual(successor.entity("wall-new").fields["params"]["thickness"], 0.4)
+        self.assertEqual(successor.entity("wall-downstream").fields["params"]["height"], "@wall_height")
+
+    def test_locked_type_defaults_and_parameter_inputs_cannot_be_detached(self) -> None:
+        record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
+        record = apply_state_record_operator(record, self._wall_edit(record))
+        arch = record.entity("arch-new")
+        arch = replace(arch, fields={**arch.fields, "params": {"height": "@opening_height"}})
+        record = apply_state_record_operator(record, compile_component_edit(record, entities=(arch,)))
+        record = apply_state_record_operator(record, compile_parameter_locks(record, parameter_keys=("opening_width",), lock_authority="architect"))
+        overridden = replace(arch, fields={**arch.fields, "params": {**arch.fields["params"], "width": 1.2}})
+        with self.assertRaisesRegex(StateRecordError, "detaches locked"):
+            apply_state_record_operator(record, compile_component_edit(record, entities=(overridden,)))
+        with self.assertRaisesRegex(StateRecordError, "detaches locked parameter inputs"):
+            apply_state_record_operator(record, compile_component_edit(record,
+                parameters=(replace(record.parameter("opening_height"), expr=None, inputs=()),)))
+
     def test_simple_level_edits_use_the_same_operator_and_protected_closure(self) -> None:
         record = replace(_record(), base=ProjectVersionRef("demo", 0, "0" * 64))
         level = record.entity("level-piano-nobile")

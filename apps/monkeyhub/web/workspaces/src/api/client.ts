@@ -61,6 +61,7 @@ import {
   prepareModelingApiProjectModelingPost,
   createTransformProposalApiProposalsTransformPost,
   createPushPullProposalApiProposalsPushPullPost,
+  createParameterLocksProposalApiProposalsParameterLocksPost,
   readProposalApiProposalsProposalIdGet,
   readClosureApiStateClosurePost,
   readFrameApiStateFrameGet,
@@ -114,6 +115,7 @@ import type {
   TransformElementRequestDto,
   PushPullRequestDto,
   ProposalRequestDto,
+  ParameterLocksRequestDto,
   SourceDocumentDto,
   SourceDocumentListDto,
   SourceDocumentRequestDto,
@@ -443,6 +445,10 @@ export const createStudioClient = (connection: ServerConnection) => ({
   /** Several finished drawing actions as one proposal; later items may reference earlier ones. */
   sketchBatch(body: SketchBatchRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ client: connection.client, body }));
+  },
+
+  parameterLocks(body: ParameterLocksRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/parameter-locks", createParameterLocksProposalApiProposalsParameterLocksPost({ client: connection.client, body }));
   },
 
   /** Prepare an empty project for its first sketch (idempotent; seeds component `model` and level `ground`). */

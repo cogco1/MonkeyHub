@@ -95,6 +95,39 @@ class ProposalTestCase(unittest.TestCase):
         return payload
 
 
+class ParameterLockProposalTests(ProposalTestCase):
+    def test_lock_proposal_is_exact_reviewable_and_cannot_enter_ordinary_chain(self) -> None:
+        response = self.client.post("/api/proposals/parameter-locks", json={
+            "projectId": PROJECT_ID, "stateDigest": self.state_digest,
+            "parameterKeys": ["module"], "action": "lock",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = response.json()
+        self.assertEqual(proposal["baseStateDigest"], self.state_digest)
+        self.assertEqual(proposal["change"]["kind"], "edit_components")
+        self.assertEqual(proposal["change"]["edits"]["parameters"][0]["lock_authority"], "studio:explicit-user-action")
+        self.assertEqual(self.client.get("/api/state").json()["stateDigest"], self.state_digest)
+        followup = self.client.post("/api/proposals", json={
+            "sourceProposalId": proposal["proposalId"], "stateDigest": self.state_digest,
+            "targetComponentId": "portico", "elementId": "portico-cornice", "utterance": "set height to 0.5",
+        })
+        self.assertEqual(followup.status_code, 409, followup.text)
+        self.assertEqual(followup.json()["code"], "LOCK_PROPOSAL_REQUIRES_CANDIDATE")
+
+    def test_lock_request_refuses_stale_foreign_unknown_and_authored_authority(self) -> None:
+        base = {"stateDigest": self.state_digest, "parameterKeys": ["module"], "action": "lock"}
+        for extra, status in (({"stateDigest": OTHER_DIGEST}, 409),
+                              ({"projectId": "another-project"}, 403),
+                              ({"parameterKeys": ["unknown"]}, 422),
+                              ({"parameterKeys": ["module", "module"]}, 422),
+                              ({"lockAuthority": "architect"}, 422),
+                              ({"sourceProposalId": "missing"}, 422),
+                              ({"action": "unlock"}, 422)):
+            with self.subTest(extra=extra):
+                response = self.client.post("/api/proposals/parameter-locks", json={**base, **extra})
+                self.assertEqual(response.status_code, status, response.text)
+
+
 class ProposalAccessTests(ProposalTestCase):
     def test_protected_geometry_is_read_while_declared_parameter_dependents_are_written(self) -> None:
         payload = self.accepted("set module to 1.5 keep entity:portico-base")

@@ -37,6 +37,7 @@ def export_board(request: Request, payload: BoardExportRequestDto) -> Response:
         [boards.BoardExportPage(page.run_id, page.asset_sha256, page.revision_ref, page.page_index) for page in payload.pages],
         payload.format,
         payload.zip,
+        payload.max_edge,
     )
     return Response(
         content=result.content,

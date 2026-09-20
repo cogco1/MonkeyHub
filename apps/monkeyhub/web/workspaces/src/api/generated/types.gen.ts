@@ -294,6 +294,12 @@ export type BoardExportRequestDto = {
      * Zip
      */
     zip?: boolean;
+    /**
+     * Maxedge
+     *
+     * Optional longest pixel edge for transient PNG/JPEG previews; omitted exports retain 144 dpi.
+     */
+    maxEdge?: number | null;
 };
 
 /**
@@ -4048,6 +4054,38 @@ export type ParameterDto = {
      * Lockauthority
      */
     lockAuthority: string | null;
+};
+
+/**
+ * ParameterLocksRequestDto
+ *
+ * An explicit parameter constraint decision; ordinary semantic edits cannot author locks.
+ */
+export type ParameterLocksRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Parameterkeys
+     */
+    parameterKeys: Array<string>;
+    /**
+     * Action
+     */
+    action: 'lock' | 'unlock';
 };
 
 /**
@@ -9388,6 +9426,41 @@ export type CreateProposalApiProposalsPostResponses = {
 };
 
 export type CreateProposalApiProposalsPostResponse = CreateProposalApiProposalsPostResponses[keyof CreateProposalApiProposalsPostResponses];
+
+export type CreateParameterLocksProposalApiProposalsParameterLocksPostData = {
+    body: ParameterLocksRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/proposals/parameter-locks';
+};
+
+export type CreateParameterLocksProposalApiProposalsParameterLocksPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateParameterLocksProposalApiProposalsParameterLocksPostError = CreateParameterLocksProposalApiProposalsParameterLocksPostErrors[keyof CreateParameterLocksProposalApiProposalsParameterLocksPostErrors];
+
+export type CreateParameterLocksProposalApiProposalsParameterLocksPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreateParameterLocksProposalApiProposalsParameterLocksPostResponse = CreateParameterLocksProposalApiProposalsParameterLocksPostResponses[keyof CreateParameterLocksProposalApiProposalsParameterLocksPostResponses];
 
 export type CreateSketchProposalApiProposalsSketchPostData = {
     /**
