@@ -27,7 +27,14 @@
         "apps/archflow-studio/api/tests/test_intents.py",
         "apps/archflow-studio/api/tests/test_proposals.py",
         "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
       ],
       "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
       "lanes": [
@@ -60,6 +67,30 @@
           ],
           "depends_on": [],
           "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied."
+        },
+        {
+          "id": "lock-controls",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
+          "status": "active",
+          "branch": "codex/185-lock-controls",
+          "worktree": "workspace/worktrees/codex-185-lock-controls",
+          "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/api/client.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
+            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+          ],
+          "depends_on": [],
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics."
         }
       ]
     },
