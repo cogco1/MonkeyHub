@@ -3,6 +3,29 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-32",
+      "stream": "measurement",
+      "status": "active",
+      "goal": "Measure retained-session versus project-state continuation on exact paired inputs through existing Hub benchmarks and Monitor; preserve failures and unknowns.",
+      "depends_on": [],
+      "branch": "codex/32-context-measurement",
+      "worktree": "C:/Users/asus/.codex/worktrees/b617/ARCHFLOW_V4",
+      "base_ref": "fe9bafcf6085777fe890c0439699abdd2c1bf605",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "hub.shell",
+        "monkeymonitor"
+      ],
+      "write_scope": [
+        "docs/CONTEXT_COMPILATION.md",
+        "tests/monkeymonitor/run_turn_benchmark.py",
+        "tests/monkeymonitor/benchmarks.json",
+        "tests/monkeymonitor/test_turn_benchmark.py"
+      ],
+      "handoff": "Retain PR #190 measurement commits and data as exact execution evidence; reapply its final source tree with the required historical work-scope claim, without rewriting published history."
+    },
+    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
