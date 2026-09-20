@@ -1,0 +1,9 @@
+.parameter-locks { width: min(390px, 100%); }
+.parameter-locks p { line-height: 1.5; }
+.parameter-locks__list { max-height: 230px; overflow: auto; }
+.parameter-locks__row { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 5px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.parameter-locks__row input { flex: 0 0 auto; }
+.parameter-locks__name { display: grid; gap: 3px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.parameter-locks__row > span:last-child { flex: 0 0 auto; }
+.parameter-locks__actions { display: flex; gap: 8px; margin: 12px 0; }
+.parameter-locks__actions button { flex: 1; min-height: 36px; }

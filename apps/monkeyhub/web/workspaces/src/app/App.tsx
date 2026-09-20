@@ -240,7 +240,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const t = useT();
   const viewportOpened = useRef(active);
   viewportOpened.current ||= active;
-  const { developerMode } = usePreferences();
+  const { developerMode, language } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -2378,6 +2378,43 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [baseRunId]);
 
   const modelNavigationBusy = changingBase || selectingWorkingCopy || modelLoading;
+  const [parameterLockBusy, setParameterLockBusy] = useState(false);
+  const [parameterLockError, setParameterLockError] = useState<string | null>(null);
+  const lockZh = language === "zh-CN";
+  const parameterLockReason = !projection?.stateDigest || !project || baseError || sourceLabel === LOCAL_SOURCE_LABEL
+    ? (lockZh ? "请先打开可编辑的项目模型。" : "Open an editable project model first.")
+    : unsavedChatDraft ? (lockZh ? "请先同步当前模型修改。" : "Sync the current model edits first.")
+    : modelNavigationBusy || candidateBusy || modelRunPending !== null || proposalBusy || modelSyncBusy
+      ? (lockZh ? "请等待当前模型操作完成。" : "Wait for the current model operation to finish.")
+      : loadedArtifact && (!viewedProjection || loadedArtifacts.some((artifact) => artifact.runId !== projection.referenceRun.runId) ||
+          viewedProjection.stateDigest !== projection.stateDigest)
+        ? (lockZh ? "请先选择从当前查看的版本继续编辑。" : "Choose to continue editing from the viewed version first.") : null;
+  const parameterLockContext = useRef({ key: contextKey, reason: parameterLockReason });
+  parameterLockContext.current = { key: contextKey, reason: parameterLockReason };
+  useEffect(() => { setParameterLockError(null); }, [contextKey]);
+  const applyParameterLocks = useCallback(async (parameterKeys: string[], action: "lock" | "unlock") => {
+    if (parameterLockBusy || parameterLockReason || !project || !projection?.stateDigest || parameterKeys.length === 0) return;
+    const key = contextKey;
+    const revision = previewContext.current.revision, viewRequest = modelLoadRequest.current, interactionEpoch = modelInteractionEpoch.current;
+    const stillCurrent = () => parameterLockContext.current.key === key && previewContext.current.revision === revision &&
+      modelLoadRequest.current === viewRequest && modelInteractionEpoch.current === interactionEpoch;
+    setParameterLockBusy(true); setParameterLockError(null);
+    try {
+      const proposal = await studio.parameterLocks({ projectId: project.projectId, stateDigest: projection.stateDigest,
+        sourceRunId: projection.referenceRunSource === "none" ? undefined : projection.referenceRun.runId,
+        sourceStageRef: projection.sourceStageRef ?? undefined, parameterKeys, action });
+      // A delayed proposal must not start a candidate in a different edit context.
+      if (!stillCurrent() || parameterLockContext.current.reason) return;
+      append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+      await runCandidate(proposal.proposalId);
+    } catch (cause) {
+      if (!stillCurrent()) return;
+      const error = asStudioApiError(cause);
+      setParameterLockError(error.detail);
+      recoverFromStaleBase(error);
+      append({ kind: "refusal", error, what: "POST /api/proposals/parameter-locks" });
+    } finally { setParameterLockBusy(false); }
+  }, [parameterLockBusy, parameterLockReason, project, projection, contextKey, studio, append, runCandidate, recoverFromStaleBase]);
   const canUndoModel = sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index > 0 : modelHistory.index > 0) && !modelNavigationBusy;
   const canRedoModel = sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length :
     modelHistory.index >= 0 && modelHistory.index < modelHistory.runs.length - 1) && !modelNavigationBusy;
@@ -3073,6 +3110,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             onChatRequest={onChatRequest}
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
+            parameterLocks={{ parameters: projection?.parameters ?? [], contextKey, busy: parameterLockBusy || modelRunPending !== null,
+              disabledReason: parameterLockReason, error: parameterLockError, onApply: (keys, action) => void applyParameterLocks(keys, action) }}
             sketchBusy={modelNavigationBusy}
             snapPoints={sketchSnapPoints}
             model={{

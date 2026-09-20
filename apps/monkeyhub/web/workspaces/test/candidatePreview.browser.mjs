@@ -21,6 +21,8 @@ const published = { version: 0, stateSha256: "1".repeat(64) };
 const relations = { held: 0, violated: 0, unchecked: 0, heldFlag: true, fullyChecked: true };
 const allArtifacts = [], models = new Map(), jobs = new Map(), candidates = new Map();
 const workingCopies = [];
+const parameterStates = new Map();
+let nextLockCandidate = null, lockProposalGate = null;
 const candidateStartQueues = new Map();
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
 let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0;
@@ -77,7 +79,7 @@ function projection(runId = currentHome.runId, stageRef = null) {
     referenceReceipt: null, matchesReferenceReceipt: true, recordSource: "fixture", recordDigest: digest(`record:${runId}`), stateDigest: stateDigest(runId),
     activePhase: "stage-2", counts: { entities: 1, components: 1, parameters: 0, relations: 0, obligations: 0, dependencyEdges: 0 },
     componentTree: [{ componentId: element.componentId, parentComponentId: null, semanticKind: "room", intent: "fixture", maturity: "candidate", revision: 1 }],
-    componentTreeError: null, elements: [element], parameters: [], dependencyEdges: [], honesty: [], catalog: {
+    componentTreeError: null, elements: [element], parameters: parameterStates.get(runId) ?? [], dependencyEdges: [], honesty: [], catalog: {
       components: [{ componentId: element.componentId, parentId: null, children: [], elementIds: [element.elementId], descendantElementIds: [element.elementId],
         capabilityCount: 1, states: ["editable"], objectCount: 1, unboundObjectCount: 0, closure: [] }],
       elements: [{ ...element, objectNames: [element.elementId], capabilities: [{ capabilityId: "height", elementId: element.elementId, key: "height", value: 0.2,
@@ -359,6 +361,25 @@ try {
           impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
           utterance: body.utterance, persistence: "fixture", createdAt: new Date().toISOString(),
         }, pendingIntent: null, timings: { totalMs: 1, agentMs: 1, proposalMs: 0 } }, 201);
+      }
+      if (method === "POST" && name === "/api/proposals/parameter-locks") {
+        const body = request.postDataJSON(), candidate = nextLockCandidate;
+        assert.ok(candidate); nextLockCandidate = null;
+        if (lockProposalGate) { lockProposalGate.requested = true; await lockProposalGate.promise; }
+        assert.equal(body.projectId, projectId);
+        assert.equal(body.stateDigest, stateDigest(body.sourceRunId));
+        const parameters = (parameterStates.get(body.sourceRunId) ?? []).map((parameter) => ({ ...parameter,
+          lockAuthority: body.parameterKeys.includes(parameter.key) ? (body.action === "lock" ? "fixture-user" : null) : parameter.lockAuthority }));
+        parameterStates.set(candidate.candidateId, parameters);
+        candidateBases.set(candidate.candidateId, body.sourceStageRef ?? null);
+        return await json({ proposalId: candidate.proposalId, status: "proposed", modelSource: null,
+          sourceRunId: body.sourceRunId, sourceStageRef: body.sourceStageRef, baseStateDigest: body.stateDigest,
+          recordDigest: digest(`record:${body.sourceRunId}`),
+          target: { componentId: "fixture-room", elementId: "fixture-floor", ref: "parameter:height", key: "height" },
+          change: { kind: "edit_components", summary: `${body.action} parameter`, kept: [], edits: { entities: [], parameters: [], relations: [], removeEntityIds: [], removeParameterKeys: [], removeRelationIds: [] }, changes: [] },
+          protected: [], decisionOperator: null,
+          impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
+          utterance: `${body.action} parameter`, persistence: "fixture", createdAt: new Date().toISOString() }, 201);
       }
       if (method === "POST" && name === "/api/drawings/elevations") {
         if (drawingFailure) {
@@ -1150,6 +1171,99 @@ try {
   });
   }
 
+  if (!modelTimingOnly) {
+    await step("parameter locks retain the selected values on an exact candidate, reopen, and unlock without accepting a Stage", async () => {
+      projectionOnly = false; historyEnabled = true; diagnosticsEnabled = false; projectId = "parameter-lock-fixture";
+      branches.clear(); stages.clear(); candidateBases.clear();
+      currentHome = makeArtifact("parameter-lock-base"); allArtifacts.push(currentHome);
+      const stage = commitStage(currentHome.modelSource, "main", "S0");
+      parameterStates.set(currentHome.runId, [
+        { key: "height", value: 3.6, unit: "m", expr: null, inputs: [], epistemicStatus: "authored", lockAuthority: null },
+        { key: "width", value: 12, unit: "m", expr: null, inputs: [], epistemicStatus: "authored", lockAuthority: null },
+      ]);
+      await page.reload({ waitUntil: "domcontentloaded" }); await rendered(currentHome.runId);
+      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      let panel = page.getByRole("region", { name: "Parameter locks", exact: true });
+      assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
+      await panel.getByRole("checkbox", { name: /height/ }).check();
+      const candidate = nextLockCandidate = prepare("parameter-locked");
+      await panel.getByRole("button", { name: "Lock selected", exact: true }).click();
+      await until(snapshot, value => value.runs[candidate.candidateId]?.job.status === "ready", "Lock action did not start the retained candidate");
+      const request = requests.findLast(row => row.name === "/api/proposals/parameter-locks");
+      assert.deepEqual(request.body.parameterKeys, ["height"]);
+      assert.equal(request.body.sourceRunId, currentHome.runId); assert.equal(request.body.sourceStageRef, stage.stageRef);
+      await complete(candidate); await diagnosticRendered(candidate);
+      assert.equal(stages.size, 1);
+      await page.reload({ waitUntil: "domcontentloaded" }); await rendered(candidate.candidateId);
+      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      panel = page.getByRole("region", { name: "Parameter locks", exact: true });
+      assert.match(await panel.locator("label").filter({ hasText: "height" }).innerText(), /height\s+3\.6 m\s+Locked/);
+      assert.match(await panel.locator("label").filter({ hasText: "width" }).innerText(), /Editable/);
+      await panel.getByRole("checkbox", { name: /height/ }).check();
+      const unlocked = nextLockCandidate = prepare("parameter-unlocked");
+      await panel.getByRole("button", { name: "Unlock selected", exact: true }).click();
+      await until(snapshot, value => value.runs[unlocked.candidateId]?.job.status === "ready", "Unlock action did not start the retained candidate");
+      await complete(unlocked); await diagnosticRendered(unlocked);
+      assert.equal(parameterStates.get(unlocked.candidateId)[0].lockAuthority, null);
+      assert.equal(stages.size, 1);
+    });
+
+    await step("a delayed lock proposal cannot start a candidate after changing the editing base", async () => {
+      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      const panel = page.getByRole("region", { name: "Parameter locks", exact: true });
+      await panel.getByRole("checkbox", { name: /height/ }).check();
+      lockProposalGate = deferred(); const candidate = nextLockCandidate = prepare("parameter-stale");
+      await panel.getByRole("button", { name: "Lock selected", exact: true }).click();
+      await until(() => lockProposalGate.requested, Boolean, "Lock proposal was not submitted");
+      await page.evaluate(run => window.__candidatePreview.changeBase(run), currentHome.runId);
+      await until(snapshot, value => value.editingRunId === currentHome.runId && !value.changingBase, "Base did not change during the held lock proposal");
+      lockProposalGate.resolve(); lockProposalGate = null;
+      await until(() => panel.getByText("Saving…", { exact: true }).count(), value => value === 0, "Held lock proposal did not settle");
+      assert.equal(requests.filter(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`).length, 0);
+      assert.equal(stages.size, 1);
+    });
+
+    await step("unresolved, browsed and local models cannot change the editing base's parameter locks", async () => {
+      await view(currentHome);
+      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      const panel = page.getByRole("region", { name: "Parameter locks", exact: true });
+      await page.keyboard.press("Escape");
+      assert.equal(await panel.count(), 0);
+      await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      await panel.getByRole("checkbox", { name: /height/ }).check();
+      const requestCount = requests.filter(row => row.name === "/api/proposals/parameter-locks").length;
+      const alternative = makeArtifact("parameter-lock-other"); allArtifacts.push(alternative);
+      const held = deferred(); stateGates.set(alternative.runId, held);
+      await view(alternative);
+      assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
+      held.resolve(); stateGates.delete(alternative.runId);
+      await view(currentHome);
+      await until(() => panel.getByRole("button", { name: "Lock selected", exact: true }).isEnabled(), Boolean, "Returning to the edit base did not re-enable locking");
+      await page.evaluate(bytes => {
+        const transfer = new DataTransfer(); transfer.items.add(new File([new Uint8Array(bytes)], "local-parameters.3dm"));
+        document.querySelector(".viewport-host").dispatchEvent(new DragEvent("drop", { bubbles: true, dataTransfer: transfer }));
+      }, [...models.get(currentHome.sha256)]);
+      await until(snapshot, value => value.status === "ready" && value.loadedRunId == null, "Local model was not displayed");
+      assert.equal(await panel.getByRole("button", { name: "Lock selected", exact: true }).isDisabled(), true);
+      assert.equal(requests.filter(row => row.name === "/api/proposals/parameter-locks").length, requestCount);
+      await view(currentHome);
+    });
+
+    await step("a delayed lock proposal stays cancelled after browsing away and back to the same base", async () => {
+      await openViewTools(); await page.getByRole("button", { name: "Parameter locks", exact: true }).click();
+      const panel = page.getByRole("region", { name: "Parameter locks", exact: true });
+      await panel.getByRole("checkbox", { name: /height/ }).check();
+      lockProposalGate = deferred(); const candidate = nextLockCandidate = prepare("parameter-returned-view");
+      await panel.getByRole("button", { name: "Lock selected", exact: true }).click();
+      await until(() => lockProposalGate.requested, Boolean, "Lock proposal was not submitted");
+      await view(allArtifacts.find(row => row.runId === "parameter-lock-other"));
+      await view(currentHome);
+      lockProposalGate.resolve(); lockProposalGate = null;
+      await until(() => panel.getByText("Saving…", { exact: true }).count(), value => value === 0, "Held lock proposal did not settle");
+      assert.equal(requests.filter(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`).length, 0);
+      assert.equal(stages.size, 1);
+    });
+  }
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);
 } catch (error) {
@@ -1162,6 +1276,7 @@ try {
   throw error;
 } finally {
   historyGate?.resolve();
+  lockProposalGate?.resolve();
   drawingGate?.resolve();
   intentGate?.resolve(); documentGate?.resolve(); timingGate?.resolve();
   for (const gate of [...validationGates.values(), ...modelGates.values(), ...stateGates.values()]) gate.resolve();

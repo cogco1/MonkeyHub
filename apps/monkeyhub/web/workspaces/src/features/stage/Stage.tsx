@@ -36,6 +36,7 @@ import { distanceBetween } from "../../workspaces/monkeyarch/viewer/featureEdges
 import { cancelInteractionFrame, createInteractionSession, scheduleInteractionFrame } from "../../workspaces/monkeyarch/interactionSession";
 import type { PushPullTarget, ScaleMode } from "../../workspaces/monkeyarch/interactionSession";
 import { ModelEditPanel, type DirectModelAction, type DirectModelTool } from "./ModelEditPanel";
+import { ParameterLocksPanel, type ParameterLockControls } from "./ParameterLocksPanel";
 import { ElevationPanel, type ElevationControls } from "./ElevationPanel";
 import { ModelToolButton } from "./ModelToolButton";
 import { preparePushPull } from "./pushPull";
@@ -172,6 +173,7 @@ export function Stage({
   sketchBusy = false,
   snapPoints = [],
   model,
+  parameterLocks,
   loadedRunId,
   editingBaseRunId,
   editingBaseLabel,
@@ -332,6 +334,7 @@ export function Stage({
     onApply?(action: DirectModelAction): void;
     elevation?: ElevationControls | null;
   };
+  parameterLocks?: ParameterLockControls;
   /** A host page already shows the workspace entries and the project's position. */
   active?: boolean;
   onOpenBoard?: () => void;
@@ -359,6 +362,7 @@ export function Stage({
   const [eraser, setEraser] = useState(false);
   const [annotationToolsOpen, setAnnotationToolsOpen] = useState(false);
   const [viewToolsOpen, setViewToolsOpen] = useState(false);
+  const [parameterLocksOpen, setParameterLocksOpen] = useState(false);
   const [lineToolsOpen, setLineToolsOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const stageElement = useRef<HTMLElement>(null);
@@ -861,7 +865,7 @@ export function Stage({
     stopMove();
     stopRotate();
     stopScale();
-    setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false);
+    setAnnotationToolsOpen(false); setViewToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false);
     onTool(null); setEraser(false); setMeasuring(false); stopMeasuring();
     model?.onTool?.("select");
     showSketch({ ...cancelledSketch(interaction.current.sketch), tool: next });
@@ -1670,11 +1674,11 @@ export function Stage({
             <ModelToolButton icon="measure" label={t("stage.measure.label")} shortcut="T" aria-pressed={measuring}
               onClick={() => measuring ? chooseDrawingTool(null) : chooseMeasure()} />
             <ModelToolButton icon="annotate" label={t("stage.tools.annotate")} aria-expanded={annotationToolsOpen} aria-controls="annotation-tools"
-              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); setVersionsOpen(false); }} />
+              onClick={() => { setAnnotationToolsOpen((open) => !open); setViewToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false); }} />
             <ModelToolButton icon="fit" label={t("stage.tools.fit")} onClick={() => viewportRef.current?.fitView()} />
             <ModelToolButton icon="front" label={t("stage.tools.front")} onClick={() => viewportRef.current?.frontView()} />
             <ModelToolButton icon="more" label={t("stage.tools.viewOptions")} aria-expanded={viewToolsOpen} aria-controls="view-tools"
-              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); }} />
+              onClick={() => { setViewToolsOpen((open) => !open); setAnnotationToolsOpen(false); setVersionsOpen(false); setParameterLocksOpen(false); }} />
             </div>
             {model?.sync && <div className="model-tools__group model-tools__sync">
               <ModelToolButton icon="sync" label={t("stage.sync.label")} disabled={!model.sync.dirty || model.sync.busy}
@@ -1720,6 +1724,9 @@ export function Stage({
             </>}
           </div>}
           {viewToolsOpen && <div id="view-tools" className="viewtools viewtools--panel" role="group" aria-label={t("stage.tools.viewOptions")}>
+          {parameterLocks && <button type="button" aria-expanded={parameterLocksOpen}
+            onClick={() => { chooseDrawingTool(null); setParameterLocksOpen(true); }}>
+            {zh ? "参数锁" : "Parameter locks"}</button>}
           <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
           {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
             onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
@@ -1925,6 +1932,9 @@ export function Stage({
               <span className="quiet sketch-entry__hint">{t("stage.sketch.cancel")}</span>
             </div>
           )}
+          {parameterLocksOpen && parameterLocks && <ParameterLocksPanel key={parameterLocks.contextKey} controls={parameterLocks}
+            onClose={() => { setParameterLocksOpen(false); setViewToolsOpen(true);
+              requestAnimationFrame(() => toolsElement.current?.querySelector<HTMLButtonElement>('[aria-controls="view-tools"]')?.focus()); }} />}
           {model?.directTool && model.onApply && <ModelEditPanel key={model.directTool} tool={model.directTool}
             subject={model.subject} busy={model.busy ?? false} error={scaleError ?? rotateError ?? moveError ?? pushPullError ?? model.error ?? null}
             onApply={model.onApply} onClose={closeDirectTool}
@@ -1982,7 +1992,7 @@ export function Stage({
       <div ref={footerElement} className="stage__foot">
         <div className="stage__versions">
           <button type="button" className="btn stage__versions-toggle" aria-expanded={versionsOpen} aria-controls="stage-versions-panel"
-            onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); }}>
+            onClick={() => { if (!versionsOpen) onVersionsOpen?.(); setVersionsOpen((open) => !open); setAnnotationToolsOpen(false); setViewToolsOpen(false); setParameterLocksOpen(false); }}>
             {t("stage.versions.open")} <span className="quiet">{versionCount}</span>
             {contextLabel && <span className="stage__versions-current">{contextLabel}</span>}
             {hasNewVersions && <span className="stage__versions-new" role="status">{t("stage.versions.new")}</span>}
