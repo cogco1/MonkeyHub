@@ -832,7 +832,7 @@ export type CapabilityRunRequestDto = ({
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
@@ -1682,7 +1682,7 @@ export type DeleteElementRequestDto = {
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
@@ -4853,7 +4853,7 @@ export type ProposalRequestDto = ({
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
@@ -4960,7 +4960,7 @@ export type PushPullRequestDto = {
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
@@ -6603,7 +6603,7 @@ export type SketchBatchRequestDto = {
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
@@ -6750,7 +6750,7 @@ export type SketchPrismRequestDto = {
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
@@ -7375,7 +7375,7 @@ export type TransformElementRequestDto = {
     /**
      * Sourceproposalid
      *
-     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Only executing the final proposal creates a candidate checkpoint.
+     * Continue this in-memory proposal; stateDigest stays its original baseStateDigest. Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.
      */
     sourceProposalId?: string | null;
     /**
