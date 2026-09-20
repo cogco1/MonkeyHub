@@ -28,6 +28,7 @@ function fixture() {
   const api: ModelDraftSyncApi = {
     sketch: body => propose("sketch", body), transform: body => propose("transform", body),
     pushPull: body => propose("pushPull", body), removeElement: body => propose("delete", body),
+    editElevation: body => propose("elevation", body),
     startCandidate: async (id, trace, key) => { calls.push({ kind: "candidate", body: { id, trace, key } }); return accepted; },
     runtime: async id => { calls.push({ kind: "runtime", body: id }); return { projectId: source.projectId, jobs: [], candidates: [] } as unknown as RuntimeDto; },
   };
@@ -193,4 +194,59 @@ test("client keeps the explicit Sync idempotency key, diagnostic trace and targe
   assert.equal(requests[0]!.headers.get("X-Monkey-Parent"), "parent");
   assert.equal(new URL(requests[2]!.url).searchParams.get("candidateId"), candidateId);
   assert.equal(requests[2]!.method, "GET");
+});
+
+test("new upright masses are detached before later explicit bindings and only final elevation proposal runs", async () => {
+  const { api, calls } = fixture();
+  const commands: DraftCommand[] = [
+    { kind: "sketch", elementId: "lower", componentId: "room", action: { profile: [[0,0],[4,0],[4,3],[0,3]], base: -1, height: 3 } },
+    { kind: "elevation", elementId: "upper", action: "bind-base", reference: { kind: "element-top", id: "lower", offset: 0.5 } },
+    { kind: "elevation", elementId: "lower", action: "set-height", value: 4.5 },
+    { kind: "elevation", elementId: "lower", action: "set-datum", levelId: "roof", name: "Roof ref", value: 12 },
+  ];
+  const attempt = createModelDraftSyncAttempt(requestId);
+  await syncModelDraft(snapshot(...commands), source, frame, attempt, api);
+  assert.deepEqual(calls.map(row => row.kind), ["sketch", "elevation", "elevation", "elevation", "elevation", "candidate"]);
+  assert.equal(calls[1]!.body.action, "detach-base");
+  assert.equal(calls[1]!.body.sourceProposalId, "p1");
+  assert.equal(calls[2]!.body.sourceProposalId, "p2");
+  assert.deepEqual(calls[2]!.body.reference, { kind: "element-top", id: "lower", offset: 0.5 });
+  assert.equal(calls.at(-1)!.body.id, "p5");
+  assert.equal("elementId" in calls[4]!.body, false, "datum DTO accepts levelId rather than the contextual UI selection");
+  assert.equal(attempt.nextCommand, commands.length);
+  for (const row of calls.slice(0, -1)) assert.equal(row.body.stateDigest, source.stateDigest);
+});
+
+test("rejected elevation Sync preserves its confirmed prefix without candidate submission", async () => {
+  const { api, calls } = fixture(), attempt = createModelDraftSyncAttempt(requestId);
+  const original = api.editElevation;
+  api.editElevation = async body => {
+    if (body.action === "set-height") throw failure("ELEVATION_EDIT_INVALID");
+    return original(body);
+  };
+  const frozen = snapshot(
+    { kind: "elevation", elementId: "upper", action: "bind-base", reference: { kind: "element-top", id: "lower", offset: 0 } },
+    { kind: "elevation", elementId: "lower", action: "set-height", value: -1 });
+  await assert.rejects(syncModelDraft(frozen, source, frame, attempt, api), { code: "ELEVATION_EDIT_INVALID" });
+  assert.equal(attempt.nextCommand, 1); assert.equal(attempt.sourceProposalId, "p1");
+  assert.equal(attempt.finalProposalId, null); assert.equal(calls.length, 1);
+  assert.equal(frozen.commands.length, 2);
+});
+
+test("sketch uses the datum at its replay prefix, including retries, rather than old or final levels", async () => {
+  const { api, calls } = fixture(), attempt = createModelDraftSyncAttempt(requestId);
+  const original = api.sketch; let refuse = true;
+  api.sketch = async body => { if (refuse) { refuse = false; throw failure("NETWORK_ERROR"); } return original(body); };
+  const frozen = snapshot(
+    { kind: "elevation", elementId: "mass", action: "set-datum", levelId: "level-0", name: "Ground", value: 2 },
+    { kind: "sketch", elementId: "mass", componentId: "room", action: { profile: [[0,0],[4,0],[4,3],[0,3]], base: 0, height: 2 } },
+    { kind: "elevation", elementId: "mass", action: "set-datum", levelId: "level-0", name: "Ground", value: 6 });
+  await assert.rejects(syncModelDraft(frozen, source, frame, attempt, api), { code: "NETWORK_ERROR" });
+  assert.equal(attempt.nextCommand, 1);
+  await syncModelDraft(frozen, source, frame, attempt, api);
+  const sketch = calls.find(row => row.kind === "sketch")!;
+  assert.equal(sketch.body.baseLevel, "level-0");
+  assert.equal(sketch.body.plane.origin[1], -2);
+  assert.equal(calls[2]!.body.action, "detach-base");
+  assert.equal(frame.levels[0]!.elevation, 0, "the original source frame is immutable");
 });

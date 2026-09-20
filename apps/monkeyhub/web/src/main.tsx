@@ -9,7 +9,6 @@ import { createClient } from "./api/generated/client";
 import { applicationSettingsApiSettingsAppsGet, chatProvidersApiChatProvidersGet, chatWorkspaceApiChatWorkspaceGet, getUserSettingsApiSettingsUserGet, listAppsApiAppsGet, putUserSettingsApiSettingsUserPut, startAppApiAppsAppIdStartPost, stopAppApiAppsAppIdStopPost, updateApplicationSettingsApiSettingsAppsPut, type AppStatus, type ApplicationSettingsDto, type ChatProvider, type ChatWorkspace, type UserSettingsDto } from "./api/generated";
 import "./styles.css";
 import { FabPage } from "./FabPage";
-import { MonitorPage } from "./MonitorPage";
 import { ChatShell } from "./ChatShell";
 
 type AppId = AppStatus["appId"];
@@ -70,8 +69,7 @@ function WorkspaceDiagnosticsSettings() {
 function App() {
   const view = new URLSearchParams(window.location.search).get("view");
   const fabView = view === "fab";
-  const monitorView = view === "monitor";
-  const hostedView = fabView || monitorView;
+  const hostedView = fabView;
   const [preferences, setPreferences] = useState<AppearancePreferences>(() => hostedView ? appearanceFromSearch(window.location.search) : { ...DEFAULT_APPEARANCE });
   const [savedAppearance, setSavedAppearance] = useState<AppearancePreferences | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettingsDto | null>(null);
@@ -189,7 +187,6 @@ function App() {
     finally { actionLocks.current.delete(app.serviceId); setBusyServices(new Set(actionLocks.current)); }
   };
   if (fabView) return <FabPage preferences={preferences} client={hubClient} readResult={responseData} />;
-  if (monitorView) return <MonitorPage preferences={preferences} />;
   // One detection answers both places: what a connection is, and what it lists.
   const connectionWords = (row: ChatProvider) => !row.installed ? t("notInstalled")
     : row.id === "coding-plan" && !row.available ? t("notConfigured")

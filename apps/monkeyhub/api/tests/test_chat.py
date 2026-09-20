@@ -649,10 +649,15 @@ class ChatTests(unittest.TestCase):
                     # in the prompt sent to the CLI on every native-session turn.
                     for duplicate in ("/api/proposals/sketch", "/api/capabilities", "awaitSeconds"):
                         self.assertNotIn(duplicate, envelope)
-                    for boundary in ("Project files are read-only", "Do not call another model",
+                    for boundary in ("Project files are read-only", "the user's keep conditions",
                                      "do not claim approval, issuance or printer upload",
                                      "Do not switch Hub configuration"):
                         self.assertIn(boundary, envelope)
+                    self.assertIn("generate and inspect a candidate", envelope)
+                    self.assertIn("then revise as needed", envelope)
+                    for restriction in ("Compose the whole requested modeling chain", "Ask at most one",
+                                        "Do not export a candidate after every form"):
+                        self.assertNotIn(restriction, envelope)
 
     def test_codex_continues_native_session_after_hub_reopen(self):
         before = {str(path.relative_to(self.project)): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
@@ -694,6 +699,50 @@ class ChatTests(unittest.TestCase):
         # Its own built-in tools, so it can edit and run what it is working on.
         self.assertEqual(args[args.index("--tools") + 1], "default")
         self.assertIn("--strict-mcp-config", args)
+
+    def test_usage_sources_preserve_prior_sessions_after_reset_and_reload_from_legacy_records(self):
+        sessions = [(self.create(), "cli", str(uuid4()), str(uuid4())),
+                    (self.create(self.other), "acp", "fixture/old-session", "fixture/new-session")]
+        self.create()  # No provider session has started.
+        claude = self.create(provider="claude")
+        self.store._sessions[claude.id].nativeSessionId = str(uuid4())
+        self.store._fresh_provider_session(claude.id)
+        expected = []
+        for session, transport, old_id, _ in sessions:
+            row = self.store._sessions[session.id]
+            row.transport = transport
+            setattr(row, "acpSessionId" if transport == "acp" else "nativeSessionId", old_id)
+            self.store._save(row)
+            path = self.store.root / f"{session.id}.json"
+            legacy = json.loads(path.read_text(encoding="utf-8"))
+            legacy.pop("priorProviderSessionIds")
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            expected.append({"projectId": session.projectId, "sessionId": old_id})
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, self.store.hub_url, commands=self.commands)
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        for session, transport, old_id, new_id in sessions:
+            row = self.store._fresh_provider_session(session.id)
+            self.assertEqual(row.priorProviderSessionIds, [old_id])
+            self.assertIsNone(row.nativeSessionId)
+            self.assertIsNone(row.acpSessionId)
+            # A reset without a new connection adds no identity. Reobserving
+            # the same ID is also one usage source, never duplicate accounting.
+            row = self.store._fresh_provider_session(session.id)
+            self.assertEqual(row.priorProviderSessionIds, [old_id])
+            setattr(row, "acpSessionId" if transport == "acp" else "nativeSessionId", old_id)
+            row = self.store._fresh_provider_session(session.id)
+            self.assertEqual(row.priorProviderSessionIds, [old_id])
+            setattr(row, "acpSessionId" if transport == "acp" else "nativeSessionId", new_id)
+            self.store._save(row)
+            expected.append({"projectId": session.projectId, "sessionId": new_id})
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, self.store.hub_url, commands=self.commands)
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        for session, _, old_id, _ in sessions:
+            self.assertEqual(self.store._sessions[session.id].priorProviderSessionIds, [old_id])
+            self.assertNotIn("priorProviderSessionIds", self.store.get(session.id).model_dump())
 
     def test_usage_sources_keep_project_and_archive_binding_without_transcripts(self):
         native = self.create()
@@ -998,8 +1047,8 @@ class ChatTests(unittest.TestCase):
         self.assertIn("P036", call["prompt"])
         # Per-turn guidance keeps the edit principle; endpoint recipes live in
         # the connected action contract, checked by the tests below.
-        self.assertIn("existing numeric control", call["prompt"])
-        self.assertIn("documented modification flow instead of drawing it again", call["prompt"])
+        self.assertIn("existing controls", call["prompt"])
+        self.assertIn("dependencies for linked edits", call["prompt"])
 
     def _studio_tool_path(self, base, path, method, headers, session):
         """Verify the Hub admission boundary before routing its fake Studio call."""
@@ -1077,12 +1126,12 @@ class ChatTests(unittest.TestCase):
         for stated in ("/api/proposals/sketch", "stateDigest", "componentId", "elementId",
                        "profile", "height", "baseLevel", "metres", "[x, z]",
                        "/api/proposals/{id}/candidate", "GET /api/state/frame", "/api/project/modeling",
-                       "GET /api/documents?runId=", "MonkeyDiagram's documents list automatically",
-                       "PUT /api/document-annotations", "baseRevisionSha256",
-                       "GET /api/drawings/styles", "POST /api/drawings/sheets",
-                       "Do not use PUT /api/board to save a generated drawing"):
+                       "GET /api/documents?runId=", "MonkeyDiagram's documents list",
+                        "/api/document-annotations", "baseRevisionSha256",
+                        "GET /api/drawings/styles", "POST /api/drawings/sheets",
+                        "/api/proposals/elevation"):
             self.assertIn(stated, request_tool["description"], stated)
-        self.assertIn("only for an action", schema_tool["description"])
+        self.assertIn("clarify a field or correct a request", schema_tool["description"])
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
             path = self._studio_tool_path(base, path, method, headers, session)
@@ -1098,9 +1147,10 @@ class ChatTests(unittest.TestCase):
                 return {"projectId": "chat-project", "projectDir": str(self.project)}
             if path == "/openapi.json":
                 return {"paths": {"/api/project/modeling": {"post": {"summary": "initialize"}},
-                                  "/api/documents": {"get": {"summary": "list drawings"}},
-                                  "/api/proposals/sketch": {"post": {"summary": "draw"}},
-                                  "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
+                                   "/api/documents": {"get": {"summary": "list drawings"}},
+                                   "/api/proposals/sketch": {"post": {"summary": "draw"}},
+                                   "/api/proposals/elevation": {"post": {"summary": "edit elevation"}},
+                                   "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
                         "components": {"schemas": {}}}
             return {"method": method, "body": body, "path": path}
 
@@ -1122,6 +1172,20 @@ class ChatTests(unittest.TestCase):
             })
             self.assertEqual(drawn["path"], "/api/proposals/sketch")
             self.assertEqual(drawn["body"]["height"], 3.2)
+            elevation_body = {"stateDigest": "a" * 64, "sourceRunId": "candidate-before",
+                              "sourceStageRef": "stage-base", "sourceProposalId": "proposal-before",
+                              "elementId": "drawn-1", "action": "set-base", "value": 2,
+                              "keep": ["entity:porch"]}
+            raised = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/proposals/elevation", "body": elevation_body,
+            })
+            self.assertEqual((raised["path"], raised["body"]), ("/api/proposals/elevation", elevation_body))
+            with self.assertRaises(HubFailure) as wrong_elevation_project:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "POST", "path": "/api/proposals/elevation",
+                    "body": {**elevation_body, "projectId": "other"},
+                })
+            self.assertEqual(wrong_elevation_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
             documents = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "GET", "path": "/api/documents?runId=studio-drawing-1",
             })
@@ -1159,7 +1223,8 @@ class ChatTests(unittest.TestCase):
                 self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
             # A documented template can be read as a schema, which is what an
             # exploring turn used to fail on.
-            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling"):
+            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling",
+                             "/api/proposals/elevation"):
                 answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                         {"method": "POST", "path": template})
                 self.assertEqual(answer["method"], "POST")
@@ -1278,7 +1343,7 @@ class ChatTests(unittest.TestCase):
             self.assertIn("loft", unavailable.exception.error.detail)
             self.assertIn("prism", unavailable.exception.error.detail)
 
-    def test_changing_something_starts_at_the_capability_index_not_at_a_guess(self):
+    def test_existing_controls_and_candidate_continuation_are_discoverable(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""
 
         session = self.create()
@@ -1287,22 +1352,14 @@ class ChatTests(unittest.TestCase):
         for stated in ("GET /api/capabilities/candidate.modify_existing?target=",
                        "&elementId=<the element>", "GET /api/capabilities?goal=",
                        "POST /api/capabilities/{capabilityId}/run", "awaitSeconds: 60",
-                       # The waiting rule the tool's own description carries, which is
-                       # what a new stdio bridge reads without the Hub being restarted.
-                       "omit yield_time_ms so it keeps its 30000 ms default",
-                       "do not loop short functions.wait calls",
                        "keep is a list", "never send the request again",
-                       "No match in the index is not a verdict"):
+                       "GET /api/state?run=<candidateId>", "original baseStateDigest",
+                       "Multiple observation and revision cycles"):
             self.assertIn(stated, description, stated)
-        # A change to something already known must not be made to walk the
-        # index and the state again first.
-        self.assertIn("do not read the index", description)
-        self.assertNotIn("ask the capability index first", description)
-        # The modify path is described once. The old hand-written body for it
-        # is gone, so there are not two editable descriptions of one action.
-        self.assertNotIn("CHANGE ONE EXISTING NUMBER", description)
-        self.assertNotIn("targetComponentId, optional elementId", description)
-        # What the fixed massing chain and the compare parameter say is kept.
+        for restriction in ("Never generate an intermediate", "READ ONCE", "do not read the index",
+                            "yield_time_ms", "functions.wait"):
+            self.assertNotIn(restriction, description)
+        # The quick sketch and exact-source comparison remain discoverable.
         self.assertIn("/api/proposals/sketch", description)
         self.assertIn("compare?against=<runId>", description)
 
@@ -1345,7 +1402,7 @@ class ChatTests(unittest.TestCase):
     # ---- one tool call that sees one action through
 
     def _finishing_service(self, session, *, job_states, candidate=None, compare=None,
-                           readback_error=None, barriers=None):
+                           readback_error=None, compare_error=None, barriers=None):
         """A stand-in Hub and Studio that records what was actually sent.
 
         It answers the same shapes the real services answer and nothing more.
@@ -1385,6 +1442,8 @@ class ChatTests(unittest.TestCase):
                     raise HubFailure(503, "CHAT_TOOL_FAILED", readback_error)
                 return candidate
             if path.startswith("/api/candidates/studio-cand-2/compare"):
+                if compare_error:
+                    raise HubFailure(404, "INSPECTION_NOT_FOUND", compare_error)
                 return compare
             raise AssertionError(f"unexpected call: {method} {path}")
 
@@ -1604,6 +1663,94 @@ class ChatTests(unittest.TestCase):
         self.assertIn("refused", answer["detail"])
         self.assertNotIn("candidate", answer, "nothing may stand in for the answer that was not read")
         self.assertIn("GET /api/candidates/studio-cand-2", answer["next"])
+
+    def test_partial_readback_keeps_each_success_and_only_follows_missing_reads(self):
+        session = self.create()
+        session.status = "running"
+        candidate = {"candidateId": "studio-cand-2", "stateDigest": "b" * 64,
+                     "seatExecutionComplete": True, "artifacts": [],
+                     "objects": [{"name": "cornice", "bbox": {"min": [0, 0, 0.6], "max": [4, 2, 1.1]}}],
+                     "relationChecks": {"held": 1, "unchecked": 2},
+                     "honesty": ["two relations were not checked"]}
+        compare = {"against": "studio-cand-1", "changed": 1, "unchanged": 1, "objects": []}
+        for missing in (("compare",), ("candidate",), ("candidate", "compare")):
+            with self.subTest(missing=missing):
+                request, sent = self._finishing_service(
+                    session, job_states=[{"jobId": "job-1", "status": "succeeded"}],
+                    candidate=candidate, compare=compare,
+                    readback_error="candidate unavailable" if "candidate" in missing else None,
+                    compare_error="source inspection missing" if "compare" in missing else None)
+                answer = self._run_with_wait(request, session)
+                self.assertEqual(answer["status"], "succeeded")
+                self.assertEqual(answer["readback"], "failed", "partial evidence is never full verification")
+                self.assertEqual(set(answer["readbackErrors"]), set(missing))
+                expected_next = []
+                if "candidate" in missing:
+                    expected_next.append("GET /api/candidates/studio-cand-2")
+                    for key in ("candidate", "objects", "artifacts", "objectReadbackError"):
+                        self.assertNotIn(key, answer)
+                else:
+                    self.assertEqual(answer["objects"], candidate["objects"])
+                    self.assertEqual(answer["candidate"]["relationChecks"], candidate["relationChecks"])
+                    self.assertEqual(answer["candidate"]["honesty"], candidate["honesty"])
+                if "compare" in missing:
+                    expected_next.append("GET /api/candidates/studio-cand-2/compare?against=studio-cand-1")
+                    self.assertNotIn("compare", answer)
+                else:
+                    self.assertEqual(answer["compare"]["against"], "studio-cand-1")
+                    self.assertEqual(answer["compare"]["unchanged"], 1)
+                self.assertEqual(answer["next"], expected_next)
+                self.assertEqual(len([row for row in sent if row["method"] == "POST"]), 1)
+                self.assertIsNone(chat._tool_values(json.dumps(answer))[1],
+                                  "partial evidence must not become a fully read-back candidate card")
+
+    def test_readback_deadline_preserves_completed_sibling_without_waiting_for_stalled_read(self):
+        release = threading.Event()
+        candidate = {"candidateId": "candidate", "objects": [{"name": "cornice"}], "artifacts": []}
+
+        def request(base, path, **kwargs):
+            if path == "/api/jobs/job":
+                return {"status": "succeeded"}
+            if path == "/api/candidates/candidate":
+                return candidate
+            release.wait(5)
+            return {"changed": 1}
+
+        try:
+            with patch.object(chat, "_request_json", side_effect=request):
+                answer = chat._finish("http://127.0.0.1:8791", {"jobId": "job", "candidateId": "candidate"},
+                                      {"sourceRunId": "before"}, time.monotonic() + 0.2)
+            self.assertFalse(release.is_set())
+            self.assertEqual(answer["objects"], candidate["objects"])
+            self.assertEqual(answer["readback"], "failed")
+            self.assertIn("compare", answer["readbackErrors"])
+            self.assertEqual(answer["next"], ["GET /api/candidates/candidate/compare?against=before"])
+        finally:
+            release.set()
+
+    def test_partial_readback_does_not_swallow_unexpected_errors(self):
+        def request(base, path, **kwargs):
+            if path.startswith("/api/jobs/"):
+                return {"status": "succeeded"}
+            raise AssertionError("unexpected readback defect")
+
+        with patch.object(chat, "_request_json", side_effect=request), self.assertRaisesRegex(AssertionError, "defect"):
+            chat._finish("http://127.0.0.1:8791", {"jobId": "job", "candidateId": "candidate"},
+                         {"sourceRunId": "before"}, time.monotonic() + 1)
+
+    def test_benchmark_can_inspect_one_admitted_candidate_without_a_complete_readback_card(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("turn_benchmark", ROOT / "tests/monkeymonitor/run_turn_benchmark.py")
+        benchmark = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(benchmark)
+        detail = {"id": "this-chat", "messages": [{"role": "tool", "candidateId": None}]}
+        operation = {"sessionId": "this-chat", "candidateId": "candidate-1", "jobId": "job-1"}
+        runtime = {"operations": [operation, {"sessionId": "another-chat", "candidateId": "other", "jobId": "other-job"},
+                                  {"sessionId": "this-chat", "candidateId": "refused", "status": "failed"}]}
+        self.assertEqual(benchmark.candidate_for_readback(detail, runtime), "candidate-1")
+        self.assertIsNone(benchmark.candidate_for_readback(detail, {"operations": []}))
+        runtime["operations"].append({**operation, "candidateId": "candidate-2"})
+        self.assertIsNone(benchmark.candidate_for_readback(detail, runtime), "an ambiguous run must not be guessed")
 
     def test_the_wait_belongs_to_the_one_action_that_can_be_seen_through(self):
         session = self.create()
@@ -2109,6 +2256,108 @@ class ChatTests(unittest.TestCase):
 
     def turns(self):
         return [] if not self.log.exists() else self.calls()
+
+    def test_project_context_starts_fresh_cli_then_resumes_and_keeps_visible_history(self):
+        for provider in ("codex", "claude"):
+            with self.subTest(provider=provider):
+                session = self.create(provider=provider)
+                self.post(session, "OLD_CHAT_ONLY_185")
+                self.assertEqual(self.finished(session).status, "idle")
+                old_id = self.store._sessions[session.id].nativeSessionId
+                with patch.object(chat, "_request_json", side_effect=self.studio(session, [])):
+                    self.store.post(session.id, ChatPostRequest(
+                        projectId=session.projectId, content="Continue from retained geometry",
+                        contextMode="project", designContext=self.selected()))
+                    result = self.finished(session)
+                self.assertEqual(result.status, "idle", result.error)
+                fresh = self.calls()[-1]
+                self.assertNotIn(old_id, fresh["args"])
+                self.assertNotIn("OLD_CHAT_ONLY_185", fresh["prompt"])
+                self.assertIn('"stateDigest": "' + "a" * 64, fresh["prompt"])
+                new_id = self.store._sessions[session.id].nativeSessionId
+                self.assertNotEqual(new_id, old_id)
+                self.assertEqual([(m.content, m.contextMode) for m in result.messages if m.role == "user"],
+                                 [("OLD_CHAT_ONLY_185", "continue"), ("Continue from retained geometry", "project")])
+                self.store.shutdown()
+                self.store = chat.ChatStore(self.runtime, self.store.hub_url, commands=self.commands)
+                self.post(session, "Next detail")
+                self.assertEqual(self.finished(session).status, "idle")
+                self.assertIn(new_id, self.calls()[-1]["args"])
+                self.assertNotIn(old_id, self.calls()[-1]["args"])
+
+    def test_refused_project_context_preserves_existing_cli_continuation(self):
+        session = self.create(provider="claude")
+        self.post(session)
+        self.finished(session)
+        old_id = self.store._sessions[session.id].nativeSessionId
+        count = len(self.calls())
+        with patch.object(chat, "_request_json", side_effect=self.studio(
+                session, [], HubFailure(409, "STALE_BASE", "Selected source changed"))):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Continue",
+                contextMode="project", designContext=self.selected()))
+            self.assertEqual(self.finished(session).error.code, "STALE_BASE")
+        self.assertEqual(len(self.calls()), count)
+        self.assertEqual(self.store._sessions[session.id].nativeSessionId, old_id)
+        self.post(session, "Keep talking")
+        self.finished(session)
+        self.assertIn(old_id, self.calls()[-1]["args"])
+
+    def test_whole_project_and_multiple_focus_forward_without_inventing_an_element(self):
+        session = self.create()
+        packs = []
+        for extra in ({}, {"elementIds": ["wall-a", "wall-b"], "contextRefs": ["entity:roof"], "contextOffset": 64}):
+            with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
+                self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Design the facade",
+                    designContext=ChatDesignContext(sourceRunId="run-001", stateDigest="a" * 64, **extra)))
+                self.assertEqual(self.finished(session).status, "idle")
+            self.assertEqual(packs[-1]["body"], {"projectId": session.projectId, "utterance": "Design the facade",
+                "sourceRunId": "run-001", "stateDigest": "a" * 64, **extra})
+
+    def test_project_context_requires_a_source_before_posting(self):
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            ChatPostRequest(projectId="chat-project", content="Continue", contextMode="project")
+
+    def test_model_view_reaches_mcp_as_image_with_exact_metadata(self):
+        import io
+        session = self.create()
+        path = "/api/drawings/model-view?runId=run-001&stateDigest=" + "a" * 64 + "&assetSha256=" + "b" * 64 + "&view=top"
+        picture = {"source": {"runId": "run-001", "stateDigest": "a" * 64, "assetSha256": "b" * 64},
+                   "view": "top", "mimeType": "image/png", "data": "iVBORw0KGgo=", "width": 800, "height": 500,
+                   "representation": "orthographic-line-projection"}
+        def request(base, requested, method="GET", body=None, **kwargs):
+            if requested == path:
+                self.assertEqual(method, "GET")
+                return picture
+            return self.studio(session, [])(base, requested, method, body, **kwargs)
+        class Stream(io.StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+        line = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "studio_request", "arguments": {"method": "GET", "path": path}}}
+        reader, writer = Stream(json.dumps(line) + "\n"), Stream()
+        self.store._sessions[session.id].status = "running"
+        with patch.object(chat, "_request_json", side_effect=request), \
+             patch.object(chat.sys, "stdin", reader), patch.object(chat.sys, "stdout", writer):
+            chat._mcp(self.store.hub_url, session.id)
+        result = json.loads(writer.getvalue())["result"]
+        self.assertNotIn("isError", result)
+        metadata, image = result["content"]
+        self.assertEqual(json.loads(metadata["text"]), {k: v for k, v in picture.items() if k != "data"})
+        self.assertEqual(image, {"type": "image", "mimeType": "image/png", "data": picture["data"]})
+        self.assertNotIn(picture["data"], metadata["text"])
+
+    def test_context_supplement_is_exposed_as_a_read_without_mutation_admission(self):
+        session = self.create()
+        self.store._sessions[session.id].status = "running"
+        packs = []
+        body = {"projectId": session.projectId, "sourceRunId": "run-001", "stateDigest": "a" * 64,
+                "utterance": "Design the facade", "contextRefs": ["entity:roof"], "contextOffset": 64}
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                   {"method": "POST", "path": "/api/intents/context", "body": body})
+        self.assertEqual(result, self.PACK)
+        self.assertEqual(packs, [{"method": "POST", "base": "http://127.0.0.1:8791", "body": body}])
 
     def test_the_named_source_is_read_once_and_never_carried_into_the_next_turn(self):
         session = self.create()

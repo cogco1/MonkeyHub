@@ -188,7 +188,7 @@ class StateProjectionTests(unittest.TestCase):
             elements["portico-cornice"]["numericFields"], {"height": 0.3}
         )
 
-    def test_drawn_shapes_use_record_inputs_and_refuse_unresolved_host_datums(self) -> None:
+    def test_drawn_shapes_resolve_host_datums_without_producing_geometry(self) -> None:
         elements = {item["elementId"]: item for item in self.payload["elements"]}
         self.assertEqual(elements["portico-base"]["drawnShape"], {
             "profile": [[0, 0], [4, 0], [4, 2], [0, 2]], "height": 0.6,
@@ -196,9 +196,10 @@ class StateProjectionTests(unittest.TestCase):
             "parameterBoundFields": [],
         })
         self.assertIsNone(elements["portico-base"]["drawnShapeReason"])
-        self.assertIsNone(elements["portico-cornice"]["drawnShape"])
-        self.assertIn("host datum portico-base-top", elements["portico-cornice"]["drawnShapeReason"])
-        self.assertIn("modeling panel", elements["portico-cornice"]["drawnShapeReason"])
+        self.assertEqual(elements["portico-cornice"]["drawnShape"]["workPlane"]["origin"], [0, 0.6, 0])
+        self.assertEqual(elements["portico-cornice"]["elevation"]["baseReference"],
+                         {"kind": "element-top", "id": "portico-base", "offset": 0})
+        self.assertIsNone(elements["portico-cornice"]["drawnShapeReason"])
         before = self.repository.read_head()
         with patch("monkeyarch.capabilities.element_producers.produce_rows", side_effect=AssertionError("state reads must not produce geometry")):
             after = self.client.get("/api/state").json()
@@ -933,6 +934,17 @@ class BoundElementTests(unittest.TestCase):
         self.assertEqual(shape["workPlane"]["normal"], [0, 0, -1])
         self.assertEqual(shape["parameterBoundFields"], [], "an elevation binding does not block P")
 
+    def test_an_unrelated_unsupported_producer_does_not_hide_a_drawn_prism(self) -> None:
+        payload = deepcopy(RECORD_PAYLOAD)
+        cornice = next(item for item in payload["entities"] if item["entity_id"] == "portico-cornice")
+        cornice["fields"]["producer"] = "retained-legacy"
+        _, state = self._project(payload)
+        elements = {item["elementId"]: item for item in state["elements"]}
+        self.assertIsNotNone(elements["portico-base"]["drawnShape"])
+        self.assertEqual(elements["portico-base"]["elevation"]["height"], 0.6)
+        self.assertIsNone(elements["portico-cornice"]["drawnShape"])
+        self.assertIn("retained-legacy", elements["portico-cornice"]["drawnShapeReason"])
+
     def test_constrained_drawings_have_an_explicit_local_preview_refusal(self) -> None:
         for change in ("top", "rectangular_cutouts"):
             with self.subTest(constraint=change):
@@ -945,7 +957,7 @@ class BoundElementTests(unittest.TestCase):
                 _, state = self._project(payload)
                 element = next(item for item in state["elements"] if item["elementId"] == "portico-base")
                 self.assertIsNone(element["drawnShape"])
-                self.assertIn("cannot detach", element["drawnShapeReason"])
+                self.assertIn("not above base" if change == "top" else "cannot detach", element["drawnShapeReason"])
 
     def test_a_stale_bound_value_is_left_out_and_named_rather_than_shown(self) -> None:
         _, payload = self._project(_bound_payload(bay_value=99.0))       # stored 99 while 2 * module says 2.4

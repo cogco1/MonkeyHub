@@ -21,7 +21,7 @@ export interface ModelDraftSyncAttempt {
 }
 
 export type ModelDraftSyncApi = Pick<StudioClient,
-  "sketch" | "transform" | "pushPull" | "removeElement" | "startCandidate" | "runtime">;
+  "sketch" | "transform" | "pushPull" | "removeElement" | "editElevation" | "startCandidate" | "runtime">;
 
 export function createModelDraftSyncAttempt(requestId: string = crypto.randomUUID()): ModelDraftSyncAttempt {
   return { requestId, nextCommand: 0, sourceProposalId: null, finalProposalId: null };
@@ -31,9 +31,24 @@ const buildingVector = ([x, y, z]: readonly [number, number, number]): [number, 
 const errorCode = (error: unknown): string | undefined =>
   typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
 
-function propose(command: DraftCommand, source: ModelDraftSource, frame: FrameDto,
+function frameAtCommand(frame: FrameDto, commands: readonly DraftCommand[], index: number): FrameDto {
+  const levels = new Map(frame.levels.map(level => [level.levelId, level]));
+  for (const command of commands.slice(0, index)) {
+    if (command.kind !== "elevation" || command.action !== "set-datum" || !command.levelId) continue;
+    levels.set(command.levelId, { levelId: command.levelId, role: command.name ?? command.levelId,
+      elevation: command.value!, elementsOn: [], closure: [] });
+  }
+  return { ...frame, levels: [...levels.values()] };
+}
+
+async function propose(command: DraftCommand, source: ModelDraftSource, frame: FrameDto,
   sourceProposalId: string | null, api: ModelDraftSyncApi) {
   const base = { ...source, sourceProposalId, elementId: command.elementId };
+  if (command.kind === "elevation") {
+    const { kind: _kind, elementId, ...edit } = command;
+    return api.editElevation({ ...source, sourceProposalId, ...edit,
+      ...(command.action === "set-datum" ? {} : { elementId }) });
+  }
   if (command.kind === "delete") return api.removeElement(base);
   if (command.kind === "sketch") {
     const action = command.action;
@@ -41,7 +56,7 @@ function propose(command: DraftCommand, source: ModelDraftSource, frame: FrameDt
     const level = frame.levels.reduce<FrameDto["levels"][number] | undefined>((nearest, row) =>
       !nearest || Math.abs(row.elevation - elevation) < Math.abs(nearest.elevation - elevation) ? row : nearest, undefined);
     if (!level) throw new Error("The drawing needs an existing base level.");
-    return api.sketch({ ...base, componentId: command.componentId,
+    const proposal = await api.sketch({ ...base, componentId: command.componentId,
       profile: action.profile.map(([x, y]) => [x, y]), height: action.height,
       closed: action.closed ?? true, baseLevel: level.levelId,
       plane: action.plane ? {
@@ -51,6 +66,13 @@ function propose(command: DraftCommand, source: ModelDraftSource, frame: FrameDt
       } : { origin: [0, elevation - level.elevation, 0],
         xAxis: [1, 0, 0], yAxis: [0, 0, 1], normal: [0, 1, 0] },
     });
+    // New upright masses stay free until an explicit reference command binds them.
+    // Other existing sketch producer shapes retain their current placement contract.
+    const normal = action.plane?.normal ?? [0, 0, 1];
+    if (action.height >= 0 && action.closed !== false && Math.abs(normal[2]! - 1) < 1e-9) {
+      return api.editElevation({ ...base, sourceProposalId: proposal.proposalId, action: "detach-base" });
+    }
+    return proposal;
   }
   const action = command.action;
   if (action.kind === "pushPull") {
@@ -74,7 +96,8 @@ async function submit(snapshot: DraftSnapshot, source: ModelDraftSource, frame: 
     let replayed = false;
     while (attempt.nextCommand < snapshot.commands.length) {
       try {
-        const proposal = await propose(snapshot.commands[attempt.nextCommand]!, source, frame, attempt.sourceProposalId, api);
+        const proposal = await propose(snapshot.commands[attempt.nextCommand]!, source,
+          frameAtCommand(frame, snapshot.commands, attempt.nextCommand), attempt.sourceProposalId, api);
         attempt.sourceProposalId = proposal.proposalId;
         attempt.nextCommand += 1;
       } catch (error) {

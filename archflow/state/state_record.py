@@ -1478,7 +1478,7 @@ def _apply_reindex_operator(
 def _apply_component_operator(record: StateRecord, operator: StateRecordOperator) -> StateRecord:
     """Apply one atomic semantic graph edit; refuse dangling survivors."""
 
-    allowed_schemas = {"Component@1", "Element@1", "Type@1", "Reading@1"}
+    allowed_schemas = {"Component@1", "Element@1", "Type@1", "Reading@1", "Level@1"}
     existing_entities = {entity.entity_id: entity for entity in record.entities}
     for entity in operator.entities:
         if entity.schema not in allowed_schemas:
@@ -1533,6 +1533,9 @@ def _apply_component_operator(record: StateRecord, operator: StateRecordOperator
         ) + tuple(item for identifier, item in edits.items() if identifier not in known)
 
     successor = replace(record, **final)
+    if (any(entity.schema == "Level@1" for entity in operator.entities)
+            or any(existing_entities[identifier].schema == "Level@1" for identifier in operator.remove_entity_ids)):
+        project_levels_of(successor)
     # Component membership and expression inputs must also remain resolvable;
     # they cannot be silently detached when another item is removed.
     surviving_entities = {entity.entity_id: entity for entity in successor.entities}

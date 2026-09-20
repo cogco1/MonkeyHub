@@ -61,6 +61,70 @@ class DrawingTests(CandidateTestCase):
             "styleId": "arch400-white", **body,
         })
 
+    def test_model_view_projects_the_exact_step_without_writing_a_drawing(self):
+        from monkeydiagram.drawing_elevation import project_model_axis_elevation
+
+        project_root = self.repository.layout.root
+        before = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
+        for view in ("front", "back", "left", "right", "top"):
+            with self.subTest(view=view), patch(
+                "archflow_studio_api.application.drawings.project_model_axis_elevation",
+                wraps=project_model_axis_elevation,
+            ) as project:
+                response = self.client.get("/api/drawings/model-view", params={**self.model, "view": view})
+                self.assertEqual(response.status_code, 200, response.text)
+                result = response.json()
+                self.assertEqual((result["source"], result["view"]), (self.model, view))
+                self.assertEqual((result["mimeType"], result["representation"]), ("image/png", "orthographic-line-projection"))
+                data = base64.b64decode(result["data"], validate=True)
+                with Image.open(BytesIO(data)) as image:
+                    image.load()
+                    self.assertEqual(image.format, "PNG")
+                    self.assertEqual(image.size, (result["width"], result["height"]))
+                    self.assertLessEqual(max(image.size), 1024)
+                    self.assertLess(image.convert("L").getextrema()[0], 255, "the real model must leave visible lines")
+                self.assertEqual(project.call_count, 1, "one observation projects once")
+        after = {path.relative_to(project_root): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
+        self.assertEqual(after, before, "observation creates no project files or records and does not change HEAD")
+
+    def test_model_view_keeps_the_named_run_after_a_new_candidate_and_bounds_large_models(self):
+        original = self.client.get("/api/drawings/model-view", params=self.model)
+        self.assertEqual(original.status_code, 200, original.text)
+        accepted, job = self.run_candidate("set height to 2000", elementId="portico-base",
+                                           stateDigest=self.model["stateDigest"], sourceRunId=self.model["runId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        candidate = self.client.get(f"/api/candidates/{accepted['candidateId']}").json()
+        newer = next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
+        self.assertNotEqual(newer["stateDigest"], self.model["stateDigest"])
+        response = self.client.get("/api/drawings/model-view", params=newer)
+        self.assertEqual(response.status_code, 200, response.text)
+        result = response.json()
+        self.assertEqual(result["source"], newer)
+        self.assertLessEqual(max(result["width"], result["height"]), 1024)
+        self.assertNotEqual(result["data"], original.json()["data"])
+        with TestClient(create_app(self.settings)) as reopened:
+            retained = reopened.get("/api/drawings/model-view", params=self.model)
+            self.assertEqual(retained.status_code, 200, retained.text)
+            self.assertEqual(retained.json(), original.json(), "cold observation follows the exact requested run")
+            mixed = reopened.get("/api/drawings/model-view", params={**self.model, "runId": newer["runId"]})
+            self.assertEqual(mixed.status_code, 409, mixed.text)
+            self.assertEqual(mixed.json()["code"], "MODEL_SOURCE_MISMATCH")
+
+    def test_model_view_refuses_mismatched_or_tampered_sources_before_projection(self):
+        with patch("archflow_studio_api.application.drawings.project_model_axis_elevation",
+                   side_effect=AssertionError("invalid sources must not be rendered")):
+            for key in ("stateDigest", "assetSha256"):
+                response = self.client.get("/api/drawings/model-view", params={**self.model, key: "0" * 64})
+                self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(self.client.get("/api/drawings/model-view", params={**self.model, "view": "perspective"}).status_code, 422)
+            step_path = self.repository.layout.root / self.step["relativePath"]
+            step_path.write_bytes(step_path.read_bytes() + b"\nchanged-source")
+            response = self.client.get("/api/drawings/model-view", params=self.model)
+            self.assertEqual(response.status_code, 409, response.text)
+            self.assertEqual(response.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
+        self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
+        self.assertEqual(self.repository.read_head(), self.head)
+
     def test_sheet_styles_generate_scaled_pdfs_on_source_run_and_reuse_after_restart(self):
         from pypdf import PdfReader
         from archflow.adapters.cad_execution import project_occt_lines
@@ -505,6 +569,9 @@ class DrawingTests(CandidateTestCase):
         result = self.generate(composed.json())
         self.assertEqual(result.status_code, 409, result.text)
         self.assertEqual(result.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
+        observation = self.client.get("/api/drawings/model-view", params=imported["modelSource"])
+        self.assertEqual(observation.status_code, 409, observation.text)
+        self.assertEqual(observation.json()["code"], "DRAWING_COMPLETE_SOURCE_UNAVAILABLE")
         self.assertEqual(self.client.get("/api/documents", params={"runId": self.model["runId"]}).json()["documents"], [])
         self.assertEqual(self.repository.read_head(), self.head)
 

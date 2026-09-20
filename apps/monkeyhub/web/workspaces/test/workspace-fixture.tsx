@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ProjectWorkspace } from "../src/app/ProjectWorkspace";
+import { ProjectWorkspace, type WorkspaceDesignContext } from "../src/app/ProjectWorkspace";
 import { ErrorBoundary } from "../src/app/ErrorBoundary";
 import { UserPreferencesProvider, usePreferences } from "./TestProviders";
 import "../src/styles.css";
+
+const receiveDesignContext = (context: WorkspaceDesignContext | null) => {
+  Object.assign(window, { __workspaceDesignContext: context });
+};
 
 function Fixture() {
   const query = new URLSearchParams(window.location.search);
@@ -25,7 +29,8 @@ function Fixture() {
       <button type="button" data-testid="workspace-board" onClick={() => setWorkspace("board")}>Board</button>
     </nav>
     <div style={{ flex: 1, minHeight: 0 }}>
-      <ProjectWorkspace workspace={workspace} candidateRunId={candidateRunId} refreshKey={refreshKey} onWorkspaceChange={setWorkspace} />
+      <ProjectWorkspace workspace={workspace} candidateRunId={candidateRunId} refreshKey={refreshKey} onWorkspaceChange={setWorkspace}
+        onDesignContextChange={receiveDesignContext} />
     </div>
   </div>;
 }

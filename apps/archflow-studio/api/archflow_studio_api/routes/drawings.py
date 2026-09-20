@@ -1,15 +1,37 @@
-"""Generate one exact elevation and expose its retained document revision."""
+"""Observe exact models and generate their retained drawing revisions."""
 
-from fastapi import APIRouter
+import base64
+from typing import Literal
+
+from fastapi import APIRouter, Query
 from starlette.requests import Request
 
 from ..application.binding import bound_project
-from ..application.drawings import generate_elevation, generate_sheet
-from ..transport.artifacts import SourceDocumentDto, document_dto, model_source_from
-from ..transport.drawings import DrawingStylesDto, ElevationRequestDto, SheetRequestDto
+from ..application.drawings import generate_elevation, generate_sheet, model_view
+from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
+from ..transport.drawings import DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto
 from ..transport.errors import StudioError
 
 router = APIRouter(tags=["drawings"])
+
+
+@router.get("/drawings/model-view", response_model=ModelViewDto, response_model_by_alias=True)
+def read_model_view(
+    request: Request,
+    run_id: str = Query(alias="runId", min_length=1),
+    state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
+    asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
+    view: Literal["front", "back", "left", "right", "top"] = Query(default="front"),
+) -> ModelViewDto:
+    """Observe an exact complete model without creating a run, drawing or project record.
+
+    The image is a visible-line orthographic projection, not a material render;
+    top is an uncut projection, not a floor plan. Its longest edge is at most 1024 pixels.
+    """
+
+    source = ModelSourceDto(run_id=run_id, state_digest=state_digest, asset_sha256=asset_sha256)
+    png, width, height = model_view(bound_project(request.app.state), model_source=model_source_from(source), view=view)
+    return ModelViewDto(source=source, view=view, data=base64.b64encode(png).decode("ascii"), width=width, height=height)
 
 
 @router.get("/drawings/styles", response_model=DrawingStylesDto, response_model_by_alias=True)

@@ -76,7 +76,7 @@ import { usePreferences } from "../features/settings/preferences";
 import type { DirectModelAction, DirectModelTool } from "../features/stage/ModelEditPanel";
 import type { PushPullTarget } from "../workspaces/monkeyarch/interactionSession";
 import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
-  redoDraft, specFromDrawnShape, undoDraft, snapshotsEquivalent,
+  redoDraft, specFromDrawnShape, undoDraft, snapshotsEquivalent, elevationOf, elevationFromProjection,
   type DraftCommand, type DraftObject, type DraftSnapshot, type ModelDraftHistory,
 } from "../features/stage/modelDraft";
 import { createModelDraftSyncAttempt, syncModelDraft,
@@ -213,7 +213,14 @@ interface HomeArtifacts extends HomeModel {
   readonly referenceRunId: string;
 }
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest }: {
+export type WorkspaceDesignContext = {
+  projectId: string;
+  designContext: { sourceRunId: string | null; stateDigest: string; sourceStageRef?: string | null;
+    targetComponentId?: string; elementId?: string } | null;
+  unavailableReason: "unsaved" | "loading" | "unavailable" | null;
+};
+
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
@@ -227,9 +234,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   refreshKey?: number;
   onOpenBoard?: () => void;
   onChatRequest?: () => void;
+  onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }) {
   const studio = useStudio();
   const t = useT();
+  const viewportOpened = useRef(active);
+  viewportOpened.current ||= active;
   const { developerMode } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
@@ -682,6 +692,37 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // local work; neither export discovery nor another preview may replace it.
   localEditingRef.current = localModel !== null && (localModel.history.index > 0 ||
     localModel.pending !== null || !snapshotsEquivalent(draftSnapshot!, localModel.synced));
+  // Chat continues the verified editing base. Browsing another retained model
+  // never selects it, and local geometry cannot impersonate a saved revision.
+  const unsavedChatDraft = !!localModel && unsynced(localModel) || [...localModels.current.values()].some((model) =>
+    model.source.projectId === project?.projectId && model.source.stateDigest === projection?.stateDigest &&
+    model.source.sourceRunId === (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId) && unsynced(model));
+  const chatContext = useMemo<WorkspaceDesignContext | null>(() => {
+    const projectId = project?.projectId ?? binding?.projectId;
+    if (!projectId) return null;
+    const unavailableReason = unsavedChatDraft ? "unsaved" : changingBase || session.status === "loading" ? "loading"
+      : baseError || !projection?.stateDigest || sourceLabel === LOCAL_SOURCE_LABEL ? "unavailable" : null;
+    const designContext: WorkspaceDesignContext["designContext"] = unavailableReason || !projection?.stateDigest ? null : {
+      sourceRunId: projection.referenceRunSource === "none" ? null : projection.referenceRun.runId,
+      stateDigest: projection.stateDigest, sourceStageRef: projection.sourceStageRef,
+    };
+    // The catalog fast path also labels verified exported objects "local";
+    // only ids present in this exact saved projection can cross into chat.
+    const retainedPick = picked?.status === "resolved" && picked.sourceState === "current" ||
+      picked?.status === "local" && picked.sourceState === designContext?.stateDigest;
+    if (designContext && retainedPick && picked &&
+        viewedProjection?.referenceRun.runId === designContext.sourceRunId && viewedProjection.stateDigest === designContext.stateDigest && picked.componentId && picked.elementId &&
+        projection?.elements.some((element) => element.elementId === picked.elementId && element.componentId === picked.componentId)) {
+      designContext.targetComponentId = picked.componentId;
+      designContext.elementId = picked.elementId;
+    }
+    return { projectId, designContext, unavailableReason };
+  }, [project?.projectId, binding?.projectId, projection, changingBase, session.status, baseError, sourceLabel,
+    unsavedChatDraft, picked, viewedProjection]);
+  useEffect(() => {
+    onDesignContextChange?.(chatContext);
+    return () => onDesignContextChange?.(null);
+  }, [onDesignContextChange, chatContext]);
   // The Hub keeps this model workspace mounted while the Board is visible.
   const returnToBoard = onReturnToBoard && documentView.open ? leaveToBoard : undefined;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
@@ -694,8 +735,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       spec: element.drawnShape ? specFromDrawnShape(element.drawnShape) : null,
       originalObjectNames: semanticCatalog?.elements.find(row => row.elementId === element.elementId)?.objectNames ?? [],
       created: false, parameterBoundFields: element.drawnShape?.parameterBoundFields,
+      elevation: elevationFromProjection(element.elevation),
     }));
-    const history = createModelDraft(objects);
+    const history = createModelDraft(objects, draftProjection.levels ?? []);
     const session: LocalModelSession = { history, source: draftSource, synced: currentDraft(history),
       pending: null, busy: false, error: null };
     localModels.current.set(draftKey, session);
@@ -1275,7 +1317,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     displayedProjectRef.current = projectId;
   }, [session.status, project?.projectId, missingChosenModel]);
   useEffect(() => {
-    if (documentIntentStatus !== "done" || initialRunId) return;
+    if (!active || documentIntentStatus !== "done" || initialRunId) return;
     if (autoLoadedRef.current) return;
     // The first export may arrive while the architect is still drawing.
     // Local Sync owns its adoption, with the same input guard as later runs.
@@ -1284,7 +1326,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
     autoLoadedRef.current = true;
     showHome(false);
-  }, [documentIntentStatus, homeArtifacts, loadedArtifacts, showHome, initialRunId]);
+  }, [documentIntentStatus, homeArtifacts, loadedArtifacts, showHome, initialRunId, active]);
 
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
@@ -1809,7 +1851,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const candidateRequest = useRef(candidateRequestKey);
   candidateRequest.current = candidateRequestKey;
   useEffect(() => {
-    if (!initialRunId || session.status !== "ready" || !project || !viewportRef.current) return;
+    if (!active || !initialRunId || session.status !== "ready" || !project || !viewportRef.current) return;
     const projectId = project.projectId;
     const request = candidateRequestKey;
     const controller = new AbortController();
@@ -1834,7 +1876,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }).catch((cause) => { if (isCurrent()) setArtifactError(asStudioApiError(cause)); });
     return () => { live = false; controller.abort(); };
-  }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer]);
+  }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
@@ -2290,6 +2332,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const pickedShape = (picked?.status === "resolved" || picked?.status === "local") && picked.elementId
     ? viewedProjection?.elements.find((row) => row.elementId === picked.elementId) : null;
   const localPickedObject = picked?.elementId ? draftSnapshot?.objects.get(picked.elementId) : null;
+  const elevationObjects = useMemo<readonly DraftObject[]>(() => draftSnapshot ? [...draftSnapshot.objects.values()] :
+    (draftProjection?.elements ?? []).map(element => ({ elementId: element.elementId, componentId: element.componentId,
+      spec: element.drawnShape ? specFromDrawnShape(element.drawnShape) : null,
+      elevation: elevationFromProjection(element.elevation), parameterBoundFields: element.drawnShape?.parameterBoundFields,
+      created: false, originalObjectNames: [] })), [draftSnapshot, draftProjection]);
+  const elevationObject = (picked?.status === "resolved" || picked?.status === "local")
+    ? elevationObjects.find(object => object.elementId === picked.elementId && elevationOf(object)) : null;
   const pushPullTarget = useMemo<PushPullTarget | null>(() => {
     if (!picked?.elementId) return null;
     if (localPickedObject) return localPickedObject.spec && !localPickedObject.deleted && localPickedObject.spec.closed !== false
@@ -2875,6 +2924,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     !(session.status === "failed" && session.error.code === "EDITING_PROJECT_CHANGED");
   const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");
 
+  if (!viewportOpened.current) return null;
+
   if ((session.status === "failed" || missingChosenModel) && !canOpenDocuments) {
     const error = session.status === "failed" ? session.error
       : artifacts.status === "failed" ? artifacts.error : baseError;
@@ -3043,6 +3094,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
+              elevation: elevationObject && draftKey ? { object: elevationObject, objects: elevationObjects,
+                levels: draftSnapshot?.levels ?? draftProjection?.levels ?? [], onApply: command => {
+                  if (modelNavigationBusy) return false;
+                  try { commitLocalCommand(command); setDirectError(null); return true; }
+                  catch (cause) { setDirectError(asStudioApiError(cause).detail); return false; }
+                } } : null,
             }}
             viewportRef={viewportRef}
             message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : modelRunPending !== null ? t("stage.sketch.busy") : viewerMessage}
