@@ -3,22 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-123",
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/123",
-      "stream": "research",
-      "status": "active",
-      "goal": "Review the callable evaluator slice and correct reproduced numerical boundary failures; replay traceable benchmark candidates without product or persistence changes.",
-      "depends_on": [],
-      "branch": "codex/123-evaluator-review",
-      "worktree": "codex-worktrees/5203/ARCHFLOW_V4",
-      "base_ref": "3b9c6c80e21c34ca74a5e6709397f0bf7757b561",
-      "contributor": "Codex",
-      "reviewer": null,
-      "modules": ["state.massing_metrics", "state.record"],
-      "write_scope": ["labs/candidate_evaluation/"],
-      "handoff": "Follow-up to PR #178 for coordinator review; preserve the original branch. No production ingestion, search, allocator or preference implementation."
-    },
-    {
       "id": "GH-137",
       "stream": "interaction",
       "status": "blocked",
