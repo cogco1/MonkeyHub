@@ -73,7 +73,7 @@
         {
           "id": "drawing-pages",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "active",
+          "status": "review",
           "branch": "codex/185-drawing-page-read",
           "worktree": "workspace/worktrees/codex-185-drawing-page-read",
           "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
@@ -95,7 +95,7 @@
             "docs/SYSTEM_MAP.md"
           ],
           "depends_on": [],
-          "handoff": "Reuse registered document pages and the existing transient Board export renderer for bounded native MCP PNG reads. No project writes or UI changes. Root integration owns regenerated clients and main/desktop delivery."
+          "handoff": "Registered-page PNG read and exact revision checks are implemented and behavior-tested. Root integration regenerates the existing client for optional BoardExportRequestDto.maxEdge, reviews/merges the PR, then removes this lane on delivery. No UI or project persistence change."
         }
       ]
     },

@@ -35,7 +35,7 @@ class BoardExportPageDto(BaseModel):
     run_id: str = Field(alias="runId", min_length=1)
     asset_sha256: str = Field(alias="assetSha256", pattern=r"^[0-9a-f]{64}$")
     revision_ref: str | None = Field(alias="revisionRef", default=None)
-    page_index: int = Field(alias="pageIndex", ge=0)
+    page_index: int = Field(alias="pageIndex", ge=0, strict=True)
 
 
 class BoardExportRequestDto(BaseModel):
@@ -47,6 +47,8 @@ class BoardExportRequestDto(BaseModel):
     pages: list[BoardExportPageDto] = Field(min_length=1, max_length=100)
     format: Literal["merged-pdf", "page-pdfs", "png", "jpeg"]
     zip: bool = False
+    max_edge: int | None = Field(default=None, alias="maxEdge", ge=1, le=2048, strict=True,
+                                 description="Optional longest pixel edge for transient PNG/JPEG previews; omitted exports retain 144 dpi.")
 
 
 def board_dto(scene: BoardScene) -> BoardDto:

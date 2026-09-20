@@ -1713,8 +1713,10 @@ def _stop_process(process: subprocess.Popen) -> None:
 
 
 _READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
-_POST = re.compile(r"^/api/(project/modeling|intents/context|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
+_POST = re.compile(r"^/api/(project/modeling|intents/context|board/export|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
 _WRITE = re.compile(r"^/api/(board|document-annotations)$")
+_PAGE_IMAGE_MAX_EDGE = 2048
+_PAGE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -1729,7 +1731,7 @@ def _url(value: str) -> str:
     return f"http://{url.netloc}"
 
 
-def _request_json(base: str, path: str, method: str = "GET", body=None, timeout: float = 180, *, headers=None):
+def _request_json(base: str, path: str, method: str = "GET", body=None, timeout: float = 180, *, headers=None, png: bool = False):
     """One call to a bound service, with the caller's own time limit on it.
 
     ``timeout`` is what makes a deadline real: a call that has run out of time
@@ -1747,6 +1749,8 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
     })
     try:
         with build_opener(ProxyHandler({}), _NoRedirect()).open(request, timeout=timeout) as response:
+            if png:
+                return _page_image(response)
             return json.load(response)
     except HTTPError as exc:
         code = "CHAT_TOOL_FAILED"
@@ -1759,6 +1763,45 @@ def _request_json(base: str, path: str, method: str = "GET", body=None, timeout:
         except (ValueError, AttributeError):
             detail = "The application refused the request."
         raise HubFailure(exc.code, code, _redact(str(detail))[:1200]) from exc
+
+
+def _page_image(response) -> dict:
+    """Decode a bounded PNG from the registered-page owner, never a file path."""
+    from io import BytesIO
+    from PIL import Image
+
+    if response.headers.get("Content-Type", "").split(";")[0].strip().lower() != "image/png":
+        raise HubFailure(502, "CHAT_IMAGE_INVALID", "The registered page export did not return image/png.")
+    data = response.read(_PAGE_IMAGE_MAX_BYTES + 1)
+    if len(data) > _PAGE_IMAGE_MAX_BYTES:
+        raise HubFailure(413, "CHAT_IMAGE_TOO_LARGE", "The PNG exceeds 4 MiB. Read the same page with a smaller maxEdge.")
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if image.format != "PNG" or max(image.size) > _PAGE_IMAGE_MAX_EDGE:
+                raise ValueError("not a bounded PNG")
+            image.load()
+            width, height = image.size
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise HubFailure(502, "CHAT_IMAGE_INVALID", "The page export must be a valid PNG with neither edge above 2048 pixels.") from exc
+    return {"mimeType": "image/png", "width": width, "height": height, "data": base64.b64encode(data).decode("ascii")}
+
+
+def _read_drawing_page(base: str, body) -> dict:
+    pages = body.get("pages") if isinstance(body, dict) else None
+    if (not isinstance(pages, list) or len(pages) != 1 or not isinstance(pages[0], dict)
+            or body.get("format") != "png" or body.get("zip", False) is not False):
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Read one registered page with format=png and zip=false.")
+    page = pages[0]
+    if set(page) != {"runId", "assetSha256", "revisionRef", "pageIndex"}:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "Copy runId, assetSha256, revisionRef (including null), and zero-based pageIndex from GET /api/documents or the generated drawing result.")
+    max_edge = body.get("maxEdge", _PAGE_IMAGE_MAX_EDGE)
+    if type(max_edge) is not int or not 1 <= max_edge <= _PAGE_IMAGE_MAX_EDGE:
+        raise HubFailure(422, "CHAT_TOOL_INVALID", "maxEdge must be an integer from 1 to 2048.")
+    # The existing owner verifies the digest, exact revision and page before
+    # rasterizing in memory. This POST is a read and never enters admission.
+    picture = _request_json(base, "/api/board/export", "POST", {**body, "maxEdge": max_edge}, png=True)
+    return {**picture, "source": {"projectId": body["projectId"], **page},
+            "representation": "registered-document-page", "annotationsIncluded": False}
 
 
 def _together(calls: Mapping[str, tuple], timeout: float, *, allow_partial: bool = False) -> dict:
@@ -2124,7 +2167,8 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
     if "producer" in arguments and name != "studio_schema":
         raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
-    if "operationId" in arguments and (name != "studio_request" or method == "GET"):
+    if "operationId" in arguments and (name != "studio_request" or method == "GET"
+                                      or (method == "POST" and parsed.path == "/api/board/export")):
         raise HubFailure(422, "CHAT_TOOL_INVALID", "operationId identifies a Studio mutation request.")
     if "awaitSeconds" in arguments and name != "studio_request":
         # Only one tool can wait for anything. Quietly dropping the option here
@@ -2227,9 +2271,13 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         body = dict(body)
         if body.get("projectId", session["projectId"]) != session["projectId"]:
             raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "A tool cannot select another project.")
-        if parsed.path == "/api/proposals":
+        if parsed.path in {"/api/proposals", "/api/board/export"}:
             body["projectId"] = session["projectId"]
     comparison = body or {}
+    if method == "POST" and parsed.path == "/api/board/export":
+        if parsed.query:
+            raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")
+        return _read_drawing_page(base, body)
     if wait is not None and checkpoint:
         proposal = _request_json(base, parsed.path.removesuffix("/candidate"))
         comparison = {"sourceRunId": proposal.get("sourceRunId")}
@@ -2362,6 +2410,7 @@ def _mcp(hub: str, chat_id: str) -> None:
         "Read modelSource from the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
+        'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}. Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision), pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.',
         "For page edits, read existing annotations and use baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
         "Board arranges document references; generated drawings are saved by their drawing API.",
         "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
@@ -2402,10 +2451,11 @@ def _mcp(hub: str, chat_id: str) -> None:
                 try:
                     value = call_tool(hub, chat_id, params.get("name", ""), params.get("arguments", {}))
                     arguments = params.get("arguments", {})
-                    model_view = (params.get("name") == "studio_request"
-                                  and str(arguments.get("method", "GET")).upper() == "GET"
-                                  and urlsplit(arguments.get("path", "")).path == "/api/drawings/model-view")
-                    if model_view:
+                    image_read = (params.get("name") == "studio_request"
+                                  and (str(arguments.get("method", "GET")).upper(),
+                                       urlsplit(arguments.get("path", "")).path) in {
+                                           ("GET", "/api/drawings/model-view"), ("POST", "/api/board/export")})
+                    if image_read:
                         metadata = {key: item for key, item in value.items() if key != "data"}
                         result = {"content": [
                             {"type": "text", "text": _redact(json.dumps(metadata, ensure_ascii=False))},
