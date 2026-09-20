@@ -294,6 +294,12 @@ export type BoardExportRequestDto = {
      * Zip
      */
     zip?: boolean;
+    /**
+     * Maxedge
+     *
+     * Optional longest pixel edge for transient PNG/JPEG previews; omitted exports retain 144 dpi.
+     */
+    maxEdge?: number | null;
 };
 
 /**
