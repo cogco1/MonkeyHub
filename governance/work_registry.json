@@ -3,6 +3,30 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-204",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Deliver the measured A/B event-triage lab and replaceable Jev adapter with explicit GH-205 access gap; independent review and any future real C holdout comparison remain separate from production wake policy or accepted project mutation.",
+      "depends_on": [
+        "GH-195",
+        "GH-183"
+      ],
+      "branch": "codex/204-205-event-gating-lab",
+      "worktree": ".",
+      "base_ref": "27b8944c",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "adapters.cad_execution",
+        "state.record",
+        "monkeymonitor"
+      ],
+      "write_scope": [
+        "labs/event_gating/"
+      ],
+      "handoff": "A/B: 28/28 correct dispositions per condition; wakes28->20. No production policy change. Jev adapter and fault tests ready; no real Jev request without existing credentials. Dependencies PR198@72f4248 and PR202@f4399f4 retain their histories. See labs/event_gating/results.md."
+    },
+    {
       "id": "GH-125",
       "issue": "https://github.com/cogco1/MonkeyHub/issues/125",
       "status": "ready",
