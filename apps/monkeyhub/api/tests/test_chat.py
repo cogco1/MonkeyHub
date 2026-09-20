@@ -649,10 +649,15 @@ class ChatTests(unittest.TestCase):
                     # in the prompt sent to the CLI on every native-session turn.
                     for duplicate in ("/api/proposals/sketch", "/api/capabilities", "awaitSeconds"):
                         self.assertNotIn(duplicate, envelope)
-                    for boundary in ("Project files are read-only", "Do not call another model",
+                    for boundary in ("Project files are read-only", "the user's keep conditions",
                                      "do not claim approval, issuance or printer upload",
                                      "Do not switch Hub configuration"):
                         self.assertIn(boundary, envelope)
+                    self.assertIn("generate and inspect a candidate", envelope)
+                    self.assertIn("then revise as needed", envelope)
+                    for restriction in ("Compose the whole requested modeling chain", "Ask at most one",
+                                        "Do not export a candidate after every form"):
+                        self.assertNotIn(restriction, envelope)
 
     def test_codex_continues_native_session_after_hub_reopen(self):
         before = {str(path.relative_to(self.project)): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
@@ -998,8 +1003,8 @@ class ChatTests(unittest.TestCase):
         self.assertIn("P036", call["prompt"])
         # Per-turn guidance keeps the edit principle; endpoint recipes live in
         # the connected action contract, checked by the tests below.
-        self.assertIn("existing numeric control", call["prompt"])
-        self.assertIn("documented modification flow instead of drawing it again", call["prompt"])
+        self.assertIn("existing controls", call["prompt"])
+        self.assertIn("dependencies for linked edits", call["prompt"])
 
     def _studio_tool_path(self, base, path, method, headers, session):
         """Verify the Hub admission boundary before routing its fake Studio call."""
@@ -1077,12 +1082,12 @@ class ChatTests(unittest.TestCase):
         for stated in ("/api/proposals/sketch", "stateDigest", "componentId", "elementId",
                        "profile", "height", "baseLevel", "metres", "[x, z]",
                        "/api/proposals/{id}/candidate", "GET /api/state/frame", "/api/project/modeling",
-                       "GET /api/documents?runId=", "MonkeyDiagram's documents list automatically",
-                       "PUT /api/document-annotations", "baseRevisionSha256",
-                       "GET /api/drawings/styles", "POST /api/drawings/sheets",
-                       "Do not use PUT /api/board to save a generated drawing"):
+                       "GET /api/documents?runId=", "MonkeyDiagram's documents list",
+                        "/api/document-annotations", "baseRevisionSha256",
+                        "GET /api/drawings/styles", "POST /api/drawings/sheets",
+                        "/api/proposals/elevation"):
             self.assertIn(stated, request_tool["description"], stated)
-        self.assertIn("only for an action", schema_tool["description"])
+        self.assertIn("clarify a field or correct a request", schema_tool["description"])
 
         def request(base, path, method="GET", body=None, timeout=None, *, headers=None):
             path = self._studio_tool_path(base, path, method, headers, session)
@@ -1098,9 +1103,10 @@ class ChatTests(unittest.TestCase):
                 return {"projectId": "chat-project", "projectDir": str(self.project)}
             if path == "/openapi.json":
                 return {"paths": {"/api/project/modeling": {"post": {"summary": "initialize"}},
-                                  "/api/documents": {"get": {"summary": "list drawings"}},
-                                  "/api/proposals/sketch": {"post": {"summary": "draw"}},
-                                  "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
+                                   "/api/documents": {"get": {"summary": "list drawings"}},
+                                   "/api/proposals/sketch": {"post": {"summary": "draw"}},
+                                   "/api/proposals/elevation": {"post": {"summary": "edit elevation"}},
+                                   "/api/options/{option_id}/select": {"post": {"summary": "select"}}},
                         "components": {"schemas": {}}}
             return {"method": method, "body": body, "path": path}
 
@@ -1122,6 +1128,20 @@ class ChatTests(unittest.TestCase):
             })
             self.assertEqual(drawn["path"], "/api/proposals/sketch")
             self.assertEqual(drawn["body"]["height"], 3.2)
+            elevation_body = {"stateDigest": "a" * 64, "sourceRunId": "candidate-before",
+                              "sourceStageRef": "stage-base", "sourceProposalId": "proposal-before",
+                              "elementId": "drawn-1", "action": "set-base", "value": 2,
+                              "keep": ["entity:porch"]}
+            raised = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                "method": "POST", "path": "/api/proposals/elevation", "body": elevation_body,
+            })
+            self.assertEqual((raised["path"], raised["body"]), ("/api/proposals/elevation", elevation_body))
+            with self.assertRaises(HubFailure) as wrong_elevation_project:
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {
+                    "method": "POST", "path": "/api/proposals/elevation",
+                    "body": {**elevation_body, "projectId": "other"},
+                })
+            self.assertEqual(wrong_elevation_project.exception.error.code, "CHAT_PROJECT_MISMATCH")
             documents = chat.call_tool(self.store.hub_url, session.id, "studio_request", {
                 "method": "GET", "path": "/api/documents?runId=studio-drawing-1",
             })
@@ -1159,7 +1179,8 @@ class ChatTests(unittest.TestCase):
                 self.assertEqual(refused.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
             # A documented template can be read as a schema, which is what an
             # exploring turn used to fail on.
-            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling"):
+            for template in ("/api/options/{option_id}/select", "/api/proposals/sketch", "/api/project/modeling",
+                             "/api/proposals/elevation"):
                 answer = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
                                         {"method": "POST", "path": template})
                 self.assertEqual(answer["method"], "POST")
@@ -1278,7 +1299,7 @@ class ChatTests(unittest.TestCase):
             self.assertIn("loft", unavailable.exception.error.detail)
             self.assertIn("prism", unavailable.exception.error.detail)
 
-    def test_changing_something_starts_at_the_capability_index_not_at_a_guess(self):
+    def test_existing_controls_and_candidate_continuation_are_discoverable(self):
         """One short pointer, and the bound path behind it — not a second hand-written contract."""
 
         session = self.create()
@@ -1287,22 +1308,14 @@ class ChatTests(unittest.TestCase):
         for stated in ("GET /api/capabilities/candidate.modify_existing?target=",
                        "&elementId=<the element>", "GET /api/capabilities?goal=",
                        "POST /api/capabilities/{capabilityId}/run", "awaitSeconds: 60",
-                       # The waiting rule the tool's own description carries, which is
-                       # what a new stdio bridge reads without the Hub being restarted.
-                       "omit yield_time_ms so it keeps its 30000 ms default",
-                       "do not loop short functions.wait calls",
                        "keep is a list", "never send the request again",
-                       "No match in the index is not a verdict"):
+                       "GET /api/state?run=<candidateId>", "original baseStateDigest",
+                       "Multiple observation and revision cycles"):
             self.assertIn(stated, description, stated)
-        # A change to something already known must not be made to walk the
-        # index and the state again first.
-        self.assertIn("do not read the index", description)
-        self.assertNotIn("ask the capability index first", description)
-        # The modify path is described once. The old hand-written body for it
-        # is gone, so there are not two editable descriptions of one action.
-        self.assertNotIn("CHANGE ONE EXISTING NUMBER", description)
-        self.assertNotIn("targetComponentId, optional elementId", description)
-        # What the fixed massing chain and the compare parameter say is kept.
+        for restriction in ("Never generate an intermediate", "READ ONCE", "do not read the index",
+                            "yield_time_ms", "functions.wait"):
+            self.assertNotIn(restriction, description)
+        # The quick sketch and exact-source comparison remain discoverable.
         self.assertIn("/api/proposals/sketch", description)
         self.assertIn("compare?against=<runId>", description)
 

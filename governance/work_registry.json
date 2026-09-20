@@ -460,7 +460,31 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": []
+      "lanes": [
+        {
+          "id": "design-observation-prompt",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/183",
+          "status": "review",
+          "branch": "codex/183-design-observation-prompt",
+          "worktree": "workspace/worktrees/codex-183-design-observation-prompt",
+          "base_ref": "32fc10e1024a42ff9e8fb3a384686b7abc3a9016",
+          "contributor": "Codex",
+          "reviewer": "Repository owner",
+          "modules": [
+            "hub.shell",
+            "studio.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md"
+          ],
+          "depends_on": [],
+          "handoff": "Review the bounded prompt/schema simplification and existing elevation MCP exposure. Chat and elevation tests, generated client and architecture checks passed locally. Issue #183 remains open for selected-source context, actual visual feedback and real design-loop acceptance; this lane does not claim those paths."
+        }
+      ]
     },
     {
       "id": "P105",

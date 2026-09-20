@@ -208,7 +208,7 @@ class SketchPrismRequestDto(SketchActionDto):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",
@@ -229,7 +229,7 @@ class SketchBatchRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",
@@ -250,7 +250,7 @@ class TransformElementRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
@@ -285,7 +285,7 @@ class PushPullRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
@@ -363,7 +363,7 @@ class DeleteElementRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",
@@ -434,7 +434,7 @@ class ProposalRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",

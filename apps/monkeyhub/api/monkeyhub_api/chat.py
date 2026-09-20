@@ -1356,24 +1356,17 @@ class ChatStore:
                 session = self._sessions[session_id]
                 prompt = (
                     "You are the assistant in MonkeyHub. Reply in the user's language. "
-                    "Use the connected monkeyhub tools for architectural changes and queries. "
-                    "Project files are read-only: never edit project.json, HEAD, input, runs or records directly. "
-                    "The studio_request description already states the usual actions, their fields and their units: "
-                    "follow it and call them. Read a schema only for something it does not cover. "
-                    "Compose the whole requested modeling chain as in-memory proposals using sourceProposalId, "
-                    "then execute the final proposal once as a Stage checkpoint candidate. Do not export a candidate after every form. "
-                    "Ordinary design actions use these connected contracts; source and environment searches are only for "
-                    "a requested code investigation or an actual tool failure that needs diagnosis. "
-                    "For an existing numeric control, use its documented modification flow instead of drawing it again. "
-                    "Author shared dimensions and dependencies through semanticEdit when the design needs linked changes; "
-                    "later change the retained parameters together rather than recalculate and redraw every dependent object. "
-                    "Read only what you do not already know from this conversation; do not re-read to confirm "
-                    "what you have just been told. "
-                    "Choose reasonable, reversible defaults for sizes nobody stated rather than stopping to ask, "
-                    "and say plainly which numbers you chose. Ask at most one short question, and only when the answer "
-                    "would change the design itself — never for internal ids, digests or payload shapes, which are yours to read. "
-                    "Do not call another model via /api/intents. "
-                    "If an action fails, say what it refused and what can be done now; never describe a candidate that was not made. "
+                    "Develop the user's design through reversible candidates. Batch steps whose outcome is already clear; "
+                    "generate and inspect a candidate when the next design decision depends on its result, then revise as needed. "
+                    "Check the actual result against the user's spatial intent before reporting completion; distinguish "
+                    "geometry readback from visual inspection. Choose suitable modeling methods and reasonable reversible "
+                    "defaults, stating material assumptions. Ask when a design choice needs the user's judgment. "
+                    "Use the connected monkeyhub tools for project queries and changes: studio_request lists entry points "
+                    "and studio_schema supplies their contracts on demand. Refresh evidence when it has changed or is unclear. "
+                    "Preserve the exact editing base, object identity and the user's keep conditions; use existing controls "
+                    "and dependencies for linked edits. Correct recoverable errors and continue; explain a concrete limit "
+                    "when the available tools cannot preserve the requested design meaning. "
+                    "Project files are read-only: use Studio/P036 for changes rather than editing project.json, HEAD, input, runs or records. "
                     "Show reversible candidates; do not claim approval, issuance or printer upload. "
                     f"This conversation is bound to project {session.projectId} at {session.projectDir}. "
                     + (
@@ -1688,7 +1681,7 @@ def _stop_process(process: subprocess.Popen) -> None:
 
 
 _READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|drawings/styles|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
-_POST = re.compile(r"^/api/(project/modeling|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
+_POST = re.compile(r"^/api/(project/modeling|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
 _WRITE = re.compile(r"^/api/(board|document-annotations)$")
 
 
@@ -1850,8 +1843,8 @@ _CONTEXT_NOTE = (
     "move; request is the capability's own body already holding those current values — a template to "
     "edit, never a change that was asked for or approved. contextTier, escalation, context and "
     "preflight are how the record reads these words and what it already answers about them. "
-    "Because these are here, the usual state and schema lookups about this object are unnecessary; "
-    "read further only for something they do not cover."
+    "Use this context for the facts it covers; refresh it when the source changes and read further "
+    "when a decision needs more evidence."
 )
 
 
@@ -2229,7 +2222,7 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     if wait is None:
         if method == "POST" and parsed.path in {
             "/api/proposals", "/api/proposals/sketch", "/api/proposals/transform",
-            "/api/proposals/push-pull", "/api/proposals/delete",
+            "/api/proposals/push-pull", "/api/proposals/delete", "/api/proposals/elevation",
         } and isinstance(started, dict) and "proposalId" in started:
             # The client just authored these edits. Echoing both the edits and
             # their full operator makes each model continuation read them twice.
@@ -2277,153 +2270,76 @@ def _mcp(hub: str, chat_id: str) -> None:
             "operationId": {"type": "string", "format": "uuid", "description": "Optional stable identity for this mutation. Reusing it returns the same admission/result and never executes the request twice. Different requests must use different ids."},
             "awaitSeconds": {
                 "type": "integer", "minimum": 1, "maximum": _AWAIT_MAX_S,
-                "description": "This tool's own option, beside method/path/body and never inside the "
-                               "body; 60 suits an ordinary change. It is not an execution wrapper's "
-                               "yield_time_ms: through functions.exec, omit yield_time_ms so it keeps its "
-                               "30000 ms default, never set 1000, and never loop short functions.wait "
-                               "calls. For the final POST /api/proposals/{id}/candidate (no body; the proposal supplies its source), "
-                               "or POST " + _FINISHABLE + ", whose body must name sourceRunId: wait this many seconds, counted from when that action is "
-                               "accepted, then answer with the job, the candidate and the comparison "
-                               "against the run it was made from. Running out of time answers with the job "
-                               "and candidate to read; the request is never sent twice. Any other path is "
-                               "refused, so an answer never looks waited-for when it was not.",
+                "description": "Wait for one submitted change, in seconds; 60 suits an ordinary change. "
+                               "Place beside method/path/body. Supported by POST /api/proposals/{id}/candidate "
+                               "(no body; source comes from the proposal), or POST " + _FINISHABLE +
+                               " (body requires sourceRunId). Returns job, candidate and source comparison when available. "
+                               "On timeout, continue the returned reads; do not resubmit the mutation. Other paths do not support waiting.",
             },
         }, "required": ["method", "path"], "additionalProperties": False,
     }
-    # What the connected CLI is told it can do. The common actions are stated
-    # here with their fields and units so that making something is a call, not
-    # an exploration: a schema lookup is for what this does not cover.
+    # Keep common actions usable without a schema round trip. Detailed producer
+    # contracts remain discoverable on demand; the agent chooses observation points.
     modelling = chr(10).join([
-        "Call the bound project's existing Studio API. Lengths are metres, plan points are [x, z] pairs,",
-        "and a height rises from the base the request names.",
+        "Use the bound project's Studio API. Lengths are metres; plan points are [x, z], with Y up.",
+        "Read studio_schema for action details or producer inputs as needed.",
         "",
-        "MAKE FORMS (simple independent shapes use sketch; linked dimensions use semanticEdit below):",
-        "1. GET /api/state -> stateDigest, components[].componentId, elements[].",
-        "   If this project has no modeling component yet, POST /api/project/modeling with {projectId}",
-        "   prepares its empty modeling base through the project API; then read the state again.",
-        "   This creates no geometry or candidate and never replaces existing design inputs.",
-        "2. GET /api/state/frame -> levels[].levelId, for the base to stand on.",
-        "3. Plan the requested forms together. Prefer ONE POST /api/proposals/sketch with",
-        "   {stateDigest, sketches: [{componentId, elementId, profile: [[x,z], ...], height, baseLevel}, ...]}.",
-        "   The items run in order in memory, so a later item may stack on an earlier item with baseDatum.",
-        "   sourceRunId/sourceStageRef/sourceProposalId and keep belong at the top level. A failed batch saves nothing.",
-        "   For just one form the existing {stateDigest, componentId, elementId, profile, height, baseLevel} body also works.",
-        "   Use baseDatum: '<elementId>-top' instead of baseLevel to stack on something already there.",
-        "   elementId is yours to choose; sending the same elementId again changes that outline or height",
-        "   instead of adding another form. Optional: summary, keep (refs this must not change), sourceRunId.",
-        "4. Continue the WHOLE requested modeling chain in memory: pass the last proposalId as sourceProposalId",
-        "   on each further sketch/transform/push-pull/delete/numeric proposal. Keep stateDigest equal to the first",
-        "   proposal's baseStateDigest; sourceRunId and sourceStageRef are inherited. GET /api/proposals/{id}",
-        "   reads the accumulated changes. Stacking with baseDatum can refer to forms created earlier in this chain.",
-        "5. Only after every requested change is composed, POST /api/proposals/{id}/candidate ONCE using the last proposalId,",
-        "   with awaitSeconds: 60 beside method/path and no body. This saves one final Stage checkpoint candidate.",
-        "   It remains reversible and unaccepted; do not accept or issue a Stage. Never generate an intermediate",
-        "   candidate just to continue the next step. If the wait runs out, follow its job/candidate reads; never send the request again.",
-        "   A completed result includes objects with actual retained bbox.min/max, lengthUnit and upAxis; use those to report sizes.",
-        "   A first candidate has compare: null because there is no prior run. objectReadbackError states missing inspection.",
-        "   GET /api/candidates/{id} also returns these objects. No separate inspection/schema search is needed.",
-        "A new component needs parentComponentId (an existing component a seat builds) and semanticKind (what it is);",
-        "drawing under a component no seat builds is refused with the list of the ones that are built.",
+        "CURRENT STATE: GET /api/state and GET /api/state/frame provide stateDigest, components/elements and levels.",
+        "To continue a retained candidate, read these with ?run=<candidateId> and send sourceRunId on writes.",
+        "Keep its sourceStageRef when provided. Viewing a candidate alone does not change the editing base.",
+        "An empty project can prepare a modeling base with POST /api/project/modeling {projectId}, then read state/frame.",
         "",
-        "REUSABLE DIMENSIONS AND DEPENDENCIES (same proposal and final checkpoint; no second model):",
-        "POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
-        "Use semanticEdit OR utterance, never both. sourceRunId/sourceStageRef/sourceProposalId and keep stay at the top level.",
-        "For a new Component@1, fields.semantic_kind takes a registered alias: 'building' for the whole, 'cover' for a roof,",
-        "or 'support' for a load-bearing column. Choose a fitting alias from GET /api/semantics; do not invent one.",
-        "The returned role.* and condition.* IDs are not aliases for semantic_kind. Describe the specific object in fields.intent.",
-        "An authored parameter is {key: 'width', value: 3, unit: 'm', epistemic_status: 'declared'}.",
-        "A derived parameter adds expr and inputs, for example {key: 'left', value: -1.5, unit: 'm',",
-        "expr: '-width / 2', inputs: ['width']}. Use ordinary arithmetic with parameter names; value must match the expression.",
-        "For a centered width, similarly derive 'right' as 'width / 2' with value 1.5 and inputs ['width'].",
-        "A prism entity is {entity_id: 'canopy', schema: 'Element@1', parent_id: '<existing componentId>',",
-        "fields: {component_id: '<same componentId>', producer: 'prism', references: {base: {level: '<levelId>'}},",
-        "params: {profile: [['@left',0],['@right',0],['@right',1.8],['@left',1.8]], height: 0.18, elevation: 2.8}}}.",
-        "Bind each dimension that must move together with '@key', including profile coordinates, height and elevation.",
-        "Expressions belong in parameters[].expr; an '@key' in geometry references a parameter, not an inline expression.",
-        "Later, read GET /api/state?run=<candidateId> once: parameters include retained values, expr and inputs.",
-        "Change several independent controls in ONE semanticEdit: {summary: '...', parameters: [{key: 'width', value: 4.2}, ...]}.",
-        "Existing omitted fields and dependencies are preserved. Change upstream controls; do not overwrite derived formulas",
-        "or rebuild every dependent form. Submit the final proposal once with awaitSeconds: 60 as above.",
-        "If a semantic field is unclear, read studio_schema POST /api/proposals with producer: 'prism' (or the producer needed).",
-        "That selects its request contract; avoid repeatedly reading the full schema with unrelated producers and response payloads.",
-        "When a wall is explicitly requested, producer: 'wall' accepts references.line.from/to as {point: [x,z]},",
-        "including @parameter coordinates, or existing grid/host references; references.base names an existing level.",
-        "Its params include thickness, height and optional openings [{opening_id, kind, along, width, sill, head}].",
-        "Read studio_schema POST /api/proposals with producer: 'wall' for its exact contract. No invented GridAxis is needed.",
-        "Keep an existing wall's identity, hosted openings and relations; do not silently replace it with a prism.",
-        "A shape that has not been identified as a wall can remain a generic form; geometry alone does not decide its role.",
-        "RECOVER REFUSED MODELING REQUESTS: preserve the original source/base, keep conditions and object identity.",
-        "For SEMANTIC_EDIT_INVALID or REQUEST_INVALID, inspect the named contract, correct the request, and continue",
-        "from the last valid sourceProposalId before the single final checkpoint. A rejected request produced no model.",
-        "For STALE_BASE or a chain conflict, re-read the actual state and reconcile the intended change; never blindly retry",
-        "or drop keep conditions. Unknown references must be corrected explicitly, not converted into free coordinates.",
-        "A truly unsupported operation is a capability limit. Use another representation only when it preserves the",
-        "requested design meaning and relationships; otherwise explain the limitation rather than invent success.",
-        "For a tapered or rounded form, use ONE entity with producer: 'loft' instead of stacked independent prisms.",
-        "Its params are {profiles: [[[x,y,z],...], ...], profile_size: <vertices per section>, loft_type: 'normal',",
-        "profile_basis: 'polyline', cap_ends: true}; references.base names the level or datum. Y is height here.",
-        "Use at least two closed sections with equal vertex counts and no repeated closing point; coordinates may use '@key'.",
-        "loft_type may be 'normal' or 'straight'. The loft publishes no top datum; its shape follows the actual sections.",
-        "Proposal creation returns the checked change and impact without echoing the submitted edits and operator twice;",
-        "Large changes/direct lists show their total and omitted counts; detailsPath reads the full proposal.",
-        "Conflicts, locks, keep conditions and coverage limitations stay complete. GET /api/proposals/{id} retains all details.",
+        "CREATE: POST /api/proposals/sketch with",
+        "{stateDigest, componentId, elementId, profile: [[x,z], ...], height, baseLevel}.",
+        "A closed profile does not repeat its first point. Reusing elementId updates that form.",
+        "For several forms, use {stateDigest, sketches: [{componentId, elementId, profile, height, baseLevel}, ...]}.",
+        "Items run in order; baseDatum: '<elementId>-top' can replace baseLevel to stack on an earlier form.",
+        "sourceRunId, sourceStageRef, sourceProposalId and keep are top-level fields. A rejected batch saves nothing.",
+        "New components need parentComponentId under a built component and semanticKind; existing components can hold generic forms.",
         "",
-        "CHANGE SOMETHING THAT IS ALREADY THERE:",
-        "For a chain of changes, use POST /api/proposals (numeric edits), /api/proposals/transform,",
-        "/api/proposals/push-pull or /api/proposals/delete with sourceProposalId; read that action's schema when needed.",
-        "Compose all steps before the one final checkpoint above. The immediate capability run below is only",
-        "for a SINGLE requested change that is already the complete task, never for an intermediate chain step.",
-        "A. READ ONCE. If the target and the run are already known from this conversation:",
-        "   GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>",
-        "   &run=<the candidate being worked on> -> the numbers on that element that can move with their",
-        "   current values and units, the refs a keep clause may name, and the exact request to send next",
-        "   with this project's base already in it. That is the whole preparation; do not read the index",
-        "   or the state again to confirm what you already have.",
-        "   If the object is not known yet, find it first — GET /api/state lists the elements and the",
-        "   components they belong to, and GET /api/capabilities?goal=<what the user asked, in their own",
-        "   words> says which capability serves it. Never guess a target from the wording of the request,",
-        "   and never take the first field of a component as the one that was meant.",
-        "B. RUN ONCE. POST /api/capabilities/{capabilityId}/run with the body that answer handed back,",
-        "   adding awaitSeconds: 60 beside method/path/body. It is this tool's own option, never a field",
-        "   of the body; 1-180 is allowed and 60 suits an ordinary change. The answer is the finished",
-        "   result: the job, the candidate with what it exported, and the comparison object by object",
-        "   against the run it was made from, which the body must name as sourceRunId. keep is a list such as",
-        "   ['entity:portico-base']; a change that reaches something kept comes back refused and runs nothing.",
-        "   targetComponentId is the element's own component. A read selects a base with ?run=<runId>;",
-        "   a write names it as sourceRunId in the body.",
-        "   Without awaitSeconds the call answers {proposalId, jobId, candidateId} and the job, candidate",
-        "   and comparison are the ordinary reads below. If the wait runs out, the answer names the job and",
-        "   the candidate to read: pick those up, never send the request again.",
-        "   awaitSeconds is not an execution wrapper's yield_time_ms; they are two different waits.",
-        "   If you call this through functions.exec, omit yield_time_ms so it keeps its 30000 ms default.",
-        "   Do not set yield_time_ms: 1000, and do not loop short functions.wait calls.",
-        "   If it is still running after that default wait, continue waiting on the same call with",
-        "   ordinary-length waits; the request is already in and must never be sent again.",
-        "No match in the index is not a verdict that the system cannot do it: the answer says so, names",
-        "what matched, and the actions below remain available.",
+        "EDIT: POST /api/proposals/transform, /api/proposals/push-pull, /api/proposals/elevation or /api/proposals/delete.",
+        "Read each action's schema for its fields; tool errors identify unsupported operations. Choose methods that preserve design meaning.",
+        "For an existing numeric control, GET /api/capabilities/candidate.modify_existing?target=<componentId>&elementId=<the element>&run=<candidateId>",
+        "returns its current values, units and a ready request; edit that body and POST /api/capabilities/{capabilityId}/run.",
+        "GET /api/capabilities?goal=<user request> helps discover operations; an index miss does not exclude the other listed APIs.",
+        "keep is a list of protected refs, e.g. ['entity:portico-base']. Use the actual target and source, not a guessed field.",
+        "For linked dimensions, use POST /api/proposals with {stateDigest, semanticEdit: {summary, parameters: [...], entities: [...]}}.",
+        "Use semanticEdit or utterance, not both. Existing omitted fields/dependencies are retained; revise upstream controls for linked edits.",
+        "Read studio_schema POST /api/proposals with producer (e.g. prism, loft, wall, planar-surface) for the actual authoring contract.",
+        "Geometry binds parameters with '@key'; formulas belong in parameters[].expr with inputs, and value must match the expression.",
+        "GET /api/semantics supplies registered semantic_kind aliases; role.* and condition.* IDs are not those aliases.",
+        "Keep early forms generic until their role is established. Existing object identity, hosted features and intended relationships matter when changing representation.",
         "",
-        "READ: GET /api/capabilities, /api/state, /api/state/frame, /api/state/volumes, /api/semantics, /api/program, /api/options, /api/board,",
-        "/api/artifacts, /api/documents, /api/document-annotations, /api/proposals/{id}, /api/jobs/{id}, /api/candidates/{id}.",
-        "GET /api/candidates/{id}/compare?against=<runId> — the run to compare with is required, and it is the",
-        "sourceRunId the candidate was made from (the run before it); without it the request is refused.",
-        "OTHER EXISTING ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select,",
-        "/api/candidates/combine, /api/drawings/elevations; PUT /api/board, /api/document-annotations.",
-        "POST /api/drawings/elevations generates and registers the drawing in MonkeyDiagram's documents list automatically.",
-        "Views include front/back/left/right and top (an orthographic top projection, not a cut plan).",
-        "For a composed sheet, GET /api/drawings/styles then POST /api/drawings/sheets with the exact modelSource,",
-        "styleId and explicit scaleDenominator. It composes front/right/top in the selected style and returns a registered PDF.",
-        "Choose hiddenObjectIds or outlineObjectIds only for requested display simplification; no model object is changed.",
-        "Read GET /api/documents?runId=<the drawing's runId> to inspect its retained document entries.",
-        "For page text or dimensions, read studio_schema for PUT /api/document-annotations and GET the existing page first.",
-        "Preserve existing annotations, use its current baseRevisionSha256, and bind the exact run/asset/page/drawingRevisionRef.",
-        "Do not use PUT /api/board to save a generated drawing. Board layout is a separate action, only when the user asks for it.",
-        "Typed semanticEdit uses the same checked proposal path. No freeform intent/model call, issue, approvals or filesystem writes.",
+        "COMPOSE / OBSERVE / CONTINUE:",
+        "Chain known edits in memory by passing the last proposalId as sourceProposalId; keep stateDigest at the chain's original baseStateDigest.",
+        "sourceRunId/sourceStageRef are inherited. GET /api/proposals/{id} reads accumulated changes; inspect conflicts before executing.",
+        "At a useful design decision point, POST /api/proposals/{id}/candidate with no body and awaitSeconds: 60 beside method/path.",
+        "This materializes a reversible, unaccepted candidate. Multiple observation and revision cycles can occur within the same Stage.",
+        "After observing it, start further changes from GET /api/state?run=<candidateId>, using that stateDigest and sourceRunId;",
+        "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
+        "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
+        "On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
+        "GET /api/candidates/{id} returns retained objects with bbox.min/max, lengthUnit and upAxis, plus objectReadbackError if inspection is unavailable.",
+        "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
+        "Object bounds and successful checks are not visual inspection or proof of the user's spatial intent; inspect relevant views when available and report gaps.",
+        "For invalid input, use the named schema to correct it. For stale state/conflicts, refresh the exact source and reconcile the change while preserving keep conditions.",
+        "A refused request made no model. Distinguish unsupported operations from correctable inputs; report unresolved limits without inventing success.",
+        "",
+        "OTHER READS: GET /api/project, /api/state/volumes, /api/program, /api/options, /api/board,",
+        "/api/artifacts, /api/documents, /api/document-annotations, /api/jobs/{id}.",
+        "OTHER ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select, /api/candidates/combine;",
+        "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
+        "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
+        "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
+        "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
+        "For page edits, read existing annotations and use baseRevisionSha256 with the exact run/asset/page/drawingRevisionRef.",
+        "Board arranges document references; generated drawings are saved by their drawing API.",
+        "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
     ])
     tools = [
         {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action. "
-         "The usual actions are already described in studio_request with their fields and units: use this only for an action "
-         "that description does not cover, or a field it does not state. A path may be written with its template segments, "
-         "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select that producer's request inputs.", "inputSchema": schema_input},
+         "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
+         "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select its request inputs.", "inputSchema": schema_input},
         {"name": "studio_request", "description": modelling, "inputSchema": request_schema},
         {"name": "fab_request", "description": "Use MonkeyFab GET /api/fab/profiles or POST /api/fab/send for dry-run validation only. This tool never uploads or starts printing.", "inputSchema": input_schema},
         {"name": "attachment_read", "description": "Read an uploaded attachment from this conversation by its id. "

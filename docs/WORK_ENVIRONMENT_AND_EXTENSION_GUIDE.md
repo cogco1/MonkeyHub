@@ -94,13 +94,16 @@ CAD 导出共用 `cad_workspace_path`，默认进入 `runs/<run-id>/workspaces/c
 **当前聊天入口：** CLI 收到绑定项目和少量工具说明。修改已有构件的数值时，先用
 已知的候选来源和目标直接读取能力详情；首次不清楚能力或对象时，再查询
 `GET /api/capabilities?goal=...` 或项目状态。沿详情返回的请求执行时，`studio_request` 的
-`awaitSeconds` 可让最终 proposal 检查点或一次完整数值修改在同一次工具调用内提交、等待任务完成，并行读取候选和比较结果。
-多个已确定的形体通过 sketch 的 `sketches` 一次提交；后续精调通过 `sourceProposalId` 在内存中累积，整条链完成后仅保存一次 Stage 候选，不自动接受或发布。
+`awaitSeconds` 可让 proposal 候选或一次数值修改在同一次工具调用内提交、等待任务完成，并行读取候选和比较结果。
+多个已确定的形体通过 sketch 的 `sketches` 一次提交；确定性的连续修改通过 `sourceProposalId` 在内存中累积，保持该链原始 `baseStateDigest`。
+下一步设计决策依赖实际结果时，可先生成并观察候选；后续从 `GET /api/state?run=<candidateId>` 读取准确状态，写入时使用该状态的 `stateDigest` 和 `sourceRunId`。
+同一 Stage 内允许多轮候选观察与修改，不自动接受或发布。修改方法、schema 查询和状态刷新按实际需要选择。
 需要共享尺寸或联动的设计，通过同一个 `POST /api/proposals` 提交 `semanticEdit`：当前 Agent 直接写入已有的构件、参数、表达式和关系契约，不再调用第二个模型。
 `utterance` 与 `semanticEdit` 二选一；后续可只提交 `{key, value}` 参数更新，保留原有表达式和几何中的 `@key` 绑定。
 prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可使用已公开的单个 `loft`，当前支持顶点对应的闭合折线截面及 normal/straight 两种方式。
 `studio_schema` 的 `producer` 选项可只查询所需 producer 的请求契约，避免读取无关几何与重复响应字段。
-候选读回直接返回保留 inspection 的对象包围盒、单位和坐标系；首次候选没有上一 run 时不请求比较，inspection 缺失会明确说明。
+候选读回直接返回保留 inspection 的对象包围盒、单位和坐标系；首次候选没有上一 run 时不请求比较，inspection 缺失会明确说明。包围盒和技术检查不代替视觉检查或空间意图验收。
+已有标高编辑 `POST /api/proposals/elevation` 可通过聊天 MCP 调用并查询 schema，沿用项目绑定、准确来源和 keep 条件。
 大型参数提案的即时回复只列前 100 条变更和直接影响，明确总数、省略数及完整提案读取路径；冲突、锁、keep 和覆盖限制保持完整。
 现有出图入口支持四向立面与未剖切的顶投影；文字和尺寸可通过已有文档批注接口绑定到准确页面，沿用其版本比较保存。
 `awaitSeconds` 限定为提交成功后的等待时间；超时或读取失败返回原任务的只读续查入口，不重复提交。
