@@ -195,6 +195,47 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(record.resultDigest, response.json()["recordDigest"])
         self.assertEqual(self.snapshot()["stages"], stages_before)
 
+    def test_cold_candidate_order_uses_admissions_and_verified_receipts_without_jobs(self):
+        self.manager = self.durable_manager()
+        older, _ = self.candidate()
+        newer, _ = self.candidate()
+        unfinished, _ = self.admission("/api/proposals/unexecuted/candidate")
+        refused, _ = self.admission("/api/program", {})
+        self.manager.replied(refused, HttpResult(422, b'{"detail":"refused"}', {}))
+        journal_before = self.manager.journal_path.read_bytes()
+        runs_before = bound_project(self.app.state).run_ids()
+        head_before = self.repository.read_head()
+
+        cold_app = create_app(self.settings)
+        self.addCleanup(cold_app.state.jobs.shutdown)
+        cold = self.durable_manager()
+        self.assertTrue(all(row.resultDigest is None for row in cold.records()))
+        with TestClient(cold_app) as client, patch(
+            "archflow_studio_api.application.candidate.execute_candidate", side_effect=AssertionError("cold replay"),
+        ):
+            response = client.get("/api/runtime", params=[("candidateId", row.record.candidateId)
+                for row in (older, newer, unfinished)])
+            self.assertEqual(response.status_code, 200, response.text)
+            retained = response.json()
+            self.assertEqual(retained["jobs"], [], "a fresh Studio has no process jobs or job timestamps")
+            cold.reconcile(retained, worker_alive=False)
+        records = {row.operationId: row for row in cold.records()}
+        successful = [row for row in records.values() if row.status == "completed" and row.resultDigest]
+        self.assertEqual([row.candidateId for row in sorted(successful, key=lambda row: row.admissionSequence)],
+                         [older.record.candidateId, newer.record.candidateId])
+        self.assertEqual(records[unfinished.record.operationId].status, "needs_recovery")
+        self.assertEqual(records[refused.record.operationId].status, "failed")
+        self.assertEqual([records[row.record.operationId].admissionSequence for row in (older, newer, unfinished, refused)],
+                         [1, 2, 3, 4])
+        for row in successful:
+            candidate = next(item for item in retained["candidates"] if item["candidateId"] == row.candidateId)
+            self.assertTrue(candidate["receiptRef"])
+            self.assertEqual(row.resultDigest, candidate["resultStateDigest"])
+        self.assertEqual(self.manager.journal_path.read_bytes(), journal_before, "reading order does not rewrite the journal")
+        self.assertNotIn(b"admissionSequence", journal_before, "order is projected from the existing array, not newly persisted")
+        self.assertEqual(bound_project(self.app.state).run_ids(), runs_before)
+        self.assertEqual(self.repository.read_head(), head_before)
+
     def test_lost_candidate_reply_recovers_exact_retained_result_without_resubmission(self):
         admission, accepted = self.candidate()
         before_runs = bound_project(self.app.state).run_ids()
@@ -220,6 +261,7 @@ class OperationRecoveryTests(unittest.TestCase):
         observed = next(row for row in restarted.records() if row.candidateId == record.candidateId)
         self.assertEqual(observed.status, "completed")
         self.assertEqual(observed.source, "retained")
+        self.assertIsNone(observed.admissionSequence, "a receipt without an admission journal cannot invent request order")
 
     def test_http_acceptance_and_live_process_do_not_prove_a_candidate_finished(self):
         admission, _ = self.admission("/api/proposals/unexecuted/candidate")

@@ -529,11 +529,78 @@ try {
     `Cancel replacement should return to its keyboard trigger, got ${await page.evaluate(() => document.activeElement.tagName)}`);
   // Keep the server's competing revision and the page's unsent canvas separate.
   competingVersion = true;
+  // A headless upload saves its source change while the user is still marking
+  // this mounted board. The old CAS must recover without disabling submission.
+  const beforeHeadless = await readScene();
+  saved = { ...structuredClone(saved), revisionSha256: "e".repeat(64) };
+  const remotePage = saved.elements.find((element) => element.id === "unmapped-image");
+  remotePage.customData = { ...remotePage.customData, sourceDocument: pageSource(uploadedReplacement, 1) };
+  remotePage.fileId = "headless-new-preview"; remotePage.version += 1;
+  await page.evaluate(() => {
+    const api = window.__boardApi;
+    const { convertToExcalidrawElements, CaptureUpdateAction } = window.__boardHelpers;
+    const added = convertToExcalidrawElements([{ id: "headless-local-note", type: "text", text: "Keep this critique", x: 430, y: 670 }], { regenerateIds: false });
+    api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...added], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  });
+  await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
+  await page.waitForFunction((sha) => window.__boardApi.getSceneElements().find((element) => element.id === "unmapped-image")?.customData.sourceDocument.assetSha256 === sha, uploadedReplacement.assetSha256);
+  const afterHeadless = await readScene();
+  assert.equal(byId(afterHeadless, "headless-local-note").text, "Keep this critique");
+  assert.equal(saved.elements.find((element) => element.id === "headless-local-note").text, "Keep this critique");
+  assert.deepEqual(geometry(byId(afterHeadless, "unmapped-image")), geometry(byId(beforeHeadless, "unmapped-image")));
+  assert.equal(afterHeadless.zoom, beforeHeadless.zoom);
+  assert.equal(afterHeadless.scrollX, beforeHeadless.scrollX);
+  assert.equal(afterHeadless.scrollY, beforeHeadless.scrollY);
+  assert.equal(await chineseUpdate.isEnabled(), true, "Recovered canvas can still submit/upload");
+
+  // A save can rebase while the pointer is still down. The remainder of the
+  // same native stroke must reach both the live scene and the retained board.
+  const beforeStrokeTool = await page.evaluate(() => {
+    const api = window.__boardApi, state = api.getAppState();
+    const previous = { activeTool: state.activeTool, selectedElementIds: state.selectedElementIds,
+      selectedGroupIds: state.selectedGroupIds };
+    api.updateScene({ appState: { activeTool: { type: "freedraw", customType: null, locked: true },
+      selectedElementIds: {}, selectedGroupIds: {} }, captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER });
+    return previous;
+  });
+  const drawingSurface = await page.locator("canvas.excalidraw__canvas.interactive").boundingBox();
+  assert.ok(drawingSurface);
+  const strokeX = drawingSurface.x + drawingSurface.width * 0.65;
+  const strokeY = drawingSurface.y + drawingSurface.height * 0.6;
+  await page.mouse.move(strokeX, strokeY); await page.mouse.down();
+  await page.mouse.move(strokeX + 30, strokeY + 20, { steps: 5 });
+  const partialStroke = await page.evaluate(() => {
+    const element = window.__boardApi.getAppState().newElement;
+    return { id: element?.id, points: element?.points };
+  });
+  assert.ok(partialStroke.id && partialStroke.points.length > 1, "A native stroke must still be in progress");
+  saved = { ...structuredClone(saved), title: "Remote update during live stroke", revisionSha256: "d".repeat(64) };
+  await page.keyboard.press("Control+s");
+  await page.waitForFunction(() => document.querySelector('input[aria-label="画布标题"]')?.value === "Remote update during live stroke");
+  await page.mouse.move(strokeX + 140, strokeY + 95, { steps: 8 });
+  const continuedStroke = await page.evaluate(() => {
+    const element = window.__boardApi.getAppState().newElement;
+    return { id: element?.id, points: element?.points };
+  });
+  assert.equal(continuedStroke.id, partialStroke.id, "A remote save must leave the current gesture active");
+  assert.ok(continuedStroke.points.length > partialStroke.points.length, "The stroke continues after rebase");
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
+  const completedStroke = byId(await readScene(), partialStroke.id);
+  assert.deepEqual(completedStroke.points.slice(0, continuedStroke.points.length), continuedStroke.points,
+    "Rebasing must retain points drawn after the refreshed board arrived");
+  assert.deepEqual(saved.elements.find((element) => element.id === partialStroke.id)?.points, completedStroke.points,
+    "The retained board must contain the complete stroke");
+  await page.evaluate((appState) => window.__boardApi.updateScene({ appState,
+    captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER }), beforeStrokeTool);
+  const recoveredConflicts = conflicts;
+
   saved = { ...structuredClone(saved), title: "Another saved board", revisionSha256: "f".repeat(64) };
   const winner = structuredClone(saved), localScene = await readScene();
   await page.getByRole("textbox", { name: "画布标题", exact: true }).fill("我的未保存图墙");
   await page.getByText(/已有另一份保存版本/).waitFor();
-  assert.equal(conflicts, 1);
+  assert.ok(conflicts === recoveredConflicts || conflicts === recoveredConflicts + 1,
+    "The competing title is detected by refresh or the first stale save");
   assert.deepEqual(saved, winner, "A rejected stale save must not overwrite the winning board");
   assert.deepEqual((await readScene()).elements, localScene.elements, "Conflict must preserve the current scene");
   assert.equal(await page.getByRole("textbox", { name: "画布标题", exact: true }).inputValue(), "我的未保存图墙");

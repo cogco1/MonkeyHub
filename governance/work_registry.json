@@ -40,6 +40,59 @@
       "handoff": "Ready for independent PR review: corrected PNG paths, exact saved calibration, real OCCT candidate continuation, stable object updates and failure preservation pass against main 3a92b414 after a conflict-only merge. Mainline parameter locks and elevation logic are retained; Stage/viewport paths match main. DocumentCanvas, client and generated API feature seams remain handed to GH-73 in its independent branch. Automatic image interpretation and broader drawing semantics remain open in Issue #46."
     },
     {
+      "id": "GH-183",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Deliver the bounded headless result display and Board compare-and-swap refresh follow-up. Broader architectural observation and correction acceptance remains on issue #183.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardSaveQueue.ts",
+        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
+      ],
+      "lanes": [
+        {
+          "id": "headless-board-refresh",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/183",
+          "status": "review",
+          "branch": "codex/headless-board-refresh",
+          "worktree": "workspace/worktrees/codex-headless-board-refresh",
+          "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardSaveQueue.ts",
+            "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md"
+          ],
+          "depends_on": [],
+          "handoff": "Review only headless result display and Board CAS refresh, related to issues #183 and #32. Public source is ported from verified bf0d3c23 and 442321ef; those installation commits remain traceable. The base contains the completed GH-185 integration and lock controls. Preserve both this lane's headless refresh assertions and the parallel GH-183 explicit Continue/Monitor assertions when integrating their independent PRs; keep only one named Top selector replacement. Private project data and the separate component removal repair are excluded."
+        }
+      ]
+    },
+    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
@@ -108,16 +161,14 @@
             "studio.intent"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/MonitorPage.tsx",
             "apps/monkeyhub/web/src/MonitorPage.css",
             "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
           ],
           "depends_on": [],
-          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. Completed source handoff releases the provider transport seam in intent_agent.py to GH-73; current context integration continues in its separately coordinated lane."
+          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. ChatShell.tsx and chatShell.browser.mjs are released after their integration reached main; GH-183/headless-board-refresh owns the bounded refresh follow-up in its independent PR, preserving the parallel explicit Continue/Monitor assertions. Completed intent_agent.py ownership remains with GH-73."
         },
         {
           "id": "parameter-locks",
@@ -197,7 +248,7 @@
     {
       "id": "GH-137",
       "stream": "interaction",
-      "status": "ready",
+      "status": "active",
       "goal": "Deliver S1 scene-wide endpoint/midpoint/feature-edge/face snapping through existing drawing, Move/Copy and signed-normal Push/Pull constraints. V1 and N1 are delivered; V2 remains separate.",
       "depends_on": [],
       "branch": "codex/137-scene-snapping",
@@ -205,9 +256,7 @@
       "base_ref": "32fc10e1024a42ff9e8fb3a384686b7abc3a9016",
       "contributor": "Codex",
       "reviewer": "Repository owner",
-      "modules": [
-        "hub.shell"
-      ],
+      "modules": ["hub.shell"],
       "write_scope": [
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
@@ -218,36 +267,9 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/sceneSnapping.ts",
         "apps/monkeyhub/web/workspaces/test/featureEdges.test.ts",
         "apps/monkeyhub/web/workspaces/test/sceneSnapping.test.ts",
-        "apps/monkeyhub/web/workspaces/test/sceneSnapping.browser.mjs",
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css"
+        "apps/monkeyhub/web/workspaces/test/sceneSnapping.browser.mjs"
       ],
-      "handoff": "S1 implementation is ready for review with measured scene queries and isolated browser coverage of loaded 3DM/drafts, constraints and cancellation. Keep this modeling scope reserved until the S1 PR merges; then defer V2 and release Stage/viewport to #136. #46 DocumentTracingContext and App.tsx document callbacks are outside this scope. #180 is the recorded base; no main push or issue closure.",
-      "lanes": [
-        {
-          "id": "integration",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/137",
-          "status": "review",
-          "branch": "codex/integrate-reviewed-prs",
-          "worktree": ".",
-          "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
-          "contributor": "Codex",
-          "reviewer": "Codex coordinator",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/web/src/i18n/messages.en.ts",
-            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
-            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
-            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css"
-          ],
-          "depends_on": [],
-          "handoff": "Combine the reviewed scene snapping and orthographic camera changes with the current Hub editor; preserve both source PR histories and verify the composed behavior."
-        }
-      ]
+      "handoff": "S1 implementation is ready for review with measured scene queries and isolated browser coverage of loaded 3DM/drafts, constraints and cancellation. Keep this modeling scope reserved until the S1 PR merges; then defer V2 and release Stage/viewport to #136. #46 DocumentTracingContext and App.tsx document callbacks are outside this scope. #180 is the recorded base; no main push or issue closure."
     },
     {
       "id": "GH-73",

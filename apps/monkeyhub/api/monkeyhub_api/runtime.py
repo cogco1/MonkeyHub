@@ -155,7 +155,7 @@ class OperationManager:
         # Only recovery metadata crosses this Hub-runtime boundary. Request
         # bodies and successful project results stay with their existing owners.
         saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
-            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason"}),
+            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason", "admissionSequence"}),
             "signature": row.signature, "expectedStage": row.expected_stage,
             "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
         } for row in self._operations.values()]}
@@ -336,7 +336,11 @@ class OperationManager:
 
     def records(self) -> list[OperationRecord]:
         with self._lock:
-            values = [row.record for row in self._operations.values()]
+            # The existing journal retains this admission order across Hub
+            # restarts. Derive it before the bounded/reordered display window;
+            # it supplies no result status and is never written back to disk.
+            values = [row.record.model_copy(update={"admissionSequence": index})
+                      for index, row in enumerate(self._operations.values(), start=1)]
             # Keep active work visible even after many completed requests.
             active = [row for row in values if row.status in _ACTIVE or row.status == "needs_recovery"]
             recent = [row for row in values if row not in active][-50:]

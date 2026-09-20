@@ -212,6 +212,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const observedSessions = useRef(new Map<string, ChatSummary["status"]>());
   const completedChats = useRef(new Set<string>());
   const openedCandidates = useRef(new Set<string>());
+  const observedRuntimeCandidates = useRef(new Map<string, { completed: Set<string>; sequence: number }>());
   const projectPreparations = useRef(new Map<string, ProjectPreparation>());
   const selection = useRef({ chatId, projectDir, archivedView, projects }); selection.current = { chatId, projectDir, archivedView, projects };
   const project = projects.find((item) => item.projectDir === projectDir);
@@ -263,6 +264,50 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     for (const item of snapshot.projects) runtimeAttachments.current.set(item.projectDir, item);
     runtimeRef.current = snapshot; setRuntime(snapshot);
   }, []);
+  useEffect(() => {
+    if (!runtime) return;
+    const updates = new Map<string, { previous?: string; candidate: string }>();
+    for (const tab of tabs) {
+      const current = runtime.projects.find((item) => item.runtimeId === tab.runtimeId &&
+        item.projectId === tab.projectId && item.projectDir === tab.projectDir);
+      if (!current?.retained || current.retained.projectId !== current.projectId || current.retained.projectDir !== current.projectDir) continue;
+      const jobs = new Map(current.retained.jobs.map((job) => [job.jobId, job]));
+      const retained = new Map(current.retained.candidates.map((candidate) => [candidate.candidateId, candidate]));
+      const completed = (current.operations ?? []).filter((item) => {
+        const candidate = item.candidateId ? retained.get(item.candidateId) : undefined;
+        const job = item.jobId ? jobs.get(item.jobId) : undefined;
+        return item.projectId === current.projectId && item.status === "completed" && item.resultDigest &&
+          candidate?.receiptRef && ["completed", "succeeded"].includes(candidate.status) &&
+          [candidate.resultStateDigest, candidate.resultRecordDigest].includes(item.resultDigest) &&
+          (!job || (job.candidateId === item.candidateId && job.status === "succeeded"));
+      });
+      const choices = completed.filter((item) => item.source === "studio" && !item.sessionId && !item.committed)
+        .map((item) => ({ candidate: item.candidateId!, sequence: Number.isSafeInteger(item.admissionSequence) && item.admissionSequence! > 0
+          ? item.admissionSequence! : NaN }));
+      const previous = observedRuntimeCandidates.current.get(current.runtimeId);
+      const unseen = choices.filter((item) => !previous?.completed.has(item.candidate));
+      const sequence = Math.max(previous?.sequence ?? -Infinity, ...choices.map((item) => item.sequence).filter(Number.isFinite));
+      observedRuntimeCandidates.current.set(current.runtimeId, {
+        completed: new Set([...(previous?.completed ?? []), ...choices.map((item) => item.candidate)]), sequence,
+      });
+      // The journal supplies request order even after jobs leave memory. It
+      // never proves success: the retained receipt and digest above do that.
+      // Older slow requests and unordered legacy observations cannot win.
+      if (!unseen.length || unseen.some((item) => !Number.isFinite(item.sequence))) continue;
+      unseen.sort((a, b) => b.sequence - a.sequence);
+      const newest = unseen[0]!;
+      if (newest.sequence <= (previous?.sequence ?? -Infinity) || unseen[1]?.sequence === newest.sequence) continue;
+      const latestCompletedRequest = Math.max(...completed.map((item) => item.admissionSequence ?? NaN).filter(Number.isFinite));
+      if (newest.sequence < latestCompletedRequest || newest.candidate === tab.candidate) continue;
+      updates.set(current.runtimeId, { previous: tab.candidate, candidate: newest.candidate });
+    }
+    if (updates.size) setTabs((items) => items.map((item) => {
+      const update = item.runtimeId ? updates.get(item.runtimeId) : undefined;
+      // Keep the same workspace mounted, including a Board with unsent marks.
+      // A manual choice made meanwhile wins; unchanged polling never reopens it.
+      return update && item.candidate === update.previous ? { ...item, candidate: update.candidate } : item;
+    }));
+  }, [runtime, tabs]);
   const refresh = useCallback(async () => {
     if (readLock.current) { readAgain.current = true; return; }
     readLock.current = true;
