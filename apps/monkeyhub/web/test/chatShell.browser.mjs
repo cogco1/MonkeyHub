@@ -13,6 +13,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-chat-ui-"));
 const toolLoads = [];
 const streams = new Set();
 let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
+let confirmedStageForChat = null;
 const emitRuntime = () => {
   const event = { serverId: "fixture-hub", sequence: ++runtimeSequence, kind: "changed", snapshot: runtimeSnapshot() };
   for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify(event)}\n\n`);
@@ -281,8 +282,11 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
         uploadedAttachments.set(id, { ...file, sessionId: session.id });
         return { id, name: file.name, mimeType: file.mimeType, size: Buffer.from(file.data, "base64").length };
       });
+      const stageHandoff = data().contextMode === "stage" && confirmedStageForChat
+        && data().designContext?.sourceRunId === confirmedStageForChat.runId;
       session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments,
-        contextMode: data().contextMode ?? "continue" });
+        contextMode: stageHandoff ? "stage" : data().contextMode === "project" ? "project" : "continue",
+        ...(stageHandoff ? { confirmedStageRef: confirmedStageForChat.stageRef, confirmedStageLabel: confirmedStageForChat.label } : {}) });
       session.title = session.messages[0].content || session.messages[0].attachments?.[0]?.name; session.status = "running";
       // What the API saves while the CLI works: one row per MCP call, a failed
       // one, and the finished candidate that call reported.
@@ -1341,10 +1345,12 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   const continuePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
-  assert.equal(continuePost.contextMode, undefined);
+  assert.equal(continuePost.contextMode, "stage", "the default checks for an accepted boundary without forcing a candidate reset");
   assert.equal(continuePost.designContext.sourceRunId, "cand-A-1", "explicit continuation changes the bound context");
   assert.equal(continuePost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.designStateDigest);
   assert.equal(await page.locator(".chat-message--user").count(), 2, "starting model context retains the visible chat");
+  assert.equal(await page.getByText("Continuing from confirmed stage:", { exact: false }).count(), 0,
+    "requesting automatic handoff alone does not label a candidate as accepted");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 
   await page.reload();
@@ -1357,6 +1363,23 @@ try {
   assert.equal(reopenedPost.designContext.sourceRunId, "cand-A-1", "reopening retains the explicitly chosen candidate as the chat base");
   assert.equal(reopenedPost.designContext.stateDigest, continuePost.designContext.stateDigest);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  // The Runtime/ChatStore tests verify acceptance and rotation. Here the UI
+  // receives the actual confirmed boundary, not a client-inferred acceptance.
+  confirmedStageForChat = { runId: "cand-A-1", stageRef: "confirmed-massing", label: "Massing approved" };
+  await page.getByText("After you confirm a stage, its saved result starts the next model context. Candidate revisions keep the same conversation.", { exact: true }).waitFor();
+  await page.locator("#chat-input").fill("Continue with the walls from the confirmed massing");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const stagePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(stagePost.contextMode, "stage");
+  assert.equal(stagePost.designContext.sourceRunId, "cand-A-1");
+  await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.reload();
+  await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
+  assert.equal(await page.locator(".chat-message--user").count(), 4, "the stage handoff remains visible after reopening");
+  confirmedStageForChat = null;
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

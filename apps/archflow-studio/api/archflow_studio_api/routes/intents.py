@@ -48,7 +48,7 @@ from ..application.intent_agent import (
     context_refs,
     record_sheet,
 )
-from ..application.intent_context import compile_task_context, model_context
+from ..application.intent_context import compile_task_context, confirmed_stage_context, model_context
 from ..application.intent_requests import action_preflight
 from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
@@ -305,7 +305,16 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
         component_id=component_id if focused is not None else None,
         element_id=focused.element_id if focused is not None else None,
     )
-    return context_pack_dto(description, context, preflight, model_context(context))
+    confirmed_stage = None
+    if projection.source_stage_ref is not None:
+        stage = binding.design_stage(projection.source_stage_ref)
+        accepted = (projection if projection.run.run_id == stage.candidate_id
+                    else project_state(binding, source_stage_ref=projection.source_stage_ref))
+        require_actionable(accepted)
+        confirmed_stage = confirmed_stage_context(
+            projection, accepted, stage, stage_ref=projection.source_stage_ref.uri,
+        )
+    return context_pack_dto(description, context, preflight, model_context(context), confirmed_stage=confirmed_stage)
 
 
 @router.post(

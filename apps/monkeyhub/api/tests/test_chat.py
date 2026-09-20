@@ -2595,7 +2595,7 @@ class ChatTests(unittest.TestCase):
         with patch.object(chat, "_request_json", side_effect=request):
             appended = chat._context_pack(self.store.hub_url, session.id, "Raise it to 0.5 m.",
                                           self.selected(), time.monotonic() + 30)
-        self.assertIn(chat._CONTEXT_NOTE, appended)
+        self.assertEqual(appended, self.PACK)
         # _bound_studio binds this turn's headers; nothing after it may inherit
         # them, so a second turn cannot be correlated to the first one's span.
         self.assertEqual(chat._trace_headers.get(), {})

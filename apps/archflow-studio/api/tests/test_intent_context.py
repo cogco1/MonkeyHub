@@ -11,8 +11,13 @@ from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
 from archflow_studio_api.application.intent_agent import Selection, record_sheet
 from archflow_studio_api.application import intent_context
-from archflow_studio_api.application.intent_context import compile_context, compile_task_context, expand_context, control_unit, model_context
+from archflow_studio_api.application.intent_context import compile_context, compile_task_context, confirmed_stage_context, expand_context, control_unit, model_context
 from archflow_studio_api.application.projection import _elements
+from fastapi.testclient import TestClient
+from archflow_studio_api.main import create_app
+
+from .support import PROJECT_ID, REFERENCE_RUN_ID
+from .test_design_history import DesignHistoryFixture
 
 
 def fixture(*, shared=False):
@@ -471,6 +476,135 @@ class ModelContextTests(unittest.TestCase):
         self.assertIn("entity:window-24", context.included_refs)
         self.assertEqual(len(reads), len(set(reads)), "a row was read for its references more than once")
         self.assertLessEqual(len(reads), len(rows))
+
+
+class ConfirmedStageContextTests(unittest.TestCase):
+    def summary(self, accepted_record, current_record=None):
+        accepted = SimpleNamespace(record=accepted_record, run=SimpleNamespace(run_id="accepted-run"),
+                                   record_source="accepted-state", state_digest="a" * 64)
+        current = accepted if current_record is None else SimpleNamespace(
+            record=current_record, run=SimpleNamespace(run_id="candidate-run"),
+            record_source="candidate-state", state_digest="b" * 64)
+        stage = SimpleNamespace(label="Massing", branch_id="main", candidate_id="accepted-run",
+                                record_ref=SimpleNamespace(uri="accepted-state"))
+        return confirmed_stage_context(current, accepted, stage, stage_ref="accepted-stage")
+
+    def test_accepted_conditions_are_named_without_claiming_whole_geometry_lock(self):
+        record, _ = fixture()
+        record = replace(record, parameters=(replace(record.parameters[0], lock_authority="studio:intent"),
+                                             *record.parameters[1:]))
+        summary = self.summary(record)
+        self.assertTrue(summary["isSource"])
+        self.assertEqual(summary["label"], "Massing")
+        self.assertEqual(summary["lockedParameterKeys"], ["module"])
+        self.assertIn("entity:local-reading", summary["retainedConditionRefs"])
+        self.assertIn("obligation:global-keep", summary["retainedConditionRefs"])
+        self.assertEqual(summary["changes"]["changedRefs"], [])
+        self.assertEqual(summary["changes"]["needsReviewRefs"], [])
+        self.assertIn("do not freeze whole geometry", " ".join(summary["limitations"]))
+        # Rebinding exactly the same content does not endorse the new run.
+        candidate = self.summary(record, replace(record, run_id="another-run"))
+        self.assertFalse(candidate["isSource"])
+        self.assertEqual(candidate["changes"]["changedRefs"], [])
+
+    def test_upstream_parameter_change_reaches_declared_transitive_consumers_and_conditions(self):
+        record, _ = fixture(shared=True)
+        changed = replace(record, parameters=(replace(record.parameters[0], value=0.7), *record.parameters[1:]))
+        summary = self.summary(record, changed)
+        self.assertEqual(summary["changes"]["changedRefs"], ["parameter:module"])
+        self.assertEqual(set(summary["changes"]["affectedRefs"]),
+                         {"parameter:window-width", "entity:window-23", "entity:window-24"})
+        review = summary["changes"]["needsReviewRefs"]
+        self.assertIn("entity:local-reading", review)
+        self.assertIn("obligation:local-keep", review)
+        self.assertIn("obligation:global-keep", review)
+        self.assertNotIn("entity:remote-wall", review)
+        self.assertIn("not validation results", " ".join(summary["limitations"]))
+
+    def test_reopened_reading_and_removed_relation_use_old_and_current_subjects(self):
+        record, _ = fixture()
+        changed = replace(record, entities=tuple(
+            replace(item, fields={"subject_refs": ["entity:wall-07"], "note": "Reopen daylight condition"})
+            if item.entity_id == "local-reading" else item for item in record.entities), relations=())
+        summary = self.summary(record, changed)
+        self.assertEqual(set(summary["changes"]["changedRefs"]),
+                         {"entity:local-reading", "relation:opening-support"})
+        self.assertIn("entity:wall-07", summary["changes"]["affectedRefs"])
+        self.assertIn("entity:window-23", summary["changes"]["affectedRefs"])
+        self.assertIn("obligation:local-keep", summary["changes"]["needsReviewRefs"])
+
+    def test_unscoped_changed_condition_and_undeclared_stage_interfaces_remain_explicit(self):
+        record, _ = fixture()
+        changed = replace(record, entities=tuple(
+            replace(item, fields={"note": "Structural clearance changed in an unlinked earlier stage"})
+            if item.entity_id == "global-reading" else item for item in record.entities))
+        summary = self.summary(record, changed)
+        self.assertEqual(summary["changes"]["unresolvedImpactRefs"], ["entity:global-reading"])
+        self.assertEqual(summary["changes"]["needsReviewRefs"], ["entity:global-reading", "obligation:global-keep"])
+        self.assertIn("non-adjacent Stage interfaces absent from these records are not resolved", " ".join(summary["limitations"]))
+
+    def test_removing_a_condition_scope_does_not_hide_unknown_impact_behind_old_subjects(self):
+        record, _ = fixture()
+        changed = replace(record, entities=tuple(
+            replace(item, fields={"note": "The daylight condition now applies throughout the project"})
+            if item.entity_id == "local-reading" else item for item in record.entities))
+        summary = self.summary(record, changed)
+        self.assertEqual(summary["changes"]["unresolvedImpactRefs"], ["entity:local-reading"])
+        self.assertIn("entity:window-23", summary["changes"]["affectedRefs"])
+
+    def test_summary_omissions_do_not_claim_complete_lock_or_condition_coverage(self):
+        record, _ = fixture()
+        record = replace(record, parameters=record.parameters + tuple(
+            Parameter(f"locked-{i:03}", i, "m", lock_authority="studio:intent") for i in range(70)))
+        changed = replace(record, parameters=tuple(replace(item, value=item.value + 1) for item in record.parameters))
+        summary = self.summary(record, changed)
+        self.assertEqual(len(summary["lockedParameterKeys"]), 64)
+        self.assertEqual(summary["omittedCounts"]["lockedParameterKeys"], 6)
+        self.assertEqual(summary["omittedCounts"]["changedRefs"], 9)
+
+
+class ConfirmedStageContextRouteTests(DesignHistoryFixture):
+    def context(self, client, *, run_id=REFERENCE_RUN_ID, stage_ref=None):
+        state = client.get("/api/state", params={"run": run_id,
+                                               **({"sourceStageRef": stage_ref} if stage_ref else {})})
+        self.assertEqual(state.status_code, 200, state.text)
+        response = client.post("/api/intents/context", json={
+            "projectId": PROJECT_ID, "sourceRunId": run_id,
+            "stateDigest": state.json()["stateDigest"],
+            "utterance": "Continue the wall task from the confirmed massing result",
+            **({"sourceStageRef": stage_ref} if stage_ref else {}),
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_explicit_acceptance_and_cold_read_distinguish_stage_from_same_stage_candidate(self):
+        self.assertIsNone(self.context(self.client)["confirmedStage"])
+        initial = self.initialize()
+        confirmed = self.context(self.client, stage_ref=initial["stageRef"])["confirmedStage"]
+        self.assertEqual(confirmed["stageRef"], initial["stageRef"])
+        self.assertEqual(confirmed["stateDigest"], initial["modelSource"]["stateDigest"])
+        self.assertTrue(confirmed["isSource"])
+        candidate_id = self.candidate_from(initial)
+        with TestClient(create_app(self.settings)) as reopened:
+            candidate = self.context(reopened, run_id=candidate_id)["confirmedStage"]
+            self.assertEqual(candidate["stageRef"], initial["stageRef"])
+            self.assertFalse(candidate["isSource"])
+            self.assertIn("entity:portico-base", candidate["changes"]["changedRefs"])
+            self.assertEqual(len(self.history(client=reopened)["stages"]), 1)
+            accepted = self.accept(candidate_id, initial, client=reopened)
+            self.assertEqual(accepted.status_code, 200, accepted.text)
+            stage = accepted.json()
+        before = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        with TestClient(create_app(self.settings)) as reopened:
+            confirmed = self.context(reopened, run_id=candidate_id)["confirmedStage"]
+            self.assertEqual(confirmed["stageRef"], stage["stageRef"])
+            self.assertEqual(confirmed["runId"], candidate_id)
+            self.assertEqual(confirmed["stateDigest"], stage["modelSource"]["stateDigest"])
+            self.assertTrue(confirmed["isSource"])
+            self.assertEqual(confirmed["changes"]["changedRefs"], [])
+        after = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        self.assertEqual(after, before)
+        self.assertEqual(self.repository.read_head(), self.initial_head)
 
 
 if __name__ == "__main__":

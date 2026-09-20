@@ -14,7 +14,9 @@ import re
 from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from archflow.state.design_portfolio import DesignStage
     from archflow.state.state_record import StateRecord
+    from .projection import StateProjection
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +31,110 @@ class IntentContext:
     expansion_count: int = 0
     supplemental_refs: tuple[str, ...] = ()
     design_sheet: Mapping[str, Any] | None = None
+
+
+def confirmed_stage_context(
+    current: StateProjection, accepted: StateProjection, stage: DesignStage, *, stage_ref: str,
+) -> dict[str, Any]:
+    """Describe a verified committed Stage relative to this exact source.
+
+    The route resolves committed history and exact retained records. This is
+    only a derived view: no summary is saved, and a candidate's inherited
+    source Stage does not make the candidate an accepted result.
+    """
+    def rows(record: StateRecord) -> dict[str, dict[str, Any]]:
+        return {
+            **{item.ref: item.to_dict() for item in record.entities},
+            **{item.ref: item.to_dict() for item in record.parameters},
+            **{"relation:" + item.relation_id: item.to_dict() for item in record.relations},
+            **{"obligation:" + item.obligation_id: item.to_dict() for item in record.obligations},
+        }
+
+    before, after = rows(accepted.record), rows(current.record)
+    changed = {ref for ref in before.keys() | after.keys() if before.get(ref) != after.get(ref)}
+    seeds = set(changed)
+    conditions: dict[str, set[str]] = {}
+    unscoped: set[str] = set()
+    unresolved: set[str] = set()
+    # Reading subjects and obligation conditions are read-context links, not
+    # geometry invalidation edges. Reopening one explicitly flags its named
+    # subjects for review; the existing record closure supplies downstreams.
+    for record in (accepted.record, current.record):
+        for reading in record.entities_of("Reading@1"):
+            subjects = set(reading.fields.get("subject_refs", ()))
+            conditions.setdefault(reading.ref, set()).update(subjects)
+            if not subjects:
+                unscoped.add(reading.ref)
+        for obligation in record.obligations:
+            ref = "obligation:" + obligation.obligation_id
+            refs = set(obligation.subject_refs)
+            refs.update(obligation.blocked_by)
+            if obligation.condition is not None:
+                refs.add(obligation.condition.ref)
+            conditions.setdefault(ref, set()).update(refs)
+            if not refs:
+                unscoped.add(ref)
+        for relation in record.relations:
+            if "relation:" + relation.relation_id in changed:
+                seeds.update(("entity:" + relation.subject, "entity:" + relation.object))
+    known = before.keys() | after.keys()
+    for ref in changed.intersection(conditions):
+        subjects = conditions[ref]
+        seeds.update(subjects.intersection(known))
+        if ref in unscoped or subjects.difference(known):
+            unresolved.add(ref)
+    affected = set(accepted.record.closure(tuple(seeds))) | set(current.record.closure(tuple(seeds)))
+    needs_review = affected | set(current.record.invalidated_refs)
+    if changed:
+        # Unscoped duties remain global, just as in the existing context slice.
+        # No declared applicability means there is no basis to exclude them.
+        needs_review.update(unscoped)
+    # If a condition depends on a changed result (including another duty),
+    # retain it as a review item without asserting its truth or satisfaction.
+    while True:
+        related = {ref for ref, subjects in conditions.items() if subjects.intersection(needs_review)}
+        if related.issubset(needs_review):
+            break
+        needs_review.update(related)
+
+    groups = {
+        "lockedParameterKeys": sorted(item.key for item in accepted.record.parameters if item.lock_authority),
+        "retainedConditionRefs": sorted(
+            [item.ref for item in accepted.record.entities_of("Reading@1")]
+            + ["obligation:" + item.obligation_id for item in accepted.record.obligations]
+        ),
+        "changedRefs": sorted(changed),
+        "affectedRefs": sorted(affected - changed),
+        "needsReviewRefs": sorted(needs_review),
+        "unresolvedImpactRefs": sorted(unresolved),
+    }
+    # The detailed source is already available through the ContextPack's
+    # exact-source supplements. A summary must not recreate an unbounded sheet.
+    omitted = {key: len(value) - 64 for key, value in groups.items() if len(value) > 64}
+    bounded = {key: value[:64] for key, value in groups.items()}
+    return {
+        "stageRef": stage_ref,
+        "label": stage.label,
+        "branchId": stage.branch_id,
+        "runId": stage.candidate_id,
+        "stateDigest": accepted.state_digest,
+        "isSource": (current.run.run_id == stage.candidate_id
+                     and current.record_source == stage.record_ref.uri
+                     and current.state_digest == accepted.state_digest),
+        "lockedParameterKeys": bounded.pop("lockedParameterKeys"),
+        "retainedConditionRefs": bounded.pop("retainedConditionRefs"),
+        "changes": bounded,
+        "omittedCounts": omitted,
+        "limitations": [
+            "Parameter locks protect only the named parameters and existing bindings; they do not freeze whole geometry.",
+            "Review items compare retained entities, parameters, relations and obligations using declared dependencies "
+            "and condition subjects. They are review prompts, not validation results or proof that other work is unaffected.",
+            "Undeclared dependencies and non-adjacent Stage interfaces absent from these records are not resolved. "
+            "Unscoped or unresolved changed conditions are listed in unresolvedImpactRefs.",
+            "Each summary list includes at most 64 entries; omittedCounts reports the rest. Read exact accepted/current "
+            "sources through ContextPack supplements before relying on incomplete condition coverage.",
+        ],
+    }
 
 
 def _complete_sheet(sheet: Mapping[str, Any], record: StateRecord | None) -> dict[str, Any]:

@@ -239,6 +239,50 @@ measurements establish neither billed cost savings nor model success rates.
 
 ## Retained-session versus project-state measurement (#32)
 
+### Confirmed-stage continuation (#185)
+
+After an architect explicitly accepts a Stage, the next Hub message from that
+exact saved editing source uses its project facts in a fresh native provider
+session. Candidate revisions continue that session. Hub saves only the last
+confirmed starting Stage reference beside its existing provider identity; the
+Stage, geometry, locks and conditions continue to belong to P036. Reopening the
+same Stage therefore does not repeatedly replace the provider context. The chat
+marks a handoff only after its source has been verified, and retains earlier
+visible messages and provider usage identities.
+
+The existing `ContextPack@1` now derives `confirmedStage` from committed history.
+It carries exact identity, the accepted parameter-lock keys and retained
+condition references. Comparing that Stage with a later candidate exposes
+changed references, declared downstream effects, review items and unresolved
+condition impacts. These findings do not validate the design or silently accept
+a new Stage. Each summary list is bounded to 64 with explicit omission counts;
+the existing source-bound supplements provide detailed facts. Parameter locks
+cover their keys and existing bindings, not every possible geometric edit.
+Non-adjacent dependencies absent from the retained records remain unresolved.
+This is the cumulative review scope since the selected accepted Stage, not a
+per-mutation attribution log. The isolated upstream acceptance check therefore
+uses a separate P036 clone with an explicitly accepted wall Stage: the baseline
+has no changes or review items, then changing only the entrance Reading puts
+the unchanged wall review into the review list. The measured project's wall
+candidate remains unaccepted.
+
+This extends the current `studio.intent` and `hub.shell` owners. The UI sends
+`contextMode=stage` only with its verified editing projection. API callers can
+still use `continue` for accumulated history or `project` for an explicit fresh
+session. An absent/unsynchronized editing projection, a candidate's inherited
+Stage, failed preparation and cancellation cannot cause an automatic handoff.
+
+The native-session mechanism follows [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup):
+`session/new` creates an independent context; loading or resuming an old session
+continues its state. Avoiding transcript replay to the client is not evidence
+that the model forgot that session. The local `acp_session.py` already selects
+`new_session` when given no saved identity, so this slice reuses that path.
+[Anthropic's context engineering discussion](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+motivates retaining relevant working facts and persistent notes. Here those facts
+are derived deterministically from StateRecord and Stage instead of introducing
+a model-written summary authority. Neither source establishes a cost saving for
+this project; the paired measurements below must report that separately.
+
 The existing manual Hub turn benchmark also measures a real provider continuing
 its old session versus starting a new provider session from the same project
 state. Use an explicit model returned by the installed provider's model list:

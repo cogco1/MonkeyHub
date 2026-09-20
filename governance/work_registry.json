@@ -18,13 +18,10 @@
         "monkeymonitor"
       ],
       "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/tests/test_chat.py",
         "tests/monkeymonitor/run_turn_benchmark.py",
-        "tests/monkeymonitor/test_turn_benchmark.py",
-        "docs/CONTEXT_COMPILATION.md"
+        "tests/monkeymonitor/test_turn_benchmark.py"
       ],
-      "handoff": "Explicitly inherits PR #202. Own only _finish and _mcp tool descriptions in chat.py; no ChatStore, prepared context, stage handoff or artifact refresh edits. Release chat.py to the new #185 slice immediately after the focused tool commit. Results stay in the existing nonproject benchmark directory; no raw transcripts or private data enter Git. Broader #32 acceptance remains open."
+      "handoff": "Explicitly inherits PR #202. Own only _finish and _mcp tool descriptions in chat.py; no ChatStore, prepared context, stage handoff or artifact refresh edits. Release chat.py to the new #185 slice immediately after the focused tool commit. Results stay in the existing nonproject benchmark directory; no raw transcripts or private data enter Git. Broader #32 acceptance remains open. Exact tool commit 0dec7bf is integrated here; chat.py/test_chat.py and shared documentation now transfer to GH-185/confirmed-stage for this checkout. GH-32 retains separate benchmark implementation/results in its own branch."
     },
     {
       "id": "GH-183",
@@ -50,7 +47,6 @@
         "apps/monkeyhub/web/src/MonitorPage.css",
         "apps/monkeyhub/web/src/MonitorPage.tsx",
         "apps/monkeyhub/web/src/monitorData.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/test/monitorData.test.ts",
         "apps/monkeyhub/web/workspaces/src/app/App.tsx",
         "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
@@ -67,13 +63,13 @@
         "tests/test_element_producers.py",
         "tests/test_occt_execution.py"
       ],
-      "handoff": "Independent PR for #183 and #32; current desktop and mainline merge remain with the coordinator. Synthetic provider experiments retain failed runs in an explicit external workspace. No claim of general design quality or latency improvement. Coordinated #32 handoff: completed tool completion/readback helpers and benchmark results transfer to GH-32; chat.py session/context functions transfer onward to the new #185 slice after the isolated tool commit. This does not close either issue."
+      "handoff": "Independent PR for #183 and #32; current desktop and mainline merge remain with the coordinator. Synthetic provider experiments retain failed runs in an explicit external workspace. No claim of general design quality or latency improvement. Coordinated #32 handoff: completed tool completion/readback helpers and benchmark results transfer to GH-32; chat.py session/context functions transfer onward to the new #185 slice after the isolated tool commit. This does not close either issue. Shared browser assertions transfer to GH-185/confirmed-stage; retain the completed candidate reopening and semantic Top locator checks."
     },
     {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
-      "goal": "Verify a real Hub provider massing-to-wall design loop, same-source visual revision, and cold-start continuation from exact retained project conditions. Extend existing intent/history owners only for reproduced gaps; issue #183 retains broader design quality acceptance.",
+      "goal": "Continue from an explicitly accepted Stage in a fresh provider session, retaining exact source, declared locks and conditions, and expose declared downstream impacts after upstream changes. Verify a synthetic massing-to-wall slice and bounded same-task history comparison; #185 remains open for undeclared and non-adjacent dependencies.",
       "depends_on": [],
       "branch": "codex/185-design-loop",
       "worktree": "C:/Users/asus/.codex/worktrees/ca06/ARCHFLOW_V4",
@@ -120,14 +116,25 @@
         "apps/archflow-studio/api/tests/test_boards.py",
         "docs/PROTOCOL.md",
         "governance/module_registry.json",
-        "docs/SYSTEM_MAP.md"
+        "docs/SYSTEM_MAP.md",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_stage_handoff.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/src/api/generated/",
+        "docs/CONTEXT_COMPILATION.md",
+              "apps/monkeyhub/api/tests/test_acp_chat.py",
+              "tests/monkeymonitor/run_stage_handoff_benchmark.py",
+              "tests/monkeymonitor/test_stage_handoff_benchmark.py"
       ],
       "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
       "lanes": [
         {
           "id": "integration",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "active",
+          "status": "done",
           "branch": "codex/185-integrate-monitor",
           "worktree": "workspace/worktrees/codex-185-integrate-monitor",
           "base_ref": "fe9bafcf6085777fe890c0439699abdd2c1bf605",
@@ -150,7 +157,7 @@
         {
           "id": "parameter-locks",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "review",
+          "status": "done",
           "branch": "codex/185-parameter-locks",
           "worktree": "workspace/worktrees/codex-185-parameter-locks",
           "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
@@ -180,7 +187,7 @@
         {
           "id": "lock-controls",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "review",
+          "status": "done",
           "branch": "codex/185-lock-controls",
           "worktree": "workspace/worktrees/codex-185-lock-controls",
           "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
@@ -203,7 +210,7 @@
         {
           "id": "drawing-pages",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "review",
+          "status": "done",
           "branch": "codex/185-drawing-page-read",
           "worktree": "workspace/worktrees/codex-185-drawing-page-read",
           "base_ref": "4385da95c25e95f561b06804aefed5a48efc5dbf",
@@ -223,7 +230,41 @@
             "docs/SYSTEM_MAP.md"
           ],
           "depends_on": [],
-          "handoff": "Merged coordinator-approved main without rewriting history. Exact Board maxEdge client generated; api:check, build and focused page/MCP checks pass headlessly. Root independently reviews the PR, merges and delivers the desktop update, then removes this completed lane. Generated types transfer to lock-controls after the verified maxEdge update, preserving one active generated-client owner. Coordinated #32 handoff: completed tool completion/readback helpers and benchmark results transfer to GH-32; chat.py session/context functions transfer onward to the new #185 slice after the isolated tool commit. This does not close either issue."
+          "handoff": "Merged coordinator-approved main without rewriting history. Exact Board maxEdge client generated; api:check, build and focused page/MCP checks pass headlessly. Root independently reviews the PR, merges and delivers the desktop update, then removes this completed lane. Generated types transfer to lock-controls after the verified maxEdge update, preserving one active generated-client owner."
+        },
+        {
+          "id": "confirmed-stage",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
+          "status": "active",
+          "branch": "codex/185-confirmed-stage-handoff",
+          "worktree": "C:/Users/asus/.codex/worktrees/042c/ARCHFLOW_V4",
+          "base_ref": "0dec7bf71372f31b4e5d2347e4321962eda9fe17",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "studio.intent",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/tests/test_stage_handoff.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "docs/CONTEXT_COMPILATION.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py"
+          ],
+          "depends_on": [],
+          "handoff": "Inherited #202 f4399f4f and exact #32 tool commit 0dec7bf preserving history. GH-32 released chat.py/test_chat.py; this slice owns ChatStore/provider preparation, retaining upstream tool completion. Shared ChatShell/browser work was coordinated with #90 and root; preserve candidate refresh, editing-base and Top locator checks. Stage experiment is an independent helper using existing benchmark statistics."
         }
       ]
     },

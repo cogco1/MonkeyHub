@@ -187,6 +187,16 @@ The scalar path retains its existing capability template, preflight and numeric 
 context reads relevant dependency closure, upstream geometry, explicit locks and conditions;
 it does not infer stage restrictions. `focusElementIds` describes focus, and `readOnlyRefs`
 distinguishes surrounding read evidence for a local task. Neither grants or revokes edit authority.
+
+`confirmedStage` is a derived view of the selected source's committed DesignStage, or null.
+It names its exact `stageRef`, `runId`, `stateDigest`, branch and label. `isSource` is true only
+when the selected state is that accepted result; a candidate's inherited Stage does not qualify.
+The summary lists the accepted Stage's locked parameter keys and retained condition references.
+`changes` compares accepted/current records and lists changed references, declared downstream
+effects, review items and unresolved condition impacts. These are review prompts, not validation
+results. Lists are limited to 64 with `omittedCounts`; exact-source ContextPack supplements remain
+the way to read missing facts. Parameter locks do not freeze whole geometry, and undeclared or
+missing non-adjacent Stage dependencies are not resolved. This view writes no project record.
 This read creates no proposal, candidate, model call, stored summary or second project state.
 
 Design detail rows have a 32 KiB budget, with conditions prioritized. This is a detail budget,
@@ -830,7 +840,22 @@ project state. It does not load the previous provider transcript. Visible messag
 the same Hub chat and mark the project-context turn; subsequent ordinary turns continue the
 new provider session. Failed/stopped preparation preserves the previous continuation. Retained
 provider identities remain available for usage attribution; old chat text is never projected
-as design state. This is an explicit reset, not automatic stage-transition orchestration.
+as design state.
+
+The UI defaults to `stage` when a verified editing projection is available. Like `project`, this
+mode requires `designContext`. It starts a fresh provider only if the verified pack identifies
+the exact accepted result (`confirmedStage.isSource`) and that Stage differs from the provider's
+last confirmed starting Stage. The continuity marker is saved with Hub's existing chat metadata,
+so reopening the same Stage does not reset again. A candidate's inherited Stage, ordinary
+revision, history browsing, absent context or refused/cancelled read never triggers a boundary.
+No Stage is accepted by this process. The actual handoff message records `contextMode=stage`,
+`confirmedStageRef` and `confirmedStageLabel`; other automatic-mode turns remain `continue` in
+the visible history. Explicit API `continue` remains available for accumulated-history use.
+If startup fails or is cancelled before a replacement provider reports its session identity,
+Hub restores the prior continuation and removes the automatic handoff marker while retaining
+the failed turn and its error. Once a replacement identity exists, a later turn failure does
+not restore an older provider. Manual candidate-context resets retain the last handled Stage
+boundary, preventing another automatic reset when returning to that same Stage.
 
 Preparing is bounded by the turn's own limit and can be stopped inside it: a stop ends the turn
 then, abandoning that read rather than waiting it out, and the answer it may still produce reaches

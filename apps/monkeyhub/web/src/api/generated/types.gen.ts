@@ -371,7 +371,15 @@ export type ChatMessage = {
     /**
      * Contextmode
      */
-    contextMode?: 'continue' | 'project';
+    contextMode?: 'continue' | 'project' | 'stage';
+    /**
+     * Confirmedstageref
+     */
+    confirmedStageRef?: string | null;
+    /**
+     * Confirmedstagelabel
+     */
+    confirmedStageLabel?: string | null;
 };
 
 /**
@@ -456,7 +464,7 @@ export type ChatPostRequest = {
     /**
      * Contextmode
      */
-    contextMode?: 'continue' | 'project';
+    contextMode?: 'continue' | 'project' | 'stage';
 };
 
 /**
