@@ -177,6 +177,16 @@ class ReadinessTests(unittest.TestCase):
         )
         self.assertUnavailable(record, "endpoints.i", "invalid")
 
+    def test_nontext_support_joint_returns_findings_instead_of_raising_type_error(self):
+        for joint in (["base-0"], {"id": "base-0"}):
+            with self.subTest(joint=joint):
+                record = self.revised_structural(
+                    lambda structural: structural["endpoints"]["i"].update(joint=joint),
+                    member_id="column-0",
+                )
+                self.assertUnavailable(record, "endpoints.i", entity_id="column-0")
+                self.assertUnavailable(record, "supports", "invalid", entity_id="column-0")
+
     def test_exact_run_base_content_and_entity_selection_are_required(self):
         other_run = self.repository.create_run("another-analysis")
         wrong_base = replace(self.run, base=replace(self.run.base, version=self.run.base.version + 1))

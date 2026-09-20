@@ -199,7 +199,7 @@ def _project(record, member_ids, expected_run, expected_digest):
                 continue
             point = endpoints.get(end, {}) if isinstance(endpoints, Mapping) else {}
             name = point.get("joint") if isinstance(point, Mapping) else None
-            if name not in nodes:
+            if not isinstance(name, str) or name not in nodes:
                 fail("invalid", entity_id, "supports", "support joint unavailable")
                 continue
             if name in supports and supports[name]["restrained"] != list(dofs):
