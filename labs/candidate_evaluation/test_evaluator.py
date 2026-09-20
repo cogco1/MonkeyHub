@@ -212,6 +212,18 @@ class ComparisonTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize(result, {})
 
+    def test_normalization_refuses_unrepresentable_arithmetic(self):
+        result = MassingEvaluator(ENVELOPE, objective_names=("gross_floor_area_m2",)).evaluate(
+            request_for(candidate("finite-normalization")))
+        # Finite bounds can still overflow their span or the normalized result.
+        for bounds in ((-1e308, 1e308), (0, 1e-320)):
+            with self.subTest(bounds=bounds), self.assertRaisesRegex(ValueError, "floating-point domain"):
+                normalize(result, {"gross_floor_area_m2": bounds})
+        huge = replace(result, objectives=(replace(result.objectives[0],
+            statistics=replace(result.objectives[0].statistics, mean=1e308)),))
+        with self.assertRaisesRegex(ValueError, "floating-point domain"):
+            normalize(huge, {"gross_floor_area_m2": (-1e308, 0)})
+
 
 class StatisticsTests(unittest.TestCase):
     def test_hand_calculated_unbiased_variance(self):
@@ -261,9 +273,18 @@ class StatisticsTests(unittest.TestCase):
         self.assertIsNone(run.seconds_per_sample)
 
     def test_unrepresentable_sample_moments_are_unavailable(self):
-        result = SyntheticEvaluator(0, 1e308, 8, 0).evaluate(request_for(candidate("large-noise")))
+        run = evaluate_timed(SyntheticEvaluator(0, 1e308, 8, 0), request_for(candidate("large-noise")))
+        result = run.result
         self.assertIsNone(result.objectives[0].value)
         self.assertIn("sample statistics unavailable", result.objectives[0].unavailable_reason)
+        self.assertEqual(result.objectives[0].statistics.count, 8)
+        self.assertIsNone(result.objectives[0].statistics.variance)
+        self.assertIsNone(result.objectives[0].statistics.standard_error)
+        self.assertEqual(result.objectives[0].uncertainty_kind, "sampling")
+        self.assertEqual(run.seconds_per_sample, run.elapsed_seconds / 8)
+        self.assertGreater(run.seconds_per_sample, 0)
+        with self.assertRaises(ValueError):
+            pareto_front((result,))
         json.dumps(result.to_dict(), allow_nan=False)
 
 

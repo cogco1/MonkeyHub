@@ -7,6 +7,26 @@ the boundaries of [#119](https://github.com/cogco1/MonkeyHub/issues/119) and
 [#176](https://github.com/cogco1/MonkeyHub/issues/176). It is not a product API or
 an architectural preference model. The issue remains open.
 
+## 汇报用说明：现在可调用什么
+
+- **输入：** 一个 `StateRecord`、独立确认的 project/run/base 与内容摘要、
+  上下文证据引用，以及明确的 envelope / objective 配置。绑定不符会拒绝测量。
+- **硬有效性：** 分别返回绑定、体量可测性、边界、限高和 FAR 的检查结果。
+  已知违规为 `invalid`；必要证据或输入缺失为 `unavailable`；`valid` 只代表
+  这组已声明检查通过，不代表真实建筑、Stage 或规范已验收。
+- **客观指标：** 可读出占地、总楼面面积、层数和高度；在相同 base、上下文和
+  评价配置下，对完整的确定性结果调用 Pareto 比较与固定范围归一化。
+  缺值不补零，无效候选不能用高指标进入比较。
+- **不确定性与成本：** 合成双点分布可返回样本数、均值、无偏样本方差、标准误
+  和实际调用的摊销墙钟成本。统计量溢出时保留已经抽取的样本数和成本，
+  数值保持 `null` 并说明原因；这与没有抽样、候选无效是不同情况。
+- **仍不可判断：** 可用面积、日照/结构性能、空间质量、偏好和设计优劣。
+  确定性指标方差为零不代表现实误差为零；合成噪声也没有建筑意义。
+
+现有 benchmark 的完整 JSON 包含可重开的候选输入和独立记录的请求绑定。
+这些候选是公开的合成体量 fixture；回放成功只验证接口、计算和来源绑定，
+不是实际 CAD 成功或真实设计质量的证据。生产接入尚未实现。
+
 ## Run and call
 
 From the repository root, with Python 3.12 and no additional dependencies:
@@ -117,6 +137,8 @@ them. Equal vectors do not dominate each other. Stochastic means are not treated
 as exact rankings. `normalize` uses caller-declared fixed bounds, orients values
 so larger means better, and does not clip values outside the bounds. No weighted
 utility or implicit normalization from the current candidate population is added.
+Finite bounds alone do not guarantee representable arithmetic: overflowing spans,
+offsets or normalized results raise `ValueError`, never a spurious zero or infinity.
 
 ## Statistical control and cost
 
@@ -134,6 +156,9 @@ unknown mean. Non-finite or unrepresentable moments are refused. See the
 [Python statistics documentation](https://docs.python.org/3.12/library/statistics.html#statistics.variance)
 and [random reproducibility notes](https://docs.python.org/3.12/library/random.html#notes-on-reproducibility).
 No third-party algorithm code, datasets or new dependencies are incorporated.
+`synthetic-two-point-v2` preserves the completed draw count if moment computation
+fails; the moments stay unknown with an explicit failure reason. The distribution
+fixture remains `synthetic-two-point-v1` because its sampling rule has not changed.
 
 `evaluate_timed` measures elapsed wall time around one actual evaluator call.
 `seconds_per_sample` is amortized elapsed time including evaluator overhead,
@@ -141,6 +166,8 @@ available only when all returned objectives share a positive sample count.
 It is not separately measured solver time or per-draw latency. Monetary cost is
 unknown (`null`). JSON export and benchmark housekeeping are outside this timer.
 The pure deterministic result is reproducible; elapsed time is expected to vary.
+Completed draws still incur cost when their moments are unavailable; a binding
+rejection or zero requested draws incurs no sample count or per-sample estimate.
 
 ## Checked small experiment
 

@@ -6,7 +6,7 @@ from random import Random
 
 from archflow.contracts.canonical import canonical_json
 from .evaluator import (
-    EvaluationRequest, EvaluationResult, Measurement, Objective, binding_check,
+    EvaluationRequest, EvaluationResult, Measurement, Objective, SampleStatistics, binding_check,
     summarize, unavailable,
 )
 
@@ -46,10 +46,13 @@ class SyntheticEvaluator:
                 measured = Measurement(objective, summarize(samples), "sampling",
                                        "no samples requested" if not samples else None)
             except ValueError as exc:
-                measured = unavailable(objective, f"sample statistics unavailable: {exc}")
+                # The draws happened even when their moments are unrepresentable.
+                # Retain the count so callers can account for the consumed budget.
+                measured = Measurement(objective, SampleStatistics(len(samples), None, None, None),
+                                       "sampling", f"sample statistics unavailable: {exc}")
         return EvaluationResult(
             request.expected_run, request.expected_content_digest,
-            None if request.record.base is None else request.record.run_ref, request.record.digest, "synthetic-two-point-v1",
+            None if request.record.base is None else request.record.run_ref, request.record.digest, "synthetic-two-point-v2",
             canonical_json({"distribution": "equal_probability_two_point", "mean": self.mean,
                             "deviation": self.deviation, "sample_count": self.sample_count, "seed": self.seed}),
             request.context_refs, ("fixture:synthetic-two-point-v1",), (check,), (measured,),
