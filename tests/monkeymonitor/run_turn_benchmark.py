@@ -377,6 +377,16 @@ def main():
             preview_code = preview.wait(timeout=100) if preview else None
             snapshot = request(monitor, "/api/traces")
             trace = next(row for row in snapshot["traces"] if row["turn_id"] == turn_id)
+            preparation = None
+            if args.condition:
+                primer_chat = json.loads((args.output / "primer-chat.json").read_text(encoding="utf-8"))
+                primer_turn = next(row["id"] for row in reversed(primer_chat["messages"]) if row["role"] == "user")
+                primer_trace = next(row for row in snapshot["traces"] if row["turn_id"] == primer_turn)
+                write_json(args.output / "primer-trace.json", primer_trace)
+                preparation = {"metrics": measured_metrics(primer_trace),
+                               "visible_history_messages": len(primer_chat["messages"]),
+                               "visible_history_characters": sum(len(row.get("content", "")) for row in primer_chat["messages"]),
+                               "provider_history_tokens": None}
             saved_session = app.state.chats._sessions[session['id']]
             native_session_id = saved_session.acpSessionId or saved_session.nativeSessionId
             continuity_ok = (bool(primer_session_id and native_session_id) and
@@ -393,6 +403,7 @@ def main():
                                     # are comparable and say which is which.
                                     "context_mode": args.condition or ("context_pack" if args.context_pack else "none")},
                       "task_success": task_success, "metrics": measured_metrics(trace),
+                      "preparation": preparation,
                       "observed_wall_ms": observed_wall_ms, "project_dir": str(project), "runtime_root": str(runtime),
                       "session_id": session['id'], "primer_provider_session_id": primer_session_id,
                       "provider_session_id": native_session_id, "session_continuity_ok": continuity_ok,
