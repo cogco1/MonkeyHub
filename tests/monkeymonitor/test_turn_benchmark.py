@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-import run_turn_benchmark as benchmark
+from tests.monkeymonitor import run_turn_benchmark as benchmark
 
 
 class BenchmarkTests(unittest.TestCase):
