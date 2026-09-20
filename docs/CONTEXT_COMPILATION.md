@@ -503,3 +503,83 @@ write-lock correction and its source comparison are documented in
 [MonkeyMonitor](../monkeymonitor/README.md#turntrace). Neither telemetry repair
 nor session rebuilding establishes a general latency improvement. The Hub's
 trace-comparison UI and the larger #32 benchmark set remain separate acceptance.
+
+### Retained real-provider results, 2026-09-20
+
+The `gpt-6-astra` six-turn run passed the final checker: seven candidate runs,
+including the intentionally invalid trial, with exact final solids, original
+and prior-source fields preserved, two genuinely new provider sessions for
+reopen/wall, and unchanged HEAD/accepted branches. The 4 m trial intruded
+215.76 m³ into the protected courtyard volume; the 2 m correction intruded
+0 m³. Existing tool timestamps confirm that the trial image returned before
+the correction proposal began. This verifies the declared schematic task,
+not building feasibility or general autonomous design quality.
+
+| Turn | New candidates | Tools | Failed tools | Successful model views | Turn seconds | First new candidate seconds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Three-wing courtyard | 1 | 9 | 2 | 1 | 171.401 | 123.258 |
+| Lower east wing | 1 | 6 | 0 | 2 | 68.356 | 34.087 |
+| North upper setback | 1 | 6 | 0 | 2 | 87.968 | 42.254 |
+| Trial, observe, repair | 2 | 11 | 0 | 2 | 169.979 | 45.652 |
+| Cold reopen, move west wing | 1 | 9 | 1 | 2 | 224.824 | 156.431 |
+| New session, derive north wall | 1 | 11 | 1 | 2 | 160.874 | 110.219 |
+
+Provider-reported token totals across the observed usage events are below;
+cached input is a subset of input, not an additional charge or a unique-prompt
+size. These counts do not establish model-request boundaries.
+
+| Turn | Input tokens | Cached input tokens | Output tokens |
+| --- | ---: | ---: | ---: |
+| Three-wing courtyard | 388,304 | 332,928 | 2,705 |
+| Lower east wing | 310,736 | 296,064 | 868 |
+| North upper setback | 375,608 | 362,496 | 1,349 |
+| Trial, observe, repair | 940,511 | 915,840 | 2,043 |
+| Cold reopen, move west wing | 369,766 | 308,096 | 1,981 |
+| New session, derive north wall | 454,535 | 387,968 | 2,275 |
+
+The trial's first candidate is deliberately unsuitable; this metric measures
+completed generation/readback, not satisfaction of the design requirement.
+The four failed calls were rejected keep references or an invalid `type_ref`,
+subsequently corrected by the same provider. No routine schema/read request
+has been hidden from the tool counts. Model-request counts, provider-internal
+retries, browser first paint and billed cost remain unknown. All six traces
+have closed observed spans; absence of missing-log notices does not prove that
+every possible operation was instrumented.
+
+The local evidence root is
+`D:/MONKEYHUB_DEV/temp/183-32-validation/courtyard-3`; it retains the P036 project,
+original requests/reports/chat, model-derived top/front PNGs and the existing
+diagnostic journal. The six-turn run used the frozen pre-review production
+code; the final trace correction and stricter offline checker followed it.
+Geometry, UI and worker code did not change between that run and commit
+`8b7e1d05`. The final checker reprojects timings without rewriting the original
+reports: the wall's old 32.993 s value was an input-candidate read, and becomes
+110.219 s when same-turn generation is required.
+
+Failures remain in adjacent directories: `baseline-simple` lacked the isolated
+ACP dependency before any provider turn; `courtyard-1` lacked the user-site PDF
+dependency during service setup; `courtyard-2` passed the first four spatial
+steps but failed the cold-reopen observation with three
+`CHAT_STUDIO_UNAVAILABLE` calls. Its old one-second worker identity timeout was
+the reproduced cause. The final checker still rejects that pilot. These runs
+are not discarded or counted as successful complete loops. No statistical
+speedup follows from this small, uncontrolled series.
+
+Two additional `incremental-edit --context-pack --no-preview` runs used commit
+`8b7e1d05`, the same archived project bytes, prompt, `gpt-6-astra` model and
+context mode, in distinct fresh provider sessions. Both changed only the
+cornice height from 0.3 to 0.5 m, preserved its footprint/support and all other
+authored fields, and left canonical HEAD unchanged. Both produced one CAD
+build and passed readback, geometry and authored-field checks.
+
+| Repeat | Turn seconds | First new candidate seconds | Tools | Input / cached input / output tokens |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 86.310 | 39.211 | 8 | 248,336 / 195,456 / 1,752 |
+| 2 | 108.260 | 27.124 | 7 | 283,036 / 233,600 / 2,305 |
+
+Both traces have zero observed failed tools and zero incomplete spans. Each
+had one nonblocking Monitor read return busy/503; later reads recovered and
+those poll failures remain in the reports. Browser first paint and explicit
+`verified_ms` remain unknown. The variation shows why a faster first candidate
+must not be presented as a faster completed turn. Evidence remains under
+`D:/MONKEYHUB_DEV/temp/183-32-validation/numeric-repeats/repeat-1` and `repeat-2`.
