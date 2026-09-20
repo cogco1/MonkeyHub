@@ -138,6 +138,9 @@ retained live batch verifies all 12 planned slots, candidate operator trajectori
 exact review bindings/adjudication, public call artifacts and the all-trial
 aggregate. P036 HEAD remains version 0 with the original empty-state digest;
 design branches remain empty and no Stage or canonical version was issued.
+The probe's local `.gitattributes` preserves exact JSON/HEAD bytes under Git's
+newline conversion settings. A retained state hash failed with `core.autocrlf=true`
+before this correction and matches under both `true` and `false` afterward.
 
 ```powershell
 python -m unittest labs.checkpoint_critique.test_fixture labs.checkpoint_critique.test_provider labs.checkpoint_critique.test_harness

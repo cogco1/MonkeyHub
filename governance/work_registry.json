@@ -3,6 +3,15 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-173", "stream": "planning", "status": "active",
+      "goal": "Preserve the completed experiment's exact P036 bytes across Git newline configurations.",
+      "depends_on": [], "branch": "codex/173-checkpoint-critique", "worktree": "0609/ARCHFLOW_V4",
+      "base_ref": "9d0cf61", "contributor": "Codex", "reviewer": null,
+      "modules": ["project.repository"],
+      "write_scope": ["probes/checkpoint-critique/.gitattributes", "labs/checkpoint_critique/RESULTS.md"],
+      "handoff": "Local byte-preservation correction only; no provider rerun or production changes."
+    },
+    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
