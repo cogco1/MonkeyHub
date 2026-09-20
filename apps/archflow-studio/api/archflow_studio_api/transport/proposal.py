@@ -396,6 +396,11 @@ def _semantic_edit_schema(schema: dict[str, Any]) -> None:
             variant["description"] = "Upsert: omitted fields retain the existing value; new items need their complete declared fields."
             fields = variant.get("properties", {}).get("fields")
             if fields is not None:
+                variant["description"] = (
+                    "Upsert: omitted outer fields retain existing values; entity fields are merged by key. "
+                    "A supplied params or references object replaces that entire object. Preserve every unchanged "
+                    "nested member, such as a prism's profile when changing height. New items need their complete declared fields."
+                )
                 for field_variant in fields.get("anyOf", [fields]):
                     field_variant["required"] = []
     schema.update(edit)

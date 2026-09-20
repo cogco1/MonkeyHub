@@ -22,8 +22,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/archflow-studio/api/tests/test_intent_context.py",
         "apps/archflow-studio/api/tests/test_intents.py",
+        "apps/archflow-studio/api/tests/test_proposals.py",
         "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
       ],
       "handoff": "Live acceptance in isolated gh185-courtyard-loop project, Hub runtime gh185-design-loop-runtime and port 8910. #188 implementation is the committed baseline; its broad source reservations are released. Coordinate any production write outside this exact scope with the integration task; Hub chat/UI/generated clients remain there."
