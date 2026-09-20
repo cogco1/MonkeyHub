@@ -27,7 +27,16 @@
         "apps/archflow-studio/api/tests/test_intents.py",
         "apps/archflow-studio/api/tests/test_proposals.py",
         "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/boards.py",
+        "apps/archflow-studio/api/tests/test_boards.py",
+        "docs/PROTOCOL.md",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
       ],
       "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
       "lanes": [
@@ -60,6 +69,33 @@
           ],
           "depends_on": [],
           "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied."
+        },
+        {
+          "id": "drawing-pages",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
+          "status": "active",
+          "branch": "codex/185-drawing-page-read",
+          "worktree": "workspace/worktrees/codex-185-drawing-page-read",
+          "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/boards.py",
+            "apps/archflow-studio/api/tests/test_boards.py",
+            "docs/PROTOCOL.md",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md"
+          ],
+          "depends_on": [],
+          "handoff": "Reuse registered document pages and the existing transient Board export renderer for bounded native MCP PNG reads. No project writes or UI changes. Root integration owns regenerated clients and main/desktop delivery."
         }
       ]
     },
