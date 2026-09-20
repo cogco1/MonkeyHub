@@ -236,3 +236,52 @@ The explicit `o200k_base` run reported that the local package/cache was unavaila
 no tokenizer data was downloaded and no new reference-token figures are claimed.
 Re-run the command when schemas or rules change. These synthetic packaging
 measurements establish neither billed cost savings nor model success rates.
+
+## Retained-session versus project-state measurement (#32)
+
+The existing manual Hub turn benchmark also measures a real provider continuing
+its old session versus starting a new provider session from the same project
+state. Use an explicit model returned by the installed provider's model list:
+
+```powershell
+python tests/monkeymonitor/run_turn_benchmark.py --session-pair --prepare-only --scenario incremental-edit --model <model-id> --output <absolute-nonproject-directory>
+python tests/monkeymonitor/run_turn_benchmark.py --session-pair --scenario incremental-edit --model <model-id> --output <same-directory> --timeout 300
+```
+
+`--prepare-only` makes one P036 fixture archive, restores two copies through the
+existing archive owner, and verifies their complete retained file manifests.
+It calls no model. Running the prepared pair starts isolated Hub/Studio/Monitor
+services on free ports. Each arm first performs the same read-only primer in a
+real provider session; the measured request then uses `contextMode=continue` or
+`contextMode=project`, with the same explicit `designContext`. The latter must
+replace the provider session identity. Primer outputs are retained because the
+two independently generated histories need not be textually identical.
+
+`incremental-edit` changes the cornice height while keeping its base.
+`assembly-edit` revises both heights together while preserving the footprint,
+support reference, parameters and relationship. This small retained assembly
+tests modification/continuation costs; it does not test building design quality.
+Both require real candidate readback and the specified bounds and authored
+fields. The requested source's actual `/api/state?run=...` digest is used;
+the seed fixture's historical receipt digest is not substituted for it.
+
+Use a new output directory for every repeat, and alternate
+`--order continue,project` with `--order project,continue`. A used or modified
+pair is refused. Only sample during a coordinated quiet window. One ordered
+pair is a pilot, not evidence of a general speedup or a latency distribution.
+
+`comparison.json` reports matching input/build/prompt/model conditions and task
+success separately. Each arm retains `trace.json`, `chat.json`, `primer-chat.json`,
+`input-state.json`, `candidate.json`, its P036 project under `projects/`, and
+native Hub diagnostics under `runtime/`. Open that exact project directory with
+the same source checkout to inspect the retained candidate. These directories
+are explicit external test outputs, never a second canonical project store.
+
+Token counts come from Monitor/provider records, with unavailable fields left
+`null`. Model request count remains unknown when the provider does not expose
+request identities; Agent activity intervals are reported separately. Failed
+tools, retry spans and CAD builds count only observed events, and provider-internal
+retries remain unknown. The benchmark reports neither account billing nor a
+browser first-visible time. Different failed/partial outputs are not accepted
+as faster successful work. The offline intent packaging command above remains
+a separate measurement with zero live model calls.

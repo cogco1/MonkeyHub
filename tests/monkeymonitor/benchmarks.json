@@ -11,6 +11,10 @@
     {
       "id": "incremental-edit",
       "prompt": "This is an isolated design benchmark, not source development. Only use the connected monkeyhub tools. Modify only existing portico/portico-cornice height from 0.3 m to 0.5 m. Preserve its footprint and support datum, keep portico-base unchanged at height 0.6 m with its existing footprint, and preserve all other authored fields. Use keep:[\"entity:portico-base\"]. Exact initial stateDigest: {state_digest}; sourceRunId: run-001. Use the existing numeric modification capability and its bounded submit/wait/readback flow with awaitSeconds:60. Read back the candidate; the cornice should span Z=0.6 to 1.1 m and the base Z=0 to 0.6 m. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
+    },
+    {
+      "id": "assembly-edit",
+      "prompt": "This is an isolated design benchmark, not source development. Only use connected monkeyhub tools. Continue the existing portico assembly from exact sourceRunId run-001 and stateDigest {state_digest}. Raise portico-base height from 0.6 m to 0.8 m and increase portico-cornice height from 0.3 m to 0.5 m in one candidate. Preserve both footprints, the cornice base reference to portico-base-top, the support relationship, all parameters and all other authored fields. The resulting base spans Z=0 to 0.8 m and cornice Z=0.8 to 1.3 m. Use the existing semanticEdit proposal path, submit once, execute with awaitSeconds:60 and read back the candidate. Do not accept or issue a Stage. Give one short result sentence. Do not read or edit repo files, use shell tools, or call another model."
     }
   ]
 }
