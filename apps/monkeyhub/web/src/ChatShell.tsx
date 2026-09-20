@@ -524,7 +524,10 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       if (current.archived) { setChat(current); return; }
       await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
-      if (requestedContext && contextProjectId === current.projectId) body.designContext = requestedContext;
+      if (requestedContext && contextProjectId === current.projectId) {
+        body.designContext = requestedContext;
+        body.contextMode = "stage";
+      }
       if (requestedContextMode === "project") {
         if (!body.designContext) throw new Error(t.contextOpenProject);
         body.contextMode = "project";
@@ -821,6 +824,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
               </div>
             : <article className={`chat-message chat-message--${message.role}`} key={message.id}>
               {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
+              {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
               <MessageText text={message.content} />
               {Boolean(message.attachments?.length) && <ul className="chat-attachments chat-attachments--saved" aria-label={t.attachments}>{message.attachments!.map((file) => <li key={file.id}>
                 <a href={`/api/chat/sessions/${encodeURIComponent(chat!.id)}/attachments/${encodeURIComponent(file.id)}`} download={file.name}><Icon name="file" /><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></a>
@@ -858,6 +862,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             {t.contextProject}
           </label>
           {(!designContext || contextMode === "project") && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
+          {designContext && contextMode !== "project" && <p className="chat-muted">{t.contextStageHint}</p>}
           <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="attach" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>

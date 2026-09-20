@@ -208,7 +208,7 @@
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
-      "goal": "Verify a real Hub provider massing-to-wall design loop, same-source visual revision, and cold-start continuation from exact retained project conditions. Extend existing intent/history owners only for reproduced gaps; issue #183 retains broader design quality acceptance.",
+      "goal": "Continue from an explicitly accepted Stage in a fresh provider session, retaining exact source, declared locks and conditions, and expose declared downstream impacts after upstream changes. Verify a synthetic massing-to-wall slice and bounded same-task history comparison; #185 remains open for undeclared and non-adjacent dependencies.",
       "depends_on": [],
       "branch": "codex/185-design-loop",
       "worktree": "C:/Users/asus/.codex/worktrees/ca06/ARCHFLOW_V4",
@@ -255,14 +255,25 @@
         "apps/archflow-studio/api/tests/test_boards.py",
         "docs/PROTOCOL.md",
         "governance/module_registry.json",
-        "docs/SYSTEM_MAP.md"
+        "docs/SYSTEM_MAP.md",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_stage_handoff.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/src/api/generated/",
+        "docs/CONTEXT_COMPILATION.md",
+        "apps/monkeyhub/api/tests/test_acp_chat.py",
+        "tests/monkeymonitor/run_stage_handoff_benchmark.py",
+        "tests/monkeymonitor/test_stage_handoff_benchmark.py"
       ],
       "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
       "lanes": [
         {
           "id": "integration",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "active",
+          "status": "done",
           "branch": "codex/185-integrate-monitor",
           "worktree": "workspace/worktrees/codex-185-integrate-monitor",
           "base_ref": "fe9bafcf6085777fe890c0439699abdd2c1bf605",
@@ -273,17 +284,19 @@
             "studio.intent"
           ],
           "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/main.tsx",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
           ],
           "depends_on": [],
-          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. ChatShell.tsx and chatShell.browser.mjs are released after their integration reached main; GH-183/headless-board-refresh owns the bounded refresh follow-up in its independent PR, preserving the parallel explicit Continue/Monitor assertions. Completed intent_agent.py ownership remains with GH-73."
+          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. Current candidate/context and Monitor follow-up transfers apps/monkeyhub/web/src/MonitorPage.tsx, apps/monkeyhub/web/src/MonitorPage.css, apps/monkeyhub/web/test/chatShell.browser.mjs to GH-183 after the merged baseline and explicit stop-writing handoff; remaining acceptance stays with this lane."
         },
         {
           "id": "parameter-locks",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "review",
+          "status": "done",
           "branch": "codex/185-parameter-locks",
           "worktree": "workspace/worktrees/codex-185-parameter-locks",
           "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
@@ -296,8 +309,11 @@
           ],
           "write_scope": [
             "archflow/state/state_record.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
             "apps/archflow-studio/api/tests/test_proposals.py",
             "apps/archflow-studio/api/tests/test_collaboration_auth.py",
             "apps/archflow-studio/api/tests/test_intents.py",
@@ -305,12 +321,12 @@
             "tests/test_state_record.py"
           ],
           "depends_on": [],
-          "handoff": "Explicit parameter lock/unlock proposals reuse the sole StateRecord operator and candidate/P036 writer; preserve locked bindings, cold readback and exact bases. Root owns Hub UI and generated clients. Parameter locks do not freeze whole geometry or accept Stage. Source writing stopped after #194 landed; the coordinator verified clean completed checkouts and released the shared App/client/generated and intent/proposal integration seams to current lanes. Remaining acceptance is retained here."
+          "handoff": "Explicit parameter lock/unlock proposals reuse the sole StateRecord operator and candidate/P036 writer; preserve locked bindings, cold readback and exact bases. Root owns Hub UI and generated clients. Parameter locks do not freeze whole geometry or accept Stage."
         },
         {
           "id": "lock-controls",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "review",
+          "status": "done",
           "branch": "codex/185-lock-controls",
           "worktree": "workspace/worktrees/codex-185-lock-controls",
           "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
@@ -320,16 +336,20 @@
             "hub.shell"
           ],
           "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/api/client.ts",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css"
+            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
+            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
           ],
           "depends_on": [],
-          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. PR #194 is merged into main at 3a92b414; completed App/Stage/candidatePreview editing is released to GH-137/retire-elevation-entry for removal of the old elevation toolbar. Preserve all parameter-lock behavior and its tests."
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. Current candidate/context and Monitor follow-up transfers apps/monkeyhub/web/workspaces/src/app/App.tsx to GH-183 after the merged baseline and explicit stop-writing handoff; remaining acceptance stays with this lane."
         },
         {
           "id": "drawing-pages",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "review",
+          "status": "done",
           "branch": "codex/185-drawing-page-read",
           "worktree": "workspace/worktrees/codex-185-drawing-page-read",
           "base_ref": "4385da95c25e95f561b06804aefed5a48efc5dbf",
@@ -340,8 +360,6 @@
             "studio.board"
           ],
           "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
             "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/boards.py",
@@ -352,6 +370,42 @@
           ],
           "depends_on": [],
           "handoff": "Merged coordinator-approved main without rewriting history. Exact Board maxEdge client generated; api:check, build and focused page/MCP checks pass headlessly. Root independently reviews the PR, merges and delivers the desktop update, then removes this completed lane. Generated types transfer to lock-controls after the verified maxEdge update, preserving one active generated-client owner."
+        },
+        {
+          "id": "confirmed-stage",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
+          "status": "review",
+          "branch": "codex/185-confirmed-stage-handoff",
+          "worktree": "C:/Users/asus/.codex/worktrees/042c/ARCHFLOW_V4",
+          "base_ref": "0dec7bf71372f31b4e5d2347e4321962eda9fe17",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "studio.intent",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+            "apps/monkeyhub/api/monkeyhub_api/models.py",
+            "apps/monkeyhub/api/tests/test_stage_handoff.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/src/api/generated/",
+            "apps/monkeyhub/web/workspaces/src/api/generated/",
+            "docs/CONTEXT_COMPILATION.md",
+            "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
+            "apps/monkeyhub/api/monkeyhub_api/chat.py",
+            "apps/monkeyhub/api/tests/test_chat.py",
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "tests/monkeymonitor/run_stage_handoff_benchmark.py",
+            "tests/monkeymonitor/test_stage_handoff_benchmark.py"
+          ],
+          "depends_on": [],
+          "handoff": "PR #211 implements confirmed-Stage continuation and startup-failure recovery, inheriting #202 f4399f4f and exact #32 tool commit 0dec7bf. Shared candidate-refresh and Top locator assertions are retained. Four synthetic provider arms passed all 25 checks at frozen 8143c5a; input fell but latency/cache results are mixed. Coordinator reviews, merges in dependency order and handles desktop delivery; issue #185 remains open for undeclared and non-adjacent dependencies."
         }
       ]
     },

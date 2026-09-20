@@ -1546,6 +1546,65 @@ export type CompositionPatternDto = {
 };
 
 /**
+ * ConfirmedStageContextDto
+ *
+ * A read-only view of committed Stage identity and its retained conditions.
+ */
+export type ConfirmedStageContextDto = {
+    /**
+     * Stageref
+     */
+    stageRef: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Issource
+     *
+     * True only when the selected run, retained record and state digest are the accepted Stage itself. Inheriting a Stage base does not accept a candidate.
+     */
+    isSource: boolean;
+    /**
+     * Lockedparameterkeys
+     *
+     * Parameters locked in the accepted Stage. This is not a whole-geometry lock; current values and lock state remain in context.
+     */
+    lockedParameterKeys: Array<string>;
+    /**
+     * Retainedconditionrefs
+     *
+     * Reading and obligation references retained in the accepted Stage; their current details and coverage remain in context.
+     */
+    retainedConditionRefs: Array<string>;
+    changes: StageContextChangesDto;
+    /**
+     * Omittedcounts
+     *
+     * Omitted entries by summary list name; each list is bounded to 64 entries.
+     */
+    omittedCounts: {
+        [key: string]: number;
+    };
+    /**
+     * Limitations
+     */
+    limitations: Array<string>;
+};
+
+/**
  * ContextPackDto
  *
  * What a caller would otherwise discover by reading before it can act.
@@ -1602,6 +1661,10 @@ export type ContextPackDto = {
     preflight?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Derived from verified committed design history, with differences from this exact source. Null when no committed Stage is bound; never inferred from an unaccepted candidate.
+     */
+    confirmedStage?: ConfirmedStageContextDto | null;
     /**
      * Honesty
      */
@@ -7245,6 +7308,30 @@ export type SourceDocumentRequestDto = {
      * Replace one registered document whole, page for page. The upload must have the same media type and page count as the document it replaces. Mutually exclusive with replacesPages.
      */
     replacesDocument?: DocumentReplacementTargetDto | null;
+};
+
+/**
+ * StageContextChangesDto
+ *
+ * Content differences and declared review scope, never a validation receipt.
+ */
+export type StageContextChangesDto = {
+    /**
+     * Changedrefs
+     */
+    changedRefs: Array<string>;
+    /**
+     * Affectedrefs
+     */
+    affectedRefs: Array<string>;
+    /**
+     * Needsreviewrefs
+     */
+    needsReviewRefs: Array<string>;
+    /**
+     * Unresolvedimpactrefs
+     */
+    unresolvedImpactRefs: Array<string>;
 };
 
 /**

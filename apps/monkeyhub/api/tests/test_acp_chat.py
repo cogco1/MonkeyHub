@@ -206,7 +206,7 @@ class AcpChatTests(unittest.TestCase):
         self.post(session, "OLD_TRANSCRIPT_185")
         self.finished(session)
         old_client = self.store._acp_sessions[session.id]
-        with patch.object(chat, "_prepared_context", return_value='\n\n{"stateDigest":"retained-source","keep":["entity:mass"]}'):
+        with patch.object(chat, "_prepared_context", return_value={"stateDigest": "retained-source", "keep": ["entity:mass"]}):
             self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Design facade",
                 contextMode="project", designContext=ChatDesignContext(sourceRunId="run-1", stateDigest="retained-source")))
             result = self.finished(session)

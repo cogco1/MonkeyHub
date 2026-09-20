@@ -874,6 +874,8 @@ export const chatCopy = {
     contextLoading: "正在读取编辑状态，请稍后再开始新上下文。",
     contextUnsaved: "模型有尚未保存的本地修改，请先同步或撤销，再将模型作为聊天上下文。",
     contextProjectMessage: "项目状态",
+    contextStageMessage: "从已确认阶段继续",
+    contextStageHint: "确认阶段后，从保存的阶段成果开始新的模型上下文；候选修改继续当前对话。",
     modelSince: "改动只影响这个对话之后的消息。",
     railWorkspaces: "工作区", railSystem: "系统", railProject: "此项目",
     errorDetails: "技术详情", changeModel: "更换模型",

@@ -4437,7 +4437,8 @@
         "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
         "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
         "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary",
-        "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation"
+        "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation",
+        "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4656,7 +4657,8 @@
         "one accepted Stage carries at most one acceptance event: it is written only after the branch head actually advanced, a repeat acceptance returns the committed Stage and writes none, a refusal writes none, and a Stage committed before this evidence existed reads back with none rather than an invented actor",
         "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance",
         "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly.",
-        "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD"
+        "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD",
+        "confirmedStage is a derived view, never another persisted authority; isSource requires the exact accepted run/record/digest; bounded changed/affected/review references disclose omissions and unresolved non-adjacent or undeclared dependencies"
       ],
       "status": "canonical",
       "tests": [
@@ -6217,7 +6219,8 @@
         "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
         "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
         "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with",
-        "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write."
+        "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
+        "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6231,7 +6234,8 @@
         "Fixed application id, optional projectDir scope, and start/stop request",
         "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code",
         "An existing complete project folder, chosen installed CLI/model and user chat message with optional base64 file attachments (8 files, 20 MiB each, 40 MiB total)",
-        "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext"
+        "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext",
+        "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
@@ -6325,7 +6329,8 @@
         "Hub controls language, theme and application settings. Workspace preferences only project those values; retained editing-base pointers keep their existing exact project binding.",
         "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
         "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory",
-        "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained."
+        "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained.",
+        "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6403,7 +6408,9 @@
         "apps/monkeyhub/web/workspaces/test/connection.test.ts",
         "apps/monkeyhub/web/workspaces/test/proposalCard.test.ts",
         "apps/monkeyhub/web/workspaces/test/preferences.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+        "apps/monkeyhub/api/tests/test_stage_handoff.py",
+        "tests/monkeymonitor/test_stage_handoff_benchmark.py"
       ],
       "depends_on": [
         "project.repository",

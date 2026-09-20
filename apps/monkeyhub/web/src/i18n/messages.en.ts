@@ -916,6 +916,8 @@ export const chatCopy = {
     contextLoading: "Reading the editing state. Wait before starting a new context.",
     contextUnsaved: "Local model edits are not saved. Sync or undo them before using the model as chat context.",
     contextProjectMessage: "Project context",
+    contextStageMessage: "Continuing from confirmed stage",
+    contextStageHint: "After you confirm a stage, its saved result starts the next model context. Candidate revisions keep the same conversation.",
     connectionDetails: "Connection details", toolUrl: "Tool page address", connectionNone: "No tool page is open on the right.",
     modelLabel: "Model", modelCliDefault: "CLI default model", modelCustom: "Custom model id…", modelCustomLabel: "Model id",
     modelChecking: "Checking which models are available…", modelSaving: "Switching…", modelRunning: "The model can be changed once this reply finishes.", modelApply: "Use",

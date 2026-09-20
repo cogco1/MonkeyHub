@@ -239,6 +239,188 @@ measurements establish neither billed cost savings nor model success rates.
 
 ## Retained-session versus project-state measurement (#32)
 
+### Confirmed-stage continuation (#185)
+
+After an architect explicitly accepts a Stage, the next Hub message from that
+exact saved editing source uses its project facts in a fresh native provider
+session. Candidate revisions continue that session. Hub saves only the last
+confirmed starting Stage reference beside its existing provider identity; the
+Stage, geometry, locks and conditions continue to belong to P036. Reopening the
+same Stage therefore does not repeatedly replace the provider context. The chat
+marks a handoff only after its source has been verified, and retains earlier
+visible messages and provider usage identities.
+
+The existing `ContextPack@1` now derives `confirmedStage` from committed history.
+It carries exact identity, the accepted parameter-lock keys and retained
+condition references. Comparing that Stage with a later candidate exposes
+changed references, declared downstream effects, review items and unresolved
+condition impacts. These findings do not validate the design or silently accept
+a new Stage. Each summary list is bounded to 64 with explicit omission counts;
+the existing source-bound supplements provide detailed facts. Parameter locks
+cover their keys and existing bindings, not every possible geometric edit.
+Non-adjacent dependencies absent from the retained records remain unresolved.
+This is the cumulative review scope since the selected accepted Stage, not a
+per-mutation attribution log. The isolated upstream acceptance check therefore
+uses a separate P036 clone with an explicitly accepted wall Stage: the baseline
+has no changes or review items, then changing only the entrance Reading puts
+the unchanged wall review into the review list. The measured project's wall
+candidate remains unaccepted.
+
+This extends the current `studio.intent` and `hub.shell` owners. The UI sends
+`contextMode=stage` only with its verified editing projection. API callers can
+still use `continue` for accumulated history or `project` for an explicit fresh
+session. An absent/unsynchronized editing projection, a candidate's inherited
+Stage, failed preparation and cancellation cannot cause an automatic handoff.
+
+The native-session mechanism follows [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup):
+`session/new` creates an independent context; loading or resuming an old session
+continues its state. Avoiding transcript replay to the client is not evidence
+that the model forgot that session. The local `acp_session.py` already selects
+`new_session` when given no saved identity, so this slice reuses that path.
+[Anthropic's context engineering discussion](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+motivates retaining relevant working facts and persistent notes. Here those facts
+are derived deterministically from StateRecord and Stage instead of introducing
+a model-written summary authority. Neither source establishes a cost saving for
+this project; the paired measurements below must report that separately.
+
+### 2026-09-20 confirmed-stage comparison (#185): four measured arms
+
+A separate helper measures the accepted-Stage handoff itself. All four arms used
+frozen commit `8143c5a3570f2d2886da9d9204c097957605a747`, provider `codex`,
+reported model `gpt-6-astra` and an empty tracked source diff. Use Python 3.12
+with the Hub and Runtime requirements installed. This run used the isolated
+interpreter below; reproduce it in a new, unused directory under the configured
+dev temp root:
+
+```powershell
+$stagePython = 'D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/venv/Scripts/python.exe'
+& $stagePython tests/monkeymonitor/run_stage_handoff_benchmark.py --prepare-only --model gpt-6-astra --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
+& $stagePython tests/monkeymonitor/run_stage_handoff_benchmark.py --model gpt-6-astra --timeout 360 --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
+```
+
+`--prepare-only` is an optional preflight: it builds and verifies the
+deterministic P036 fixture without calling a model. That deterministic
+preparation took 10.375 s. The measured run refuses an output directory that
+already attempted provider calls, runs the arms sequentially and performs no
+automatic retries.
+
+The two pairs use opposite orders: pair 1 ran continue then stage, pair 2 ran stage
+then continue. Every arm first requests six read-only massing reviews of
+350-500 words each in one real provider session, then explicitly accepts the
+massing candidate, then restarts Hub and Runtime for real, then sends the same
+exact final wall task under its own `contextMode`. All six massing controls
+(`mass_height`, `mass_x0`, `mass_x1`, `mass_y0`, `mass_y1`, `mass_z0`) are
+parameter-bound and locked. Each arm passed all 25 recorded checks; both pairs
+matched on build revision, source diff, provider, model, input source, prompt
+digest, history-prompt digest and accepted-record digest, and both are recorded
+as comparable successful pairs.
+
+Measured final wall turn:
+
+| Pair / condition | Input | Cached input | Non-cached input | Output | Wall s | First candidate s | Tool calls | CAD builds | Failed tools |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 / continue | 781,793 | 759,168 | 22,625 | 2,965 | 122.897 | 74.392 | 9 | 1 | 1 |
+| 1 / stage | 473,560 | 412,928 | 60,632 | 3,209 | 145.089 | 86.335 | 9 | 1 | 1 |
+| 2 / stage | 378,006 | 314,624 | 63,382 | 2,292 | 109.031 | 68.533 | 9 | 1 | 0 |
+| 2 / continue | 937,840 | 864,256 | 73,584 | 4,139 | 156.041 | 98.358 | 9 | 1 | 1 |
+
+Six preparation reviews, and all seven provider turns of each arm:
+
+| Pair / condition | Prep input | Prep cached | Prep output | Prep wall s | All-7 input | All-7 cached | All-7 non-cached | All-7 output | All-7 wall s | All-7 tool calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 / continue | 1,080,376 | 979,968 | 9,617 | 355.793 | 1,862,169 | 1,739,136 | 123,033 | 12,582 | 478.690 | 26 |
+| 1 / stage | 652,728 | 572,416 | 9,546 | 344.013 | 1,126,288 | 985,344 | 140,944 | 12,755 | 489.102 | 17 |
+| 2 / stage | 1,023,655 | 932,992 | 10,509 | 378.901 | 1,401,661 | 1,247,616 | 154,045 | 12,801 | 487.932 | 26 |
+| 2 / continue | 1,356,754 | 1,263,360 | 12,498 | 458.351 | 2,294,594 | 2,127,616 | 166,978 | 16,637 | 614.392 | 30 |
+
+Cached input is a subset of input; non-cached input is input minus cached input.
+The columns must not be added together. Each Stage arm reports lower total input
+than the continue arm of its own pair, but its non-cached input is higher in
+pair 1 (60,632 versus 22,625 for the final turn; 140,944 versus 123,033 across
+seven turns) and lower in pair 2. Any lower-total-input reading must be tempered
+by this cache composition. These are provider counters, not account charges, and
+this is not a cost or speed claim.
+
+Visible history and the separately measured Hub operations:
+
+| Pair / condition | Visible messages | Visible characters | Stage acceptance ms | Hub/Runtime restart ms | Standalone context re-read ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 / continue | 29 | 30,057 | 609 | 5,546 | 110 |
+| 1 / stage | 20 | 25,486 | 547 | 6,125 | 125 |
+| 2 / stage | 29 | 29,090 | 640 | 5,563 | 109 |
+| 2 / continue | 33 | 31,349 | 594 | 6,093 | 109 |
+
+Native provider history token length remains unknown. The explicit context re-read is
+a separate experiment measurement taken outside the measured turn; the final
+turn already includes its own preparation, so this separate read must not be
+added when reporting final-turn latency. Wall-time differences are not pure provider
+startup.
+
+Both arms of each pair independently generate their own six-review history, so
+the preparation differences above cannot be attributed to the Stage
+intervention. Each arm's summaries are derived deterministically from
+StateRecord and Stage; no additional model summarizer runs.
+
+The measured wall candidate is never accepted or issued in the measured project:
+each arm ends with an unchanged canonical HEAD and exactly the two massing
+Stages. The upstream-impact baseline is settled in a disposable P036 clone that
+accepts the verified wall Stage only for that purpose. In the clone the accepted
+baseline lists no changed, affected or needs-review references; changing only
+the entrance Reading from a 1.0 m to a 1.4 m clear gap then reports
+`entity:entrance-condition` as changed, `entity:hall-mass` as affected, and
+`entity:entrance-condition`, `entity:hall-mass` and the previously unchanged
+`entity:wall-review` as needing review, with no omitted summary entries. The
+current geometry stays unchanged pending human revision. This is the cumulative
+review scope relative to the accepted Stage, not proof of buildability or of
+complete dependency coverage.
+
+Provider-turn tool and CAD totals exclude the deterministic fixture preparation
+and the post-turn clone validation. That work is measured separately: 10.375 s
+of deterministic preparation for the comparison, then per arm 2,625 / 2,953 /
+2,562 / 2,766 ms of clone preparation and 1,969 / 2,094 / 2,094 / 1,859 ms for
+the single-Reading condition change (pair 1 continue, pair 1 stage, pair 2
+stage, pair 2 continue). It is deterministic service and filesystem work; it is
+neither zero CAD cost nor a model saving.
+
+Each arm recorded 10 agent activity intervals and 2 model-view requests in its
+final turn. Provider turns and agent activity intervals are not model calls: the
+exact model-call count, provider-internal retry count, account billing and any
+browser timing remain unknown. Recorded retry spans were zero, and no arm
+reported a missing-observations notice or an unfinished span.
+
+Observed failures are retained even though every final candidate succeeded. In
+pair 1 continue, pair 1 stage and pair 2 continue one `studio_request` mutation
+(`POST /api/proposals`) failed with `SEMANTIC_EDIT_INVALID` because an element
+named no `Type@1` in its `type_ref`; the agent then resubmitted and the readback
+candidate succeeded with actual wall geometry. Pair 2 stage recorded no failed
+tool. No model was rerun to replace any sample.
+
+Native sessions were verified independently from the exact provider JSONL files,
+not from UI labels. Both Stage arms hold different old and new session
+identities: the old file keeps the six review requests and no final wall request
+(7 user-role items including the initial environment item), and the new file
+holds zero old reviews and the one final wall request (2 user-role items
+including environment). Both continue arms keep the same identity across the
+restart, with the six reviews and the final request in one file (8 user-role
+items).
+
+The first provider span started at 2026-09-20T08:47:13.211537+00:00 and the last
+measured provider turn ended at 2026-09-20T09:23:20.221460+00:00, a span of
+about 36 min 7 s; `comparison.json` was completed at 09:23:30.735+00:00. The
+coordinator confirmed that the five other known benchmark/Claude tasks had
+finished before the start and that no other known sampling job ran; unknown
+account tasks and provider-side scheduling were not controlled, and CI ran
+remotely. Four successful arms establish this synthetic vertical slice only:
+they are not statistical power and not evidence of whole-building usability.
+
+The exploratory `stage-comparison-1` preflight is retained as a limitation: it
+compared against a cumulative baseline that already listed the wall changes, so
+it was rejected as causal evidence. The strengthened `stage-comparison-2`
+settles the wall baseline in the clone, and every accepted arm check uses that
+settled baseline. No extra paid pilot and no automatic retries were run. Raw
+chats and diagnostics stay outside Git under
+`D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-2/`.
+
 The existing manual Hub turn benchmark also measures a real provider continuing
 its old session versus starting a new provider session from the same project
 state. Use an explicit model returned by the installed provider's model list:

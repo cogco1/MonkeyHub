@@ -437,6 +437,35 @@ class ContextPackRequestDto(BaseModel):
         return self
 
 
+class StageContextChangesDto(BaseModel):
+    """Content differences and declared review scope, never a validation receipt."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    changed_refs: list[str] = Field(alias="changedRefs")
+    affected_refs: list[str] = Field(alias="affectedRefs")
+    needs_review_refs: list[str] = Field(alias="needsReviewRefs")
+    unresolved_impact_refs: list[str] = Field(alias="unresolvedImpactRefs")
+
+
+class ConfirmedStageContextDto(BaseModel):
+    """A read-only view of committed Stage identity and its retained conditions."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    stage_ref: str = Field(alias="stageRef")
+    label: str
+    branch_id: str = Field(alias="branchId")
+    run_id: str = Field(alias="runId")
+    state_digest: str = Field(alias="stateDigest")
+    is_source: bool = Field(alias="isSource", description="True only when the selected run, retained record and state digest are the accepted Stage itself. Inheriting a Stage base does not accept a candidate.")
+    locked_parameter_keys: list[str] = Field(alias="lockedParameterKeys", description="Parameters locked in the accepted Stage. This is not a whole-geometry lock; current values and lock state remain in context.")
+    retained_condition_refs: list[str] = Field(alias="retainedConditionRefs", description="Reading and obligation references retained in the accepted Stage; their current details and coverage remain in context.")
+    changes: StageContextChangesDto
+    omitted_counts: dict[str, int] = Field(alias="omittedCounts", description="Omitted entries by summary list name; each list is bounded to 64 entries.")
+    limitations: list[str]
+
+
 class ContextPackDto(BaseModel):
     """What a caller would otherwise discover by reading before it can act.
 
@@ -484,6 +513,10 @@ class ContextPackDto(BaseModel):
         "a derived value, a shared control, a top reference — as the record "
         "already answers it, needing no model call. Null when there is none "
         "and for the design tier, which this preflight does not judge",
+    )
+    confirmed_stage: ConfirmedStageContextDto | None = Field(
+        alias="confirmedStage", default=None,
+        description="Derived from verified committed design history, with differences from this exact source. Null when no committed Stage is bound; never inferred from an unaccepted candidate.",
     )
     honesty: list[str] = Field(default_factory=list)
 
@@ -809,6 +842,7 @@ BLOCKED_NOTE = (
 
 def context_pack_dto(
     description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
+    *, confirmed_stage: Mapping[str, Any] | None = None,
 ) -> ContextPackDto:
     """One capability description and one compiled read context, as the pack.
 
@@ -829,6 +863,7 @@ def context_pack_dto(
         escalation=list(context.escalation),
         context=dict(model_facts),
         preflight=None if preflight is None else dict(preflight),
+        confirmed_stage=None if confirmed_stage is None else ConfirmedStageContextDto(**confirmed_stage),
         honesty=[
             *detail.honesty,
             *([BLOCKED_NOTE] if blocked else []),

@@ -194,7 +194,9 @@ class ChatMessage(BaseModel):
     candidateId: str | None = None
     permission: ChatPermission | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
-    contextMode: Literal["continue", "project"] = "continue"
+    contextMode: Literal["continue", "project", "stage"] = "continue"
+    confirmedStageRef: str | None = None
+    confirmedStageLabel: str | None = None
 
 
 class ChatSummary(BaseModel):
@@ -349,11 +351,11 @@ class ChatPostRequest(BaseModel):
     attachments: list[ChatAttachmentInput] = Field(default_factory=list, max_length=8)
     # The verified editing projection for this turn only; old callers may omit it.
     designContext: ChatDesignContext | None = None
-    contextMode: Literal["continue", "project"] = "continue"
+    contextMode: Literal["continue", "project", "stage"] = "continue"
 
     @model_validator(mode="after")
     def project_context_requires_source(self):
-        if self.contextMode == "project" and self.designContext is None:
+        if self.contextMode in {"project", "stage"} and self.designContext is None:
             raise ValueError("Starting from project state requires an explicit designContext.")
         return self
 
