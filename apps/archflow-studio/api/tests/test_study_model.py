@@ -28,9 +28,11 @@ from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER
 from archflow_studio_api.application import intent_agent, study_model
 from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.intent_agent import CodexCompiler, AnthropicCompiler, DeterministicCompiler, IntentAgentFailed
+from archflow_studio_api.application.monitoring import MonitoredCompiler, StudioMonitor
 from archflow_studio_api.transport.errors import StudioError
 from archflow_studio_api.transport.study import StudyResearchRequestDto
 from archflow_studio_api.routes import study as study_routes
+from monkeymonitor.store import UsageLog
 
 from . import test_study_research as research_tests
 from .study_fixture import fixture_evidence, fixture_png, fixture_research
@@ -257,6 +259,125 @@ class StudyModelTests(unittest.TestCase):
             self.propose(compiler, proposed.ref.uri, "reason")
         self.assertEqual(caught.exception.code, "STUDY_MODEL_COMPARISON_CHANGED")
         self.assertEqual(self.client.get("/api/studies/synthetic-passage").json()["ledgerRef"], proposed.ref.uri)
+
+    def monitored_http_proposal(self, compiler, previous, action, store):
+        monitor = StudioMonitor(store)
+        self.client.app.state.monitor = monitor
+        self.client.app.state.intent_compiler = MonitoredCompiler(compiler, monitor)
+        return self.client.post("/api/studies/propose", json={
+            "projectId": PROJECT_ID, "studyId": previous["studyId"],
+            "expectedPreviousRef": previous["ledgerRef"], "action": action,
+        }, headers={"x-monkey-operation": "11111111-1111-4111-8111-111111111111",
+                    "x-monkey-parent": "22222222-2222-4222-8222-222222222222"})
+
+    def assert_monitored_association(self, store, previous, action, *, service_status):
+        events, warnings = store.read()
+        self.assertFalse(warnings)
+        models = [event for event in events if event.phase == "model_request"]
+        services = [event for event in events if event.phase == f"study_{action}"]
+        requests = [event for event in events if event.phase == "api_request"]
+        self.assertEqual(len(models), 1, "A paid Study call must appear once in the configured UsageLog.")
+        self.assertEqual(sum(event.model_call is True for event in events), 1)
+        self.assertEqual(len(services), 1)
+        self.assertEqual(len(requests), 1)
+        model, service, request = models[0], services[0], requests[0]
+        self.assertEqual(model.parent_event_id, service.event_id)
+        self.assertEqual(service.parent_event_id, request.event_id)
+        self.assertEqual(request.parent_event_id, "studio:client:22222222-2222-4222-8222-222222222222")
+        for event in (model, service):
+            self.assertEqual(event.operation_id, "studio:client:11111111-1111-4111-8111-111111111111")
+            self.assertEqual(event.project_id, PROJECT_ID)
+            self.assertEqual(event.run_id, previous["runId"])
+            self.assertEqual(event.source_ref, previous["ledgerRef"])
+            self.assertIsNotNone(event.ended_at)
+            self.assertGreaterEqual(event.duration_ms, 0)
+        self.assertGreaterEqual(service.duration_ms, model.duration_ms)
+        self.assertTrue(model.model_call)
+        self.assertEqual(model.timing_scope, "model_call")
+        self.assertFalse(service.model_call)
+        self.assertEqual(service.timing_scope, "service")
+        self.assertEqual(service.status, service_status)
+        self.assertTrue(all(count is None for count in service.tokens.to_dict().values()))
+        return model
+
+    def test_monitored_study_success_records_one_call_usage_and_private_free_lineage(self):
+        research = fixture_research()
+        research["question"] = "PRIVATE_STUDY_RESEARCH_QUESTION_29014"
+        previous = self.save(research=research)
+        for provider in ("codex", "anthropic"):
+            for action in ("trace", "reason"):
+                output = TRACE if action == "trace" else StudyResearchRequestDto.model_validate(research).model_dump()
+                if action == "reason":
+                    output["design_prior"]["statement"] = "PRIVATE_MODEL_OUTPUT_57261"
+                store = UsageLog(self.root.parent / f"monitor-success-{provider}-{action}")
+                with self.subTest(provider=provider, action=action), self.transport(provider, output=output) as (compiler, calls):
+                    answer = self.monitored_http_proposal(compiler, previous, action, store)
+                self.assertEqual(answer.status_code, 200, answer.text)
+                self.assertEqual(len(calls), 1)
+                event = self.assert_monitored_association(store, previous, action, service_status="succeeded")
+                self.assertEqual(event.status, "succeeded")
+                self.assertEqual(event.provider, provider)
+                self.assertEqual(event.model, "test-reported-model")
+                self.assertEqual(event.tokens.input_tokens, 12)
+                self.assertEqual(event.tokens.output_tokens, 8)
+                self.assertEqual(event.event_id, f"studio:model:{answer.json()['modelInvocations'][-1]['receiptId']}")
+                self.assertTrue(event.details["success"])
+                contents = store.path.read_text(encoding="utf-8")
+                self.assertNotIn("PRIVATE_STUDY_RESEARCH_QUESTION_29014", contents)
+                self.assertNotIn("PRIVATE_MODEL_OUTPUT_57261", contents)
+                self.assertNotIn('"prompt":', contents)
+                self.assertNotIn('"response":', contents)
+                previous = answer.json()
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_monitored_study_timeout_and_malformed_record_call_without_ledger_write(self):
+        previous = self.save()
+        for provider in ("codex", "anthropic"):
+            for failure in ("timeout", "malformed"):
+                store = UsageLog(self.root.parent / f"monitor-failure-{provider}-{failure}")
+                with self.subTest(provider=provider, failure=failure), self.transport(provider, raw="PRIVATE_MALFORMED_OUTPUT_68192", timeout=failure == "timeout") as (compiler, calls):
+                    answer = self.monitored_http_proposal(compiler, previous, "trace", store)
+                self.assertEqual(answer.status_code, 502, answer.text)
+                self.assertEqual(answer.json()["code"], "INTENT_AGENT_FAILED")
+                self.assertEqual(len(calls), 1)
+                event = self.assert_monitored_association(store, previous, "trace", service_status="failed")
+                self.assertEqual(event.provider, provider)
+                self.assertFalse(event.details["success"])
+                if failure == "timeout":
+                    self.assertEqual(event.status, "failed")
+                    self.assertIsNone(event.tokens.input_tokens)
+                    self.assertIsNone(event.tokens.output_tokens)
+                    self.assertIn("did not answer", answer.json()["detail"])
+                else:
+                    self.assertEqual(event.tokens.input_tokens, 12)
+                    self.assertEqual(event.tokens.output_tokens, 8)
+                    self.assertIn("not JSON", answer.json()["detail"])
+                self.assertNotIn("PRIVATE_MALFORMED_OUTPUT_68192", store.path.read_text(encoding="utf-8"))
+                self.assertEqual(self.client.get("/api/studies/synthetic-passage").json(), previous)
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_study_diagnostic_append_failure_preserves_success_and_original_error_without_retry(self):
+        previous = self.save()
+        for provider in ("codex", "anthropic"):
+            for outcome in ("success", "timeout", "malformed"):
+                store = UsageLog(self.root.parent / f"monitor-broken-{provider}-{outcome}")
+                raw = "ORIGINAL_PROVIDER_MALFORMED_77041" if outcome == "malformed" else None
+                with self.subTest(provider=provider, outcome=outcome), self.transport(provider, raw=raw, timeout=outcome == "timeout") as (compiler, calls):
+                    with patch.object(store, "append", side_effect=OSError("test diagnostic disk failure")) as append:
+                        answer = self.monitored_http_proposal(compiler, previous, "trace", store)
+                self.assertEqual(len(calls), 1, "Diagnostic failures must never resubmit a model request.")
+                self.assertGreater(append.call_count, 0)
+                if outcome == "success":
+                    self.assertEqual(answer.status_code, 200, answer.text)
+                    self.assertEqual(answer.json()["modelInvocations"][-1]["output"], TRACE)
+                    self.assertNotEqual(answer.json()["ledgerRef"], previous["ledgerRef"])
+                    previous = answer.json()
+                else:
+                    self.assertEqual(answer.status_code, 502, answer.text)
+                    self.assertEqual(answer.json()["code"], "INTENT_AGENT_FAILED")
+                    self.assertIn("did not answer" if outcome == "timeout" else "ORIGINAL_PROVIDER_MALFORMED_77041", answer.json()["detail"])
+                    self.assertEqual(self.client.get("/api/studies/synthetic-passage").json(), previous)
+        self.assertEqual(self.repository.read_head(), self.head)
 
 
 @unittest.skipUnless(os.environ.get("ARCHFLOW_STUDY_LIVE") == "1", "Opt-in real provider run; synthetic CC0 source only")

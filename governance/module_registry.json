@@ -4737,7 +4737,7 @@
         "every wire DTO and its camelCase aliases, and the router mounting order",
         "GET /api/health and GET /api/protocol",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement, served for MonkeyHub, which owns the settings authority and injects the resolved values into the runtime's launch environment",
-        "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call",
+        "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of intent and structured Study model outcomes without changing its result or retrying a call",
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
@@ -4814,7 +4814,8 @@
         "request_attribution",
         "LOCAL_ACTOR_ID",
         "ORIGIN_STUDIO",
-        "ORIGIN_HUB"
+        "ORIGIN_HUB",
+        "MonitoredCompiler.invoke_structured"
       ],
       "depends_on": [
         "monkeymonitor",
@@ -4860,7 +4861,8 @@
         "apps/archflow-studio/api/tests/test_errors.py",
         "apps/archflow-studio/api/tests/test_protocol.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",
-        "apps/archflow-studio/api/tests/test_collaboration_auth.py"
+        "apps/archflow-studio/api/tests/test_collaboration_auth.py",
+        "apps/archflow-studio/api/tests/test_study_model.py"
       ],
       "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/workspaces/src/api/connection.ts is the client boundary. The runtime serves the settings routes MonkeyHub mounts; browser appearance, language catalogs and workspace composition belong to hub.shell; this process serves APIs only.",
       "files": [

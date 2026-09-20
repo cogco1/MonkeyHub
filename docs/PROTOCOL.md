@@ -970,6 +970,9 @@ polygons use the same page interaction surface, but are saved only through
   Machine traces stay proposed. The model's source, input revision, timing,
   usage and response are retained in `modelInvocations`; no substitute provider
   or deterministic mock is used when one is unavailable.
+  When Monitor is configured, the existing usage log also records the actual
+  provider boundary, reported tokens and failure outcome against this project
+  and input ledger. Diagnostic failures never repeat a provider call.
 
 New research observations use true page-aspect-correct polygons; old derivation
 snapshots remain readable with their original method stamp. Counterfactuals keep

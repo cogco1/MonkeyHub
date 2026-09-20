@@ -256,13 +256,14 @@
         "monkeydiagram/study.py",
         "governance/architecture_policy.json",
         "apps/archflow-studio/api/tests/test_study_compare.py",
-        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
+        "apps/archflow-studio/api/archflow_studio_api/application/monitoring.py"
       ],
       "branch": "codex/73-study-document",
       "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
       "contributor": "Codex",
       "reviewer": null,
-      "handoff": "Ready for review: same-page Study tracing/correction, polygon measurements, competing hypotheses, checked counterfactuals, archived exact comparisons and conditional priors save/reopen through the existing ledger. Real Codex evidence-only and comparison-informed reasoning runs are documented. #181 f27e31fe is a merged development dependency awaiting its own review; #46 released DocumentCanvas/client. #183/#32 retains App/ProjectWorkspace/chat ownership. No main merge, installation, independent-precedent validation or Try on model delivery is implied; broader Issue #73 acceptance remains open."
+      "handoff": "Ready for review: same-page Study tracing/correction, polygon measurements, competing hypotheses, checked counterfactuals, archived exact comparisons and conditional priors save/reopen through the existing ledger. Real Codex evidence-only and comparison-informed reasoning runs are documented. #181 f27e31fe is a merged development dependency awaiting its own review; #46 released DocumentCanvas/client. #183/#32 retains App/ProjectWorkspace/chat ownership. No main merge, installation, independent-precedent validation or Try on model delivery is implied; broader Issue #73 acceptance remains open. Review follow-up reuses application/monitoring.py for Study provider accounting; #183 confirmed no production write there, and Study regression tests remain in test_study_model.py."
     },
     {
       "id": "P115",

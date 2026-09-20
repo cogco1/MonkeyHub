@@ -1526,7 +1526,8 @@ class AnthropicCompiler:
 
 
 def invoke_structured(compiler, *, request: ModelInvocationRequest, prompt: str,
-                      schema: Mapping[str, Any], images: Sequence[bytes] = ()) -> tuple[dict, ModelInvocationReceipt]:
+                      schema: Mapping[str, Any], images: Sequence[bytes] = (),
+                      operation_observer: Callable[[Mapping[str, Any]], None] | None = None) -> tuple[dict, ModelInvocationReceipt]:
     """A second consumer of the same configured transport, without intent parsing.
 
     Research retains its own typed result through Study; the transport owns the
@@ -1534,11 +1535,14 @@ def invoke_structured(compiler, *, request: ModelInvocationRequest, prompt: str,
     """
     from jsonschema import validate, ValidationError
 
-    # The optional host monitor wraps this same configured compiler.
-    transport = getattr(compiler, "compiler", compiler)
-    if not isinstance(transport, (CodexCompiler, AnthropicCompiler)):
+    if not isinstance(compiler, (CodexCompiler, AnthropicCompiler)):
+        observed = getattr(compiler, "invoke_structured", None)
+        if callable(observed):
+            return observed(request=request, prompt=prompt, schema=schema, images=images)
         raise StudioError(409, "STUDY_MODEL_UNAVAILABLE", "Study needs the project's configured Codex or Anthropic provider. Manual evidence editing remains available.")
-    called = transport._invoke_once(request=request, prompt=prompt, schema=schema, images=images)
+    transport = compiler
+    called = transport._invoke_once(request=request, prompt=prompt, schema=schema, images=images,
+                                    operation_observer=operation_observer)
     try:
         output = _answer_payload(called["raw"], provider=transport.provider)
         validate(output, dict(schema))

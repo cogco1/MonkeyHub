@@ -372,5 +372,9 @@ def propose_study(request: Request, payload: ProposeStudyRequestDto) -> StudyVie
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The Study names another project.")
-    return study_dto(propose(binding, request.app.state.intent_compiler,
-        study_id=payload.study_id, expected_previous_ref=payload.expected_previous_ref, action=payload.action))
+    with request.app.state.monitor.measure(
+        f"study_{payload.action}", project_id=binding.project_id,
+        run_id=study_application._study_run_id(payload.study_id), source_ref=payload.expected_previous_ref,
+    ):
+        return study_dto(propose(binding, request.app.state.intent_compiler,
+            study_id=payload.study_id, expected_previous_ref=payload.expected_previous_ref, action=payload.action))
