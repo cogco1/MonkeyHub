@@ -894,11 +894,6 @@ function standardRuntime(runtime: ViewportRuntime, view: StandardView): void {
     runtime.render();
     return;
   }
-  if (view === "iso") {
-    activateProjection(runtime, "perspective");
-    fitRuntime(runtime);
-    return;
-  }
   activateProjection(runtime, "orthographic");
   const box = boundsForRuntime(runtime);
   if (box.isEmpty()) return;
