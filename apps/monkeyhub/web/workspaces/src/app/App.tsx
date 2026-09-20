@@ -37,7 +37,6 @@ import type {
   CatalogDto,
   DesignHistoryDto,
   DesignStageDto,
-  ElevationRequestDto,
   DocumentAnnotationRefDto,
   DocumentVisualInputDto,
   CandidateDto,
@@ -268,8 +267,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const stageModelSource = session.status === "ready" ? session.value.stageModelSource ?? null : null;
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [drawingBusy, setDrawingBusy] = useState(false);
-  const [drawingError, setDrawingError] = useState<StudioApiError | null>(null);
   const [documentController] = useState(() => createDocumentAnnotationsController(studio));
   const documentSaveRef = useRef<(() => Promise<void>) | null>(null);
   const bindDocumentSave = useCallback((save: (() => Promise<void>) | null) => { documentSaveRef.current = save; }, []);
@@ -368,8 +365,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const activeEditTiming = useRef<EditTimingTicket | null>(null);
   const proposalTimings = useRef(new Map<string, EditTimingTicket>());
   const candidateTimings = useRef(new Map<string, EditTimingTicket>());
-  const drawingTiming = useRef<ClientTimingSpan | null>(null);
-  const [drawingDisplayTiming, setDrawingDisplayTiming] = useState<ClientTimingSpan | null>(null);
   const manualLoadRef = useRef(false);
   const localEditingRef = useRef(false);
   const modelInteractionEpoch = useRef(0);
@@ -515,7 +510,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       finishEditTiming(activeEditTiming.current, "cancelled");
       for (const ticket of proposalTimings.current.values()) finishEditTiming(ticket, "cancelled");
       for (const ticket of candidateTimings.current.values()) finishEditTiming(ticket, "cancelled");
-      drawingTiming.current?.finish("cancelled");
     };
   }, [contextKey]);
   // A new editing base starts a new exchange, without discarding the draft or history.
@@ -567,9 +561,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     return loadedArtifact.modelSource ?? modelSources.find((row) => row.modelSource.runId === loadedArtifact.runId &&
       row.modelSource.assetSha256 === loadedArtifact.sha256)?.modelSource ?? null;
   }, [loadedArtifact, loadedArtifacts.length, modelSources]);
-  useEffect(() => {
-    setDrawingError(null);
-  }, [contextKey, loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, viewerStatus]);
   // What is on screen and can be worked on.
   //
   // Looking at a candidate is not editing it, and this changes neither: it is
@@ -974,7 +965,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   const openLocalFile = useCallback((file: File) => {
     finishEditTiming(activeEditTiming.current, "cancelled");
-    drawingTiming.current?.finish("cancelled");
     modelLoadRequest.current += 1;
     modelDownloadAbort.current?.abort();
     pendingArtifacts.current = [];
@@ -1960,35 +1950,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       await openDesignStage(stage, branchId);
     } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
     finally { setHistoryBusy(false); }
-  };
-  const generateElevation = async (view: ElevationRequestDto["view"]) => {
-    if (!project || !loadedModelSource || drawingBusy) return;
-    const stage = designHistory?.stages.find((item) => sameModelSource(item.modelSource, loadedModelSource));
-    const currentContext = previewContext.current.revision;
-    const currentViewRequest = modelLoadRequest.current;
-    drawingTiming.current?.finish("cancelled");
-    const timing = monitorDiagnostics ? startClientTiming(studio, "drawing_wait", {
-      projectId: project.projectId, runId: loadedModelSource.runId, sourceRef: stage?.stageRef,
-    }) : null;
-    drawingTiming.current = timing;
-    setDrawingBusy(true); setDrawingError(null);
-    try {
-      await documentSaveRef.current?.();
-      const result = await studio.elevation({ projectId: project.projectId, view,
-        ...(stage ? { sourceStageRef: stage.stageRef } : { modelSource: loadedModelSource }) }, timing?.trace);
-      if (previewContext.current.revision !== currentContext || modelLoadRequest.current !== currentViewRequest) {
-        timing?.finish("cancelled"); return;
-      }
-      setDrawingDisplayTiming(timing);
-      setDocumentView({ open: true, mounted: true, runId: result.runId, sourceSha: result.assetSha256,
-        revisionRef: result.revisionRef ?? null, pageIndex: 0 });
-    } catch (cause) {
-      timing?.finish(previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest ? "failed" : "cancelled");
-      if (previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest) {
-        setDrawingError(asStudioApiError(cause));
-      }
-    }
-    finally { setDrawingBusy(false); }
   };
   const combineDesignCandidates = async (candidateIds: string[]) => {
     if (!project || historyBusy || candidateIds.length < 2) return;
@@ -3162,9 +3123,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}
             onReturnToBoard={returnToBoard}
-            documentTiming={drawingDisplayTiming ?? undefined}
-            drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
-              dismissError: () => setDrawingError(null), generate: (view) => { void generateElevation(view); } } : undefined}
             documentAnnotationsController={documentController}
             onDocumentBeforeLeave={bindDocumentSave}
             onDocumentView={(next) => {
