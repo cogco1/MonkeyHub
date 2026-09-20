@@ -846,6 +846,26 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-124",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/124",
+      "status": "active",
+      "goal": "Extend GH-123 retained-input evaluation and independently benchmark sequential OCBA allocation on fixed candidates.",
+      "depends_on": [],
+      "branch": "codex/candidate-ocba-123-124",
+      "worktree": "workspace/worktrees/cb29/ARCHFLOW_V4",
+      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "state.record",
+        "state.massing_metrics"
+      ],
+      "write_scope": [
+        "labs/candidate_evaluation/"
+      ],
+      "handoff": "Coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e. Existing GH-123 evaluator interface remains stable for GH-173; lab-only read adapter and allocation. No production owner or project state writes."
     }
   ]
 }
