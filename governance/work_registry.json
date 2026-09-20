@@ -126,16 +126,13 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
             "apps/monkeyhub/web/workspaces/src/api/client.ts",
             "apps/monkeyhub/web/workspaces/src/api/generated/",
-            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
-            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css"
           ],
           "depends_on": [],
-          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics."
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. PR #194 is merged into main at 3a92b414; completed App/Stage/candidatePreview editing is released to GH-137/retire-elevation-entry for removal of the old elevation toolbar. Preserve all parameter-lock behavior and its tests."
         },
         {
           "id": "drawing-pages",
@@ -169,7 +166,7 @@
     {
       "id": "GH-137",
       "stream": "interaction",
-      "status": "blocked",
+      "status": "active",
       "goal": "V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1.",
       "depends_on": [],
       "branch": "codex/137-signed-normal",
@@ -185,9 +182,39 @@
         "apps/monkeyhub/web/workspaces/test/normalDrag.test.ts",
         "apps/monkeyhub/web/workspaces/test/pushPull.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/features/stage/ModelEditPanel.tsx",
-        "apps/monkeyhub/web/workspaces/test/translationGizmo.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/translationGizmo.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
       ],
-      "handoff": "V1 and N1 are merged (#147/#155), Tracing Paper integration #153 is merged, and the #156/#157 viewport/document closeout is complete. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane."
+      "handoff": "V1 and N1 are merged (#147/#155), Tracing Paper integration #153 is merged, and the #156/#157 viewport/document closeout is complete. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane.",
+      "lanes": [
+        {
+          "id": "retire-elevation-entry",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/137",
+          "status": "active",
+          "branch": "codex/monkeyarch-axonometric-camera",
+          "worktree": "workspace/worktrees/codex-monkeyarch-axonometric-camera",
+          "base_ref": "fccf76c1",
+          "contributor": "Claude; Codex direction and acceptance",
+          "reviewer": "Codex",
+          "modules": [
+            "hub.shell"
+          ],
+          "depends_on": [],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css",
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+          ],
+          "handoff": "Remove only the obsolete Generate elevation toolbar entry and its unused UI plumbing, per the user request relayed by the #204 task. Preserve height editing, drawing styles, backend drawing and exact document-source/revision boundaries. Camera correction is already committed."
+        }
+      ]
     },
     {
       "id": "GH-73",
