@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int)
@@ -46,13 +47,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if seen.exists():
             seen.unlink()
+        if self.path == "/api/project" and outage.with_suffix(".slow-project").exists():
+            time.sleep(1.2)
+            with outage.with_suffix(".project-seen").open("a") as observed:
+                observed.write("x")
         result = {
             "managedInstanceId": args.managed_instance_id,
             "sourceRevision": ("b" if outage.with_suffix(".mismatch").exists() else "a") * 40,
             "processId": os.getpid(), "parentProcessId": os.getppid(),
             "serverVersion": "0.1.0", "projectBound": True,
         } if self.path == "/api/health" else {
-            "projectId": os.environ["PROJECT_ID"], "projectDir": os.environ["PROJECT_DIR"],
+            "projectId": "other-project" if outage.with_suffix(".project-mismatch").exists() else os.environ["PROJECT_ID"],
+            "projectDir": os.environ["PROJECT_DIR"],
         }
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -212,6 +218,32 @@ class WorkerSupervisorTests(unittest.TestCase):
         ready = self.wait_state(launch.worker_id, "ready")
         self.assertEqual(ready.instance_id, original.instance_id)
         self.assertIsNone(ready.error)
+
+    def test_slow_project_check_stays_ready_and_still_rejects_changed_identity(self):
+        launch = self.launch("slow-binding")
+        self.supervisor.start(launch)
+        original = self.wait_state(launch.worker_id, "ready")
+        outage = Path(launch.environment["OUTAGE_FILE"])
+        outage.with_suffix(".slow-project").touch()
+        seen = outage.with_suffix(".project-seen")
+        # Four actual 1.2 s HTTP responses cross the old one-second timeout
+        # and its five-second outage grace; a single fast probe cannot pass.
+        wait_for(lambda: seen.exists() and len(seen.read_text()) >= 4,
+                 "Worker did not finish four slow binding checks", timeout=15)
+        current = self.supervisor.snapshot(launch.worker_id)
+        self.assertEqual(current.state, "ready")
+        self.assertTrue(current.healthy)
+        self.assertIsNone(current.error)
+        self.assertEqual((current.instance_id, current.process_id),
+                         (original.instance_id, original.process_id))
+        # The longer budget never permits a foreign binding, even on the
+        # already-owned process with unchanged health identity and PID.
+        outage.with_suffix(".project-mismatch").touch()
+        rejected = self.wait_state(launch.worker_id, "unavailable")
+        self.assertEqual(rejected.error.code, "SERVICE_IDENTITY_MISMATCH")
+        self.assertEqual(rejected.desired_state, "stopped")
+        self.assertFalse(rejected.healthy)
+        self.assertEqual(self.supervisor._children[launch.worker_id].process.wait(timeout=5), 0)
 
     def test_brief_outage_keeps_the_verified_page_attached_and_clears_on_success(self):
         launch = self.launch("brief")

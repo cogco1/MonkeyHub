@@ -37,6 +37,7 @@ test("project list combines trace and usage identities without duplicates", () =
 
 test("durations are compact without inventing missing timing", () => {
   assert.equal(formatDuration(null), "—");
+  assert.equal(formatDuration(undefined), "—");
   assert.equal(formatDuration(800), "800 ms");
   assert.equal(formatDuration(2500), "2.5 s");
   assert.equal(formatDuration(90_000), "1.5 min");

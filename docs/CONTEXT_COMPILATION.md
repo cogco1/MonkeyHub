@@ -403,3 +403,103 @@ Primer wall times were 28.996/25.864 s for cornice project/continue and
 27.860/22.102 s for assembly continue/project; their usage and history sizes
 remain separate in `preparation`. The final set is two samples per condition
 per task, with one reversed order, not a statistical latency study.
+
+## Candidate observation and revision acceptance (#183 / #32)
+
+The existing Hub `designContext` remains a projection of the explicit editing
+base. Opening a chat result or browsing a historical candidate does not change
+that base. The selection request generation is invalidated when the user chooses
+another semantic target, so a delayed pick cannot overwrite that later choice.
+No additional design state or writer is introduced.
+
+The opt-in experiment uses a small synthetic courtyard, the real installed
+provider, the normal Hub MCP interface, OCCT and the existing Monitor journal:
+
+```powershell
+python tests/monkeymonitor/run_design_loop.py --model <installed-model-id> --output <new-absolute-nonproject-directory>
+python tests/monkeymonitor/run_design_loop.py --summarize --output <same-directory>
+```
+
+It batches three masses into one candidate, lowers the east wing, sets back the
+north upper mass, and explicitly studies a 4 m inward trial before correcting
+its courtyard violation. This is a controlled observation task: the experiment
+asks for the trial; it does not demonstrate spontaneous discovery of a bad
+design. It then shuts down its owned services, starts fresh services/provider
+sessions, restores the pre-movement candidate, revises the west wing, and adds
+a schematic north wall from the retained massing without the earlier chat.
+
+Successful acceptance requires exact retained sources, unchanged fixture
+entities/parameters/locks/relations and all prior fields except the requested
+height or translation, the retained courtyard Reading and the
+north-upper support reference, successful source-bound top/front observations,
+and observation of the trial before its correction proposal. Existing tool-span
+timestamps must prove that the image returned before the correction started;
+chat-row order alone is insufficient. Admission records
+verify the candidate parent chain. Certified cold STEP solids are compared to
+the requested solids, including the specified trial, by bidirectional B-rep differences and intersected with
+the courtyard/access void. A regression with the same bounding box and an
+incorrect notched solid fails this check. HEAD and accepted branch refs must
+remain unchanged. A Reading is retained intent, not a computed constraint or
+acceptance decision; the test's explicit void checks cover only this scene.
+
+Failed provider attempts, failed tool calls and incomplete observations stay
+in their original output directories. The read-only `--summarize` checker writes
+`validation.json` separately from the original reports and calls no provider.
+It records its own source hash and reprojects metrics from the existing usage
+journal with the current Monitor code; the original reports remain unchanged.
+`all_passed:false` is a failure, even if the
+geometry happened to be correct. No real user project or raw provider transcript
+is uploaded by this experiment. Browser first-paint time and user rework outside
+the declared test requests remain unmeasured.
+
+The mechanism follows [ReAct, ICLR 2023 camera-ready v3](https://arxiv.org/abs/2210.03629v3):
+an external observation can change the next action. Its QA/game results are not
+evidence of architectural design quality or an argument for an extra critic
+model. The existing native image blocks match the
+[MCP 2025-11-25 tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+and the actual `Image.to_image_content` implementation in the
+[MCP Python SDK v1.26.0](https://github.com/modelcontextprotocol/python-sdk/blob/v1.26.0/src/mcp/server/fastmcp/utilities/types.py)
+([MIT](https://github.com/modelcontextprotocol/python-sdk/blob/v1.26.0/LICENSE)).
+We reuse this boundary; no screenshot-shaped JSON or new image transport is added.
+
+For stale selection, [React's asynchronous cleanup guidance](https://react.dev/reference/react/useEffect#fetching-data-with-effects)
+and [SWR v2.3.6's response-key guard](https://github.com/vercel/swr/blob/v2.3.6/src/index/use-swr.ts)
+support invalidating the existing request generation. React 19.2.8 and SWR use
+MIT licenses; SWR is not added as a dependency because its cache is unrelated
+to this race.
+
+Loft revisions transform existing section controls rather than replacing the
+entity with another producer. Actual OCCT 7.9.3.1 cold-read tests compare against
+independently transformed solids. Translation, rotation, reflection and uniform
+scale preserve normal lofts; straight lofts also support nonuniform scale.
+Normal loft nonuniform scale is refused: the measured refit volume ratio was
+1.755844 instead of the affine determinant 1.5. The
+[OCCT ThruSections parameterization contract](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___thru_sections.html)
+and [CadQuery v2.7.0 transformShape/transformGeometry](https://github.com/CadQuery/cadquery/blob/v2.7.0/cadquery/occ_impl/shapes.py)
+([Apache-2.0](https://github.com/CadQuery/cadquery/blob/v2.7.0/LICENSE)) explain why
+refitting section controls is not a general affine surface transform. A new
+persistent post-transform path is unnecessary for the supported cases. Bound
+lofts continue through their existing parameters; direct-edit dependency guards
+remain in force.
+
+The first restart pilot exposed valid `/api/project` reads of 1.155 and 1.390 s
+being classified unavailable by the worker's 1 s identity probe. The project
+identity read now has a separate 5 s budget; health remains 1 s and all instance,
+process, source and project checks remain required. A real managed-process test
+reproduces refusal at 1 s and success at 5 s for a 1.2 s response, then confirms
+that a wrong project is still refused. This is a measured engineering budget,
+not an optimum. It uses the bounded-probe pattern of
+[Uvicorn 0.35.0](https://github.com/encode/uvicorn/blob/0.35.0/uvicorn/supervisors/multiprocess.py)
+([BSD-3-Clause](https://github.com/encode/uvicorn/blob/0.35.0/LICENSE.md)); its
+automatic terminate/restart policy is not adopted.
+
+Monitor's first successful complete readback of a candidate generated in the same
+turn is now `summary.first_candidate_ms`, distinct from verification or browser visibility.
+Reading an older input candidate does not trigger it; missing same-turn generation
+evidence keeps it unknown.
+The Hub shows it without per-run data entry. Missing child endings remain
+`incomplete` with unknown duration after a root ends. The journal's bounded
+write-lock correction and its source comparison are documented in
+[MonkeyMonitor](../monkeymonitor/README.md#turntrace). Neither telemetry repair
+nor session rebuilding establishes a general latency improvement. The Hub's
+trace-comparison UI and the larger #32 benchmark set remain separate acceptance.

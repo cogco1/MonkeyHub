@@ -3,6 +3,51 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-183",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Complete the assigned candidate context, loft revision and real provider spatial-observation follow-up for issue #183, with issue #32 first-candidate and missing-span diagnostics. Preserve exact editing sources, retained conditions, canonical authority and truthful timing limits; broader issue acceptance remains open.",
+      "depends_on": [],
+      "branch": "codex/183-32-candidate-context",
+      "worktree": "C:/Users/asus/.codex/worktrees/36a7/ARCHFLOW_V4",
+      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "hub.shell",
+        "capabilities.element_producers",
+        "monkeymonitor"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/tests/test_monitoring.py",
+        "apps/archflow-studio/api/tests/test_sketch.py",
+        "apps/monkeyhub/api/monkeyhub_api/workers.py",
+        "apps/monkeyhub/api/tests/test_workers.py",
+        "apps/monkeyhub/web/src/MonitorPage.css",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/monitorData.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/monitorData.test.ts",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+        "docs/CONTEXT_COMPILATION.md",
+        "monkeyarch/capabilities/element_producers.py",
+        "monkeymonitor/README.md",
+        "monkeymonitor/server.py",
+        "monkeymonitor/store.py",
+        "monkeymonitor/trace.py",
+        "tests/monkeymonitor/run_design_loop.py",
+        "tests/monkeymonitor/run_turn_benchmark.py",
+        "tests/monkeymonitor/test_core.py",
+        "tests/monkeymonitor/test_design_loop.py",
+        "tests/monkeymonitor/test_trace.py",
+        "tests/monkeymonitor/test_turntrace_contract.py",
+        "tests/test_element_producers.py",
+        "tests/test_occt_execution.py"
+      ],
+      "handoff": "Independent PR for #183 and #32; current desktop and mainline merge remain with the coordinator. Synthetic provider experiments retain failed runs in an explicit external workspace. No claim of general design quality or latency improvement."
+    },
+    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
@@ -72,16 +117,13 @@
           ],
           "write_scope": [
             "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/src/MonitorPage.tsx",
-            "apps/monkeyhub/web/src/MonitorPage.css",
             "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
           ],
           "depends_on": [],
-          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice."
+          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. Current candidate/context and Monitor follow-up transfers apps/monkeyhub/web/src/MonitorPage.tsx, apps/monkeyhub/web/src/MonitorPage.css, apps/monkeyhub/web/test/chatShell.browser.mjs to GH-183 after the merged baseline and explicit stop-writing handoff; remaining acceptance stays with this lane."
         },
         {
           "id": "parameter-locks",
@@ -126,7 +168,6 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
             "apps/monkeyhub/web/workspaces/src/api/client.ts",
             "apps/monkeyhub/web/workspaces/src/api/generated/",
             "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
@@ -135,7 +176,7 @@
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
           ],
           "depends_on": [],
-          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics."
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. Current candidate/context and Monitor follow-up transfers apps/monkeyhub/web/workspaces/src/app/App.tsx to GH-183 after the merged baseline and explicit stop-writing handoff; remaining acceptance stays with this lane."
         },
         {
           "id": "drawing-pages",

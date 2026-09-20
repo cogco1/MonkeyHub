@@ -86,7 +86,7 @@ const documentToken = "fixture-document-continuation";
 const comments = [];
 const errors = [], requests = [], intents = [], selections = [], escapedApiRequests = [];
 const passed = [];
-let observationTransforms = 0, heldIntent = null, heldDocument = null, phase = "setup", vite, browser, page;
+let observationTransforms = 0, heldIntent = null, heldDocument = null, heldPick = null, phase = "setup", vite, browser, page;
 const http = createHttpServer();
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-intent-view-test-"));
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -194,7 +194,7 @@ try {
           return { code: source.replace(marker, marker + `
             (window as unknown as { __modelInkSnapshot: unknown }).__modelInkSnapshot = structuredClone(gestures);
             (window as unknown as { __intentViewSource: unknown }).__intentViewSource = {
-              propose, select: selectSemanticTarget,
+              propose, select: selectSemanticTarget, pick: resolvePick,
               snapshot: { fileName: inspection?.fileName, sourceLabel, viewState: view?.state,
                 loading: modelLoading, busy: proposalBusy, selection,
                 entries: transcript.entries.map((entry) => ({ kind: entry.kind })) }
@@ -263,6 +263,14 @@ try {
           assert.ok(bytes); return await route.fulfill({ status: 200, contentType: "image/png", body: bytes });
         }
         if (url.pathname === "/api/document-comments") return await json({ comments });
+      }
+      if (method === "POST" && url.pathname === "/api/pick/resolve") {
+        const delayed = heldPick; assert.ok(delayed, "Pick replies are held by the selection race scenario");
+        const body = request.postDataJSON();
+        assert.equal(body.sourceRunId, runId); assert.equal(body.stateDigest, stateDigest);
+        delayed.requested.resolve(); await delayed.release.promise; heldPick = null;
+        return await json({ componentId: element.componentId, elementId: element.elementId,
+          status: "resolved", sourceState: "current", detail: "fixture pick" });
       }
       if (method === "PUT" && url.pathname === "/api/board") {
         const body = request.postDataJSON();
@@ -355,6 +363,25 @@ try {
     await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
     await ready(optionB); assert.equal(group.selectedOptionId, "B"); assert.equal(selections.length, 1);
+  });
+  await step("a delayed model pick cannot replace a newer semantic selection or chat target", async () => {
+    heldPick = { requested: deferred(), release: deferred() };
+    const delayed = heldPick;
+    await page.evaluate((objectName) => {
+      // Resolve through the mounted App's real handler; the disposable hit has
+      // no model parent, so this tests only the asynchronous identity boundary.
+      window.__pendingPick = window.__intentViewSource.pick({ objectName, object: { parent: null }, userStrings: {} });
+    }, element.elementId);
+    await Promise.race([delayed.requested.promise, sleep(12_000).then(() => assert.fail("The pick request was not held"))]);
+    await page.evaluate((componentId) => window.__intentViewSource.select(componentId, null), element.componentId);
+    const selected = { componentId: element.componentId, elementId: null };
+    await until(snapshot, (value) => JSON.stringify(value.selection) === JSON.stringify(selected), "The newer semantic target was not selected");
+    delayed.release.resolve();
+    await page.evaluate(() => window.__pendingPick);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.deepEqual((await snapshot()).selection, selected, "The earlier ray hit must not overwrite the newer record selection");
+    assert.equal(await page.evaluate(() => window.__workspaceDesignContext.designContext.elementId), undefined,
+      "The superseded pick must not return as the next chat's element target");
   });
   await step("viewing same-run A preserves editing B and posts B's full identity", async () => {
     await view(optionA);

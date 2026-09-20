@@ -808,7 +808,7 @@
         "prism semantic authoring: parameter-bound profile coordinates, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
         "loft semantic authoring: corresponding polyline sections with parameter-bound coordinates form one normal or straight loft, capped or open; unsupported section bases and inconsistent vertex counts refuse before execution",
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
-        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits",
+        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; loft section controls support translation, rotation, copy and scale while retaining type, identity and datum binding; normal lofts refuse nonuniform scaling because refitting is not an equivalent transform, and loft push/pull is unsupported; dependent and parameter-bound changes retain the existing intent guards",
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level."
@@ -5982,7 +5982,7 @@
         "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities",
         "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage",
         "Automatic numeric usage from explicitly Hub-bound Codex session identities, resolved through the local read-only Codex index and verified against session metadata",
-        "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export",
+        "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export; first_candidate_ms requires successful same-turn generation and complete retained candidate readback separately from verification and viewport visibility, and missing child endings after a completed root remain incomplete with unknown duration",
         "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation"
       ],
       "does_not_own": [
@@ -6057,6 +6057,7 @@
       "tests": [
         "tests/monkeymonitor/test_core.py",
         "tests/monkeymonitor/test_trace.py",
+        "tests/monkeymonitor/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "tests/monkeymonitor/test_server.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",

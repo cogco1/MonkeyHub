@@ -7,15 +7,17 @@ from dataclasses import replace
 import os
 from pathlib import Path
 from threading import Lock
+from time import monotonic, sleep
 
 from .pricing import load_rates, match_rate
 from .usage import UsageEvent
 
 BUSY_NOTICE = "诊断日志正被占用；本次读取没有等待，最近记录可能尚未出现。"
+_WRITE_LOCK_TIMEOUT = 0.02
 
 
 class _Contended(Exception):
-    """Someone else holds the journal right now. Diagnostics wait for nobody."""
+    """The journal remained busy beyond the caller's lock budget."""
 
 
 class UsageLog:
@@ -23,8 +25,9 @@ class UsageLog:
 
     Construction is read/write free. Hub and Studio share a process lock when
     appending or rotating. Monitor reads the same journal, never project state.
-    A held lock never delays the observed operation: the observation is skipped
-    and a sticky notice rides the next event this log actually stores.
+    Writers allow at most 20 ms of lock contention so a request and its worker
+    can both retain their completed spans. Readers never wait. A longer-held
+    lock skips the observation and carries a sticky notice on the next write.
     """
 
     def __init__(self, data_dir: Path, *, max_bytes: int = 8 * 1024 * 1024, backups: int = 3) -> None:
@@ -37,9 +40,11 @@ class UsageLog:
 
     @contextmanager
     def _locked(self, *, write: bool):
-        """Take both locks or raise at once; an exclusive holder still owns rotation."""
+        """Share one short write deadline across both locks; reads fail at once."""
 
-        if not self._lock.acquire(blocking=False):
+        deadline = monotonic() + (_WRITE_LOCK_TIMEOUT if write else 0)
+        acquired = self._lock.acquire(timeout=_WRITE_LOCK_TIMEOUT) if write else self._lock.acquire(blocking=False)
+        if not acquired:
             raise _Contended
         try:
             lock_path = self.path.with_suffix(".lock")
@@ -60,17 +65,21 @@ class UsageLog:
             with stream:
                 if os.name == "nt":
                     import msvcrt
-                    stream.seek(0)
-                    try:
-                        msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK if write else msvcrt.LK_NBRLCK, 1)
-                    except OSError as exc:
-                        raise _Contended from exc
                 else:
                     import fcntl
+                while True:
                     try:
-                        fcntl.flock(stream.fileno(), (fcntl.LOCK_EX if write else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+                        if os.name == "nt":
+                            stream.seek(0)
+                            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK if write else msvcrt.LK_NBRLCK, 1)
+                        else:
+                            fcntl.flock(stream.fileno(), (fcntl.LOCK_EX if write else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+                        break
                     except OSError as exc:
-                        raise _Contended from exc
+                        remaining = deadline - monotonic()
+                        if not write or remaining <= 0:
+                            raise _Contended from exc
+                        sleep(min(0.001, remaining))
                 try:
                     yield
                 finally:
@@ -128,8 +137,8 @@ class UsageLog:
                 with self.path.open("a", encoding="utf-8", newline="\n") as stream:
                     stream.write(line)
         except _Contended:
-            # A busy journal costs the observation, never the user operation.
-            # No retry, no sleep, no unlocked write: the notice waits instead.
+            # No unbounded wait, deferred queue or unlocked fallback write.
+            # The diagnostic notice survives; the business operation is never retried.
             self._missing = True
         except BaseException:
             if carried:

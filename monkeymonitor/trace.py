@@ -332,16 +332,22 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
         ids = {row["event_id"] for row in group}
         spans = []
         for row in group:
-            interval = _interval(row, clock)
+            # A completed root does not establish when an unfinished child
+            # stopped (or whether background work is still running). Never
+            # turn an old missing end event into ever-growing service time.
+            incomplete = bool(root and root["status"] != "running" and row["status"] == "running"
+                              and row.get("ended_at") is None and row.get("duration_ms") is None)
+            observed = {**row, "status": "incomplete"} if incomplete else row
+            interval = _interval(observed, clock)
             parent = row.get("parent_event_id") or row.get("related_event_id")
             if parent not in ids:
                 parent = root["event_id"] if root and root != row else None
-            duration = round(interval[1] - interval[0]) if interval and (row.get("ended_at") or row.get("duration_ms") is not None or row["status"] == "running") else None
+            duration = round(interval[1] - interval[0]) if interval and (row.get("ended_at") or row.get("duration_ms") is not None or observed["status"] == "running") else None
             details = _safe_details(row["details"])
             label = _LABELS.get(row["phase"], _code(row["phase"]))
             if row["phase"] == "tool_call" and details.get("tool_name"):
                 label += " · " + details["tool_name"]
-            spans.append({**{name: _code(row.get(name)) for name in ("event_id", "source", "provider", "model", "phase", "status", "operation_id", "run_id", "source_ref")},
+            spans.append({**{name: _code(observed.get(name)) for name in ("event_id", "source", "provider", "model", "phase", "status", "operation_id", "run_id", "source_ref")},
                           "parent_event_id": _code(parent), "label": label, "lane": _lane(row),
                           "started_at": row["started_at"], "ended_at": row.get("ended_at"),
                           "offset_ms": round(interval[0] - origin) if interval and origin is not None else None,
@@ -359,12 +365,29 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
                        and span["offset_ms"] is not None and span["duration_ms"] is not None and span["ended_at"] is not None)
         verified = [span["offset_ms"] + (span["duration_ms"] or 0) for span in spans if span["offset_ms"] is not None and
                     (span["phase"] == "verified" or span["details"].get("validator_pass") is True) and span["status"] != "running"]
+        # Reading an existing input candidate is not a new result of this turn.
+        # Require the same run's complete successful generation in this trace,
+        # starting after its root, before counting successful object readback.
+        generated = {span["run_id"]: end for span in spans
+                     if root and origin is not None and span["source"] == "studio" and span["phase"] == "candidate"
+                     and span["status"] == "succeeded" and span["run_id"]
+                     and span["duration_ms"] is not None
+                     and (start := _time(span["started_at"])) is not None and start >= origin
+                     and (end := _time(span["ended_at"])) is not None and end >= start}
+        first_candidate = [span["offset_ms"] + span["duration_ms"] for span in spans
+                           if root and span["source"] == "studio" and span["phase"] == "candidate_readback"
+                           and span["status"] == "succeeded" and span["run_id"] in generated
+                           and span["details"].get("success") is True
+                           and span["offset_ms"] is not None and span["offset_ms"] >= 0
+                           and span["duration_ms"] is not None
+                           and (end := _time(span["ended_at"])) is not None and end >= generated[span["run_id"]]]
         provider_rounds = sum(row["phase"] == "provider_round" for row in group)
         traces.append({"schema": "TurnTrace@1", "trace_id": _code(identity), "turn_id": _code(reference.get("turn_id")), "project_id": _code(reference.get("project_id")),
                        "session_id": _code(reference.get("session_id")), "started_at": reference["started_at"], "ended_at": reference.get("ended_at"),
                        "status": _code(reference["status"]), "summary": {"elapsed_ms": elapsed, "timeline_ms": timeline,
                        "elapsed_basis": "hub_turn" if root and root["phase"] == "hub_turn" else "recorded_root" if root else "unavailable",
                        "first_visible_ms": min(visible, default=None), "first_response_ms": min(first_response, default=None),
+                       "first_candidate_ms": min(first_candidate, default=None),
                        "verified_ms": min(verified, default=None), "provider_rounds": provider_rounds, "model_rounds": model_rounds,
                        "usage_events": usage["events_count"],
                        "tool_rounds": sum(row["phase"] == "tool_call" for row in group), "agent_resumes": max(0, provider_rounds - 1),
@@ -372,6 +395,8 @@ def build_traces(rows: list[dict], *, rates: tuple[RateCard, ...] = (), now: dat
                        "spans": spans, "attribution": attribution, "critical_path": critical, "usage": usage,
                        "price": _prices(measured, rates), "diagnostics": _diagnostics(group),
                        "warnings": ([] if root else ["缺少请求根区间；阶段记录仍可查看，总耗时保持未知。"])
+                       + (["请求已结束，但部分关联阶段未观测到结束；其状态显示为 incomplete，时长保持未知，不随读取时间增长。"]
+                          if any(span["status"] == "incomplete" for span in spans) else [])
                        + (["该记录的写入方此前在日志繁忙时跳过过诊断观测；受影响的回合、数量与时长都未知，此处不代表本回合缺失。"]
                           if any(row["details"].get("missing_observations") for row in group) else [])
                        + (["已关联的客户端活动超出聊天根区间；时间轴保留完整尾部，根耗时没有叠加这些阶段。"] if elapsed is not None and timeline > elapsed else [])

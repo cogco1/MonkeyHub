@@ -826,6 +826,52 @@ class DirectLoftTests(unittest.TestCase):
     thickness; the row's word travels to the operation as it was stated.
     """
 
+    def test_direct_transforms_keep_sections_identity_closure_and_nonzero_datum(self) -> None:
+        for loft_type in ("straight", "normal"):
+            with self.subTest(loft_type=loft_type):
+                row = replace(_loft_row(loft_type=loft_type, cap_ends=False), references={"base": {"level": PN}})
+                original = json.loads(json.dumps(row.params))
+                _, context = _produce((row,))
+                moved = edit_drawn_element(row, context, kind="move", translation=[2, 3, 4])
+                rotated = edit_drawn_element(moved, context, kind="rotate", axis=[0, 0, 1], angle_degrees=90,
+                                             origin=[0, 3.57, 0])
+                mirrored = edit_drawn_element(rotated, context, kind="scale", scale=[-2, 2, 2], origin=[0, 3.57, 0])
+                copied = edit_drawn_element(mirrored, context, kind="copy", translation=[10, 0, 0])
+                for source, target in zip([p for s in row.params["profiles"] for p in s],
+                                          [p for s in copied.params["profiles"] for p in s]):
+                    x, y, z = source
+                    for value, expected in zip(target, [2 * (y + 3) + 10, 2 * (x + 2), 2 * (z + 4)]):
+                        self.assertAlmostEqual(value, expected)
+                self.assertEqual((copied.element_id, copied.component_id, copied.producer, copied.references, copied.basis_refs),
+                                 (row.element_id, row.component_id, "loft", row.references, row.basis_refs))
+                self.assertEqual({k: v for k, v in copied.params.items() if k != "profiles"},
+                                 {k: v for k, v in row.params.items() if k != "profiles"})
+                self.assertEqual(row.params, original, "the source definition remains unchanged")
+                produced, _ = _produce((copied,))
+                self.assertEqual(produced[0].operations[0].output_object_ids, ("obj-drum",))
+                self.assertFalse(_op_params(produced[0].operations[0])["cap_ends"])
+                self.assertEqual(produced[0].bindings[0].datum_id, PN)
+
+    def test_loft_default_scale_origin_is_the_world_section_center(self) -> None:
+        row = replace(_loft_row(), references={"base": {"level": PN}})
+        _, context = _produce((row,))
+        changed = edit_drawn_element(row, context, kind="scale", scale=[2, 3, 4])
+        _assert_bbox(self, [p for s in changed.params["profiles"] for p in s], ((-2, 2), (-1, 2), (-4, 4)))
+
+    def test_loft_refuses_shape_changing_smooth_stretch_push_pull_and_host_detachment(self) -> None:
+        row = _loft_row(loft_type="normal")
+        _, context = _produce((row,))
+        with self.assertRaisesRegex(ElementProducerError, "non-uniform scale.*refit"):
+            edit_drawn_element(row, context, kind="scale", scale=[2, 1, 1])
+        with self.assertRaisesRegex(ElementProducerError, "section controls"):
+            edit_drawn_element(row, context, kind="push_pull", distance=1)
+        with self.assertRaisesRegex(ElementProducerError, "nonzero"):
+            edit_drawn_element(row, context, kind="scale", scale=[0, 1, 1])
+        rows = (*_rows(), replace(row, references={"base": {"datum": "capitals-west-top"}}))
+        _, context = _produce(rows)
+        with self.assertRaisesRegex(ElementProducerError, "cannot detach its host"):
+            edit_drawn_element(rows[-1], context, kind="move", translation=[1, 0, 0])
+
     def test_section_heights_are_relative_to_the_datum_without_moving_the_profiles(self) -> None:
         for bottom, top, support in ((0.4, 1.4375, {"rise": 0.4}),
                                      (-0.2, 0.8, {"engagement_depth": 0.2}),

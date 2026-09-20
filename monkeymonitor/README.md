@@ -63,7 +63,7 @@ python -m monkeymonitor serve --data-dir C:\explicit\diagnostics
 
 Studio / Hub 的观测写入显式的 `MONKEYMONITOR_DATA_DIR`，默认由 MonkeyHub 指向它自己的 runtime diagnostics 目录。日志属于工程诊断，不属于建筑项目文档。
 
-`UsageLog` 使用分段 JSONL：默认每段 8 MiB、保留 3 个历史段。写入和读取使用跨进程锁；日志被占用时，业务操作不等待。写入会跳过本次观测，后续成功记录携带“曾缺失观测”提示；读取占用则返回 503，而不是假装这是一个空的新日志。
+`UsageLog` 使用分段 JSONL：默认每段 8 MiB、保留 3 个历史段。写入和读取使用跨进程锁。写入的线程锁与文件锁共用 20 ms 的竞争等待预算，使请求返回与候选工作线程同时结束时能够保留两者的观测；超时仍跳过本次观测，后续成功记录携带“曾缺失观测”提示。读取不等待，占用则返回 503，而不是假装这是一个空的新日志。该预算只限制主动等锁，不能承诺操作系统调度与磁盘 I/O 的总耗时；没有延迟写入队列，也不会重试业务操作。
 
 Token 口径：
 
@@ -85,10 +85,14 @@ Token 口径：
 - `elapsed_ms` 只有存在完整根区间时才成立。
 - `model_rounds` 只有能把真实用量事件绑定到明确模型请求边界时才给数值。
 - `first_visible_ms`、客户端加载、CAD 等时间使用各自产生者记录的边界，不拿 token 时间差补算。
+- `first_candidate_ms` 是根请求开始到本轮首次成功生成候选的对象读回结束的时间。同一 trace 内必须先有同一 `run_id` 的成功 Studio `candidate` 生成区间，生成起止完整且不早于本轮起点；随后才采纳对象 inspection 完备、结束时间已记录的成功 `candidate_readback`。只读取旧输入候选、缺生成证据或缺结束时间时保持未知；比较失败不会抹去成功读回，job 成功、HTTP 成功或尚在运行的候选不算。该指标不代替 `verified_ms` 的显式验证，也不代表已满足空间意图或完成界面绘制。
 - critical path 只标注有明确阻塞证据的区间；并行分支缺少等待先后证据时保留未归因。
+- 根请求已经结束、子阶段只有开始记录时，投影状态为 `incomplete`，时长为 `null`；不把当前读表时间当作其结束时间。原日志保留，后来收到真实结束记录后恢复其实际区间。缺少结束记录的工具也使工具覆盖状态为 `incomplete`。
 - trace export 过滤本机路径、正文与任意自由文本，只保留允许的诊断代码、计数和摘要身份。
 
 输入重复诊断只表示“当前记录里的输入身份相同”。它不会自行断言某次请求本来可以删除；是否能复用还要满足 exact source、缓存可用性、provider 规则与结果绑定。
+
+计时修复采用 [Python 3.12 `Lock.acquire(timeout)`](https://docs.python.org/3.12/library/threading.html#threading.Lock.acquire) 与现有非阻塞文件锁；参考 [Portalocker 3.2.0 的有界锁重试](https://github.com/wolph/portalocker/blob/v3.2.0/portalocker/utils.py)（[BSD-3-Clause](https://github.com/wolph/portalocker/blob/v3.2.0/LICENSE)），使用同一单调时钟截止时间，未引入该依赖。保留 [OpenTelemetry Python 1.37.0 `SimpleSpanProcessor`](https://github.com/open-telemetry/opentelemetry-python/blob/v1.37.0/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/__init__.py)（[Apache-2.0](https://github.com/open-telemetry/opentelemetry-python/blob/v1.37.0/LICENSE)）的结束事件同步交付、诊断失败隔离思路；未采用其批处理后台线程，因为本次缺口是短暂锁竞争，增加队列会额外引入关闭时排空和事件顺序问题。父阶段结束不证明子阶段结束，符合 [OpenTelemetry Trace API 的独立 span 生命周期](https://opentelemetry.io/docs/specs/otel/trace/api/#end)。
 
 ## Codex 会话来源
 

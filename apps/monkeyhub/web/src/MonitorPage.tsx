@@ -26,24 +26,24 @@ const words = {
     refresh: "刷新", connecting: "正在连接监控服务…", retry: "重新连接", ready: "监控服务在线", failed: "监控服务暂不可用",
     allProjects: "全部项目", project: "项目", calls: "模型调用", cached: "缓存输入", uncached: "未缓存输入", output: "输出", wait: "请求往返 P50",
     coverage: (known: number, missing: number) => `${known} 次已记录${missing ? ` · ${missing} 次未知` : ""}`,
-    tasks: "任务时间线", noTasks: "暂无任务记录。MonkeyHub 发起任务后会在这里出现。", task: "任务", status: "状态", elapsed: "总历时", firstVisible: "首次可见", modelRounds: "模型轮次", toolRounds: "工具轮次",
+    tasks: "任务时间线", noTasks: "暂无任务记录。MonkeyHub 发起任务后会在这里出现。", task: "任务", status: "状态", elapsed: "总历时", firstVisible: "首次可见", firstCandidate: "首个候选", modelRounds: "模型轮次", toolRounds: "工具轮次",
     activity: "阶段", lane: "泳道", duration: "耗时", blocking: "阻塞", yes: "是", no: "否", details: "详情", diagnostics: "耗时诊断", warnings: "记录提示",
     usage: "调用记录", source: "来源", provider: "Provider / 模型", phase: "阶段", time: "时间", noUsage: "暂无用量记录。", showMore: "再显示 20 条",
     sources: "Codex 来源", sourcesHelp: "每行一个明确的本机 JSONL 路径。Hub 自动绑定的会话不需要手填；这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
     calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", resetTotals: "恢复当前汇总", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
-    serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录",
+    serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
   },
   en: {
     back: "Back to chat", title: "Usage and task records", subtitle: "Follow task progress, timing and model usage.",
     refresh: "Refresh", connecting: "Connecting to monitoring service…", retry: "Reconnect", ready: "Monitoring service online", failed: "Monitoring service unavailable",
     allProjects: "All projects", project: "Project", calls: "Model calls", cached: "Cached input", uncached: "Uncached input", output: "Output", wait: "Request round-trip P50",
     coverage: (known: number, missing: number) => `${known} recorded${missing ? ` · ${missing} unknown` : ""}`,
-    tasks: "Task timeline", noTasks: "No task records yet. Tasks started from MonkeyHub will appear here.", task: "Task", status: "Status", elapsed: "Elapsed", firstVisible: "First visible", modelRounds: "Model rounds", toolRounds: "Tool rounds",
+    tasks: "Task timeline", noTasks: "No task records yet. Tasks started from MonkeyHub will appear here.", task: "Task", status: "Status", elapsed: "Elapsed", firstVisible: "First visible", firstCandidate: "First candidate", modelRounds: "Model rounds", toolRounds: "Tool rounds",
     activity: "Stage", lane: "Lane", duration: "Duration", blocking: "Blocking", yes: "Yes", no: "No", details: "Details", diagnostics: "Timing diagnostics", warnings: "Record notices",
     usage: "Call records", source: "Source", provider: "Provider / model", phase: "Phase", time: "Time", noUsage: "No usage records yet.", showMore: "Show 20 more",
     sources: "Codex sources", sourcesHelp: "One explicit local JSONL path per line. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
     calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", resetTotals: "Use current totals", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
-    serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record",
+    serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record", endNotObserved: "End not observed",
   },
 } as const;
 
@@ -252,18 +252,20 @@ export function MonitorPage({ preferences, active, onClose }: Props) {
             <span><small>{t.status}</small><strong>{text(selectedTrace.status)}</strong></span>
             <span><small>{t.elapsed}</small><strong>{formatDuration(numeric(selectedTrace.summary?.elapsed_ms))}</strong></span>
             <span><small>{t.firstVisible}</small><strong>{formatDuration(numeric(selectedTrace.summary?.first_visible_ms))}</strong></span>
+            <span><small>{t.firstCandidate}</small><strong>{formatDuration(selectedTrace.summary?.first_candidate_ms)}</strong></span>
             <span><small>{t.modelRounds}</small><strong>{formatCount(numeric(selectedTrace.summary?.model_rounds))}</strong></span>
             <span><small>{t.toolRounds}</small><strong>{formatCount(numeric(selectedTrace.summary?.tool_rounds))}</strong></span>
             <a className="btn" href={base ? `${base}/api/traces/export?trace_id=${encodeURIComponent(selectedTrace.trace_id)}` : undefined} target="_blank" rel="noreferrer">{t.download}</a>
           </div>
           <div className="monitor-timeline" style={{ "--timeline-ms": timeline } as CSSProperties}>
             {spans.map((span, index) => {
+              const status = span.status === "incomplete" ? t.endNotObserved : text(span.status);
               const offset = numeric(span.offset_ms) ?? 0, duration = numeric(span.duration_ms) ?? 0;
               const left = timeline > 0 ? Math.max(0, Math.min(100, offset / timeline * 100)) : 0;
               const width = timeline > 0 ? Math.max(0.7, Math.min(100 - left, duration / timeline * 100)) : 1;
               return <details className="monitor-span" key={span.span_id ?? span.event_id ?? index}>
-                <summary><span className="monitor-span__label">{span.label ?? span.phase ?? "stage"}</span><span className="monitor-span__lane">{span.lane ?? "—"}</span><span className="monitor-span__track"><i data-lane={span.lane ?? "unknown"} data-blocking={span.blocking === true} style={{ left: `${left}%`, width: `${width}%` }} /></span><span>{formatDuration(span.duration_ms)}</span></summary>
-                <dl><dt>{t.status}</dt><dd>{text(span.status)}</dd><dt>{t.source}</dt><dd>{text(span.source)}</dd><dt>{t.provider}</dt><dd>{[span.provider, span.model].filter(Boolean).join(" · ") || "—"}</dd><dt>{t.blocking}</dt><dd>{span.blocking == null ? "—" : span.blocking ? t.yes : t.no}</dd></dl>
+                <summary><span className="monitor-span__label" title={status}>{span.label ?? span.phase ?? "stage"}{span.status === "incomplete" ? ` · ${status}` : ""}</span><span className="monitor-span__lane">{span.lane ?? "—"}</span><span className="monitor-span__track"><i data-lane={span.lane ?? "unknown"} data-blocking={span.blocking === true} style={{ left: `${left}%`, width: `${width}%` }} /></span><span>{formatDuration(span.duration_ms)}</span></summary>
+                <dl><dt>{t.status}</dt><dd>{status}</dd><dt>{t.source}</dt><dd>{text(span.source)}</dd><dt>{t.provider}</dt><dd>{[span.provider, span.model].filter(Boolean).join(" · ") || "—"}</dd><dt>{t.blocking}</dt><dd>{span.blocking == null ? "—" : span.blocking ? t.yes : t.no}</dd></dl>
                 {span.details && Object.keys(span.details).length > 0 && <pre>{JSON.stringify(span.details, null, 2)}</pre>}
               </details>;
             })}

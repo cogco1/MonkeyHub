@@ -14,6 +14,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from archflow_studio_api.application.intent_agent import DeterministicCompiler, Selection
 from archflow_studio_api.application.jobs import JobRegistry
@@ -157,6 +158,86 @@ class MonitoringTests(unittest.TestCase):
                 self.assertFalse(event.model_call)
                 self.assertEqual((event.provider, event.model), ("none", "none"))
                 self.assertTrue(all(value is None for value in event.tokens.to_dict().values()))
+
+    def test_real_asgi_request_end_survives_worker_collision_success_failure_and_cancel(self):
+        for outcome in ("succeeded", "failed", "cancelled"):
+            with self.subTest(outcome=outcome), TemporaryDirectory() as directory:
+                app = create_app(StudioSettings(project_dir=Path(directory) / "project", cad_export="off",
+                                                monitor_dir=Path(directory) / "diagnostics"))
+                store = app.state.monitor.store
+                append = store.append
+                held, collided = threading.Event(), threading.Event()
+                calls = []
+                original_lock = store._lock
+
+                class ObserveContention:
+                    def acquire(self, *args, **kwargs):
+                        if original_lock.locked():
+                            collided.set()
+                        return original_lock.acquire(*args, **kwargs)
+
+                    def release(self):
+                        original_lock.release()
+
+                def hold_short_write():
+                    with original_lock:
+                        held.set()
+                        if collided.wait(5):
+                            time.sleep(0.002)
+
+                def finishing(event):
+                    if event.phase == "api_request" and event.status != "running":
+                        worker = threading.Thread(target=hold_short_write, daemon=True)
+                        worker.start()
+                        self.assertTrue(held.wait(5))
+                        try:
+                            append(event)
+                        finally:
+                            worker.join(5)
+                        self.assertFalse(worker.is_alive())
+                    else:
+                        append(event)
+
+                async def exercise():
+                    entered = asyncio.Event()
+
+                    @app.get("/api/monitor-lifecycle")
+                    async def route():
+                        calls.append(outcome)
+                        entered.set()
+                        if outcome == "cancelled":
+                            await asyncio.Event().wait()
+                        if outcome == "failed":
+                            raise RuntimeError("private route detail")
+                        return {"ok": True}
+
+                    async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False),
+                                           base_url="http://test") as client:
+                        pending = asyncio.create_task(client.get("/api/monitor-lifecycle", headers={"x-monkey-turn-id": str(uuid4())}))
+                        await entered.wait()
+                        if outcome == "cancelled":
+                            pending.cancel()
+                            with self.assertRaises(asyncio.CancelledError):
+                                await pending
+                        else:
+                            response = await pending
+                            self.assertEqual(response.status_code, 500 if outcome == "failed" else 200)
+
+                try:
+                    with patch.object(store, "_lock", ObserveContention()), patch.object(store, "append", finishing):
+                        asyncio.run(exercise())
+                    rows, warnings = store.read()
+                    self.assertFalse(warnings)
+                    self.assertEqual(calls, [outcome], "diagnostics did not repeat the actual request")
+                    self.assertTrue(collided.is_set())
+                    self.assertEqual(len(rows), 1)
+                    self.assertEqual(rows[0].status, outcome)
+                    self.assertIsNotNone(rows[0].ended_at)
+                    self.assertIsNotNone(rows[0].duration_ms)
+                    self.assertNotIn("missing_observations", rows[0].details)
+                    self.assertNotIn("private route detail", store.path.read_text(encoding="utf-8"))
+                finally:
+                    app.state.jobs.shutdown()
 
     def test_candidate_service_clock_starts_when_worker_enters_not_while_queued(self):
         with TemporaryDirectory() as directory:
@@ -460,10 +541,14 @@ class MonitoringOcctTests(OcctCandidateTestCase):
         self.assertFalse(self.store.read()[1])
         self.assertEqual(self.observed()[-1].related_event_id, candidate_event.event_id)
         hub.finish("succeeded")
-        # The real reader stays the journal's; the trace under test is built
-        # from every emitted phase, not only from the ones it managed to store.
+        # Assert the actual retained journal, including the request/worker
+        # collision, rather than substituting the intercepted append calls.
         self.assertFalse(MonitorData(self.settings.monitor_dir).traces()["warnings"])
-        report = build_traces([row.to_dict() for row in self.observed()])
+        retained, warnings = self.store.read()
+        self.assertFalse(warnings)
+        self.assertEqual({row.event_id for row in retained}, {row.event_id for row in self.observed()})
+        self.assertFalse(any(row.status == "running" for row in retained))
+        report = build_traces([row.to_dict() for row in retained])
         self.assertEqual(len(report["traces"]), 1, report["warnings"])
         trace = report["traces"][0]
         self.assertEqual(trace["turn_id"], turn_id)
