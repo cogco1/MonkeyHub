@@ -924,6 +924,50 @@ class ContextPackTests(IntentTestCase):
         response = self.client.post("/api/intents/context", json=body)
         return response.status_code, response.json()
 
+    def test_advertised_reading_edit_survives_candidate_and_cold_task_context(self) -> None:
+        from jsonschema import Draft202012Validator
+        from archflow_studio_api.transport.proposal import SemanticEditRequestDto
+
+        reading = {
+            "entity_id": "entry-condition", "schema": "Reading@1", "parent_id": "portico",
+            "basis_refs": ["studio:intent"],
+            "fields": {"note": "Keep the south entry and courtyard route open; this is a design condition, not Stage approval.",
+                       "subject_refs": ["entity:portico-base", "entity:portico-cornice"],
+                       "source_ref": "studio:intent"},
+        }
+        edit = {"summary": "Retain the entry condition for later wall work.", "entities": [reading]}
+        # The agent must be able to discover the write through the very schema
+        # exposed by studio_schema; an accepted undocumented payload is not enough.
+        Draft202012Validator(SemanticEditRequestDto.model_json_schema()).validate(edit)
+        proposed = self.client.post("/api/proposals", json={
+            "projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID,
+            "stateDigest": self.state_digest, "semanticEdit": edit,
+        })
+        self.assertEqual(proposed.status_code, 201, proposed.text)
+        started = self.client.post(f"/api/proposals/{proposed.json()['proposalId']}/candidate")
+        self.assertEqual(started.status_code, 202, started.text)
+        self.assertEqual(_finished(self.client, started.json()["jobId"])["status"], "succeeded")
+        candidate_id = started.json()["candidateId"]
+        record = _load_kind(self.repository, candidate_id, "state-record")
+        saved = next(row for row in record["entities"] if row["entity_id"] == "entry-condition")
+        self.assertEqual(saved["fields"], reading["fields"])
+        self.assertEqual(saved["basis_refs"], reading["basis_refs"])
+
+        self.client.close()
+        cold_app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        cold_app.state.intent_compiler = Failing()
+        with TestClient(cold_app) as cold:
+            state = cold.get("/api/state", params={"run": candidate_id}).json()
+            response = cold.post("/api/intents/context", json={
+                "projectId": PROJECT_ID, "sourceRunId": candidate_id,
+                "stateDigest": state["stateDigest"], "utterance": "Add the courtyard walls.",
+                "elementIds": ["portico-base", "portico-cornice"],
+            })
+            self.assertEqual(response.status_code, 200, response.text)
+            facts = response.json()["context"]
+            self.assertEqual(next(row for row in facts["readings"] if row["entity_id"] == "entry-condition"), saved)
+        self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
     def test_the_named_source_and_focus_answer_a_pack_with_no_compiler_and_no_write(self) -> None:
         status, payload = self.pack("Raise portico-cornice height to 0.5 m.")
         self.assertEqual(status, 200, payload)
