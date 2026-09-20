@@ -1,0 +1,3 @@
+# P036 references verify exact bytes, including line endings.
+*.json -text
+HEAD -text
