@@ -94,7 +94,9 @@ class MiniLMEncoder:
 
 def require_current(result: Mapping[str, Any], snapshot: Mapping[str, Any]) -> None:
     """Consumers must call this against their intended current source."""
-    if any(value != snapshot.get(key) for key, value in result["source"].items()):
+    expected = {key: snapshot[key] for key in
+                ("revision", "state_digest", "record_digest", "step_sha256") if key in snapshot}
+    if not expected.get("revision") or not expected.get("state_digest") or result.get("source") != expected:
         raise ValueError("stale selection: rebuild against the intended source revision")
 
 
@@ -277,6 +279,121 @@ class SelectionIndex:
                      "actual_api_charge_usd": 0},
         }
         return result
+
+    def select_revision(self, query: Query, *, snapshot: Mapping[str, Any], budget: int,
+                        conditions: Sequence[Mapping[str, Any]] = (),
+                        required_images: Sequence[str] = (),
+                        images: Sequence[Mapping[str, Any]] = ()) -> dict:
+        """Opt-in revision consumer: rank only after preserving declared evidence.
+
+        `change` includes upstream support of all affected objects. `impact`
+        follows only invalidates/requires_revalidation, as StateRecord.closure
+        does. Open-ended inspection/search cannot establish sufficiency and
+        falls back to full. Neither mode certifies undeclared design impact.
+        Conditions are supplied task facts, never evaluator relevance labels.
+        Images must carry actual PNG bytes and this exact retained source.
+        """
+        started = perf_counter()
+        require_current({"source": self.source}, snapshot)
+        if type(budget) is not int or budget < 1:
+            raise ValueError("budget must be a positive integer")
+        condition_refs = set()
+        for condition in conditions:
+            if not condition.get("id") or not condition.get("text") or not condition.get("entity_refs"):
+                raise ValueError("conditions require id, text and entity_refs")
+            condition_refs.update(condition["entity_refs"])
+        if condition_refs - self.entities.keys():
+            raise ValueError("condition names entity refs absent from this source")
+        by_image = {}
+        for item in images:
+            if not item.get("id") or item["id"] in by_image:
+                raise ValueError("image refs must be unique and nonempty")
+            expected = {key: self.source[key] for key in ("revision", "state_digest", "step_sha256")
+                        if key in self.source}
+            if "step_sha256" not in expected or item.get("source") != expected:
+                raise ValueError("stale or unbound image: render the intended retained source")
+            if not isinstance(item.get("png"), bytes) or not item["png"].startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("image evidence requires PNG bytes, not a reference alone")
+            from io import BytesIO
+            from PIL import Image
+
+            try:
+                with Image.open(BytesIO(item["png"])) as picture:
+                    picture.verify()
+            except (OSError, SyntaxError) as exc:
+                raise ValueError("image evidence contains invalid PNG bytes") from exc
+            by_image[item["id"]] = item
+        if set(required_images) - by_image.keys():
+            raise ValueError("required image evidence missing: request/render it before inference")
+
+        # Preserve the original pilot as a raw comparator. Charge its retrieval
+        # attempt even when the safety decision subsequently falls back.
+        rank_query = Query(query.text, query.target_refs,
+                           "impact" if query.operation == "change" else query.operation)
+        raw = self.select(rank_query, revision=self.source["revision"],
+                          state_digest=self.source["state_digest"],
+                          budget=max(budget, len(set(query.target_refs))))
+        forward = {key: set() for key in self.ids}
+        upstream = {key: set() for key in self.ids}
+        unknown_effect = False
+        for edge in self.edges:
+            if edge["family"] != "dependencies":
+                continue
+            effect = edge.get("effect")
+            if effect in ("invalidates", "requires_revalidation"):
+                forward[edge["source"]].add(edge["target"])
+            elif effect not in ("blocks", "supports_only"):
+                unknown_effect = True
+            upstream[edge["target"]].add(edge["source"])
+
+        def walk(seeds, adjacency):
+            seen = set(seeds)
+            pending = deque(sorted(seen))
+            while pending:
+                key = pending.popleft()
+                for ref in sorted(adjacency[key] - seen):
+                    seen.add(ref)
+                    pending.append(ref)
+            return seen
+
+        affected = walk(query.target_refs, forward)
+        required = affected | condition_refs
+        if query.operation == "change":
+            required = walk(required, upstream)
+        reasons = []
+        if not query.target_refs or query.operation not in ("impact", "change"):
+            reasons.append("open-ended evidence coverage is not established")
+        if unknown_effect:
+            reasons.append("dependency effect unavailable or unknown")
+        if len(required) > budget:
+            reasons.append("required declared evidence exceeds entity budget")
+        full = self.method == "full" or bool(reasons)
+        ranked = list(dict.fromkeys([*query.target_refs, *sorted(required), *raw["entity_refs"]]))
+        selected = list(self.ids) if full else ranked[:budget]
+        edges = [deepcopy(edge) for edge in self.edges
+                 if {edge["source"], edge["target"]} <= set(selected)]
+        image_rows = [deepcopy(by_image[key]) for key in dict.fromkeys(required_images)]
+        context = {"source": deepcopy(self.source), "units": self.snapshot["units"],
+                   "coordinate_system": self.snapshot["coordinate_system"],
+                   "entities": [deepcopy(self.entities[key]) for key in selected], "edges": edges,
+                   "conditions": deepcopy(list(conditions)),
+                   "images": [{"id": item["id"], "source": item["source"]} for item in image_rows],
+                   "limits": "Recorded dependencies and supplied conditions only; unrecorded impact is unknown. Exact queries and validation remain required."}
+        return {"source": deepcopy(self.source), "method": self.method,
+                "version": "revision-selection-v2", "context": context, "images": image_rows,
+                "entity_refs": selected, "edge_refs": sorted({e["edge_ref"] for e in edges}),
+                "raw_entity_refs": raw["entity_refs"],
+                "raw_edge_refs": raw["edge_refs"],
+                "coverage": {"fallback_to_full": self.method != "full" and bool(reasons),
+                             "fallback_reasons": reasons, "entity_budget": budget,
+                             "exceeds_budget": len(selected) > budget,
+                             "required_declared_refs": sorted(required),
+                             "missing_declared_dependency_refs": sorted(required - set(selected)),
+                             "affected_refs": sorted(affected)},
+                "cost": {"query_ms": (perf_counter() - started) * 1000,
+                         "raw_query_ms": raw["cost"]["query_ms"],
+                         "context_bytes": len(_json(context).encode()),
+                         "image_bytes": sum(len(item["png"]) for item in image_rows)}}
 
 
 def retrieval_metrics(result: Mapping[str, Any], *, relevant_entities: Sequence[str],
