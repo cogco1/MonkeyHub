@@ -361,3 +361,45 @@ and 29.100/29.584 s for assembly continue/project. Visible prior histories range
 from 1,568 to 2,113 characters; they do not represent a long design conversation
 or the complete native system/tool context. The per-arm preparation JSON holds
 the corresponding input/cache/output counts, separately from the table.
+
+### Reverse-order repeats
+
+The second quiet window used benchmark `d3197211` with the same production
+`fe9bafcf` and reported model. Monitor was read after each measured turn, not
+polled throughout it. Cornice ran project then continue; assembly ran continue
+then project. All four candidates passed the same independent checks.
+
+| Task / condition | Wall seconds | Input | Cached input subset | Output | Tool calls | CAD builds | Failed tools |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cornice / project | 55.259 | 187,979 | 169,216 | 1,135 | 4 | 1 | 0 |
+| Cornice / continue | 26.707 | 124,180 | 116,864 | 597 | 2 | 1 | 0 |
+| Assembly / continue | 57.834 | 267,738 | 254,208 | 1,303 | 5 | 1 | 1 |
+| Assembly / project | 99.253 | 328,232 | 276,864 | 1,820 | 8 | 1 | 1 |
+
+The project-state cornice and assembly turns additionally requested a model
+view (125 ms and 140 ms of observed server work). The assembly project turn
+also reread candidate/context data. No old-session turn requested a model view.
+Thus the equal candidate checks coexist with different observation work. In
+these short histories project-state turns used more reported input and elapsed
+time; neither observation proves context rebuilding caused the difference or
+predicts a long conversation. Keep the two benchmark versions separate rather
+than pooling them into a performance claim.
+
+Both additional assembly turns repeated the missing-profile error and then
+corrected it: four of four assembly turns exposed the same nested replacement
+ambiguity, across both session modes and execution orders. The existing schema
+owner addresses this in [PR #191](https://github.com/cogco1/MonkeyHub/pull/191);
+that production change was deliberately excluded from these fixed-baseline
+measurements. Its latency effect has not been measured here.
+
+All four new reports exported normally, with no final Monitor read failure.
+Each still carries a missing-observations notice and one unfinished Studio
+mutation span. Removing active sampling reads did not resolve that telemetry
+limitation, and the successful exports do not establish the original exception's
+cause. No additional production tracing mechanism was added for this exercise.
+
+Sources are the adjacent `scalar-pair-2` and `assembly-pair-2` directories.
+Primer wall times were 28.996/25.864 s for cornice project/continue and
+27.860/22.102 s for assembly continue/project; their usage and history sizes
+remain separate in `preparation`. The final set is two samples per condition
+per task, with one reversed order, not a statistical latency study.
