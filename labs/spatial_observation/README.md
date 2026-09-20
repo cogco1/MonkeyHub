@@ -70,6 +70,34 @@ entity/edge references, not architectural quality judgments. Contexts remain
 incomplete; answer support is checked against the actual supplied references.
 Retrieval cost, exact suspicion checks and downstream model usage are separate.
 
+To recompute the retained summary without new model calls, run this Python from
+the repository root in the same CAD environment. It reads the primary, earlier
+and smoke runs independently and verifies the committed summary:
+
+```python
+import json
+from pathlib import Path
+from labs.spatial_observation.analyze import summarize_observation, summarize_downstream
+
+root = Path("probes/spatial-observation-v1")
+def rows(name):
+    return [json.loads(line) for line in (root / name).read_text(encoding="utf-8").splitlines()]
+
+summary = {
+    key: summarize_observation(rows(f"observation-{name}.jsonl"))
+    for key, name in (
+        ("explicit_camera_v2", "explicit-camera-v2"),
+        ("orientation_unspecified_v1", "orientation-unspecified-v1"),
+        ("smoke", "smoke"),
+    )
+}
+summary["selection_consumer"] = summarize_downstream(
+    rows("downstream.jsonl"), json.loads((root / "selection.json").read_text(encoding="utf-8"))
+)
+assert summary == json.loads((root / "summary.json").read_text(encoding="utf-8"))
+print("Retained summary matches recomputed observations and downstream results.")
+```
+
 ## Boundaries
 
 This small fixture establishes repeatable measurements and explicit information
