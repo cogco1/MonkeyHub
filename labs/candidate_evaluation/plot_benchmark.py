@@ -54,6 +54,9 @@ def plot(directory: Path) -> None:
     plt.close(figure)
 
     target = ("heterogeneous_variance", "ocba", max(summary["sample_budgets"]))
+    if not any((row["fixture"], row["policy"], row["budget"]) == target for row in rows):
+        selected = next((row for row in rows if row["policy"] == "ocba"), rows[0])
+        target = (selected["fixture"], selected["policy"], selected["budget"])
     with gzip.open(directory / "trials.jsonl.gz", "rt", encoding="utf-8") as file:
         trial = next(row for line in file if (row := json.loads(line))["repetition"] == 0
                      and (row["fixture"], row["policy"], row["budget"]) == target)
@@ -87,7 +90,53 @@ def plot(directory: Path) -> None:
     plt.close(figure)
 
 
+def plot_paired(directory: Path) -> None:
+    """Plot retained paired PCS differences, including simultaneous intervals."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    summary = json.loads((directory / "paired_summary.json").read_text(encoding="utf-8"))
+    rows = sorted(summary["results"], key=lambda row: (row["fixture"], row["policy"] == "cost_ocba"))
+    names = {"heterogeneous_cost": "异成本候选", "monkeyhub_fixed_massing": "固定体量候选"}
+    policies = {"ocba": "经典 OCBA", "cost_ocba": "成本 OCBA"}
+    with plt.rc_context({"font.family": "Microsoft YaHei", "svg.fonttype": "none"}):
+        figure, ax = plt.subplots(figsize=(10, max(4.7, .75 * len(rows) + 1.8)))
+        for index, row in enumerate(rows):
+            center = 100 * row["delta_pcs"]
+            low, high = (100 * row[field] for field in
+                         ("delta_pcs_familywise95_low", "delta_pcs_familywise95_high"))
+            ax.errorbar(center, index, xerr=[[center - low], [high - center]],
+                        fmt="o", color="#171717", ecolor="#777777", capsize=5, markersize=5)
+            ax.annotate(f"{center:+.2f}", (center, index), xytext=(0, -19),
+                        textcoords="offset points", ha="center", fontsize=10)
+        ax.set_yticks(range(len(rows)), [f"{names.get(row['fixture'], row['fixture'])} / {policies[row['policy']]}" for row in rows])
+        ax.set_ylim(len(rows) - .15, -.7)
+        ax.axvline(0, color="#999999", linestyle="--", linewidth=1)
+        ax.set_xlabel("相对均分的 PCS 差值（百分点）", labelpad=12)
+        ax.grid(axis="x", color="#e6e6e6")
+        ax.set_axisbelow(True)
+        for side in ("top", "right", "left"):
+            ax.spines[side].set_visible(False)
+        ax.tick_params(axis="y", length=0, pad=12)
+        figure.suptitle("同成本比较：点估计与不确定性", fontsize=17, x=.045, ha="left")
+        budgets = ", ".join(f"{unit} {budget:,}" for unit, budget in sorted({(r["budget_unit"], r["budget"]) for r in rows}))
+        counts = ", ".join(str(n) for n in sorted({r["paired_trials"] for r in rows}))
+        figure.text(.045, .015,
+                    f"预算 {budgets} / 每组 {counts} 次配对重复 / {len(rows)} 项差值同时 95% 区间（保守 exact 方法）\n"
+                    "人工噪声与费用；区间包含零不等于两策略等效。", fontsize=9, color="#555555")
+        figure.tight_layout(rect=(0, .13, 1, .92))
+        figure.savefig(directory / "paired_pcs.svg")
+        svg = directory / "paired_pcs.svg"
+        svg.write_text("\n".join(line.rstrip() for line in svg.read_text(encoding="utf-8").splitlines()) + "\n",
+                       encoding="utf-8", newline="\n")
+        figure.savefig(directory / "paired_pcs.png", dpi=160)
+        plt.close(figure)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
-    plot(parser.parse_args().directory)
+    parser.add_argument("--paired", action="store_true", help="plot paired_summary.json instead of summary.json")
+    args = parser.parse_args()
+    (plot_paired if args.paired else plot)(args.directory)

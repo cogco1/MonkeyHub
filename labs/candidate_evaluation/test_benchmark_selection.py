@@ -4,11 +4,21 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from .allocation_benchmark import run_benchmark
 
 
 class SelectionTests(unittest.TestCase):
+    def test_synthetic_selection_does_not_require_production_dependencies(self):
+        with TemporaryDirectory() as root, patch(
+                "labs.candidate_evaluation.allocation_benchmark.production_fixture",
+                side_effect=AssertionError("unselected production fixture")):
+            summary = run_benchmark(Path(root), repetitions=2, master_seed=1, budgets=(4,),
+                                    fixture_names=("heterogeneous_cost",), policies=("equal",),
+                                    budget_units=("cost",))
+            self.assertEqual(summary["selected_fixtures"], ["heterogeneous_cost"])
+
     def test_cost_only_selection_is_paired_complete_and_not_overwritten(self):
         with TemporaryDirectory() as root:
             output = Path(root) / "run"

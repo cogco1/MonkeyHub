@@ -232,7 +232,7 @@ def run_benchmark(output: Path, *, repetitions: int, master_seed: int, budgets: 
     started = datetime.now(timezone.utc).isoformat()
     with TemporaryDirectory(prefix="monkeyhub-evaluation-") as project_dir:
         fixtures = synthetic_fixtures()
-        if include_production:
+        if include_production and (fixture_names is None or "monkeyhub_fixed_massing" in fixture_names):
             fixtures = (*fixtures, production_fixture(Path(project_dir) / "project"))
         if fixture_names is not None:
             if (not fixture_names or len(set(fixture_names)) != len(fixture_names)
@@ -302,7 +302,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20260920)
-    parser.add_argument("--budgets", type=int, nargs="+", default=[100, 300, 900])
+    parser.add_argument("--budgets", type=int, nargs="+", default=[100, 300, 900],
+                        help="sample budgets; each cost-budget condition uses five times this value")
     parser.add_argument("--synthetic-only", action="store_true")
     parser.add_argument("--fixtures", nargs="+", help="optional exact fixture names")
     parser.add_argument("--policies", nargs="+", choices=POLICIES, default=list(POLICIES))

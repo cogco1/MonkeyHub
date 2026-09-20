@@ -19,7 +19,7 @@
         "contributor": "Codex at repository owner's request",
         "reviewer": null,
         "handoff": null,
-        "modules": [],
+        "modules": ["state.massing_metrics"],
         "write_scope": ["labs/candidate_evaluation/", "docs/research/performance-experiments.md", "docs/research/ocba-discussion.md"],
         "depends_on": [],
         "blocked_reason": null

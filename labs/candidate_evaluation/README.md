@@ -11,6 +11,12 @@ same statistical values. See [research and implementation decisions](RESEARCH.md
 The [executed benchmark report](BENCHMARK.md) and
 [complete aggregate results](benchmark_results.csv) retain the measured comparisons.
 
+The [equal-cost follow-up](PAIRED_ANALYSIS.md) retains a fresh 2,400-trial pilot,
+paired uncertainty and reproducible analysis. The [discussion brief](../../docs/research/ocba-discussion.md)
+explains what is being allocated and the proposed FEA interface; the separate
+[performance experiment plan](../../docs/research/performance-experiments.md)
+addresses end-to-end Agent latency and cost.
+
 ## 汇报用说明：现在可调用什么
 
 - **输入：** 一个 `StateRecord`、独立确认的 project/run/base 与内容摘要、
