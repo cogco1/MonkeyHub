@@ -943,3 +943,43 @@ own code (`RECORDING_ACTIVE`, `RECORDING_NOT_ACTIVE`, `BACKEND_UNAVAILABLE`,
 Hub's runtime root, read again on every request; without it these routes answer `403
 COMPUTER_USE_NOT_ENABLED` naming that path, and the MCP tools `computer_inspect`,
 `computer_action` and `computer_record` proxy the same three routes with no second check.
+
+## Study on a registered document page
+
+The existing Board document editor offers a Study side panel. Its normalized
+polygons use the same page interaction surface, but are saved only through
+`research-evidence-ledger` (`EvidenceLedger@1`), never as document annotations.
+
+- `POST /api/studies` saves corrected evidence and optional `research` against
+  `expectedPreviousRef`. Research contains editable documentary citations,
+  competing hypotheses, gaps, declared counterfactuals, exact comparison references,
+  a CompositionPattern and a conditional DesignPrior. Clients cannot provide
+  computed `actual` or `comparisonResults` results. The server computes and archives
+  comparisons with the saved research; cold reads replay those retained results.
+- `GET /api/studies` discovers current retained Studies, optionally filtered by
+  `sourceRunId`, `assetSha256` and `pageIndex`. `GET /api/studies/{study_id}` can
+  reopen an exact `ledgerRef`; source bytes and retained findings are verified.
+- `POST /api/studies/compare` compares 2–6 exact retained revisions using the
+  existing aspect-correct topology/proportion descriptors. Its bounds-based
+  similarity is not a validated architectural composition-family judgment.
+  Archived comparison references name the compared revisions, which can precede
+  the Study revision containing the result; subsequent edits do not relabel them.
+- `POST /api/studies/propose` names `projectId`, `studyId`, `expectedPreviousRef`
+  and `action` (`trace` or `reason`). It renders the exact registered page and
+  invokes the configured Codex/Anthropic transport under `ModelPhase.RESEARCH`.
+  Machine traces stay proposed. The model's source, input revision, timing,
+  usage and response are retained in `modelInvocations`; no substitute provider
+  or deterministic mock is used when one is unavailable.
+  When Monitor is configured, the existing usage log also records the actual
+  provider boundary, reported tokens and failure outcome against this project
+  and input ledger. Diagnostic failures never repeat a provider call.
+
+New research observations use true page-aspect-correct polygons; old derivation
+snapshots remain readable with their original method stamp. Counterfactuals keep
+the target, conditions and prediction, recompute affected geometry, and retain
+the measured outcome separately from interpretations. Model explanations cannot
+add unsupplied historical citations or sign the user's preferences. Changed
+applicability can retain, revise or reject a prior without rewriting the source.
+All Study operations leave StateRecord, DesignStage and canonical HEAD unchanged.
+Method limits and the public synthetic experiment are described in
+[the Study method note](research/study-evidence-method.md).
