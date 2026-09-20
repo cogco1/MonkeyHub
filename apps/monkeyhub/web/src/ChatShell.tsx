@@ -5,6 +5,7 @@ import { applicationUrl, type AppearancePreferences } from "../../../shared-web/
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
+import { MonitorPage } from "./MonitorPage";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
 import "./ChatShell.css";
@@ -604,11 +605,21 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const openTool = async (id: AppId, view?: Record<string, string>) => {
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
     if (needsProject && !projectDir) return false;
+    // An explicit system-page choice supersedes even a stale project link.
+    if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing) {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
         candidate: view?.candidate ?? item.candidate,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : "arch" })}` : item.url } : item));
+      setPanel(true); setActiveTool(id); setError(null);
+      return true;
+    }
+    // Monitor connects its data service inside the Hub, so even an unavailable
+    // service cannot replace application navigation or prevent leaving the page.
+    if (id === "monkeymonitor") {
+      setTabs((items) => [...items.filter((item) => item.id !== id), { id,
+        url: `${window.location.origin}/?view=monitor`, revision: 0 }]);
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -640,8 +651,14 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   };
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
-  const routeRestored = useRef(initialRuntimeRoute === null);
+  const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
+  const routeRestored = useRef(initialRuntimeRoute === null && !initialMonitorRoute);
   useEffect(() => {
+    if (initialMonitorRoute && !routeRestored.current) {
+      restoredTools.current = true;
+      void openTool("monkeymonitor").then((opened) => { if (opened) routeRestored.current = true; });
+      return;
+    }
     const query = new URLSearchParams(window.location.search);
     const runtimeId = query.get("runtimeId");
     if (!runtimeId || routeRestored.current || !runtime) return;
@@ -655,25 +672,28 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       ? initial.tools.find((item) => item.id === id) : undefined;
     void openTool(id, saved?.candidate ? { candidate: saved.candidate } : undefined)
       .then((opened) => { if (opened) routeRestored.current = true; });
-  }, [runtime, projects, projectDir, busy, toolBusy, initial]);
+  }, [runtime, projects, projectDir, busy, toolBusy, initial, initialMonitorRoute]);
   useEffect(() => {
     // Let an explicit incoming workspace link resolve before reflecting navigation.
     if (!routeRestored.current) return;
     const url = new URL(window.location.href);
-    if (selectedTab?.runtimeId) {
+    if (panel && selectedTab?.id === "monkeymonitor") {
+      url.searchParams.delete("runtimeId");
+      url.searchParams.set("view", "monitor");
+    } else if (selectedTab?.runtimeId) {
       url.searchParams.set("runtimeId", selectedTab.runtimeId);
       url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : "arch");
     } else {
       url.searchParams.delete("runtimeId");
-      if (["arch", "board"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
+      if (["arch", "board", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
     }
     window.history.replaceState(null, "", url);
-  }, [selectedTab?.runtimeId, selectedTab?.id, projectDir]);
+  }, [selectedTab?.runtimeId, selectedTab?.id, projectDir, panel]);
 
   // Save view choices, not old worker URLs. Reopening always resolves the live host.
   useEffect(() => {
     if (restoredTools.current || !project) return;
-    if (initialRuntimeRoute) { restoredTools.current = true; return; }
+    if (initialRuntimeRoute || initialMonitorRoute) { restoredTools.current = true; return; }
     if (!initial.tools.length || initial.projectDir !== projectDir) { restoredTools.current = true; return; }
     if (!studioWorker?.healthy || busy || toolBusy || actionLock.current) return;
     restoredTools.current = true;
@@ -822,6 +842,9 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     {(panel || workspaceTabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
       <div className="chat-browser__pages">{workspaceTabs.map((item) => {
         const visible = panel && item === selectedTab;
+        if (item.id === "monkeymonitor") return <div className="chat-monitor-workspace" key={`${item.id}:${item.revision}`} hidden={!visible} inert={!visible}>
+          <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} onClose={() => setPanel(false)} /></ErrorBoundary>
+        </div>;
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>

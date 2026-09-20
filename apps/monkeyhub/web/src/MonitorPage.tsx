@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type FormEvent } from "react";
-import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
+import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { AppStatus, ApplicationSettingsDto } from "./api/generated";
 import {
   aggregateTokens, formatCount, formatDuration, projectIds, summarizeUsage, quoteDraftReducer,
@@ -7,7 +7,7 @@ import {
 } from "./monitorData";
 import "./MonitorPage.css";
 
-type Props = { preferences: AppearancePreferences };
+type Props = { preferences: AppearancePreferences; active: boolean; onClose: () => void };
 type EventResponse = { events: MonitorEvent[]; warnings: string[] };
 type TraceResponse = { traces: MonitorTrace[]; warnings: string[]; lanes?: Array<{ id: string; label: string }> };
 type Rate = {
@@ -22,7 +22,7 @@ type Quote = { currency: string; amount_usd: string | null; known_subtotal_usd: 
 
 const words = {
   "zh-CN": {
-    back: "返回 MonkeyHub", title: "用量与任务记录", subtitle: "MonkeyMonitor 的记录与算法仍独立；这个页面由 MonkeyHub 承载。",
+    back: "回到聊天", title: "用量与任务记录", subtitle: "查看任务进度、耗时与模型用量。",
     refresh: "刷新", connecting: "正在连接监控服务…", retry: "重新连接", ready: "监控服务在线", failed: "监控服务暂不可用",
     allProjects: "全部项目", project: "项目", calls: "模型调用", cached: "缓存输入", uncached: "未缓存输入", output: "输出", wait: "请求往返 P50",
     coverage: (known: number, missing: number) => `${known} 次已记录${missing ? ` · ${missing} 次未知` : ""}`,
@@ -34,7 +34,7 @@ const words = {
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录",
   },
   en: {
-    back: "Back to MonkeyHub", title: "Usage and task records", subtitle: "MonkeyMonitor still owns the records and algorithms; MonkeyHub owns this page.",
+    back: "Back to chat", title: "Usage and task records", subtitle: "Follow task progress, timing and model usage.",
     refresh: "Refresh", connecting: "Connecting to monitoring service…", retry: "Reconnect", ready: "Monitoring service online", failed: "Monitoring service unavailable",
     allProjects: "All projects", project: "Project", calls: "Model calls", cached: "Cached input", uncached: "Uncached input", output: "Output", wait: "Request round-trip P50",
     coverage: (known: number, missing: number) => `${known} recorded${missing ? ` · ${missing} unknown` : ""}`,
@@ -73,9 +73,8 @@ function dateText(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function MonitorPage({ preferences }: Props) {
+export function MonitorPage({ preferences, active, onClose }: Props) {
   const t = words[preferences.language];
-  const framed = window.parent !== window;
   const [base, setBase] = useState<string | null>(null);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
   const [traces, setTraces] = useState<MonitorTrace[]>([]);
@@ -105,17 +104,10 @@ export function MonitorPage({ preferences }: Props) {
   useEffect(() => () => { quoteRequest.current += 1; }, []);
   const loadingRef = useRef(false);
 
-  // The current Hub still opens generic tools through its right-panel iframe.
-  // Monitor is no longer a separate app shell, so the Hub-owned system page
-  // immediately becomes the top-level view. #127 can remove the generic frame
-  // once the project workspaces themselves are folded into Hub.
-  useEffect(() => {
-    if (!framed) return;
-    const target = new URL(window.location.href);
-    target.searchParams.delete("embedded");
-    target.searchParams.delete("host");
-    window.top?.location.replace(target.href);
-  }, [framed]);
+  const baseRef = useRef(base);
+  const sourceDirtyRef = useRef(sourceDirty);
+  baseRef.current = base;
+  sourceDirtyRef.current = sourceDirty;
 
   const ensureService = useCallback(async () => {
     const settings = await jsonRequest<ApplicationSettingsDto>("/api/settings/apps");
@@ -141,35 +133,38 @@ export function MonitorPage({ preferences }: Props) {
     loadingRef.current = true;
     setLoading(true); setError(null);
     try {
-      const monitorBase = base ?? await ensureService();
+      const monitorBase = baseRef.current ?? await ensureService();
       setBase(monitorBase);
-      const requests: [Promise<EventResponse>, Promise<TraceResponse>, Promise<Rates>, Promise<SourceResponse> | null] = [
-        jsonRequest<EventResponse>(`${monitorBase}/api/events`),
-        jsonRequest<TraceResponse>(`${monitorBase}/api/traces`),
+      const [diagnostics, rateResult, sourceResult] = await Promise.all([
+        (async () => {
+          // These two views read the same rotation-protected journal. Parallel
+          // reads contend on its process lock and turn every refresh into 503.
+          const eventResult = await jsonRequest<EventResponse>(`${monitorBase}/api/events`);
+          const traceResult = await jsonRequest<TraceResponse>(`${monitorBase}/api/traces`);
+          return { eventResult, traceResult };
+        })(),
         jsonRequest<Rates>(`${monitorBase}/api/rates`),
         includeSources ? jsonRequest<SourceResponse>(`${monitorBase}/api/sources/codex`) : null,
-      ];
-      const [eventResult, traceResult, rateResult, sourceResult] = await Promise.all([
-        requests[0], requests[1], requests[2], requests[3] ?? Promise.resolve(null),
       ]);
+      const { eventResult, traceResult } = diagnostics;
       setEvents(eventResult.events ?? []); setTraces(traceResult.traces ?? []); setRates(rateResult.rates ?? []);
       setWarnings([...new Set([...(eventResult.warnings ?? []), ...(traceResult.warnings ?? [])])]);
-      if (sourceResult && !sourceDirty) setSourcePaths(sourceResult.paths.join("\n"));
+      if (sourceResult && !sourceDirtyRef.current) setSourcePaths(sourceResult.paths.join("\n"));
       setUpdatedAt(new Date());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setBase(null);
     } finally { setLoading(false); loadingRef.current = false; }
-  }, [base, ensureService, sourceDirty]);
+  }, [ensureService]);
 
   useEffect(() => {
-    if (framed) return;
+    if (!active) return;
     void readAll(true);
     const timer = window.setInterval(() => { if (!document.hidden) void readAll(false); }, 5000);
     const onVisible = () => { if (!document.hidden) void readAll(false); };
     document.addEventListener("visibilitychange", onVisible);
     return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
-  }, [framed, readAll]);
+  }, [active, readAll]);
 
   const projects = useMemo(() => projectIds(events, traces), [events, traces]);
   const filteredEvents = useMemo(() => project ? events.filter((event) => event.project_id === project) : events, [events, project]);
@@ -230,15 +225,13 @@ export function MonitorPage({ preferences }: Props) {
     }
   };
 
-  if (framed) return <main className="monitor-redirect" role="status">{t.connecting}</main>;
-  const home = applicationUrl(window.location.origin + "/", preferences);
   const timeline = numeric(selectedTrace?.summary?.timeline_ms) ?? numeric(selectedTrace?.summary?.elapsed_ms) ?? 0;
   const spans = selectedTrace?.spans ?? [];
   const selectedDiagnostics = selectedTrace?.diagnostics ?? [];
   const selectedWarnings = selectedTrace?.warnings ?? [];
 
   return <div className="monitor-page">
-    <header className="toolbar monitor-toolbar"><a className="btn" href={home}>{t.back}</a><strong className="wordmark">MonkeyHub</strong><span className={`monitor-health ${error ? "monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span><button className="btn" type="button" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</button></header>
+    <header className="toolbar monitor-toolbar"><button className="btn" type="button" onClick={onClose}>{t.back}</button><strong className="wordmark">MonkeyMonitor</strong><span className={`monitor-health ${error ? "monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span><button className="btn" type="button" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</button></header>
     <main className="monitor-shell">
       <div className="monitor-heading"><div><p className="monitor-eyebrow">MonkeyMonitor</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><label>{t.project}<select value={project} onChange={(event) => { invalidateQuote(); setProject(event.target.value); }}><option value="">{t.allProjects}</option>{projects.map((id) => <option key={id}>{id}</option>)}</select></label></div>
       {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}

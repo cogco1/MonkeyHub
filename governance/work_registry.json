@@ -47,7 +47,31 @@
         "apps/monkeyhub/web/workspaces/test/workspace-fixture.tsx",
         "apps/monkeyhub/web/src/ChatShell.css"
       ],
-      "handoff": "Review the tested first slice: exact editing-source context, bounded dependency facts and MCP supplements, explicit fresh provider sessions preserving visible chat and usage identities, and read-only exact STEP images. Cold Runtime recovery and reversible continuation pass with controlled providers; real-model design quality, automatic stage resets and cost comparison remain open. Based on committed #184, not a mainline merge."
+      "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
+      "lanes": [
+        {
+          "id": "integration",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
+          "status": "active",
+          "branch": "codex/185-integrate-monitor",
+          "worktree": "workspace/worktrees/codex-185-integrate-monitor",
+          "base_ref": "fe9bafcf6085777fe890c0439699abdd2c1bf605",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.css",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+          ],
+          "depends_on": [],
+          "handoff": "Combine committed PR #188 task context and #187 Monitor navigation in one tested checkout; preserve hidden context sessions and visible native Monitor. Design-loop and performance work run in independent tasks. No mainline merge or current installation is implied."
+        }
+      ]
     },
     {
       "id": "GH-137",
