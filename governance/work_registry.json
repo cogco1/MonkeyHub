@@ -3,14 +3,14 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-195",
+      "id": "GH-170",
       "stream": "planning",
-      "status": "ready",
-      "goal": "Compare structured state, current orthographic line images and exact-query augmented images on public synthetic retained geometry; separately test fixed-representation spatial selection for GH-170. Research-only, no production write path.",
+      "status": "active",
+      "goal": "Preserve declared revision dependencies, upstream support, task conditions and required images before ranking; compare full, graph, lexical and hybrid on an expanded public synthetic heldout set with real consumer costs.",
       "depends_on": [],
-      "branch": "codex/195-170-spatial-observation",
+      "branch": "codex/170-revision-selection",
       "worktree": ".",
-      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "base_ref": "72f424800a4eadf71604648d2d93f8163f22b10e",
       "contributor": "Codex",
       "reviewer": null,
       "modules": [
@@ -22,11 +22,11 @@
         "labs/spatial_observation/",
         "probes/spatial-observation-v1/"
       ],
-      "handoff": "Independent lab experiment complete for review: public synthetic A/B0/D0 and fixed-representation selection results retained in probes/spatial-observation-v1. Production integration and external architectural task validation remain separate decisions; do not automatically close GH-195/GH-170. Stopped ec46 WIP was reviewed read-only and not copied.",
+      "handoff": "Coordinator confirmed completed GH-195 source ownership handoff from PR #198. Old observation results remain unchanged; broader GH-195 research acceptance remains open. New GH-170 lab-only slice; no production ContextPack edits.",
       "acceptance": [
-        "Audited synthetic tasks and true retained STEP measurements; source, axis and unit checks.",
-        "Real A/B0/D0 repeat comparison and fixed-representation full/graph/lexical/embedding selection; preserve negative results and missing telemetry.",
-        "Seven primary-source implementation comparisons and justified C/E decisions."
+        "Reviewed development/heldout truth and negative freshness/image/coverage cases.",
+        "Reusable opt-in revision selector plus same-source real consumer comparisons including fallback, build, update and provider cost.",
+        "Focused dependency tests and architecture/scope checks; retain negative outcomes."
       ]
     },
     {

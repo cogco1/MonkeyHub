@@ -127,7 +127,8 @@ class Fixture:
     preprocessing_seconds: dict[str, float]
 
     @classmethod
-    def create(cls, root: Path, *, variant="base", scale=1.0):
+    def create(cls, root: Path, *, variant="base", scale=1.0,
+               authored: StateRecord | None = None, revision: str | None = None):
         """Create a disposable public fixture only in the caller's explicit root.
 
         Persistent records/binaries use P036. The CAD adapter receives its
@@ -135,7 +136,7 @@ class Fixture:
         """
         start = perf_counter()
         root = Path(root).resolve()
-        authored = authored_record(variant=variant, scale=scale)
+        authored = authored if authored is not None else authored_record(variant=variant, scale=scale)
         repository = FilesystemProjectRepository.initialize(
             root, project_id=authored.project_id, initial_state={"phase": "request", "commitments": []},
             authored_record=authored.to_dict(),
@@ -184,7 +185,7 @@ class Fixture:
                                 artifact["sha256"], receipt_ref.relative_path, receipt_ref.sha256)
         exported_at = perf_counter()
         read_elevation_source(repository, source)
-        return cls(repository, record, f"{variant}-scale-{scale:g}", source,
+        return cls(repository, record, revision or f"{variant}-scale-{scale:g}", source,
                    {"author_compile_persist": compiled_at - start,
                     "cad_export_readback_persist": exported_at - compiled_at,
                     "retained_source_verify": perf_counter() - exported_at})

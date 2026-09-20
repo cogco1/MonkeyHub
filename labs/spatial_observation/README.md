@@ -10,6 +10,10 @@ Read [results](../../probes/spatial-observation-v1/README.md), the
 [fixture audit](fixture_protocol.md), and [selection protocol](selection_protocol.md).
 These distinguish measured results, input limitations and future hypotheses.
 
+The follow-up [revision evidence protocol](revision_protocol.md) adds an opt-in
+closure/upstream/condition/image guard and a larger held-out consumer comparison.
+It keeps the historical observation and selection results below unchanged.
+
 ## Verified production baseline
 
 The measured checkout is `3a92b41460b52c04963278a3300a29c34744c43e`, fetched from
