@@ -72,10 +72,10 @@
         {
           "id": "drawing-pages",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "active",
+          "status": "review",
           "branch": "codex/185-drawing-page-read",
           "worktree": "workspace/worktrees/codex-185-drawing-page-read",
-          "base_ref": "9c163919916587a46c775a522f6e52eb264cbc2f",
+          "base_ref": "4385da95c25e95f561b06804aefed5a48efc5dbf",
           "contributor": "Codex",
           "reviewer": null,
           "modules": [
@@ -95,7 +95,7 @@
             "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
           ],
           "depends_on": [],
-          "handoff": "Complete the Board maxEdge generated client, api:check and build headlessly in this branch. Wait for the coordinator-provided main SHA before one integration push. Root independently reviews code and owns UI, main merge and desktop delivery."
+          "handoff": "Merged coordinator-approved main without rewriting history. Exact Board maxEdge client generated; api:check, build and focused page/MCP checks pass headlessly. Root independently reviews the PR, merges and delivers the desktop update, then removes this completed lane."
         }
       ]
     },
