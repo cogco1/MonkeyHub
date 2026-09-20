@@ -8,6 +8,8 @@ the boundaries of [#119](https://github.com/cogco1/MonkeyHub/issues/119) and
 an architectural preference model. The independent sequential allocation
 experiment for [#124](https://github.com/cogco1/MonkeyHub/issues/124) consumes the
 same statistical values. See [research and implementation decisions](RESEARCH.md).
+The [executed benchmark report](BENCHMARK.md) and
+[complete aggregate results](benchmark_results.csv) retain the measured comparisons.
 
 ## 汇报用说明：现在可调用什么
 

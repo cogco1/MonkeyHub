@@ -10,6 +10,7 @@ def plot(directory: Path) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import NullLocator
 
     summary = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
     rows = summary["results"]
@@ -31,6 +32,9 @@ def plot(directory: Path) -> None:
         ax.set_title(f"{fixture}\n{unit} budget", fontsize=9)
         ax.set_ylim(0, 1.04)
         ax.set_xscale("log")
+        budgets = sorted({r["budget"] for r in rows if (r["fixture"], r["budget_unit"]) == (fixture, unit)})
+        ax.set_xticks(budgets, [f"{budget:,}" for budget in budgets])
+        ax.xaxis.set_minor_locator(NullLocator())
         ax.set_ylabel("PCS")
         ax.grid(alpha=.15)
     for ax in list(axes.flat)[len(groups):]:
@@ -67,8 +71,9 @@ def plot(directory: Path) -> None:
             mean_paths[i].append(float("nan") if means[i] is None else means[i])
     for i in range(count):
         label = trial["final_estimates"][i]["candidate_id"]
-        counts_ax.plot(count_paths[i], label=label)
-        means_ax.plot(mean_paths[i], linewidth=.8)
+        attempts = range(1, len(trial["trace"]) + 1)
+        counts_ax.plot(attempts, count_paths[i], label=label)
+        means_ax.plot(attempts, mean_paths[i], linewidth=.8)
     counts_ax.set(xlabel="Total attempted observations", ylabel="Cumulative attempts per candidate")
     means_ax.set(xlabel="Total attempted observations", ylabel="Estimated response mean")
     figure.suptitle(f"One replayable trajectory: {target[0]}, {target[1]}, repetition 0\n"
