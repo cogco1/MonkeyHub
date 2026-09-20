@@ -3,6 +3,51 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-90",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Detect stable timestamp-preserving work-copy saves and preserve the update/View notice when a registered source arrives through Board CAS refresh. Wider delivery channels and human workflow acceptance remain on issue #90.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/tests/test_project_runtime.py",
+        "apps/monkeyhub/api/tests/work_copy_browser_fixture.py",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
+      ],
+      "lanes": [
+        {
+          "id": "bound-artifact-refresh",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/90",
+          "status": "review",
+          "branch": "codex/bound-artifact-refresh",
+          "worktree": "C:/Users/asus/.codex/worktrees/05ad/ARCHFLOW_V4",
+          "base_ref": "eda3ec97f8552e98591ba177e114a945f311bfb1",
+          "contributor": "Codex",
+          "reviewer": "Codex coordinator; focused independent review completed",
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/tests/test_project_runtime.py",
+            "apps/monkeyhub/api/tests/work_copy_browser_fixture.py",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md"
+          ],
+          "depends_on": [],
+          "handoff": "Coordinator confirmed public #201 eda3ec97 source handoff; carried as an explicit dependency, still unmerged. Only bound work-copy detection and existing Board notification are extended. Preserve upstream #201 tests and #202 continuation/Monitor assertions at integration. No private project data, installed app changes, ChatShell session changes or canonical acceptance."
+        }
+      ]
+    },
+    {
       "id": "GH-183",
       "stream": "planning",
       "status": "active",
@@ -26,7 +71,7 @@
         {
           "id": "headless-board-refresh",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/183",
-          "status": "review",
+          "status": "done",
           "branch": "codex/headless-board-refresh",
           "worktree": "workspace/worktrees/codex-headless-board-refresh",
           "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
@@ -51,7 +96,7 @@
             "docs/SYSTEM_MAP.md"
           ],
           "depends_on": [],
-          "handoff": "Review only headless result display and Board CAS refresh, related to issues #183 and #32. Public source is ported from verified bf0d3c23 and 442321ef; those installation commits remain traceable. The base contains the completed GH-185 integration and lock controls. Preserve both this lane's headless refresh assertions and the parallel GH-183 explicit Continue/Monitor assertions when integrating their independent PRs; keep only one named Top selector replacement. Private project data and the separate component removal repair are excluded."
+          "handoff": "Review only headless result display and Board CAS refresh, related to issues #183 and #32. Public source is ported from verified bf0d3c23 and 442321ef; those installation commits remain traceable. The base contains the completed GH-185 integration and lock controls. Preserve both this lane's headless refresh assertions and the parallel GH-183 explicit Continue/Monitor assertions when integrating their independent PRs; keep only one named Top selector replacement. Private project data and the separate component removal repair are excluded. Coordinator confirmed the clean public eda3ec97 head and released this source-edit lane to GH-90; PR #201 remains unmerged and no project acceptance is implied."
         }
       ]
     },

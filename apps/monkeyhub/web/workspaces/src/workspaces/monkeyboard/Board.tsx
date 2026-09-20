@@ -265,11 +265,13 @@ function createPreviewLoader(studio: StudioClient) {
         originals.set(key, original);
       }
       // The page as its editor saved it. A page whose marks cannot be read is
-      // still placed, showing the original rather than nothing.
-      const annotations = await studio
+      // still placed, showing the original rather than nothing. Both reads are
+      // awaited together, so an original that fails before the marks arrive is
+      // reported to this caller instead of escaping as an unhandled rejection.
+      const [file, annotations] = await Promise.all([original, studio
         .documentAnnotations(document.runId, document.assetSha256, pageIndex, null, document.revisionRef ?? null)
-        .then((saved) => saved.annotations, () => []);
-      const visual = await renderDocumentVisual(await original, page, annotations);
+        .then((saved) => saved.annotations, () => [])]);
+      const visual = await renderDocumentVisual(file, page, annotations);
       return { dataURL: `data:image/png;base64,${visual.annotatedPngBase64 ?? visual.pagePngBase64}` as DataURL,
         width: visual.width, height: visual.height };
     })().catch((error) => { previews.delete(key); throw error; });
@@ -385,6 +387,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   // A replacement this tab uploaded itself is never announced back to its author.
   const originated = useRef(new Set<string>());
   const [update, setUpdate] = useState<BoardUpdateNotice | null>(null);
+  const refreshedPreviews = useRef(new Set<string>());
   const [previewFailed, setPreviewFailed] = useState(failures.length > 0);
   const [sourceError, setSourceError] = useState("");
   const [sketchSelection, setSketchSelection] = useState<SketchSelection | null>(null);
@@ -396,6 +399,20 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   // so the panel never shows a number that would not be sent.
   const [sketchHeight, setSketchHeight] = useState("");
   const [sketchSending, setSketchSending] = useState(false);
+  const announceUpdates = useCallback((sources: PageSource[], next: SourceDocumentDto[]) => {
+    const arrived = [...new Map(sources.map((source) => [pageKey(source), source])).values()].flatMap((source) => {
+      const document = findSource(next, source);
+      return document && !originated.current.has(documentKey(document))
+        ? [{ source, document, order: next.indexOf(document) }] : [];
+    });
+    if (arrived.length === 0 || !alive.current) return;
+    const newest = arrived.reduce((best, item) => {
+      const left = item.document.generatedAt ?? "", right = best.document.generatedAt ?? "";
+      return left > right || (left === right && item.order > best.order) ? item : best;
+    });
+    setUpdate({ fileName: newest.document.fileName, others: arrived.length - 1,
+      sources: [newest.source, ...arrived.filter((item) => item !== newest).map((item) => item.source)] });
+  }, []);
   const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false, revisionSha256: board.revisionSha256 });
   const [queue] = useState(() => createBoardSaveQueue(board, studio.saveBoard, (state) => {
     if (alive.current) setSaveState(state);
@@ -407,7 +424,31 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         const list = await studio.documents();
         if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
         const restored = await sceneFiles(latest, list.documents, preview);
+        // A saved change to which page an image shows is adopted only once that
+        // page can actually be drawn. While its bytes are unreadable the board
+        // keeps the image, source and marks it already shows; the existing Retry
+        // previews entry rebases it, and announces it, when the read succeeds.
+        // A page whose source did not change, and a deleted historical copy,
+        // never hold back an ordinary title or ink refresh.
+        const api = canvas.current;
+        const live = new Map(api?.getSceneElementsIncludingDeleted().map((element) => [String(element.id), element]));
+        const unreadable = api !== null && latest.elements.some((element) => {
+          if (element.type !== "image" || element.isDeleted) return false;
+          const source = imageSource(element);
+          const current = live.get(String(element.id));
+          const shown = current && !current.isDeleted && imageSource(current);
+          if (!source || (shown && pageKey(shown) === pageKey(source))) return false;
+          return !restored.files[String(element.fileId)];
+        });
+        if (unreadable) {
+          if (alive.current) setPreviewFailed(true);
+          throw new Error(textRef.current.previewError);
+        }
         if (alive.current) {
+          refreshedPreviews.current = new Set(latest.elements.flatMap((element) => {
+            const source = imageSource(element);
+            return source && restored.files[String(element.fileId)] ? [pageKey(source)] : [];
+          }));
           documentsRef.current = list.documents; setDocuments(list.documents);
           canvas.current?.addFiles(Object.values(restored.files));
           setPreviewFailed(restored.failures.length > 0);
@@ -427,6 +468,17 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         return current && JSON.stringify(records([current])[0]) === JSON.stringify(element) ? current : element;
       });
       api?.updateScene({ elements: elements as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.NEVER });
+      // Another Board can already have saved the replacement. In that case
+      // receive() has nothing left to swap, but this canvas still received new
+      // reviewable bytes. Announce only changed existing pages with a loaded
+      // preview, after the safe merge succeeds; unchanged reads stay quiet.
+      announceUpdates(elements.flatMap((element) => {
+        const previous = live.get(String(element.id));
+        const before = previous && !previous.isDeleted && imageSource(previous);
+        const after = !element.isDeleted && imageSource(element);
+        return before && after && pageKey(before) !== pageKey(after) && refreshedPreviews.current.has(pageKey(after))
+          ? [after] : [];
+      }), documentsRef.current);
     },
   }));
   const work = useRef(Promise.resolve());
@@ -551,20 +603,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       capture(elements);
       // Everything this batch actually swapped on the scene, minus this tab's own
       // upload, becomes one quiet notice that replaces any earlier one.
-      const arrived = [...applied].flatMap((key) => {
-        const item = rendered.get(key);
-        const document = item && findSource(next, item.source);
-        if (!item || !document || originated.current.has(documentKey(document))) return [];
-        return [{ source: item.source, document, order: next.indexOf(document) }];
-      });
-      if (arrived.length > 0 && alive.current) {
-        const newest = arrived.reduce((best, item) => {
-          const left = item.document.generatedAt ?? "", right = best.document.generatedAt ?? "";
-          return left > right || (left === right && item.order > best.order) ? item : best;
-        });
-        setUpdate({ fileName: newest.document.fileName, others: arrived.length - 1,
-          sources: [newest.source, ...arrived.filter((item) => item !== newest).map((item) => item.source)] });
-      }
+      announceUpdates([...applied].flatMap((key) => rendered.get(key)?.source ?? []), next);
     }
     for (const document of next) {
       const key = documentKey(document);
@@ -588,7 +627,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       if (!waitingForPreview.has(documentKey(document))) seen.current.add(documentKey(document));
     }
     capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []);
-  }, [addPage, capture, preview, queue]);
+  }, [addPage, announceUpdates, capture, preview, queue]);
   const upload = useCallback((incoming: File[]) => serial(async () => {
     for (const file of incoming) {
       const mime = documentMime(file);
@@ -736,6 +775,10 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     void upload([...event.dataTransfer.files]);
   };
   const retryVisuals = () => { void serial(async () => {
+    // A page whose saved source could not be drawn is still showing its previous
+    // one, so the retained board rebases first; the scene is then reread from the
+    // sources it actually carries.
+    await queue.refresh();
     const list = await studio.documents();
     if (!alive.current) return;
     if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");

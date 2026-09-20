@@ -4060,7 +4060,8 @@
         "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardNavigation.test.ts",
         "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts"
+        "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts",
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -6391,7 +6392,8 @@
         "apps/monkeyhub/web/test/monitorData.test.ts",
         "apps/monkeyhub/web/workspaces/test/connection.test.ts",
         "apps/monkeyhub/web/workspaces/test/proposalCard.test.ts",
-        "apps/monkeyhub/web/workspaces/test/preferences.test.ts"
+        "apps/monkeyhub/web/workspaces/test/preferences.test.ts",
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs"
       ],
       "depends_on": [
         "project.repository",
