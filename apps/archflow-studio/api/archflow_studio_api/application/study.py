@@ -25,6 +25,7 @@ import threading
 from typing import Any, Iterable, Mapping
 
 from archflow.contracts.canonical import canonical_digest
+from archflow.ports.model import ModelInvocationReceipt, ModelPhase, ModelInvocationStatus
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import RESEARCH_EVIDENCE_LEDGER, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
@@ -52,6 +53,8 @@ LEGACY_LEDGER_KEYS = frozenset({
 })
 CURRENT_DERIVATION_METHOD = "StudyDerivation@1"
 LEDGER_KEYS = LEGACY_LEDGER_KEYS | {"derivation_method"}
+RESEARCH_LEDGER_KEYS = LEDGER_KEYS | {"research"}
+RESEARCH_METHOD = "manual-conjecture-polygon-intervention@1"
 STUDY_RUN_PREFIX = "study-"
 TRACE_KINDS = frozenset({"envelope", "mass", "void", "floor_plate"})
 TRACE_STATUSES = frozenset({"proposed", "confirmed", "rejected"})
@@ -879,6 +882,215 @@ def _derived(
     return measurements, relations, graph, hypotheses, counterfactuals
 
 
+def _polygon_observations(
+    source: StudySource, evidence: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    from monkeydiagram import study as drawing_study
+
+    return drawing_study.polygon_observations(
+        [{"evidence_id": row["evidence_id"], "kind": row["kind"],
+          "points": row["geometry"]["points"]} for row in _confirmed(evidence)],
+        page_width=source.page_width, page_height=source.page_height,
+    )
+
+
+def _research_links(research: Mapping[str, Any], evidence: list[dict[str, Any]]) -> None:
+    """Check references without reinterpreting the person's arguments."""
+    def identifiers(rows, key):
+        if not isinstance(rows, list) or not all(isinstance(row, Mapping) for row in rows):
+            raise ValueError("Research entries must be object lists.")
+        result = [row[key] for row in rows]
+        if not all(isinstance(value, str) and value for value in result) or len(set(result)) != len(result):
+            raise ValueError(f"Research {key} values must be unique nonempty identifiers.")
+        return set(result)
+
+    def refs(row, field, allowed):
+        values = row[field]
+        if not isinstance(values, list) or not all(isinstance(value, str) and value in allowed for value in values):
+            raise ValueError(f"Research {field} names an absent source, trace or hypothesis.")
+
+    evidence_ids = {row["evidence_id"] for row in evidence}
+    source_ids = identifiers(research["historical_sources"], "source_id")
+    hypothesis_ids = identifiers(research["hypotheses"], "hypothesis_id")
+    identifiers(research["gaps"], "gap_id")
+    identifiers(research["counterfactuals"], "counterfactual_id")
+    for hypothesis in research["hypotheses"]:
+        refs(hypothesis, "evidence_ids", evidence_ids)
+        if "counter_evidence_ids" in hypothesis:
+            refs(hypothesis, "counter_evidence_ids", evidence_ids)
+        refs(hypothesis, "historical_source_ids", source_ids)
+        refs(hypothesis, "competes_with", hypothesis_ids - {hypothesis["hypothesis_id"]})
+    for gap in research["gaps"]:
+        refs(gap, "evidence_ids", evidence_ids)
+    for intervention in research["counterfactuals"]:
+        refs(intervention, "hypothesis_ids", hypothesis_ids)
+        if intervention["target_evidence_id"] not in evidence_ids:
+            raise ValueError("A counterfactual target must name an existing trace.")
+    pattern = research["composition_pattern"]
+    if pattern is not None:
+        refs(pattern, "evidence_ids", evidence_ids)
+    prior = research["design_prior"]
+    if prior is not None:
+        refs(prior, "hypothesis_ids", hypothesis_ids)
+        if pattern is None or prior["pattern_id"] != pattern["pattern_id"]:
+            raise ValueError("A DesignPrior must name this Study's CompositionPattern.")
+        if prior["preference_status"] == "stated" and not prior["preference"].strip():
+            raise ValueError("A stated preference needs the person's actual preference text.")
+        context = prior["changed_context"]
+        if context and context["decision"] != "unresolved":
+            if not any(value.strip() for value in context["changed_conditions"]) or not context["reason"].strip():
+                raise ValueError("A changed-context decision needs changed conditions and a reason.")
+            if context["decision"] == "revise" and not context["revised_statement"].strip():
+                raise ValueError("Revising a prior needs the revised statement.")
+
+
+def _research_intervention(source, evidence, intervention, baseline) -> dict[str, Any] | None:
+    if not intervention["execute"]:
+        return None
+    if not intervention["prediction"].strip() or not any(value.strip() for value in intervention["conditions"]) or not intervention["hypothesis_ids"]:
+        raise ValueError("An executed counterfactual needs its prior prediction, conditions and hypotheses.")
+    changed = _copy_evidence(evidence)
+    target = next(row for row in changed if row["evidence_id"] == intervention["target_evidence_id"])
+    if target["status"] != "confirmed":
+        return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1",
+                "reason": "The intervention target has not been confirmed by the user."}
+    parameters = intervention["parameters"]
+    operation = intervention["operation"]
+    if operation == "remove":
+        target["status"] = "rejected"
+    else:
+        points = target["geometry"]["points"]
+        # Uniform page-coordinate scaling preserves physical similarity even
+        # on a rectangular page. Translation is expressed in page fractions.
+        box = _box(points)
+        scale = parameters["scale"] if operation == "scale" else 1.0
+        dx = parameters["dx"] if operation == "translate" else 0.0
+        dy = parameters["dy"] if operation == "translate" else 0.0
+        moved = [[_q(box.cx + (x - box.cx) * scale + dx),
+                  _q(box.cy + (y - box.cy) * scale + dy)] for x, y in points]
+        if any(not 0 <= coordinate <= 1 for point in moved for coordinate in point):
+            return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1",
+                    "reason": "The requested geometry leaves the source page; it was not clamped."}
+        target["geometry"]["points"] = moved
+    if changed == evidence:
+        return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1",
+                "reason": "The requested intervention makes no geometric change."}
+    try:
+        measurements, relations = _polygon_observations(source, changed)
+    except ValueError as exc:
+        return {"status": "unsupported", "method": "aspect-correct-polygon-intervention@1", "reason": str(exc)}
+    baseline_measurements, baseline_relations = baseline
+    before = _signature(evidence, baseline_relations)
+    after = _signature(changed, relations)
+    union = before | after
+    return {
+        "status": "computed", "category": "computed", "method": "aspect-correct-polygon-intervention@1",
+        "metric_frame": "page-aspect-correct-long-edge@1",
+        "evidence": changed, "measurements": measurements, "relations": relations,
+        "baseline_measurements": baseline_measurements, "baseline_relations": baseline_relations,
+        "removed_facts": sorted(before - after), "added_facts": sorted(after - before),
+        "relation_signature_similarity": _q(len(before & after) / len(union)) if union else 1.0,
+        "interpretation": "underdetermined",
+    }
+
+
+def _research_snapshot(source, evidence, research) -> dict[str, Any]:
+    result = json.loads(json.dumps(research, allow_nan=False))
+    _research_links(result, evidence)
+    try:
+        baseline = _polygon_observations(source, evidence)
+    except ValueError as exc:
+        baseline = None
+        unsupported = str(exc)
+    for row in result["counterfactuals"]:
+        if row["execute"] and (not row["prediction"].strip() or not any(value.strip() for value in row["conditions"]) or not row["hypothesis_ids"]):
+            raise ValueError("An executed counterfactual needs its prior prediction, conditions and hypotheses.")
+        row["actual"] = (
+            _research_intervention(source, evidence, row, baseline) if baseline is not None
+            else ({"status": "unsupported", "method": "aspect-correct-polygon-intervention@1", "reason": unsupported}
+                  if row["execute"] else None)
+        )
+    missing = []
+    hypotheses = result["hypotheses"]
+    if not result["question"].strip():
+        missing.append("research-question")
+    if len(hypotheses) < 2 or not any(row["competes_with"] for row in hypotheses):
+        missing.append("two-competing-explanations")
+    if any(not row["statement"].strip() or not any(value.strip() for value in row["assumptions"]) or not row["falsification"].strip()
+           or not (row["evidence_ids"] or row["historical_source_ids"]) for row in hypotheses):
+        missing.append("evidence-conditions-and-falsification")
+    if not any(row["description"].strip() for row in result["gaps"]):
+        missing.append("evidence-gap")
+    executed = [row for row in result["counterfactuals"] if row["actual"] and row["actual"]["status"] == "computed"]
+    distinct_results = {json.dumps(row["actual"]["evidence"], sort_keys=True) for row in executed}
+    if not 3 <= len(distinct_results) <= 5:
+        missing.append("three-to-five-computed-interventions")
+    pattern, prior = result["composition_pattern"], result["design_prior"]
+    if not pattern or not pattern["rule"].strip() or not pattern["evidence_ids"] or not any(value.strip() for value in pattern["conditions"]):
+        missing.append("composition-pattern")
+    if not prior or not prior["statement"].strip() or not prior["hypothesis_ids"] or not any(value.strip() for value in prior["conditions"]):
+        missing.append("conditional-design-prior")
+    context = prior and prior["changed_context"]
+    if not context or context["decision"] not in {"retain", "revise", "reject"}:
+        missing.append("changed-context-decision")
+    result.update({
+        "method": RESEARCH_METHOD, "source_binding": source.to_dict(),
+        "observations": None if baseline is None else {"category": "computed", "method": "aspect-correct-polygon@1",
+            "metric_frame": "page-aspect-correct-long-edge@1", "measurements": baseline[0], "relations": baseline[1]},
+        "completion": {"ready": not missing, "missing": missing},
+    })
+    return result
+
+
+def _check_comparison_results(binding, research, results) -> None:
+    """Verify archived inputs and result structure without rerunning comparison."""
+    definitions = research.get("comparisons", [])
+    if (not isinstance(definitions, list) or len(definitions) > 6
+            or not isinstance(results, list) or len(definitions) != len(results)):
+        raise ValueError("Each research comparison needs its exact retained result.")
+    for definition, result in zip(definitions, results):
+        if not isinstance(definition, Mapping) or not isinstance(result, Mapping):
+            raise ValueError("Research comparisons and results must be objects.")
+        requested = definition.get("studies")
+        projected = result.get("studies")
+        if (not isinstance(requested, list) or not 2 <= len(requested) <= 6
+                or not isinstance(projected, list) or len(projected) != len(requested)
+                or result.get("schema") != "StudyComparison@1"
+                or result.get("project_id") != binding.project_id
+                or not isinstance(result.get("method"), str) or not result["method"]
+                or not isinstance(result.get("metric_frame"), str) or not result["metric_frame"]
+                or result.get("canonical_state_changed") is not False):
+            raise ValueError("The retained comparison result has a different input or method contract.")
+        identities = set()
+        for reference, projection in zip(requested, projected):
+            if not isinstance(reference, Mapping) or not isinstance(projection, Mapping):
+                raise ValueError("Comparison entries must name an exact Study revision.")
+            study_id, ledger_ref = reference["study_id"], reference["ledger_ref"]
+            identity = (study_id, ledger_ref)
+            if identity in identities or any(projection.get(key) != reference[key] for key in ("study_id", "ledger_ref")):
+                raise ValueError("The comparison result disagrees with its requested revisions.")
+            identities.add(identity)
+            named = _own_ledger_ref(ledger_ref, binding, _study_run_id(study_id))
+            if named is None:
+                raise ValueError("A comparison reference belongs to another Study or project.")
+            archived = _identity(binding, named, study_id)
+            if projection.get("source") != archived.get("source"):
+                raise ValueError("The comparison projection names another source page.")
+        for field in ("shared_topology", "pairwise"):
+            if not isinstance(result.get(field), list) or not all(isinstance(row, Mapping) for row in result[field]):
+                raise ValueError("The retained comparison results are structurally incomplete.")
+        pairs = set()
+        for row in result["pairwise"]:
+            left = (row["left"]["study_id"], row["left"]["ledger_ref"])
+            right = (row["right"]["study_id"], row["right"]["ledger_ref"])
+            pair = frozenset((left, right))
+            if left not in identities or right not in identities or left == right or pair in pairs:
+                raise ValueError("A retained comparison pair names another input revision.")
+            pairs.add(pair)
+        if len(pairs) != len(identities) * (len(identities) - 1) // 2:
+            raise ValueError("The retained comparison pair list is incomplete.")
+
+
 def _ledger_refs(
     binding: ProjectBinding,
     run_id: str,
@@ -944,7 +1156,7 @@ def _identity(
             "No retained Study ledger answers that reference in this project.",
         ) from exc
     keys = frozenset(payload)
-    if keys not in {LEGACY_LEDGER_KEYS, LEDGER_KEYS} or (
+    if keys - {"model_invocations"} not in {LEGACY_LEDGER_KEYS, LEDGER_KEYS, RESEARCH_LEDGER_KEYS} or (
         payload.get("schema") != LEDGER_SCHEMA
         or payload.get("project_id") != binding.project_id
         or payload.get("study_id") != study_id
@@ -1028,6 +1240,29 @@ def _load_payload(
             "STUDY_LEDGER_INVALID",
             "The retained Study evidence is not canonical.",
         )
+    if "model_invocations" in payload:
+        try:
+            if not isinstance(payload["model_invocations"], list):
+                raise ValueError("Invalid model invocation list")
+            for row in payload["model_invocations"]:
+                receipt = ModelInvocationReceipt.from_dict(row)
+                request_payload = receipt.request.payload
+                if (receipt.request.phase != ModelPhase.RESEARCH
+                        or receipt.status != ModelInvocationStatus.SUCCESS
+                        or request_payload["source"] != source):
+                    raise ValueError("Model receipt names another source or phase")
+                input_ref = _own_ledger_ref(request_payload["ledger_ref"], binding, _study_run_id(study_id))
+                if input_ref is None:
+                    raise ValueError("Model receipt names another Study")
+                input_ledger = _identity(binding, input_ref, study_id)
+                if (input_ledger["source"] != source
+                        or request_payload.get("evidence") != input_ledger["evidence"]
+                        or request_payload.get("research") != input_ledger.get("research")
+                        or receipt.request.context_digest != canonical_digest(request_payload, ascii=False)
+                        or receipt.request.checkpoint_digest != _graph(input_ledger["evidence"], input_ledger["relations"])["graph_digest"]):
+                    raise ValueError("Model receipt does not describe its exact retained input revision")
+        except (KeyError, TypeError, ValueError, StudioError) as exc:
+            raise StudioError(409, "STUDY_LEDGER_INVALID", "The retained Study model receipt is invalid.") from exc
     for field in ("measurements", "relations", "hypotheses", "counterfactuals"):
         rows = payload.get(field)
         # Shape only: what an older method concluded is not re-judged here, but
@@ -1042,6 +1277,32 @@ def _load_payload(
                 "STUDY_LEDGER_INVALID",
                 "The retained Study derivation snapshot is structurally incomplete.",
             )
+    if "research" in payload:
+        try:
+            research = payload["research"]
+            if not isinstance(research, Mapping) or not isinstance(research.get("method"), str) or not research["method"]:
+                raise ValueError("The research snapshot has no method.")
+            if research["source_binding"] != source:
+                raise ValueError("The research snapshot names another source page.")
+            _research_links(research, evidence)
+            _check_comparison_results(binding, research, research.get("comparison_results", []))
+            for row in research["counterfactuals"]:
+                if row["actual"] is not None and (not isinstance(row["actual"], Mapping)
+                                                 or row["actual"].get("status") not in {"computed", "unsupported"}):
+                    raise ValueError("The retained counterfactual result is unreadable.")
+                actual = row["actual"]
+                if actual and actual["status"] == "computed":
+                    retained = actual["evidence"]
+                    if _evidence(exact_source, retained) != retained:
+                        raise ValueError("The retained intervention evidence is not canonical.")
+                    originals = {item["evidence_id"]: item for item in evidence}
+                    if {item["evidence_id"] for item in retained} != set(originals):
+                        raise ValueError("The retained intervention changed the evidence identity set.")
+                    if any(item != originals[item["evidence_id"]] for item in retained
+                           if item["evidence_id"] != row["target_evidence_id"]):
+                        raise ValueError("The retained intervention altered a trace outside its target.")
+        except (KeyError, TypeError, ValueError, AttributeError, StudioError) as exc:
+            raise StudioError(409, "STUDY_LEDGER_INVALID", "The retained Study research is invalid.") from exc
     # Retained derivations are historical evidence, not a cache. Re-running a
     # newer method here would rewrite the meaning of an old content-addressed
     # revision and make method evolution break archive readability.
@@ -1149,6 +1410,31 @@ def read_study(
     return StudyView(ref, payload, graph)
 
 
+def list_studies(
+    binding: ProjectBinding, *, source_run_id: str | None = None,
+    asset_sha256: str | None = None, page_index: int | None = None,
+) -> list[StudyView]:
+    """Discover saved Studies through their existing P036 runs, without an index."""
+    result = []
+    for run_id in sorted(binding.run_ids()):
+        if not run_id.startswith(STUDY_RUN_PREFIX):
+            continue
+        study_id = run_id[len(STUDY_RUN_PREFIX):]
+        current = _current_ref(binding, study_id)
+        if current is None:
+            continue
+        payload = _identity(binding, current, study_id)
+        source = payload.get("source", {})
+        if not isinstance(source, Mapping):
+            raise StudioError(409, "STUDY_LEDGER_INVALID", "The retained Study source is structurally incomplete.")
+        if ((source_run_id is not None and source.get("run_id") != source_run_id)
+                or (asset_sha256 is not None and source.get("asset_sha256") != asset_sha256)
+                or (page_index is not None and source.get("page_index") != page_index)):
+            continue
+        result.append(read_study(binding, study_id, current.uri))
+    return result
+
+
 def _same_revision_content(
     previous: Mapping[str, Any],
     candidate: Mapping[str, Any],
@@ -1171,6 +1457,9 @@ def save_study(
     page_index: int,
     evidence_rows: Iterable[Mapping[str, Any]],
     expected_previous_ref: str | None,
+    research: Mapping[str, Any] | None = None,
+    model_receipt: ModelInvocationReceipt | None = None,
+    comparison_results: list[Mapping[str, Any]] | None = None,
 ) -> StudyView:
     """Save one corrected evidence revision without writing design state."""
 
@@ -1184,6 +1473,12 @@ def save_study(
     )
     evidence = _evidence(source, evidence_rows)
     measurements, relations, graph, hypotheses, counterfactuals = _derived(evidence)
+    research_snapshot = None
+    if research is not None:
+        try:
+            research_snapshot = _research_snapshot(source, evidence, research)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise StudioError(422, "STUDY_RESEARCH_INVALID", str(exc)) from exc
 
     with _study_lock:
         current = _current_ref(binding, study_id)
@@ -1197,12 +1492,28 @@ def save_study(
         previous_payload: Mapping[str, Any] | None = None
         if current is not None:
             previous_payload = _load_payload(binding, current, study_id)
+            if "research" in previous_payload and research is None:
+                raise StudioError(409, "STUDY_RESEARCH_REQUIRED", "Reload and include this Study's research before saving corrections.")
             if not _source_payload_matches(previous_payload["source"], source):
                 raise StudioError(
                     409,
                     "STUDY_SOURCE_IMMUTABLE",
                     "A Study revision cannot switch to another source page; start another Study.",
                 )
+
+        if research_snapshot is not None:
+            previous_research = (previous_payload or {}).get("research") or {}
+            if comparison_results is None:
+                if research_snapshot.get("comparisons", []) != previous_research.get("comparisons", []):
+                    raise StudioError(422, "STUDY_COMPARISON_REQUIRED", "Changed comparison references need server-computed results before they can be retained.")
+                retained_comparisons = previous_research.get("comparison_results", [])
+            else:
+                retained_comparisons = json.loads(json.dumps(comparison_results, allow_nan=False))
+            try:
+                _check_comparison_results(binding, research_snapshot, retained_comparisons)
+            except (KeyError, TypeError, ValueError, StudioError) as exc:
+                raise StudioError(422, "STUDY_COMPARISON_INVALID", "The comparison result must name the exact retained revisions requested by this research.") from exc
+            research_snapshot["comparison_results"] = retained_comparisons
 
         payload = {
             "schema": LEDGER_SCHEMA,
@@ -1219,6 +1530,23 @@ def save_study(
             "derivation_method": CURRENT_DERIVATION_METHOD,
             "canonical_state_changed": False,
         }
+        if research_snapshot is not None:
+            payload["research"] = research_snapshot
+        invocations = list((previous_payload or {}).get("model_invocations", []))
+        if model_receipt is not None:
+            if (model_receipt.request.phase != ModelPhase.RESEARCH
+                    or model_receipt.status != ModelInvocationStatus.SUCCESS
+                    or model_receipt.request.payload.get("source") != source.to_dict()
+                    or model_receipt.request.payload.get("ledger_ref") != actual_previous
+                    or previous_payload is None
+                    or model_receipt.request.payload.get("evidence") != previous_payload["evidence"]
+                    or model_receipt.request.payload.get("research") != previous_payload.get("research")
+                    or model_receipt.request.context_digest != canonical_digest(model_receipt.request.payload, ascii=False)
+                    or model_receipt.request.checkpoint_digest != _graph(previous_payload["evidence"], previous_payload["relations"])["graph_digest"]):
+                raise StudioError(422, "STUDY_MODEL_BINDING_INVALID", "The model response must name this exact Study source and previous revision.")
+            invocations.append(model_receipt.to_dict())
+        if invocations:
+            payload["model_invocations"] = invocations
         if (
             current is not None
             and previous_payload is not None

@@ -54,7 +54,7 @@ export type MonitorTrace = {
   started_at: string;
   ended_at?: string | null;
   status?: string | null;
-  summary?: Record<string, unknown>;
+  summary?: Record<string, unknown> & { first_candidate_ms?: number | null };
   spans?: MonitorSpan[];
   diagnostics?: Array<Record<string, unknown>>;
   warnings?: string[];

@@ -652,11 +652,46 @@ class BoundCodexSourceTests(unittest.TestCase):
 
 
 class JournalContentionTests(unittest.TestCase):
-    """A held journal costs an observation; it never costs the user any wait."""
+    """Brief write collisions survive; sustained contention has a short bound."""
 
     def setUp(self):
         self.directory = Path(self.enterContext(TemporaryDirectory()))
         self.store = UsageLog(self.directory)
+
+    def test_brief_cross_process_collision_retains_completed_span_in_journal(self):
+        self.store.append(stored("span", "api_request", "running"))
+        holder = JournalHolder(self, self.directory)
+        if sys.platform == "win32":
+            import msvcrt
+            module, method = msvcrt, "locking"
+        else:
+            import fcntl
+            module, method = fcntl, "flock"
+        original = getattr(module, method)
+        collisions = []
+
+        def unlock_after_collision(*args):
+            try:
+                return original(*args)
+            except OSError:
+                collisions.append(True)
+                # The real OS lock refused this write before the other process
+                # releases it. No arbitrary sleep determines the overlap.
+                holder.process.stdin.write("\n")
+                holder.process.stdin.flush()
+                raise
+
+        with patch.object(module, method, unlock_after_collision):
+            self.store.append(stored("span", "api_request", "succeeded", ended_at=STAMP, duration_ms=1))
+        holder.expect("released")
+        self.assertEqual(holder.process.wait(30), 0)
+        rows, warnings = self.store.read()
+        self.assertTrue(collisions, "the append actually met the held OS lock")
+        self.assertFalse(warnings)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].status, "succeeded")
+        self.assertEqual(rows[0].duration_ms, 1)
+        self.assertNotIn("missing_observations", rows[0].details)
 
     def test_cross_process_hold_skips_the_observation_without_waiting_or_writing(self):
         self.store.append(stored("before"))

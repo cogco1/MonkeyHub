@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { StudioApiError, TRANSPORT_ERROR, UNSUPPORTED_REQUEST, asStudioApiError, type StudioClient } from "../../api/client";
 import { useStudio } from "../../api/ProjectRuntimeContext";
-import type { DocumentAnnotationRefDto, DocumentGestureDto } from "../../api/generated";
+import type { DocumentAnnotationRefDto, DocumentGestureDto, DocumentTracingCalibrationDto } from "../../api/generated";
 
 export interface DocumentAnnotationsOptions {
   projectId: string;
@@ -16,6 +16,7 @@ export interface DocumentAnnotationsOptions {
 interface Draft {
   annotations: readonly DocumentGestureDto[];
   comment: string;
+  tracingCalibration: DocumentTracingCalibrationDto | null;
 }
 
 interface PageSnapshot extends Draft {
@@ -31,6 +32,7 @@ interface PageSnapshot extends Draft {
 export interface DocumentAnnotationsHandle extends PageSnapshot {
   changeAnnotations(next: readonly DocumentGestureDto[]): void;
   setComment(text: string): void;
+  setTracingCalibration(value: DocumentTracingCalibrationDto | null): void;
   undo(): void;
   redo(): void;
   save(): Promise<DocumentAnnotationRefDto>;
@@ -60,7 +62,7 @@ function unavailable(detail: string): StudioApiError {
 function createPage(studio: StudioClient, scope: DocumentAnnotationsOptions) {
   const readOnly = scope.assetSha256 === null || scope.revisionSha256 != null;
   const listeners = new Set<() => void>();
-  let history: Draft[] = [{ annotations: [], comment: "" }];
+  let history: Draft[] = [{ annotations: [], comment: "", tracingCalibration: null }];
   let cursor = 0;
   let acknowledged: Draft | null = null;
   let revision: string | null = null;
@@ -105,6 +107,7 @@ function createPage(studio: StudioClient, scope: DocumentAnnotationsOptions) {
             pageIndex: scope.pageIndex, baseRevisionSha256: revision,
             ...(scope.drawingRevisionRef ? { drawingRevisionRef: scope.drawingRevisionRef } : {}),
             annotations: copyInk(job.draft.annotations), comment: job.draft.comment,
+            tracingCalibration: job.draft.tracingCalibration,
           });
           if (response.revisionSha256 === null) {
             throw new StudioApiError({
@@ -173,7 +176,8 @@ function createPage(studio: StudioClient, scope: DocumentAnnotationsOptions) {
           scope.runId, scope.assetSha256!, scope.pageIndex, scope.revisionSha256, scope.drawingRevisionRef,
         );
         if ((response.drawingRevisionRef ?? null) !== (scope.drawingRevisionRef ?? null)) throw unavailable("The annotations belong to another drawing revision.");
-        const next = { annotations: copyInk(response.annotations), comment: response.comment };
+        const next = { annotations: copyInk(response.annotations), comment: response.comment,
+          tracingCalibration: response.tracingCalibration ?? null };
         finishTyping();
         rejectWaiters(unavailable("Reading the latest page interrupted this save; the local draft remains in Undo."));
         queue = [];
@@ -222,6 +226,13 @@ function createPage(studio: StudioClient, scope: DocumentAnnotationsOptions) {
         typing = false;
         enqueue(present());
       }, 500);
+    },
+    setTracingCalibration(value: DocumentTracingCalibrationDto | null) {
+      if (!ready || readOnly) return;
+      const typed = finishTyping();
+      const tracingCalibration = value ? { ...value, origin: [...value.origin] as [number, number],
+        axisPoint: [...value.axisPoint] as [number, number] } : null;
+      if (push({ ...present(), tracingCalibration }) || typed) enqueue(present());
     },
     undo() {
       if (!ready || readOnly || cursor === 0) return;
@@ -284,7 +295,7 @@ export function useDocumentAnnotations(
   const snapshot = useSyncExternalStore(page.subscribe, page.getSnapshot, page.getSnapshot);
   useEffect(() => { void page.load(); }, [page]);
   return {
-    ...snapshot, changeAnnotations: page.changeAnnotations, setComment: page.setComment,
+    ...snapshot, changeAnnotations: page.changeAnnotations, setComment: page.setComment, setTracingCalibration: page.setTracingCalibration,
     undo: page.undo, redo: page.redo, save: page.save, reload: page.reload,
   };
 }

@@ -1385,6 +1385,22 @@ export type CompareObjectDto = {
 };
 
 /**
+ * CompareStudiesRequestDto
+ *
+ * A bounded exact-revision comparison inside one bound project.
+ */
+export type CompareStudiesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Studies
+     */
+    studies: Array<StudyRevisionRequestDto>;
+};
+
+/**
  * ComponentChangeDto
  */
 export type ComponentChangeDto = {
@@ -1500,6 +1516,95 @@ export type ComponentNodeDto = {
 };
 
 /**
+ * CompositionPatternDto
+ */
+export type CompositionPatternDto = {
+    /**
+     * Patternid
+     */
+    patternId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Rule
+     */
+    rule: string;
+    /**
+     * Evidenceids
+     */
+    evidenceIds?: Array<string>;
+    /**
+     * Conditions
+     */
+    conditions?: Array<string>;
+    /**
+     * Exceptions
+     */
+    exceptions?: Array<string>;
+};
+
+/**
+ * ConfirmedStageContextDto
+ *
+ * A read-only view of committed Stage identity and its retained conditions.
+ */
+export type ConfirmedStageContextDto = {
+    /**
+     * Stageref
+     */
+    stageRef: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Branchid
+     */
+    branchId: string;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Issource
+     *
+     * True only when the selected run, retained record and state digest are the accepted Stage itself. Inheriting a Stage base does not accept a candidate.
+     */
+    isSource: boolean;
+    /**
+     * Lockedparameterkeys
+     *
+     * Parameters locked in the accepted Stage. This is not a whole-geometry lock; current values and lock state remain in context.
+     */
+    lockedParameterKeys: Array<string>;
+    /**
+     * Retainedconditionrefs
+     *
+     * Reading and obligation references retained in the accepted Stage; their current details and coverage remain in context.
+     */
+    retainedConditionRefs: Array<string>;
+    changes: StageContextChangesDto;
+    /**
+     * Omittedcounts
+     *
+     * Omitted entries by summary list name; each list is bounded to 64 entries.
+     */
+    omittedCounts: {
+        [key: string]: number;
+    };
+    /**
+     * Limitations
+     */
+    limitations: Array<string>;
+};
+
+/**
  * ContextPackDto
  *
  * What a caller would otherwise discover by reading before it can act.
@@ -1556,6 +1661,10 @@ export type ContextPackDto = {
     preflight?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Derived from verified committed design history, with differences from this exact source. Null when no committed Stage is bound; never inferred from an unaccepted candidate.
+     */
+    confirmedStage?: ConfirmedStageContextDto | null;
     /**
      * Honesty
      */
@@ -1809,6 +1918,41 @@ export type DesignHistoryDto = {
 };
 
 /**
+ * DesignPriorDto
+ */
+export type DesignPriorDto = {
+    /**
+     * Priorid
+     */
+    priorId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Patternid
+     */
+    patternId: string;
+    /**
+     * Hypothesisids
+     */
+    hypothesisIds?: Array<string>;
+    /**
+     * Conditions
+     */
+    conditions?: Array<string>;
+    /**
+     * Preference
+     */
+    preference?: string;
+    /**
+     * Preferencestatus
+     */
+    preferenceStatus?: 'unresolved' | 'stated';
+    changedContext?: StudyChangedContextDto | null;
+};
+
+/**
  * DesignStageDto
  */
 export type DesignStageDto = {
@@ -1910,6 +2054,7 @@ export type DocumentAnnotationsDto = {
      * Drawingrevisionref
      */
     drawingRevisionRef?: string | null;
+    tracingCalibration?: DocumentTracingCalibrationDto | null;
 };
 
 /**
@@ -1952,6 +2097,10 @@ export type DocumentAnnotationsRequestDto = {
      * Comment
      */
     comment?: string;
+    /**
+     * Explicitly calibrated origin, direction and distance for this saved page. Omit/null to save without a model scale.
+     */
+    tracingCalibration?: DocumentTracingCalibrationDto | null;
 };
 
 /**
@@ -2013,7 +2162,7 @@ export type DocumentGestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text' | 'polyline';
     /**
      * Points
      *
@@ -2045,6 +2194,12 @@ export type DocumentGestureDto = {
      * Required only for text: font size as a fraction of the visible page's shorter side. Render at fontSize * min(displayedPageWidth, displayedPageHeight) CSS px with 1.25em line height. Absent on existing strokes; never derived from lineWidth.
      */
     fontSize?: number | null;
+    /**
+     * Closed
+     *
+     * Required only for polyline: whether the ordered editable vertices close into a contour. The first point is not repeated.
+     */
+    closed?: boolean | null;
 };
 
 /**
@@ -2146,6 +2301,127 @@ export type DocumentReplacementTargetDto = {
      * Revisionref
      */
     revisionRef?: string | null;
+};
+
+/**
+ * DocumentTracingCalibrationDto
+ *
+ * Explicit page origin/+X direction and the known distance in project length units.
+ */
+export type DocumentTracingCalibrationDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number
+    ];
+    /**
+     * Axispoint
+     */
+    axisPoint: [
+        number,
+        number
+    ];
+    /**
+     * Distance
+     */
+    distance: number;
+};
+
+/**
+ * DocumentTracingRequestDto
+ *
+ * Read calibrated paths from saved annotations through the existing sketch action.
+ */
+export type DocumentTracingRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Keep
+     */
+    keep?: Array<string>;
+    tracing: DocumentTracingSourceDto;
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentcomponentid
+     */
+    parentComponentId?: string | null;
+    /**
+     * Semantickind
+     */
+    semanticKind?: string | null;
+    /**
+     * Baselevel
+     */
+    baseLevel?: string | null;
+    /**
+     * Basedatum
+     */
+    baseDatum?: string | null;
+    /**
+     * Height
+     *
+     * Positive pull height in project length units when any closed contour is selected; open paths always become zero-height curves.
+     */
+    height: number;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+};
+
+/**
+ * DocumentTracingSourceDto
+ *
+ * An exact saved page revision and the paths the user explicitly chose.
+ */
+export type DocumentTracingSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
+    /**
+     * Annotationids
+     */
+    annotationIds: Array<string>;
 };
 
 /**
@@ -5040,6 +5316,28 @@ export type ProposalTargetDto = {
 };
 
 /**
+ * ProposeStudyRequestDto
+ */
+export type ProposeStudyRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Expectedpreviousref
+     */
+    expectedPreviousRef: string;
+    /**
+     * Action
+     */
+    action: 'trace' | 'reason';
+};
+
+/**
  * PushPullRequestDto
  */
 export type PushPullRequestDto = {
@@ -5292,6 +5590,7 @@ export type SaveStudyRequestDto = {
      * Expectedpreviousref
      */
     expectedPreviousRef?: string | null;
+    research?: StudyResearchRequestDto | null;
 };
 
 /**
@@ -7012,6 +7311,30 @@ export type SourceDocumentRequestDto = {
 };
 
 /**
+ * StageContextChangesDto
+ *
+ * Content differences and declared review scope, never a validation receipt.
+ */
+export type StageContextChangesDto = {
+    /**
+     * Changedrefs
+     */
+    changedRefs: Array<string>;
+    /**
+     * Affectedrefs
+     */
+    affectedRefs: Array<string>;
+    /**
+     * Needsreviewrefs
+     */
+    needsReviewRefs: Array<string>;
+    /**
+     * Unresolvedimpactrefs
+     */
+    unresolvedImpactRefs: Array<string>;
+};
+
+/**
  * StateProjectionDto
  *
  * The wire form of ``GET /api/state``.
@@ -7197,6 +7520,271 @@ export type StudioHealth = {
 };
 
 /**
+ * StudyChangedContextDto
+ */
+export type StudyChangedContextDto = {
+    /**
+     * Changedconditions
+     */
+    changedConditions?: Array<string>;
+    /**
+     * Decision
+     */
+    decision?: 'unresolved' | 'retain' | 'revise' | 'reject';
+    /**
+     * Reason
+     */
+    reason?: string;
+    /**
+     * Revisedstatement
+     */
+    revisedStatement?: string;
+};
+
+/**
+ * StudyComparisonDto
+ *
+ * Read-only comparison projection; it is neither a Study ledger nor design truth.
+ */
+export type StudyComparisonDto = {
+    /**
+     * Schema
+     */
+    schema: 'StudyComparison@1';
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Method
+     */
+    method: 'aspect-correct-composition-compare@1';
+    /**
+     * Metricframe
+     */
+    metricFrame: 'page-aspect-correct-long-edge@1';
+    /**
+     * Studies
+     */
+    studies: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Sharedtopology
+     */
+    sharedTopology: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Pairwise
+     */
+    pairwise: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Canonicalstatechanged
+     */
+    canonicalStateChanged: boolean;
+};
+
+/**
+ * StudyEvidenceGapDto
+ */
+export type StudyEvidenceGapDto = {
+    /**
+     * Gapid
+     */
+    gapId: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Evidenceids
+     */
+    evidenceIds?: Array<string>;
+};
+
+/**
+ * StudyHistoricalSourceDto
+ */
+export type StudyHistoricalSourceDto = {
+    /**
+     * Sourceid
+     */
+    sourceId: string;
+    /**
+     * Citation
+     */
+    citation: string;
+    /**
+     * Url
+     */
+    url?: string;
+    /**
+     * Locator
+     */
+    locator?: string;
+    /**
+     * Summary
+     */
+    summary?: string;
+};
+
+/**
+ * StudyHypothesisDto
+ */
+export type StudyHypothesisDto = {
+    /**
+     * Hypothesisid
+     */
+    hypothesisId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Evidenceids
+     */
+    evidenceIds?: Array<string>;
+    /**
+     * Counterevidenceids
+     */
+    counterEvidenceIds?: Array<string>;
+    /**
+     * Historicalsourceids
+     */
+    historicalSourceIds?: Array<string>;
+    /**
+     * Assumptions
+     */
+    assumptions?: Array<string>;
+    /**
+     * Falsification
+     */
+    falsification?: string;
+    /**
+     * Competeswith
+     */
+    competesWith?: Array<string>;
+    /**
+     * Status
+     */
+    status?: 'open' | 'revised' | 'rejected';
+};
+
+/**
+ * StudyInterventionDto
+ */
+export type StudyInterventionDto = {
+    /**
+     * Counterfactualid
+     */
+    counterfactualId: string;
+    /**
+     * Hypothesisids
+     */
+    hypothesisIds?: Array<string>;
+    /**
+     * Targetevidenceid
+     */
+    targetEvidenceId: string;
+    /**
+     * Operation
+     */
+    operation: 'translate' | 'scale' | 'remove';
+    parameters?: StudyInterventionParametersDto;
+    /**
+     * Conditions
+     */
+    conditions?: Array<string>;
+    /**
+     * Prediction
+     */
+    prediction?: string;
+    /**
+     * Execute
+     */
+    execute?: boolean;
+};
+
+/**
+ * StudyInterventionParametersDto
+ */
+export type StudyInterventionParametersDto = {
+    /**
+     * Dx
+     */
+    dx?: number;
+    /**
+     * Dy
+     */
+    dy?: number;
+    /**
+     * Scale
+     */
+    scale?: number;
+};
+
+/**
+ * StudyResearchComparisonDto
+ */
+export type StudyResearchComparisonDto = {
+    /**
+     * Studies
+     */
+    studies: Array<StudyRevisionRequestDto>;
+};
+
+/**
+ * StudyResearchRequestDto
+ */
+export type StudyResearchRequestDto = {
+    /**
+     * Question
+     */
+    question?: string;
+    /**
+     * Historicalsources
+     */
+    historicalSources?: Array<StudyHistoricalSourceDto>;
+    /**
+     * Hypotheses
+     */
+    hypotheses?: Array<StudyHypothesisDto>;
+    /**
+     * Gaps
+     */
+    gaps?: Array<StudyEvidenceGapDto>;
+    /**
+     * Counterfactuals
+     */
+    counterfactuals?: Array<StudyInterventionDto>;
+    /**
+     * Comparisons
+     */
+    comparisons?: Array<StudyResearchComparisonDto>;
+    compositionPattern?: CompositionPatternDto | null;
+    designPrior?: DesignPriorDto | null;
+};
+
+/**
+ * StudyRevisionRequestDto
+ *
+ * One exact retained Study revision; comparison never guesses a current head.
+ */
+export type StudyRevisionRequestDto = {
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Ledgerref
+     */
+    ledgerRef: string;
+};
+
+/**
  * StudySourceRequestDto
  */
 export type StudySourceRequestDto = {
@@ -7282,6 +7870,18 @@ export type StudyViewDto = {
      * Counterfactuals
      */
     counterfactuals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Research
+     */
+    research?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Modelinvocations
+     */
+    modelInvocations?: Array<{
         [key: string]: unknown;
     }>;
     /**
@@ -9277,6 +9877,56 @@ export type CreateElevationApiDrawingsElevationsPostResponses = {
 
 export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationApiDrawingsElevationsPostResponses[keyof CreateElevationApiDrawingsElevationsPostResponses];
 
+export type DiscoverStudiesApiStudiesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Sourcerunid
+         */
+        sourceRunId?: string | null;
+        /**
+         * Assetsha256
+         */
+        assetSha256?: string | null;
+        /**
+         * Pageindex
+         */
+        pageIndex?: number | null;
+    };
+    url: '/api/studies';
+};
+
+export type DiscoverStudiesApiStudiesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DiscoverStudiesApiStudiesGetError = DiscoverStudiesApiStudiesGetErrors[keyof DiscoverStudiesApiStudiesGetErrors];
+
+export type DiscoverStudiesApiStudiesGetResponses = {
+    /**
+     * Response Discover Studies Api Studies Get
+     *
+     * Successful Response
+     */
+    200: Array<StudyViewDto>;
+};
+
+export type DiscoverStudiesApiStudiesGetResponse = DiscoverStudiesApiStudiesGetResponses[keyof DiscoverStudiesApiStudiesGetResponses];
+
 export type RetainStudyApiStudiesPostData = {
     body: SaveStudyRequestDto;
     headers?: {
@@ -9311,6 +9961,41 @@ export type RetainStudyApiStudiesPostResponses = {
 };
 
 export type RetainStudyApiStudiesPostResponse = RetainStudyApiStudiesPostResponses[keyof RetainStudyApiStudiesPostResponses];
+
+export type CompareStudiesApiStudiesComparePostData = {
+    body: CompareStudiesRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/studies/compare';
+};
+
+export type CompareStudiesApiStudiesComparePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompareStudiesApiStudiesComparePostError = CompareStudiesApiStudiesComparePostErrors[keyof CompareStudiesApiStudiesComparePostErrors];
+
+export type CompareStudiesApiStudiesComparePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: StudyComparisonDto;
+};
+
+export type CompareStudiesApiStudiesComparePostResponse = CompareStudiesApiStudiesComparePostResponses[keyof CompareStudiesApiStudiesComparePostResponses];
 
 export type ReopenStudyApiStudiesStudyIdGetData = {
     body?: never;
@@ -9356,6 +10041,41 @@ export type ReopenStudyApiStudiesStudyIdGetResponses = {
 };
 
 export type ReopenStudyApiStudiesStudyIdGetResponse = ReopenStudyApiStudiesStudyIdGetResponses[keyof ReopenStudyApiStudiesStudyIdGetResponses];
+
+export type ProposeStudyApiStudiesProposePostData = {
+    body: ProposeStudyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/studies/propose';
+};
+
+export type ProposeStudyApiStudiesProposePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProposeStudyApiStudiesProposePostError = ProposeStudyApiStudiesProposePostErrors[keyof ProposeStudyApiStudiesProposePostErrors];
+
+export type ProposeStudyApiStudiesProposePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: StudyViewDto;
+};
+
+export type ProposeStudyApiStudiesProposePostResponse = ProposeStudyApiStudiesProposePostResponses[keyof ProposeStudyApiStudiesProposePostResponses];
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;
@@ -9466,7 +10186,7 @@ export type CreateSketchProposalApiProposalsSketchPostData = {
     /**
      * Body
      */
-    body: SketchPrismRequestDto | SketchBatchRequestDto;
+    body: SketchPrismRequestDto | SketchBatchRequestDto | DocumentTracingRequestDto;
     headers?: {
         /**
          * X-Monkey-Operation

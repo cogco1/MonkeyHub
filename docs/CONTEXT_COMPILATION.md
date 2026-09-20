@@ -239,6 +239,188 @@ measurements establish neither billed cost savings nor model success rates.
 
 ## Retained-session versus project-state measurement (#32)
 
+### Confirmed-stage continuation (#185)
+
+After an architect explicitly accepts a Stage, the next Hub message from that
+exact saved editing source uses its project facts in a fresh native provider
+session. Candidate revisions continue that session. Hub saves only the last
+confirmed starting Stage reference beside its existing provider identity; the
+Stage, geometry, locks and conditions continue to belong to P036. Reopening the
+same Stage therefore does not repeatedly replace the provider context. The chat
+marks a handoff only after its source has been verified, and retains earlier
+visible messages and provider usage identities.
+
+The existing `ContextPack@1` now derives `confirmedStage` from committed history.
+It carries exact identity, the accepted parameter-lock keys and retained
+condition references. Comparing that Stage with a later candidate exposes
+changed references, declared downstream effects, review items and unresolved
+condition impacts. These findings do not validate the design or silently accept
+a new Stage. Each summary list is bounded to 64 with explicit omission counts;
+the existing source-bound supplements provide detailed facts. Parameter locks
+cover their keys and existing bindings, not every possible geometric edit.
+Non-adjacent dependencies absent from the retained records remain unresolved.
+This is the cumulative review scope since the selected accepted Stage, not a
+per-mutation attribution log. The isolated upstream acceptance check therefore
+uses a separate P036 clone with an explicitly accepted wall Stage: the baseline
+has no changes or review items, then changing only the entrance Reading puts
+the unchanged wall review into the review list. The measured project's wall
+candidate remains unaccepted.
+
+This extends the current `studio.intent` and `hub.shell` owners. The UI sends
+`contextMode=stage` only with its verified editing projection. API callers can
+still use `continue` for accumulated history or `project` for an explicit fresh
+session. An absent/unsynchronized editing projection, a candidate's inherited
+Stage, failed preparation and cancellation cannot cause an automatic handoff.
+
+The native-session mechanism follows [ACP session setup](https://agentclientprotocol.com/protocol/v1/session-setup):
+`session/new` creates an independent context; loading or resuming an old session
+continues its state. Avoiding transcript replay to the client is not evidence
+that the model forgot that session. The local `acp_session.py` already selects
+`new_session` when given no saved identity, so this slice reuses that path.
+[Anthropic's context engineering discussion](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
+motivates retaining relevant working facts and persistent notes. Here those facts
+are derived deterministically from StateRecord and Stage instead of introducing
+a model-written summary authority. Neither source establishes a cost saving for
+this project; the paired measurements below must report that separately.
+
+### 2026-09-20 confirmed-stage comparison (#185): four measured arms
+
+A separate helper measures the accepted-Stage handoff itself. All four arms used
+frozen commit `8143c5a3570f2d2886da9d9204c097957605a747`, provider `codex`,
+reported model `gpt-6-astra` and an empty tracked source diff. Use Python 3.12
+with the Hub and Runtime requirements installed. This run used the isolated
+interpreter below; reproduce it in a new, unused directory under the configured
+dev temp root:
+
+```powershell
+$stagePython = 'D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/venv/Scripts/python.exe'
+& $stagePython tests/monkeymonitor/run_stage_handoff_benchmark.py --prepare-only --model gpt-6-astra --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
+& $stagePython tests/monkeymonitor/run_stage_handoff_benchmark.py --model gpt-6-astra --timeout 360 --output D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-3
+```
+
+`--prepare-only` is an optional preflight: it builds and verifies the
+deterministic P036 fixture without calling a model. That deterministic
+preparation took 10.375 s. The measured run refuses an output directory that
+already attempted provider calls, runs the arms sequentially and performs no
+automatic retries.
+
+The two pairs use opposite orders: pair 1 ran continue then stage, pair 2 ran stage
+then continue. Every arm first requests six read-only massing reviews of
+350-500 words each in one real provider session, then explicitly accepts the
+massing candidate, then restarts Hub and Runtime for real, then sends the same
+exact final wall task under its own `contextMode`. All six massing controls
+(`mass_height`, `mass_x0`, `mass_x1`, `mass_y0`, `mass_y1`, `mass_z0`) are
+parameter-bound and locked. Each arm passed all 25 recorded checks; both pairs
+matched on build revision, source diff, provider, model, input source, prompt
+digest, history-prompt digest and accepted-record digest, and both are recorded
+as comparable successful pairs.
+
+Measured final wall turn:
+
+| Pair / condition | Input | Cached input | Non-cached input | Output | Wall s | First candidate s | Tool calls | CAD builds | Failed tools |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 / continue | 781,793 | 759,168 | 22,625 | 2,965 | 122.897 | 74.392 | 9 | 1 | 1 |
+| 1 / stage | 473,560 | 412,928 | 60,632 | 3,209 | 145.089 | 86.335 | 9 | 1 | 1 |
+| 2 / stage | 378,006 | 314,624 | 63,382 | 2,292 | 109.031 | 68.533 | 9 | 1 | 0 |
+| 2 / continue | 937,840 | 864,256 | 73,584 | 4,139 | 156.041 | 98.358 | 9 | 1 | 1 |
+
+Six preparation reviews, and all seven provider turns of each arm:
+
+| Pair / condition | Prep input | Prep cached | Prep output | Prep wall s | All-7 input | All-7 cached | All-7 non-cached | All-7 output | All-7 wall s | All-7 tool calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 / continue | 1,080,376 | 979,968 | 9,617 | 355.793 | 1,862,169 | 1,739,136 | 123,033 | 12,582 | 478.690 | 26 |
+| 1 / stage | 652,728 | 572,416 | 9,546 | 344.013 | 1,126,288 | 985,344 | 140,944 | 12,755 | 489.102 | 17 |
+| 2 / stage | 1,023,655 | 932,992 | 10,509 | 378.901 | 1,401,661 | 1,247,616 | 154,045 | 12,801 | 487.932 | 26 |
+| 2 / continue | 1,356,754 | 1,263,360 | 12,498 | 458.351 | 2,294,594 | 2,127,616 | 166,978 | 16,637 | 614.392 | 30 |
+
+Cached input is a subset of input; non-cached input is input minus cached input.
+The columns must not be added together. Each Stage arm reports lower total input
+than the continue arm of its own pair, but its non-cached input is higher in
+pair 1 (60,632 versus 22,625 for the final turn; 140,944 versus 123,033 across
+seven turns) and lower in pair 2. Any lower-total-input reading must be tempered
+by this cache composition. These are provider counters, not account charges, and
+this is not a cost or speed claim.
+
+Visible history and the separately measured Hub operations:
+
+| Pair / condition | Visible messages | Visible characters | Stage acceptance ms | Hub/Runtime restart ms | Standalone context re-read ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 / continue | 29 | 30,057 | 609 | 5,546 | 110 |
+| 1 / stage | 20 | 25,486 | 547 | 6,125 | 125 |
+| 2 / stage | 29 | 29,090 | 640 | 5,563 | 109 |
+| 2 / continue | 33 | 31,349 | 594 | 6,093 | 109 |
+
+Native provider history token length remains unknown. The explicit context re-read is
+a separate experiment measurement taken outside the measured turn; the final
+turn already includes its own preparation, so this separate read must not be
+added when reporting final-turn latency. Wall-time differences are not pure provider
+startup.
+
+Both arms of each pair independently generate their own six-review history, so
+the preparation differences above cannot be attributed to the Stage
+intervention. Each arm's summaries are derived deterministically from
+StateRecord and Stage; no additional model summarizer runs.
+
+The measured wall candidate is never accepted or issued in the measured project:
+each arm ends with an unchanged canonical HEAD and exactly the two massing
+Stages. The upstream-impact baseline is settled in a disposable P036 clone that
+accepts the verified wall Stage only for that purpose. In the clone the accepted
+baseline lists no changed, affected or needs-review references; changing only
+the entrance Reading from a 1.0 m to a 1.4 m clear gap then reports
+`entity:entrance-condition` as changed, `entity:hall-mass` as affected, and
+`entity:entrance-condition`, `entity:hall-mass` and the previously unchanged
+`entity:wall-review` as needing review, with no omitted summary entries. The
+current geometry stays unchanged pending human revision. This is the cumulative
+review scope relative to the accepted Stage, not proof of buildability or of
+complete dependency coverage.
+
+Provider-turn tool and CAD totals exclude the deterministic fixture preparation
+and the post-turn clone validation. That work is measured separately: 10.375 s
+of deterministic preparation for the comparison, then per arm 2,625 / 2,953 /
+2,562 / 2,766 ms of clone preparation and 1,969 / 2,094 / 2,094 / 1,859 ms for
+the single-Reading condition change (pair 1 continue, pair 1 stage, pair 2
+stage, pair 2 continue). It is deterministic service and filesystem work; it is
+neither zero CAD cost nor a model saving.
+
+Each arm recorded 10 agent activity intervals and 2 model-view requests in its
+final turn. Provider turns and agent activity intervals are not model calls: the
+exact model-call count, provider-internal retry count, account billing and any
+browser timing remain unknown. Recorded retry spans were zero, and no arm
+reported a missing-observations notice or an unfinished span.
+
+Observed failures are retained even though every final candidate succeeded. In
+pair 1 continue, pair 1 stage and pair 2 continue one `studio_request` mutation
+(`POST /api/proposals`) failed with `SEMANTIC_EDIT_INVALID` because an element
+named no `Type@1` in its `type_ref`; the agent then resubmitted and the readback
+candidate succeeded with actual wall geometry. Pair 2 stage recorded no failed
+tool. No model was rerun to replace any sample.
+
+Native sessions were verified independently from the exact provider JSONL files,
+not from UI labels. Both Stage arms hold different old and new session
+identities: the old file keeps the six review requests and no final wall request
+(7 user-role items including the initial environment item), and the new file
+holds zero old reviews and the one final wall request (2 user-role items
+including environment). Both continue arms keep the same identity across the
+restart, with the six reviews and the final request in one file (8 user-role
+items).
+
+The first provider span started at 2026-09-20T08:47:13.211537+00:00 and the last
+measured provider turn ended at 2026-09-20T09:23:20.221460+00:00, a span of
+about 36 min 7 s; `comparison.json` was completed at 09:23:30.735+00:00. The
+coordinator confirmed that the five other known benchmark/Claude tasks had
+finished before the start and that no other known sampling job ran; unknown
+account tasks and provider-side scheduling were not controlled, and CI ran
+remotely. Four successful arms establish this synthetic vertical slice only:
+they are not statistical power and not evidence of whole-building usability.
+
+The exploratory `stage-comparison-1` preflight is retained as a limitation: it
+compared against a cumulative baseline that already listed the wall changes, so
+it was rejected as causal evidence. The strengthened `stage-comparison-2`
+settles the wall baseline in the clone, and every accepted arm check uses that
+settled baseline. No extra paid pilot and no automatic retries were run. Raw
+chats and diagnostics stay outside Git under
+`D:/MONKEYHUB_DEV/temp/gh185-stage-handoff/stage-comparison-2/`.
+
 The existing manual Hub turn benchmark also measures a real provider continuing
 its old session versus starting a new provider session from the same project
 state. Use an explicit model returned by the installed provider's model list:
@@ -403,3 +585,272 @@ Primer wall times were 28.996/25.864 s for cornice project/continue and
 27.860/22.102 s for assembly continue/project; their usage and history sizes
 remain separate in `preparation`. The final set is two samples per condition
 per task, with one reversed order, not a statistical latency study.
+
+## Candidate observation and revision acceptance (#183 / #32)
+
+The existing Hub `designContext` remains a projection of the explicit editing
+base. Opening a chat result or browsing a historical candidate does not change
+that base. The selection request generation is invalidated when the user chooses
+another semantic target, so a delayed pick cannot overwrite that later choice.
+No additional design state or writer is introduced.
+
+The opt-in experiment uses a small synthetic courtyard, the real installed
+provider, the normal Hub MCP interface, OCCT and the existing Monitor journal:
+
+```powershell
+python tests/monkeymonitor/run_design_loop.py --model <installed-model-id> --output <new-absolute-nonproject-directory>
+python tests/monkeymonitor/run_design_loop.py --summarize --output <same-directory>
+```
+
+It batches three masses into one candidate, lowers the east wing, sets back the
+north upper mass, and explicitly studies a 4 m inward trial before correcting
+its courtyard violation. This is a controlled observation task: the experiment
+asks for the trial; it does not demonstrate spontaneous discovery of a bad
+design. It then shuts down its owned services, starts fresh services/provider
+sessions, restores the pre-movement candidate, revises the west wing, and adds
+a schematic north wall from the retained massing without the earlier chat.
+
+Successful acceptance requires exact retained sources, unchanged fixture
+entities/parameters/locks/relations and all prior fields except the requested
+height or translation, the retained courtyard Reading and the
+north-upper support reference, successful source-bound top/front observations,
+and observation of the trial before its correction proposal. Existing tool-span
+timestamps must prove that the image returned before the correction started;
+chat-row order alone is insufficient. Admission records
+verify the candidate parent chain. Certified cold STEP solids are compared to
+the requested solids, including the specified trial, by bidirectional B-rep differences and intersected with
+the courtyard/access void. A regression with the same bounding box and an
+incorrect notched solid fails this check. HEAD and accepted branch refs must
+remain unchanged. A Reading is retained intent, not a computed constraint or
+acceptance decision; the test's explicit void checks cover only this scene.
+
+Failed provider attempts, failed tool calls and incomplete observations stay
+in their original output directories. The read-only `--summarize` checker writes
+`validation.json` separately from the original reports and calls no provider.
+It records its own source hash and reprojects metrics from the existing usage
+journal with the current Monitor code; the original reports remain unchanged.
+`all_passed:false` is a failure, even if the
+geometry happened to be correct. No real user project or raw provider transcript
+is uploaded by this experiment. Browser first-paint time and user rework outside
+the declared test requests remain unmeasured.
+
+The mechanism follows [ReAct, ICLR 2023 camera-ready v3](https://arxiv.org/abs/2210.03629v3):
+an external observation can change the next action. Its QA/game results are not
+evidence of architectural design quality or an argument for an extra critic
+model. The existing native image blocks match the
+[MCP 2025-11-25 tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
+and the actual `Image.to_image_content` implementation in the
+[MCP Python SDK v1.26.0](https://github.com/modelcontextprotocol/python-sdk/blob/v1.26.0/src/mcp/server/fastmcp/utilities/types.py)
+([MIT](https://github.com/modelcontextprotocol/python-sdk/blob/v1.26.0/LICENSE)).
+We reuse this boundary; no screenshot-shaped JSON or new image transport is added.
+
+For stale selection, [React's asynchronous cleanup guidance](https://react.dev/reference/react/useEffect#fetching-data-with-effects)
+and [SWR v2.3.6's response-key guard](https://github.com/vercel/swr/blob/v2.3.6/src/index/use-swr.ts)
+support invalidating the existing request generation. React 19.2.8 and SWR use
+MIT licenses; SWR is not added as a dependency because its cache is unrelated
+to this race.
+
+Loft revisions transform existing section controls rather than replacing the
+entity with another producer. Actual OCCT 7.9.3.1 cold-read tests compare against
+independently transformed solids. Translation, rotation, reflection and uniform
+scale preserve normal lofts; straight lofts also support nonuniform scale.
+Normal loft nonuniform scale is refused: the measured refit volume ratio was
+1.755844 instead of the affine determinant 1.5. The
+[OCCT ThruSections parameterization contract](https://occt3d.com/dev/doc/refman/html/class_b_rep_offset_a_p_i___thru_sections.html)
+and [CadQuery v2.7.0 transformShape/transformGeometry](https://github.com/CadQuery/cadquery/blob/v2.7.0/cadquery/occ_impl/shapes.py)
+([Apache-2.0](https://github.com/CadQuery/cadquery/blob/v2.7.0/LICENSE)) explain why
+refitting section controls is not a general affine surface transform. A new
+persistent post-transform path is unnecessary for the supported cases. Bound
+lofts continue through their existing parameters; direct-edit dependency guards
+remain in force.
+
+The first restart pilot exposed valid `/api/project` reads of 1.155 and 1.390 s
+being classified unavailable by the worker's 1 s identity probe. The project
+identity read now has a separate 5 s budget; health remains 1 s and all instance,
+process, source and project checks remain required. A real managed-process test
+reproduces refusal at 1 s and success at 5 s for a 1.2 s response, then confirms
+that a wrong project is still refused. This is a measured engineering budget,
+not an optimum. It uses the bounded-probe pattern of
+[Uvicorn 0.35.0](https://github.com/encode/uvicorn/blob/0.35.0/uvicorn/supervisors/multiprocess.py)
+([BSD-3-Clause](https://github.com/encode/uvicorn/blob/0.35.0/LICENSE.md)); its
+automatic terminate/restart policy is not adopted.
+
+Monitor's first successful complete readback of a candidate generated in the same
+turn is now `summary.first_candidate_ms`, distinct from verification or browser visibility.
+Reading an older input candidate does not trigger it; missing same-turn generation
+evidence keeps it unknown.
+The Hub shows it without per-run data entry. Missing child endings remain
+`incomplete` with unknown duration after a root ends. The journal's bounded
+write-lock correction and its source comparison are documented in
+[MonkeyMonitor](../monkeymonitor/README.md#turntrace). Neither telemetry repair
+nor session rebuilding establishes a general latency improvement. The Hub's
+trace-comparison UI and the larger #32 benchmark set remain separate acceptance.
+
+### Retained real-provider results, 2026-09-20
+
+The `gpt-6-astra` six-turn run passed the final checker: seven candidate runs,
+including the intentionally invalid trial, with exact final solids, original
+and prior-source fields preserved, two genuinely new provider sessions for
+reopen/wall, and unchanged HEAD/accepted branches. The 4 m trial intruded
+215.76 m³ into the protected courtyard volume; the 2 m correction intruded
+0 m³. Existing tool timestamps confirm that the trial image returned before
+the correction proposal began. This verifies the declared schematic task,
+not building feasibility or general autonomous design quality.
+
+| Turn | New candidates | Tools | Failed tools | Successful model views | Turn seconds | First new candidate seconds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Three-wing courtyard | 1 | 9 | 2 | 1 | 171.401 | 123.258 |
+| Lower east wing | 1 | 6 | 0 | 2 | 68.356 | 34.087 |
+| North upper setback | 1 | 6 | 0 | 2 | 87.968 | 42.254 |
+| Trial, observe, repair | 2 | 11 | 0 | 2 | 169.979 | 45.652 |
+| Cold reopen, move west wing | 1 | 9 | 1 | 2 | 224.824 | 156.431 |
+| New session, derive north wall | 1 | 11 | 1 | 2 | 160.874 | 110.219 |
+
+Provider-reported token totals across the observed usage events are below;
+cached input is a subset of input, not an additional charge or a unique-prompt
+size. These counts do not establish model-request boundaries.
+
+| Turn | Input tokens | Cached input tokens | Output tokens |
+| --- | ---: | ---: | ---: |
+| Three-wing courtyard | 388,304 | 332,928 | 2,705 |
+| Lower east wing | 310,736 | 296,064 | 868 |
+| North upper setback | 375,608 | 362,496 | 1,349 |
+| Trial, observe, repair | 940,511 | 915,840 | 2,043 |
+| Cold reopen, move west wing | 369,766 | 308,096 | 1,981 |
+| New session, derive north wall | 454,535 | 387,968 | 2,275 |
+
+The trial's first candidate is deliberately unsuitable; this metric measures
+completed generation/readback, not satisfaction of the design requirement.
+The four failed calls were rejected keep references or an invalid `type_ref`,
+subsequently corrected by the same provider. No routine schema/read request
+has been hidden from the tool counts. Model-request counts, provider-internal
+retries, browser first paint and billed cost remain unknown. All six traces
+have closed observed spans; absence of missing-log notices does not prove that
+every possible operation was instrumented.
+
+The local evidence root is
+`D:/MONKEYHUB_DEV/temp/183-32-validation/courtyard-3`; it retains the P036 project,
+original requests/reports/chat, model-derived top/front PNGs and the existing
+diagnostic journal. The six-turn run used the frozen pre-review production
+code; the final trace correction and stricter offline checker followed it.
+Geometry, UI and worker code did not change between that run and commit
+`8b7e1d05`. The final checker reprojects timings without rewriting the original
+reports: the wall's old 32.993 s value was an input-candidate read, and becomes
+110.219 s when same-turn generation is required.
+
+Failures remain in adjacent directories: `baseline-simple` lacked the isolated
+ACP dependency before any provider turn; `courtyard-1` lacked the user-site PDF
+dependency during service setup; `courtyard-2` passed the first four spatial
+steps but failed the cold-reopen observation with three
+`CHAT_STUDIO_UNAVAILABLE` calls. Its old one-second worker identity timeout was
+the reproduced cause. The final checker still rejects that pilot. These runs
+are not discarded or counted as successful complete loops. No statistical
+speedup follows from this small, uncontrolled series.
+
+Two additional `incremental-edit --context-pack --no-preview` runs used commit
+`8b7e1d05`, the same archived project bytes, prompt, `gpt-6-astra` model and
+context mode, in distinct fresh provider sessions. Both changed only the
+cornice height from 0.3 to 0.5 m, preserved its footprint/support and all other
+authored fields, and left canonical HEAD unchanged. Both produced one CAD
+build and passed readback, geometry and authored-field checks.
+
+| Repeat | Turn seconds | First new candidate seconds | Tools | Input / cached input / output tokens |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 86.310 | 39.211 | 8 | 248,336 / 195,456 / 1,752 |
+| 2 | 108.260 | 27.124 | 7 | 283,036 / 233,600 / 2,305 |
+
+Both traces have zero observed failed tools and zero incomplete spans. Each
+had one nonblocking Monitor read return busy/503; later reads recovered and
+those poll failures remain in the reports. Browser first paint and explicit
+`verified_ms` remain unknown. The variation shows why a faster first candidate
+must not be presented as a faster completed turn. Evidence remains under
+`D:/MONKEYHUB_DEV/temp/183-32-validation/numeric-repeats/repeat-1` and `repeat-2`.
+
+## Reusing the awaited candidate observation source (#32)
+
+The bounded completion response now preserves each artifact's exact
+`modelSource` and `sourceStageRef`. `_finish` already read these values from the
+candidate but discarded them, while the tool description directed the model to
+use `modelSource` for its next model-view observation. Both assembly baseline
+turns consequently included another candidate GET. The two revised turns use
+the awaited result and omit that extra GET. Numeric turns did not improve.
+
+Commit `0dec7bf7` extends the existing artifact projection and tool description.
+Absent and null sources stay absent and null; source identities are never
+reconstructed from other hashes. Runtime still verifies every model-view source.
+`sourceStageRef` remains source metadata, not candidate acceptance. Partial
+readback, timeout recovery and single-submit behavior retain their existing
+meaning. Necessary authored-state, source and context checks remain available.
+
+This reuses the existing data and native image result contract of the
+[MCP 2025-11-25 tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+The transferable mechanism from [ReAct v3](https://arxiv.org/abs/2210.03629v3)
+is continuing an action from an external observation. Its QA/game results do not
+establish an architectural or latency benefit. No new transport or execution
+framework is needed for this missing field.
+
+### Paired observations, 2026-09-20
+
+The unchanged `tests/monkeymonitor/run_turn_benchmark.py` ran the fixed numeric
+and two-object assembly edits through Hub, MCP and OCCT. Each scenario has two
+baseline/revised pairs, with eight fresh `gpt-6-astra` sessions and byte-identical
+inputs restored from one synthetic project archive. Pair checks confirm the
+same fixture, reported model, prompt, initial source and context mode.
+Numeric uses `--context-pack`; assembly does not. Each arm uses `--no-preview`,
+`--timeout 240` and its own `--retained-root`/`--output` directory. Production was
+frozen at `f4399f4f` for all four baselines, then at `0dec7bf7` for all four
+revised runs. No failed or slow sample was dropped or rerun.
+
+| Task / repeat / build | Turn seconds | First new candidate seconds | Tools | Extra candidate GETs | Input / cached subset / output tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Numeric 1 / baseline | 65.061 | 27.531 | 4 | 0 | 144,845 / 102,784 / 1,431 |
+| Numeric 1 / revised | 68.723 | 31.859 | 5 | 0 | 187,494 / 143,488 / 1,321 |
+| Numeric 2 / baseline | 54.447 | 22.472 | 4 | 0 | 181,449 / 140,800 / 1,024 |
+| Numeric 2 / revised | 61.881 | 31.381 | 5 | 0 | 184,461 / 155,520 / 1,252 |
+| Assembly 1 / baseline | 126.733 | 87.448 | 9 | 1 | 399,058 / 343,552 / 1,810 |
+| Assembly 1 / revised | 93.395 | 63.942 | 8 | 0 | 344,643 / 291,456 / 1,832 |
+| Assembly 2 / baseline | 100.424 | 68.288 | 10 | 1 | 442,806 / 400,896 / 1,812 |
+| Assembly 2 / revised | 84.258 | 66.238 | 8 | 0 | 337,780 / 300,032 / 1,347 |
+
+Numeric median elapsed time increased from 59.754 to 65.302 s (+5.548 s), with
+one more tool call in both revised turns: an additional context read in repeat
+1 and an additional state read in repeat 2. Numeric first-candidate median also
+increased, from 25.002 to 31.620 s. Assembly median elapsed time decreased from
+113.579 to 88.827 s (-24.752 s), with the duplicate candidate reads removed;
+its first-candidate median changed from 77.868 to 65.090 s.
+
+The local `waterfall.svg`/`.png` projects the existing trace into Agent activity,
+Tools, CAD and Readback lanes on one seconds axis. Nested spans overlap and are
+not added into a fake total; post-turn checker reads are excluded. The dashed
+line uses the existing same-turn `first_candidate_ms`, never an input-candidate
+read. In assembly pair 1, 23.506 s of the 33.338 s total difference precedes
+the first new candidate. That difference cannot be attributed solely to
+avoiding its later re-read. Agent activity includes provider wait, CLI and
+scheduling; pure model inference remains unknown. Browser visibility is unknown.
+
+All eight final candidates passed the independent geometry, authored-entity,
+parameter, relation, obligation and unchanged-HEAD checks. Each made one CAD
+build and one model-view observation. Zero failed tools and zero retry spans
+were observed, but **all eight source comparisons failed** with
+`INSPECTION_NOT_FOUND`: the synthetic input `run-001` has no inspection. The
+awaited response truthfully remains partial even when its new candidate and
+source descriptor are available. One Monitor poll returned busy/503 and later
+recovered. These failures remain in the original reports.
+
+Total observed budget across all eight attempts is 654.922 turn-seconds,
+53 tools, 8 CAD builds, 2,222,536 input tokens (including 1,878,528 cached input)
+and 11,829 output tokens. Cached input is a subset, not an extra charge.
+Fixture/service preparation and teardown wall time were not measured;
+provider-internal retries, model-request boundaries, explicit `verified_ms`
+and billed cost remain unknown. This total is not an all-in wall-time or price
+claim. No extra provider runs were made to obtain a favorable result.
+
+All baselines preceded all revised runs; the pilot was not counterbalanced.
+Other Claude tasks and workstation load were concurrent, and caching was not
+controlled. The retained reports support the specific observation-source repair
+and fewer assembly reads in this batch, **not a general speedup or improved
+numeric-edit latency**. Evidence remains at
+`D:/MONKEYHUB_DEV/temp/32-edit-latency`: the eight original report/project/runtime
+directories, shared `input.zip`, `comparison.json`, and the waterfall. The
+temporary summary script was implemented by the real Claude CLI, then reviewed,
+corrected and executed independently; it is not a production mechanism.

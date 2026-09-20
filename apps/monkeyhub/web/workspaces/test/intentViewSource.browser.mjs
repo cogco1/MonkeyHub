@@ -84,9 +84,9 @@ let drawingBytes, referenceBytes, pixelAudit;
 let board = { projectId, title: "Intent source board", elements: [], seenDocuments: [], revisionSha256: null };
 const documentToken = "fixture-document-continuation";
 const comments = [];
-const errors = [], requests = [], intents = [], selections = [], escapedApiRequests = [];
+const errors = [], requests = [], intents = [], selections = [], escapedApiRequests = [], frameReads = [];
 const passed = [];
-let observationTransforms = 0, heldIntent = null, heldDocument = null, phase = "setup", vite, browser, page;
+let observationTransforms = 0, heldIntent = null, heldDocument = null, heldPick = null, phase = "setup", vite, browser, page;
 const http = createHttpServer();
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-intent-view-test-"));
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -194,7 +194,7 @@ try {
           return { code: source.replace(marker, marker + `
             (window as unknown as { __modelInkSnapshot: unknown }).__modelInkSnapshot = structuredClone(gestures);
             (window as unknown as { __intentViewSource: unknown }).__intentViewSource = {
-              propose, select: selectSemanticTarget,
+              propose, select: selectSemanticTarget, pick: resolvePick,
               snapshot: { fileName: inspection?.fileName, sourceLabel, viewState: view?.state,
                 loading: modelLoading, busy: proposalBusy, selection,
                 entries: transcript.entries.map((entry) => ({ kind: entry.kind })) }
@@ -245,6 +245,19 @@ try {
           assert.ok(!requestedRun || [runId, sourceC.runId].includes(requestedRun));
           return await json(requestedRun === sourceC.runId ? stateC : state);
         }
+        if (url.pathname === "/api/state/frame") {
+          // The mounted document panel calibrates tracing against the frame of
+          // the model actually displayed: draftSource names the viewed
+          // projection's run, so cross-run C is read while B stays the editing
+          // base. Either way the run must be one this fixture retains, exactly
+          // as GET /api/state demands. This fixture positions nothing — one
+          // free floor, no Level@1 and no axis — so it declares no frame rows.
+          const requestedRun = url.searchParams.get("run");
+          assert.ok(requestedRun && [runId, sourceC.runId].includes(requestedRun),
+            `The frame must name a run this fixture retains: ${requestedRun}`);
+          frameReads.push(requestedRun);
+          return await json({ levels: [], axes: [], honesty: [] });
+        }
         if (url.pathname === "/api/artifacts") return await json(artifacts);
         const model = /^\/api\/artifacts\/([^/]+)\/bytes$/.exec(url.pathname);
         if (model) { assert.ok(models.has(model[1])); return await route.fulfill({ status: 200, contentType: "application/octet-stream", body: models.get(model[1]) }); }
@@ -263,6 +276,14 @@ try {
           assert.ok(bytes); return await route.fulfill({ status: 200, contentType: "image/png", body: bytes });
         }
         if (url.pathname === "/api/document-comments") return await json({ comments });
+      }
+      if (method === "POST" && url.pathname === "/api/pick/resolve") {
+        const delayed = heldPick; assert.ok(delayed, "Pick replies are held by the selection race scenario");
+        const body = request.postDataJSON();
+        assert.equal(body.sourceRunId, runId); assert.equal(body.stateDigest, stateDigest);
+        delayed.requested.resolve(); await delayed.release.promise; heldPick = null;
+        return await json({ componentId: element.componentId, elementId: element.elementId,
+          status: "resolved", sourceState: "current", detail: "fixture pick" });
       }
       if (method === "PUT" && url.pathname === "/api/board") {
         const body = request.postDataJSON();
@@ -355,6 +376,25 @@ try {
     await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
     await ready(optionB); assert.equal(group.selectedOptionId, "B"); assert.equal(selections.length, 1);
+  });
+  await step("a delayed model pick cannot replace a newer semantic selection or chat target", async () => {
+    heldPick = { requested: deferred(), release: deferred() };
+    const delayed = heldPick;
+    await page.evaluate((objectName) => {
+      // Resolve through the mounted App's real handler; the disposable hit has
+      // no model parent, so this tests only the asynchronous identity boundary.
+      window.__pendingPick = window.__intentViewSource.pick({ objectName, object: { parent: null }, userStrings: {} });
+    }, element.elementId);
+    await Promise.race([delayed.requested.promise, sleep(12_000).then(() => assert.fail("The pick request was not held"))]);
+    await page.evaluate((componentId) => window.__intentViewSource.select(componentId, null), element.componentId);
+    const selected = { componentId: element.componentId, elementId: null };
+    await until(snapshot, (value) => JSON.stringify(value.selection) === JSON.stringify(selected), "The newer semantic target was not selected");
+    delayed.release.resolve();
+    await page.evaluate(() => window.__pendingPick);
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.deepEqual((await snapshot()).selection, selected, "The earlier ray hit must not overwrite the newer record selection");
+    assert.equal(await page.evaluate(() => window.__workspaceDesignContext.designContext.elementId), undefined,
+      "The superseded pick must not return as the next chat's element target");
   });
   await step("viewing same-run A preserves editing B and posts B's full identity", async () => {
     await view(optionA);
@@ -499,6 +539,8 @@ try {
     const beforeQuestion = await viewState();
     assert.equal(beforeQuestion.match, "different");
     assert.ok(beforeQuestion.editing.includes(optionB.label));
+    await until(() => frameReads.at(-1), (run) => run === sourceC.runId,
+      "The open document must recalibrate tracing against the displayed cross-run C frame");
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await page.evaluate(() => { window.__intentViewCalls = []; });
     delayed.release.resolve();
@@ -590,8 +632,12 @@ try {
     assert.equal(modelRequests(), requestsBefore, "Local history changes never GET or PUT model annotations");
   });
   assert.deepEqual(errors, []); assert.deepEqual(escapedApiRequests, []);
+  assert.ok(frameReads.length > 0, "The mounted document panel must read the frame it calibrates tracing against");
+  assert.deepEqual([...new Set(frameReads)].sort(), [runId, sourceC.runId].sort(),
+    "Tracing calibration follows the displayed model's run: the shared A/B run, and C's own while C is viewed");
   console.log(JSON.stringify({ passed: passed.length, projectId, sources: { A: sourceA, B: sourceB, C: sourceC },
-    interceptedIntents: intents.length, mockSelections: selections.length, pixelAudit, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
+    interceptedIntents: intents.length, mockSelections: selections.length, frameReads: frameReads.length,
+    pixelAudit, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
 } catch (error) {
   console.error(`FAIL ${phase}: ${error.stack ?? error}`); if (errors.length) console.error(JSON.stringify(errors, null, 2));
   if (page && !page.isClosed()) console.error(await page.locator("body").innerText().catch(() => "Cannot inspect failed page"));

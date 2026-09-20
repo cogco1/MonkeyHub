@@ -1,0 +1,461 @@
+{
+  "frozen_implementation": "ca82e5a7fb680a87fbe07adbea081ae03d49f1ed",
+  "dependency_head": "72f424800a4eadf71604648d2d93f8163f22b10e",
+  "planned_calls": 80,
+  "retained_unique_calls": 80,
+  "transport_failures": 0,
+  "reported_init_models": [
+    "claude-opus-5[1m]"
+  ],
+  "reported_assistant_models": [
+    "claude-opus-5"
+  ],
+  "usage_models": [
+    "claude-haiku-4-5-20251001",
+    "claude-opus-5[1m]"
+  ],
+  "methods": {
+    "embedding_graph": {
+      "actual_charge_usd": null,
+      "all_model_input_tokens": 191971,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 108067,
+      "calls": 20,
+      "cli_api_equivalent_usd": 1.371314,
+      "failures": [
+        "H6-similarity-embedding_graph-r0",
+        "H6-similarity-embedding_graph-r1",
+        "H4-unknown-fastener-embedding_graph-r0"
+      ],
+      "fallbacks": 3,
+      "mean_context_bytes": 9205.7,
+      "missing_usage_calls": 0,
+      "ordinary_input_tokens": 83904,
+      "output_tokens": 8484,
+      "passed": 17,
+      "query_ms_total": 69.16020000062417,
+      "retrieval_complete": 10,
+      "tasks": 10,
+      "wall_seconds": 130.2712035000004
+    },
+    "full": {
+      "actual_charge_usd": null,
+      "all_model_input_tokens": 338973,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 194097,
+      "calls": 20,
+      "cli_api_equivalent_usd": 2.302526,
+      "failures": [
+        "H6-similarity-full-r0"
+      ],
+      "fallbacks": 0,
+      "mean_context_bytes": 18417.1,
+      "missing_usage_calls": 0,
+      "ordinary_input_tokens": 144876,
+      "output_tokens": 8876,
+      "passed": 19,
+      "query_ms_total": 13.112699998600874,
+      "retrieval_complete": 10,
+      "tasks": 10,
+      "wall_seconds": 126.8169011999853
+    },
+    "graph": {
+      "actual_charge_usd": null,
+      "all_model_input_tokens": 172579,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 100925,
+      "calls": 20,
+      "cli_api_equivalent_usd": 1.266734,
+      "failures": [
+        "H4-unknown-fastener-graph-r1"
+      ],
+      "fallbacks": 3,
+      "mean_context_bytes": 8452.3,
+      "missing_usage_calls": 0,
+      "ordinary_input_tokens": 71654,
+      "output_tokens": 7634,
+      "passed": 19,
+      "query_ms_total": 3.7833999886061065,
+      "retrieval_complete": 10,
+      "tasks": 10,
+      "wall_seconds": 119.49620200002391
+    },
+    "lexical": {
+      "actual_charge_usd": null,
+      "all_model_input_tokens": 189774,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 106712,
+      "calls": 20,
+      "cli_api_equivalent_usd": 1.359797,
+      "failures": [
+        "H6-similarity-lexical-r0"
+      ],
+      "fallbacks": 3,
+      "mean_context_bytes": 9048.8,
+      "missing_usage_calls": 0,
+      "ordinary_input_tokens": 83062,
+      "output_tokens": 8595,
+      "passed": 19,
+      "query_ms_total": 6.994099996518344,
+      "retrieval_complete": 10,
+      "tasks": 10,
+      "wall_seconds": 126.3905983000077
+    }
+  },
+  "cost_total_cli_api_equivalent_usd": 6.300371,
+  "actual_charge_usd": null,
+  "model_download_seconds": 11.442774099996313,
+  "environment_install_seconds": null,
+  "encoder_setup_ms": 933.7124000012409,
+  "concurrency_note": "Other coordinator and independent task Claude calls overlapped this run. Wall time is descriptive, not a controlled latency benefit.",
+  "scoring_note": "Strict returned evidence plan only, not CAD edits, architecture acceptance, or visual reasoning accuracy.",
+  "failures": [
+    {
+      "id": "H6-similarity-embedding_graph-r0",
+      "parsed": {
+        "condition_refs": [],
+        "decision": "ready_for_checks",
+        "edge_refs": [
+          "relation:twin-b-to-drain",
+          "entity:twin-a",
+          "entity:twin-b",
+          "entity:drain"
+        ],
+        "entity_refs": [
+          "twin-a",
+          "twin-b",
+          "drain"
+        ],
+        "exact_pairs": [],
+        "image_refs": [],
+        "unknown_role_refs": [
+          "drain"
+        ]
+      },
+      "scores": {
+        "checks": {
+          "conditions_preserved": true,
+          "conditions_supported": true,
+          "decision_correct": true,
+          "edges_complete": false,
+          "edges_supported": true,
+          "entities_complete": true,
+          "entities_supported": true,
+          "exact_pairs_correct": true,
+          "image_refs_correct": true,
+          "images_supported": true,
+          "no_extra_claim_fields": true,
+          "unknown_roles_preserved": true
+        },
+        "missed_critical_refs": [],
+        "passed": false,
+        "unsupported_entity_refs": [],
+        "valid": true
+      }
+    },
+    {
+      "id": "H6-similarity-lexical-r0",
+      "parsed": {
+        "condition_refs": [],
+        "decision": "ready_for_checks",
+        "edge_refs": [
+          "relation:twin-b-to-drain",
+          "entity:twin-a",
+          "entity:twin-b",
+          "entity:drain"
+        ],
+        "entity_refs": [
+          "twin-a",
+          "twin-b",
+          "drain"
+        ],
+        "exact_pairs": [],
+        "image_refs": [],
+        "unknown_role_refs": [
+          "drain"
+        ]
+      },
+      "scores": {
+        "checks": {
+          "conditions_preserved": true,
+          "conditions_supported": true,
+          "decision_correct": true,
+          "edges_complete": false,
+          "edges_supported": true,
+          "entities_complete": true,
+          "entities_supported": true,
+          "exact_pairs_correct": true,
+          "image_refs_correct": true,
+          "images_supported": true,
+          "no_extra_claim_fields": true,
+          "unknown_roles_preserved": true
+        },
+        "missed_critical_refs": [],
+        "passed": false,
+        "unsupported_entity_refs": [],
+        "valid": true
+      }
+    },
+    {
+      "id": "H4-unknown-fastener-graph-r1",
+      "parsed": {
+        "condition_refs": [],
+        "decision": "ready_for_checks",
+        "edge_refs": [
+          "entity:fixing",
+          "entity:drain",
+          "entity:twin-b",
+          "relation:fixing-to-drain",
+          "relation:twin-b-to-drain"
+        ],
+        "entity_refs": [
+          "fixing",
+          "drain",
+          "twin-b",
+          "ground"
+        ],
+        "exact_pairs": [],
+        "image_refs": [],
+        "unknown_role_refs": [
+          "fixing",
+          "drain"
+        ]
+      },
+      "scores": {
+        "checks": {
+          "conditions_preserved": true,
+          "conditions_supported": true,
+          "decision_correct": true,
+          "edges_complete": false,
+          "edges_supported": true,
+          "entities_complete": false,
+          "entities_supported": true,
+          "exact_pairs_correct": true,
+          "image_refs_correct": true,
+          "images_supported": true,
+          "no_extra_claim_fields": true,
+          "unknown_roles_preserved": true
+        },
+        "missed_critical_refs": [
+          "lintel",
+          "screen",
+          "seal"
+        ],
+        "passed": false,
+        "unsupported_entity_refs": [],
+        "valid": true
+      }
+    },
+    {
+      "id": "H6-similarity-full-r0",
+      "parsed": {
+        "condition_refs": [],
+        "decision": "ready_for_checks",
+        "edge_refs": [
+          "relation:twin-b-to-drain",
+          "entity:twin-a",
+          "entity:twin-b",
+          "entity:drain"
+        ],
+        "entity_refs": [
+          "twin-a",
+          "twin-b",
+          "drain"
+        ],
+        "exact_pairs": [],
+        "image_refs": [],
+        "unknown_role_refs": [
+          "drain"
+        ]
+      },
+      "scores": {
+        "checks": {
+          "conditions_preserved": true,
+          "conditions_supported": true,
+          "decision_correct": true,
+          "edges_complete": false,
+          "edges_supported": true,
+          "entities_complete": true,
+          "entities_supported": true,
+          "exact_pairs_correct": true,
+          "image_refs_correct": true,
+          "images_supported": true,
+          "no_extra_claim_fields": true,
+          "unknown_roles_preserved": true
+        },
+        "missed_critical_refs": [],
+        "passed": false,
+        "unsupported_entity_refs": [],
+        "valid": true
+      }
+    },
+    {
+      "id": "H6-similarity-embedding_graph-r1",
+      "parsed": {
+        "condition_refs": [],
+        "decision": "ready_for_checks",
+        "edge_refs": [
+          "relation:twin-b-to-drain",
+          "entity:twin-a",
+          "entity:twin-b",
+          "entity:drain"
+        ],
+        "entity_refs": [
+          "twin-a",
+          "twin-b",
+          "drain"
+        ],
+        "exact_pairs": [],
+        "image_refs": [],
+        "unknown_role_refs": [
+          "drain"
+        ]
+      },
+      "scores": {
+        "checks": {
+          "conditions_preserved": true,
+          "conditions_supported": true,
+          "decision_correct": true,
+          "edges_complete": false,
+          "edges_supported": true,
+          "entities_complete": true,
+          "entities_supported": true,
+          "exact_pairs_correct": true,
+          "image_refs_correct": true,
+          "images_supported": true,
+          "no_extra_claim_fields": true,
+          "unknown_roles_preserved": true
+        },
+        "missed_critical_refs": [],
+        "passed": false,
+        "unsupported_entity_refs": [],
+        "valid": true
+      }
+    },
+    {
+      "id": "H4-unknown-fastener-embedding_graph-r0",
+      "parsed": {
+        "condition_refs": [],
+        "decision": "ready_for_checks",
+        "edge_refs": [
+          "entity:fixing",
+          "entity:drain",
+          "entity:twin-b",
+          "relation:fixing-to-drain",
+          "relation:twin-b-to-drain"
+        ],
+        "entity_refs": [
+          "fixing",
+          "drain",
+          "twin-b",
+          "ground"
+        ],
+        "exact_pairs": [],
+        "image_refs": [],
+        "unknown_role_refs": [
+          "fixing",
+          "drain"
+        ]
+      },
+      "scores": {
+        "checks": {
+          "conditions_preserved": true,
+          "conditions_supported": true,
+          "decision_correct": true,
+          "edges_complete": false,
+          "edges_supported": true,
+          "entities_complete": false,
+          "entities_supported": true,
+          "exact_pairs_correct": true,
+          "image_refs_correct": true,
+          "images_supported": true,
+          "no_extra_claim_fields": true,
+          "unknown_roles_preserved": true
+        },
+        "missed_critical_refs": [
+          "lintel",
+          "screen",
+          "seal"
+        ],
+        "passed": false,
+        "unsupported_entity_refs": [],
+        "valid": true
+      }
+    }
+  ],
+  "accounting": {
+    "full": {
+      "index_ms": 1.764499997079838,
+      "full_rebuild_ms": 1.4708000016980805,
+      "query_ms": 13.112699998600874,
+      "gate_checks_ms": 0.021500003640539944,
+      "serialization_seconds": 0.002449900006467942,
+      "cli_wait_seconds": 126.8169011999853,
+      "raw_complete_queries": 10,
+      "critical_answer_failures": 0,
+      "image_calls": 4
+    },
+    "graph": {
+      "index_ms": 1.7036999997799285,
+      "full_rebuild_ms": 1.5698999995947815,
+      "query_ms": 3.7833999886061065,
+      "gate_checks_ms": 0.013800010492559522,
+      "serialization_seconds": 0.0014523999707307667,
+      "cli_wait_seconds": 119.49620200002391,
+      "raw_complete_queries": 0,
+      "critical_answer_failures": 1,
+      "image_calls": 4
+    },
+    "lexical": {
+      "index_ms": 1.5951000023051165,
+      "full_rebuild_ms": 1.6153999968082644,
+      "query_ms": 6.994099996518344,
+      "gate_checks_ms": 0.013900003978051245,
+      "serialization_seconds": 0.0018384000286459923,
+      "cli_wait_seconds": 126.3905983000077,
+      "raw_complete_queries": 3,
+      "critical_answer_failures": 0,
+      "image_calls": 4
+    },
+    "embedding_graph": {
+      "index_ms": 1039.3898999973317,
+      "full_rebuild_ms": 1034.983600002306,
+      "query_ms": 69.16020000062417,
+      "gate_checks_ms": 0.019899998733308166,
+      "serialization_seconds": 0.002348500012885779,
+      "cli_wait_seconds": 130.2712035000004,
+      "raw_complete_queries": 2,
+      "critical_answer_failures": 1,
+      "image_calls": 4
+    }
+  },
+  "fixture_preparation_seconds": {
+    "base": {
+      "author_compile_persist": 0.09316250000119908,
+      "cad_export_readback_persist": 1.1036775999964448,
+      "retained_source_verify": 0.09324220000416972
+    },
+    "heldout": {
+      "author_compile_persist": 0.0769704999984242,
+      "cad_export_readback_persist": 0.2239999000012176,
+      "retained_source_verify": 0.09898799999791663
+    }
+  },
+  "image_render_seconds": {
+    "front": 0.6657085999977426,
+    "top": 0.05198260000179289
+  },
+  "full_fallback_identical_context_tasks": [
+    "H5-unresolved",
+    "H6-similarity",
+    "H8-datum"
+  ],
+  "runner_retries": 0,
+  "cli_provider_internal_retries": null,
+  "documentation_drafting": {
+    "cli_calls": 2,
+    "cli_api_equivalent_usd": 0.250677,
+    "included_in_consumer_comparison": false,
+    "primary_reviewed": true
+  }
+}

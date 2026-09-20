@@ -57,6 +57,7 @@ def measured_metrics(trace):
              and "drawings/model-view" in row["details"].get("request_kind", "")]
     return {
         "wall_ms": summary["elapsed_ms"],
+        "first_candidate_ms": summary.get("first_candidate_ms"),
         **trace["usage"]["tokens"],
         "model_calls": summary["model_rounds"],
         "agent_activity_intervals": summary["provider_rounds"],
@@ -68,7 +69,7 @@ def measured_metrics(trace):
         "model_view_calls": len(views),
         "model_view_service_ms": (sum(row["duration_ms"] for row in views)
                                   if all(row.get("duration_ms") is not None and row["status"] == "succeeded" for row in views) else None),
-        "unfinished_spans": sum(row["status"] == "running" for row in spans),
+        "unfinished_spans": sum(row["status"] in {"running", "incomplete"} for row in spans),
         "missing_observations_notice": any(row["details"].get("missing_observations") for row in spans),
         "reported_models": sorted({row["model"] for row in spans if row.get("model_call") and row.get("model")}),
     }

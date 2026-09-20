@@ -187,6 +187,16 @@ The scalar path retains its existing capability template, preflight and numeric 
 context reads relevant dependency closure, upstream geometry, explicit locks and conditions;
 it does not infer stage restrictions. `focusElementIds` describes focus, and `readOnlyRefs`
 distinguishes surrounding read evidence for a local task. Neither grants or revokes edit authority.
+
+`confirmedStage` is a derived view of the selected source's committed DesignStage, or null.
+It names its exact `stageRef`, `runId`, `stateDigest`, branch and label. `isSource` is true only
+when the selected state is that accepted result; a candidate's inherited Stage does not qualify.
+The summary lists the accepted Stage's locked parameter keys and retained condition references.
+`changes` compares accepted/current records and lists changed references, declared downstream
+effects, review items and unresolved condition impacts. These are review prompts, not validation
+results. Lists are limited to 64 with `omittedCounts`; exact-source ContextPack supplements remain
+the way to read missing facts. Parameter locks do not freeze whole geometry, and undeclared or
+missing non-adjacent Stage dependencies are not resolved. This view writes no project record.
 This read creates no proposal, candidate, model call, stored summary or second project state.
 
 Design detail rows have a 32 KiB budget, with conditions prioritized. This is a detail budget,
@@ -326,6 +336,25 @@ points and length. Model pick, delete and history use the same candidate source 
 Pointer movement and completed gestures stay local until manual Sync.
 Snapping copies coordinates and does not infer a lasting host
 or alignment dependency; closed line networks do not yet split existing faces.
+
+The same sketch endpoint accepts a `DocumentTracingRequestDto` with `tracing`
+(`runId`, `assetSha256`, `pageIndex`, `revisionSha256`, optional `drawingRevisionRef`,
+and explicit `annotationIds`), the existing exact model base/keep fields, target
+component, `baseLevel` or `baseDatum`, and `height`. It reads saved line/polyline
+vertices and their calibration itself. It never accepts inferred image geometry or
+client-supplied profiles on this request. Closed contours require positive height;
+selected open paths use zero height. Ordinary arrows, freehand ink and page text are
+not converted. A source image need not already describe a model: this explicit
+action authors new editable sketches and makes no model-source association claim.
+
+Each resulting Element retains `sourceDocumentTrace` with the exact saved page
+reference, annotation id and calibration. Its stable id uses the source run, asset,
+drawing revision, page and annotation id, excluding the annotation revision. Continuing
+from a previous candidate and regenerating a corrected path therefore updates that
+element; unselected or erased page paths do not implicitly delete model elements.
+The candidate worker rechecks the retained source before creating its run. Existing
+proposal continuation, keep protection and exact-base checks still apply; no model
+call, separate persistence store, acceptance or HEAD change occurs here.
 
 ### 5.1 The four outcomes of an intent
 
@@ -520,6 +549,18 @@ Document annotation pages, saved annotation references and visual inputs may car
 annotation saving, intent compilation and candidate execution, even when another
 drawing has identical PNG bytes. Annotation heads are separate per drawing revision;
 older records without this optional field keep their existing serialization.
+
+Page annotations also support editable `kind: "polyline"` vertices and an explicit
+`closed` boolean (2–512 distinct points; at least 3 when closed, without repeating the
+first vertex). `tracingCalibration` optionally saves `{origin, axisPoint, distance}`
+in the same annotation revision. Both points use normalized visible-page coordinates;
+distance is positive and finite in project length units. Distinct calibration points
+define the sketch origin and +X direction. Mapping accounts for the registered page's
+width/height, including PDF crop/rotation or image EXIF orientation. The left side of
+that directed axis maps to positive second plan coordinate. Existing producers map
+the internal XZ plan and Y height to the saved model's XY plan and Z height. There is
+no inferred scale, north or perspective correction. Omitting calibration saves a
+page without a tracing scale, and legacy annotations retain their serialized shape.
 
 ## 6. Pick and gesture resolution
 
@@ -830,7 +871,22 @@ project state. It does not load the previous provider transcript. Visible messag
 the same Hub chat and mark the project-context turn; subsequent ordinary turns continue the
 new provider session. Failed/stopped preparation preserves the previous continuation. Retained
 provider identities remain available for usage attribution; old chat text is never projected
-as design state. This is an explicit reset, not automatic stage-transition orchestration.
+as design state.
+
+The UI defaults to `stage` when a verified editing projection is available. Like `project`, this
+mode requires `designContext`. It starts a fresh provider only if the verified pack identifies
+the exact accepted result (`confirmedStage.isSource`) and that Stage differs from the provider's
+last confirmed starting Stage. The continuity marker is saved with Hub's existing chat metadata,
+so reopening the same Stage does not reset again. A candidate's inherited Stage, ordinary
+revision, history browsing, absent context or refused/cancelled read never triggers a boundary.
+No Stage is accepted by this process. The actual handoff message records `contextMode=stage`,
+`confirmedStageRef` and `confirmedStageLabel`; other automatic-mode turns remain `continue` in
+the visible history. Explicit API `continue` remains available for accumulated-history use.
+If startup fails or is cancelled before a replacement provider reports its session identity,
+Hub restores the prior continuation and removes the automatic handoff marker while retaining
+the failed turn and its error. Once a replacement identity exists, a later turn failure does
+not restore an older provider. Manual candidate-context resets retain the last handled Stage
+boundary, preventing another automatic reset when returning to that same Stage.
 
 Preparing is bounded by the turn's own limit and can be stopped inside it: a stop ends the turn
 then, abandoning that read rather than waiting it out, and the answer it may still produce reaches
@@ -912,3 +968,43 @@ own code (`RECORDING_ACTIVE`, `RECORDING_NOT_ACTIVE`, `BACKEND_UNAVAILABLE`,
 Hub's runtime root, read again on every request; without it these routes answer `403
 COMPUTER_USE_NOT_ENABLED` naming that path, and the MCP tools `computer_inspect`,
 `computer_action` and `computer_record` proxy the same three routes with no second check.
+
+## Study on a registered document page
+
+The existing Board document editor offers a Study side panel. Its normalized
+polygons use the same page interaction surface, but are saved only through
+`research-evidence-ledger` (`EvidenceLedger@1`), never as document annotations.
+
+- `POST /api/studies` saves corrected evidence and optional `research` against
+  `expectedPreviousRef`. Research contains editable documentary citations,
+  competing hypotheses, gaps, declared counterfactuals, exact comparison references,
+  a CompositionPattern and a conditional DesignPrior. Clients cannot provide
+  computed `actual` or `comparisonResults` results. The server computes and archives
+  comparisons with the saved research; cold reads replay those retained results.
+- `GET /api/studies` discovers current retained Studies, optionally filtered by
+  `sourceRunId`, `assetSha256` and `pageIndex`. `GET /api/studies/{study_id}` can
+  reopen an exact `ledgerRef`; source bytes and retained findings are verified.
+- `POST /api/studies/compare` compares 2–6 exact retained revisions using the
+  existing aspect-correct topology/proportion descriptors. Its bounds-based
+  similarity is not a validated architectural composition-family judgment.
+  Archived comparison references name the compared revisions, which can precede
+  the Study revision containing the result; subsequent edits do not relabel them.
+- `POST /api/studies/propose` names `projectId`, `studyId`, `expectedPreviousRef`
+  and `action` (`trace` or `reason`). It renders the exact registered page and
+  invokes the configured Codex/Anthropic transport under `ModelPhase.RESEARCH`.
+  Machine traces stay proposed. The model's source, input revision, timing,
+  usage and response are retained in `modelInvocations`; no substitute provider
+  or deterministic mock is used when one is unavailable.
+  When Monitor is configured, the existing usage log also records the actual
+  provider boundary, reported tokens and failure outcome against this project
+  and input ledger. Diagnostic failures never repeat a provider call.
+
+New research observations use true page-aspect-correct polygons; old derivation
+snapshots remain readable with their original method stamp. Counterfactuals keep
+the target, conditions and prediction, recompute affected geometry, and retain
+the measured outcome separately from interpretations. Model explanations cannot
+add unsupplied historical citations or sign the user's preferences. Changed
+applicability can retain, revise or reject a prior without rewriting the source.
+All Study operations leave StateRecord, DesignStage and canonical HEAD unchanged.
+Method limits and the public synthetic experiment are described in
+[the Study method note](research/study-evidence-method.md).

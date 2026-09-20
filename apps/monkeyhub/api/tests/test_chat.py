@@ -1474,9 +1474,14 @@ class ChatTests(unittest.TestCase):
                      "artifacts": [{"runId": "studio-cand-2", "fileName": "seat.3dm", "sha256": "c" * 64,
                                     "relativePath": "runs/studio-cand-2/seat.3dm", "objectCount": 6,
                                     "readbackVerified": True, "representation": "composed",
-                                    "lengthUnit": "meters", "available": True},
+                                    "lengthUnit": "meters", "available": True,
+                                    "modelSource": {"runId": "studio-cand-2", "stateDigest": "d" * 64,
+                                                    "assetSha256": "e" * 64},
+                                    "sourceStageRef": "source-stage"},
                                    {"runId": "studio-cand-2", "fileName": "gone.3dm", "available": False,
-                                    "unavailableReason": "the file is not on disk"}]}
+                                    "modelSource": None, "sourceStageRef": None,
+                                    "unavailableReason": "the file is not on disk"},
+                                   {"runId": "studio-cand-2", "fileName": "legacy.3dm", "sha256": "f" * 64}]}
         compare = {"candidateId": "studio-cand-2", "against": "studio-cand-1", "tolerance": 1e-9,
                    "changed": 1, "unchanged": 1, "added": 0, "removed": 0, "honesty": [],
                    "objects": [
@@ -1506,6 +1511,13 @@ class ChatTests(unittest.TestCase):
         saved = {row["fileName"]: row for row in answer["artifacts"]}
         self.assertEqual(saved["seat.3dm"]["relativePath"], "runs/studio-cand-2/seat.3dm")
         self.assertIs(saved["seat.3dm"]["readbackVerified"], True)
+        self.assertEqual(saved["seat.3dm"]["modelSource"], candidate["artifacts"][0]["modelSource"],
+                         "reuse the exact observation source; do not rebuild it from candidate or artifact hashes")
+        self.assertEqual(saved["seat.3dm"]["sourceStageRef"], "source-stage")
+        self.assertIsNone(saved["gone.3dm"]["modelSource"])
+        self.assertIsNone(saved["gone.3dm"]["sourceStageRef"])
+        self.assertNotIn("modelSource", saved["legacy.3dm"])
+        self.assertNotIn("sourceStageRef", saved["legacy.3dm"])
         self.assertIs(saved["gone.3dm"]["available"], False,
                       "an export that is not there says so rather than being dropped")
         # The comparison is against the run the change was submitted from.
@@ -1668,7 +1680,9 @@ class ChatTests(unittest.TestCase):
         session = self.create()
         session.status = "running"
         candidate = {"candidateId": "studio-cand-2", "stateDigest": "b" * 64,
-                     "seatExecutionComplete": True, "artifacts": [],
+                     "seatExecutionComplete": True,
+                     "artifacts": [{"modelSource": {"runId": "studio-cand-2", "stateDigest": "b" * 64,
+                                                    "assetSha256": "c" * 64}, "sourceStageRef": None}],
                      "objects": [{"name": "cornice", "bbox": {"min": [0, 0, 0.6], "max": [4, 2, 1.1]}}],
                      "relationChecks": {"held": 1, "unchecked": 2},
                      "honesty": ["two relations were not checked"]}
@@ -1691,6 +1705,8 @@ class ChatTests(unittest.TestCase):
                         self.assertNotIn(key, answer)
                 else:
                     self.assertEqual(answer["objects"], candidate["objects"])
+                    self.assertEqual(answer["artifacts"], candidate["artifacts"],
+                                     "a missing comparison must not force a second candidate read for its observation source")
                     self.assertEqual(answer["candidate"]["relationChecks"], candidate["relationChecks"])
                     self.assertEqual(answer["candidate"]["honesty"], candidate["honesty"])
                 if "compare" in missing:
@@ -2579,7 +2595,7 @@ class ChatTests(unittest.TestCase):
         with patch.object(chat, "_request_json", side_effect=request):
             appended = chat._context_pack(self.store.hub_url, session.id, "Raise it to 0.5 m.",
                                           self.selected(), time.monotonic() + 30)
-        self.assertIn(chat._CONTEXT_NOTE, appended)
+        self.assertEqual(appended, self.PACK)
         # _bound_studio binds this turn's headers; nothing after it may inherit
         # them, so a second turn cannot be correlated to the first one's span.
         self.assertEqual(chat._trace_headers.get(), {})

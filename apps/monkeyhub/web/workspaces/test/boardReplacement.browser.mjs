@@ -51,6 +51,10 @@ function sourceDocument(bytes, fileName, count, revisionRef, mimeType = "applica
     modelSource: null, modelSourceBindingRef: null, sourceStageRef: null, revisionRef };
 }
 const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-drawing-revision");
+const headlessBytes = pdfBytes([[0.75, 0.3, 0.85]]);
+const headlessDocument = { ...sourceDocument(headlessBytes, "Headless updated.pdf", 1, "headless-drawing-revision"),
+  replacesPages: [{ ...pageSource(oldDocument, 0), newPageIndex: 0 }] };
+let headlessPreviewAvailable = false, headlessPreviewFailures = 0;
 let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
 let uploadedReplacement;
@@ -176,6 +180,15 @@ try {
         if (url.pathname === `/api/documents/${oldDocument.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), oldDocument.revisionRef);
           return await route.fulfill({ contentType: "application/pdf", body: oldBytes });
+        }
+        if (url.pathname === `/api/documents/${headlessDocument.assetSha256}/bytes`) {
+          assert.equal(url.searchParams.get("revisionRef"), headlessDocument.revisionRef);
+          if (!headlessPreviewAvailable) {
+            headlessPreviewFailures++;
+            return await route.fulfill({ status: 503,
+              json: { code: "DOCUMENT_UNAVAILABLE", detail: "The saved preview is temporarily unavailable." } });
+          }
+          return await route.fulfill({ contentType: "application/pdf", body: headlessBytes });
         }
         if (url.pathname === `/api/documents/${uploadedReplacement.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), uploadedReplacement.revisionRef);
@@ -529,11 +542,115 @@ try {
     `Cancel replacement should return to its keyboard trigger, got ${await page.evaluate(() => document.activeElement.tagName)}`);
   // Keep the server's competing revision and the page's unsent canvas separate.
   competingVersion = true;
+  // A headless upload saves its source change while the user is still marking
+  // this mounted board. The old CAS must recover without disabling submission.
+  // This exact revision has never been previewed: an already-cached document
+  // would conceal the transient read failure the safe merge must withstand.
+  const beforeHeadless = await readScene();
+  documents = [...documents, headlessDocument];
+  saved = { ...structuredClone(saved), seenDocuments: [...saved.seenDocuments, documentKey(headlessDocument)],
+    revisionSha256: "e".repeat(64) };
+  const remotePage = saved.elements.find((element) => element.id === "unmapped-image");
+  remotePage.customData = { ...remotePage.customData, sourceDocument: pageSource(headlessDocument, 0) };
+  remotePage.fileId = "headless-new-preview"; remotePage.version += 1;
+  await page.evaluate(() => {
+    const api = window.__boardApi;
+    const { convertToExcalidrawElements, CaptureUpdateAction } = window.__boardHelpers;
+    const added = convertToExcalidrawElements([{ id: "headless-local-note", type: "text", text: "Keep this critique", x: 430, y: 670 }], { regenerateIds: false });
+    api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), ...added], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  });
+  const retryPreviews = page.getByRole("button", { name: "重试预览 / 接收", exact: true });
+  await retryPreviews.waitFor();
+  assert.ok(headlessPreviewFailures > 0, "The uncached remote preview must actually fail before recovery");
+  const failedHeadless = await readScene();
+  assert.deepEqual(byId(failedHeadless, "unmapped-image").customData.sourceDocument,
+    byId(beforeHeadless, "unmapped-image").customData.sourceDocument,
+    "A failed remote preview must retain the currently visible page source");
+  assert.equal(byId(failedHeadless, "unmapped-image").fileId, byId(beforeHeadless, "unmapped-image").fileId,
+    "A failed remote preview must retain the current image bytes");
+  assert.equal(byId(failedHeadless, "headless-local-note").text, "Keep this critique");
+  assert.equal(await page.locator(".monkeyboard-update").count(), 0,
+    "An unreadable replacement must not announce a reviewable update");
+  headlessPreviewAvailable = true;
+  await retryPreviews.click();
+  await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
+  await page.waitForFunction((source) => {
+    const current = window.__boardApi.getSceneElements().find((element) => element.id === "unmapped-image")?.customData.sourceDocument;
+    return current?.assetSha256 === source.assetSha256 && current?.revisionRef === source.revisionRef;
+  }, pageSource(headlessDocument, 0));
+  const afterHeadless = await readScene();
+  assert.equal(byId(afterHeadless, "headless-local-note").text, "Keep this critique");
+  assert.equal(saved.elements.find((element) => element.id === "headless-local-note").text, "Keep this critique");
+  assert.deepEqual(geometry(byId(afterHeadless, "unmapped-image")), geometry(byId(beforeHeadless, "unmapped-image")));
+  assert.equal(afterHeadless.zoom, beforeHeadless.zoom);
+  assert.equal(afterHeadless.scrollX, beforeHeadless.scrollX);
+  assert.equal(afterHeadless.scrollY, beforeHeadless.scrollY);
+  assert.equal(await chineseUpdate.isEnabled(), true, "Recovered canvas can still submit/upload");
+  const rebasedNotice = page.locator(".monkeyboard-update");
+  await rebasedNotice.waitFor({ timeout: 3000 });
+  assert.match(await rebasedNotice.innerText(), /Headless updated\.pdf.*已更新/,
+    "Receiving a saved source replacement must announce the same update as a document refresh");
+  assert.equal(await rebasedNotice.count(), 1, "A saved replacement produces one coalesced notice");
+  const writesBeforeRebasedView = writes.length;
+  await rebasedNotice.getByRole("button", { name: "查看", exact: true }).click();
+  assert.deepEqual(persisted((await readScene()).elements), persisted(afterHeadless.elements));
+  await page.waitForTimeout(1000);
+  assert.equal(writes.length, writesBeforeRebasedView, "Viewing a rebased page does not write another revision");
+  await rebasedNotice.getByRole("button", { name: "关闭提示", exact: true }).click();
+  // Re-reading the same saved revision cannot bring back a dismissed notice.
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.waitForTimeout(1000);
+  assert.equal(await rebasedNotice.count(), 0);
+  await select(["kept-frame"]);
+
+  // A save can rebase while the pointer is still down. The remainder of the
+  // same native stroke must reach both the live scene and the retained board.
+  const beforeStrokeTool = await page.evaluate(() => {
+    const api = window.__boardApi, state = api.getAppState();
+    const previous = { activeTool: state.activeTool, selectedElementIds: state.selectedElementIds,
+      selectedGroupIds: state.selectedGroupIds };
+    api.updateScene({ appState: { activeTool: { type: "freedraw", customType: null, locked: true },
+      selectedElementIds: {}, selectedGroupIds: {} }, captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER });
+    return previous;
+  });
+  const drawingSurface = await page.locator("canvas.excalidraw__canvas.interactive").boundingBox();
+  assert.ok(drawingSurface);
+  const strokeX = drawingSurface.x + drawingSurface.width * 0.65;
+  const strokeY = drawingSurface.y + drawingSurface.height * 0.6;
+  await page.mouse.move(strokeX, strokeY); await page.mouse.down();
+  await page.mouse.move(strokeX + 30, strokeY + 20, { steps: 5 });
+  const partialStroke = await page.evaluate(() => {
+    const element = window.__boardApi.getAppState().newElement;
+    return { id: element?.id, points: element?.points };
+  });
+  assert.ok(partialStroke.id && partialStroke.points.length > 1, "A native stroke must still be in progress");
+  saved = { ...structuredClone(saved), title: "Remote update during live stroke", revisionSha256: "d".repeat(64) };
+  await page.keyboard.press("Control+s");
+  await page.waitForFunction(() => document.querySelector('input[aria-label="画布标题"]')?.value === "Remote update during live stroke");
+  await page.mouse.move(strokeX + 140, strokeY + 95, { steps: 8 });
+  const continuedStroke = await page.evaluate(() => {
+    const element = window.__boardApi.getAppState().newElement;
+    return { id: element?.id, points: element?.points };
+  });
+  assert.equal(continuedStroke.id, partialStroke.id, "A remote save must leave the current gesture active");
+  assert.ok(continuedStroke.points.length > partialStroke.points.length, "The stroke continues after rebase");
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
+  const completedStroke = byId(await readScene(), partialStroke.id);
+  assert.deepEqual(completedStroke.points.slice(0, continuedStroke.points.length), continuedStroke.points,
+    "Rebasing must retain points drawn after the refreshed board arrived");
+  assert.deepEqual(saved.elements.find((element) => element.id === partialStroke.id)?.points, completedStroke.points,
+    "The retained board must contain the complete stroke");
+  await page.evaluate((appState) => window.__boardApi.updateScene({ appState,
+    captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER }), beforeStrokeTool);
+  const recoveredConflicts = conflicts;
+
   saved = { ...structuredClone(saved), title: "Another saved board", revisionSha256: "f".repeat(64) };
   const winner = structuredClone(saved), localScene = await readScene();
   await page.getByRole("textbox", { name: "画布标题", exact: true }).fill("我的未保存图墙");
   await page.getByText(/已有另一份保存版本/).waitFor();
-  assert.equal(conflicts, 1);
+  assert.ok(conflicts === recoveredConflicts || conflicts === recoveredConflicts + 1,
+    "The competing title is detected by refresh or the first stale save");
   assert.deepEqual(saved, winner, "A rejected stale save must not overwrite the winning board");
   assert.deepEqual((await readScene()).elements, localScene.elements, "Conflict must preserve the current scene");
   assert.equal(await page.getByRole("textbox", { name: "画布标题", exact: true }).inputValue(), "我的未保存图墙");

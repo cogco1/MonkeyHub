@@ -22,6 +22,7 @@ from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 from archflow.project.repository import FilesystemProjectRepository, ProjectRepositoryError
 from archflow_studio_api.application.artifacts import (
     DocumentWorkCopy,
+    document_bytes,
     list_document_work_copies,
 )
 from archflow_studio_api.application.binding import ProjectBinding
@@ -41,13 +42,12 @@ _ACCEPT_REQUEST = re.compile(r"^/api/candidates/([^/]+)/accept$")
 _PROPOSAL_CANDIDATE = re.compile(r"^/api/proposals/([^/]+)/candidate$")
 _ACTIVE = {"queued", "planning", "validated", "executing", "committing"}
 _IDLE_RETAINED_REFRESH_S = 30
-# How long a work copy's last write must predate the read that hashed it before
-# an unchanged stat sample is believed without reading again. Filesystem
-# timestamps are coarse: two rewrites inside one clock tick share an
-# ``st_mtime_ns``, so a same-size rewrite landing in the tick the digest was
-# taken in would otherwise be invisible. Beyond this margin it cannot be, and a
-# settled copy stops being read on every heartbeat.
+# A sample must remain unchanged for this interval before bytes are read.
+# File timestamps alone cannot measure that wait: producers can preserve them.
 _WORK_COPY_SETTLED_NS = 2_000_000_000
+# Unchanged stat metadata is only a fast path, not proof of unchanged content.
+# Recheck occasionally for in-place saves that preserve both size and mtime.
+_WORK_COPY_CONTENT_REFRESH_NS = _IDLE_RETAINED_REFRESH_S * 1_000_000_000
 
 
 def project_key(path: str) -> str:
@@ -155,7 +155,7 @@ class OperationManager:
         # Only recovery metadata crosses this Hub-runtime boundary. Request
         # bodies and successful project results stay with their existing owners.
         saved = {"projectId": self.project_id, "projectDir": self.project_dir, "operations": [{
-            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason"}),
+            "record": row.record.model_dump(exclude={"committed", "resultDigest", "resultRevision", "reason", "admissionSequence"}),
             "signature": row.signature, "expectedStage": row.expected_stage,
             "branchId": row.branch_id, "acceptingCandidate": row.accepting_candidate,
         } for row in self._operations.values()]}
@@ -336,7 +336,11 @@ class OperationManager:
 
     def records(self) -> list[OperationRecord]:
         with self._lock:
-            values = [row.record for row in self._operations.values()]
+            # The existing journal retains this admission order across Hub
+            # restarts. Derive it before the bounded/reordered display window;
+            # it supplies no result status and is never written back to disk.
+            values = [row.record.model_copy(update={"admissionSequence": index})
+                      for index, row in enumerate(self._operations.values(), start=1)]
             # Keep active work visible even after many completed requests.
             active = [row for row in values if row.status in _ACTIVE or row.status == "needs_recovery"]
             recent = [row for row in values if row not in active][-50:]
@@ -361,7 +365,9 @@ class _WorkCopyObservation:
     """
 
     copy: DocumentWorkCopy
-    sample: tuple[int, int] | None = None
+    sample: tuple[int, int, int, int] | None = None
+    sample_since_ns: int | None = None
+    # Both observation times use the monotonic clock, independent of file dates.
     hashed_at_ns: int | None = None
     observed_sha256: str | None = None
     failure: HubError | None = None
@@ -583,23 +589,38 @@ class ProjectRuntimeManager:
                 runtime.work_copies[key] = _WorkCopyObservation(copy)
             else:
                 if copy.refusal != observed.copy.refusal:
-                    # A settled file is not read again while its sample holds.
+                    # A settled file otherwise waits for its content refresh.
                     # Whether the owner will take these bytes has just changed,
                     # so the next pass has to look: an edit refused while the
                     # document was someone else's is still waiting to register.
                     observed.hashed_at_ns = None
                 observed.copy = copy
+                if (observed.failure is not None
+                        and observed.failure.code == "WORK_COPY_OPERATION_INTERRUPTED"
+                        and observed.observed_sha256 == copy.head_asset_sha256):
+                    # A lost response is not a failed write. Verify the exact
+                    # retained successor through the owner's reader, without
+                    # replaying the POST or inferring success from liveness.
+                    try:
+                        document, _ = document_bytes(runtime.binding, copy.head_run_id,
+                                                     copy.head_asset_sha256, copy.head_revision_ref)
+                    except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError):
+                        continue
+                    if (document.run_id, document.asset_sha256, document.revision_ref) == (
+                            copy.head_run_id, copy.head_asset_sha256, copy.head_revision_ref):
+                        observed.failure = None
+                        self.emit("artifact/updated", runtime.runtime_id)
         return {key: str(copy.path) for key, copy in copies.items()}
 
     def _stable_work_copy_bytes(self, observed: _WorkCopyObservation) -> bytes | None:
         """The copy's settled contents, or ``None`` while it is still moving.
 
         A producer's save is not atomic on every path. The same
-        ``(size, mtime_ns)`` has to be seen twice before the file is read, the
-        sample is taken again after reading, and a digest is only trusted once
-        the last write is older than the timestamp granularity that could hide
-        a rewrite inside it. Half-written bytes therefore reach neither the
-        project nor the user as an error.
+        file identity, size and mtime must remain stable for the settle interval,
+        and the complete sample is checked again after reading. Identity catches
+        atomic replacements even when timestamps are preserved; a bounded content
+        refresh catches same-size in-place writes that preserve timestamps too.
+        The document owner still validates complete bytes before registration.
         """
 
         path = observed.copy.path
@@ -609,22 +630,28 @@ class ProjectRuntimeManager:
             # A transient missing file is what an atomic save/rename looks
             # like from here, not a deletion. Binding decides what exists.
             return None
-        sample = (before.st_size, before.st_mtime_ns)
-        if (observed.hashed_at_ns is not None and observed.sample == sample
-                and before.st_mtime_ns + _WORK_COPY_SETTLED_NS <= observed.hashed_at_ns):
-            return None
+        sample = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        now = time.monotonic_ns()
         if observed.sample != sample:
             observed.sample, observed.hashed_at_ns = sample, None
+            observed.sample_since_ns = now
+            return None
+        if observed.sample_since_ns is None or now - observed.sample_since_ns < _WORK_COPY_SETTLED_NS:
+            return None
+        if (observed.hashed_at_ns is not None
+                and now - observed.hashed_at_ns < _WORK_COPY_CONTENT_REFRESH_NS):
             return None
         try:
             data = path.read_bytes()
             after = path.stat()
         except FileNotFoundError:
             return None
-        if (after.st_size, after.st_mtime_ns) != sample:
-            observed.sample, observed.hashed_at_ns = (after.st_size, after.st_mtime_ns), None
+        after_sample = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        if after_sample != sample:
+            observed.sample, observed.hashed_at_ns = after_sample, None
+            observed.sample_since_ns = time.monotonic_ns()
             return None
-        observed.hashed_at_ns = time.time_ns()
+        observed.hashed_at_ns = time.monotonic_ns()
         return data
 
     def _observe_work_copies(self, runtime: ProjectRuntime) -> int:
@@ -789,8 +816,8 @@ class ProjectRuntimeManager:
             try:
                 if due:
                     # Which copies exist is re-derived on the retained cadence;
-                    # their bytes are watched every heartbeat, which costs one
-                    # stat each once a copy has settled.
+                    # their metadata is watched every heartbeat, with bounded
+                    # content reads after a copy has settled.
                     self.bind_work_copies(runtime)
                 self._observe_work_copies(runtime)
             except (StudioError, ProjectRepositoryError, OSError, ValueError, KeyError, TypeError) as exc:

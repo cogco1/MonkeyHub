@@ -37,7 +37,6 @@ import type {
   CatalogDto,
   DesignHistoryDto,
   DesignStageDto,
-  ElevationRequestDto,
   DocumentAnnotationRefDto,
   DocumentVisualInputDto,
   CandidateDto,
@@ -49,12 +48,15 @@ import type {
   ProjectArtifactDto,
   ProposalDto,
   StateProjectionDto,
+  FrameLevelDto,
+  DocumentTracingSourceDto,
   ValidationDto,
 } from "../api/generated";
 import { renderTracingPaperSnapshotPng, captureTracingPaperReview, type GestureTool } from "../workspaces/monkeyarch/Annotate";
 import { createModelAnnotationsController, useModelAnnotations } from "../workspaces/monkeyarch/useModelAnnotations";
 import { createDocumentAnnotationsController } from "../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { DocumentViewContext } from "../workspaces/monkeydiagram/DocumentCanvas";
+import { DocumentTracingContext } from "../workspaces/monkeydiagram/DocumentTracingContext";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import {
@@ -268,8 +270,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const stageModelSource = session.status === "ready" ? session.value.stageModelSource ?? null : null;
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [drawingBusy, setDrawingBusy] = useState(false);
-  const [drawingError, setDrawingError] = useState<StudioApiError | null>(null);
   const [documentController] = useState(() => createDocumentAnnotationsController(studio));
   const documentSaveRef = useRef<(() => Promise<void>) | null>(null);
   const bindDocumentSave = useCallback((save: (() => Promise<void>) | null) => { documentSaveRef.current = save; }, []);
@@ -363,13 +363,12 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const autoShowRef = useRef<{
     candidateId: string | null; context: number; viewRequest: number; started?: boolean;
     timing?: EditTimingTicket | null;
+    preserveDocument?: boolean;
   } | null>(null);
   const monitorDiagnostics = server.capabilities.includes("operation-diagnostics");
   const activeEditTiming = useRef<EditTimingTicket | null>(null);
   const proposalTimings = useRef(new Map<string, EditTimingTicket>());
   const candidateTimings = useRef(new Map<string, EditTimingTicket>());
-  const drawingTiming = useRef<ClientTimingSpan | null>(null);
-  const [drawingDisplayTiming, setDrawingDisplayTiming] = useState<ClientTimingSpan | null>(null);
   const manualLoadRef = useRef(false);
   const localEditingRef = useRef(false);
   const modelInteractionEpoch = useRef(0);
@@ -515,7 +514,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       finishEditTiming(activeEditTiming.current, "cancelled");
       for (const ticket of proposalTimings.current.values()) finishEditTiming(ticket, "cancelled");
       for (const ticket of candidateTimings.current.values()) finishEditTiming(ticket, "cancelled");
-      drawingTiming.current?.finish("cancelled");
     };
   }, [contextKey]);
   // A new editing base starts a new exchange, without discarding the draft or history.
@@ -567,9 +565,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     return loadedArtifact.modelSource ?? modelSources.find((row) => row.modelSource.runId === loadedArtifact.runId &&
       row.modelSource.assetSha256 === loadedArtifact.sha256)?.modelSource ?? null;
   }, [loadedArtifact, loadedArtifacts.length, modelSources]);
-  useEffect(() => {
-    setDrawingError(null);
-  }, [contextKey, loadedModelSource?.runId, loadedModelSource?.stateDigest, loadedModelSource?.assetSha256, viewerStatus]);
   // What is on screen and can be worked on.
   //
   // Looking at a candidate is not editing it, and this changes neither: it is
@@ -724,7 +719,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     return () => onDesignContextChange?.(null);
   }, [onDesignContextChange, chatContext]);
   // The Hub keeps this model workspace mounted while the Board is visible.
-  const returnToBoard = onReturnToBoard && documentView.open ? leaveToBoard : undefined;
+  const returnToBoard = onReturnToBoard && (documentView.open || documentSource !== null) ? leaveToBoard : undefined;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
   const ensureLocalModel = useCallback((): LocalModelSession => {
     if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));
@@ -852,6 +847,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   /** A semantic target lights only the exact object names in this run's catalog. */
   const selectSemanticTarget = useCallback((componentId: string, elementId: string | null) => {
+    pickRequestRef.current += 1;
     setSelection({ componentId, elementId });
     setPicked(null);
     const objectNames =
@@ -974,7 +970,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   const openLocalFile = useCallback((file: File) => {
     finishEditTiming(activeEditTiming.current, "cancelled");
-    drawingTiming.current?.finish("cancelled");
     modelLoadRequest.current += 1;
     modelDownloadAbort.current?.abort();
     pendingArtifacts.current = [];
@@ -1961,35 +1956,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     } catch (cause) { setHistoryError(asStudioApiError(cause).detail); }
     finally { setHistoryBusy(false); }
   };
-  const generateElevation = async (view: ElevationRequestDto["view"]) => {
-    if (!project || !loadedModelSource || drawingBusy) return;
-    const stage = designHistory?.stages.find((item) => sameModelSource(item.modelSource, loadedModelSource));
-    const currentContext = previewContext.current.revision;
-    const currentViewRequest = modelLoadRequest.current;
-    drawingTiming.current?.finish("cancelled");
-    const timing = monitorDiagnostics ? startClientTiming(studio, "drawing_wait", {
-      projectId: project.projectId, runId: loadedModelSource.runId, sourceRef: stage?.stageRef,
-    }) : null;
-    drawingTiming.current = timing;
-    setDrawingBusy(true); setDrawingError(null);
-    try {
-      await documentSaveRef.current?.();
-      const result = await studio.elevation({ projectId: project.projectId, view,
-        ...(stage ? { sourceStageRef: stage.stageRef } : { modelSource: loadedModelSource }) }, timing?.trace);
-      if (previewContext.current.revision !== currentContext || modelLoadRequest.current !== currentViewRequest) {
-        timing?.finish("cancelled"); return;
-      }
-      setDrawingDisplayTiming(timing);
-      setDocumentView({ open: true, mounted: true, runId: result.runId, sourceSha: result.assetSha256,
-        revisionRef: result.revisionRef ?? null, pageIndex: 0 });
-    } catch (cause) {
-      timing?.finish(previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest ? "failed" : "cancelled");
-      if (previewContext.current.revision === currentContext && modelLoadRequest.current === currentViewRequest) {
-        setDrawingError(asStudioApiError(cause));
-      }
-    }
-    finally { setDrawingBusy(false); }
-  };
   const combineDesignCandidates = async (candidateIds: string[]) => {
     if (!project || historyBusy || candidateIds.length < 2) return;
     const preview = beginCandidatePreview();
@@ -2178,7 +2144,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   );
 
   const runCandidate = useCallback(
-    async (proposalId: string) => {
+    async (proposalId: string, preserveDocument = false) => {
       setCandidateBusy(true);
       // The approximation has done its work: from here the picture is the
       // loaded model until the exact geometry arrives.
@@ -2198,6 +2164,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         activeEditTiming.current = timing;
       }
       const preview = beginCandidatePreview(timing);
+      if (autoShowRef.current) autoShowRef.current.preserveDocument = preserveDocument;
       try {
         const accepted = await studio.startCandidate(proposalId, timing?.candidate?.trace);
         setModelRunPending(accepted.candidateId);
@@ -2221,12 +2188,63 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           error,
           what: `POST /api/proposals/${proposalId}/candidate`,
         });
+        if (preserveDocument) throw error;
       } finally {
         setCandidateBusy(false);
       }
     },
     [append, beginCandidatePreview, monitorDiagnostics, project, projection, recoverFromStaleBase, sourceRunId],
   );
+
+  const [tracingLevels, setTracingLevels] = useState<FrameLevelDto[]>([]);
+  useEffect(() => {
+    let stopped = false;
+    setTracingLevels([]);
+    if (documentView.mounted && draftSource) void studio.frame(draftSource.sourceRunId ?? undefined)
+      .then(frame => { if (!stopped) setTracingLevels(frame.levels); }).catch(() => { /* Generate reports the exact API refusal. */ });
+    return () => { stopped = true; };
+  }, [documentView.mounted, draftSource?.stateDigest, draftSource?.sourceRunId]);
+  const tracingScopeKey = JSON.stringify([project?.projectId, sourceRunId, documentView.runId,
+    documentView.sourceSha, documentView.revisionRef, documentView.pageIndex, active]);
+  const tracingScope = useRef({ key: tracingScopeKey });
+  if (tracingScope.current.key !== tracingScopeKey) tracingScope.current = { key: tracingScopeKey };
+  const generateDocumentTracing = async (tracing: DocumentTracingSourceDto, height: number, requestedLevel: string) => {
+    if (!project || session.status !== "ready" || changingBase || modelLoading || proposalBusy || candidateBusy) throw new Error(t("document.trace.busy"));
+    if (localModel && unsynced(localModel)) throw new Error(t("document.trace.unsynced"));
+    const scope = tracingScope.current;
+    const epoch = modelInteractionEpoch.current;
+    const viewRequest = modelLoadRequest.current;
+    const isCurrent = () => tracingScope.current === scope && modelInteractionEpoch.current === epoch && modelLoadRequest.current === viewRequest;
+    let base = draftProjection;
+    let traceSource = draftSource;
+    setProposalBusy(true);
+    try {
+      if (!base?.stateDigest && !projection?.stateDigest) {
+        const prepared = await studio.prepareModeling(project.projectId);
+        if (!prepared.initialized || !isCurrent()) throw new Error(t("board.sketch.unmodelled"));
+        const next = await reload();
+        base = next?.projection ?? null;
+        traceSource = next && base?.stateDigest ? { projectId: project.projectId, stateDigest: base.stateDigest,
+          sourceRunId: next.sourceRunId, sourceStageRef: base.sourceStageRef ?? null } : null;
+      }
+      if (!base?.stateDigest || !traceSource || !isCurrent()) throw new Error(t("document.trace.contextChanged"));
+      const frame = await studio.frame(traceSource.sourceRunId ?? undefined);
+      const level = frame.levels.find(row => row.levelId === requestedLevel) ?? (requestedLevel === "" && frame.levels.length === 1 ? frame.levels[0] : null);
+      if (!level) throw new Error(t("document.trace.chooseLevel"));
+      const roots = base.catalog?.components.filter(row => row.parentId === null) ?? [];
+      const selectedComponent = selection?.componentId && base.elements.some(row => row.componentId === selection.componentId)
+        ? selection.componentId : null;
+      const componentId = selectedComponent ?? base.elements[0]?.componentId ?? (roots.length === 1 ? roots[0].componentId : null);
+      if (!componentId) throw new Error(t("stage.sketch.noComponent"));
+      if (!isCurrent()) throw new Error(t("document.trace.contextChanged"));
+      const proposal = await studio.traceDocument({ projectId: project.projectId, stateDigest: base.stateDigest,
+        sourceRunId: traceSource.sourceRunId ?? undefined, sourceStageRef: traceSource.sourceStageRef ?? undefined,
+        tracing, componentId, baseLevel: level.levelId, height, keep: [], summary: t("document.trace.summary") });
+      append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+      if (!isCurrent()) throw new Error(t("document.trace.contextChanged"));
+      await runCandidate(proposal.proposalId, true);
+    } finally { setProposalBusy(false); }
+  };
 
   // A board sketch is submitted exactly once, through the routes a typed sketch
   // already uses: no board geometry is truth until the exact-base candidate has
@@ -2699,7 +2717,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
         autoShowRef.current !== preview || preview.context !== previewContext.current.revision || manualLoadRef.current ? "cancelled" : "failed");
       if (shown && preview.context === previewContext.current.revision) {
         if (designHistoryEnabled) await reload(twin.runId).then((next) => {
-          if (next) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
+          if (next && !preview.preserveDocument) setDocumentView((current) => ({ ...current, runId: twin.runId, sourceSha: null, revisionRef: null, pageIndex: 0 }));
         });
         append({
         kind: "system",
@@ -3103,6 +3121,9 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
           />
         ) : null}
         stage={
+          <DocumentTracingContext.Provider value={{ levels: tracingLevels,
+            blockedReason: localModel && unsynced(localModel) ? t("document.trace.unsynced") : null,
+            generate: generateDocumentTracing, showModel: () => setDocumentView(current => ({ ...current, open: false })) }}>
           <Stage
             key={binding?.projectId ?? "unbound"}
             active={active}
@@ -3162,9 +3183,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             documentProjectId={binding?.projectId ?? null}
             documentView={documentView}
             onReturnToBoard={returnToBoard}
-            documentTiming={drawingDisplayTiming ?? undefined}
-            drawing={server.capabilities.includes("drawing-elevations") ? { busy: drawingBusy, error: drawingError, available: loadedModelSource !== null && !modelLoading && !changingBase,
-              dismissError: () => setDrawingError(null), generate: (view) => { void generateElevation(view); } } : undefined}
             documentAnnotationsController={documentController}
             onDocumentBeforeLeave={bindDocumentSave}
             onDocumentView={(next) => {
@@ -3303,6 +3321,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             workModel={workModelControls}
             onEvidence={openEvidence}
           />
+          </DocumentTracingContext.Provider>
         }
         pinnedDrawer={developerMode && evidencePinned ? drawer : null}
       />

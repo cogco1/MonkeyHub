@@ -47,7 +47,7 @@ from archflow.adapters.cad_execution import (
 from archflow.adapters import cad_program
 from archflow.adapters.cad_program import CadTranslationError
 from archflow.adapters.three_dm_inspector import inspect_three_dm
-from monkeyarch.capabilities.element_producers import ProductionContext, element_rows_of, produce_rows
+from monkeyarch.capabilities.element_producers import ProductionContext, edit_drawn_element, element_rows_of, produce_rows
 from monkeyarch.capabilities.reference_resolver import ReferenceContext
 from archflow.state.geometry_program import CompiledGeometryObject, CompiledGeometryProgram
 from monkeyarch.compilers.geometry import compile_geometry_program
@@ -544,6 +544,62 @@ class NativeLoftHeightExecutionTests(unittest.TestCase):
                     self.assertEqual(occt_backend.classify_program_point(shape, (0.0, self.DATUM + height / 2, 0.0)), "inside")
                     self.assertEqual(inspect_three_dm(workspace / receipt.preview_artifact["relative_path"]).top_level_object_count, 1)
                     self.assertEqual(next(e for e in current.entities if e.entity_id == element.entity_id).fields["params"], params)
+
+    def test_direct_loft_transforms_match_kernel_transforms_after_step_readback(self) -> None:
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_GTransform
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+        from OCP.gp import gp_GTrsf
+
+        def volume(shape):
+            properties = GProp_GProps()
+            BRepGProp.VolumeProperties_s(shape, properties)
+            return properties.Mass()
+
+        for loft_type in ("straight", "normal"):
+            record = self._record([_ring(1.0, 0), _ring(0.45, 0.8), _ring(0.9, 3)])
+            entity = next(e for e in record.entities if e.entity_id == "drum-east")
+            entity = replace(entity, fields={**entity.fields, "params": {**entity.fields["params"], "loft_type": loft_type}})
+            record = replace(record, entities=tuple(entity if e.entity_id == entity.entity_id else e for e in record.entities))
+            expected = occt_backend.build_program_shapes(_compile(record)).objects["obj-drum-east"].shape
+            factors = [-2, 0.5, 1.5] if loft_type == "straight" else [-2, 2, 2]
+            actions = (
+                ({"kind": "move", "translation": [2, 3, 4]}, [[1, 0, 0, 2], [0, 1, 0, 4], [0, 0, 1, 3]]),
+                ({"kind": "rotate", "axis": [0, 0, 1], "angle_degrees": 90}, [[0, 0, -1, 0], [0, 1, 0, 0], [1, 0, 0, 0]]),
+                ({"kind": "scale", "scale": factors}, [[factors[0], 0, 0, 0], [0, factors[2], 0, 0], [0, 0, factors[1], 0]]),
+            )
+            for action, matrix in actions:
+                with self.subTest(loft_type=loft_type, kind=action["kind"]), tempfile.TemporaryDirectory() as tmp:
+                    rows = element_rows_of(record)
+                    context = ProductionContext(ReferenceContext(grids=project_grids_of(record), levels=project_levels_of(record)), {})
+                    produce_rows(rows, context)
+                    row = next(r for r in rows if r.element_id == "drum-east")
+                    changed = edit_drawn_element(row, context, origin=[0, 0, 0], **action)
+                    entity = replace(entity, fields={**entity.fields, "params": changed.params})
+                    record = replace(record, entities=tuple(entity if e.entity_id == entity.entity_id else e for e in record.entities))
+                    program = _compile(record)
+                    workspace = Path(tmp).resolve()
+                    receipt, _ = _execute(program, _persisted_binding(program, "stage-transform-loft"), workspace, "transform-loft@occt")
+                    self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+                    entries = _entries_by_name(workspace / receipt.exact_artifact["relative_path"])
+                    self.assertEqual(list(entries), ["obj-drum-east"])
+                    actual = entries["obj-drum-east"].shape
+                    measured = occt_backend.measure_shape(actual)
+                    self.assertEqual((measured.valid, measured.closed, measured.solid_count), (True, True, 1))
+                    transform = gp_GTrsf()
+                    for i, values in enumerate(matrix, 1):
+                        for j, value in enumerate(values, 1):
+                            transform.SetValue(i, j, value)
+                    expected = BRepBuilderAPI_GTransform(expected, transform, True).Shape()
+                    self.assertAlmostEqual(measured.volume, volume(expected), delta=1e-6)
+                    # Equal boxes or volume alone can conceal a changed neck or surface.
+                    for left, right in ((actual, expected), (expected, actual)):
+                        difference = BRepAlgoAPI_Cut(left, right)
+                        self.assertTrue(difference.IsDone())
+                        self.assertLess(abs(volume(difference.Shape())), 1e-6)
+                    self.assertTrue(receipt.readback_verified)
+                    self.assertEqual(inspect_three_dm(workspace / receipt.preview_artifact["relative_path"]).top_level_object_count, 1)
 
 
 WINDOW_TYPE = {"schema": "WindowType@1", "type_id": "window-type-1", "frame_width": 0.09, "frame_depth": 0.18,

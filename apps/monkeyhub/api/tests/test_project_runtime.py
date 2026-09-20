@@ -7,14 +7,20 @@ from dataclasses import replace
 import os
 from pathlib import Path
 import signal
+import subprocess
+import sys
+import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
 from test_monkeyhub_lifecycle import LocalHubCase, ROOT, project_fixture, wait_for
 from archflow.project.repository import FilesystemProjectRepository
+from monkeyhub_api.models import HubFailure
+from monkeyhub_api.runtime import ProjectRuntimeManager, _WorkCopyObservation
 
 
 class ProjectRuntimeHttpTests(LocalHubCase):
@@ -101,12 +107,12 @@ class ProjectRuntimeHttpTests(LocalHubCase):
         return {str(path.relative_to(project)): path.read_bytes() for path in project.rglob("*") if path.is_file()}
 
     @staticmethod
-    def png_bytes(color, size=(40, 20)):
+    def png_bytes(color, size=(40, 20), *, compress_level=6):
         from io import BytesIO
         from PIL import Image
 
         output = BytesIO()
-        Image.new("RGB", size, color=color).save(output, format="PNG")
+        Image.new("RGB", size, color=color).save(output, format="PNG", compress_level=compress_level)
         return output.getvalue()
 
     def upload_document(self, client, runtime_id, data, file_name, mime_type, *, replaces=None):
@@ -247,6 +253,111 @@ class ProjectRuntimeHttpTests(LocalHubCase):
                                 params={"runId": replacement["runId"]})
             self.assertEqual(served.status_code, 200, served.text)
             self.assertEqual(served.content, second)
+
+    def test_atomic_script_save_coalesces_and_ignores_timestamp_only_save(self):
+        first = self.png_bytes("white", compress_level=0)
+        second = self.png_bytes("black", compress_level=0)
+        self.assertEqual(len(first), len(second))
+        with self.hub() as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_image(client, runtime_id, first)
+            _, work = self.open_work_copy(client, runtime_id, original)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            wait_for(lambda: any(row.observed_sha256 == original["assetSha256"]
+                                 for row in runtime.work_copies.values()),
+                     "The original work copy was not observed", timeout=20)
+            updates = lambda: [event for event in manager.events.replay()
+                               if event["kind"] == "artifact/updated" and event["runtimeId"] == runtime_id]
+            before = len(updates())
+            # A real external producer emits five atomic saves with the same
+            # final content, preserving both the original size and timestamp.
+            script = """import base64, os, sys
+from pathlib import Path
+target = Path(sys.argv[1])
+data = base64.b64decode(sys.argv[2])
+stamp = target.stat()
+for _ in range(5):
+    temporary = target.with_suffix('.saving')
+    temporary.write_bytes(data)
+    os.utime(temporary, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    os.replace(temporary, target)
+"""
+            subprocess.run([sys.executable, "-c", script, str(work), base64.b64encode(second).decode()],
+                           check=True, capture_output=True, timeout=15)
+            replacement = self.wait_document_replacement(client, runtime_id, original["assetSha256"])
+            wait_for(lambda: len(updates()) == before + 1, "The registered edit did not emit one update", timeout=5)
+            observed = next(iter(runtime.work_copies.values()))
+            hashed_at = observed.hashed_at_ns
+            stamp = work.stat()
+            os.utime(work, ns=(stamp.st_atime_ns, stamp.st_mtime_ns + 1_000_000_000))
+            # Arbitrary adjacent files never acquire a document binding.
+            (work.parent / "unbound.png").write_bytes(self.png_bytes("red"))
+            wait_for(lambda: observed.hashed_at_ns is not None and observed.hashed_at_ns != hashed_at,
+                     "The timestamp-only save was not inspected", timeout=10)
+            self.assertEqual(len(updates()), before + 1)
+            documents = self.proxy(client, runtime_id, "/api/documents").json()["documents"]
+            self.assertEqual(len(documents), 2)
+            self.assertEqual(list(manager.bind_work_copies(runtime).values()), [str(work)])
+            served = self.proxy(client, runtime_id, f"/api/documents/{replacement['assetSha256']}/bytes",
+                                params={"runId": replacement["runId"]})
+            self.assertEqual(served.content, second)
+
+    def test_lost_work_copy_reply_reconciles_exact_retained_revision_without_replay(self):
+        with self.hub() as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_image(client, runtime_id, self.png_bytes("white"))
+            _, work = self.open_work_copy(client, runtime_id, original)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            forward = manager.forward
+            writes = []
+            def lose_reply(runtime, path, method, body, headers):
+                result = forward(runtime, path, method, body, headers)
+                if path == "/api/documents" and method == "POST":
+                    writes.append(body)
+                    raise HubFailure(503, "OPERATION_INTERRUPTED", "The registration response was lost.")
+                return result
+            before = sum(event["kind"] == "artifact/updated" and event["runtimeId"] == runtime_id
+                         for event in manager.events.replay())
+            with patch.object(manager, "forward", lose_reply):
+                work.write_bytes(self.png_bytes("black"))
+                replacement = self.wait_document_replacement(client, runtime_id, original["assetSha256"])
+                wait_for(lambda: any(row.copy.head_asset_sha256 == replacement["assetSha256"]
+                                     and row.failure is None for row in runtime.work_copies.values()),
+                         "The retained registration did not clear its lost-response error", timeout=10)
+                self.assertEqual(len(writes), 1)
+                self.assertIsNone(self.read_runtime(client, runtime_id)["error"])
+                updates = sum(event["kind"] == "artifact/updated" and event["runtimeId"] == runtime_id
+                              for event in manager.events.replay())
+                self.assertEqual(updates, before + 1)
+                manager.bind_work_copies(runtime)
+                self.assertEqual(sum(event["kind"] == "artifact/updated" and event["runtimeId"] == runtime_id
+                                     for event in manager.events.replay()), updates)
+
+    def test_unregistered_work_copy_lost_reply_keeps_its_error_without_replay(self):
+        with self.hub() as client:
+            runtime_id = self.open_project(client)
+            original = self.upload_image(client, runtime_id, self.png_bytes("white"))
+            _, work = self.open_work_copy(client, runtime_id, original)
+            manager = client.app.state.runtimes
+            runtime = manager.get(runtime_id)
+            forward = manager.forward
+            writes = []
+            def lose_request(runtime, path, method, body, headers):
+                if path == "/api/documents" and method == "POST":
+                    writes.append(body)
+                    raise HubFailure(503, "OPERATION_INTERRUPTED", "No registered result is known.")
+                return forward(runtime, path, method, body, headers)
+            with patch.object(manager, "forward", lose_request):
+                work.write_bytes(self.png_bytes("black"))
+                self.wait_runtime_error(client, runtime_id, "WORK_COPY_OPERATION_INTERRUPTED")
+                manager.bind_work_copies(runtime)
+                manager._observe_work_copies(runtime)
+                self.assertEqual(len(writes), 1)
+                self.assertEqual(self.read_runtime(client, runtime_id)["error"]["code"],
+                                 "WORK_COPY_OPERATION_INTERRUPTED")
+                self.assertEqual(len(self.proxy(client, runtime_id, "/api/documents").json()["documents"]), 1)
 
     def test_untouched_work_copy_never_rolls_back_a_page_replaced_elsewhere(self):
         first = self.png_bytes("white")
@@ -840,6 +951,76 @@ class ProjectRuntimeHttpTests(LocalHubCase):
                 self.assertIsNone(crashed["workers"][0]["processId"])
                 self.assertEqual(crashed["workers"][0]["instanceId"], original["instanceId"])
                 self.assertEqual(self.project_bytes(self.project), before)
+
+
+class WorkCopyObservationTests(unittest.TestCase):
+    """Real files, with only the observer clock advanced to bound idle costs."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="hub-work-copy-observer-")
+        self.addCleanup(temporary.cleanup)
+        self.work = Path(temporary.name) / "plan.png"
+        self.first = ProjectRuntimeHttpTests.png_bytes("white", compress_level=0)
+        self.second = ProjectRuntimeHttpTests.png_bytes("black", compress_level=0)
+        self.assertEqual(len(self.first), len(self.second))
+        self.work.write_bytes(self.first)
+        self.observed = _WorkCopyObservation(SimpleNamespace(path=self.work))
+        self.manager = object.__new__(ProjectRuntimeManager)
+
+    def read_at(self, seconds):
+        with patch("monkeyhub_api.runtime.time.monotonic_ns", return_value=int(seconds * 1_000_000_000)):
+            return self.manager._stable_work_copy_bytes(self.observed)
+
+    def replace_preserving_timestamp(self):
+        stamp = self.work.stat()
+        temporary = self.work.with_suffix(".saving")
+        temporary.write_bytes(self.second)
+        os.utime(temporary, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        os.replace(temporary, self.work)
+
+    def test_waits_for_elapsed_stability_even_when_file_timestamp_is_old(self):
+        old = time.time_ns() - 10_000_000_000
+        os.utime(self.work, ns=(old, old))
+        with patch.object(Path, "read_bytes", autospec=True, return_value=self.first) as read:
+            for instant in (0, 0.01, 1, 1.999):
+                self.assertIsNone(self.read_at(instant))
+            read.assert_not_called()
+            self.assertEqual(self.read_at(2), self.first)
+            self.assertEqual(read.call_count, 1)
+
+    def test_atomic_replacement_with_same_size_and_timestamp_waits_then_reads(self):
+        self.assertIsNone(self.read_at(0))
+        self.assertEqual(self.read_at(2), self.first)
+        self.replace_preserving_timestamp()
+        self.assertIsNone(self.read_at(3))
+        self.assertIsNone(self.read_at(4.999))
+        self.assertEqual(self.read_at(5), self.second)
+
+    def test_same_metadata_in_place_save_is_detected_by_bounded_content_refresh(self):
+        read_bytes = Path.read_bytes
+        with patch.object(Path, "read_bytes", autospec=True, side_effect=read_bytes) as read:
+            self.assertIsNone(self.read_at(0))
+            self.assertEqual(self.read_at(2), self.first)
+            stamp = self.work.stat()
+            self.work.write_bytes(self.second)
+            os.utime(self.work, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+            for instant in range(3, 32):
+                self.assertIsNone(self.read_at(instant))
+            self.assertEqual(read.call_count, 1)
+            self.assertEqual(self.read_at(32), self.second)
+            self.assertEqual(read.call_count, 2)
+
+    def test_atomic_replacement_during_read_discards_the_old_sample(self):
+        self.assertIsNone(self.read_at(0))
+        read_bytes = Path.read_bytes
+        def replace_during_read(path):
+            data = read_bytes(path)
+            self.replace_preserving_timestamp()
+            return data
+        with patch.object(Path, "read_bytes", replace_during_read):
+            self.assertIsNone(self.read_at(2))
+        self.assertIsNone(self.read_at(3.999))
+        self.assertEqual(self.read_at(4), self.second)
 
 
 if __name__ == "__main__":

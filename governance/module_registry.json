@@ -808,7 +808,7 @@
         "prism semantic authoring: parameter-bound profile coordinates, height and independently editable elevation above the resolved base; a named top constrains the actual elevated bottom plus height",
         "loft semantic authoring: corresponding polyline sections with parameter-bound coordinates form one normal or straight loft, capped or open; unsupported section bases and inconsistent vertex counts refuse before execution",
         "planar-surface: one explicitly closed profile at its referenced base plus the declared elevation parameter; an explicit orthonormal work_plane supports drawing on horizontal, vertical or selected planar faces without inferred thickness",
-        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; retaining their original datum binding and refusing ambiguous or dependent edits",
+        "editing drawn prism and planar-surface rows through their existing parameters: signed push/pull, translation, rotation, scale and copy; loft section controls support translation, rotation, copy and scale while retaining type, identity and datum binding; normal lofts refuse nonuniform scaling because refitting is not an equivalent transform, and loft push/pull is unsupported; dependent and parameter-bound changes retain the existing intent guards",
         "one datum-bound polyline curve producer for authored lines, sampled freehand and segmented arcs; no face, thickness, top datum or support relation is inferred",
         "straight-wall authoring accepts explicit project-local point references through the existing resolver and retains @parameter binding and hosted opening relations",
         "Absolute numeric prism/face base references and read-only placement of drawn elements through their existing datum dependencies; free placement publishes its own fixed base instead of binding an editable Level."
@@ -4060,7 +4060,8 @@
         "apps/monkeyhub/web/workspaces/test/boardWhiteboard.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardNavigation.test.ts",
         "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts"
+        "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts",
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -4244,7 +4245,7 @@
         "one arrangement for every kind of candidate: compile or receive a StateRecordOperator, replay it against the worker's exact base, then run the successor (run_operator over _run_successor); a proposal's optional source_run_id follows its explicitly selected retained record through queue and worker, while None preserves the default reference policy",
         "executing a semantic component proposal through the same run_operator path as scalar and massing proposals",
         "retaining the exact document comment referenced by a proposal in the candidate run without substituting newer ink or source file versions",
-        "rechecking a proposal model source and its exact pinned document association before candidate execution",
+        "rechecking a proposal model source and its exact pinned document association before candidate execution, including original saved page and calibration references on traced elements",
         "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through studio.artifacts",
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
@@ -4431,11 +4432,13 @@
         "Preparing a read-only ContextPack@1 from an explicit exact source and selected component/element, reusing the existing context compiler, preflight and capability description before a native agent starts",
         "performing a registered capability by assembling its request and calling the existing proposal and candidate routes; it holds no capability state, grants no authority those routes do not, and accepts or issues nothing",
         "the deterministic removal of one picked element: the typed edit_components removal at one exact base, refusing with the named dependents when something stands on it, and never a model call or a cascade into objects nobody picked",
-        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design",
+        "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design; explicitly selected calibrated saved document paths use this same sketch route and retain exact sourceDocumentTrace fields on stable editable elements",
         "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
         "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
         "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
-        "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary"
+        "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary",
+        "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation",
+        "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4452,11 +4455,13 @@
         "Gesture strokes",
         "StateProjection",
         "StudioSettings",
-        "page-normalized DocumentGesture values, including text content, anchor and independent font size, and exact saved DocumentAnnotationRef values",
+        "page-normalized DocumentGesture values, including text content, anchor and independent font size, editable polyline vertices with closed state, optional two-point DocumentTracingCalibration, and exact saved DocumentAnnotationRef values",
         "optional StudioEventSink for successful API registration or option additions",
         "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes",
         "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities",
-        "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set; closed defaults true for existing face/prism actions, while false with zero height saves a 2+ point model curve"
+        "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set; closed defaults true for existing face/prism actions, while false with zero height saves a 2+ point model curve",
+        "DocumentTracingRequestDto on POST /api/proposals/sketch names exact saved run/asset/drawing revision/page/annotation revision and selected line or polyline ids, a target component, base and height; scale and direction come only from the saved two-point calibration",
+        "ModelInvocationRequest and structured schema/images from Study for the existing configured transport"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4562,6 +4567,8 @@
         "delete_element_proposal",
         "POST /api/proposals/sketch",
         "sketch_prism_proposal",
+        "read_document_tracing",
+        "require_document_trace",
         "POST /api/proposals/transform",
         "POST /api/proposals/push-pull",
         "direct_element_proposal",
@@ -4571,7 +4578,8 @@
         "AcceptanceEvidence",
         "POST /api/proposals/elevation",
         "compile_task_context",
-        "POST /api/proposals/parameter-locks"
+        "POST /api/proposals/parameter-locks",
+        "invoke_structured"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4628,6 +4636,7 @@
         "candidate generation does not accept or reject proposals; explicit acceptance uses the existing decision route with a successful candidateId belonging to that proposal, retains an episode and never issues the project",
         "2D ink has no camera, model hit, world direction or implied model target/keep clause; legacy 3D Gesture fields and existing Reading entities retain their meaning",
         "page revisions bind project, run, source SHA-256, zero-based page index and optional exact drawingRevisionRef; drawings with identical pixels keep independent annotation heads, and legacy records retain their serialized identity",
+        "explicit tracing maps saved calibrated line/polyline vertices through registered page aspect ratio to existing editable sketch producers; stable source-plus-annotation ids permit correction without duplication, retain exact revision and calibration on the element, and do not infer deletion, model association, visual recognition or HEAD acceptance",
         "2D points use the visible page with a top-left origin and x-right/y-down coordinates in [0,1]; lineWidth is a fraction of its shorter side, unaffected by zoom or DPI; page text has one top-left anchor, multiline label content and its own short-side-normalized fontSize, while legacy strokes omit that field and retain their serialized identity",
         "submitted document words and exact page references survive restart in the named run even when the intent needs clarification; their retained drawing association is not replaced by a later same-pixel revision, and saving documents or ink never moves HEAD",
         "viewing a work item is read-only; explicit selection changes only that item, leaves canonical HEAD and authored inputs unchanged, and is distinct from project issue or proposal endorsement",
@@ -4648,7 +4657,8 @@
         "one accepted Stage carries at most one acceptance event: it is written only after the branch head actually advanced, a repeat acceptance returns the committed Stage and writes none, a refusal writes none, and a Stage committed before this evidence existed reads back with none rather than an invented actor",
         "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance",
         "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly.",
-        "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD"
+        "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD",
+        "confirmedStage is a derived view, never another persisted authority; isSource requires the exact accepted run/record/digest; bounded changed/affected/review references disclose omissions and unresolved non-adjacent or undeclared dependencies"
       ],
       "status": "canonical",
       "tests": [
@@ -4730,7 +4740,7 @@
         "every wire DTO and its camelCase aliases, and the router mounting order",
         "GET /api/health and GET /api/protocol",
         "local-only GET/PUT user preferences at APPDATA/MonkeyArch/settings.json with shared HTTP/file validation and atomic replacement, served for MonkeyHub, which owns the settings authority and injects the resolved values into the runtime's launch environment",
-        "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of each intent outcome without changing its result or retrying a call",
+        "Optional MonitoredCompiler host adapter: MONKEYMONITOR_DATA_DIR enables metadata-only recording of intent and structured Study model outcomes without changing its result or retrying a call",
         "Managed stdin stop/EOF and additive process, parent process, launch instance and actual source revision health identity; optional prebuilt Studio web hosting",
         "ApplicationSettingsDto and atomic local application configuration in the caller-selected Hub runtime root, separate from shared user preferences",
         "Reading the positive application-text intent context budget from ARCHFLOW_STUDIO_CONTEXT_BUDGET_TOKENS; preserving per-attempt provider usage and request-output outcomes through the existing optional Monitor adapter",
@@ -4807,7 +4817,8 @@
         "request_attribution",
         "LOCAL_ACTOR_ID",
         "ORIGIN_STUDIO",
-        "ORIGIN_HUB"
+        "ORIGIN_HUB",
+        "MonitoredCompiler.invoke_structured"
       ],
       "depends_on": [
         "monkeymonitor",
@@ -4853,7 +4864,8 @@
         "apps/archflow-studio/api/tests/test_errors.py",
         "apps/archflow-studio/api/tests/test_protocol.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",
-        "apps/archflow-studio/api/tests/test_collaboration_auth.py"
+        "apps/archflow-studio/api/tests/test_collaboration_auth.py",
+        "apps/archflow-studio/api/tests/test_study_model.py"
       ],
       "notes": "Project Runtime contract: docs/PROJECT_RUNTIME.md. The module id and the package name are historical; the runtime is not a product, and #127 retires the Studio product name from the frontend. transport/* carries wire shapes, so a DTO change is a shell change. docs/PROTOCOL.md records protocol.py; apps/monkeyhub/web/workspaces/src/api/connection.ts is the client boundary. The runtime serves the settings routes MonkeyHub mounts; browser appearance, language catalogs and workspace composition belong to hub.shell; this process serves APIs only.",
       "files": [
@@ -5982,7 +5994,7 @@
         "Operation/parent-linked timing trees and read-only same-input comparisons within the selected diagnostic rows, with actual execution/cache reasons and conditional reuse opportunities",
         "Validating bounded, content-free context budget section estimates and request-output validation outcomes beside separate provider-reported usage",
         "Automatic numeric usage from explicitly Hub-bound Codex session identities, resolved through the local read-only Codex index and verified against session metadata",
-        "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export",
+        "TurnTrace@1 views over existing events: exact turn/session correlation, live lane waterfall and semantic activity tree, non-overlapping blocking attribution, evidence-bound diagnostics and safe trace export; first_candidate_ms requires successful same-turn generation and complete retained candidate readback separately from verification and viewport visibility, and missing child endings after a completed root remain incomplete with unknown duration",
         "Versioned exact provider/model/billing-plan rate matching and historical diagnostic snapshots; bounded multi-process usage journal rotation"
       ],
       "does_not_own": [
@@ -6057,6 +6069,7 @@
       "tests": [
         "tests/monkeymonitor/test_core.py",
         "tests/monkeymonitor/test_trace.py",
+        "tests/monkeymonitor/test_design_loop.py",
         "apps/monkeyhub/api/tests/test_chat_trace.py",
         "tests/monkeymonitor/test_server.py",
         "apps/archflow-studio/api/tests/test_monitoring.py",
@@ -6194,7 +6207,7 @@
         "Persistent Codex ACP sessions through the upstream SDK and adapter, retained Codex/Claude CLI sessions, explicit permission decisions, and a bounded stdio adapter to the actually bound existing Studio APIs; Coding Plan reuses the installed Claude-compatible endpoint configuration",
         "the bounded completion option of the design request tool: one final proposal checkpoint or one complete numeric capability change is posted once, followed only by reads of its job, candidate objects and comparison when a retained before-run exists; proposal replies omit duplicate submitted edits and bound large changes/direct lists with explicit total/omitted counts and a full GET path, while keeping conflicts, locks, keep conditions and coverage limitations complete; schema queries may select one producer's actual request contract while the full OpenAPI view remains available",
         "same-origin project preparation starts or reuses the selected project's shared Studio, waits for readiness, and verifies the exact source, service and project before initial modeling preparation; Monitor is prepared during Hub startup, with independent Fab and Monitor status without rebinding Studio",
-        "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, durable request identity admission under the explicit nonproject runtime root, retained-result reconciliation, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
+        "ProjectRuntimeManager, WorkerSupervisor and OperationManager: exact project/path attachment, worker health and desired state, durable request identity admission under the explicit nonproject runtime root, read-only admissionSequence projected from that existing journal for cold-start preview ordering, retained-result reconciliation, explicit worker recovery without mutation replay, and one runtime snapshot/SSE surface",
         "Project-scoped Studio API forwarding for Hub workspaces and chat, with request-scoped idempotency keys independent of diagnostic correlation; browser refresh reattaches to retained/runtime state and never restarts a crashed worker implicitly",
         "Thin Windows Tauri desktop window: starts one owned root Hub, checks compiled source/protocol/process/instance health, restricts WebView navigation and coordinates managed-stdin shutdown; existing Hub owns all workers",
         "Read-only project/native-session identity projection for Monitor, including archived chats, without exposing messages or project paths",
@@ -6206,7 +6219,8 @@
         "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
         "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
         "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with",
-        "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write."
+        "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
+        "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6220,7 +6234,8 @@
         "Fixed application id, optional projectDir scope, and start/stop request",
         "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code",
         "An existing complete project folder, chosen installed CLI/model and user chat message with optional base64 file attachments (8 files, 20 MiB each, 40 MiB total)",
-        "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext"
+        "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext",
+        "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
@@ -6314,7 +6329,8 @@
         "Hub controls language, theme and application settings. Workspace preferences only project those values; retained editing-base pointers keep their existing exact project binding.",
         "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
         "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory",
-        "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained."
+        "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained.",
+        "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6391,7 +6407,10 @@
         "apps/monkeyhub/web/test/monitorData.test.ts",
         "apps/monkeyhub/web/workspaces/test/connection.test.ts",
         "apps/monkeyhub/web/workspaces/test/proposalCard.test.ts",
-        "apps/monkeyhub/web/workspaces/test/preferences.test.ts"
+        "apps/monkeyhub/web/workspaces/test/preferences.test.ts",
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+        "apps/monkeyhub/api/tests/test_stage_handoff.py",
+        "tests/monkeymonitor/test_stage_handoff_benchmark.py"
       ],
       "depends_on": [
         "project.repository",
@@ -6658,30 +6677,45 @@
     {
       "module_id": "studio.study",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/study.py",
-      "purpose": "Experimental API for retaining and inspecting corrected precedent-page trace evidence; its geometric rules are research proposals awaiting method and compatibility review.",
+      "purpose": "Retain corrected precedent evidence and conditional research in the existing Board document editor, with inspectable polygon tests and configured model proposals, without changing canonical design state.",
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
         "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
-        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence"
+        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence",
+        "the Study side panel and independent evidence draft in the existing document page editor",
+        "editable, evidence-linked competing explanations, gaps, polygon counterfactual predictions/outcomes and conditional CompositionPattern/DesignPrior revisions",
+        "real RESEARCH model proposals through the existing configured intent transport, with source image identity and invocation receipts retained in the same ledger"
       ],
       "does_not_own": [
         "source document import and byte identity (studio.artifacts)",
         "Board scenes (studio.board), model proposal execution or canonical design state",
-        "image-model tracing, a user-facing Study workspace or validated architectural research methods"
+        "validated architectural family thresholds, recovery of historical author intent, automatic user preference or promotion of a prior into canonical state"
       ],
       "inputs": [
         "ProjectBinding",
-        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref"
+        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref",
+        "optional editable research statements with evidence references, predictions and changed applicability conditions",
+        "explicit trace/reason request against an exact retained Study revision and the configured model compiler",
+        "optional groups of 2-6 exact Study revision references for retained comparison"
       ],
       "outputs": [
         "StudyView with retained EvidenceLedger@1 and its CompositionGraph@1 reconstructed from that revision's retained evidence and relations",
-        "StudyViewDto"
+        "StudyViewDto",
+        "retained research polygon observations and bounded intervention results",
+        "conditional CompositionPattern/DesignPrior and true model invocation receipts",
+        "exact comparison references and computed snapshots retained with the research and supplied to model reasoning"
       ],
       "public_api": [
         "POST /api/studies",
         "GET /api/studies/{study_id}",
         "save_study",
-        "read_study"
+        "read_study",
+        "GET /api/studies",
+        "POST /api/studies/compare",
+        "POST /api/studies/propose",
+        "list_studies",
+        "polygon_observations",
+        "web: DocumentStudyPanel"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -6690,7 +6724,10 @@
         "project.ports",
         "project.repository",
         "project.refs",
-        "project.record_kinds"
+        "project.record_kinds",
+        "ports.model",
+        "studio.intent",
+        "studio.board"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py"
@@ -6699,18 +6736,29 @@
         "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
         "only confirmed traces contribute geometric relations; proposed and rejected evidence stays inspectable",
         "stale corrections and competing retained revision heads are refused",
-        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered"
+        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered",
+        "Study evidence uses the existing page canvas but never the annotation persistence or annotation undo controller",
+        "model traces remain proposed until corrected and confirmed; documentary evidence and user preferences cannot be invented by the model",
+        "historical bounds methods replay unchanged; new research observations name true polygon computations and do not claim a validated composition-family threshold",
+        "clients cannot supply computed comparison results; model continuation preserves the retained comparison inputs and cold reads replay their original results"
       ],
       "status": "provisional",
-      "source_paths": [
+      "tests": [
+        "apps/archflow-studio/api/tests/test_study.py",
+        "apps/archflow-studio/api/tests/test_study_compare.py",
+        "apps/archflow-studio/api/tests/test_study_research.py",
+        "apps/archflow-studio/api/tests/test_study_model.py",
+        "apps/monkeyhub/web/workspaces/test/documentStudy.test.ts",
+        "apps/monkeyhub/web/workspaces/test/documentStudy.browser.mjs"
+      ],
+      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
+      "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/study.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
-      ],
-      "tests": [
-        "apps/archflow-studio/api/tests/test_study.py"
-      ],
-      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Source revision pinning, retained-method compatibility and retained-revision self-consistency are now resolved: a revision pins the exact StudioSourceDocument record, an older revision is replayed rather than re-derived, and a read refuses a retained relation whose endpoint is not a confirmed trace of that same revision, or a retained reasoning receipt bound to another composition graph. What remains open: two competing retained heads block default head selection and corrections with no reconciliation route, while a revision named by ledgerRef remains readable; and an archived revision stays readable only while the current evidence validator still accepts its exact retained rows. Page metric normalization and the unvalidated similarity thresholds remain the author's research decision; no architectural method is endorsed by this registration."
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
+        "monkeydiagram/study.py"
+      ]
     }
   ]
 }

@@ -13,6 +13,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), "monkeyhub-chat-ui-"));
 const toolLoads = [];
 const streams = new Set();
 let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
+let confirmedStageForChat = null;
 const emitRuntime = () => {
   const event = { serverId: "fixture-hub", sequence: ++runtimeSequence, kind: "changed", snapshot: runtimeSnapshot() };
   for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify(event)}\n\n`);
@@ -55,6 +56,14 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 const errors = [], writes = [], sessions = [], providerReads = [];
 const monitorReads = [];
+const monitorTrace = { trace_id: "finished-with-missing-end", started_at: "2026-09-20T00:00:00Z", ended_at: "2026-09-20T00:00:02Z",
+  status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
+    { span_id: "missing-end", label: "Model request", lane: "model", status: "incomplete", offset_ms: 100, duration_ms: null },
+  ] };
+const monitorCandidateTrace = { trace_id: "candidate-readback", started_at: "2026-09-20T00:01:00Z", status: "succeeded",
+  summary: { elapsed_ms: 80000, first_candidate_ms: 46241, verified_ms: null }, spans: [] };
+const monitorLegacyTrace = { trace_id: "legacy-no-candidate-timing", started_at: "2026-09-20T00:02:00Z", status: "succeeded",
+  summary: { elapsed_ms: 2000, verified_ms: 1500 }, spans: [] };
 let monitorFailure = false, monitorReadLocked = false, monitorReadConflicts = 0, documentLoads = 0;
 page.on("request", (request) => {
   if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++;
@@ -134,7 +143,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       monitorReadLocked = true;
       try {
         await new Promise((resolve) => setTimeout(resolve, 40));
-        return await json(url.pathname === "/api/events" ? { events: [], warnings: [] } : { traces: [], warnings: [] });
+        return await json(url.pathname === "/api/events" ? { events: [], warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace], warnings: [] });
       } finally { monitorReadLocked = false; }
     }
     if (url.pathname === "/api/rates") return json({ rates: [] });
@@ -273,8 +282,11 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
         uploadedAttachments.set(id, { ...file, sessionId: session.id });
         return { id, name: file.name, mimeType: file.mimeType, size: Buffer.from(file.data, "base64").length };
       });
+      const stageHandoff = data().contextMode === "stage" && confirmedStageForChat
+        && data().designContext?.sourceRunId === confirmedStageForChat.runId;
       session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments,
-        contextMode: data().contextMode ?? "continue" });
+        contextMode: stageHandoff ? "stage" : data().contextMode === "project" ? "project" : "continue",
+        ...(stageHandoff ? { confirmedStageRef: confirmedStageForChat.stageRef, confirmedStageLabel: confirmedStageForChat.label } : {}) });
       session.title = session.messages[0].content || session.messages[0].attachments?.[0]?.name; session.status = "running";
       // What the API saves while the CLI works: one row per MCP call, a failed
       // one, and the finished candidate that call reported.
@@ -420,12 +432,30 @@ try {
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
+  const firstCandidateCard = page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("First candidate", { exact: true }) });
+  assert.equal(await firstCandidateCard.locator("strong").innerText(), "—", "missing candidate readback timing must not fall back to verification time");
+  await page.locator(".monitor-section__head select").selectOption(monitorCandidateTrace.trace_id);
+  assert.equal(await firstCandidateCard.locator("strong").innerText(), "46 s", "first candidate comes from the retained readback metric without requiring verification");
+  await page.locator(".monitor-section__head select").selectOption(monitorLegacyTrace.trace_id);
+  assert.equal(await firstCandidateCard.locator("strong").innerText(), "—", "older traces without the candidate field remain unknown");
+  await page.locator(".monitor-section__head select").selectOption(monitorTrace.trace_id);
+  const missingEndSpan = page.locator(".monitor-span").filter({ hasText: "Model request" });
+  await missingEndSpan.locator("summary").getByText("Model request · End not observed", { exact: true }).waitFor();
+  assert.equal(await missingEndSpan.locator("summary > span").last().innerText(), "—", "an unclosed span has unknown duration, not zero or a live timer");
+  await missingEndSpan.locator("summary").click();
+  assert.equal(await missingEndSpan.locator("dd").first().innerText(), "End not observed");
   await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
   assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage");
   assert.equal(documentLoads, beforeMonitorNavigation, "opening Monitor keeps the current Hub document and conversation");
   assert.equal(settings.projectDir, beforeIndependentProject, "independent tools leave the shared Studio on its existing project");
   assert.ok(writes.slice(beforeIndependent).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)),
     "independent tools neither stop Studio nor rewrite its project configuration");
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
+  assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   // Failed data reads stay visible and do not drive a base/effect retry loop.
   monitorFailure = true;
   const beforeFailedRead = monitorReads.filter((route) => route === "/api/events").length;
@@ -547,7 +577,7 @@ try {
   assert.ok(!savedEditingBases?.includes("cand-A-1"), "viewing a candidate does not save it as an editing choice");
   await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
-  await visibleWorkspace().locator("#view-tools button").nth(1).click();
+  await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -799,7 +829,7 @@ try {
 
   // Refreshing a completed readback preserves the user's later camera view.
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
-  await visibleWorkspace().locator("#view-tools button").nth(1).click();
+  await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
   const beforeRefreshCanvas = await visibleWorkspace().locator(".stage canvas").first().screenshot();
@@ -819,9 +849,83 @@ try {
   assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
     "refreshing keeps the camera chosen after the candidate appeared");
 
+  // Headless API jobs have no chat message. Their completed results update the
+  // mounted project's candidate without taking the architect out of the Board.
+  const runtimeB = runtimes.get("D:\\fixture\\B");
+  const headlessJob = (candidateId, minute, status = "succeeded") => ({ jobId: `job-${candidateId}`, candidateId,
+    proposalId: `proposal-${candidateId}`, status, createdAt: `2026-09-20T01:${String(minute).padStart(2, "0")}:00Z` });
+  const headlessOperation = (job, overrides = {}) => ({ operationId: `operation-${job.candidateId}`, projectId: "B",
+    kind: "POST /api/proposals/fixture/candidate", source: "studio", sessionId: null, committed: false,
+    status: job.status === "succeeded" ? "completed" : "executing", candidateId: job.candidateId,
+    jobId: job.jobId, resultDigest: "d".repeat(64), admissionSequence: Number(job.createdAt.slice(14, 16)), ...overrides });
+  const headlessCandidate = (job, overrides = {}) => ({ candidateId: job.candidateId,
+    status: job.status === "succeeded" ? "completed" : job.status, resultStateDigest: "d".repeat(64),
+    receiptRef: `project://B/runs/${job.candidateId}/records/fixture.json`, ...overrides });
+  const oldJob = headlessJob("cand-B-headless-old", 10), newJob = headlessJob("cand-B-headless-new", 20);
+  const pendingJob = headlessJob("cand-B-headless-pending", 30, "running");
+  const failedJob = headlessJob("cand-B-headless-failed", 40, "failed");
+  const projectBFixture = workspaceFixture.projects.get("B");
+  for (const job of [oldJob, newJob, pendingJob]) projectBFixture.artifact(job.candidateId);
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  await visibleWorkspace().evaluate((element) => { element.headlessBoardMarker = "retained"; });
+  const boardBeforeHeadless = structuredClone(projectBFixture.board);
+  const writesBeforeHeadless = workspaceFixture.requests.filter((row) => row.method !== "GET").length;
+  runtimeB.retained = { projectId: "B", projectDir: runtimeB.projectDir, jobs: [pendingJob, oldJob, failedJob, newJob],
+    candidates: [pendingJob, oldJob, failedJob, newJob].map((job) => headlessCandidate(job)) };
+  runtimeB.operations = [headlessOperation(newJob), headlessOperation(oldJob), headlessOperation(pendingJob),
+    headlessOperation(failedJob, { status: "completed" }),
+    headlessOperation(headlessJob("cand-A-wrong-project", 40), { projectId: "A" })];
+  emitRuntime();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("monkeyhub.chat-view.v1"))?.tools
+    .some((tool) => tool.candidate === "cand-B-headless-new"));
+  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.headlessBoardMarker), "retained");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
+  assert.deepEqual(projectBFixture.board, boardBeforeHeadless, "model completion preserves the Board and its marks");
+  assert.equal(workspaceFixture.requests.filter((row) => row.method !== "GET").length, writesBeforeHeadless,
+    "automatic preview makes no project write or editing-base change");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitCandidate(newJob.candidateId);
+  assert.ok(!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId === pendingJob.candidateId),
+    "a later unfinished job cannot become the displayed candidate");
+
+  // A manual historical preview survives repeated snapshots. Reopening the app
+  // starts at the newest reliably ordered headless result, even with an old tab.
+  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await waitCandidate("cand-B-final");
+  const manualBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+  emitRuntime(); emitRuntime();
+  await page.waitForTimeout(600);
+  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, manualBytes,
+    "polling does not steal the architect's explicit historical preview");
+  runtimeB.retained.jobs = [];
+  await page.reload();
+  await waitWorkspace();
+  await waitCandidate(newJob.candidateId);
+
+  // Slow older requests and unordered completion observations do not guess a
+  // new winner. The projected journal order works without in-memory job times.
+  const slowOldJob = headlessJob("cand-B-headless-slow-old", 15);
+  const tiedJobs = [headlessJob("cand-B-headless-tie-a", 35), headlessJob("cand-B-headless-tie-b", 35)];
+  const unordered = headlessJob("cand-B-headless-unordered", 45);
+  for (const job of [slowOldJob, ...tiedJobs, unordered]) projectBFixture.artifact(job.candidateId);
+  const stableBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+  runtimeB.retained.candidates.push(headlessCandidate(slowOldJob)); runtimeB.operations.push(headlessOperation(slowOldJob)); emitRuntime();
+  await page.waitForTimeout(400);
+  runtimeB.retained.candidates.push(...tiedJobs.map((job) => headlessCandidate(job))); runtimeB.operations.push(...tiedJobs.map((job) => headlessOperation(job))); emitRuntime();
+  await page.waitForTimeout(400);
+  runtimeB.retained.candidates.push(headlessCandidate(unordered)); runtimeB.operations.push(headlessOperation(unordered, { admissionSequence: null })); emitRuntime();
+  await page.waitForTimeout(400);
+  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, stableBytes,
+    "older, tied, or unordered results never replace the known latest candidate");
+  runtimeB.operations = []; runtimeB.retained = null; emitRuntime();
+  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await waitCandidate("cand-B-final");
+  await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
+
   // Refresh and reconnect read the retained operation, without replaying a
   // modification. A crashed worker needs the person's explicit recovery.
-  const runtimeB = runtimes.get("D:\\fixture\\B");
   runtimeB.operations = [{ operationId: "committed-operation", projectId: "B", kind: "candidate.commit", source: "studio",
     status: "completed", committed: true, resultRevision: 1, candidateId: "cand-B-final" }];
   let releaseRuntimeOpen;
@@ -1315,11 +1419,41 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   const continuePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
-  assert.equal(continuePost.contextMode, undefined);
+  assert.equal(continuePost.contextMode, "stage", "the default checks for an accepted boundary without forcing a candidate reset");
   assert.equal(continuePost.designContext.sourceRunId, "cand-A-1", "explicit continuation changes the bound context");
   assert.equal(continuePost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.designStateDigest);
   assert.equal(await page.locator(".chat-message--user").count(), 2, "starting model context retains the visible chat");
+  assert.equal(await page.getByText("Continuing from confirmed stage:", { exact: false }).count(), 0,
+    "requesting automatic handoff alone does not label a candidate as accepted");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  await page.reload();
+  await waitWorkspace();
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await page.locator("#chat-input").fill("Continue the saved candidate after reopening");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const reopenedPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(reopenedPost.designContext.sourceRunId, "cand-A-1", "reopening retains the explicitly chosen candidate as the chat base");
+  assert.equal(reopenedPost.designContext.stateDigest, continuePost.designContext.stateDigest);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  // The Runtime/ChatStore tests verify acceptance and rotation. Here the UI
+  // receives the actual confirmed boundary, not a client-inferred acceptance.
+  confirmedStageForChat = { runId: "cand-A-1", stageRef: "confirmed-massing", label: "Massing approved" };
+  await page.getByText("After you confirm a stage, its saved result starts the next model context. Candidate revisions keep the same conversation.", { exact: true }).waitFor();
+  await page.locator("#chat-input").fill("Continue with the walls from the confirmed massing");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const stagePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(stagePost.contextMode, "stage");
+  assert.equal(stagePost.designContext.sourceRunId, "cand-A-1");
+  await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await page.reload();
+  await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
+  assert.equal(await page.locator(".chat-message--user").count(), 4, "the stage handoff remains visible after reopening");
+  confirmedStageForChat = null;
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

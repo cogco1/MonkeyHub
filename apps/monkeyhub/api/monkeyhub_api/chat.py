@@ -307,6 +307,8 @@ class _SavedChat(ChatDetail):
     nativeSessionId: str | None = None
     cliStartId: str | None = None
     priorProviderSessionIds: list[str] = []
+    # Provider continuity only; the Stage and all design facts remain in P036.
+    providerStageRef: str | None = None
     # Records written before ACP retain the exact native CLI continuation path.
     transport: Literal["cli", "acp"] = "cli"
     acpSessionId: str | None = None
@@ -503,7 +505,7 @@ class _Running:
     # lives and dies with the turn: nothing reads it afterwards, and the next
     # message brings its own or none.
     design_context: ChatDesignContext | None = None
-    context_mode: Literal["continue", "project"] = "continue"
+    context_mode: Literal["continue", "project", "stage"] = "continue"
     attachments: tuple[tuple[ChatAttachment, Path], ...] = ()
 
 
@@ -1086,7 +1088,7 @@ class ChatStore:
             if not session.messages and session.title == "New chat":
                 session.title = (content.splitlines()[0] if content else attachments[0][0].name)[:80]
             session.messages.append(ChatMessage(id=str(uuid4()), role="user", content=content, createdAt=_now(),
-                                                contextMode=request.contextMode,
+                                                contextMode="continue" if request.contextMode == "stage" else request.contextMode,
                                                 attachments=[attachment for attachment, _ in attachments]))
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
@@ -1346,7 +1348,8 @@ class ChatStore:
                 client.close()
             return HubError(code="CHAT_ACP_FAILED", detail=_redact(str(exc), environment)[:1000])
 
-    def _fresh_provider_session(self, session_id: str) -> _SavedChat:
+    def _fresh_provider_session(self, session_id: str, *, stage: dict | None = None,
+                                automatic: bool = False) -> _SavedChat:
         """Replace provider continuity only after this turn's source was verified."""
         with self._lock:
             session = self._sessions[session_id].model_copy(deep=True)
@@ -1357,6 +1360,16 @@ class ChatStore:
             session.acpSessionId = None
             # Claude requires a fresh UUID even before it reports a native ID.
             session.cliStartId = str(uuid4())
+            # A manual reset replaces the provider, not the boundary already
+            # handled: without a named Stage the recorded one still stands, so
+            # returning to it does not rotate the provider a second time.
+            if stage is not None:
+                session.providerStageRef = stage["stageRef"]
+            if automatic:
+                message = next(row for row in reversed(session.messages) if row.role == "user")
+                message.contextMode = "stage"
+                message.confirmedStageRef = stage["stageRef"]
+                message.confirmedStageLabel = stage["label"]
             self._save(session)
             self._sessions[session_id] = session
             client = self._acp_sessions.pop(session_id, None)
@@ -1364,8 +1377,41 @@ class ChatStore:
             client.close()
         return session
 
+    def _retained_continuity(self, session: _SavedChat) -> dict:
+        """What a rotation is about to replace, kept in case nothing replaces it."""
+        boundary = next((row for row in reversed(session.messages) if row.role == "user"), None)
+        return {
+            "session": {"nativeSessionId": session.nativeSessionId, "acpSessionId": session.acpSessionId,
+                        "cliStartId": session.cliStartId, "acpDefaultModel": session.acpDefaultModel,
+                        "providerStageRef": session.providerStageRef,
+                        "priorProviderSessionIds": list(session.priorProviderSessionIds)},
+            "message": None if boundary is None else (boundary.id, {
+                "contextMode": boundary.contextMode, "confirmedStageRef": boundary.confirmedStageRef,
+                "confirmedStageLabel": boundary.confirmedStageLabel}),
+        }
+
+    def _restore_continuity(self, session: _SavedChat, retained: dict):
+        """Put back continuity a replacement took away and then never replaced.
+
+        Only what the rotation itself wrote is undone: this turn's messages,
+        outcome and error are its own and stay exactly as they happened.
+        """
+        for field, value in retained["session"].items():
+            setattr(session, field, value)
+        if retained["message"] is not None:
+            identifier, marks = retained["message"]
+            message = next((row for row in session.messages if row.id == identifier), None)
+            if message is not None:
+                for field, value in marks.items():
+                    setattr(message, field, value)
+        # The adapter opened for the replacement negotiated no session of its
+        # own, and it cannot be asked to load the restored one: it is given up
+        # here, and the next turn loads that identity on an adapter of its own.
+        return self._acp_sessions.pop(session.id, None)
+
     def _run(self, session_id: str, content: str, running: _Running) -> None:
         error: HubError | None = None
+        retained: dict | None = None
         stderr: list[str] = []
         completed_turn = False
         # When this turn's own limit is spent. Preparing a named source is bound
@@ -1414,6 +1460,7 @@ class ChatStore:
                            "Paths are retained for complex formats that need explicitly authorized local processing):\n")
                 prompt += json.dumps([{"id": attachment.id, "name": attachment.name, "mimeType": attachment.mimeType, "path": str(path)}
                                       for attachment, path in running.attachments], ensure_ascii=False)
+            prepared = None
             if running.design_context is not None:
                 if running.stop.is_set():
                     return
@@ -1440,14 +1487,22 @@ class ChatStore:
                         error = HubError(code="CHAT_TIMEOUT", detail="This turn's time limit ran out while "
                                          "its selected context was being prepared.")
                     return
-                prompt += prepared
+                prompt += "\n\n" + _CONTEXT_NOTE + "\n" + _redact(json.dumps(prepared, ensure_ascii=False))
             if running.stop.is_set():
                 return
-            if running.context_mode == "project":
+            stage = (prepared or {}).get("confirmedStage")
+            # A candidate's inherited Stage is context, not a new boundary.
+            # Only the exact committed source may replace provider history.
+            stage = stage if isinstance(stage, dict) and stage.get("isSource") is True else None
+            automatic = (running.context_mode == "stage" and stage is not None
+                         and stage["stageRef"] != session.providerStageRef)
+            if running.context_mode == "project" or automatic:
                 if time.monotonic() >= deadline:
                     error = HubError(code="CHAT_TIMEOUT", detail="The turn expired before a new provider session could start.")
                     return
-                session = self._fresh_provider_session(session_id)
+                with self._lock:
+                    retained = self._retained_continuity(self._sessions[session_id])
+                session = self._fresh_provider_session(session_id, stage=stage, automatic=automatic)
                 prompt += ("\n\nThis is a new provider session reconstructed from the project state above. "
                            "Previous chat messages are not included; use the current request and project evidence.")
             if session.transport == "acp":
@@ -1542,6 +1597,7 @@ class ChatStore:
         except Exception as exc:
             error = HubError(code="CHAT_PROCESS_FAILED", detail=_redact(str(exc), _claude_env())[:1000] or "The installed CLI could not run.")
         finally:
+            abandoned = None
             with self._lock:
                 session = self._sessions[session_id]
                 self._clear_permissions(session_id)
@@ -1555,10 +1611,22 @@ class ChatStore:
                 if running.trace:
                     running.trace.bind(session.acpSessionId if session.transport == "acp" else session.nativeSessionId)
                     running.trace.finish("cancelled" if running.stop.is_set() else "failed" if error else "succeeded")
+                # A replacement that never reported an identity of its own is no
+                # replacement: the chat would be left with nothing to continue
+                # from at all, so the continuity this turn set aside goes back. A
+                # provider that did open its own session keeps it, whether or not
+                # the turn it was opened for then failed. The trace above already
+                # recorded what this turn itself reached, which is nothing.
+                if retained is not None and session.nativeSessionId is None and session.acpSessionId is None:
+                    abandoned = self._restore_continuity(session, retained)
                 try:
                     self._save(session)
                 finally:
                     self._running.pop(session_id, None)
+            if abandoned is not None:
+                # Closing hands work to the adapter's own thread and waits for
+                # it; that never happens while this store's lock is held.
+                abandoned.close()
 
     def _tool_message(self, session: _SavedChat, item: Mapping, kind: str, environment) -> None:
         """Keep one visible row per MCP call, from started to its outcome."""
@@ -1922,7 +1990,7 @@ _CONTEXT_NOTE = (
 
 
 def _prepared_context(hub: str, chat_id: str, content: str, selected: ChatDesignContext,
-                      stop: threading.Event, deadline: float) -> str | None:
+                      stop: threading.Event, deadline: float) -> dict | None:
     """This turn's prepared context, waited for only as long as this turn lasts.
 
     A synchronous socket read cannot be interrupted once it is waiting, so the
@@ -1964,8 +2032,8 @@ def _prepared_context(hub: str, chat_id: str, content: str, selected: ChatDesign
     return outcome["pack"]
 
 
-def _context_pack(hub: str, chat_id: str, content: str, selected: ChatDesignContext, deadline: float) -> str:
-    """This turn's selected-source context, as a paragraph to append to its prompt.
+def _context_pack(hub: str, chat_id: str, content: str, selected: ChatDesignContext, deadline: float) -> dict:
+    """This turn's selected-source facts, read before replacing provider context.
 
     The whole message goes to the Studio, unedited: the read context it compiles
     is the one these words actually need, and sending a shortened stand-in would
@@ -1989,7 +2057,7 @@ def _context_pack(hub: str, chat_id: str, content: str, selected: ChatDesignCont
     finally:
         # The headers belong to the turn that set them and to nothing after it.
         _trace_headers.reset(token)
-    return "\n\n" + _CONTEXT_NOTE + "\n" + _redact(json.dumps(pack, ensure_ascii=False))
+    return pack
 
 
 # The one action a caller may ask to see through in a single tool call, and the
@@ -2074,7 +2142,7 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         # What the run saved, by the fields that say whether it is really there.
         "artifacts": [
             {key: row.get(key) for key in
-             ("runId", "fileName", "relativePath", "representation", "lengthUnit",
+             ("runId", "modelSource", "sourceStageRef", "fileName", "relativePath", "representation", "lengthUnit",
               "objectCount", "readbackVerified", "available", "unavailableReason", "sha256")
              if key in row}
             for row in candidate.get("artifacts", ())
@@ -2392,6 +2460,9 @@ def _mcp(hub: str, chat_id: str) -> None:
         "After observing it, start further changes from GET /api/state?run=<candidateId>, using that stateDigest and sourceRunId;",
         "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
         "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
+        "With awaitSeconds, candidate/artifacts/objects and compare, when present, are completed readbacks; reuse them for observation.",
+        "Use an available artifact's non-null modelSource unchanged for model-view. A missing source cannot be reconstructed from hashes.",
+        "Follow next for missing reads and retain any source/state/context checks the task still requires.",
         "On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
         "GET /api/candidates/{id} returns retained objects with bbox.min/max, lengthUnit and upAxis, plus objectReadbackError if inspection is unavailable.",
         "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
@@ -2407,7 +2478,7 @@ def _mcp(hub: str, chat_id: str) -> None:
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
         "OBSERVE: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image with exact source metadata.",
-        "Read modelSource from the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
+        "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}. Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision), pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.',

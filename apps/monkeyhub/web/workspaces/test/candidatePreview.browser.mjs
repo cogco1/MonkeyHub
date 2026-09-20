@@ -27,7 +27,7 @@ const candidateStartQueues = new Map();
 const requests = [], errors = [], passed = [], validationGates = new Map(), modelGates = new Map(), stateGates = new Map();
 let projectId = "candidate-preview-fixture", artifactFailures = 0, seq = 0;
 let historyEnabled = false, acceptFailure = false, annotationFailure = false, lastDrawing = null, nextCombined = null;
-let drawingFailure = false, drawingGate = null, monitorFailure = false, historyGate = null;
+let monitorFailure = false, historyGate = null;
 let diagnosticsEnabled = false, nextIntent = null, intentGate = null, documentGate = null, timingGate = null;
 let projectionOnly = false;
 const branches = new Map(), stages = new Map(), candidateBases = new Map(), documents = [], annotations = new Map();
@@ -43,6 +43,14 @@ function commitStage(modelSource, branchId, label, parentStageRef = null) {
   stages.set(stageRef, stage);
   branches.set(branchId, { branchId, parentBranch: null, forkStageRef: stageRef, ...branches.get(branchId), headStageRef: stageRef });
   return stage;
+}
+/** A drawing already registered against an exact model, as the project retains it. */
+function registerDrawing(modelSource, sourceStageRef = null) {
+  lastDrawing = { projectId, runId: modelSource.runId, assetSha256: digest(png), fileName: "front-elevation.png", mimeType: "image/png", sizeBytes: png.length,
+    pageCount: 1, pages: [{ pageIndex: 0, width: 200, height: 150, rotation: 0 }], modelSource,
+    drawingId: "front", revisionRef: `archflow-project://${projectId}/drawing/front/${documents.length}`, sourceStageRef, viewRecipe: { view: "front" } };
+  documents.push({ ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-older` }, lastDrawing);
+  return lastDrawing;
 }
 let vite, browser, page;
 const http = createHttpServer();
@@ -150,6 +158,14 @@ async function openViewTools() {
   if (await toggle.getAttribute("aria-expanded") !== "true") await toggle.click();
 }
 
+/** Open one registered drawing the way the Board hands a page to this workspace. */
+async function openDrawingFromBoard(drawing, pageIndex = 0) {
+  await page.evaluate((source) => { window.__candidateDocumentSource = source; },
+    { runId: drawing.runId, assetSha256: drawing.assetSha256, pageIndex, revisionRef: drawing.revisionRef });
+  await page.getByTestId("workspace-board").click();
+  await page.getByRole("button", { name: "Open registered drawing", exact: true }).click();
+}
+
 /** Open the versions panel if a step has since opened the tools that close it. */
 async function openVersions() {
   const toggle = page.locator('button[aria-controls="stage-versions-panel"]');
@@ -213,7 +229,7 @@ try {
             view: (artifact: ProjectArtifactDto) => { manualLoadRef.current = true; return loadArtifactIntoViewer(artifact, artifact.fileName); },
             snapshot: { loadedRunId: loadedArtifact?.runId, loadedFileName: loadedArtifact?.fileName, status: viewerStatus, loadingSha: artifactLoadingSha,
               projectId: project?.projectId, editingRunId: projection?.referenceRun.runId, changingBase, runs: candidateRuns.runs,
-              sourceStageRef: projection?.sourceStageRef, history: designHistory, historyError, drawingError, documentView,
+              sourceStageRef: projection?.sourceStageRef, history: designHistory, historyError, documentView,
               loadedModelSource, editingModelSource, baseError: baseError?.code ?? null,
               artifacts: artifacts.status === "ready" ? artifacts.value.artifacts.map((row) => row.runId) : [],
               entries: transcript.entries.map((entry) => entry.kind === "system" ? entry.text : entry.kind),
@@ -267,6 +283,27 @@ try {
           const value = projection(runId, url.searchParams.get("sourceStageRef"));
           if (projectionOnly) value.sourceStageRef = null;
           return await json(value);
+        }
+        if (name === "/api/state/frame") {
+          // While a drawing is mounted the record's levels are read for the current
+          // local draft source, which is not necessarily the open document's own model
+          // source: exactly one such run is named. This record holds one floor
+          // element and declares no level or axis rows, so the frame is empty.
+          assert.deepEqual([...url.searchParams.keys()].filter((key) => key !== "run"), [],
+            `The frame read carries only its source run: ${url.search}`);
+          assert.ok(url.searchParams.getAll("run").length <= 1, `The frame read names one source run: ${url.search}`);
+          const requested = url.searchParams.get("run");
+          const ownedHere = (artifact) => artifact.projectId === projectId && artifact.runId === requested;
+          if (projectionOnly) {
+            assert.ok(requested === null || requested === "studio-projection",
+              `A project with no retained run must not name one in its frame read: ${requested}`);
+          } else {
+            assert.ok(requested !== null, "The frame read must name the current local draft source run");
+            assert.ok(allArtifacts.some(ownedHere) ||
+              [...candidates.values()].some((candidate) => candidate.artifacts.some(ownedHere)),
+              `The frame read must name a source this project retains: ${requested}`);
+          }
+          return await json({ levels: [], axes: [], honesty: [] });
         }
         if (name === "/api/design-history") {
           const branchId = url.searchParams.get("branchId") ?? "main", gate = historyGate;
@@ -380,19 +417,6 @@ try {
           protected: [], decisionOperator: null,
           impact: { direct: [], propagated: [], protected: [], conflicts: [], locks: [], honesty: [], unknownCoverage: { count: 0, componentIds: [], parameterIds: [] } },
           utterance: `${body.action} parameter`, persistence: "fixture", createdAt: new Date().toISOString() }, 201);
-      }
-      if (method === "POST" && name === "/api/drawings/elevations") {
-        if (drawingFailure) {
-          if (drawingGate) await drawingGate.promise;
-          return await json({ code: "DRAWING_COMPLETE_SOURCE_UNAVAILABLE",
-            detail: "This complete model has no matching exact STEP. Its native components cannot stand in for a drawing of the complete building." }, 409);
-        }
-        const body = request.postDataJSON(); const source = body.sourceStageRef ? stages.get(body.sourceStageRef).modelSource : body.modelSource;
-        lastDrawing = { projectId, runId: source.runId, assetSha256: digest(png), fileName: "front-elevation.png", mimeType: "image/png", sizeBytes: png.length,
-          pageCount: 1, pages: [{ pageIndex: 0, width: 200, height: 150, rotation: 0 }], modelSource: source,
-          drawingId: "front", revisionRef: `archflow-project://${projectId}/drawing/front/${documents.length}`, sourceStageRef: body.sourceStageRef ?? null, viewRecipe: { view: body.view } };
-        documents.push({ ...lastDrawing, revisionRef: `${lastDrawing.revisionRef}-older` }, lastDrawing);
-        return await json(lastDrawing, 201);
       }
       if (method === "POST" && name === "/api/candidates/combine") {
         assert.ok(nextCombined); const candidate = nextCombined; nextCombined = null;
@@ -791,66 +815,39 @@ try {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  await step("drawing errors stay above the viewport, dismiss, reset on direction changes, and ignore stale replies", async () => {
+  await step("the view tools keep the standard cameras and no longer offer the retired elevation entry", async () => {
     await openVersions();
     await page.getByRole("combobox", { name: "Branch", exact: true }).selectOption("main"); await rendered(historyA.candidateId);
-    const viewTools = page.locator('button[aria-controls="view-tools"]');
-    if (await viewTools.getAttribute("aria-expanded") === "true") await viewTools.click();
+    await openViewTools();
+    const viewTools = page.locator("#view-tools");
     assert.equal(await page.getByRole("button", { name: "Generate elevation", exact: true }).count(), 0);
-    await viewTools.click();
-    drawingFailure = true;
-    const generate = page.locator("#view-tools").getByRole("button", { name: "Generate elevation", exact: true });
-    const error = page.locator(".stage-drawing-error");
-    await openViewTools();
-    await generate.click(); await error.waitFor();
-    assert.equal(await error.locator('[role="alert"]').textContent(), "This model is missing its matching exact geometry file, so a complete elevation cannot be generated yet.");
-    assert.equal(await error.locator("details").getAttribute("open"), null);
-    await error.getByText("Technical details", { exact: true }).click();
-    assert.match(await error.locator("details p").textContent(), /DRAWING_COMPLETE_SOURCE_UNAVAILABLE.*matching exact STEP/);
-    const bounds = await error.boundingBox(), viewport = await page.locator(".stage-model .viewport-host").boundingBox();
-    assert.ok(bounds && viewport && bounds.y + bounds.height <= viewport.y + 1, "Drawing error must occupy its own row above the model");
-    await page.getByRole("button", { name: "Dismiss drawing error", exact: true }).click();
-    assert.equal(await error.count(), 0);
-    await openViewTools();
-    await generate.click(); await error.waitFor();
-    await openViewTools();
-    await page.getByRole("combobox", { name: "Elevation direction", exact: true }).selectOption("back");
-    assert.equal(await error.count(), 0);
-    await openViewTools();
-    await generate.click(); await error.waitFor();
-    await openVersions();
-    await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
-    await rendered(currentHome.runId); assert.equal(await error.count(), 0);
-    drawingGate = deferred();
-    await openViewTools();
-    await generate.click();
-    await openVersions();
-    await page.locator('[data-design-stage="S1"]').getByRole("button", { name: /^S1/ }).click();
+    assert.equal(await page.getByRole("combobox", { name: "Elevation direction", exact: true }).count(), 0);
+    assert.equal(await page.locator(".stage-drawing-error").count(), 0);
+    for (const view of ["Top", "Front", "Right", "Isometric", "Perspective"]) {
+      assert.equal(await viewTools.getByRole("button", { name: view, exact: true }).count(), 1,
+                   `${view} must remain a standard camera view`);
+    }
+    await viewTools.getByRole("button", { name: "Fit selected", exact: true }).waitFor();
+    const requestStart = requests.length;
+    await viewTools.getByRole("button", { name: "Isometric", exact: true }).click();
+    assert.deepEqual(requests.slice(requestStart).filter((row) => row.method !== "GET" && !row.name.startsWith("/api/events/")).map((row) => row.name), [],
+                     "A standard camera view must not submit project changes");
     await rendered(historyA.candidateId);
-    drawingGate.resolve(); drawingGate = null;
-    await until(async () => { await openViewTools(); return generate.isEnabled(); }, Boolean,
-                 "The old drawing request did not finish");
-    assert.equal(await error.count(), 0);
-    assert.equal((await snapshot()).drawingError, null);
-    drawingFailure = false;
-    await openViewTools();
-    await page.getByRole("combobox", { name: "Elevation direction", exact: true }).selectOption("front");
   });
 
-  await step("generated elevation opens the returned immutable revision with no chat expansion", async () => {
+  await step("a registered drawing opens its exact immutable revision with no chat expansion", async () => {
     // Inside a task the conversation is part of the workspace, so what this
-    // holds to is that generating a drawing leaves it exactly as it was.
+    // holds to is that opening a drawing leaves it exactly as it was.
+    const drawing = registerDrawing(historyA.artifacts[0].modelSource, s1.stageRef);
     const conversationBefore = await page.locator("#conversation-panel").count();
-    await openViewTools();
-    await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
+    await openDrawingFromBoard(drawing);
     await page.locator('.document-workspace:not([aria-hidden="true"]) .document-viewport[data-ready="true"]').waitFor();
     const value = await snapshot();
-    assert.equal(value.documentView.open, true); assert.equal(value.documentView.revisionRef, lastDrawing.revisionRef);
+    assert.equal(value.documentView.open, true); assert.equal(value.documentView.revisionRef, drawing.revisionRef);
     assert.equal(await page.locator("#conversation-panel").count(), conversationBefore,
                  "Opening a drawing must not expand or collapse the conversation");
-    assert.equal(requests.findLast((row) => row.name === "/api/drawings/elevations").body.sourceStageRef, s1.stageRef);
-    assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, lastDrawing.revisionRef);
-    assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), lastDrawing.revisionRef);
+    assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, drawing.revisionRef);
+    assert.equal(await page.getByRole("combobox", { name: "Source document", exact: true }).inputValue(), drawing.revisionRef);
   });
 
   await step("failed drawing autosave blocks a Stage switch and a retry preserves the comment", async () => {
@@ -1114,46 +1111,25 @@ try {
   });
 
   if (!modelTimingOnly) {
-  await step("drawing wait ends only after its returned revision is downloaded and painted", async () => {
-    const viewTools = page.locator('button[aria-controls="view-tools"]');
-    if (await viewTools.getAttribute("aria-expanded") === "false") await viewTools.click();
+  await step("an opened drawing becomes ready only after its own bytes are downloaded and painted", async () => {
     documentGate = deferred();
     await page.evaluate(() => { let resolve; const promise = new Promise((done) => { resolve = done; });
       window.__documentRenderGate = { waiting: false, promise, resolve }; });
-    await openViewTools();
-    await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
+    const drawing = registerDrawing(currentHome.modelSource);
+    await openDrawingFromBoard(drawing);
     await until(() => documentGate.requested, Boolean, "Drawing bytes did not start");
-    const root = latestDiagnostic("drawing_wait"); assert.equal(root.status, "running");
+    assert.equal(await page.locator('.document-viewport[data-ready="true"]').count(), 0,
+                 "A drawing cannot be ready while its bytes are still being downloaded");
     documentGate.resolve(); documentGate = null;
     await until(() => page.evaluate(() => window.__documentRenderGate.waiting), Boolean, "Drawing did not reach actual render gate");
-    assert.equal(diagnosticEvents("drawing_wait").filter((row) => row.operationId === root.operationId).at(-1).status, "running");
+    assert.equal(await page.locator('.document-viewport[data-ready="true"]').count(), 0,
+                 "A drawing cannot be ready while it is still being painted");
     await page.evaluate(() => { window.__documentRenderGate.resolve(); delete window.__documentRenderGate; });
     await page.locator('.document-viewport[data-ready="true"]').waitFor();
-    await finishedDiagnostic("drawing_wait", root.operationId);
-    const load = await finishedDiagnostic("document_load", root.operationId);
-    const render = await finishedDiagnostic("document_render", root.operationId);
-    assert.equal(load.parentEventId, root.eventId); assert.equal(render.parentEventId, root.eventId);
-    assert.equal(load.details.input_bytes, png.length);
-    assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
-    const request = requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name));
-    assert.equal(request.headers["x-monkey-operation"], root.operationId);
-    assert.equal(request.headers["x-monkey-parent"], load.eventId);
-  });
-
-  await step("failed drawing requests close their independent action without model tokens", async () => {
-    await page.locator(".stage-mode-switch").getByRole("button", { name: "MonkeyBoard · Board", exact: true }).click();
-    await page.getByRole("button", { name: "Open registered drawing", exact: true }).waitFor();
+    assert.equal((await snapshot()).documentView.revisionRef, drawing.revisionRef);
+    assert.equal(requests.findLast((row) => /^\/api\/documents\/.+\/bytes$/.test(row.name)).query.revisionRef, drawing.revisionRef);
     await page.getByTestId("workspace-arch").click();
-    await until(snapshot, (value) => !value.documentView.open, "Returning from a generated drawing must restore the model tools");
-    const viewTools = page.locator('button[aria-controls="view-tools"]');
-    if (await viewTools.getAttribute("aria-expanded") === "false") await viewTools.click();
-    drawingFailure = true;
-    await openViewTools();
-    await page.getByRole("button", { name: "Generate elevation", exact: true }).click();
-    const root = await until(() => latestDiagnostic("drawing_wait"), (row) => row.status === "failed", "Drawing did not report failure");
-    assert.ok(root.durationMs >= 0);
-    assert.ok(!Object.hasOwn(root, "tokens"));
-    drawingFailure = false;
+    await until(snapshot, (value) => !value.documentView.open, "Returning from an opened drawing must restore the model tools");
   });
 
   await step("an initial project with no retained run reports project-only timing", async () => {
@@ -1277,7 +1253,6 @@ try {
 } finally {
   historyGate?.resolve();
   lockProposalGate?.resolve();
-  drawingGate?.resolve();
   intentGate?.resolve(); documentGate?.resolve(); timingGate?.resolve();
   for (const gate of [...validationGates.values(), ...modelGates.values(), ...stateGates.values()]) gate.resolve();
   await browser?.close();

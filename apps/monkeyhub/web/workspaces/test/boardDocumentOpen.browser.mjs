@@ -261,9 +261,13 @@ print(json.dumps({"pdf": base64.b64encode(two_page_pdf()).decode()}))
   assert.equal(savedMarks(beforeRefusal), 0);
   faults["/api/board"] = true;
   await page.locator(".excalidraw").focus(); await page.keyboard.press("Escape"); await page.keyboard.press("a");
-  await page.mouse.move(standaloneBox.x + 60, standaloneBox.y + 60);
+  const arrowStart = [standaloneBox.x + standaloneBox.width * 0.78, standaloneBox.y + standaloneBox.height * 0.3];
+  const arrowEnd = [standaloneBox.x + standaloneBox.width * 0.9, standaloneBox.y + standaloneBox.height * 0.42];
+  assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName, arrowStart), "CANVAS",
+    "The refusal mark begins on the canvas, clear of Excalidraw's shape controls");
+  await page.mouse.move(...arrowStart);
   await page.mouse.down();
-  await page.mouse.move(standaloneBox.x + 220, standaloneBox.y + 170, { steps: 12 });
+  await page.mouse.move(...arrowEnd, { steps: 12 });
   await page.mouse.up();
   const boardAlert = page.locator(".monkeyboard-alert").filter({ hasText: "Changes have not been saved." });
   await boardAlert.waitFor();

@@ -93,6 +93,7 @@ function contours(gesture: DocumentGestureDto, width: number, height: number): C
     return [ellipse(end, radius, radius), ...mark];
   }
   if (gesture.kind === "freehand") return [{ points }];
+  if (gesture.kind === "polyline") return [{ points, closed: gesture.closed ?? false }];
   const shaft: Contour = { points: [start, end] };
   if (gesture.kind === "line") return [shaft];
   const length = Math.hypot(end[0] - start[0], end[1] - start[1]);

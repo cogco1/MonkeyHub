@@ -881,26 +881,28 @@ def drawn_element_placement(row: ElementRow, context: ProductionContext) -> dict
 def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str,
                        translation=None, axis=None, angle_degrees: float = 0.0,
                        scale=None, origin=None, distance: float = 0.0, normal=None) -> ElementRow:
-    """Revise a drawn face/prism's own parameters; never patch its exported mesh.
+    """Revise a drawn face/prism or loft's parameters; never patch its exported mesh.
 
     Explicit plane axes retain the profile and the independent pull distance.
     A scaled profile is re-expressed in an orthonormal basis; an oblique
     extrusion is refused because the prism's pull must remain normal to its face.
+    Loft sections retain their correspondence, closure and datum-relative heights.
     """
 
-    if row.producer not in {"prism", "planar-surface"}:
-        raise ElementProducerError(f"{row.element_id}: direct {kind} currently supports drawn faces and prisms, not {row.producer}")
+    if row.producer not in {"prism", "planar-surface", "loft"}:
+        raise ElementProducerError(f"{row.element_id}: direct {kind} currently supports drawn faces, prisms and lofts, not {row.producer}")
+    if row.producer == "loft" and kind == "push_pull":
+        raise ElementProducerError(f"{row.element_id}: push/pull cannot reinterpret a loft as a prism; edit its section controls")
     if "rectangular_cutouts" in row.params or "top" in row.references:
         raise ElementProducerError(f"{row.element_id}: direct {kind} cannot detach panel cutouts or a top-reference constraint")
     params = dict(row.params)
-    profile, extrusion_axis = _profile_on_work_plane(row)
     base_id, base_offset = _base(row, context)
     vertical_origin = context.datum_value(base_id) + base_offset + _finite(params.get("elevation", 0), "elevation")
     plane = dict(params.get("work_plane") or {
         "origin": [0.0, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0],
         "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, 1.0, 0.0],
     })
-    height = 0.0 if row.producer == "planar-surface" else _positive(params.get("height"), "height")
+    height = _positive(params.get("height"), "height") if row.producer == "prism" else 0.0
 
     def vector(value, label):
         if not isinstance(value, (list, tuple)) or len(value) != 3:
@@ -913,6 +915,12 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
         if length < 1e-9:
             raise ElementProducerError(f"{label} must be nonzero")
         return [c / length for c in result]
+
+    if row.producer == "loft":
+        profile = [vector(point, "loft section point") for section in params["profiles"] for point in section]
+        extrusion_axis = (0.0, 1.0, 0.0)
+    else:
+        profile, extrusion_axis = _profile_on_work_plane(row)
 
     if kind == "push_pull":
         distance = _finite(distance, "pull distance")
@@ -1006,6 +1014,12 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
     factors = vector(scale, "scale") if scale is not None else [1, 1, 1]
     if any(abs(factor) < 1e-9 for factor in factors):
         raise ElementProducerError("scale factors must be nonzero")
+    if (row.producer == "loft" and kind == "scale" and params.get("loft_type", "straight") == "normal"
+            and any(not math.isclose(abs(factor), abs(factors[0]), rel_tol=1e-9) for factor in factors[1:])):
+        # ThruSections re-parameterizes smooth lofts from section distances.
+        # Stretching their controls is not the affine image of the original surface.
+        raise ElementProducerError(f"{row.element_id}: non-uniform scale of a normal loft would refit its surface; "
+                                   "only uniform scale and reflection preserve this loft")
 
     def direction(value):
         if kind == "scale":
@@ -1019,11 +1033,17 @@ def edit_drawn_element(row: ElementRow, context: ProductionContext, *, kind: str
                     for v, q, k in zip(value, cross, rotation_axis)]
         return list(value)
 
-    point = [float(c) + (vertical_origin if i == 1 else 0) for i, c in enumerate(plane["origin"])]
-    moved = [c - p for c, p in zip(point, pivot)]
-    moved = direction(moved)
-    plane["origin"] = [c + p + (offset[i] if kind in {"move", "copy"} else 0) - (vertical_origin if i == 1 else 0)
-                       for i, (c, p) in enumerate(zip(moved, pivot))]
+    def position(value):
+        relative = [c + (vertical_origin if i == 1 else 0) - pivot[i] for i, c in enumerate(value)]
+        return [c + pivot[i] + (offset[i] if kind in {"move", "copy"} else 0) - (vertical_origin if i == 1 else 0)
+                for i, c in enumerate(direction(relative))]
+
+    if row.producer == "loft":
+        params["profiles"] = [[position(vector(point, "loft section point")) for point in section]
+                              for section in params["profiles"]]
+        return replace(row, params=params)
+
+    plane["origin"] = position(plane["origin"])
     transformed_axes = [direction(plane[key]) for key in ("xAxis", "yAxis", "normal")]
     if kind == "scale":
         # Non-uniform world scaling skews local U/V, not the planar profile.

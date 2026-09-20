@@ -21,7 +21,7 @@ from ..application.clarification import (
     ScopeOption,
 )
 from ..application.gestures import (
-    DocumentAnnotationPage, DocumentAnnotationRef, DocumentGesture, Gesture, GestureHit,
+    DocumentAnnotationPage, DocumentAnnotationRef, DocumentGesture, DocumentTracingCalibration, Gesture, GestureHit,
 )
 from ..application.intent_agent import Compilation
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
@@ -147,7 +147,7 @@ class DocumentGestureDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     id: str = Field(min_length=1, max_length=128)
-    kind: Literal["circle", "arrow", "keep", "remove", "freehand", "line", "ruler", "arc", "text"]
+    kind: Literal["circle", "arrow", "keep", "remove", "freehand", "line", "ruler", "arc", "text", "polyline"]
     points: list[tuple[PageCoordinate, PageCoordinate]] = Field(
         min_length=1, max_length=20000,
         description="Coordinates in [0,1], origin at the visible page's top left, x right/y down. PDF uses CropBox after rotation; images use EXIF orientation. Zoom and DPI do not change them. Text has exactly one point anchoring the text block's top-left corner.",
@@ -166,6 +166,8 @@ class DocumentGestureDto(BaseModel):
         exclude_if=lambda value: value is None,
         description="Required only for text: font size as a fraction of the visible page's shorter side. Render at fontSize * min(displayedPageWidth, displayedPageHeight) CSS px with 1.25em line height. Absent on existing strokes; never derived from lineWidth.",
     )
+    closed: bool | None = Field(default=None, exclude_if=lambda value: value is None,
+        description="Required only for polyline: whether the ordered editable vertices close into a contour. The first point is not repeated.")
 
     @model_validator(mode="after")
     def valid_document_gesture(self) -> DocumentGestureDto:
@@ -194,6 +196,23 @@ class DocumentAnnotationRefDto(BaseModel):
         return value
 
 
+class DocumentTracingCalibrationDto(BaseModel):
+    """Explicit page origin/+X direction and the known distance in project length units."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+    origin: tuple[PageCoordinate, PageCoordinate]
+    axis_point: tuple[PageCoordinate, PageCoordinate] = Field(alias="axisPoint")
+    distance: float = Field(gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def distinct_points(self) -> DocumentTracingCalibrationDto:
+        self.to_domain()
+        return self
+
+    def to_domain(self) -> DocumentTracingCalibration:
+        return DocumentTracingCalibration(self.origin, self.axis_point, self.distance)
+
+
 class DocumentAnnotationsRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
@@ -208,6 +227,8 @@ class DocumentAnnotationsRequestDto(BaseModel):
     )
     annotations: list[DocumentGestureDto] = Field(max_length=2000, description="Complete remaining ink on this page. Erasing a stroke removes its id from this list; prior saved revisions remain readable.")
     comment: str = Field(default="", max_length=8000)
+    tracing_calibration: DocumentTracingCalibrationDto | None = Field(alias="tracingCalibration", default=None,
+        description="Explicitly calibrated origin, direction and distance for this saved page. Omit/null to save without a model scale.")
 
 
 class DocumentAnnotationsDto(BaseModel):
@@ -221,6 +242,8 @@ class DocumentAnnotationsDto(BaseModel):
     annotations: list[DocumentGestureDto]
     comment: str
     drawing_revision_ref: str | None = Field(alias="drawingRevisionRef", default=None)
+    tracing_calibration: DocumentTracingCalibrationDto | None = Field(alias="tracingCalibration", default=None,
+        exclude_if=lambda value: value is None)
 
 
 class DocumentVisualInputDto(BaseModel):
@@ -258,7 +281,7 @@ class DocumentCommentsDto(BaseModel):
 
 
 def document_gesture_from(dto: DocumentGestureDto) -> DocumentGesture:
-    return DocumentGesture(dto.id, dto.kind, tuple(dto.points), dto.color, dto.line_width, dto.label, dto.font_size)
+    return DocumentGesture(dto.id, dto.kind, tuple(dto.points), dto.color, dto.line_width, dto.label, dto.font_size, dto.closed)
 
 
 def document_annotation_ref_from(dto: DocumentAnnotationRefDto) -> DocumentAnnotationRef:
@@ -271,6 +294,7 @@ def document_annotations_dto(page: DocumentAnnotationPage) -> DocumentAnnotation
         page_index=page.page_index, revision_sha256=page.revision_sha256,
         annotations=[DocumentGestureDto(**annotation.to_dict()) for annotation in page.annotations],
         comment=page.comment, drawing_revision_ref=page.drawing_revision_ref,
+        tracing_calibration=DocumentTracingCalibrationDto(**page.tracing_calibration.to_dict()) if page.tracing_calibration is not None else None,
     )
 
 
@@ -413,6 +437,35 @@ class ContextPackRequestDto(BaseModel):
         return self
 
 
+class StageContextChangesDto(BaseModel):
+    """Content differences and declared review scope, never a validation receipt."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    changed_refs: list[str] = Field(alias="changedRefs")
+    affected_refs: list[str] = Field(alias="affectedRefs")
+    needs_review_refs: list[str] = Field(alias="needsReviewRefs")
+    unresolved_impact_refs: list[str] = Field(alias="unresolvedImpactRefs")
+
+
+class ConfirmedStageContextDto(BaseModel):
+    """A read-only view of committed Stage identity and its retained conditions."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
+
+    stage_ref: str = Field(alias="stageRef")
+    label: str
+    branch_id: str = Field(alias="branchId")
+    run_id: str = Field(alias="runId")
+    state_digest: str = Field(alias="stateDigest")
+    is_source: bool = Field(alias="isSource", description="True only when the selected run, retained record and state digest are the accepted Stage itself. Inheriting a Stage base does not accept a candidate.")
+    locked_parameter_keys: list[str] = Field(alias="lockedParameterKeys", description="Parameters locked in the accepted Stage. This is not a whole-geometry lock; current values and lock state remain in context.")
+    retained_condition_refs: list[str] = Field(alias="retainedConditionRefs", description="Reading and obligation references retained in the accepted Stage; their current details and coverage remain in context.")
+    changes: StageContextChangesDto
+    omitted_counts: dict[str, int] = Field(alias="omittedCounts", description="Omitted entries by summary list name; each list is bounded to 64 entries.")
+    limitations: list[str]
+
+
 class ContextPackDto(BaseModel):
     """What a caller would otherwise discover by reading before it can act.
 
@@ -460,6 +513,10 @@ class ContextPackDto(BaseModel):
         "a derived value, a shared control, a top reference — as the record "
         "already answers it, needing no model call. Null when there is none "
         "and for the design tier, which this preflight does not judge",
+    )
+    confirmed_stage: ConfirmedStageContextDto | None = Field(
+        alias="confirmedStage", default=None,
+        description="Derived from verified committed design history, with differences from this exact source. Null when no committed Stage is bound; never inferred from an unaccepted candidate.",
     )
     honesty: list[str] = Field(default_factory=list)
 
@@ -785,6 +842,7 @@ BLOCKED_NOTE = (
 
 def context_pack_dto(
     description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
+    *, confirmed_stage: Mapping[str, Any] | None = None,
 ) -> ContextPackDto:
     """One capability description and one compiled read context, as the pack.
 
@@ -805,6 +863,7 @@ def context_pack_dto(
         escalation=list(context.escalation),
         context=dict(model_facts),
         preflight=None if preflight is None else dict(preflight),
+        confirmed_stage=None if confirmed_stage is None else ConfirmedStageContextDto(**confirmed_stage),
         honesty=[
             *detail.honesty,
             *([BLOCKED_NOTE] if blocked else []),

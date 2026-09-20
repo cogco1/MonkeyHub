@@ -255,6 +255,7 @@ def sketch_prism_proposal(
     semantic_kind: str | None = None,
     summary: str | None = None,
     keep_refs: Sequence[str] = (),
+    source_document_trace: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any]:
     """A profile and a height, drawn by hand, as the design edit they already are.
 
@@ -314,6 +315,7 @@ def sketch_prism_proposal(
             "producer": "curve" if not closed else "planar-surface" if height == 0 else "prism",
             "references": {"base": dict(base)},
             "params": params,
+            **({"sourceDocumentTrace": dict(source_document_trace)} if source_document_trace is not None else {}),
         },
     }
     existing = {entity.entity_id for entity in projection.record.entities}

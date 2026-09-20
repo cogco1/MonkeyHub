@@ -560,5 +560,235 @@ class DocumentAnnotationTests(unittest.TestCase):
         self.assertEqual(self.intent([], gestures=[old_3d]).status_code, 422)
 
 
+class DocumentTracingTests(unittest.TestCase):
+    """An unassociated source image, corrected page paths and the real candidate path."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="studio-document-tracing-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.repository, _ = make_project(self.root)
+        self.settings = StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="off")
+        self.client = TestClient(create_app(self.settings))
+        self.addCleanup(self.client.close)
+        self.state_digest = runner_state_digest(self.repository, REFERENCE_RUN_ID)
+        uploaded = self.client.post("/api/documents", json={
+            "projectId": PROJECT_ID, "runId": REFERENCE_RUN_ID, "fileName": "own-triangle.png",
+            "mimeType": "image/png", "contentBase64": base64.b64encode(image_bytes(size=(200, 100))).decode(),
+        })
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        self.query = {"runId": REFERENCE_RUN_ID, "assetSha256": uploaded.json()["assetSha256"], "pageIndex": 0}
+        self.calibration = {"origin": [0.1, 0.8], "axisPoint": [0.7, 0.8], "distance": 6}
+        self.contour = {**stroke("outline", "polyline"), "closed": True,
+                        "points": [[0.1, 0.8], [0.7, 0.8], [0.3, 0.2]]}
+        self.line = {**stroke("axis-line", "line"), "points": [[0.1, 0.8], [0.4, 0.6]]}
+
+    def save(self, annotations=None, *, base=None, calibration=None):
+        response = self.client.put("/api/document-annotations", json={
+            "projectId": PROJECT_ID, **self.query, "baseRevisionSha256": base,
+            "annotations": annotations if annotations is not None else [self.contour, self.line],
+            "tracingCalibration": self.calibration if calibration is None else calibration,
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def draw(self, page, ids=None, **body):
+        return self.client.post("/api/proposals/sketch", json={
+            "projectId": PROJECT_ID, "stateDigest": self.state_digest,
+            "componentId": "portico", "baseLevel": "level-ground", "height": 2,
+            "tracing": {**page_ref(page), "annotationIds": ids or ["outline", "axis-line"]}, **body,
+        })
+
+    def candidate(self, proposal):
+        response = self.client.post(f"/api/proposals/{proposal['proposalId']}/candidate")
+        self.assertEqual(response.status_code, 202, response.text)
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            job = self.client.get(f"/api/jobs/{response.json()['jobId']}").json()
+            if job["status"] in {"succeeded", "failed"}:
+                return job
+            time.sleep(0.05)
+        self.fail("traced candidate never completed")
+
+    def test_saved_vertices_and_calibration_reopen_and_map_non_square_image(self):
+        page = self.save()
+        with TestClient(create_app(self.settings)) as reopened:
+            self.assertEqual(reopened.get("/api/document-annotations", params=self.query).json(), page)
+        response = self.draw(page)
+        self.assertEqual(response.status_code, 201, response.text)
+        entities = response.json()["change"]["edits"]["entities"]
+        contour = next(row for row in entities if row["fields"]["producer"] == "prism")
+        line = next(row for row in entities if row["fields"]["producer"] == "curve")
+        for actual, expected in zip(contour["fields"]["params"]["profile"], [[0, 0], [6, 0], [2, 3]]):
+            for a, b in zip(actual, expected):
+                self.assertAlmostEqual(a, b)
+        for a, b in zip(line["fields"]["params"]["profile"][-1], [3, 1]):
+            self.assertAlmostEqual(a, b)
+        self.assertNotIn("height", line["fields"]["params"])
+        only_line = self.draw(page, ["axis-line"], height=0)
+        self.assertEqual(only_line.status_code, 201, only_line.text)
+        flat_contour = self.draw(page, ["outline"], height=0)
+        self.assertEqual(flat_contour.status_code, 422, flat_contour.text)
+        self.assertEqual(flat_contour.json()["code"], "TRACING_HEIGHT_REQUIRED")
+        trace = contour["fields"]["sourceDocumentTrace"]
+        self.assertEqual(trace, {**page_ref(page), "annotationId": "outline", "calibration": self.calibration})
+        # Rotating the calibration axis uses the displayed image aspect ratio,
+        # not the length of normalized coordinates on an imaginary square.
+        rotated = self.save(base=page["revisionSha256"], calibration={"origin": [0.1, 0.8], "axisPoint": [0.3, 0.2], "distance": 5})
+        result = self.draw(rotated, ["outline"])
+        self.assertEqual(result.status_code, 201, result.text)
+        profile = result.json()["change"]["edits"]["entities"][0]["fields"]["params"]["profile"]
+        self.assertAlmostEqual(profile[2][0], 5)
+        self.assertAlmostEqual(profile[2][1], 0)
+        self.assertLess(profile[1][1], 0)
+
+    def test_invalid_calibration_polyline_and_selection_preserve_the_saved_page(self):
+        page = self.save()
+        runs = set(self.repository.layout.runs.iterdir())
+        for calibration in ({**self.calibration, "distance": 0}, {**self.calibration, "axisPoint": self.calibration["origin"]},
+                            {**self.calibration, "origin": [-0.1, 0]}):
+            result = self.client.put("/api/document-annotations", json={
+                "projectId": PROJECT_ID, **self.query, "baseRevisionSha256": page["revisionSha256"],
+                "annotations": [self.contour], "tracingCalibration": calibration,
+            })
+            self.assertEqual(result.status_code, 422, result.text)
+        for points in ([[0, 0], [1, 0]], [[0, 0], [1, 0], [0, 0]]):
+            result = self.client.put("/api/document-annotations", json={
+                "projectId": PROJECT_ID, **self.query, "baseRevisionSha256": page["revisionSha256"],
+                "annotations": [{**self.contour, "points": points}],
+            })
+            self.assertEqual(result.status_code, 422, result.text)
+        for ids in (["outline", "missing"], ["outline", "outline"]):
+            result = self.draw(page, ids)
+            self.assertEqual(result.status_code, 422, result.text)
+            self.assertEqual(result.json()["code"], "TRACING_SELECTION_INVALID")
+        stale = self.draw(page, stateDigest="0" * 64)
+        self.assertEqual(stale.status_code, 409, stale.text)
+        wrong = self.draw({**page, "revisionSha256": "0" * 64})
+        self.assertEqual(wrong.status_code, 404, wrong.text)
+        self.assertEqual(self.client.get("/api/document-annotations", params=self.query).json(), page)
+        self.assertEqual(set(self.repository.layout.runs.iterdir()), runs)
+
+    def test_ordinary_ink_and_uncalibrated_pages_do_not_imply_geometry(self):
+        page = self.save([self.contour, stroke("ordinary")])
+        result = self.draw(page, ["ordinary"])
+        self.assertEqual(result.status_code, 422, result.text)
+        cleared = self.client.put("/api/document-annotations", json={
+            "projectId": PROJECT_ID, **self.query, "baseRevisionSha256": page["revisionSha256"],
+            "annotations": [self.contour],
+        })
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        result = self.draw(cleared.json(), ["outline"])
+        self.assertEqual(result.status_code, 422, result.text)
+        self.assertEqual(result.json()["code"], "TRACING_CALIBRATION_REQUIRED")
+
+    def test_exact_old_revision_and_later_correction_replace_one_object_across_candidates(self):
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.projection import project_state
+
+        head = self.repository.read_head()
+        page = self.save()
+        first = self.draw(page, ["outline"]).json()
+        updated = self.save([{**self.contour, "points": [[0.1, 0.8], [0.9, 0.8], [0.3, 0.2]]}], base=page["revisionSha256"])
+        # The earlier proposal must execute exactly the old page after a newer save.
+        job = self.candidate(first)
+        self.assertEqual(job["status"], "succeeded", job)
+        run = job["candidateId"]
+        source = self.client.get("/api/state", params={"run": run}).json()
+        second = self.draw(updated, ["outline"], stateDigest=source["stateDigest"], sourceRunId=run, height=3)
+        self.assertEqual(second.status_code, 201, second.text)
+        first_id = first["change"]["edits"]["entities"][0]["entity_id"]
+        [replacement] = second.json()["change"]["edits"]["entities"]
+        self.assertEqual(replacement["entity_id"], first_id)
+        self.assertEqual(replacement["fields"]["sourceDocumentTrace"]["revisionSha256"], updated["revisionSha256"])
+        self.assertEqual(second.json()["change"]["changes"][0]["action"], "update")
+        conflict = self.draw(updated, ["outline"], stateDigest=source["stateDigest"], sourceRunId=run, keep=[f"entity:{first_id}"])
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+        job2 = self.candidate(second.json())
+        self.assertEqual(job2["status"], "succeeded", job2)
+        with TestClient(create_app(self.settings)) as reopened:
+            record = project_state(bound_project(reopened.app.state), job2["candidateId"]).record
+            traced = [entity for entity in record.entities if entity.fields.get("sourceDocumentTrace")]
+            self.assertEqual(len(traced), 1)
+            self.assertEqual(traced[0].entity_id, first_id)
+            self.assertEqual(traced[0].fields["params"]["height"], 3)
+            self.assertAlmostEqual(traced[0].fields["params"]["profile"][1][0], 8)
+        old = project_state(bound_project(self.client.app.state), run).record
+        self.assertAlmostEqual(next(entity for entity in old.entities if entity.entity_id == first_id).fields["params"]["profile"][1][0], 6)
+        self.assertEqual(self.repository.read_head(), head)
+
+    def test_proposal_continuation_preserves_keep_and_refuses_an_unrelated_id_collision(self):
+        page = self.save()
+        first = self.draw(page, ["outline"], keep=["entity:portico-base"])
+        self.assertEqual(first.status_code, 201, first.text)
+        second = self.draw(page, ["axis-line"], sourceProposalId=first.json()["proposalId"])
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(second.json()["baseStateDigest"], first.json()["baseStateDigest"])
+        self.assertIn("entity:portico-base", second.json()["protected"])
+        self.assertEqual(len(second.json()["change"]["edits"]["entities"]), 2)
+        entity_id = first.json()["change"]["edits"]["entities"][0]["entity_id"]
+        unrelated = self.client.post("/api/proposals/sketch", json={
+            "stateDigest": self.state_digest, "componentId": "portico", "elementId": entity_id,
+            "profile": [[0, 0], [2, 0], [1, 1]], "height": 1, "baseLevel": "level-ground",
+        })
+        self.assertEqual(unrelated.status_code, 201, unrelated.text)
+        refused = self.draw(page, ["outline"], sourceProposalId=unrelated.json()["proposalId"])
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "TRACING_TARGET_MISMATCH")
+
+    def test_missing_source_at_worker_boundary_leaves_no_run_and_retry_keeps_same_page(self):
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.gestures import require_document_trace
+        from archflow_studio_api.transport.errors import StudioError
+
+        page = self.save()
+        proposal = self.draw(page).json()
+        runs = set(self.repository.layout.runs.iterdir())
+        trace = proposal["change"]["edits"]["entities"][0]["fields"]["sourceDocumentTrace"]
+        for invalid in ({**trace, "revisionSha256": None}, {**trace, "calibration": {**self.calibration, "distance": 20}}):
+            with self.assertRaises(StudioError) as failure:
+                require_document_trace(bound_project(self.client.app.state), invalid)
+            self.assertEqual(failure.exception.code, "TRACING_SOURCE_MISMATCH")
+        with mock.patch("archflow_studio_api.application.gestures.document_bytes", side_effect=StudioError(409, "DOCUMENT_UNAVAILABLE", "Source bytes unavailable")):
+            job = self.candidate(proposal)
+        self.assertEqual(job["status"], "failed", job)
+        self.assertEqual(set(self.repository.layout.runs.iterdir()), runs)
+        self.assertEqual(self.client.get("/api/document-annotations", params=self.query).json(), page)
+        retried = self.candidate(proposal)
+        self.assertEqual(retried["status"], "succeeded", retried)
+
+    def test_real_occt_output_uses_xy_plan_z_height_and_preserves_asymmetric_path(self):
+        from archflow.adapters.occt_backend import occt_available
+        from archflow.adapters.three_dm_inspector import inspect_three_dm
+
+        if not occt_available():
+            self.skipTest("cadquery-ocp is not installed")
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="occt")))
+        self.addCleanup(self.client.close)
+        head = self.repository.read_head()
+        self.line = {**self.line, "kind": "polyline", "closed": False, "points": self.contour["points"]}
+        page = self.save()
+        proposal = self.draw(page).json()
+        job = self.candidate(proposal)
+        self.assertEqual(job["status"], "succeeded", job)
+        paths = list(self.repository.layout.run(job["candidateId"]).workspaces.rglob("*.3dm"))
+        self.assertTrue(paths)
+        contour_id = next(row["entity_id"] for row in proposal["change"]["edits"]["entities"] if row["fields"]["producer"] == "prism")
+        curve_id = next(row["entity_id"] for row in proposal["change"]["edits"]["entities"] if row["fields"]["producer"] == "curve")
+        bounds, curves = {}, {}
+        for path in paths:
+            inspection = inspect_three_dm(path)
+            self.assertEqual(inspection.units["name"], "Meters")
+            bounds.update({row["name"]: row["bbox"] for row in inspection.named_object_bboxes})
+            curves.update({row["name"]: row.get("curve_points") for row in inspection.object_geometry_analysis if row.get("curve_points")})
+        contour = bounds[f"obj-{contour_id}"]
+        self.assertEqual([round(c, 5) for c in contour["min"]], [0, 0, 0])
+        self.assertEqual([round(c, 5) for c in contour["max"]], [6, 3, 2])
+        points = [tuple(round(c, 5) for c in point) for point in curves[f"obj-{curve_id}"]]
+        self.assertEqual(points, [(0, 0, 0), (6, 0, 0), (2, 3, 0)])
+        self.assertEqual(self.repository.read_head(), head)
+
+
 if __name__ == "__main__":
     unittest.main()

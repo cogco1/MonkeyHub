@@ -8,6 +8,19 @@ const gesture = (kind: DocumentGestureDto["kind"], points: DocumentGestureDto["p
   id, kind, points, color: "#2f80ed", lineWidth,
 });
 
+test("closed editable outlines render and erase their closing edge; open paths do not", async t => {
+  const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
+    logLevel: "silent", server: { middlewareMode: true, watch: null } });
+  t.after(() => vite.close());
+  const { eraseAt, inkPath } = await vite.ssrLoadModule("/src/workspaces/monkeydiagram/documentInk.ts");
+  const closed = { ...gesture("polyline", [[0.1, 0.1], [0.8, 0.1], [0.8, 0.8]]), closed: true };
+  const open = { ...closed, closed: false };
+  assert.match(inkPath(closed, 800, 400), / Z$/);
+  assert.doesNotMatch(inkPath(open, 800, 400), / Z$/);
+  assert.deepEqual(eraseAt([closed], [0.45, 0.45], [0.45, 0.45], 800, 400, 2), []);
+  assert.deepEqual(eraseAt([open], [0.45, 0.45], [0.45, 0.45], 800, 400, 2), [open]);
+});
+
 test("page ink uses visible rectangular page coordinates and pointer-centred zoom", async (t) => {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
     logLevel: "silent", server: { middlewareMode: true, watch: null } });
