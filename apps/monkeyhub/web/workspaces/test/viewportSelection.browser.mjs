@@ -122,16 +122,44 @@ try {
   await page.setViewportSize({ width: 1100, height: 900 });
   await page.waitForTimeout(80);
   assert.deepEqual(await snapshot(), before, "window resizing does not change the camera");
+
+  // The actual preset must switch the renderer/controls camera, not just its pose.
+  for (const previousView of ["perspective", "top", "front", "right"]) {
+    await page.evaluate(view => window.viewport.current.standardView(view), previousView);
+    if (previousView !== "perspective") {
+      const standard = await snapshot();
+      assert.equal(standard.projection, "orthographic", `${previousView} must use parallel projection`);
+      const offset = standard.position.map((value, axis) => value - standard.target[axis]);
+      const length = Math.hypot(...offset);
+      const expected = { top: [0, 0, 1], front: [0, -1, 0], right: [1, 0, 0] }[previousView];
+      assert.ok(offset.every((value, axis) => Math.abs(value / length - expected[axis]) < 1e-6),
+        `${previousView} must look along its world axis`);
+    }
+    await page.evaluate(() => window.viewport.current.standardView("iso"));
+    const iso = await snapshot();
+    assert.equal(iso.projection, "orthographic", `Iso after ${previousView} must remove perspective`);
+    const direction = iso.position.map((value, axis) => value - iso.target[axis]);
+    assert.ok(direction[0] > 0 && direction[1] < 0 && direction[2] > 0);
+    assert.ok(Math.abs(direction[0] + direction[1]) < 1e-8 && Math.abs(direction[0] - direction[2]) < 1e-8,
+      "Iso must use the same scale along all three world axes");
+  }
+  before = await snapshot();
+  await page.evaluate(() => window.load(true));
+  assert.deepEqual(await snapshot(), before, "model refresh preserves the isometric projection");
+  await page.evaluate(() => window.viewport.current.fitView());
+  assert.equal((await snapshot()).projection, "orthographic", "Fit keeps the isometric projection");
+  await page.evaluate(() => window.viewport.current.standardView("perspective"));
+  assert.equal((await snapshot()).projection, "perspective", "the explicit perspective preset still works");
   assert.deepEqual(errors, []);
   if (process.env.BROWSER_OUTPUT) {
     await mkdir(process.env.BROWSER_OUTPUT, { recursive: true });
     await page.screenshot({ path: path.join(process.env.BROWSER_OUTPUT, "viewport-selection.png") });
     await writeFile(path.join(process.env.BROWSER_OUTPUT, "viewport-report.json"), JSON.stringify({
       source: process.env.SOURCE_SHA, picked: await page.evaluate(() => window.picks), errors,
-      assertions: ["initial Fit", "layout after Fit", "explicit Fit", "six picks with async highlight", "clear and close panel", "orbit/resize/readback", "window resize"],
+      assertions: ["initial Fit", "layout after Fit", "explicit Fit", "six picks with async highlight", "clear and close panel", "orbit/resize/readback", "window resize", "standard views", "orthographic Iso", "Iso refresh and Fit", "explicit perspective"],
     }, null, 2));
   }
-  console.log("viewport selection, asynchronous highlight, panel resize, initial and explicit Fit: PASS");
+  console.log("viewport selection, asynchronous highlight, resize, Fit, standard views and orthographic Iso: PASS");
 } finally {
   await browser?.close(); await vite?.close();
   await new Promise(resolve => http.close(resolve));

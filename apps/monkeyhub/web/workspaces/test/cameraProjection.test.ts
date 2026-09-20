@@ -57,6 +57,36 @@ test("standard view frames follow the Z-up model coordinates", () => {
   assert.deepEqual(standardViewFrame("right").direction.toArray(), [1, 0, 0]);
 });
 
+test("isometric fit has equal axis scale and no depth-dependent perspective", () => {
+  const frame = standardViewFrame("iso");
+  assert.deepEqual(frame.direction.toArray(), [1, -1, 1]);
+  assert.deepEqual(frame.up.toArray(), [0, 0, 1]);
+  const box = new Box3(new Vector3(-5, -2, 0), new Vector3(5, 2, 8));
+  for (const aspect of [0.5, 1, 2]) {
+    const camera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 1000);
+    const center = fitOrthographicBox(camera, box, aspect, frame.direction, frame.up);
+    const screen = (point: Vector3) => {
+      const projected = point.clone().project(camera);
+      return [projected.x * aspect, projected.y];
+    };
+    const length = (start: Vector3, end: Vector3) => {
+      const a = screen(start), b = screen(end);
+      return Math.hypot(b[0]! - a[0]!, b[1]! - a[1]!);
+    };
+    const x = new Vector3(1, 0, 0), y = new Vector3(0, 1, 0), z = new Vector3(0, 0, 1);
+    const scale = length(center, center.clone().add(x));
+    close(length(center, center.clone().add(y)), scale);
+    close(length(center, center.clone().add(z)), scale);
+    const near = center.clone().add(frame.direction), far = center.clone().sub(frame.direction);
+    close(length(near, near.clone().add(x)), length(far, far.clone().add(x)));
+    for (const bx of [box.min.x, box.max.x]) for (const by of [box.min.y, box.max.y]) for (const bz of [box.min.z, box.max.z]) {
+      const projected = new Vector3(bx, by, bz).project(camera);
+      assert.ok(Math.abs(projected.x) < 1 && Math.abs(projected.y) < 1 && Math.abs(projected.z) < 1,
+        `isometric bounds must fit at aspect ${aspect}`);
+    }
+  }
+});
+
 test("framing selected bounds preserves perspective view direction", () => {
   const camera = new PerspectiveCamera(38, 1.5, 0.01, 10000);
   const target = new Vector3(1, 2, 3);

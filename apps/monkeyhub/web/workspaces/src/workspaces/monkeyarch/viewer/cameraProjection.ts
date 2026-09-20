@@ -68,12 +68,13 @@ export function transferProjectionPose(
   to.updateMatrixWorld();
 }
 
-export function standardViewFrame(view: Exclude<StandardView, "iso" | "perspective">): {
+export function standardViewFrame(view: Exclude<StandardView, "perspective">): {
   direction: Vector3;
   up: Vector3;
 } {
   if (view === "top") return { direction: new Vector3(0, 0, 1), up: new Vector3(0, 1, 0) };
   if (view === "front") return { direction: new Vector3(0, -1, 0), up: new Vector3(0, 0, 1) };
+  if (view === "iso") return { direction: new Vector3(1, -1, 1), up: new Vector3(0, 0, 1) };
   return { direction: new Vector3(1, 0, 0), up: new Vector3(0, 0, 1) };
 }
 

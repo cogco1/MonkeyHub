@@ -159,13 +159,11 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
-            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
-            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+            "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css"
           ],
           "depends_on": [],
-          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. Source writing stopped after #194 landed; the coordinator verified clean completed checkouts and released the shared App/client/generated and intent/proposal integration seams to current lanes. Remaining acceptance is retained here."
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. PR #194 is merged into main at 3a92b414; completed App/Stage/candidatePreview editing is released to GH-137/retire-elevation-entry for removal of the old elevation toolbar. Preserve all parameter-lock behavior and its tests."
         },
         {
           "id": "drawing-pages",
@@ -220,7 +218,9 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/sceneSnapping.ts",
         "apps/monkeyhub/web/workspaces/test/featureEdges.test.ts",
         "apps/monkeyhub/web/workspaces/test/sceneSnapping.test.ts",
-        "apps/monkeyhub/web/workspaces/test/sceneSnapping.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/sceneSnapping.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css"
       ],
       "handoff": "S1 implementation is ready for review with measured scene queries and isolated browser coverage of loaded 3DM/drafts, constraints and cancellation. Keep this modeling scope reserved until the S1 PR merges; then defer V2 and release Stage/viewport to #136. #46 DocumentTracingContext and App.tsx document callbacks are outside this scope. #180 is the recorded base; no main push or issue closure.",
       "lanes": [
@@ -239,7 +239,10 @@
           "write_scope": [
             "apps/monkeyhub/web/src/i18n/messages.en.ts",
             "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx"
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css"
           ],
           "depends_on": [],
           "handoff": "Combine the reviewed scene snapping and orthographic camera changes with the current Hub editor; preserve both source PR histories and verify the composed behavior."

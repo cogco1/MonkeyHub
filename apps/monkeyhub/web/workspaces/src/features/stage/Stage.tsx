@@ -10,7 +10,7 @@ import { useConnection } from "../../api/ProjectRuntimeContext";
 import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { StudioApiError } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentVisualInputDto, ElevationRequestDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
+import type { DocumentAnnotationRefDto, DocumentVisualInputDto, GestureDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
 import { ErrorBoundary } from "../../app/ErrorBoundary";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { designObjectLabel } from "../../app/format";
@@ -30,7 +30,6 @@ import {
 import { Annotate, GESTURE_TOOLS, type AnnotationStyle, type GestureTool } from "../../workspaces/monkeyarch/Annotate";
 import { VersionsStrip, type VersionGroup, type DesignHistoryControls } from "./VersionsStrip";
 import { DocumentCanvas, type DocumentViewContext } from "../../workspaces/monkeydiagram/DocumentCanvas";
-import type { ClientTimingSpan } from "../../app/clientTiming";
 import { createDocumentAnnotationsController } from "../../workspaces/monkeydiagram/useDocumentAnnotations";
 import type { ModelAnnotationsHandle } from "../../workspaces/monkeyarch/useModelAnnotations";
 import { distanceBetween, type SnapConstraint } from "../../workspaces/monkeyarch/viewer/featureEdges";
@@ -129,12 +128,10 @@ export function Stage({
   onOpenWorkingOption,
   designHistory,
   documentView,
-  documentTiming,
   onDocumentView,
   onReturnToBoard,
   documentAnnotationsController,
   onDocumentBeforeLeave,
-  drawing,
   loadingSha,
   loadedShas,
   evidenceCounts,
@@ -206,13 +203,11 @@ export function Stage({
   onOpenWorkingOption(option: WorkingCopyOptionDto): void;
   designHistory?: DesignHistoryControls;
   documentView: DocumentViewContext;
-  documentTiming?: ClientTimingSpan;
   onDocumentView(next: DocumentViewContext): void;
   /** Present while this tab is showing a page opened from its own board. */
   onReturnToBoard?(): void;
   documentAnnotationsController: ReturnType<typeof createDocumentAnnotationsController>;
   onDocumentBeforeLeave(save: (() => Promise<void>) | null): void;
-  drawing?: { busy: boolean; available: boolean; error: StudioApiError | null; dismissError(): void; generate(view: ElevationRequestDto["view"]): void };
   loadingSha: string | null;
   /** The digests on screen: one seat's, or every seat of a run. */
   loadedShas: readonly string[];
@@ -348,7 +343,6 @@ export function Stage({
   const { developerMode, language } = usePreferences();
   const zh = language === "zh-CN";
   const [annotationStyle, setAnnotationStyle] = useState<AnnotationStyle>({ color: "#e5534b", lineWidth: 2 });
-  const [elevationView, setElevationView] = useState<NonNullable<ElevationRequestDto["view"]>>("front");
   const [annotationCancel, setAnnotationCancel] = useState(0);
   const documentOpen = documentView.open;
   const showElevationReference = useCallback((value: number | null) => viewportRef.current?.elevationGuide(value), [viewportRef]);
@@ -357,7 +351,6 @@ export function Stage({
     showElevationReference(!documentOpen && !model?.directTool && facts?.baseReference ? facts.base - facts.baseReference.offset : null);
     return () => showElevationReference(null);
   }, [model?.elevation?.object, model?.directTool, documentOpen, showElevationReference]);
-  useEffect(() => { if (!documentOpen) documentTiming?.finish("cancelled"); }, [documentOpen, documentTiming]);
   const documentMounted = documentView.mounted;
   const documentRunId = documentView.runId ?? editingBaseRunId;
   const [eraser, setEraser] = useState(false);
@@ -1210,16 +1203,6 @@ export function Stage({
           </div>
         )}
       </div>}
-      {drawing?.error && <div className="stage-drawing-error">
-        <div>
-          <p role="alert">{t(drawing.error.code === "DRAWING_COMPLETE_SOURCE_UNAVAILABLE" ? "stage.drawing.completeSourceUnavailable"
-            : drawing.error.code === "DRAWING_SOURCE_MISMATCH" ? "stage.drawing.sourceMismatch" : "stage.drawing.failed")}</p>
-          <details key={`${drawing.error.code}:${drawing.error.detail}`}><summary>{t("stage.drawing.details")}</summary>
-            <p className="mono" lang="en" translate="no">{drawing.error.code}: {drawing.error.detail}</p>
-          </details>
-        </div>
-        <button type="button" className="btn btn--small" onClick={drawing.dismissError} aria-label={t("stage.drawing.dismiss")}>{t("common.close")}</button>
-      </div>}
       <div ref={workspaceElement} className="stage-workspace">
       <div className={`stage-model${documentOpen ? " stage-model--hidden" : ""}`} inert={documentOpen} aria-hidden={documentOpen}
         /* Undo and redo are decided in one place - the keyboard effect above -
@@ -1771,14 +1754,6 @@ export function Stage({
           <button type="button" disabled={!model?.hasSelection} onClick={() => viewportRef.current?.fitSelection()}>{t("stage.tools.fitSelected")}</button>
           {(["top", "front", "right", "iso", "perspective"] as const).map((view) => <button type="button" key={view}
             onClick={() => viewportRef.current?.standardView(view)}>{t(`stage.view.${view}`)}</button>)}
-          {drawing && <>
-            <span className="viewtools__sep" aria-hidden="true" />
-            <select aria-label={t("stage.drawing.direction")} value={elevationView} disabled={drawing.busy}
-              onChange={(event) => { setElevationView(event.target.value as NonNullable<ElevationRequestDto["view"]>); drawing.dismissError(); }}>
-              <option value="front">{t("stage.drawing.front")}</option><option value="back">{t("stage.drawing.back")}</option><option value="left">{t("stage.drawing.left")}</option><option value="right">{t("stage.drawing.right")}</option>
-            </select>
-            <button disabled={!drawing.available || drawing.busy} onClick={() => drawing.generate(elevationView)}>{t(drawing.busy ? "stage.drawing.busy" : "stage.drawing.generate")}</button>
-          </>}
           <span className="viewtools__sep" aria-hidden="true" />
           {/* One button, home: the reference run's exports when it left
               any, else the export the stage actually opened on — named for
@@ -2095,7 +2070,6 @@ export function Stage({
           onContinueModelSource={onContinueModelSource}
           initialSourceSha={documentView.sourceSha} initialPageIndex={documentView.pageIndex}
           initialRevisionRef={documentView.revisionRef}
-          timing={documentTiming}
           sourceStageRef={designHistory?.currentStageRef}
           onBeforeLeave={onDocumentBeforeLeave}
           busy={baseActionBusy || changingBase} onSubmit={onDocumentSubmit} documentVisualInputAvailable={documentVisualInputAvailable} />
