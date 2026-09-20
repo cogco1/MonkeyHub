@@ -31,6 +31,7 @@ from archflow.state.state_record import (
     StateRecordError,
     apply_state_record_operator,
     compile_component_edit,
+    compile_parameter_locks,
 )
 
 from ..transport.errors import BlockedNeedsHuman, StudioError
@@ -475,6 +476,38 @@ def delete_element_proposal(
         component_id=component_id or None,
         keep_refs=keep_refs,
     )
+
+
+def parameter_locks_proposal(
+    projection: StateProjection, *, parameter_keys: tuple[str, ...], lock_authority: str | None,
+) -> Mapping[str, Any]:
+    """Propose one authorized, metadata-only constraint decision on an exact base."""
+    try:
+        operator = compile_parameter_locks(projection.record, parameter_keys=parameter_keys, lock_authority=lock_authority)
+        successor = apply_state_record_operator(projection.record, operator)
+    except (TypeError, ValueError) as exc:
+        raise StudioError(422, "PARAMETER_LOCK_INVALID", str(exc)) from exc
+    direct = tuple(sorted(p.ref for p in operator.parameters))
+    summary = ("Lock" if lock_authority else "Unlock") + " parameters: " + ", ".join(parameter_keys)
+    components = projection.record.entities_of("Component@1")
+    return {
+        "proposal_id": f"studio-{uuid4().hex[:12]}", "status": PROPOSED,
+        "base_state_digest": projection.state_digest, "record_digest": projection.record_digest,
+        "component_id": components[0].entity_id if components else "",
+        "element_id": None, "target_ref": direct[0],
+        "key": None, "old": None, "new": None, "unit": None,
+        "protected": (), "operator": None, "state_record_operator": operator,
+        "impact": impact(projection, direct, (), successor=successor),
+        "utterance": summary, "created_at": datetime.now(timezone.utc).isoformat(),
+        "semantic_edit": {
+            "summary": summary, "kept": ["Parameter values, expressions and existing geometry remain unchanged."],
+            "changes": [{"action": "update", "entityId": p.ref, "label": p.key,
+                         "description": f"lock: {projection.record.parameter(p.key).lock_authority or 'unlocked'} → {p.lock_authority or 'unlocked'}"}
+                        for p in operator.parameters],
+            "edits": {"entities": [], "parameters": [p.to_dict() for p in operator.parameters], "relations": [],
+                      "removeEntityIds": [], "removeParameterKeys": [], "removeRelationIds": []},
+        },
+    }
 
 
 def component_edit_proposal(

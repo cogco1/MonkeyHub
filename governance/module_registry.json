@@ -3530,7 +3530,8 @@
         "plain typed operator serialization for exact-source candidate replay",
         "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates",
         "lintel_minimum_bearing relation parameters: explicit opening and lintel object ids, x or z span axis, and finite nonnegative minimum_bearing_m",
-        "Level@1 upserts through the existing EDIT_COMPONENTS operator with project-level validity, exact-base and protected-dependency checks; a Level remains a spatial reference, not a storey."
+        "Level@1 upserts through the existing EDIT_COMPONENTS operator with project-level validity, exact-base and protected-dependency checks; a Level remains a spatial reference, not a storey.",
+        "Explicit metadata-only parameter lock/unlock operators; ordinary edits preserve existing lock metadata and established parameter binding paths, including inherited Type defaults, without freezing unrelated consumer fields"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -3589,7 +3590,8 @@
         "StateRecordOperator.to_dict",
         "StateRecordOperator.from_dict",
         "combine_component_changes",
-        "StateRecord.closures"
+        "StateRecord.closures",
+        "compile_parameter_locks"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3634,7 +3636,8 @@
         "explicit @parameter bindings use evaluated values; ordinary numeric literals never acquire an inferred dependency; conflicting direct edits to derived or bound scalar targets are refused",
         "developed_design_view takes the run's phase from its caller; there is no default phase (ADR-007 rule 1); retained serialized values stay readable without rewriting old records",
         "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
-        "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances"
+        "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances",
+        "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings"
       ],
       "status": "canonical",
       "tests": [
@@ -4429,7 +4432,8 @@
         "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design",
         "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
         "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
-        "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history."
+        "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
+        "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4564,7 +4568,8 @@
         "read_acceptance",
         "AcceptanceEvidence",
         "POST /api/proposals/elevation",
-        "compile_task_context"
+        "compile_task_context",
+        "POST /api/proposals/parameter-locks"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4640,7 +4645,8 @@
         "Completed direct-model gestures update local previews without network writes; Sync never locks editing or replaces later local edits, retries retain candidate request identity through existing Hub admission, and local selection/preview is not acceptance or project authority",
         "one accepted Stage carries at most one acceptance event: it is written only after the branch head actually advanced, a repeat acceptance returns the committed Stage and writes none, a refusal writes none, and a Stage committed before this evidence existed reads back with none rather than an invented actor",
         "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance",
-        "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly."
+        "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly.",
+        "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD"
       ],
       "status": "canonical",
       "tests": [
@@ -4835,7 +4841,8 @@
         "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery",
         "an actor identity a caller supplies is never an actor: attribution comes from the authenticated actor the middleware resolved, or states the local unauthenticated boundary's own identity; no credential byte leaves this module",
         "Configuration comes only from the environment the launcher resolved (StudioSettings.from_env); the preference file is served over the settings routes and never consulted for the runtime's own behavior",
-        "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own"
+        "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
+        "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller"
       ],
       "status": "canonical",
       "tests": [

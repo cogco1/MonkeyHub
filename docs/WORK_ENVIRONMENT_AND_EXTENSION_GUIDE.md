@@ -98,6 +98,12 @@ CAD 导出共用 `cad_workspace_path`，默认进入 `runs/<run-id>/workspaces/c
 多个已确定的形体通过 sketch 的 `sketches` 一次提交；确定性的连续修改通过 `sourceProposalId` 在内存中累积，保持该链原始 `baseStateDigest`。
 下一步设计决策依赖实际结果时，可先生成并观察候选；后续从 `GET /api/state?run=<candidateId>` 读取准确状态，写入时使用该状态的 `stateDigest` 和 `sourceRunId`。
 同一 Stage 内允许多轮候选观察与修改，不自动接受或发布。修改方法、schema 查询和状态刷新按实际需要选择。
+明确锁定或解锁参数使用 `POST /api/proposals/parameter-locks`，提交准确来源、`stateDigest`、
+`parameterKeys` 和 `action: lock|unlock`，再通过既有 proposal candidate 入口留存，并从返回的候选继续。
+提案尚未执行时不产生持久锁，也不能并入 `sourceProposalId` 编辑链。锁保存于现有 StateRecord/P036，
+新会话 ContextPack 会读到；普通编辑不能清锁、删除既有绑定或将其换成常量／其他参数，新增引用与未锁字段仍可修改。
+这是参数范围的约束，不是整个体块冻结，也不代表 Stage 接受。配置 actor 认证时，锁与解锁使用现有 `accept` 权限；
+默认本地无认证模式只能归属于本地调用边界，不能据此证明自然人操作。该动作不提供给聊天 MCP。
 需要共享尺寸或联动的设计，通过同一个 `POST /api/proposals` 提交 `semanticEdit`：当前 Agent 直接写入已有的构件、参数、表达式和关系契约，不再调用第二个模型。
 `utterance` 与 `semanticEdit` 二选一；后续可只提交 `{key, value}` 参数更新，保留原有表达式和几何中的 `@key` 绑定。
 prism/planar-surface 的轮廓坐标支持参数引用；渐变截面形体可使用已公开的单个 `loft`，当前支持顶点对应的闭合折线截面及 normal/straight 两种方式。

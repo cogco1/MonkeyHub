@@ -422,6 +422,25 @@ class SemanticEditRequestDto(BaseModel):
     kept: list[str] = Field(default_factory=list)
 
 
+class ParameterLocksRequestDto(BaseModel):
+    """An explicit parameter constraint decision; ordinary semantic edits cannot author locks."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
+    project_id: str | None = Field(default=None, alias="projectId")
+    state_digest: str = Field(alias="stateDigest", min_length=64, max_length=64)
+    source_run_id: str | None = Field(default=None, alias="sourceRunId")
+    source_stage_ref: str | None = Field(default=None, alias="sourceStageRef")
+    parameter_keys: list[str] = Field(alias="parameterKeys", min_length=1)
+    action: Literal["lock", "unlock"]
+
+    @field_validator("parameter_keys")
+    @classmethod
+    def distinct_keys(cls, keys: list[str]) -> list[str]:
+        if any(not key or key != key.strip() for key in keys) or len(set(keys)) != len(keys):
+            raise ValueError("parameterKeys must be distinct nonempty keys")
+        return keys
+
+
 class ProposalRequestDto(BaseModel):
     """One scalar utterance or a typed semantic edit, at one exact base."""
 
