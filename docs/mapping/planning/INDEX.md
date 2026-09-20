@@ -4,7 +4,6 @@
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
-| GH-32 | active | Remove a measured redundant candidate read in the existing bounded MCP completion flow and repeat fixed numeric and multi-object edits with the same model and archived input. Keep necessary authored-state verification, partial readback failures, exact sources and unaccepted candidates explicit. | [GH-32](https://github.com/cogco1/MonkeyHub/issues/32) |
 | GH-183 | active | Complete the assigned candidate context, loft revision and real provider spatial-observation follow-up for issue #183, with issue #32 first-candidate and missing-span diagnostics. Preserve exact editing sources, retained conditions, canonical authority and truthful timing limits; broader issue acceptance remains open. | [GH-183](https://github.com/cogco1/MonkeyHub/issues/183) |
 | GH-185 | active | Verify a real Hub provider massing-to-wall design loop, same-source visual revision, and cold-start continuation from exact retained project conditions. Extend existing intent/history owners only for reproduced gaps; issue #183 retains broader design quality acceptance. | [GH-185](https://github.com/cogco1/MonkeyHub/issues/185) |
 | GH-137 | blocked | V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1. | [GH-137](https://github.com/cogco1/MonkeyHub/issues/137) |

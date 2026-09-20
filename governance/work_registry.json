@@ -3,30 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-32",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Remove a measured redundant candidate read in the existing bounded MCP completion flow and repeat fixed numeric and multi-object edits with the same model and archived input. Keep necessary authored-state verification, partial readback failures, exact sources and unaccepted candidates explicit.",
-      "depends_on": [],
-      "branch": "codex/32-edit-latency",
-      "worktree": "C:/Users/asus/.codex/worktrees/fcf1/ARCHFLOW_V4",
-      "base_ref": "f4399f4f9db0cab3ceba6d2fd804d90bf0261afe",
-      "contributor": "Codex",
-      "reviewer": null,
-      "modules": [
-        "hub.shell",
-        "monkeymonitor"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/tests/test_chat.py",
-        "tests/monkeymonitor/run_turn_benchmark.py",
-        "tests/monkeymonitor/test_turn_benchmark.py",
-        "docs/CONTEXT_COMPILATION.md"
-      ],
-      "handoff": "Explicitly inherits PR #202. Own only _finish and _mcp tool descriptions in chat.py; no ChatStore, prepared context, stage handoff or artifact refresh edits. Release chat.py to the new #185 slice immediately after the focused tool commit. Results stay in the existing nonproject benchmark directory; no raw transcripts or private data enter Git. Broader #32 acceptance remains open."
-    },
-    {
       "id": "GH-183",
       "stream": "planning",
       "status": "active",

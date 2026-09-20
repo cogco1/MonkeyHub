@@ -583,3 +583,92 @@ those poll failures remain in the reports. Browser first paint and explicit
 `verified_ms` remain unknown. The variation shows why a faster first candidate
 must not be presented as a faster completed turn. Evidence remains under
 `D:/MONKEYHUB_DEV/temp/183-32-validation/numeric-repeats/repeat-1` and `repeat-2`.
+
+## Reusing the awaited candidate observation source (#32)
+
+The bounded completion response now preserves each artifact's exact
+`modelSource` and `sourceStageRef`. `_finish` already read these values from the
+candidate but discarded them, while the tool description directed the model to
+use `modelSource` for its next model-view observation. Both assembly baseline
+turns consequently included another candidate GET. The two revised turns use
+the awaited result and omit that extra GET. Numeric turns did not improve.
+
+Commit `0dec7bf7` extends the existing artifact projection and tool description.
+Absent and null sources stay absent and null; source identities are never
+reconstructed from other hashes. Runtime still verifies every model-view source.
+`sourceStageRef` remains source metadata, not candidate acceptance. Partial
+readback, timeout recovery and single-submit behavior retain their existing
+meaning. Necessary authored-state, source and context checks remain available.
+
+This reuses the existing data and native image result contract of the
+[MCP 2025-11-25 tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools).
+The transferable mechanism from [ReAct v3](https://arxiv.org/abs/2210.03629v3)
+is continuing an action from an external observation. Its QA/game results do not
+establish an architectural or latency benefit. No new transport or execution
+framework is needed for this missing field.
+
+### Paired observations, 2026-09-20
+
+The unchanged `tests/monkeymonitor/run_turn_benchmark.py` ran the fixed numeric
+and two-object assembly edits through Hub, MCP and OCCT. Each scenario has two
+baseline/revised pairs, with eight fresh `gpt-6-astra` sessions and byte-identical
+inputs restored from one synthetic project archive. Pair checks confirm the
+same fixture, reported model, prompt, initial source and context mode.
+Numeric uses `--context-pack`; assembly does not. Each arm uses `--no-preview`,
+`--timeout 240` and its own `--retained-root`/`--output` directory. Production was
+frozen at `f4399f4f` for all four baselines, then at `0dec7bf7` for all four
+revised runs. No failed or slow sample was dropped or rerun.
+
+| Task / repeat / build | Turn seconds | First new candidate seconds | Tools | Extra candidate GETs | Input / cached subset / output tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Numeric 1 / baseline | 65.061 | 27.531 | 4 | 0 | 144,845 / 102,784 / 1,431 |
+| Numeric 1 / revised | 68.723 | 31.859 | 5 | 0 | 187,494 / 143,488 / 1,321 |
+| Numeric 2 / baseline | 54.447 | 22.472 | 4 | 0 | 181,449 / 140,800 / 1,024 |
+| Numeric 2 / revised | 61.881 | 31.381 | 5 | 0 | 184,461 / 155,520 / 1,252 |
+| Assembly 1 / baseline | 126.733 | 87.448 | 9 | 1 | 399,058 / 343,552 / 1,810 |
+| Assembly 1 / revised | 93.395 | 63.942 | 8 | 0 | 344,643 / 291,456 / 1,832 |
+| Assembly 2 / baseline | 100.424 | 68.288 | 10 | 1 | 442,806 / 400,896 / 1,812 |
+| Assembly 2 / revised | 84.258 | 66.238 | 8 | 0 | 337,780 / 300,032 / 1,347 |
+
+Numeric median elapsed time increased from 59.754 to 65.302 s (+5.548 s), with
+one more tool call in both revised turns: an additional context read in repeat
+1 and an additional state read in repeat 2. Numeric first-candidate median also
+increased, from 25.002 to 31.620 s. Assembly median elapsed time decreased from
+113.579 to 88.827 s (-24.752 s), with the duplicate candidate reads removed;
+its first-candidate median changed from 77.868 to 65.090 s.
+
+The local `waterfall.svg`/`.png` projects the existing trace into Agent activity,
+Tools, CAD and Readback lanes on one seconds axis. Nested spans overlap and are
+not added into a fake total; post-turn checker reads are excluded. The dashed
+line uses the existing same-turn `first_candidate_ms`, never an input-candidate
+read. In assembly pair 1, 23.506 s of the 33.338 s total difference precedes
+the first new candidate. That difference cannot be attributed solely to
+avoiding its later re-read. Agent activity includes provider wait, CLI and
+scheduling; pure model inference remains unknown. Browser visibility is unknown.
+
+All eight final candidates passed the independent geometry, authored-entity,
+parameter, relation, obligation and unchanged-HEAD checks. Each made one CAD
+build and one model-view observation. Zero failed tools and zero retry spans
+were observed, but **all eight source comparisons failed** with
+`INSPECTION_NOT_FOUND`: the synthetic input `run-001` has no inspection. The
+awaited response truthfully remains partial even when its new candidate and
+source descriptor are available. One Monitor poll returned busy/503 and later
+recovered. These failures remain in the original reports.
+
+Total observed budget across all eight attempts is 654.922 turn-seconds,
+53 tools, 8 CAD builds, 2,222,536 input tokens (including 1,878,528 cached input)
+and 11,829 output tokens. Cached input is a subset, not an extra charge.
+Fixture/service preparation and teardown wall time were not measured;
+provider-internal retries, model-request boundaries, explicit `verified_ms`
+and billed cost remain unknown. This total is not an all-in wall-time or price
+claim. No extra provider runs were made to obtain a favorable result.
+
+All baselines preceded all revised runs; the pilot was not counterbalanced.
+Other Claude tasks and workstation load were concurrent, and caching was not
+controlled. The retained reports support the specific observation-source repair
+and fewer assembly reads in this batch, **not a general speedup or improved
+numeric-edit latency**. Evidence remains at
+`D:/MONKEYHUB_DEV/temp/32-edit-latency`: the eight original report/project/runtime
+directories, shared `input.zip`, `comparison.json`, and the waterfall. The
+temporary summary script was implemented by the real Claude CLI, then reviewed,
+corrected and executed independently; it is not a production mechanism.
