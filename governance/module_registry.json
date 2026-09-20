@@ -3530,7 +3530,8 @@
         "plain typed operator serialization for exact-source candidate replay",
         "normalizing independent materialized component edits into one exact-base typed operator; refusing changed objects or dependencies shared by the candidates",
         "lintel_minimum_bearing relation parameters: explicit opening and lintel object ids, x or z span axis, and finite nonnegative minimum_bearing_m",
-        "Level@1 upserts through the existing EDIT_COMPONENTS operator with project-level validity, exact-base and protected-dependency checks; a Level remains a spatial reference, not a storey."
+        "Level@1 upserts through the existing EDIT_COMPONENTS operator with project-level validity, exact-base and protected-dependency checks; a Level remains a spatial reference, not a storey.",
+        "Explicit metadata-only parameter lock/unlock operators; ordinary edits preserve existing lock metadata and established parameter binding paths, including inherited Type defaults, without freezing unrelated consumer fields"
       ],
       "does_not_own": [
         "the relation kind vocabulary (relations.contracts.ArchitecturalRelationKind)",
@@ -3589,7 +3590,8 @@
         "StateRecordOperator.to_dict",
         "StateRecordOperator.from_dict",
         "combine_component_changes",
-        "StateRecord.closures"
+        "StateRecord.closures",
+        "compile_parameter_locks"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -3634,7 +3636,8 @@
         "explicit @parameter bindings use evaluated values; ordinary numeric literals never acquire an inferred dependency; conflicting direct edits to derived or bound scalar targets are refused",
         "developed_design_view takes the run's phase from its caller; there is no default phase (ADR-007 rule 1); retained serialized values stay readable without rewriting old records",
         "semantic edits check protected closure before and after the edit; a deleted entity releases its incident relationships, while remaining dangling references are refused",
-        "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances"
+        "a wall type supplies producer parameters and references, not a second instance store; changing a type or a bound parameter propagates to its instances",
+        "Lock changes alter only existing Parameter.lock_authority; exact bases and ordinary value/dependency protections remain enforced, new downstream bindings are allowed, and only an explicit unlock permits detaching existing locked bindings"
       ],
       "status": "canonical",
       "tests": [
@@ -3908,7 +3911,9 @@
         "POST /api/documents/{asset_sha256}/work-copy",
         "open_document_work_copy",
         "list_document_work_copies",
-        "DocumentWorkCopy"
+        "DocumentWorkCopy",
+        "GET /api/drawings/model-view",
+        "model_view"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3957,7 +3962,8 @@
         "the exact STEP and the mesh preview keep their meaning: the work model is an additional exact 3dm delivery beside them, and no preview is ever relabelled",
         "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose page has become another page of one document, whose current replacement has a different page count or is a different kind of file, or whose registered media type has no editable copy at all, has no one file that can stand for it: the row carries that reason and the request is refused as not editable, naming any copy already made; the row names the whole registration it answers for and no page number, because one file answers for the whole document",
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
-        "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page"
+        "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
+        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources."
       ],
       "status": "canonical",
       "tests": [
@@ -3999,7 +4005,8 @@
       "inputs": [
         "ProjectBinding",
         "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
-        "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment"
+        "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment",
+        "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults"
       ],
       "outputs": [
         "BoardDto",
@@ -4038,7 +4045,8 @@
         "feedback edits exactly one registered drawing page and its declared model source; explicitly connected reference pages provide visual context only, and board position, rotation and scale never change source identity",
         "selected text includes native frame children and bound labels once per object, ordered by Board y, x and id; original text prefills the editable utterance without OCR, unselected nearby text or geometric text DTOs",
         "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
-        "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version"
+        "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version",
+        "Page export verifies the exact registered revision, including null versus a generated revision, and source digest before rendering; bounded previews preserve visible PDF crop/rotation and image orientation without persisting derived output"
       ],
       "status": "canonical",
       "tests": [
@@ -4406,7 +4414,7 @@
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
         "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
         "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
-        "showing the Agent project types, source readings, parameter bindings and named relationships as context; no geometry program or deferred replay payload is accepted as semantic authoring",
+        "showing the Agent project types, source readings, parameter bindings and named relationships as context; advertising Reading@1 note, exact subject refs and source ref for retained design conditions through the existing semantic proposal; no geometry program or deferred replay payload is accepted as semantic authoring",
         "retaining complete 2D page stroke and plain-text revisions and page comments through P036 against exact source-file content, named run and page; reading exact submitted revisions into source context beside existing 3D gesture facts",
         "retaining submitted document words and their exact annotation references before intent resolution, and carrying that retained context with scalar or semantic proposals and modifications",
         "refusing unknown or mismatched document model sources before a model call; retaining resolved sourceRunId and the exact document association in comments and proposals, including clarification continuations",
@@ -4426,7 +4434,8 @@
         "compiling finished profiles and direct drawn-element edits into the existing exact-base typed component proposal and candidate path, without accepting or issuing the resulting design; explicitly selected calibrated saved document paths use this same sketch route and retain exact sourceDocumentTrace fields on stable editable elements",
         "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
         "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
-        "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history."
+        "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
+        "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4563,7 +4572,9 @@
         "continue_proposal",
         "read_acceptance",
         "AcceptanceEvidence",
-        "POST /api/proposals/elevation"
+        "POST /api/proposals/elevation",
+        "compile_task_context",
+        "POST /api/proposals/parameter-locks"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4639,7 +4650,9 @@
         "Unexecuted proposal continuations fold checked operators onto their original run/Stage base in memory; a sketch batch stores only its complete proposal, failures leave previous proposals unchanged, and only final candidate execution creates a run or model file",
         "Completed direct-model gestures update local previews without network writes; Sync never locks editing or replaces later local edits, retries retain candidate request identity through existing Hub admission, and local selection/preview is not acceptance or project authority",
         "one accepted Stage carries at most one acceptance event: it is written only after the branch head actually advanced, a repeat acceptance returns the committed Stage and writes none, a refusal writes none, and a Stage committed before this evidence existed reads back with none rather than an invented actor",
-        "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance"
+        "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance",
+        "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly.",
+        "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD"
       ],
       "status": "canonical",
       "tests": [
@@ -4834,7 +4847,8 @@
         "an editable work model is offered only for a view that is exactly one exported delivery, one request at a time per source; its file is downloaded through the existing artifact bytes route, and it is never loaded into the viewer beside the preview of the same delivery",
         "an actor identity a caller supplies is never an actor: attribution comes from the authenticated actor the middleware resolved, or states the local unauthenticated boundary's own identity; no credential byte leaves this module",
         "Configuration comes only from the environment the launcher resolved (StudioSettings.from_env); the preference file is served over the settings routes and never consulted for the runtime's own behavior",
-        "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own"
+        "One process binds one project directory, keyed and supervised by MonkeyHub; in production it is reached only through the Hub's forwarding path, and it never grows a persistent user-settings file, a launcher, a tray or a UI of its own",
+        "The Runtime parameter-lock proposal route uses the existing accept actor grant; local unauthenticated attribution identifies only the process boundary and does not prove a human caller"
       ],
       "status": "canonical",
       "tests": [
@@ -6195,7 +6209,8 @@
         "Mounted workspace view state and local drafts survive tool and project switches; Board page visits keep exact source/page/revision and return to the same canvas. These are UI projections, not a second project store.",
         "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
         "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
-        "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with"
+        "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with",
+        "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6277,7 +6292,8 @@
         "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
         "apps/shared-web/src/base.css: appearance tokens and base controls",
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
-        "ProjectWorkspace: Arch/Board navigation, exact Board page visit and candidate preview without editing-base change"
+        "ProjectWorkspace: Arch/Board navigation, exact Board page visit and candidate preview without editing-base change",
+        "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6301,7 +6317,8 @@
         "No project workspace iframe or shared mutable API client; a request remains bound to its original project when another project is selected.",
         "Hub controls language, theme and application settings. Workspace preferences only project those values; retained editing-base pointers keep their existing exact project binding.",
         "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
-        "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory"
+        "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory",
+        "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6393,7 +6410,8 @@
         "monkeyfab",
         "studio.artifacts",
         "project.archive",
-        "monkeycontrol"
+        "monkeycontrol",
+        "studio.board"
       ]
     },
     {

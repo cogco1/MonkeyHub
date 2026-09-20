@@ -1,4 +1,4 @@
-"""The Studio consumer of the existing exact STEP elevation owner."""
+"""Retained drawings and transient observations from the existing exact STEP owner."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import hashlib
 from io import BytesIO
 from itertools import product
 import json
+from math import ceil
 import os
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,8 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, SEAT_OCCT_EXECUTION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_ref_from_uri, require_identifier
 from monkeydiagram.drawing_elevation import (
-    DrawingElevationError, ElevationSource, ElevationView, freeze_model_axis_elevation, read_elevation_source,
+    DrawingElevationError, ElevationSource, ElevationView, freeze_model_axis_elevation,
+    project_model_axis_elevation, read_elevation_source,
 )
 
 from .artifacts import (
@@ -110,6 +112,31 @@ def _elevation_view(
         )
     except (KeyError, TypeError, ValueError, IndexError) as exc:
         raise StudioError(409, "DRAWING_SOURCE_INVALID", "The exact model has no complete retained bounds for this elevation.") from exc
+
+
+def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str) -> tuple[bytes, int, int]:
+    """Read one exact retained model as a bounded line projection, without retaining a drawing."""
+
+    from PIL import Image
+
+    source, receipt = _complete_source(binding, model_source, None)
+    try:
+        verified = read_elevation_source(binding.repository, source)
+        recipe = _elevation_view(receipt, view, hidden_lines=False, scale_denominator=1)
+        u0, v0, u1, v1 = recipe.crop_uv
+        mm_per_unit = {"meter": 1000, "millimeter": 1, "inch": 25.4, "foot": 304.8}[verified.length_unit]
+        # The existing PNG renderer uses 150 dpi. Choose its paper scale before
+        # rendering so even the intermediate image is bounded, not resized later.
+        scale = max(1, ceil(max(u1 - u0, v1 - v0) * mm_per_unit * 150 / (25.4 * 1023)))
+        recipe = replace(recipe, scale_denominator=scale, linear_deflection=0.1 / mm_per_unit)
+        projected = project_model_axis_elevation(
+            verified.entries, object_ids=verified.physical_object_ids, view=recipe, unit=verified.length_unit,
+        )
+    except DrawingElevationError as exc:
+        raise StudioError(409, "DRAWING_SOURCE_INVALID", str(exc)) from exc
+    with Image.open(BytesIO(projected.png)) as image:
+        width, height = image.size
+    return projected.png, width, height
 
 
 def generate_elevation(

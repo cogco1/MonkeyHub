@@ -924,6 +924,50 @@ class ContextPackTests(IntentTestCase):
         response = self.client.post("/api/intents/context", json=body)
         return response.status_code, response.json()
 
+    def test_advertised_reading_edit_survives_candidate_and_cold_task_context(self) -> None:
+        from jsonschema import Draft202012Validator
+        from archflow_studio_api.transport.proposal import SemanticEditRequestDto
+
+        reading = {
+            "entity_id": "entry-condition", "schema": "Reading@1", "parent_id": "portico",
+            "basis_refs": ["studio:intent"],
+            "fields": {"note": "Keep the south entry and courtyard route open; this is a design condition, not Stage approval.",
+                       "subject_refs": ["entity:portico-base", "entity:portico-cornice"],
+                       "source_ref": "studio:intent"},
+        }
+        edit = {"summary": "Retain the entry condition for later wall work.", "entities": [reading]}
+        # The agent must be able to discover the write through the very schema
+        # exposed by studio_schema; an accepted undocumented payload is not enough.
+        Draft202012Validator(SemanticEditRequestDto.model_json_schema()).validate(edit)
+        proposed = self.client.post("/api/proposals", json={
+            "projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID,
+            "stateDigest": self.state_digest, "semanticEdit": edit,
+        })
+        self.assertEqual(proposed.status_code, 201, proposed.text)
+        started = self.client.post(f"/api/proposals/{proposed.json()['proposalId']}/candidate")
+        self.assertEqual(started.status_code, 202, started.text)
+        self.assertEqual(_finished(self.client, started.json()["jobId"])["status"], "succeeded")
+        candidate_id = started.json()["candidateId"]
+        record = _load_kind(self.repository, candidate_id, "state-record")
+        saved = next(row for row in record["entities"] if row["entity_id"] == "entry-condition")
+        self.assertEqual(saved["fields"], reading["fields"])
+        self.assertEqual(saved["basis_refs"], reading["basis_refs"])
+
+        self.client.close()
+        cold_app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        cold_app.state.intent_compiler = Failing()
+        with TestClient(cold_app) as cold:
+            state = cold.get("/api/state", params={"run": candidate_id}).json()
+            response = cold.post("/api/intents/context", json={
+                "projectId": PROJECT_ID, "sourceRunId": candidate_id,
+                "stateDigest": state["stateDigest"], "utterance": "Add the courtyard walls.",
+                "elementIds": ["portico-base", "portico-cornice"],
+            })
+            self.assertEqual(response.status_code, 200, response.text)
+            facts = response.json()["context"]
+            self.assertEqual(next(row for row in facts["readings"] if row["entity_id"] == "entry-condition"), saved)
+        self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
     def test_the_named_source_and_focus_answer_a_pack_with_no_compiler_and_no_write(self) -> None:
         status, payload = self.pack("Raise portico-cornice height to 0.5 m.")
         self.assertEqual(status, 200, payload)
@@ -942,6 +986,182 @@ class ContextPackTests(IntentTestCase):
         self.assertNotIn("capability", payload)
         # Reading changed nothing the project stands on.
         self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
+    def test_whole_and_multi_element_tasks_do_not_invent_a_single_target(self) -> None:
+        for focuses in ({}, {"elementIds": ["portico-base", "portico-cornice"]}):
+            with self.subTest(focuses=focuses):
+                response = self.client.post("/api/intents/context", json={
+                    "projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID,
+                    "stateDigest": self.state_digest, "utterance": "Explore their spatial relation", **focuses,
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                payload = response.json()
+                self.assertEqual(payload["contextTier"], "design")
+                self.assertEqual(payload["context"]["focusElementIds"], focuses.get("elementIds", []))
+                self.assertIsNone(payload["target"])
+                self.assertIsNone(payload["request"])
+                self.assertIn("portico-base", {row["elementId"] for row in payload["context"]["elements"]})
+        self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+
+    def test_exact_element_alone_resolves_only_its_recorded_component(self) -> None:
+        status, payload = self.pack("set portico-cornice height to 0.5", targetComponentId=None)
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["target"]["componentId"], "portico")
+        self.assertEqual(payload["contextTier"], "scalar")
+
+    def test_context_request_refuses_conflicting_focuses_and_unknown_supplements(self) -> None:
+        for body in (
+            {"elementIds": ["portico-base"]},
+            {"elementId": None, "elementIds": ["portico-base", "portico-base"]},
+            {"contextRefs": ["entity:unknown"]},
+            {"contextOffset": -1},
+        ):
+            with self.subTest(body=body):
+                status, payload = self.pack("Reorganize the design", **body)
+                self.assertEqual(status, 422, payload)
+        status, payload = self.pack("Reorganize the design", elementId=None,
+                                    elementIds=["portico-base", "unknown"])
+        self.assertEqual(status, 404, payload)
+        self.assertEqual(payload["code"], "ELEMENT_UNKNOWN")
+
+    def test_omitted_run_never_selects_an_existing_candidate(self) -> None:
+        status, payload = self.pack("Review the whole design", sourceRunId=None,
+                                    targetComponentId=None, elementId=None)
+        self.assertEqual(status, 409, payload)
+        self.assertEqual(payload["code"], "SOURCE_RUN_REQUIRED")
+
+    def test_initialized_empty_modeling_state_needs_no_run_or_fake_focus(self) -> None:
+        from archflow.project.repository import FilesystemProjectRepository
+        from archflow.state.state_record import StateRecord
+
+        root = self.root / "empty-context"
+        repository = FilesystemProjectRepository.initialize(
+            root, project_id="empty-context", initial_state={"project_id": "empty-context", "version": 0},
+            authored_record=StateRecord(project_id="empty-context", run_id="authored", entities=()).to_dict(),
+        )
+        with TestClient(create_app(StudioSettings(project_dir=root, cad_export="off"))) as client:
+            initialized = client.post("/api/project/modeling", json={"projectId": "empty-context"})
+            self.assertEqual(initialized.status_code, 200, initialized.text)
+            state = client.get("/api/state").json()
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            response = client.post("/api/intents/context", json={
+                "projectId": "empty-context", "stateDigest": state["stateDigest"],
+                "utterance": "Explore three masses around a courtyard",
+            })
+            self.assertEqual(response.status_code, 200, response.text)
+            payload = response.json()
+            self.assertEqual(payload["context"]["elements"], [])
+            self.assertEqual(payload["context"]["focusElementIds"], [])
+            self.assertIsNone(payload["target"])
+            self.assertIsNone(payload["request"])
+            self.assertEqual(before, {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()})
+            self.assertEqual(list(repository.layout.runs.iterdir()), [])
+
+    def test_explicit_lock_candidate_cold_context_refuses_bypass_and_explicit_unlock_restores_editing(self) -> None:
+        from archflow.state.state_record import StateRecord
+        from archflow_studio_api.application.candidate import replay_candidate
+
+        head = self.repository.read_head()
+
+        def run_lock(client, source, keys, action):
+            proposed = client.post("/api/proposals/parameter-locks", json={
+                "projectId": PROJECT_ID, "sourceRunId": source["referenceRun"]["runId"],
+                "stateDigest": source["stateDigest"], "parameterKeys": keys, "action": action,
+            })
+            self.assertEqual(proposed.status_code, 201, proposed.text)
+            started = client.post(f"/api/proposals/{proposed.json()['proposalId']}/candidate")
+            self.assertEqual(started.status_code, 202, started.text)
+            job = _finished(client, started.json()["jobId"])
+            self.assertEqual(job["status"], "succeeded", job)
+            return started.json()["candidateId"]
+
+        source = self.client.get(f"/api/state?run={REFERENCE_RUN_ID}").json()
+        locked_run = run_lock(self.client, source, ["module"], "lock")
+        original = StateRecord.from_dict(_load_kind(self.repository, REFERENCE_RUN_ID, "state-record"))
+        saved = StateRecord.from_dict(_load_kind(self.repository, locked_run, "state-record"))
+        self.assertEqual(saved.entities, original.entities)
+        self.assertEqual(saved.parameter("module").lock_authority, "studio:explicit-user-action")
+        self.assertEqual(self.repository.read_head(), head)
+
+        self.client.close()
+        app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        with TestClient(app) as cold:
+            self.assertEqual(replay_candidate(bound_project(app.state), locked_run).digest, saved.digest)
+            state = cold.get(f"/api/state?run={locked_run}").json()
+            request = {"projectId": PROJECT_ID, "sourceRunId": locked_run, "stateDigest": state["stateDigest"]}
+            context = cold.post("/api/intents/context", json={**request, "utterance": "Continue the design while preserving locked dimensions"})
+            self.assertEqual(context.status_code, 200, context.text)
+            parameters = {row["key"]: row for row in context.json()["context"]["parameters"]}
+            self.assertEqual(parameters["module"]["lockAuthority"], "studio:explicit-user-action")
+            scalar = cold.post("/api/proposals", json={**request, "targetComponentId": "portico", "utterance": "set module to 1.5"})
+            self.assertEqual(scalar.status_code, 422, scalar.text)
+            # No chat or proposal store is needed to read and unlock this exact candidate.
+            unlocked_run = run_lock(cold, state, ["module"], "unlock")
+            unlocked = cold.get(f"/api/state?run={unlocked_run}").json()
+            edited = cold.post("/api/proposals", json={
+                "projectId": PROJECT_ID, "sourceRunId": unlocked_run, "stateDigest": unlocked["stateDigest"],
+                "targetComponentId": "portico", "utterance": "set module to 1.5",
+            })
+            self.assertEqual(edited.status_code, 201, edited.text)
+            self.assertIsNone(StateRecord.from_dict(_load_kind(self.repository, unlocked_run, "state-record")).parameter("module").lock_authority)
+            self.assertEqual(self.repository.read_head(), head)
+
+    def test_cold_context_reopens_exact_design_facts_and_continues_without_chat_history(self) -> None:
+        from .support import add_later_run
+
+        request = {
+            "projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID, "stateDigest": self.state_digest,
+            "utterance": "Adjust the cornice while preserving the existing base and locked project dimensions",
+        }
+        original = self.client.post("/api/intents/context", json=request)
+        self.assertEqual(original.status_code, 200, original.text)
+        original_facts = original.json()["context"]
+        source_record = _load_kind(self.repository, REFERENCE_RUN_ID, "state-record")
+        authored = {path: self.repository.layout.resolve_relative(path).read_bytes()
+                    for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)}
+        # A newer eligible run makes an accidental implicit-latest read visible.
+        newer = add_later_run(self.repository, run_id="newer-context-design")
+        self.client.close()
+        cold_app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        cold_app.state.intent_compiler = Failing()
+        with TestClient(cold_app) as cold:
+            self.assertEqual(cold.get("/api/state").json()["referenceRun"]["runId"], newer.run_id)
+            reopened = cold.post("/api/intents/context", json=request)
+            self.assertEqual(reopened.status_code, 200, reopened.text)
+            pack = reopened.json()
+            self.assertEqual(pack["source"]["runId"], REFERENCE_RUN_ID)
+            self.assertEqual(pack["source"]["stateDigest"], self.state_digest)
+            self.assertEqual(pack["context"], original_facts)
+            facts = pack["context"]
+            self.assertTrue(facts["coverage"]["complete"])
+            locked = next(row for row in facts["parameters"] if row["key"] == "plinth")
+            self.assertEqual((locked["value"], locked["lockAuthority"]), (0.6, "client"))
+            cornice = next(row for row in facts["elements"] if row["elementId"] == "portico-cornice")
+            self.assertEqual(cornice["references"]["base"], {"datum": "portico-base-top"})
+            self.assertIn("rel-cornice-on-base", {row["relation_id"] for row in facts["relationships"]})
+
+            proposed = cold.post("/api/proposals", json={
+                "stateDigest": pack["source"]["stateDigest"], "sourceRunId": pack["source"]["runId"],
+                "targetComponentId": "portico", "elementId": "portico-cornice", "utterance": "set height to 0.5",
+                "keep": ["entity:portico-base", "parameter:plinth"],
+            })
+            self.assertEqual(proposed.status_code, 201, proposed.text)
+            proposal = proposed.json()
+            self.assertEqual(proposal["sourceRunId"], REFERENCE_RUN_ID)
+            self.assertEqual(proposal["baseStateDigest"], self.state_digest)
+            started = cold.post(f"/api/proposals/{proposal['proposalId']}/candidate")
+            self.assertEqual(started.status_code, 202, started.text)
+            self.assertEqual(_finished(cold, started.json()["jobId"])["status"], "succeeded")
+            result = _load_kind(self.repository, started.json()["candidateId"], "state-record")
+            entities = {row["entity_id"]: row for row in result["entities"]}
+            self.assertEqual(entities["portico-cornice"]["fields"]["params"]["height"], 0.5)
+            self.assertEqual(entities["portico-base"], next(row for row in source_record["entities"]
+                                                         if row["entity_id"] == "portico-base"))
+            self.assertEqual(next(row for row in result["parameters"] if row["key"] == "plinth")["lock_authority"], "client")
+        self.assertEqual(_load_kind(self.repository, REFERENCE_RUN_ID, "state-record"), source_record)
+        self.assertEqual(self.repository.layout.head.read_bytes(), self.head)
+        for path, data in authored.items():
+            self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), data)
 
     def test_the_request_is_a_template_of_the_current_values_not_of_the_asked_change(self) -> None:
         status, payload = self.pack("set portico-cornice height to 0.5")

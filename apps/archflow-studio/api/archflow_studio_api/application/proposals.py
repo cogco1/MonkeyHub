@@ -118,6 +118,10 @@ def continue_proposal(
     if proposal.status == "conflict":
         raise StudioError(409, "PROPOSAL_CHAIN_CONFLICT", "The next edit reaches protected refs: " + ", ".join(proposal.impact.conflicts))
     prior_operator = operator_of(previous, base.record)
+    if (prior_operator.kind is StateRecordEditKind.SET_PARAMETER_LOCKS
+            or (proposal.state_record_operator is not None
+                and proposal.state_record_operator.kind is StateRecordEditKind.SET_PARAMETER_LOCKS)):
+        raise StudioError(409, "LOCK_PROPOSAL_REQUIRES_CANDIDATE", "Run the parameter lock proposal as a candidate, then continue from its exact retained state.")
     prior_record = apply_state_record_operator(base.record, prior_operator)
     try:
         # Earlier keep conditions apply to the state in which they were made,

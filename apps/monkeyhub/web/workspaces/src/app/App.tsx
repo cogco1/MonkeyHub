@@ -216,7 +216,14 @@ interface HomeArtifacts extends HomeModel {
   readonly referenceRunId: string;
 }
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest }: {
+export type WorkspaceDesignContext = {
+  projectId: string;
+  designContext: { sourceRunId: string | null; stateDigest: string; sourceStageRef?: string | null;
+    targetComponentId?: string; elementId?: string } | null;
+  unavailableReason: "unsaved" | "loading" | "unavailable" | null;
+};
+
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
@@ -230,10 +237,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   refreshKey?: number;
   onOpenBoard?: () => void;
   onChatRequest?: () => void;
+  onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }) {
   const studio = useStudio();
   const t = useT();
-  const { developerMode } = usePreferences();
+  const viewportOpened = useRef(active);
+  viewportOpened.current ||= active;
+  const { developerMode, language } = usePreferences();
   const transcript = useTranscript();
   const { append, remove: removeEntry, noteJobStatus: noteTranscriptStatus } = transcript;
   const pushNotice = useCallback(
@@ -686,6 +696,37 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // local work; neither export discovery nor another preview may replace it.
   localEditingRef.current = localModel !== null && (localModel.history.index > 0 ||
     localModel.pending !== null || !snapshotsEquivalent(draftSnapshot!, localModel.synced));
+  // Chat continues the verified editing base. Browsing another retained model
+  // never selects it, and local geometry cannot impersonate a saved revision.
+  const unsavedChatDraft = !!localModel && unsynced(localModel) || [...localModels.current.values()].some((model) =>
+    model.source.projectId === project?.projectId && model.source.stateDigest === projection?.stateDigest &&
+    model.source.sourceRunId === (projection?.referenceRunSource === "none" ? null : projection?.referenceRun.runId) && unsynced(model));
+  const chatContext = useMemo<WorkspaceDesignContext | null>(() => {
+    const projectId = project?.projectId ?? binding?.projectId;
+    if (!projectId) return null;
+    const unavailableReason = unsavedChatDraft ? "unsaved" : changingBase || session.status === "loading" ? "loading"
+      : baseError || !projection?.stateDigest || sourceLabel === LOCAL_SOURCE_LABEL ? "unavailable" : null;
+    const designContext: WorkspaceDesignContext["designContext"] = unavailableReason || !projection?.stateDigest ? null : {
+      sourceRunId: projection.referenceRunSource === "none" ? null : projection.referenceRun.runId,
+      stateDigest: projection.stateDigest, sourceStageRef: projection.sourceStageRef,
+    };
+    // The catalog fast path also labels verified exported objects "local";
+    // only ids present in this exact saved projection can cross into chat.
+    const retainedPick = picked?.status === "resolved" && picked.sourceState === "current" ||
+      picked?.status === "local" && picked.sourceState === designContext?.stateDigest;
+    if (designContext && retainedPick && picked &&
+        viewedProjection?.referenceRun.runId === designContext.sourceRunId && viewedProjection.stateDigest === designContext.stateDigest && picked.componentId && picked.elementId &&
+        projection?.elements.some((element) => element.elementId === picked.elementId && element.componentId === picked.componentId)) {
+      designContext.targetComponentId = picked.componentId;
+      designContext.elementId = picked.elementId;
+    }
+    return { projectId, designContext, unavailableReason };
+  }, [project?.projectId, binding?.projectId, projection, changingBase, session.status, baseError, sourceLabel,
+    unsavedChatDraft, picked, viewedProjection]);
+  useEffect(() => {
+    onDesignContextChange?.(chatContext);
+    return () => onDesignContextChange?.(null);
+  }, [onDesignContextChange, chatContext]);
   // The Hub keeps this model workspace mounted while the Board is visible.
   const returnToBoard = onReturnToBoard && (documentView.open || documentSource !== null) ? leaveToBoard : undefined;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
@@ -1280,7 +1321,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     displayedProjectRef.current = projectId;
   }, [session.status, project?.projectId, missingChosenModel]);
   useEffect(() => {
-    if (documentIntentStatus !== "done" || initialRunId) return;
+    if (!active || documentIntentStatus !== "done" || initialRunId) return;
     if (autoLoadedRef.current) return;
     // The first export may arrive while the architect is still drawing.
     // Local Sync owns its adoption, with the same input guard as later runs.
@@ -1289,7 +1330,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     if (loadedArtifacts.length > 0 || pendingArtifacts.current.length > 0) return;
     autoLoadedRef.current = true;
     showHome(false);
-  }, [documentIntentStatus, homeArtifacts, loadedArtifacts, showHome, initialRunId]);
+  }, [documentIntentStatus, homeArtifacts, loadedArtifacts, showHome, initialRunId, active]);
 
   /** The viewer says which file it holds; that is when the shell writes it down. */
   const noteSource = useCallback((label: string | null) => {
@@ -1814,7 +1855,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const candidateRequest = useRef(candidateRequestKey);
   candidateRequest.current = candidateRequestKey;
   useEffect(() => {
-    if (!initialRunId || session.status !== "ready" || !project || !viewportRef.current) return;
+    if (!active || !initialRunId || session.status !== "ready" || !project || !viewportRef.current) return;
     const projectId = project.projectId;
     const request = candidateRequestKey;
     const controller = new AbortController();
@@ -1839,7 +1880,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }).catch((cause) => { if (isCurrent()) setArtifactError(asStudioApiError(cause)); });
     return () => { live = false; controller.abort(); };
-  }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer]);
+  }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
@@ -2393,6 +2434,43 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [baseRunId]);
 
   const modelNavigationBusy = changingBase || selectingWorkingCopy || modelLoading;
+  const [parameterLockBusy, setParameterLockBusy] = useState(false);
+  const [parameterLockError, setParameterLockError] = useState<string | null>(null);
+  const lockZh = language === "zh-CN";
+  const parameterLockReason = !projection?.stateDigest || !project || baseError || sourceLabel === LOCAL_SOURCE_LABEL
+    ? (lockZh ? "请先打开可编辑的项目模型。" : "Open an editable project model first.")
+    : unsavedChatDraft ? (lockZh ? "请先同步当前模型修改。" : "Sync the current model edits first.")
+    : modelNavigationBusy || candidateBusy || modelRunPending !== null || proposalBusy || modelSyncBusy
+      ? (lockZh ? "请等待当前模型操作完成。" : "Wait for the current model operation to finish.")
+      : loadedArtifact && (!viewedProjection || loadedArtifacts.some((artifact) => artifact.runId !== projection.referenceRun.runId) ||
+          viewedProjection.stateDigest !== projection.stateDigest)
+        ? (lockZh ? "请先选择从当前查看的版本继续编辑。" : "Choose to continue editing from the viewed version first.") : null;
+  const parameterLockContext = useRef({ key: contextKey, reason: parameterLockReason });
+  parameterLockContext.current = { key: contextKey, reason: parameterLockReason };
+  useEffect(() => { setParameterLockError(null); }, [contextKey]);
+  const applyParameterLocks = useCallback(async (parameterKeys: string[], action: "lock" | "unlock") => {
+    if (parameterLockBusy || parameterLockReason || !project || !projection?.stateDigest || parameterKeys.length === 0) return;
+    const key = contextKey;
+    const revision = previewContext.current.revision, viewRequest = modelLoadRequest.current, interactionEpoch = modelInteractionEpoch.current;
+    const stillCurrent = () => parameterLockContext.current.key === key && previewContext.current.revision === revision &&
+      modelLoadRequest.current === viewRequest && modelInteractionEpoch.current === interactionEpoch;
+    setParameterLockBusy(true); setParameterLockError(null);
+    try {
+      const proposal = await studio.parameterLocks({ projectId: project.projectId, stateDigest: projection.stateDigest,
+        sourceRunId: projection.referenceRunSource === "none" ? undefined : projection.referenceRun.runId,
+        sourceStageRef: projection.sourceStageRef ?? undefined, parameterKeys, action });
+      // A delayed proposal must not start a candidate in a different edit context.
+      if (!stillCurrent() || parameterLockContext.current.reason) return;
+      append({ kind: "proposal", proposal, agent: null, refinements: 0 });
+      await runCandidate(proposal.proposalId);
+    } catch (cause) {
+      if (!stillCurrent()) return;
+      const error = asStudioApiError(cause);
+      setParameterLockError(error.detail);
+      recoverFromStaleBase(error);
+      append({ kind: "refusal", error, what: "POST /api/proposals/parameter-locks" });
+    } finally { setParameterLockBusy(false); }
+  }, [parameterLockBusy, parameterLockReason, project, projection, contextKey, studio, append, runCandidate, recoverFromStaleBase]);
   const canUndoModel = sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index > 0 : modelHistory.index > 0) && !modelNavigationBusy;
   const canRedoModel = sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length :
     modelHistory.index >= 0 && modelHistory.index < modelHistory.runs.length - 1) && !modelNavigationBusy;
@@ -2939,6 +3017,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     !(session.status === "failed" && session.error.code === "EDITING_PROJECT_CHANGED");
   const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");
 
+  if (!viewportOpened.current) return null;
+
   if ((session.status === "failed" || missingChosenModel) && !canOpenDocuments) {
     const error = session.status === "failed" ? session.error
       : artifacts.status === "failed" ? artifacts.error : baseError;
@@ -3089,6 +3169,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             onChatRequest={onChatRequest}
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}
+            parameterLocks={{ parameters: projection?.parameters ?? [], contextKey, busy: parameterLockBusy || modelRunPending !== null,
+              disabledReason: parameterLockReason, error: parameterLockError, onApply: (keys, action) => void applyParameterLocks(keys, action) }}
             sketchBusy={modelNavigationBusy}
             snapPoints={sketchSnapPoints}
             model={{

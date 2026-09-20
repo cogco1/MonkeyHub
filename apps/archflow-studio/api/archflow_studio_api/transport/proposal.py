@@ -208,7 +208,7 @@ class SketchPrismRequestDto(SketchActionDto):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",
@@ -229,7 +229,7 @@ class SketchBatchRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",
@@ -289,7 +289,7 @@ class TransformElementRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
@@ -324,7 +324,7 @@ class PushPullRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(alias="stateDigest", pattern=STATE_DIGEST_PATTERN)
     element_id: str = Field(alias="elementId", min_length=1)
@@ -402,7 +402,7 @@ class DeleteElementRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",
@@ -435,6 +435,11 @@ def _semantic_edit_schema(schema: dict[str, Any]) -> None:
             variant["description"] = "Upsert: omitted fields retain the existing value; new items need their complete declared fields."
             fields = variant.get("properties", {}).get("fields")
             if fields is not None:
+                variant["description"] = (
+                    "Upsert: omitted outer fields retain existing values; entity fields are merged by key. "
+                    "A supplied params or references object replaces that entire object. Preserve every unchanged "
+                    "nested member, such as a prism's profile when changing height. New items need their complete declared fields."
+                )
                 for field_variant in fields.get("anyOf", [fields]):
                     field_variant["required"] = []
     schema.update(edit)
@@ -456,6 +461,25 @@ class SemanticEditRequestDto(BaseModel):
     kept: list[str] = Field(default_factory=list)
 
 
+class ParameterLocksRequestDto(BaseModel):
+    """An explicit parameter constraint decision; ordinary semantic edits cannot author locks."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
+    project_id: str | None = Field(default=None, alias="projectId")
+    state_digest: str = Field(alias="stateDigest", min_length=64, max_length=64)
+    source_run_id: str | None = Field(default=None, alias="sourceRunId")
+    source_stage_ref: str | None = Field(default=None, alias="sourceStageRef")
+    parameter_keys: list[str] = Field(alias="parameterKeys", min_length=1)
+    action: Literal["lock", "unlock"]
+
+    @field_validator("parameter_keys")
+    @classmethod
+    def distinct_keys(cls, keys: list[str]) -> list[str]:
+        if any(not key or key != key.strip() for key in keys) or len(set(keys)) != len(keys):
+            raise ValueError("parameterKeys must be distinct nonempty keys")
+        return keys
+
+
 class ProposalRequestDto(BaseModel):
     """One scalar utterance or a typed semantic edit, at one exact base."""
 
@@ -473,7 +497,7 @@ class ProposalRequestDto(BaseModel):
     source_proposal_id: str | None = Field(
         alias="sourceProposalId", default=None, min_length=1,
         description="Continue this in-memory proposal; stateDigest stays its original baseStateDigest. "
-        "Only executing the final proposal creates a candidate checkpoint.",
+        "Proposal creation stays in memory; executing a proposal creates a candidate checkpoint.",
     )
     state_digest: str = Field(
         alias="stateDigest",

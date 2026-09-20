@@ -38,6 +38,7 @@ from starlette.requests import Request
 from archflow.state.state_record import apply_state_record_operator
 
 from ..application import episodes
+from ..application.authentication import request_attribution
 from ..application.elevation import elevation_proposal
 from ..application.binding import ProjectBinding, bound_project
 from ..adapters.seats import SeatsError, load_seat_pack, seats_of
@@ -45,6 +46,7 @@ from ..application.intent import (
     DeterministicIntentProvider,
     buildable_components,
     component_edit_proposal,
+    parameter_locks_proposal,
     merge_keep,
     direct_element_proposal,
     delete_element_proposal,
@@ -66,6 +68,7 @@ from ..transport.proposal import (
     ProposalDecisionRequestDto,
     ProposalDto,
     ProposalRequestDto,
+    ParameterLocksRequestDto,
     DeleteElementRequestDto,
     SketchPrismRequestDto,
     SketchActionDto,
@@ -150,6 +153,29 @@ def create_proposal(
     proposal = replace(proposal, source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
                        source_stage_ref=projection.source_stage_ref)
     return _remember_proposal(request, proposal, base, previous)
+
+
+@router.post("/proposals/parameter-locks", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
+def create_parameter_locks_proposal(request: Request, body: ParameterLocksRequestDto) -> ProposalDto:
+    """Authorize via the Runtime boundary, then compile on the exact retained state.
+
+    Configured actors require the existing accept grant. In unauthenticated
+    local mode attribution names the local boundary, not an identified person.
+    """
+    binding = bound_project(request.app.state)
+    _require_bound_project(binding, body.project_id)
+    projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    require_actionable(projection)
+    if body.state_digest != projection.state_digest:
+        raise StudioError(409, "STALE_BASE", "The parameter lock action no longer matches its exact source state.")
+    proposal = proposal_from(parameter_locks_proposal(
+        projection, parameter_keys=tuple(body.parameter_keys),
+        lock_authority=request_attribution(request).actor_id if body.action == "lock" else None,
+    ))
+    proposal = replace(proposal,
+                       source_run_id=projection.run.run_id if projection.reference_state_exact else body.source_run_id,
+                       source_stage_ref=projection.source_stage_ref)
+    return to_dto(request.app.state.proposals.put(proposal))
 
 
 @router.post(

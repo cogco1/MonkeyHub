@@ -120,6 +120,23 @@ class IntentRequestSchemaTests(unittest.TestCase):
         wrong = {**answer, "semanticEdit": None, "utterance": "set parameter:wall_height to 4"}
         self.assertRejected(wrong, context)
 
+    def test_local_reading_must_name_a_target_in_its_subjects(self):
+        record = _record()
+        sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))
+        context = compile_context("add a condition to wall-07 while keeping its base", sheet, record=record)
+        answer = _design_answer()
+        answer["elementId"] = "wall-07"
+        answer["semanticEdit"]["removeEntityIds"] = []
+        reading = {"entity_id": "entry-condition", "schema": "Reading@1", "parent_id": None,
+                   "basis_refs": ["studio:intent"],
+                   "fields": {"note": "Keep the south entry open.", "subject_refs": ["entity:wall-07"],
+                              "source_ref": "studio:intent"}}
+        answer["semanticEdit"]["entities"] = [reading]
+        validate_request_answer(answer, context, self.schema(context))
+        for subjects in ([], ["entity:support-wall"]):
+            reading["fields"]["subject_refs"] = subjects
+            self.assertRejected(answer, context)
+
     def test_local_new_member_requires_declared_connection_to_existing_target(self):
         record = _record()
         sheet = record_sheet(_projection(record), Selection("facade", "wall-07"))

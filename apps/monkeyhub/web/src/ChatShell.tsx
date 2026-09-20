@@ -4,6 +4,8 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSPrope
 import { applicationUrl, type AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, ChatPostRequest, ChatProject, ChatProvider, ChatSummary, ChatWorkspace, HubError, HubRuntimeDto, ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary, ProjectRuntimeDto, RuntimeEvent } from "./api/generated";
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
+import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
+import { MonitorPage } from "./MonitorPage";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
 import "./ChatShell.css";
@@ -152,6 +154,18 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const [chat, setChat] = useState<ChatDetail | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [draftAttachments, setDraftAttachments] = useState<Record<string, File[]>>({});
+  const [contextModes, setContextModes] = useState<Record<string, "continue" | "project">>({});
+  const [designContexts, setDesignContexts] = useState<Record<string, WorkspaceDesignContext | null>>({});
+  const contextCallbacks = useRef(new Map<string, (context: WorkspaceDesignContext | null) => void>());
+  const workspaceContextCallback = (runtimeId: string) => {
+    let callback = contextCallbacks.current.get(runtimeId);
+    if (!callback) {
+      callback = (context) => setDesignContexts((current) => JSON.stringify(current[runtimeId]) === JSON.stringify(context)
+        ? current : { ...current, [runtimeId]: context });
+      contextCallbacks.current.set(runtimeId, callback);
+    }
+    return callback;
+  };
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [error, setError] = useState<HubError | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,6 +226,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const draftKey = chatId ?? `new:${projectDir ?? ""}`;
   const draft = drafts[draftKey] ?? "";
   const attachments = draftAttachments[draftKey] ?? [];
+  const contextMode = contextModes[draftKey] ?? "continue";
+  const workspaceContext = projectRuntime ? designContexts[projectRuntime.runtimeId] : null;
+  const designContext = workspaceContext?.projectId === project?.projectId ? workspaceContext?.designContext : null;
+  const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" ? t.contextUnsaved
+    : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
   const running = chat?.id === chatId && chat.status === "running";
   const archived = chat?.id === chatId && chat.archived;
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
@@ -227,6 +246,12 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const modelOptions = [...new Set([...(availableProvider?.models ?? []), ...(chosenModel ? [chosenModel] : [])])];
   const currentTabs = tabs.filter((item) => !item.projectDir || item.projectDir === projectDir);
   const selectedTab = currentTabs.find((item) => item.id === activeTool);
+  // Prepare the same project session for chat before its viewport is opened.
+  // These hidden mounts are not navigation tabs and never open the tool panel.
+  const workspaceTabs: ToolTab[] = [...tabs, ...(projectRuntime ? [projectRuntime] : []).filter((item) =>
+    item.projection === "ready" && item.workers?.some((worker) => worker.serviceId === "studio" && worker.healthy) &&
+    !tabs.some((tab) => tab.runtimeId === item.runtimeId)).map((item) => ({ id: "monkeyarch" as const, url: "", revision: 0,
+      projectDir: item.projectDir, projectId: item.projectId, runtimeId: item.runtimeId }))];
   // Every candidate this conversation has an entry for, newest first: one of
   // them is usually the one just made, and the earlier ones stay reachable.
   const candidates = [...new Set([...(chat?.id === chatId ? chat.messages ?? [] : [])]
@@ -437,6 +462,10 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     event?.preventDefault();
     if (!projectDir || (!draft.trim() && !attachments.length) || actionLock.current || running || archived) return;
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
+    const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
+    if (requestedContextMode === "project" && !requestedContext) {
+      setError({ code: "CHAT_CONTEXT_UNAVAILABLE", detail: contextUnavailable }); return;
+    }
     actionLock.current = true; setBusy(true); setError(null);
     try {
       let current = chat?.id === chatId ? chat : chatId ? await request<ChatDetail>(`/api/chat/sessions/${encodeURIComponent(chatId)}`) : null;
@@ -450,11 +479,17 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       if (current.archived) { setChat(current); return; }
       await ensureProject(target, current.projectId);
       const body: ChatPostRequest = { content, projectId: current.projectId };
+      if (requestedContext && contextProjectId === current.projectId) body.designContext = requestedContext;
+      if (requestedContextMode === "project") {
+        if (!body.designContext) throw new Error(t.contextOpenProject);
+        body.contextMode = "project";
+      }
       if (files.length) body.attachments = await Promise.all(files.map(async (file) => ({ name: file.name, mimeType: file.type || "application/octet-stream", data: await fileData(file, t.attachmentRead) })));
       const posted = await request<ChatDetail>(`/api/chat/sessions/${current.id}/messages`, body);
       if (selection.current.projectDir === target && (selection.current.chatId === chatId || selection.current.chatId === current.id)) { setChatId(posted.id); setChat(posted); }
       setDrafts((value) => ({ ...value, [key]: "", [posted.id]: "" }));
       setDraftAttachments((value) => ({ ...value, [key]: [], [posted.id]: [] }));
+      setContextModes((value) => ({ ...value, [key]: "continue", [posted.id]: "continue" }));
       await refresh();
       requestAnimationFrame(() => { if (messages.current) messages.current.scrollTop = messages.current.scrollHeight; });
     } catch (cause) { setError(asFailure(cause)); void refresh(); }
@@ -570,11 +605,21 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const openTool = async (id: AppId, view?: Record<string, string>) => {
     const needsProject = id !== "monkeyfab" && id !== "monkeymonitor";
     if (needsProject && !projectDir) return false;
+    // An explicit system-page choice supersedes even a stale project link.
+    if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
     if (existing) {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
         candidate: view?.candidate ?? item.candidate,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : "arch" })}` : item.url } : item));
+      setPanel(true); setActiveTool(id); setError(null);
+      return true;
+    }
+    // Monitor connects its data service inside the Hub, so even an unavailable
+    // service cannot replace application navigation or prevent leaving the page.
+    if (id === "monkeymonitor") {
+      setTabs((items) => [...items.filter((item) => item.id !== id), { id,
+        url: `${window.location.origin}/?view=monitor`, revision: 0 }]);
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -606,8 +651,14 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   };
 
   const initialRuntimeRoute = useRef(new URLSearchParams(window.location.search).get("runtimeId")).current;
-  const routeRestored = useRef(initialRuntimeRoute === null);
+  const initialMonitorRoute = useRef(new URLSearchParams(window.location.search).get("view") === "monitor").current;
+  const routeRestored = useRef(initialRuntimeRoute === null && !initialMonitorRoute);
   useEffect(() => {
+    if (initialMonitorRoute && !routeRestored.current) {
+      restoredTools.current = true;
+      void openTool("monkeymonitor").then((opened) => { if (opened) routeRestored.current = true; });
+      return;
+    }
     const query = new URLSearchParams(window.location.search);
     const runtimeId = query.get("runtimeId");
     if (!runtimeId || routeRestored.current || !runtime) return;
@@ -621,25 +672,28 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       ? initial.tools.find((item) => item.id === id) : undefined;
     void openTool(id, saved?.candidate ? { candidate: saved.candidate } : undefined)
       .then((opened) => { if (opened) routeRestored.current = true; });
-  }, [runtime, projects, projectDir, busy, toolBusy, initial]);
+  }, [runtime, projects, projectDir, busy, toolBusy, initial, initialMonitorRoute]);
   useEffect(() => {
     // Let an explicit incoming workspace link resolve before reflecting navigation.
     if (!routeRestored.current) return;
     const url = new URL(window.location.href);
-    if (selectedTab?.runtimeId) {
+    if (panel && selectedTab?.id === "monkeymonitor") {
+      url.searchParams.delete("runtimeId");
+      url.searchParams.set("view", "monitor");
+    } else if (selectedTab?.runtimeId) {
       url.searchParams.set("runtimeId", selectedTab.runtimeId);
       url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : "arch");
     } else {
       url.searchParams.delete("runtimeId");
-      if (["arch", "board"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
+      if (["arch", "board", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
     }
     window.history.replaceState(null, "", url);
-  }, [selectedTab?.runtimeId, selectedTab?.id, projectDir]);
+  }, [selectedTab?.runtimeId, selectedTab?.id, projectDir, panel]);
 
   // Save view choices, not old worker URLs. Reopening always resolves the live host.
   useEffect(() => {
     if (restoredTools.current || !project) return;
-    if (initialRuntimeRoute) { restoredTools.current = true; return; }
+    if (initialRuntimeRoute || initialMonitorRoute) { restoredTools.current = true; return; }
     if (!initial.tools.length || initial.projectDir !== projectDir) { restoredTools.current = true; return; }
     if (!studioWorker?.healthy || busy || toolBusy || actionLock.current) return;
     restoredTools.current = true;
@@ -720,7 +774,9 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
                 {message.candidateId ? <div className="chat-activity__result"><button type="button" className="chat-activity__open" title={message.candidateId} disabled={!project || Boolean(toolBusy)}
                   onClick={() => void openTool("monkeyarch", { candidate: message.candidateId! })}><Icon name="cube" /><span>{t.openCandidate}</span></button><span className="chat-muted">{t.candidateHint}</span></div> : null}
               </div>
-            : <article className={`chat-message chat-message--${message.role}`} key={message.id}><MessageText text={message.content} />
+            : <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+              {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
+              <MessageText text={message.content} />
               {Boolean(message.attachments?.length) && <ul className="chat-attachments chat-attachments--saved" aria-label={t.attachments}>{message.attachments!.map((file) => <li key={file.id}>
                 <a href={`/api/chat/sessions/${encodeURIComponent(chat!.id)}/attachments/${encodeURIComponent(file.id)}`} download={file.name}><Icon name="file" /><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></a>
               </li>)}</ul>}
@@ -751,6 +807,12 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
           <label className="sr-only" htmlFor="chat-input">{t.placeholder}</label><textarea id="chat-input" ref={input} value={draft} placeholder={project ? t.placeholder : t.projectRequired} disabled={!project || busy}
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running) void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
+          <label className="chat-context-option" title={designContext ? t.contextProjectHint : contextUnavailable}>
+            <input type="checkbox" checked={contextMode === "project"} disabled={busy || running || (!designContext && contextMode !== "project")}
+              onChange={(event) => setContextModes((value) => ({ ...value, [draftKey]: event.target.checked ? "project" : "continue" }))} />
+            {t.contextProject}
+          </label>
+          {(!designContext || contextMode === "project") && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
           <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="attach" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
@@ -777,14 +839,18 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     {panel && <div className="chat-resizer" role="separator" aria-label={t.resize} aria-orientation="vertical" aria-valuemin={320} aria-valuemax={Math.max(320, window.innerWidth - 400)} aria-valuenow={panelWidth} tabIndex={0}
       onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); setPanelWidth((width) => clampWidth(width + (event.key === "ArrowLeft" ? 32 : -32))); } }}
       onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPanelWidth(clampWidth(window.innerWidth - event.clientX)); }} onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)} />}
-    {(panel || tabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
-      <div className="chat-browser__pages">{tabs.map((item) => {
+    {(panel || workspaceTabs.length > 0) && <aside className="chat-browser" aria-label={t.browser} hidden={!panel} inert={!panel} aria-hidden={!panel}>
+      <div className="chat-browser__pages">{workspaceTabs.map((item) => {
         const visible = panel && item === selectedTab;
+        if (item.id === "monkeymonitor") return <div className="chat-monitor-workspace" key={`${item.id}:${item.revision}`} hidden={!visible} inert={!visible}>
+          <ErrorBoundary label={t.monitor}><MonitorPage preferences={preferences} active={visible} onClose={() => setPanel(false)} /></ErrorBoundary>
+        </div>;
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} refreshKey={item.revision} onChatRequest={focusConversation}
+                onDesignContextChange={workspaceContextCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));

@@ -165,6 +165,18 @@ def response_schema(*, strict: bool = True) -> dict[str, Any]:
         "parent_id": nullable_text, "basis_refs": strings,
         "fields": {"anyOf": type_fields},
     }))
+    entity_variants.append(object_of({
+        "entity_id": text, "schema": {"type": "string", "enum": ["Reading@1"]},
+        "parent_id": nullable_text, "basis_refs": strings,
+        "fields": object_of({
+            "note": {"type": "string", "description": "A retained design condition, observation or assumption, "
+                     "with its status stated in the text. A reading is context, not approval or a lock."},
+            "subject_refs": {"type": "array", "items": text,
+                             "description": "Exact entity:/parameter:/relation: refs this reading concerns; "
+                                            "empty for a project-wide condition."},
+            "source_ref": nullable_text,
+        }, ["note", "subject_refs"]),
+    }))
     parameter = object_of({
         "key": text, "value": {"type": "number"}, "unit": text,
         "expr": nullable_text, "inputs": strings,

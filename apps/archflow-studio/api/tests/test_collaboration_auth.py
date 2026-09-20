@@ -91,6 +91,23 @@ class CollaborationAuthTests(unittest.TestCase):
             # A permitted caller reaches DTO validation, rather than the grant gate.
             self.assertEqual(client.post(path, headers=self.headers("reviewer"), json={}).status_code, 422)
 
+    def test_parameter_lock_decisions_require_accept_and_use_authenticated_actor(self) -> None:
+        client = self.client(shared=False)
+        state = client.get("/api/state", headers=self.headers("reader")).json()
+        body = {"stateDigest": state["stateDigest"], "parameterKeys": ["module"], "action": "lock"}
+        path = "/api/proposals/parameter-locks"
+        for actor in ("reader", "designer", "issuer", "outsider"):
+            with self.subTest(actor=actor):
+                response = client.post(path, headers=self.headers(actor), json=body)
+                self.assertEqual(response.status_code, 403, response.text)
+        allowed = client.post(path, headers=self.headers("reviewer"), json=body)
+        self.assertEqual(allowed.status_code, 201, allowed.text)
+        self.assertEqual(allowed.json()["change"]["edits"]["parameters"][0]["lock_authority"], "reviewer")
+        for actor in ("designer", "issuer"):
+            self.assertEqual(client.post(path, headers=self.headers(actor), json={**body, "action": "unlock"}).status_code, 403)
+        self.assertEqual(client.post(path, headers=self.headers("reviewer"), json={**body, "lockAuthority": "forged"}).status_code, 422)
+        self.assertEqual(self.client().post(path, headers=self.headers("reviewer"), json=body).status_code, 403)
+
     def test_body_cannot_replace_actor_or_project_scope(self) -> None:
         client = self.client(shared=False)
 

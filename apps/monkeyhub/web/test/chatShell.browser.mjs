@@ -54,6 +54,11 @@ const browser = await chromium.launch({ headless: true, channel: "chrome" });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 const errors = [], writes = [], sessions = [], providerReads = [];
+const monitorReads = [];
+let monitorFailure = false, monitorReadLocked = false, monitorReadConflicts = 0, documentLoads = 0;
+page.on("request", (request) => {
+  if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++;
+});
 let permissionResponseGate = Promise.resolve(), permissionFailure = null;
 let modelingResponseGate = Promise.resolve();
 let modelingFailure = null;
@@ -65,7 +70,7 @@ let projectListGate = null;
 let runtimeOpenGate = null;
 let runtimeOpenCaptured = null;
 let runtimeReadGate = null;
-let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: 18788 };
+let settings = { projectDir: "D:\\fixture\\A", referenceRun: null, cadExport: "off", studioPort: 18789, monitorPort: server.address().port };
 // The one saved preferences document: appearance and the new-conversation defaults.
 let preferences = { language: "en", theme: "light", fontScale: 1 };
 const projects = [
@@ -88,6 +93,9 @@ const archiveSummaryFor = (projectId, projectDir, archivePath) => ({
   archivePath, archiveBytes: 5242880, archiveSha256: "c".repeat(64), verified: true, projectDir,
 });
 const apps = ["monkeyarch", "monkeyboard", "monkeyfab", "monkeymonitor"].map((appId) => ({ appId, title: appId, serviceId: appId === "monkeyfab" ? "hub" : appId === "monkeymonitor" ? "monitor" : "studio", state: "running", processId: 1234, available: true, url: `${origin}/tool?app=${appId}` }));
+// Exercise the actual Hub Monitor page, including its navigation and effects.
+// A static /tool fixture concealed Monitor's former top-window redirect loop.
+Object.assign(apps.find((app) => app.appId === "monkeymonitor"), { url: `${origin}/?view=monitor`, apiUrl: `${origin}/` });
 const projectApps = new Map();
 const runtimes = new Map();
 const workspaceFixture = await createProjectWorkspaceFixture(runtimes, sessions);
@@ -113,6 +121,25 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   const data = () => req.postDataJSON();
   const json = async (body, status = 200) => { await route.fulfill({ json: body, status }); if (method !== "GET") emitRuntime(); };
   if (method !== "GET") writes.push([method, url.pathname, data(), url.searchParams.get("projectDir")]);
+  if (["/api/events", "/api/traces", "/api/rates", "/api/sources/codex"].includes(url.pathname)) {
+    monitorReads.push(url.pathname);
+    if (url.pathname === "/api/events" && monitorFailure) return json({ detail: "Monitor fixture is temporarily unavailable." }, 500);
+    if (["/api/events", "/api/traces"].includes(url.pathname)) {
+      // Both diagnostics share Monitor's non-concurrent store read. Parallel
+      // requests reproduce the live 503; unrelated rates/sources can overlap.
+      if (monitorReadLocked) {
+        monitorReadConflicts++;
+        return json({ detail: "Monitor fixture diagnostics read is already locked." }, 503);
+      }
+      monitorReadLocked = true;
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        return await json(url.pathname === "/api/events" ? { events: [], warnings: [] } : { traces: [], warnings: [] });
+      } finally { monitorReadLocked = false; }
+    }
+    if (url.pathname === "/api/rates") return json({ rates: [] });
+    return json({ paths: ["D:\\fixture\\usage.jsonl"] });
+  }
   if (url.pathname === "/api/settings/apps") { if (method === "PUT") settings = data(); return json(settings); }
   if (url.pathname === "/api/settings/user") { if (method === "PUT") preferences = data(); return json(preferences); }
   if (url.pathname === "/api/apps") return json(url.searchParams.has("projectDir") ? appsFor(url.searchParams.get("projectDir")) : apps);
@@ -246,7 +273,8 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
         uploadedAttachments.set(id, { ...file, sessionId: session.id });
         return { id, name: file.name, mimeType: file.mimeType, size: Buffer.from(file.data, "base64").length };
       });
-      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments });
+      session.messages.push({ id: `u-${session.messages.length}`, role: "user", content: data().content, status: "complete", attachments,
+        contextMode: data().contextMode ?? "continue" });
       session.title = session.messages[0].content || session.messages[0].attachments?.[0]?.name; session.status = "running";
       // What the API saves while the CLI works: one row per MCP call, a failed
       // one, and the finished candidate that call reported.
@@ -327,6 +355,16 @@ const waitCandidate = async (runId) => {
 };
 const studioReady = () => page.waitForFunction(() => ["Modeling", "Board"].every(label =>
   document.querySelector(`.chat-rail__tool[aria-label="${label}"]`)?.dataset.state === "running"));
+const waitMonitor = async () => {
+  await page.locator(".chat-browser .monitor-page").getByRole("heading", { name: "Usage and task records" }).waitFor();
+  await page.locator(".chat-browser .monitor-health").getByText("Monitoring service online", { exact: true }).waitFor();
+  assert.equal(await page.locator('.chat-browser .monitor-page [role="alert"]').count(), 0,
+    "the Monitor's actual data reads completed without a service error");
+  assert.equal(monitorReadConflicts, 0, "events and traces do not compete for the shared diagnostics read lock");
+  assert.equal(await page.locator('iframe[src*="view=monitor"], iframe[src*="app=monkeymonitor"]').count(), 0,
+    "Monitor mounts in the Hub panel without a second application document");
+  assert.equal(await page.getByRole("navigation", { name: "Project tools" }).isVisible(), true);
+};
 try {
   await page.goto(origin);
   await page.getByRole("heading", { name: "Start a project conversation" }).waitFor();
@@ -340,7 +378,11 @@ try {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
-  assert.equal(await page.locator(".chat-browser").count(), 0);
+  assert.equal(await page.locator(".chat-browser:visible").count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  assert.equal(await page.locator(".stage canvas").count(), 0, "reading initial project context does not initialize a hidden viewport");
+  assert.equal(workspaceFixture.requests.some((row) => row.name.endsWith("/bytes")), false,
+    "initial chat reads its editing state without loading model files");
   await studioReady();
   assert.equal(writes.filter(([, pathname, , target]) => pathname === "/api/project/modeling" && target === "D:\\fixture\\A").length, 1,
     "entering the configured project prepares one Studio before the first workspace click or chat");
@@ -371,13 +413,52 @@ try {
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   const beforeIndependent = writes.length;
   const beforeIndependentProject = settings.projectDir;
-  for (const [label, id] of [["Fabrication", "monkeyfab"], ["Usage", "monkeymonitor"]]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await page.waitForFunction((app) => document.querySelector("iframe:not([hidden])")?.src.includes(`app=${app}`), id);
-  }
+  await page.getByRole("button", { name: "Fabrication", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
+  const beforeMonitorNavigation = documentLoads;
+  const composer = page.getByRole("textbox", { name: "What would you like to do in this project?" });
+  await composer.fill("Keep this conversation while viewing usage");
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
+  assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage");
+  assert.equal(documentLoads, beforeMonitorNavigation, "opening Monitor keeps the current Hub document and conversation");
   assert.equal(settings.projectDir, beforeIndependentProject, "independent tools leave the shared Studio on its existing project");
   assert.ok(writes.slice(beforeIndependent).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)),
     "independent tools neither stop Studio nor rewrite its project configuration");
+  // Failed data reads stay visible and do not drive a base/effect retry loop.
+  monitorFailure = true;
+  const beforeFailedRead = monitorReads.filter((route) => route === "/api/events").length;
+  await page.locator(".monitor-page").getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.locator(".monitor-page").getByRole("alert").filter({ hasText: "Monitor fixture is temporarily unavailable." }).waitFor();
+  await page.waitForTimeout(750);
+  assert.ok(monitorReads.filter((route) => route === "/api/events").length - beforeFailedRead <= 2,
+    "a failed Monitor read does not immediately restart itself through effect dependencies");
+  monitorFailure = false;
+  await page.locator(".monitor-page").getByRole("button", { name: "Reconnect", exact: true }).click();
+  await waitMonitor();
+  // A hidden mounted Monitor must not poll or take top-level navigation back.
+  await page.getByRole("button", { name: "Hide tools" }).click();
+  await page.locator(".monitor-page").waitFor({ state: "hidden" });
+  const hiddenMonitorReads = monitorReads.length;
+  await page.waitForTimeout(5200);
+  assert.equal(monitorReads.length, hiddenMonitorReads, "Monitor suspends its five-second polling while the panel is hidden");
+  assert.equal(documentLoads, beforeMonitorNavigation, "hiding Monitor cannot reload or redirect the Hub");
+  await page.getByRole("button", { name: "Show tools" }).click();
+  await waitMonitor();
+  await page.locator(".monitor-page").getByRole("button", { name: "Back to chat", exact: true }).click();
+  await page.locator(".monitor-page").waitFor({ state: "hidden" });
+  assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage",
+    "returning from Monitor preserves the existing conversation draft");
+  assert.equal(documentLoads, beforeMonitorNavigation, "Back to chat does not reload the Hub into a restored Monitor tab");
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  for (const [label, workspace] of [["Board", "board"], ["Modeling", "arch"]]) {
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await waitWorkspace(workspace);
+    assert.equal(await page.locator(".monitor-page").isVisible(), false);
+    assert.equal(documentLoads, beforeMonitorNavigation, "switching from Monitor to a project workspace preserves the Hub document");
+  }
   await page.screenshot({ path: path.join(temporary, "new-project.png") });
   // Back to the first project's conversation for the rest of this walk.
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
@@ -386,6 +467,9 @@ try {
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   assert.equal(sessions.length, 2);
+  const firstContext = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2].designContext;
+  assert.equal(firstContext.sourceRunId, "home-A", "the first task is bound before the architect opens any modeling workspace");
+  assert.equal(firstContext.stateDigest, workspaceFixture.projects.get("A").assets.get("home-A").dto.designStateDigest);
   assert.ok(writes.some(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A"),
     "selecting an existing project prepares its base before its first task connects");
   assert.equal(writes.filter(([, pathname, body]) => pathname === "/api/project/modeling" && body.projectId === "A").length, 1,
@@ -1083,6 +1167,9 @@ try {
   const attachmentPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1);
   assert.equal(attachmentPost[2].content, "");
   assert.equal(attachmentPost[2].projectId, "B");
+  assert.equal(attachmentPost[2].designContext.sourceRunId, "home-B", "switching projects cannot inherit A's editing base or B's viewed candidate");
+  assert.equal(attachmentPost[2].designContext.stateDigest, workspaceFixture.projects.get("B").assets.get("home-B").dto.designStateDigest);
+  assert.equal(attachmentPost[2].designContext.elementId, undefined, "whole-design requests do not invent a focus");
   assert.deepEqual(attachmentPost[2].attachments, [
     { name: "clipboard.png", mimeType: "image/png", data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64") },
     { name: "notes.txt", mimeType: "text/plain", data: Buffer.from("Dropped notes B").toString("base64") },
@@ -1133,10 +1220,28 @@ try {
   await page.reload();
   await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeyfab"));
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B");
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
+  await waitMonitor();
+  await page.reload();
+  await waitMonitor();
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
+    "restoring Monitor also retains its surrounding project navigation");
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  await page.goto(`${origin}/?view=monitor`);
+  await waitMonitor();
+  assert.equal(await page.getByRole("textbox", { name: "What would you like to do in this project?" }).isVisible(), true,
+    "a legacy Monitor deep link opens a panel without replacing the conversation");
+  const afterMonitorLink = documentLoads;
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  assert.equal(documentLoads, afterMonitorLink, "a legacy Monitor link can be left without navigating the document");
   // An explicit link is deliberate navigation, and overrides the previous B/Fab view.
   await page.goto(`${origin}/?view=board&runtimeId=${runtimes.get("D:\\fixture\\A").runtimeId}`);
   await waitWorkspace("board");
   assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project A");
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  assert.equal(await visibleWorkspace().locator(".stage canvas").count(), 0, "Board-first context uses the same session without opening Arch");
   assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
   assert.equal(new URL(page.url()).searchParams.get("view"), "board");
 
@@ -1180,6 +1285,42 @@ try {
   await restored.getByRole("button", { name: "Close", exact: true }).last().click();
   await archiveCard.getByRole("button", { name: "Close", exact: true }).click();
 
+  // The user may reset model context without deleting the visible conversation.
+  // Viewing a prior result stays separate from deliberately continuing it.
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  const projectContext = page.getByRole("checkbox", { name: "Continue from project state (without previous conversation context)" });
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await visibleWorkspace().locator('.vcard__export').filter({ hasText: "cand-A-1.3dm" }).click();
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await projectContext.check();
+  await page.locator("#chat-input").fill("Compare the courtyard from the saved project state");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const resetPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(resetPost.contextMode, "project");
+  assert.equal(resetPost.designContext.sourceRunId, "home-A", "history browsing does not silently become the editing base");
+  assert.equal(resetPost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("home-A").dto.designStateDigest);
+  await page.locator(".chat-message--user").getByText("Project context", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  await visibleWorkspace().getByRole("button", { name: "Continue from this version", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.chat-project-workspace:not([hidden]) .editing-base')?.dataset.sourceMatch === "same");
+  await visibleWorkspace().locator(".stage__versions-toggle").click();
+  assert.equal(await projectContext.isChecked(), false, "the new-context option applies to one message");
+  await page.locator("#chat-input").fill("Revise this candidate now");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const continuePost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(continuePost.contextMode, undefined);
+  assert.equal(continuePost.designContext.sourceRunId, "cand-A-1", "explicit continuation changes the bound context");
+  assert.equal(continuePost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.designStateDigest);
+  assert.equal(await page.locator(".chat-message--user").count(), 2, "starting model context retains the visible chat");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.
   projects.splice(0); sessions.splice(0); settings.projectDir = null;
@@ -1195,8 +1336,12 @@ try {
   await page.getByRole("button", { name: "Fabrication", exact: true }).click();
   await page.locator(".chat-error").filter({ hasText: "MonkeyFab fixture dependency is missing." }).waitFor();
   await page.getByRole("button", { name: "Usage", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector("iframe:not([hidden])")?.src.includes("app=monkeymonitor"));
+  await waitMonitor();
   assert.ok(writes.slice(beforeNoProject).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)));
+  await page.reload();
+  await waitMonitor();
+  assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).isDisabled(), true,
+    "restoring the system Monitor panel does not require or invent a project");
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));

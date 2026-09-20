@@ -4,7 +4,7 @@ from pathlib import Path
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 AppId = Literal["monkeyarch", "monkeymonitor", "monkeyboard", "monkeyfab"]
 
@@ -194,6 +194,7 @@ class ChatMessage(BaseModel):
     candidateId: str | None = None
     permission: ChatPermission | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
+    contextMode: Literal["continue", "project"] = "continue"
 
 
 class ChatSummary(BaseModel):
@@ -307,23 +308,37 @@ class ChatArchiveRequest(BaseModel):
 
 
 class ChatDesignContext(BaseModel):
-    """The exact source and focus this one message is about.
+    """Exact project state, with an optional object or multi-object read focus.
 
-    A caller that already knows which object it is talking about says so here,
-    and the turn is prepared against that. Every field but the Stage is
-    required: a partial selection would have to be completed by guessing, and a
-    guess about which object a change lands on is the one thing this must not
-    do. It selects nothing and authorises nothing — the project the turn is
-    bound to is still the conversation's own.
+    No focus means the design as a whole. It does not select a recent candidate
+    or grant permission to edit the dependencies included in its read context.
     """
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
 
-    sourceRunId: str = Field(min_length=1)
+    sourceRunId: str | None = Field(default=None, min_length=1)
     stateDigest: str = Field(min_length=1)
-    targetComponentId: str = Field(min_length=1)
-    elementId: str = Field(min_length=1)
+    targetComponentId: str | None = Field(default=None, min_length=1)
+    elementId: str | None = Field(default=None, min_length=1)
+    elementIds: list[str] = Field(default_factory=list, max_length=64)
     sourceStageRef: str | None = Field(default=None, min_length=1)
+    contextRefs: list[str] = Field(default_factory=list, max_length=16)
+    contextOffset: int = Field(default=0, ge=0)
+
+    @field_validator("elementIds", "contextRefs")
+    @classmethod
+    def exact_references(cls, values: list[str]) -> list[str]:
+        if any(not value.strip() for value in values):
+            raise ValueError("Context references must name an exact nonempty object.")
+        if len(set(values)) != len(values):
+            raise ValueError("Context references must not repeat an object.")
+        return values
+
+    @model_validator(mode="after")
+    def consistent_focus(self):
+        if self.elementId is not None and self.elementIds and self.elementIds != [self.elementId]:
+            raise ValueError("elementId and elementIds must name the same focus when both are supplied.")
+        return self
 
 
 class ChatPostRequest(BaseModel):
@@ -332,9 +347,15 @@ class ChatPostRequest(BaseModel):
     content: str = ""
     projectId: str = Field(min_length=1)
     attachments: list[ChatAttachmentInput] = Field(default_factory=list, max_length=8)
-    # Absent on every existing caller, and never carried over: a later message
-    # with no context of its own is prepared exactly as it was before.
+    # The verified editing projection for this turn only; old callers may omit it.
     designContext: ChatDesignContext | None = None
+    contextMode: Literal["continue", "project"] = "continue"
+
+    @model_validator(mode="after")
+    def project_context_requires_source(self):
+        if self.contextMode == "project" and self.designContext is None:
+            raise ValueError("Starting from project state requires an explicit designContext.")
+        return self
 
 
 class ChatPermissionRequest(BaseModel):

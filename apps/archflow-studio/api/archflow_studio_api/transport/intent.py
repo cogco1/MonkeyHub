@@ -385,9 +385,8 @@ class IntentRequestDto(BaseModel):
 class ContextPackRequestDto(BaseModel):
     """One turn's words, plus the exact source and focus they were said about.
 
-    Nothing here is optional but the Stage: this read answers about the object
-    the caller names, and a missing or wrong name is refused rather than
-    replaced by a recent candidate, a parent or the record's first element.
+    An absent focus asks about the whole design. Named objects and sources are
+    checked exactly; no missing selection is replaced by a recent candidate.
     """
 
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
@@ -403,25 +402,39 @@ class ContextPackRequestDto(BaseModel):
         description="the project the caller believes it is reading; a "
         "different one is refused as PROJECT_MISMATCH",
     )
-    source_run_id: str = Field(
-        alias="sourceRunId", min_length=1,
-        description="the retained run this context is read against",
+    source_run_id: str | None = Field(
+        alias="sourceRunId", default=None, min_length=1,
+        description="the exact retained run; omit only for authored initial state or an explicit sourceStageRef",
     )
     state_digest: str = Field(
         alias="stateDigest", pattern=STATE_DIGEST_PATTERN,
         description="the stateDigest that run projects to; any other is "
         "refused as STALE_BASE",
     )
-    target_component_id: str = Field(
-        alias="targetComponentId", min_length=1,
-        description="the Component@1 the focus element belongs to, exactly",
+    target_component_id: str | None = Field(
+        alias="targetComponentId", default=None, min_length=1,
+        description="optional exact Component@1 focus; when elements are named they must belong to it",
     )
-    element_id: str = Field(
-        alias="elementId", min_length=1,
+    element_id: str | None = Field(
+        alias="elementId", default=None, min_length=1,
         description="the Element@1 in focus; it must declare "
         "targetComponentId as its own component",
     )
     source_stage_ref: str | None = Field(alias="sourceStageRef", default=None, min_length=1)
+    element_ids: list[Annotated[str, Field(min_length=1)]] = Field(alias="elementIds", default_factory=list, max_length=64)
+    context_refs: list[Annotated[str, Field(min_length=1)]] = Field(alias="contextRefs", default_factory=list, max_length=16)
+    context_offset: int = Field(alias="contextOffset", default=0, ge=0, strict=True,
+                              description="offset into the bounded reference index; it changes no focus or edit scope")
+
+    @model_validator(mode="after")
+    def coherent_focus(self) -> ContextPackRequestDto:
+        if len(set(self.element_ids)) != len(self.element_ids):
+            raise ValueError("elementIds must not repeat an element")
+        if self.element_id is not None and self.element_ids and self.element_ids != [self.element_id]:
+            raise ValueError("elementId and elementIds must name the same single focus, or use elementIds alone")
+        if len(set(self.context_refs)) != len(self.context_refs):
+            raise ValueError("contextRefs must not repeat a reference")
+        return self
 
 
 class ContextPackDto(BaseModel):

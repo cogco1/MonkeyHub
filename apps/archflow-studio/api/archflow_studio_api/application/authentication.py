@@ -160,6 +160,10 @@ def require_actor(request: Request, action: str, project_id: str | None = None) 
 def request_action(method: str, path: str, *, shared_project: bool) -> str | None:
     """One action mapping for both route assembly and request authorization."""
 
+    if not shared_project and method == "POST" and path == "/api/proposals/parameter-locks":
+        # An explicit constraint decision uses the existing decision grant;
+        # it still produces only a detached candidate, never Stage acceptance.
+        return "accept"
     if method in {"GET", "HEAD"}:
         if not shared_project or any(re.fullmatch(pattern, path) for pattern in _SHARED_READ_PATHS):
             return "read"

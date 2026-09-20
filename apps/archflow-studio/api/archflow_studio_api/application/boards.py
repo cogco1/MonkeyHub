@@ -120,18 +120,24 @@ def _page_pdf(data: bytes, mime_type: str, page_index: int) -> bytes:
     return output.getvalue()
 
 
-def _page_raster(data: bytes, mime_type: str, page_index: int, format: Literal["png", "jpeg"]) -> bytes:
+def _page_raster(
+    data: bytes, mime_type: str, page_index: int, format: Literal["png", "jpeg"], max_edge: int | None,
+) -> bytes:
     if mime_type == "application/pdf":
         document = fitz.open(stream=data, filetype="pdf")
         try:
-            # 144 dpi is explicit print-ready raster output, never the browser viewport.
-            pixmap = document.load_page(page_index).get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            # Keep 144 dpi exports; bounded previews scale before allocating pixels.
+            page = document.load_page(page_index)
+            scale = min(2, max_edge / max(page.rect.width, page.rect.height)) if max_edge else 2
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
             image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
         finally:
             document.close()
     else:
         with Image.open(BytesIO(data)) as source:
             image = ImageOps.exif_transpose(source).convert("RGB")
+    if max_edge:
+        image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
     output = BytesIO()
     if format == "png":
         image.save(output, format="PNG", optimize=True)
@@ -145,6 +151,7 @@ def export_board_pages(
     pages: Sequence[BoardExportPage],
     format: Literal["merged-pdf", "page-pdfs", "png", "jpeg"],
     zip_output: bool,
+    max_edge: int | None = None,
 ) -> BoardExport:
     """Build transient clean-source output in caller order without retaining a new project artifact."""
 
@@ -152,6 +159,8 @@ def export_board_pages(
         raise _invalid("Choose at least one drawing page to export.")
     if len(pages) > 100:
         raise _invalid("An export can contain at most 100 drawing pages.")
+    if max_edge is not None and (type(max_edge) is not int or not 1 <= max_edge <= 2048 or format not in {"png", "jpeg"}):
+        raise _invalid("maxEdge bounds PNG/JPEG exports only and must be an integer from 1 to 2048.")
     entries: list[tuple[str, bytes]] = []
     exported: set[tuple[str, str, str | None, int]] = set()
     for reference in pages:
@@ -161,12 +170,14 @@ def export_board_pages(
         exported.add(identity)
         index = len(entries) + 1
         document, data = document_bytes(binding, reference.run_id, reference.asset_sha256, reference.revision_ref)
-        if reference.page_index >= len(document.pages):
+        if document.revision_ref != reference.revision_ref:
+            raise _invalid("Generated drawings must name their exact registered revisionRef.")
+        if type(reference.page_index) is not int or not 0 <= reference.page_index < len(document.pages):
             raise StudioError(422, "DOCUMENT_PAGE_NOT_FOUND", "The requested board page no longer exists in its registered source.")
         if format in {"merged-pdf", "page-pdfs"}:
             entries.append((_export_name(index, document.file_name, "pdf"), _page_pdf(data, document.mime_type, reference.page_index)))
         else:
-            entries.append((_export_name(index, document.file_name, format), _page_raster(data, document.mime_type, reference.page_index, format)))
+            entries.append((_export_name(index, document.file_name, format), _page_raster(data, document.mime_type, reference.page_index, format, max_edge)))
 
     if format == "merged-pdf":
         writer = PdfWriter()

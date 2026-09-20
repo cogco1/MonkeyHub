@@ -11,7 +11,7 @@ from archflow.state.operational_state import DesignObligation
 from archflow.state.state_record import Entity, Parameter, Relation, StateRecord, ValidatorBinding
 from archflow_studio_api.application.intent_agent import Selection, record_sheet
 from archflow_studio_api.application import intent_context
-from archflow_studio_api.application.intent_context import compile_context, expand_context, control_unit, model_context
+from archflow_studio_api.application.intent_context import compile_context, compile_task_context, expand_context, control_unit, model_context
 from archflow_studio_api.application.projection import _elements
 
 
@@ -53,6 +53,73 @@ def sheet_of(record, selection=Selection("facade", "window-23")):
         raise AssertionError(error)
     projection = SimpleNamespace(project_id=record.project_id, record=record, components=None, elements=elements, parameters=record.parameters, honesty=())
     return record_sheet(projection, selection)
+
+
+class TaskContextTests(unittest.TestCase):
+    def test_multiple_focuses_keep_upstream_geometry_and_conditions_readable(self):
+        record, _ = fixture()
+        record = replace(record, parameters=(
+            Parameter("locked_origin", 0.3, "m", lock_authority="studio:intent"),
+            Parameter("module", 0.6, "m", expr="2 * locked_origin"),
+            *record.parameters[1:],
+        ))
+        sheet = sheet_of(record, Selection(None, None))
+        context = compile_task_context("Improve the relation between these openings", sheet, record=record,
+                                       element_ids=("window-23", "window-24"))
+        facts = model_context(context)
+        self.assertEqual(context.target_ids, ("window-23", "window-24"))
+        self.assertEqual(facts["focusElementIds"], ["window-23", "window-24"])
+        self.assertIn("entity:wall-07", facts["readOnlyRefs"])
+        self.assertIn("entity:level-02", facts["readOnlyRefs"])
+        self.assertNotIn("entity:window-23", facts["readOnlyRefs"])
+        locked = next(row for row in facts["parameters"] if row["key"] == "locked_origin")
+        self.assertEqual(locked["lockAuthority"], "studio:intent")
+        self.assertIn("global-keep", {row["obligation_id"] for row in facts["obligations"]})
+        self.assertTrue(facts["coverage"]["complete"])
+
+    def test_whole_design_pages_an_index_and_reads_omitted_geometry_without_expanding_focus(self):
+        record, _ = fixture()
+        record = replace(record, entities=record.entities + tuple(
+            Entity(f"mass-{i:03}", "Element@1", {"producer": "prism", "component_id": "facade",
+                   "params": {"height": 3.0}, "intent": "Authored design note " * 100}, "facade")
+            for i in range(160)))
+        sheet = sheet_of(record, Selection(None, None))
+        original = deepcopy(sheet)
+        context = compile_task_context("Explore an overall courtyard arrangement", sheet, record=record)
+        facts = model_context(context)
+        self.assertEqual(context.target_ids, ())
+        self.assertNotIn("editTargets", facts)
+        self.assertFalse(facts["coverage"]["complete"])
+        self.assertGreater(facts["coverage"]["omittedCount"], 0)
+        self.assertEqual(len(facts["index"]["items"]), 64)
+        self.assertEqual(facts["index"]["nextOffset"], 64)
+        self.assertLess(len(json.dumps(facts)), 50000)
+        second = model_context(compile_task_context("Explore an overall courtyard arrangement", sheet, record=record,
+                               context_refs=("entity:mass-159",), context_offset=64))
+        self.assertIn("mass-159", {row["elementId"] for row in second["elements"]})
+        self.assertEqual(second["focusElementIds"], [])
+        self.assertEqual(second["readOnlyRefs"], [])
+        self.assertTrue(set(row["ref"] for row in facts["index"]["items"]).isdisjoint(
+                        row["ref"] for row in second["index"]["items"]))
+        self.assertEqual(sheet, original)
+
+    def test_missing_condition_is_explicit_and_unknown_supplement_is_refused(self):
+        record, _ = fixture()
+        record = replace(record, obligations=record.obligations + (
+            DesignObligation("long-unresolved", "Unresolved evidence " * 3000, "studio:intent"),))
+        sheet = sheet_of(record, Selection(None, None))
+        facts = model_context(compile_task_context("Review the whole design", sheet, record=record))
+        self.assertFalse(facts["coverage"]["complete"])
+        self.assertEqual(facts["coverage"]["omittedConditionCount"], 1)
+        self.assertIn("Incomplete coverage", facts["supplement"]["instruction"])
+        with self.assertRaisesRegex(ValueError, "unknown exact reference"):
+            compile_task_context("Review", sheet, record=record, context_refs=("entity:not-here",))
+
+    def test_scalar_keeps_existing_projection_and_preflight_inputs(self):
+        record, sheet = fixture()
+        old = compile_context("set window-23 width to 1.2", sheet, record=record)
+        new = compile_task_context("set window-23 width to 1.2", sheet, record=record, element_ids=("window-23",))
+        self.assertEqual(new, old)
 
 
 class IntentContextTests(unittest.TestCase):
