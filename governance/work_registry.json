@@ -3,6 +3,33 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-195",
+      "stream": "planning",
+      "status": "ready",
+      "goal": "Compare structured state, current orthographic line images and exact-query augmented images on public synthetic retained geometry; separately test fixed-representation spatial selection for GH-170. Research-only, no production write path.",
+      "depends_on": [],
+      "branch": "codex/195-170-spatial-observation",
+      "worktree": ".",
+      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "adapters.cad_execution",
+        "state.record",
+        "monkeymonitor"
+      ],
+      "write_scope": [
+        "labs/spatial_observation/",
+        "probes/spatial-observation-v1/"
+      ],
+      "handoff": "Independent lab experiment complete for review: public synthetic A/B0/D0 and fixed-representation selection results retained in probes/spatial-observation-v1. Production integration and external architectural task validation remain separate decisions; do not automatically close GH-195/GH-170. Stopped ec46 WIP was reviewed read-only and not copied.",
+      "acceptance": [
+        "Audited synthetic tasks and true retained STEP measurements; source, axis and unit checks.",
+        "Real A/B0/D0 repeat comparison and fixed-representation full/graph/lexical/embedding selection; preserve negative results and missing telemetry.",
+        "Seven primary-source implementation comparisons and justified C/E decisions."
+      ]
+    },
+    {
       "id": "GH-183",
       "stream": "planning",
       "status": "active",
