@@ -199,25 +199,52 @@
     {
       "id": "GH-137",
       "stream": "interaction",
-      "status": "blocked",
-      "goal": "V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1.",
+      "status": "ready",
+      "goal": "Deliver S1 scene-wide endpoint/midpoint/feature-edge/face snapping through existing drawing, Move/Copy and signed-normal Push/Pull constraints. V1 and N1 are delivered; V2 remains separate.",
       "depends_on": [],
-      "branch": "codex/137-signed-normal",
-      "worktree": "workspace/worktrees/codex-137-signed-normal",
-      "base_ref": "26e87b99d97dd45b0c80e3b1e5721d73f2b1d90e",
-      "contributor": "GPT-6 Astra Pro",
+      "branch": "codex/137-scene-snapping",
+      "worktree": "6f6d/ARCHFLOW_V4",
+      "base_ref": "32fc10e1024a42ff9e8fb3a384686b7abc3a9016",
+      "contributor": "Codex",
       "reviewer": "Repository owner",
+      "modules": [
+        "hub.shell"
+      ],
       "write_scope": [
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
         "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/interactionSession.ts",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/normalDrag.ts",
-        "apps/monkeyhub/web/workspaces/test/normalDrag.test.ts",
-        "apps/monkeyhub/web/workspaces/test/pushPull.browser.mjs",
-        "apps/monkeyhub/web/workspaces/src/features/stage/ModelEditPanel.tsx",
-        "apps/monkeyhub/web/workspaces/test/translationGizmo.browser.mjs"
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/featureEdges.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/sceneSnapping.ts",
+        "apps/monkeyhub/web/workspaces/test/featureEdges.test.ts",
+        "apps/monkeyhub/web/workspaces/test/sceneSnapping.test.ts",
+        "apps/monkeyhub/web/workspaces/test/sceneSnapping.browser.mjs"
       ],
-      "handoff": "V1 and N1 are merged (#147/#155), Tracing Paper integration #153 is merged, and the #156/#157 viewport/document closeout is complete. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane."
+      "handoff": "S1 implementation is ready for review with measured scene queries and isolated browser coverage of loaded 3DM/drafts, constraints and cancellation. Keep this modeling scope reserved until the S1 PR merges; then defer V2 and release Stage/viewport to #136. #46 DocumentTracingContext and App.tsx document callbacks are outside this scope. #180 is the recorded base; no main push or issue closure.",
+      "lanes": [
+        {
+          "id": "integration",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/137",
+          "status": "review",
+          "branch": "codex/integrate-reviewed-prs",
+          "worktree": ".",
+          "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+          "contributor": "Codex",
+          "reviewer": "Codex coordinator",
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/i18n/messages.en.ts",
+            "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+            "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx"
+          ],
+          "depends_on": [],
+          "handoff": "Combine the reviewed scene snapping and orthographic camera changes with the current Hub editor; preserve both source PR histories and verify the composed behavior."
+        }
+      ]
     },
     {
       "id": "GH-73",

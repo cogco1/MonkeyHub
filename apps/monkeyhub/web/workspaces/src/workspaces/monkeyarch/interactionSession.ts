@@ -65,7 +65,7 @@ export interface InteractionSession {
   rotate: RotateGesture | null;
   scale: ScaleGesture | null;
   hover: LocalHit | null;
-  modelSnap: { hit: LocalHit; feature: LocalHit["mesh"]; snap: ModelSnap } | null;
+  modelSnap: { feature: LocalHit["mesh"]; snap: ModelSnap } | null;
   planeSnap: SnapCandidate | null;
   pointer: { x: number; y: number } | null;
   press: { x: number; y: number; dragging: boolean } | null;

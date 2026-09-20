@@ -14,6 +14,18 @@
 
 export type Point3 = readonly [number, number, number];
 
+/** A gesture owns its allowed motion; inference can only project onto it. */
+export type SnapConstraint = { readonly kind: "axis" | "plane"; readonly origin: Point3; readonly direction: Point3 };
+
+export function constrainSnapPoint(point: Point3, constraint?: SnapConstraint): Point3 {
+  if (!constraint) return point;
+  const { origin, direction, kind } = constraint;
+  const lengthSquared = direction.reduce((sum, value) => sum + value * value, 0);
+  if (lengthSquared < 1e-18) return origin;
+  const distance = direction.reduce((sum, value, i) => sum + value * (point[i]! - origin[i]!), 0) / lengthSquared;
+  return direction.map((value, i) => kind === "axis" ? origin[i]! + value * distance : point[i]! - value * distance) as unknown as Point3;
+}
+
 export interface FeatureEdge {
   readonly a: Point3;
   readonly b: Point3;
@@ -253,30 +265,21 @@ export function candidatesOf(edge: FeatureEdge): SnapCandidate[] {
   ];
 }
 
-/** The nearest point on a segment to a point, for snapping along an edge. */
-export function closestOnEdge(edge: FeatureEdge, point: Point3): Point3 {
-  const along = subtract(edge.b, edge.a);
-  const span = along[0] ** 2 + along[1] ** 2 + along[2] ** 2;
-  if (span < 1e-18) return edge.a;
-  const toward = subtract(point, edge.a);
-  const t = Math.min(1, Math.max(0, (toward[0] * along[0] + toward[1] * along[1] + toward[2] * along[2]) / span));
-  return [edge.a[0] + along[0] * t, edge.a[1] + along[1] * t, edge.a[2] + along[2] * t];
-}
-
 /**
  * Which candidate a pointer is on, judged where the person is looking: the
  * caller projects each candidate to the screen, and the nearest one inside the
  * radius wins. An endpoint beats a midpoint at the same distance, because that
  * is the point somebody is more likely to have meant.
  */
-export function nearestCandidate(
-  candidates: readonly SnapCandidate[],
+export function nearestCandidate<T extends { point: Point3; kind: SnapKind | "surface" }>(
+  candidates: readonly T[],
   project: (point: Point3) => readonly [number, number] | null,
   pointer: readonly [number, number],
   radiusPx: number,
-): SnapCandidate | null {
-  const rank: Record<SnapKind, number> = { endpoint: 0, midpoint: 1, edge: 2 };
-  let best: { candidate: SnapCandidate; distance: number } | null = null;
+  accepts: (candidate: T) => boolean = () => true,
+): T | null {
+  const rank = { endpoint: 0, midpoint: 1, edge: 2, surface: 3 };
+  let best: { candidate: T; distance: number } | null = null;
   for (const candidate of candidates) {
     const screen = project(candidate.point);
     if (screen === null) continue;
@@ -287,7 +290,9 @@ export function nearestCandidate(
       || distance < best.distance - 0.5
       || (Math.abs(distance - best.distance) <= 0.5 && rank[candidate.kind] < rank[best.candidate.kind])
     ) {
-      best = { candidate, distance };
+      // Visibility can be expensive. Test it only when this candidate could
+      // improve the nearest accepted result, never after choosing an occluded winner.
+      if (accepts(candidate)) best = { candidate, distance };
     }
   }
   return best?.candidate ?? null;

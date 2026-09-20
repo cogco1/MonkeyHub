@@ -81,17 +81,14 @@ import {
 } from "./cameraProjection";
 import { TranslationGizmo, type TranslationGizmoSpec, type TranslationSample } from "./translationGizmo";
 import {
-  candidatesOf,
-  closestOnEdge,
-  nearestCandidate,
-  retainSnap,
   type FeatureEdge,
-  type Point3,
 } from "./featureEdges";
+import { useT } from "../../../i18n/useT";
+import { SceneSnapIndex, type SnapOptions } from "./sceneSnapping";
 import { encodeViewportPng } from "./viewportScreenshot";
 import type { SketchPlane } from "../../../features/stage/sketch";
 import { cancelInteractionFrame, scheduleInteractionFrame, type InteractionSession } from "../interactionSession";
-import { Preselection, outlineEdges, raycastCurve, type LocalHit } from "./preselection";
+import { Preselection, raycastCurve, type LocalHit } from "./preselection";
 
 export type ViewportStatus = "idle" | "loading" | "ready" | "error";
 
@@ -176,6 +173,10 @@ export interface ModelSnap {
   /** The object it belongs to, as the export named it. */
   readonly objectName: string | null;
   readonly edge?: FeatureEdge;
+  /** The visible source and its projection onto the active gesture constraint. */
+  readonly sourcePoint?: Vec3;
+  readonly projected?: boolean;
+  readonly screen?: readonly [number, number];
 }
 
 /** One object under a point of a stroke, read the way a click is read. */
@@ -266,16 +267,17 @@ export interface ViewportController {
   beginNormalDrag(origin: Vec3, normal: Vec3): NormalDragController | null;
   workPlaneFromSelection(): SketchPlane | null;
   /**
-   * The point on the loaded model a pointer is really over: the end or the
-   * middle of a visible edge when one is within ``radiusPx`` on screen, a
-   * point along that edge when the pointer is on it, and otherwise the place
-   * the ray met the surface. A captured target survives to 1.5 times that
-   * radius, including just outside its silhouette; otherwise a miss is null.
+   * A visible scene feature within ``radiusPx`` on screen, including adjacent
+   * objects and pixels with no surface hit. A captured target survives to
+   * 1.5 times that radius. An optional gesture constraint projects the point
+   * or declines it if the resulting marker is outside that screen tolerance.
    *
    * The edges are the model's own: a face that was triangulated to draw it
-   * offers no diagonal, so nothing snaps to a line nobody can see.
+   * offers no diagonal. The transient marker shows the returned point and
+   * distinguishes a projected inference from its visible source.
    */
-  snapOnModel(clientX: number, clientY: number, radiusPx?: number): ModelSnap | null;
+  clearSnap(): void;
+  snapOnModel(clientX: number, clientY: number, radiusPx?: number, options?: SnapOptions): ModelSnap | null;
   /**
    * Show a profile, and the solid it would make, while it is being drawn.
    * This is a picture and nothing else: it is not the model, it is never
@@ -331,6 +333,7 @@ interface ViewportRuntime {
   controls: OrbitControls;
   model: Object3D | null;
   modelIndex: ReturnType<typeof indexLoadedObjects> | null;
+  snapIndex: SceneSnapIndex;
   modelBounds: Sphere | null;
   preselection: Preselection | null;
   /** Visibility, layers and material references as the loaded file supplied them. */
@@ -471,6 +474,13 @@ function draftIdFor(runtime: ViewportRuntime, object: Object3D): string | undefi
   return undefined;
 }
 
+function rebuildSnapIndex(runtime: ViewportRuntime): void {
+  runtime.snapIndex.rebuild([runtime.model, runtime.draftRoot].filter((root): root is Group => root !== null), object => {
+    const id = draftIdFor(runtime, object);
+    return id !== undefined ? { objectName: `draft:${id}` } : runtime.modelIndex?.identity(object) ?? null;
+  });
+}
+
 function clearDraftPreview(runtime: ViewportRuntime): void {
   if (runtime.highlighted.some((object) => isUnder(object, runtime.draftRoot))) restoreHighlight(runtime);
   for (const [object, visible] of runtime.draftHidden) object.visible = visible;
@@ -479,6 +489,7 @@ function clearDraftPreview(runtime: ViewportRuntime): void {
   runtime.draftObjects.clear();
   runtime.draftRoot.removeFromParent();
   runtime.draftBounds = null;
+  rebuildSnapIndex(runtime);
 }
 
 interface NurbsFallbackPatch {
@@ -947,6 +958,9 @@ export const ThreeDmViewport = forwardRef<
   forwardedRef,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const t = useT();
+  const [snapFeedback, setSnapFeedback] = useState<ModelSnap | null>(null);
+  const clearSnap = useCallback(() => { interaction.current.modelSnap = null; setSnapFeedback(null); }, [interaction]);
   const runtimeRef = useRef<ViewportRuntime | null>(null);
   const loadGenerationRef = useRef(0);
   const secondaryLoadRequest = useRef(0);
@@ -964,14 +978,14 @@ export const ThreeDmViewport = forwardRef<
   const clearHover = useCallback((render = true) => {
     cancelInteractionFrame(interaction.current, "hover");
     interaction.current.hover = null;
-    interaction.current.modelSnap = null;
+    clearSnap();
     interaction.current.planeSnap = null;
     interaction.current.pointer = null;
     const runtime = runtimeRef.current;
     if (!runtime) return;
     runtime.renderer.domElement.style.cursor = "";
     if (runtime.preselection?.clear() && render) runtime.render();
-  }, [interaction]);
+  }, [interaction, clearSnap]);
 
   useEffect(() => { if (!hoverEnabled) clearHover(); }, [clearHover, hoverEnabled]);
 
@@ -1015,6 +1029,7 @@ export const ThreeDmViewport = forwardRef<
     runtime.scene.remove(runtime.model);
     disposeScene(runtime.model);
     runtime.model = null;
+    rebuildSnapIndex(runtime);
     runtime.modelBounds = null;
     runtime.appearance = null;
     runtime.render();
@@ -1098,6 +1113,7 @@ export const ThreeDmViewport = forwardRef<
       if (!runtime.draftRoot.parent) runtime.scene.add(runtime.draftRoot);
       runtime.draftBounds = new Box3().setFromObject(runtime.draftRoot).getBoundingSphere(new Sphere());
     } else { runtime.draftRoot.removeFromParent(); runtime.draftBounds = null; }
+    rebuildSnapIndex(runtime);
     setHasDraft(runtime.draftObjects.size > 0);
     runtime.render();
   }, [clearHover]);
@@ -1520,6 +1536,7 @@ export const ThreeDmViewport = forwardRef<
       runtime.modelIndex = indexLoadedObjects(model);
       runtime.appearance = captureModelAppearance(model);
       runtime.scene.add(model);
+      rebuildSnapIndex(runtime);
       runtime.preselection = new Preselection(model, getComputedStyle(document.documentElement).getPropertyValue("--muted").trim() || "#aeafb8");
       runtime.scene.add(runtime.preselection.group);
       const inspection = inspectScene(
@@ -1670,75 +1687,20 @@ export const ThreeDmViewport = forwardRef<
     [clearHover, highlight, hitAt],
   );
 
-  const snapAtHit = useCallback(
-    (hit: LocalHit | null, clientX: number, clientY: number, radiusPx = 14): ModelSnap | null => {
-      const runtime = runtimeRef.current;
-      const raycaster = rayAt(clientX, clientY);
-      if (!runtime || !raycaster) return null;
-      const rect = runtime.renderer.domElement.getBoundingClientRect();
-      const pointer = [clientX - rect.left, clientY - rect.top] as const;
-      const project = (point: Point3): readonly [number, number] | null => {
-        const carried = new Vector3(...point).project(runtime.camera);
-        if (carried.z < -1 || carried.z > 1) return null;
-        return [(carried.x + 1) / 2 * rect.width, (1 - carried.y) / 2 * rect.height];
-      };
-      const alongEdge = (edge: FeatureEdge): Vec3 => {
-        const point = new Vector3();
-        raycaster.ray.distanceSqToSegment(new Vector3(...edge.a), new Vector3(...edge.b), undefined, point);
-        return [point.x, point.y, point.z];
-      };
-      let previous = interaction.current.modelSnap;
-      if (previous && (!isDisplayed(previous.feature) ||
-        !(isUnder(previous.feature, runtime.draftRoot) || (runtime.model && isUnder(previous.feature, runtime.model))))) previous = null;
-      const held = previous?.snap.kind === "edge" && previous.snap.edge
-        ? { ...previous.snap, point: alongEdge(previous.snap.edge) } : previous?.snap ?? null;
-      let next: ModelSnap | null = null;
-      let nextFeature = hit?.mesh;
-      if (hit) {
-        // Geometry feature edges remain cached by outlineEdges. Only the
-        // currently hit object is searched; retention needs just one old target.
-        const edges: (FeatureEdge & { mesh: Mesh | Line })[] = [];
-        hit.object.traverse((mesh) => {
-          if (!(mesh instanceof Mesh || mesh instanceof Line) || !isDisplayed(mesh)) return;
-          mesh.updateWorldMatrix(true, false);
-          for (const edge of outlineEdges(mesh)) {
-            const a = new Vector3(...edge.a).applyMatrix4(mesh.matrixWorld);
-            const b = new Vector3(...edge.b).applyMatrix4(mesh.matrixWorld);
-            edges.push({ a: [a.x, a.y, a.z], b: [b.x, b.y, b.z], mesh });
-          }
-        });
-        const chosen = nearestCandidate(edges.flatMap(candidatesOf), project, pointer, radiusPx);
-        if (chosen) {
-          const edge = edges.find(edge => {
-            const point = closestOnEdge(edge, chosen.point);
-            return Math.hypot(...point.map((value, i) => value - chosen.point[i]!)) < 1e-6;
-          })!;
-          next = { point: [...chosen.point], kind: chosen.kind, objectName: hit.objectName, edge: { a: edge.a, b: edge.b } };
-          nextFeature = edge.mesh;
-        } else {
-          let distance = radiusPx;
-          for (const edge of edges) {
-            const point = alongEdge(edge), screen = project(point);
-            if (!screen) continue;
-            const d = Math.hypot(screen[0] - pointer[0], screen[1] - pointer[1]);
-            if (d <= distance) {
-              distance = d;
-              next = { point, kind: "edge", objectName: hit.objectName, edge: { a: edge.a, b: edge.b } };
-              nextFeature = edge.mesh;
-            }
-          }
-          next ??= { point: [hit.point.x, hit.point.y, hit.point.z], kind: "surface", objectName: hit.objectName };
-        }
-      }
-      const snap = retainSnap(held, next, project, pointer, radiusPx);
-      interaction.current.modelSnap = snap && snap.kind !== "surface"
-        ? { snap, hit: snap === held ? previous!.hit : hit!, feature: snap === held ? previous!.feature : nextFeature! } : null;
-      return snap;
-    },
-    [interaction, rayAt],
-  );
-
-  const snapOnModel = useCallback((x: number, y: number, radiusPx = 14) => snapAtHit(hitAt(x, y), x, y, radiusPx), [hitAt, snapAtHit]);
+  const snapOnModel = useCallback((x: number, y: number, radiusPx = 14, options?: SnapOptions): ModelSnap | null => {
+    const runtime = runtimeRef.current;
+    if (!runtime || runtime.secondary || runtime.ghost) { clearSnap(); return null; }
+    const rect = runtime.renderer.domElement.getBoundingClientRect();
+    const target = runtime.snapIndex.query(runtime.camera, rect, [x, y], radiusPx, interaction.current.modelSnap, {
+      ...options, excludeObjects: interaction.current.move || interaction.current.pushPull ? runtime.highlighted : options?.excludeObjects,
+    });
+    interaction.current.modelSnap = target?.snap.kind !== "surface" ? target : null;
+    if (!target) { setSnapFeedback(null); return null; }
+    const screen = new Vector3(...target.snap.point).project(runtime.camera);
+    const snap: ModelSnap = { ...target.snap, screen: [(screen.x + 1) * rect.width / 2, (1 - screen.y) * rect.height / 2] };
+    setSnapFeedback(snap);
+    return snap;
+  }, [interaction, clearSnap]);
 
   const paintHover = useCallback(() => {
     const session = interaction.current;
@@ -1750,13 +1712,14 @@ export const ThreeDmViewport = forwardRef<
     // Ordinary preselection must agree with click picking. A gesture may hold
     // a snap across empty space, but hover cannot offer an unpickable face.
     if (!hit) { clearHover(); return; }
-    if (session.modelSnap?.hit.object !== hit.object) session.modelSnap = null;
-    const snap = snapAtHit(hit, x, y);
+    const snap = snapOnModel(x, y);
+    const ownSnap = session.modelSnap && isUnder(session.modelSnap.feature, hit.object) ? snap : null;
+    if (!ownSnap) clearSnap();
     session.hover = hit;
-    runtime.preselection.update(hit, snap);
+    runtime.preselection.update(hit, ownSnap);
     runtime.renderer.domElement.style.cursor = "pointer";
     runtime.render();
-  }, [clearHover, hitAt, interaction, snapAtHit]);
+  }, [clearHover, clearSnap, hitAt, interaction, snapOnModel]);
 
   const sampleAt = useCallback(
     (clientX: number, clientY: number): SampleHit | null => {
@@ -1882,6 +1845,7 @@ export const ThreeDmViewport = forwardRef<
       ghost,
       sampleAt,
       snapOnModel,
+      clearSnap,
       pointOnWorkPlane,
       pointOnSketchPlane,
       pointAlongAxis,
@@ -1959,6 +1923,7 @@ export const ThreeDmViewport = forwardRef<
       blend,
       cameraState,
       clear,
+      clearSnap,
       draftPreview,
       elevationGuide,
       clearSecondary,
@@ -2075,6 +2040,7 @@ export const ThreeDmViewport = forwardRef<
       controls,
       model: null,
       modelIndex: null,
+      snapIndex: new SceneSnapIndex(),
       modelBounds: null,
       preselection: null,
       appearance: null,
@@ -2220,6 +2186,14 @@ export const ThreeDmViewport = forwardRef<
           </>}
         </div>
       )}
+      {snapFeedback?.screen && <div className="viewport-snap" role="status"
+        style={{ position: "absolute", left: snapFeedback.screen[0] - 4, top: snapFeedback.screen[1] - 4,
+          width: 8, height: 8, border: "2px solid var(--accent)", borderRadius: snapFeedback.kind === "endpoint" ? 0 : "50%",
+          background: "var(--overlay)", zIndex: 4, pointerEvents: "none" }}>
+        <span style={{ position: "absolute", left: 12, top: 8, whiteSpace: "nowrap", padding: "2px 5px", background: "var(--overlay)", color: "var(--ink)" }}>
+          {t(`stage.snap.${snapFeedback.kind}`)}{snapFeedback.projected ? ` · ${t("stage.snap.projected")}` : ""}
+        </span>
+      </div>}
       {dragActive && <div className="drop-target">Release to open locally</div>}
     </div>
   );
