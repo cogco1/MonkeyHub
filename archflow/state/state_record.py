@@ -958,6 +958,7 @@ class StateRecordEditKind(StrEnum):
     APPLY_PROGRAM = "apply_program"
     REINDEX = "reindex"
     EDIT_COMPONENTS = "edit_components"
+    SET_PARAMETER_LOCKS = "set_parameter_locks"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1079,6 +1080,12 @@ class StateRecordOperator:
             raise StateRecordError(f"{self.kind.value} cannot carry entity or relation edits")
         if self.kind is not StateRecordEditKind.REINDEX and self.basis_refs:
             raise StateRecordError("only reindex can add record basis refs")
+        if self.kind is StateRecordEditKind.SET_PARAMETER_LOCKS:
+            if not self.parameters or self.remove_entity_ids or self.remove_parameter_keys or self.remove_relation_ids:
+                raise StateRecordError("set_parameter_locks needs existing parameters and cannot remove graph items")
+            if len({p.key for p in self.parameters}) != len(self.parameters):
+                raise StateRecordError("set_parameter_locks parameter keys must be unique")
+            return
         component_edits = self.parameters or self.remove_entity_ids or self.remove_parameter_keys or self.remove_relation_ids
         if self.kind is not StateRecordEditKind.EDIT_COMPONENTS and component_edits:
             raise StateRecordError("only edit_components can edit parameters or remove graph items")
@@ -1110,6 +1117,23 @@ def compile_component_edit(
         remove_parameter_keys=tuple(sorted(remove_parameter_keys)),
         remove_relation_ids=tuple(sorted(remove_relation_ids)),
         protected=tuple(sorted(protected)),
+    )
+
+
+def compile_parameter_locks(
+    record: StateRecord, *, parameter_keys: tuple[str, ...], lock_authority: str | None,
+) -> StateRecordOperator:
+    """Compile an explicit lock/unlock; the application authorizes its caller.
+
+    Only lock metadata may change. This value grants no project-write access;
+    the existing candidate runner persists its successor.
+    """
+    if lock_authority is not None and (not isinstance(lock_authority, str) or not lock_authority.strip()):
+        raise StateRecordError("lock authority must be nonempty text")
+    return StateRecordOperator(
+        kind=StateRecordEditKind.SET_PARAMETER_LOCKS,
+        base_record_digest=record.digest, base_state_digest=record.state_digest,
+        parameters=tuple(replace(record.parameter(key), lock_authority=lock_authority) for key in parameter_keys),
     )
 
 
@@ -1196,6 +1220,25 @@ def apply_state_record_operator(
         raise StateRecordError("state-record operator exact base is stale")
     _require_declared_protections(record, operator.protected)
 
+    if operator.kind is StateRecordEditKind.SET_PARAMETER_LOCKS:
+        updates = {}
+        for parameter in operator.parameters:
+            previous = record.parameter(parameter.key)
+            if parameter.lock_authority is not None and (
+                not isinstance(parameter.lock_authority, str) or not parameter.lock_authority.strip()
+            ):
+                raise StateRecordError("lock authority must be nonempty text")
+            if replace(parameter, lock_authority=previous.lock_authority) != previous:
+                raise StateRecordError("set_parameter_locks can change only lock metadata")
+            if previous.lock_authority == parameter.lock_authority:
+                raise StateRecordError(f"parameter {parameter.key}: lock action makes no change")
+            if previous.lock_authority and parameter.lock_authority:
+                raise StateRecordError(f"parameter {parameter.key}: unlock before assigning another lock")
+            if parameter.ref in operator.protected:
+                raise StateRecordError(f"state-record operator reaches protected refs: {parameter.ref}")
+            updates[parameter.key] = parameter
+        return replace(record, parameters=tuple(updates.get(p.key, p) for p in record.parameters))
+
     if operator.kind is StateRecordEditKind.SET_SCALAR:
         successor = _apply_scalar_operator(record, operator)
     elif operator.kind is StateRecordEditKind.REPLACE_MASSING:
@@ -1229,7 +1272,42 @@ def apply_state_record_operator(
         raise StateRecordError(
             "state-record operator reaches locked parameters: " + ", ".join(locks)
         )
+    for parameter in successor.parameters:
+        previous = next((p for p in record.parameters if p.key == parameter.key), None)
+        if parameter.lock_authority != (previous.lock_authority if previous else None):
+            raise StateRecordError("parameter lock changes require the explicit set_parameter_locks operator")
+    _require_locked_bindings(record, successor)
     return _refresh_derived_parameters(successor, changed)
+
+
+def _require_locked_bindings(record: StateRecord, successor: StateRecord) -> None:
+    """Keep existing uses of locked controls without freezing their consumers.
+
+    Compare resolved field paths, including inherited Type defaults: replacing
+    an @key with a literal or another key, or deleting its consumer, cannot
+    silently evade the lock. Other fields and new consumers remain editable.
+    """
+    locked = {p.key for p in record.parameters if p.lock_authority}
+    if not locked:
+        return
+    after = {e.entity_id: e for e in successor.entities}
+    for entity in record.entities:
+        bindings = {(path, key) for path, key in parameter_bindings_of(entity, record) if key in locked}
+        if not bindings:
+            continue
+        replacement = after.get(entity.entity_id)
+        remaining = set(parameter_bindings_of(replacement, successor)) if replacement else set()
+        lost = bindings - remaining
+        if lost:
+            raise StateRecordError("state-record operator detaches locked parameter bindings: " + ", ".join(
+                f"{entity.ref}.{path} (@{key})" for path, key in sorted(lost)
+            ))
+    for parameter in record.parameters:
+        reads = set(parameter.reads()) & locked
+        if reads:
+            replacement = next((p for p in successor.parameters if p.key == parameter.key), None)
+            if replacement is None or not reads.issubset(replacement.reads()):
+                raise StateRecordError(f"state-record operator detaches locked parameter inputs: {parameter.ref}")
 
 
 def _refresh_derived_parameters(record: StateRecord, changed: tuple[str, ...]) -> StateRecord:

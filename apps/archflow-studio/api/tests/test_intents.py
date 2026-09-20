@@ -1057,6 +1057,55 @@ class ContextPackTests(IntentTestCase):
             self.assertEqual(before, {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()})
             self.assertEqual(list(repository.layout.runs.iterdir()), [])
 
+    def test_explicit_lock_candidate_cold_context_refuses_bypass_and_explicit_unlock_restores_editing(self) -> None:
+        from archflow.state.state_record import StateRecord
+        from archflow_studio_api.application.candidate import replay_candidate
+
+        head = self.repository.read_head()
+
+        def run_lock(client, source, keys, action):
+            proposed = client.post("/api/proposals/parameter-locks", json={
+                "projectId": PROJECT_ID, "sourceRunId": source["referenceRun"]["runId"],
+                "stateDigest": source["stateDigest"], "parameterKeys": keys, "action": action,
+            })
+            self.assertEqual(proposed.status_code, 201, proposed.text)
+            started = client.post(f"/api/proposals/{proposed.json()['proposalId']}/candidate")
+            self.assertEqual(started.status_code, 202, started.text)
+            job = _finished(client, started.json()["jobId"])
+            self.assertEqual(job["status"], "succeeded", job)
+            return started.json()["candidateId"]
+
+        source = self.client.get(f"/api/state?run={REFERENCE_RUN_ID}").json()
+        locked_run = run_lock(self.client, source, ["module"], "lock")
+        original = StateRecord.from_dict(_load_kind(self.repository, REFERENCE_RUN_ID, "state-record"))
+        saved = StateRecord.from_dict(_load_kind(self.repository, locked_run, "state-record"))
+        self.assertEqual(saved.entities, original.entities)
+        self.assertEqual(saved.parameter("module").lock_authority, "studio:explicit-user-action")
+        self.assertEqual(self.repository.read_head(), head)
+
+        self.client.close()
+        app = create_app(StudioSettings(cad_export="off", project_dir=self.root / PROJECT_ID))
+        with TestClient(app) as cold:
+            self.assertEqual(replay_candidate(bound_project(app.state), locked_run).digest, saved.digest)
+            state = cold.get(f"/api/state?run={locked_run}").json()
+            request = {"projectId": PROJECT_ID, "sourceRunId": locked_run, "stateDigest": state["stateDigest"]}
+            context = cold.post("/api/intents/context", json={**request, "utterance": "Continue the design while preserving locked dimensions"})
+            self.assertEqual(context.status_code, 200, context.text)
+            parameters = {row["key"]: row for row in context.json()["context"]["parameters"]}
+            self.assertEqual(parameters["module"]["lockAuthority"], "studio:explicit-user-action")
+            scalar = cold.post("/api/proposals", json={**request, "targetComponentId": "portico", "utterance": "set module to 1.5"})
+            self.assertEqual(scalar.status_code, 422, scalar.text)
+            # No chat or proposal store is needed to read and unlock this exact candidate.
+            unlocked_run = run_lock(cold, state, ["module"], "unlock")
+            unlocked = cold.get(f"/api/state?run={unlocked_run}").json()
+            edited = cold.post("/api/proposals", json={
+                "projectId": PROJECT_ID, "sourceRunId": unlocked_run, "stateDigest": unlocked["stateDigest"],
+                "targetComponentId": "portico", "utterance": "set module to 1.5",
+            })
+            self.assertEqual(edited.status_code, 201, edited.text)
+            self.assertIsNone(StateRecord.from_dict(_load_kind(self.repository, unlocked_run, "state-record")).parameter("module").lock_authority)
+            self.assertEqual(self.repository.read_head(), head)
+
     def test_cold_context_reopens_exact_design_facts_and_continues_without_chat_history(self) -> None:
         from .support import add_later_run
 
