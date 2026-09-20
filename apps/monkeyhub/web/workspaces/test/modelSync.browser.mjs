@@ -315,8 +315,8 @@ async function rectangle(side=2,height=1,from=null) {
   const before=await snap(),p=from??await blank(); await button('Rectangle').click();await page.mouse.click(p.x,p.y);
   const input=page.locator('.sketch-entry input');await input.fill(String(side));await input.press('Enter');await input.fill(String(height));
   const start=performance.now();await input.press('Enter');
-  const state=await wait(s=>s.view.drafts.length===before.view.drafts.length+1,'rectangle not retained');
-  const obj=state.view.drafts.find(o=>!before.view.drafts.some(old=>old.id===o.id));
+  const state=await wait(s=>s.view.drafts.some(o=>o.id===s.picked&&!before.view.drafts.some(old=>old.id===o.id)),'rectangle not retained');
+  const obj=state.view.drafts.find(o=>o.id===state.picked);
   localTimings.push({action:'rectangle Enter → retained/highlighted',ms:Math.round(performance.now()-start)});
   assert.equal(state.picked,obj.id);assert.ok(state.view.highlighted>0,'new drawing must be highlighted');await deselect();return obj.id;
 }
@@ -336,9 +336,17 @@ if (authoredOnly) {
   await wait(s=>s.sessionStatus==='ready'&&s.stateDigest&&s.view&&!s.busy,'authored-only session',30000);
   const initial=await snap(),writesBefore=sent.length;
   assert.equal(initial.sourceRunId,null);assert.equal(initial.sourceLabel,null);assert.equal(initial.loaded,undefined);
+  const authoredContext=await page.evaluate(()=>window.__workspaceDesignContext);
+  assert.equal(authoredContext.designContext.sourceRunId,null,'authored context must not invent a retained run');
+  assert.equal(authoredContext.designContext.stateDigest,initial.stateDigest);
   assert.equal(initial.view.hasBaseModel,false);assert.equal(initial.view.drafts.length,0);
   console.log('0 · authored-only project: first local drawing, selection, delete/undo, then one explicit Sync');
   const first=await rectangle(2,1.25);
+  // Authored fixture primitives become visible with the first local snapshot;
+  // they are not drawings created by these gestures.
+  const authoredPrimitives=(await snap()).view.drafts.filter(object=>object.id!==first).length;
+  await page.waitForFunction(()=>window.__workspaceDesignContext?.unavailableReason==='unsaved');
+  assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'local geometry cannot impersonate a saved chat base');
   let state=await snap();assert.equal(state.loaded,undefined);assert.equal(state.sourceRunId,null);assert.equal(state.view.hasBaseModel,false);
   assert.equal(await page.locator('.stage-empty').count(),0,'a retained local object must replace the empty-canvas message');
   assert.equal(await page.locator('.viewport-state').count(),0,'a local model must not be covered by the idle overlay');
@@ -348,8 +356,8 @@ if (authoredOnly) {
   await pick(first,true);await page.keyboard.press('Escape');await wait(s=>!s.picked&&!s.selection,'clear local selection');
   const face=await page.evaluate(id=>window.__view.face(id,true),first);assert.ok(face);
   await page.mouse.move(0,0);await page.mouse.move(face.x,face.y);await wait(s=>s.view.hover,'local preselection without a base model');
-  await pick(first,true);await page.keyboard.press('Delete');await wait(s=>s.view.drafts.length===1&&!s.view.drafts.some(o=>o.id===first),'local delete without a base model');
-  await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.length===2,'local undo without a base model');
+  await pick(first,true);await page.keyboard.press('Delete');await wait(s=>s.view.drafts.length===authoredPrimitives+1&&!s.view.drafts.some(o=>o.id===first),'local delete without a base model');
+  await page.keyboard.press('Control+z');await wait(s=>s.view.drafts.length===authoredPrimitives+2,'local undo without a base model');
   await pick(second);assert.equal((await snap()).pickedStatus,'local');
   assert.equal(sent.length,writesBefore,'authored-only draw/pick/delete/undo must make no write request');
   assert.deepEqual(await runIds(),[],'local edits must not create the first run');
@@ -371,7 +379,7 @@ if (authoredOnly) {
     }else{
       await deselect();const nextCorner=await page.evaluate(()=>window.__view.blank(6));assert.ok(nextCorner);
       later=await rectangle(.8,.6,nextCorner);await pick(first,true);await page.keyboard.press('Delete');
-      await wait(s=>s.view.drafts.length===2&&!s.view.drafts.some(o=>o.id===first),'delete during first Sync');
+      await wait(s=>s.view.drafts.length===authoredPrimitives+2&&!s.view.drafts.some(o=>o.id===first),'delete during first Sync');
     }
     assert.equal(sent.length,whileHeld,'continued local edits wrote while first Sync was held');
     assert.equal(candidateCalls().length,0);assert.deepEqual(await runIds(),[]);releaseFirst();
@@ -383,6 +391,14 @@ if (authoredOnly) {
   },
     'first authored-only Sync did not produce and display its candidate',45000).catch(async error=>{await stages(syncStart,'authored-only failure');throw error;});
   state=await snap();assert.equal(candidateCalls().length,1);assert.equal((await runIds()).length,1);
+  if(!authoredInput){
+    await page.waitForFunction(()=>window.__workspaceDesignContext?.designContext?.sourceRunId!==null&&
+      window.__workspaceDesignContext?.unavailableReason===null);
+    assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext.sourceRunId),state.base,
+      'only a completed Sync adopted as the editing base updates chat context');
+  }else{
+    assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext),null,'edits during Sync remain unsaved context');
+  }
   const proposals=sent.slice(writesBefore).filter(row=>row.path==='/api/proposals/sketch');
   assert.equal(proposals.length,2);for(const proposal of proposals){assert.equal(proposal.body.sourceRunId,null);assert.equal(proposal.body.stateDigest,initial.stateDigest);}
   const model=await exported(state.candidates[0]);assert.equal(model.get('obj-'+first)?.z,1.25);assert.equal(model.get('obj-'+second)?.z,.75);
@@ -395,12 +411,15 @@ if (authoredOnly) {
       assert.equal(state.index,0);assert.equal(state.view.drafts.length,0);
       assert.equal(await page.locator('.stage-empty').count(),1,'first export discovery must preserve the empty local view');
     }else{
-      assert.equal(state.view.drafts.length,2);assert.ok(state.view.drafts.some(o=>o.id===later));assert.ok(!state.view.drafts.some(o=>o.id===first));
+      assert.equal(state.view.drafts.length,authoredPrimitives+2);assert.ok(state.view.drafts.some(o=>o.id===later));assert.ok(!state.view.drafts.some(o=>o.id===first));
       assert.ok(!model.has('obj-'+later),'later drawing leaked into first Sync snapshot');await pick(later,true);
     }
     assert.ok(!requests.slice(beforeSyncRequests).some(row=>row.path.endsWith('/bytes')),'home loading must not replace continued local work when the first export appears');
   }else{
     assert.equal(state.view.hasBaseModel,true);assert.equal(state.view.drafts.length,0);await pick(first,true);
+    await page.waitForFunction(id=>window.__workspaceDesignContext?.designContext?.elementId===id,first);
+    assert.equal(await page.evaluate(()=>window.__workspaceDesignContext.designContext.targetComponentId),proposals[0].body.componentId,
+      'retained selection carries its exact component and element into chat context');
   }
   assert.ok(!requests.some(row=>row.method==='GET'&&new URL(row.path,'http://fixture').searchParams.get('run')?.startsWith('studio-projection')),
     'the authored projection placeholder must never be requested as a retained run');

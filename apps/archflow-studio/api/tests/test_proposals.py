@@ -762,6 +762,9 @@ class DirectSemanticProposalTests(ProposalTestCase):
         edit = openapi["components"]["schemas"]["SemanticEditRequestDto"]
         entities = edit["properties"]["entities"]["items"]["anyOf"]
         element = next(item for item in entities if item["properties"]["schema"]["enum"] == ["Element@1"])
+        self.assertIn("omitted outer fields retain existing values", element["description"])
+        self.assertIn("A supplied params or references object replaces that entire object", element["description"])
+        self.assertIn("profile when changing height", element["description"])
         prism = next(item for item in element["properties"]["fields"]["anyOf"]
                      if item["properties"]["producer"]["enum"] == ["prism"])
         profile = prism["properties"]["params"]["properties"]["profile"]

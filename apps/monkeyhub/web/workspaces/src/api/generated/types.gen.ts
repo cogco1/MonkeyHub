@@ -1561,9 +1561,8 @@ export type ContextPackDto = {
  *
  * One turn's words, plus the exact source and focus they were said about.
  *
- * Nothing here is optional but the Stage: this read answers about the object
- * the caller names, and a missing or wrong name is refused rather than
- * replaced by a recent candidate, a parent or the record's first element.
+ * An absent focus asks about the whole design. Named objects and sources are
+ * checked exactly; no missing selection is replaced by a recent candidate.
  */
 export type ContextPackRequestDto = {
     /**
@@ -1581,9 +1580,9 @@ export type ContextPackRequestDto = {
     /**
      * Sourcerunid
      *
-     * the retained run this context is read against
+     * the exact retained run; omit only for authored initial state or an explicit sourceStageRef
      */
-    sourceRunId: string;
+    sourceRunId?: string | null;
     /**
      * Statedigest
      *
@@ -1593,19 +1592,33 @@ export type ContextPackRequestDto = {
     /**
      * Targetcomponentid
      *
-     * the Component@1 the focus element belongs to, exactly
+     * optional exact Component@1 focus; when elements are named they must belong to it
      */
-    targetComponentId: string;
+    targetComponentId?: string | null;
     /**
      * Elementid
      *
      * the Element@1 in focus; it must declare targetComponentId as its own component
      */
-    elementId: string;
+    elementId?: string | null;
     /**
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+    /**
+     * Elementids
+     */
+    elementIds?: Array<string>;
+    /**
+     * Contextrefs
+     */
+    contextRefs?: Array<string>;
+    /**
+     * Contextoffset
+     *
+     * offset into the bounded reference index; it changes no focus or edit scope
+     */
+    contextOffset?: number;
 };
 
 /**
@@ -3848,6 +3861,41 @@ export type ModelSourceDto = {
      * Assetsha256
      */
     assetSha256: string;
+};
+
+/**
+ * ModelViewDto
+ *
+ * Transient pixels from a verified model, not a material render or saved drawing.
+ */
+export type ModelViewDto = {
+    source: ModelSourceDto;
+    /**
+     * View
+     */
+    view: 'front' | 'back' | 'left' | 'right' | 'top';
+    /**
+     * Mimetype
+     */
+    mimeType?: 'image/png';
+    /**
+     * Data
+     *
+     * Base64 PNG bytes from the exact source model's orthographic line projection.
+     */
+    data: string;
+    /**
+     * Width
+     */
+    width: number;
+    /**
+     * Height
+     */
+    height: number;
+    /**
+     * Representation
+     */
+    representation?: 'orthographic-line-projection';
 };
 
 /**
@@ -6346,6 +6394,22 @@ export type SemanticEditRequestDto = {
             name?: string | null;
             label?: string | null;
             note?: string | null;
+        };
+    } | {
+        entity_id: string;
+        schema?: 'Reading@1';
+        parent_id?: string | null;
+        basis_refs?: Array<string>;
+        fields?: {
+            /**
+             * A retained design condition, observation or assumption, with its status stated in the text. A reading is context, not approval or a lock.
+             */
+            note?: string;
+            /**
+             * Exact entity:/parameter:/relation: refs this reading concerns; empty for a project-wide condition.
+             */
+            subject_refs?: Array<string>;
+            source_ref?: string | null;
         };
     }>;
     parameters?: Array<{
@@ -9017,6 +9081,58 @@ export type ExportBoardApiBoardExportPostResponses = {
      */
     200: unknown;
 };
+
+export type ReadModelViewApiDrawingsModelViewGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Runid
+         */
+        runId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * View
+         */
+        view?: 'front' | 'back' | 'left' | 'right' | 'top';
+    };
+    url: '/api/drawings/model-view';
+};
+
+export type ReadModelViewApiDrawingsModelViewGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadModelViewApiDrawingsModelViewGetError = ReadModelViewApiDrawingsModelViewGetErrors[keyof ReadModelViewApiDrawingsModelViewGetErrors];
+
+export type ReadModelViewApiDrawingsModelViewGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ModelViewDto;
+};
+
+export type ReadModelViewApiDrawingsModelViewGetResponse = ReadModelViewApiDrawingsModelViewGetResponses[keyof ReadModelViewApiDrawingsModelViewGetResponses];
 
 export type ReadDrawingStylesApiDrawingsStylesGetData = {
     body?: never;

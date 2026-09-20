@@ -48,7 +48,7 @@ from ..application.intent_agent import (
     context_refs,
     record_sheet,
 )
-from ..application.intent_context import compile_context, model_context
+from ..application.intent_context import compile_task_context, model_context
 from ..application.intent_requests import action_preflight
 from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
@@ -221,7 +221,7 @@ def _semantic_answer(
 
 @router.post("/intents/context", response_model=ContextPackDto, response_model_by_alias=True)
 def read_intent_context(request: Request, body: ContextPackRequestDto) -> ContextPackDto:
-    """The context one turn about one named object would otherwise go and find.
+    """Read task context from the exact source, with an optional object focus.
 
     A caller that has already chosen its source and its focus should not have
     to discover the project's shape before it can act: this composes what the
@@ -244,6 +244,10 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
     binding = bound_project(request.app.state)
     _require_bound_project(binding, body.project_id)
     projection = project_state(binding, run_id=body.source_run_id, source_stage_ref=body.source_stage_ref)
+    if body.source_run_id is None and body.source_stage_ref is None and projection.reference.source != "none":
+        raise StudioError(409, "SOURCE_RUN_REQUIRED",
+                          "A retained design exists. Name its exact sourceRunId or sourceStageRef; "
+                          "this context read does not choose a recent candidate.")
     require_actionable(projection)
     if body.state_digest != projection.state_digest:
         raise StudioError(
@@ -254,41 +258,52 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
             "/api/state again and ask against the state that answers now.",
         )
     declared = {entity.entity_id for entity in projection.record.entities_of("Component@1")}
-    if body.target_component_id not in declared:
+    if body.target_component_id is not None and body.target_component_id not in declared:
         raise StudioError(
             404, "TARGET_UNKNOWN",
             f"{body.target_component_id} is not a component this record declares; it declares "
             f"{', '.join(sorted(declared))}.",
         )
-    element = next((item for item in projection.elements if item.element_id == body.element_id), None)
-    if element is None:
-        raise StudioError(
-            404, "ELEMENT_UNKNOWN",
-            f"{body.element_id} is not an Element@1 this record declares; under "
-            f"{body.target_component_id} it declares "
-            + (", ".join(sorted(item.element_id for item in projection.elements
-                                if item.component_id == body.target_component_id)) or "none")
-            + ". Name the element this context is about.",
-        )
-    if element.component_id != body.target_component_id:
-        # Two selections that disagree, not a narrower one. Choosing either
-        # side here is how a change lands on the object nobody picked.
-        raise StudioError(
-            409, "ELEMENT_COMPONENT_MISMATCH",
-            f"element {body.element_id} belongs to component {element.component_id}, not "
-            f"{body.target_component_id}. Send the element's own component as targetComponentId.",
-        )
-    selection = Selection(component_id=body.target_component_id, element_id=body.element_id)
+    element_ids = tuple(body.element_ids) or ((body.element_id,) if body.element_id else ())
+    elements = {item.element_id: item for item in projection.elements}
+    for identifier in element_ids:
+        element = elements.get(identifier)
+        if element is None:
+            raise StudioError(404, "ELEMENT_UNKNOWN",
+                              f"{identifier} is not an Element@1 this record declares; "
+                              f"it declares {', '.join(sorted(elements)) or 'none'}.")
+        if body.target_component_id is not None and element.component_id != body.target_component_id:
+            raise StudioError(409, "ELEMENT_COMPONENT_MISMATCH",
+                              f"element {identifier} belongs to component {element.component_id}, not "
+                              f"{body.target_component_id}. Send the element's own component as targetComponentId.")
+    if not element_ids and body.target_component_id is not None:
+        components = {body.target_component_id}
+        while True:
+            descendants = components | {item.entity_id for item in projection.record.entities_of("Component@1")
+                                        if item.parent_id in components}
+            if descendants == components:
+                break
+            components = descendants
+        element_ids = tuple(item.element_id for item in projection.elements if item.component_id in components)
+    focused = elements[element_ids[0]] if len(element_ids) == 1 else None
+    component_id = focused.component_id if focused is not None else body.target_component_id
+    selection = Selection(component_id=component_id, element_id=focused.element_id if focused else None)
     sheet = record_sheet(projection, selection)
     # The complete message, read by the same compiler an intent uses. A request
     # that names several objects widens to the design tier here exactly as it
     # would there; narrowing it into a scalar would be this route inventing a
     # request the architect did not make.
-    context = compile_context(body.utterance, sheet, record=projection.record)
+    try:
+        context = compile_task_context(body.utterance, sheet, record=projection.record,
+                                       element_ids=element_ids, context_refs=body.context_refs,
+                                       context_offset=body.context_offset)
+    except ValueError as exc:
+        raise StudioError(422, "CONTEXT_REFERENCE_INVALID", str(exc)) from exc
     preflight = action_preflight(context, projection.record)
     description = describe_capability(
         binding, projection, capability("candidate.modify_existing"),
-        component_id=body.target_component_id, element_id=body.element_id,
+        component_id=component_id if focused is not None else None,
+        element_id=focused.element_id if focused is not None else None,
     )
     return context_pack_dto(description, context, preflight, model_context(context))
 

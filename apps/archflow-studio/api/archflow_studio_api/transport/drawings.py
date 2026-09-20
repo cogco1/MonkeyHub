@@ -10,6 +10,21 @@ from .artifacts import ModelSourceDto
 
 DrawingStyleId = Literal["arch400-white", "arch364-technical"]
 
+
+class ModelViewDto(BaseModel):
+    """Transient pixels from a verified model, not a material render or saved drawing."""
+
+    model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
+
+    source: ModelSourceDto
+    view: Literal["front", "back", "left", "right", "top"]
+    mime_type: Literal["image/png"] = Field(alias="mimeType", default="image/png")
+    data: str = Field(description="Base64 PNG bytes from the exact source model's orthographic line projection.")
+    width: int = Field(ge=1, le=1024)
+    height: int = Field(ge=1, le=1024)
+    representation: Literal["orthographic-line-projection"] = "orthographic-line-projection"
+
+
 class ElevationRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
     project_id: str = Field(alias="projectId", min_length=1)

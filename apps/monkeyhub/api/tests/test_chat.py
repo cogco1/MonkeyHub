@@ -700,6 +700,50 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(args[args.index("--tools") + 1], "default")
         self.assertIn("--strict-mcp-config", args)
 
+    def test_usage_sources_preserve_prior_sessions_after_reset_and_reload_from_legacy_records(self):
+        sessions = [(self.create(), "cli", str(uuid4()), str(uuid4())),
+                    (self.create(self.other), "acp", "fixture/old-session", "fixture/new-session")]
+        self.create()  # No provider session has started.
+        claude = self.create(provider="claude")
+        self.store._sessions[claude.id].nativeSessionId = str(uuid4())
+        self.store._fresh_provider_session(claude.id)
+        expected = []
+        for session, transport, old_id, _ in sessions:
+            row = self.store._sessions[session.id]
+            row.transport = transport
+            setattr(row, "acpSessionId" if transport == "acp" else "nativeSessionId", old_id)
+            self.store._save(row)
+            path = self.store.root / f"{session.id}.json"
+            legacy = json.loads(path.read_text(encoding="utf-8"))
+            legacy.pop("priorProviderSessionIds")
+            path.write_text(json.dumps(legacy), encoding="utf-8")
+            expected.append({"projectId": session.projectId, "sessionId": old_id})
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, self.store.hub_url, commands=self.commands)
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        for session, transport, old_id, new_id in sessions:
+            row = self.store._fresh_provider_session(session.id)
+            self.assertEqual(row.priorProviderSessionIds, [old_id])
+            self.assertIsNone(row.nativeSessionId)
+            self.assertIsNone(row.acpSessionId)
+            # A reset without a new connection adds no identity. Reobserving
+            # the same ID is also one usage source, never duplicate accounting.
+            row = self.store._fresh_provider_session(session.id)
+            self.assertEqual(row.priorProviderSessionIds, [old_id])
+            setattr(row, "acpSessionId" if transport == "acp" else "nativeSessionId", old_id)
+            row = self.store._fresh_provider_session(session.id)
+            self.assertEqual(row.priorProviderSessionIds, [old_id])
+            setattr(row, "acpSessionId" if transport == "acp" else "nativeSessionId", new_id)
+            self.store._save(row)
+            expected.append({"projectId": session.projectId, "sessionId": new_id})
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        self.store.shutdown()
+        self.store = chat.ChatStore(self.runtime, self.store.hub_url, commands=self.commands)
+        self.assertCountEqual([row.model_dump() for row in self.store.usage_sources()], expected)
+        for session, _, old_id, _ in sessions:
+            self.assertEqual(self.store._sessions[session.id].priorProviderSessionIds, [old_id])
+            self.assertNotIn("priorProviderSessionIds", self.store.get(session.id).model_dump())
+
     def test_usage_sources_keep_project_and_archive_binding_without_transcripts(self):
         native = self.create()
         acp = self.create(self.other)
@@ -2212,6 +2256,108 @@ class ChatTests(unittest.TestCase):
 
     def turns(self):
         return [] if not self.log.exists() else self.calls()
+
+    def test_project_context_starts_fresh_cli_then_resumes_and_keeps_visible_history(self):
+        for provider in ("codex", "claude"):
+            with self.subTest(provider=provider):
+                session = self.create(provider=provider)
+                self.post(session, "OLD_CHAT_ONLY_185")
+                self.assertEqual(self.finished(session).status, "idle")
+                old_id = self.store._sessions[session.id].nativeSessionId
+                with patch.object(chat, "_request_json", side_effect=self.studio(session, [])):
+                    self.store.post(session.id, ChatPostRequest(
+                        projectId=session.projectId, content="Continue from retained geometry",
+                        contextMode="project", designContext=self.selected()))
+                    result = self.finished(session)
+                self.assertEqual(result.status, "idle", result.error)
+                fresh = self.calls()[-1]
+                self.assertNotIn(old_id, fresh["args"])
+                self.assertNotIn("OLD_CHAT_ONLY_185", fresh["prompt"])
+                self.assertIn('"stateDigest": "' + "a" * 64, fresh["prompt"])
+                new_id = self.store._sessions[session.id].nativeSessionId
+                self.assertNotEqual(new_id, old_id)
+                self.assertEqual([(m.content, m.contextMode) for m in result.messages if m.role == "user"],
+                                 [("OLD_CHAT_ONLY_185", "continue"), ("Continue from retained geometry", "project")])
+                self.store.shutdown()
+                self.store = chat.ChatStore(self.runtime, self.store.hub_url, commands=self.commands)
+                self.post(session, "Next detail")
+                self.assertEqual(self.finished(session).status, "idle")
+                self.assertIn(new_id, self.calls()[-1]["args"])
+                self.assertNotIn(old_id, self.calls()[-1]["args"])
+
+    def test_refused_project_context_preserves_existing_cli_continuation(self):
+        session = self.create(provider="claude")
+        self.post(session)
+        self.finished(session)
+        old_id = self.store._sessions[session.id].nativeSessionId
+        count = len(self.calls())
+        with patch.object(chat, "_request_json", side_effect=self.studio(
+                session, [], HubFailure(409, "STALE_BASE", "Selected source changed"))):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Continue",
+                contextMode="project", designContext=self.selected()))
+            self.assertEqual(self.finished(session).error.code, "STALE_BASE")
+        self.assertEqual(len(self.calls()), count)
+        self.assertEqual(self.store._sessions[session.id].nativeSessionId, old_id)
+        self.post(session, "Keep talking")
+        self.finished(session)
+        self.assertIn(old_id, self.calls()[-1]["args"])
+
+    def test_whole_project_and_multiple_focus_forward_without_inventing_an_element(self):
+        session = self.create()
+        packs = []
+        for extra in ({}, {"elementIds": ["wall-a", "wall-b"], "contextRefs": ["entity:roof"], "contextOffset": 64}):
+            with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
+                self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Design the facade",
+                    designContext=ChatDesignContext(sourceRunId="run-001", stateDigest="a" * 64, **extra)))
+                self.assertEqual(self.finished(session).status, "idle")
+            self.assertEqual(packs[-1]["body"], {"projectId": session.projectId, "utterance": "Design the facade",
+                "sourceRunId": "run-001", "stateDigest": "a" * 64, **extra})
+
+    def test_project_context_requires_a_source_before_posting(self):
+        from pydantic import ValidationError
+        with self.assertRaises(ValidationError):
+            ChatPostRequest(projectId="chat-project", content="Continue", contextMode="project")
+
+    def test_model_view_reaches_mcp_as_image_with_exact_metadata(self):
+        import io
+        session = self.create()
+        path = "/api/drawings/model-view?runId=run-001&stateDigest=" + "a" * 64 + "&assetSha256=" + "b" * 64 + "&view=top"
+        picture = {"source": {"runId": "run-001", "stateDigest": "a" * 64, "assetSha256": "b" * 64},
+                   "view": "top", "mimeType": "image/png", "data": "iVBORw0KGgo=", "width": 800, "height": 500,
+                   "representation": "orthographic-line-projection"}
+        def request(base, requested, method="GET", body=None, **kwargs):
+            if requested == path:
+                self.assertEqual(method, "GET")
+                return picture
+            return self.studio(session, [])(base, requested, method, body, **kwargs)
+        class Stream(io.StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+        line = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "studio_request", "arguments": {"method": "GET", "path": path}}}
+        reader, writer = Stream(json.dumps(line) + "\n"), Stream()
+        self.store._sessions[session.id].status = "running"
+        with patch.object(chat, "_request_json", side_effect=request), \
+             patch.object(chat.sys, "stdin", reader), patch.object(chat.sys, "stdout", writer):
+            chat._mcp(self.store.hub_url, session.id)
+        result = json.loads(writer.getvalue())["result"]
+        self.assertNotIn("isError", result)
+        metadata, image = result["content"]
+        self.assertEqual(json.loads(metadata["text"]), {k: v for k, v in picture.items() if k != "data"})
+        self.assertEqual(image, {"type": "image", "mimeType": "image/png", "data": picture["data"]})
+        self.assertNotIn(picture["data"], metadata["text"])
+
+    def test_context_supplement_is_exposed_as_a_read_without_mutation_admission(self):
+        session = self.create()
+        self.store._sessions[session.id].status = "running"
+        packs = []
+        body = {"projectId": session.projectId, "sourceRunId": "run-001", "stateDigest": "a" * 64,
+                "utterance": "Design the facade", "contextRefs": ["entity:roof"], "contextOffset": 64}
+        with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request",
+                                   {"method": "POST", "path": "/api/intents/context", "body": body})
+        self.assertEqual(result, self.PACK)
+        self.assertEqual(packs, [{"method": "POST", "base": "http://127.0.0.1:8791", "body": body}])
 
     def test_the_named_source_is_read_once_and_never_carried_into_the_next_turn(self):
         session = self.create()

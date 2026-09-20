@@ -244,20 +244,16 @@ export type ChatCreateRequest = {
 /**
  * ChatDesignContext
  *
- * The exact source and focus this one message is about.
+ * Exact project state, with an optional object or multi-object read focus.
  *
- * A caller that already knows which object it is talking about says so here,
- * and the turn is prepared against that. Every field but the Stage is
- * required: a partial selection would have to be completed by guessing, and a
- * guess about which object a change lands on is the one thing this must not
- * do. It selects nothing and authorises nothing — the project the turn is
- * bound to is still the conversation's own.
+ * No focus means the design as a whole. It does not select a recent candidate
+ * or grant permission to edit the dependencies included in its read context.
  */
 export type ChatDesignContext = {
     /**
      * Sourcerunid
      */
-    sourceRunId: string;
+    sourceRunId?: string | null;
     /**
      * Statedigest
      */
@@ -265,15 +261,27 @@ export type ChatDesignContext = {
     /**
      * Targetcomponentid
      */
-    targetComponentId: string;
+    targetComponentId?: string | null;
     /**
      * Elementid
      */
-    elementId: string;
+    elementId?: string | null;
+    /**
+     * Elementids
+     */
+    elementIds?: Array<string>;
     /**
      * Sourcestageref
      */
     sourceStageRef?: string | null;
+    /**
+     * Contextrefs
+     */
+    contextRefs?: Array<string>;
+    /**
+     * Contextoffset
+     */
+    contextOffset?: number;
 };
 
 /**
@@ -360,6 +368,10 @@ export type ChatMessage = {
      * Attachments
      */
     attachments?: Array<ChatAttachment>;
+    /**
+     * Contextmode
+     */
+    contextMode?: 'continue' | 'project';
 };
 
 /**
@@ -441,6 +453,10 @@ export type ChatPostRequest = {
      */
     attachments?: Array<ChatAttachmentInput>;
     designContext?: ChatDesignContext | null;
+    /**
+     * Contextmode
+     */
+    contextMode?: 'continue' | 'project';
 };
 
 /**

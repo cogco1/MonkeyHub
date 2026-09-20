@@ -117,7 +117,7 @@ tolerate it.
 | POST | `/api/drawings/elevations` → 201 | exact-model elevation document with drawing/revision/Stage/view references | writes shared drawing artifacts and document registration | provisional |
 | GET | `/api/candidates/{candidateId}/validation` | the kernel's validation receipt and the server's review readiness (§5) | reads shared + published | stable |
 | POST | `/api/intents` → 201 | one of four outcomes: the resolved target and the proposal it became, or the pending intent the refusal belongs to (§5.1) | reads work in progress + shared | provisional |
-| POST | `/api/intents/context` | the read a turn about one already named object would otherwise go and find: the capability description against the named exact base, the compiled read context for the same words, and the record's own preflight, composed as one `ContextPack@1` | reads work in progress + shared + published | provisional |
+| POST | `/api/intents/context` | `ContextPack@1` against an exact source, with optional scalar, multiple-object, component or whole-project focus, dependency facts and bounded design-context supplements | reads work in progress + shared + published | provisional |
 | POST | `/api/proposals/{proposalId}/decision` → 201 | an explicit judgement: accepted with its successful `candidateId`, rejected, or modified into a linked replacement (§5.2) | accepted is **written into its named run**; other decisions stay in memory until a candidate run against the same state | provisional |
 | GET | `/api/episodes?stateDigest=` | the judgements this process holds, each saying whether it lives in a run or only in memory (§5.2) | server memory + reads shared | provisional |
 | GET | `/api/episodes/{episodeId}` | one of them | server memory + reads shared | provisional |
@@ -169,35 +169,42 @@ source for both preflight and execution, even after the client views another run
 Missing or inexact explicit runs are errors, not a fallback to authored WIP. These are
 optional API inputs; a client must pass the selected source to use this continuation.
 
-**Prepared context for one already named object.** `POST /api/intents/context` answers a
-`ContextPack@1` to a caller that has already chosen what it is talking about. The request carries
-the architect's complete message unedited as `utterance`, the `projectId`, the `sourceRunId` and
-`stateDigest` it is read against, the `targetComponentId` and `elementId` in focus, and optionally
-`sourceStageRef`. Only the Stage is optional: a partial selection is refused rather than completed
-by guessing, because a guess about which object a change lands on is the one thing this must not
-make. The checks the write path makes are made here first and in the same order — `403
-PROJECT_MISMATCH`, the named run itself, `409 STALE_BASE` against the digest that run projects to,
-`404 TARGET_UNKNOWN`, `404 ELEMENT_UNKNOWN`, and `409 ELEMENT_COMPONENT_MISMATCH` when the element
-and the component named disagree. Every refusal names what the record does declare; none is
-quietly answered about a similar object.
+**Prepared task context.** `POST /api/intents/context` reads a `ContextPack@1` from the existing
+StateRecord and declared dependency graph. It carries the complete `utterance`, `projectId` and
+`stateDigest`, with `sourceRunId` or an explicit `sourceStageRef` for retained work. Omitting both
+source selectors is valid only for authored initial state; a retained design refuses
+`409 SOURCE_RUN_REQUIRED` rather than choosing a recent candidate. A completely unprepared empty
+project first uses the existing `/api/project/modeling` action to obtain an actionable digest.
 
-It reads. No proposal is made, no candidate is queued, no model provider is called and nothing is
-written. `source`, `target` and `keep` are the same halves `GET /api/capabilities/{capabilityId}`
-already answers with, so the two cannot drift, and the registered entry itself is left out — the
-caller asked what its project is, not what the registry says. `request` is that capability's own
-next body already holding the values the record holds now: a template to edit, never a change that
-was asked for or approved, and null when the `preflight` beside it already answers the request
-without one. `contextTier`, `escalation`, `context` and `preflight` are the existing compiler's own
-reading of those same words, and `honesty[]` says which of these applies.
+Focus is optional: `elementId`, up to 64 distinct `elementIds`, or `targetComponentId` and its
+descendants. No focus means a design-wide request, not permission to pick the first object.
+An element alone supplies its own component; an explicitly supplied component must agree.
+Project, actionable source, digest and focus checks retain `PROJECT_MISMATCH`, `STALE_BASE`,
+`TARGET_UNKNOWN`, `ELEMENT_UNKNOWN` and `ELEMENT_COMPONENT_MISMATCH` refusals. If both element
+fields are given, `elementIds` must contain only `elementId`.
 
-**What the pack is not.** It is not a bounded or token-optimised context product, and a smaller
-pack is not what it promises. A message that names several objects, speaks of a whole building, or
-asks that other authored fields be preserved widens to the design tier exactly as `/api/intents`
-would; when no local anchor can be resolved from the words themselves, the `context` it answers
-with is the complete record sheet. That is deliberate. Narrowing it would prepare for a request
-nobody made, and stated keep conditions and preservation context must stay readable beside what may
-change, so nothing here is dropped or truncated to make the answer smaller. There is no size
-ceiling on this resource; a client that forwards the pack to a model of its own owns that budget.
+The scalar path retains its existing capability template, preflight and numeric context. Design
+context reads relevant dependency closure, upstream geometry, explicit locks and conditions;
+it does not infer stage restrictions. `focusElementIds` describes focus, and `readOnlyRefs`
+distinguishes surrounding read evidence for a local task. Neither grants or revokes edit authority.
+This read creates no proposal, candidate, model call, stored summary or second project state.
+
+Design detail rows have a 32 KiB budget, with conditions prioritized. This is a detail budget,
+not a total response/token limit. `coverage` reports omitted groups and condition counts;
+incomplete coverage cannot establish that all constraints are satisfied. The source reference
+index contains up to 64 entries per page. Repeat the exact source, utterance and focus with
+`contextOffset=index.nextOffset` to page it, or up to 16 distinct `contextRefs` to prioritize
+additional facts without expanding focus. An individual fact over budget remains explicitly
+omitted. Existing internal Studio intent compilation is unchanged.
+
+For visual observation, `GET /api/drawings/model-view` requires exact `runId`, `stateDigest` and
+`assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top` (default front).
+It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/height, and
+`representation=orthographic-line-projection`), with longest dimension at most 1024 pixels.
+It reuses the retained STEP projection and creates no drawing record or project file.
+Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-box image stands
+in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
+source metadata in a separate text block.
 
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
@@ -783,15 +790,29 @@ candidate completion and formal project issue remain separate. `close` at the sa
 cancels only its attached agents/permissions and drains its owned Studio. Normal Hub shutdown
 preserves the existing accepted-work drain.
 
-A chat message may carry an optional `designContext`: `sourceRunId`, `stateDigest`,
-`targetComponentId`, `elementId`, and optionally `sourceStageRef`, each nonempty. When it is there,
+A chat message may carry an optional `designContext` with `stateDigest` and the same optional
+source, focus and supplement fields as `/api/intents/context`. When it is there,
 Hub prepares that one turn against the bound Studio's `POST /api/intents/context` (§4) and appends
 the `ContextPack@1` it answers with to the prompt as data, leaving the architect's own message
 unedited and ahead of it. The selection belongs to the message that carried it: it is never
-inferred from a viewport, a recent candidate or the previous turn, and a later message with none of
+inferred from a browsed candidate or the previous turn, and a later message with none of
 its own is prepared exactly as it was before. A refusal is that turn's answer in the words the
 refusal came with — no provider starts, and no other source is tried to get one started. The
 project the turn is bound to is still the conversation's own.
+
+The Hub UI supplies this context from its verified editing projection. Browsing history does not
+change it; explicit continuation does. An unsynchronized local draft has no saved context and
+must be synchronized before project-context continuation. A selected object is included only
+when its resolved source agrees with that editing digest.
+
+`contextMode` defaults to `continue`, preserving native conversation continuity. Explicit
+`project` requires `designContext`; after that source read succeeds, Hub starts a new native
+CLI/ACP provider session containing the current request, current attachments and prepared
+project state. It does not load the previous provider transcript. Visible messages remain in
+the same Hub chat and mark the project-context turn; subsequent ordinary turns continue the
+new provider session. Failed/stopped preparation preserves the previous continuation. Retained
+provider identities remain available for usage attribution; old chat text is never projected
+as design state. This is an explicit reset, not automatic stage-transition orchestration.
 
 Preparing is bounded by the turn's own limit and can be stopped inside it: a stop ends the turn
 then, abandoning that read rather than waiting it out, and the answer it may still produce reaches

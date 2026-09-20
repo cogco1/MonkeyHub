@@ -5,7 +5,8 @@ import type { ServerIdentity } from "../api/connection";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
 import type { BoardDocumentOpen } from "../workspaces/monkeyboard/boardNavigation";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
-import App from "./App";
+import App, { type WorkspaceDesignContext } from "./App";
+export type { WorkspaceDesignContext } from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
@@ -24,11 +25,12 @@ export interface ProjectWorkspaceProps {
   refreshKey?: number;
   onWorkspaceChange(workspace: "arch" | "board"): void;
   onChatRequest?: () => void;
+  onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, active = true, refreshKey = 0,
-  onWorkspaceChange, onChatRequest }: ProjectWorkspaceProps) {
+  onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
   const connection = useConnection();
   const studio = useStudio();
   const boundProjectId = useRef(expectedProjectId);
@@ -38,12 +40,12 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [visit, setVisit] = useState<BoardDocumentOpen | null>(null);
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | undefined>();
   const [sketchRequest, setSketchRequest] = useState<BoardSketchRequest | undefined>();
-  const [visited, setVisited] = useState({ arch: workspace === "arch", board: workspace === "board" });
+  const [boardVisited, setBoardVisited] = useState(workspace === "board");
   const pageOpen = workspace === "board" && visit !== null;
   const modelVisible = workspace === "arch" || pageOpen;
   useEffect(() => {
-    setVisited((previous) => ({ arch: previous.arch || modelVisible, board: previous.board || workspace === "board" }));
-  }, [modelVisible, workspace]);
+    if (workspace === "board") setBoardVisited(true);
+  }, [workspace]);
   useEffect(() => {
     if (workspace === "arch") setVisit(null);
   }, [workspace]);
@@ -86,13 +88,14 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   if (server.status !== "ready") return <div className="project-workspace"><LoadingOverlay mode="boot" status="Project Runtime" /></div>;
   return <div className="project-workspace" style={{ height: "100%", minHeight: 0 }}>
     {refreshError && <ErrorPanel error={refreshError} what="GET /api/protocol" />}
-    {(visited.arch || modelVisible) && <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
+    <div data-project-surface="arch" hidden={!modelVisible} inert={!active || !modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "block" : "none" }}>
       <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} documentSource={pageOpen ? visit.source : null}
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
-        active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest} />
-    </div>}
-    {(visited.board || workspace === "board") && <div data-project-surface="board" hidden={modelVisible} inert={!active || modelVisible}
+        active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
+        onDesignContextChange={onDesignContextChange} />
+    </div>
+    {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={modelVisible} inert={!active || modelVisible}
       style={{ height: "100%", minHeight: 0, display: modelVisible ? "none" : "block" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
         <Board expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt} active={active && !modelVisible} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} />

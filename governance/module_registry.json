@@ -3908,7 +3908,9 @@
         "POST /api/documents/{asset_sha256}/work-copy",
         "open_document_work_copy",
         "list_document_work_copies",
-        "DocumentWorkCopy"
+        "DocumentWorkCopy",
+        "GET /api/drawings/model-view",
+        "model_view"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3957,7 +3959,8 @@
         "the exact STEP and the mesh preview keep their meaning: the work model is an additional exact 3dm delivery beside them, and no preview is ever relabelled",
         "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose page has become another page of one document, whose current replacement has a different page count or is a different kind of file, or whose registered media type has no editable copy at all, has no one file that can stand for it: the row carries that reason and the request is refused as not editable, naming any copy already made; the row names the whole registration it answers for and no page number, because one file answers for the whole document",
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
-        "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page"
+        "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
+        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources."
       ],
       "status": "canonical",
       "tests": [
@@ -4406,7 +4409,7 @@
         "the scope step: which elements a change is agreed to reach - the element, the stack that seats on it (support relations and base references, intersected with the record's closure), or everything on its datum; asked (SCOPE_UNRESOLVED) only when a stack exists and the request did not say, never for an explicitly picked element",
         "the derived-control answer: a capability a reference pins is named with its source (CONTROL_IS_DERIVED) and never compiled - the source's own editable controls when it is an element, the terminal authored-control answer when it is a level",
         "compiling an Agent semantic component edit from the queried producer signatures and the current record into the existing typed StateRecordOperator; POST /api/proposals accepts either scalar utterance or direct semanticEdit with no second model, supports partial parameter/entity upserts and preserves exact-base proposal continuation",
-        "showing the Agent project types, source readings, parameter bindings and named relationships as context; no geometry program or deferred replay payload is accepted as semantic authoring",
+        "showing the Agent project types, source readings, parameter bindings and named relationships as context; advertising Reading@1 note, exact subject refs and source ref for retained design conditions through the existing semantic proposal; no geometry program or deferred replay payload is accepted as semantic authoring",
         "retaining complete 2D page stroke and plain-text revisions and page comments through P036 against exact source-file content, named run and page; reading exact submitted revisions into source context beside existing 3D gesture facts",
         "retaining submitted document words and their exact annotation references before intent resolution, and carrying that retained context with scalar or semantic proposals and modifications",
         "refusing unknown or mismatched document model sources before a model call; retaining resolved sourceRunId and the exact document association in comments and proposals, including clarification continuations",
@@ -4560,7 +4563,8 @@
         "continue_proposal",
         "read_acceptance",
         "AcceptanceEvidence",
-        "POST /api/proposals/elevation"
+        "POST /api/proposals/elevation",
+        "compile_task_context"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4635,7 +4639,8 @@
         "Unexecuted proposal continuations fold checked operators onto their original run/Stage base in memory; a sketch batch stores only its complete proposal, failures leave previous proposals unchanged, and only final candidate execution creates a run or model file",
         "Completed direct-model gestures update local previews without network writes; Sync never locks editing or replaces later local edits, retries retain candidate request identity through existing Hub admission, and local selection/preview is not acceptance or project authority",
         "one accepted Stage carries at most one acceptance event: it is written only after the branch head actually advanced, a repeat acceptance returns the committed Stage and writes none, a refusal writes none, and a Stage committed before this evidence existed reads back with none rather than an invented actor",
-        "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance"
+        "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance",
+        "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly."
       ],
       "status": "canonical",
       "tests": [
@@ -6297,7 +6302,8 @@
         "No project workspace iframe or shared mutable API client; a request remains bound to its original project when another project is selected.",
         "Hub controls language, theme and application settings. Workspace preferences only project those values; retained editing-base pointers keep their existing exact project binding.",
         "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
-        "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory"
+        "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory",
+        "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",

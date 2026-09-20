@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from archflow.project.repository import FilesystemProjectRepository
 from monkeyhub_api import chat
 from monkeyhub_api.main import HubSettings, create_app
-from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest
+from monkeyhub_api.models import ChatCreateRequest, ChatPostRequest, ChatDesignContext
 
 
 HUB_AGENT = FAKE_AGENT.replace("asyncio.run(main())", "") + r'''
@@ -200,6 +200,30 @@ class AcpChatTests(unittest.TestCase):
             outcomes = [{k: v for k, v in r["outcome"].items() if v is not None}
                         for r in self.calls() if r["event"] == "permission"]
             self.assertEqual(outcomes, [{"outcome": "selected", "optionId": "allow"}, {"outcome": "cancelled"}])
+
+    def test_project_context_opens_new_acp_session_without_loading_old_transcript(self):
+        session = self.create()
+        self.post(session, "OLD_TRANSCRIPT_185")
+        self.finished(session)
+        old_client = self.store._acp_sessions[session.id]
+        with patch.object(chat, "_prepared_context", return_value='\n\n{"stateDigest":"retained-source","keep":["entity:mass"]}'):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Design facade",
+                contextMode="project", designContext=ChatDesignContext(sourceRunId="run-1", stateDigest="retained-source")))
+            result = self.finished(session)
+        self.assertIsNot(self.store._acp_sessions[session.id], old_client)
+        calls = self.calls()
+        self.assertEqual(len([c for c in calls if c["event"] == "new"]), 2)
+        self.assertFalse(any(c["event"] == "load" for c in calls))
+        prompts = [c for c in calls if c["event"] == "hub_prompt"]
+        self.assertNotEqual(prompts[0]["pid"], prompts[1]["pid"])
+        text = prompts[-1]["blocks"][0]["text"]
+        self.assertNotIn("OLD_TRANSCRIPT_185", text)
+        self.assertIn("retained-source", text)
+        self.assertIn("entity:mass", text)
+        self.assertEqual([m.contextMode for m in result.messages if m.role == "user"], ["continue", "project"])
+        self.post(session, "next")
+        self.finished(session)
+        self.assertEqual(len([c for c in self.calls() if c["event"] == "new"]), 2)
 
     def test_attachments_reach_acp_once_and_remain_downloadable_after_reopen(self):
         before = {str(path): path.read_bytes() for path in self.project.rglob("*") if path.is_file()}
