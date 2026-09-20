@@ -1,0 +1,5 @@
+# Optional isolated experiment dependency, never imported by production code.
+PyNiteFEA==3.2.0
+# Pin the numeric stack used for the cold-replay comparison as well.
+numpy==2.5.3
+scipy==1.18.1

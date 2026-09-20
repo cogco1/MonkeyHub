@@ -3,6 +3,24 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-125",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/125",
+      "status": "ready",
+      "goal": "Prove progressive enrichment of the same retained entities into a sourced structural projection and independently checked linear frame analysis in the existing lab boundary.",
+      "depends_on": [],
+      "branch": "codex/125-progressive-structural-analysis",
+      "worktree": ".",
+      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [],
+      "write_scope": [
+        "labs/structural_analysis/",
+        "governance/work_registry.json"
+      ],
+      "handoff": "Coordinator confirmed this isolated scope; worktree is checkout-local '.', with the absolute host path reported privately to the coordinator. Reuse state.record operators and P036 without public state/DTO changes. Solver research is read-only in a separate agent; no overlap with GH-183, GH-73 or GH-123/124. Solver projections/results are artifacts, never entity mutations or Stage acceptance."
+    },
+    {
       "id": "GH-46",
       "stream": "interaction",
       "status": "ready",
