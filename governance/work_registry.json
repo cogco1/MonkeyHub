@@ -3,29 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-124",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Compare equal-cost OCBA policies with complete paired trials and prepare the requested performance experiment and research discussion.",
-      "depends_on": [],
-      "write_scope": ["labs/candidate_evaluation/", "docs/research/performance-experiments.md", "docs/research/ocba-discussion.md"],
-      "lanes": [{
-        "id": "cost-followup",
-        "issue": "https://github.com/cogco1/MonkeyHub/issues/124",
-        "status": "active",
-        "branch": "codex/ocba-performance-study",
-        "worktree": "codex-ocba-performance-study",
-        "base_ref": "26cadb140d1a5b35506d77c610a3efe87447a1d0",
-        "contributor": "Codex at repository owner's request",
-        "reviewer": null,
-        "handoff": null,
-        "modules": ["state.massing_metrics"],
-        "write_scope": ["labs/candidate_evaluation/", "docs/research/performance-experiments.md", "docs/research/ocba-discussion.md"],
-        "depends_on": [],
-        "blocked_reason": null
-      }]
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
