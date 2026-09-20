@@ -116,7 +116,7 @@ when requested. The independent final checker is never fed back for repair.
 
 
 class RetainedTrial:
-    """A caller-assigned P036 run; no promotion or branch-writing capability."""
+    """A caller-assigned P036 run using candidate/trace writes, never promotion."""
 
     def __init__(self, repository: FilesystemProjectRepository, run_id: str):
         self.repository = repository

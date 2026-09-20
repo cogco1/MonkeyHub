@@ -19,7 +19,7 @@ model knowledge. All construction and repair calls retain the public conversatio
 ## Fixed protocol
 
 The predeclared live pilot has **three repetitions per arm**, 12 scheduled trials.
-Repetition orders are ABCD, BCDA and CDAB. Three independent repetition blocks may
+Repetition orders are ABCD, BCDA and CDAB. Three separate repetition blocks may
 run concurrently; stages within a trial are synchronous. CLI seed control is
 unavailable; repetition numbers are not seeds. The fixed primary model is
 `claude-opus-5`, effort `low`, Claude CLI 2.1.272. Actual primary and auxiliary
@@ -39,8 +39,9 @@ Each review can cause one repair. Construction has at most two attempts per
 checkpoint, and there are no speculative branches or asynchronous shadow critics.
 Checks execute in bounded batches at design decisions. Immediate core exact-base,
 parameter-lock and protected-courtyard checks apply in every arm. A reviewer can
-request the same finite independent goal checks; only failed applicable checks
-justify revision or blocking. Disagreement itself cannot veto a candidate. Final
+request the same finite independent goal checks; failed goal checks can trigger
+one repair, while only failed applicable invariants justify a hard block.
+Disagreement itself cannot veto a candidate. Final
 assessment runs identically for every arm and is not fed back to trigger another
 repair. Malformed, stale, timeout, exhausted, omitted and failed trials remain in
 the denominator, including a valid design whose required review never completed.
@@ -98,11 +99,18 @@ to public JSON decisions and brief evidence summaries.
 
 ## Run and verify
 
+Use the repository's existing Hub/Runtime dependencies from
+[`apps/monkeyhub/api/requirements.txt`](../../apps/monkeyhub/api/requirements.txt)
+and [`apps/archflow-studio/api/requirements.txt`](../../apps/archflow-studio/api/requirements.txt).
+This run used Python 3.12.10 and jsonschema 4.26.0. Live trials also require an
+already authenticated Claude CLI; the harness does not configure credentials.
+
 ```powershell
 python -m unittest labs.checkpoint_critique.test_fixture labs.checkpoint_critique.test_provider labs.checkpoint_critique.test_harness
 python tools/archcheck.py
 python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch YOUR-UNIQUE-CONTROL --repeats 1
 python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch YOUR-UNIQUE-LIVE --real --repeats 3 --parallel-blocks 3
+python -m labs.checkpoint_critique.benchmark --project probes/checkpoint-critique --batch live-v1 --replay
 ```
 
 `--real` makes actual provider calls. Use a unique batch name: retained data is

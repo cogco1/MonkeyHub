@@ -111,7 +111,8 @@ or self-reported confidence never substitutes for those observations.
   that declared scope remain unknown.
 - The cited papers use other models, prompts, datasets, feedback channels, and
   task structures. Positive or negative results from them cannot replace live
-  budget-matched repetitions here, nor authorize a production superiority claim.
+  repetitions under the same predeclared cost/call/time ceilings here, nor authorize
+  a production superiority claim.
 
 This note records the research rationale. Run records and their independent final
 assessments determine the experiment's results, including negative or unsupported

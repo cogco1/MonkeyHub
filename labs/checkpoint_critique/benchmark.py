@@ -15,7 +15,7 @@ from archflow.project.repository import FilesystemProjectRepository
 from archflow.state.state_record import StateRecord
 
 from .fixture import checks
-from .harness import ARMS, Budget, RetainedTrial, replay, run_trial
+from .harness import ARMS, Budget, RetainedTrial, _read_artifact, replay, run_trial
 from .provider import CallResult, ClaudeProvider
 
 
@@ -164,17 +164,42 @@ def run_batch(repository, batch: str, *, real: bool, repeats: int = 3, parallel_
     return {**result, "result_ref": result_ref}
 
 
+def replay_batch(repository, batch: str):
+    """Use the retained result as an index; verify its exact referenced artifacts."""
+    from archflow.project.refs import require_identifier
+    require_identifier(batch, "batch")
+    index = repository.layout.run(f"{batch}-plan").workspaces / "checkpoint-critique/batch-result.json"
+    result = json.loads(index.read_text(encoding="utf-8"))
+    plan = _read_artifact(repository, result["plan_ref"])
+    rows = [_read_artifact(repository, ref) for ref in result["trials"]]
+    planned = {f"{batch}-r{rep + 1:02d}-{arm.lower()}" for rep, order in enumerate(plan["schedule"]) for arm in order}
+    if len(rows) != len(planned) or {r["trial"] for r in rows} != planned:
+        raise ValueError("retained trial denominator differs from predeclared schedule")
+    replayed = [replay(repository, ref) for ref, row in zip(result["trials"], rows) if row["status"] != "harness_error"]
+    if summarize(rows) != result["summary"]:
+        raise ValueError("retained aggregate differs from all trial rows")
+    return {"batch": batch, "scheduled_trials": len(planned), "replayed_trials": len(replayed),
+            "unresolved_harness_failures": len(rows) - len(replayed), "aggregate_matches": True,
+            "source_revision": plan["git_revision"], "summary": result["summary"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, required=True, help="explicit synthetic project/probe root, named checkpoint-critique")
     parser.add_argument("--batch", required=True, help="unique immutable batch name")
     parser.add_argument("--real", action="store_true", help="make real paid/subscription Claude calls with synthetic inputs only")
+    parser.add_argument("--replay", action="store_true", help="verify a retained batch without provider calls or writes")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--parallel-blocks", type=int, default=1)
     parser.add_argument("--scenario", default="wrong_entry")
     args = parser.parse_args()
     if args.project.name != "checkpoint-critique":
         parser.error("project root name must be checkpoint-critique to isolate this synthetic experiment")
+    if args.replay:
+        if args.real:
+            parser.error("--replay and --real are mutually exclusive")
+        print(json.dumps(replay_batch(FilesystemProjectRepository.open(args.project), args.batch), indent=2))
+        return
     repository = (FilesystemProjectRepository.open(args.project) if (args.project / "project.json").exists()
                   else FilesystemProjectRepository.initialize(args.project, project_id="checkpoint-critique", initial_state={}))
     result = run_batch(repository, args.batch, real=args.real, repeats=args.repeats,
