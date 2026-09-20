@@ -1,16 +1,28 @@
 """The manual benchmark must not promote missing evidence to success."""
 import copy
+from io import BytesIO
 import json
 from pathlib import Path
 import tempfile
 import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
+from urllib.error import HTTPError
 
 import run_turn_benchmark as benchmark
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_monitor_busy_does_not_abort_provider_but_other_errors_are_visible(self):
+        failures = []
+        with patch.object(benchmark, "request", side_effect=HTTPError("http://localhost", 503, "busy", {}, BytesIO(b'journal busy'))):
+            self.assertIsNone(benchmark.monitor_snapshot("http://localhost", failures))
+        self.assertEqual(failures, [{"status": 503, "detail": "journal busy"}])
+        with patch.object(benchmark, "request", side_effect=HTTPError("http://localhost", 500, "error", {}, BytesIO(b'error'))):
+            with self.assertRaises(HTTPError):
+                benchmark.monitor_snapshot("http://localhost", failures)
+
     def test_actual_candidate_satisfies_geometry_and_authored_checks(self):
         from fastapi.testclient import TestClient
         from archflow_studio_api.main import create_app

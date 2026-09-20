@@ -285,3 +285,71 @@ retries remain unknown. The benchmark reports neither account billing nor a
 browser first-visible time. Different failed/partial outputs are not accepted
 as faster successful work. The offline intent packaging command above remains
 a separate measurement with zero live model calls.
+
+### 2026-09-20 pilot: end-to-end behavior, not isolated rebuilding overhead
+
+The first pairs used production `fe9bafcf` and benchmark `48234705`, the installed
+Codex ACP adapter 1.11.0 and reported model `gpt-6-astra`. Each pair used identical
+retained input bytes and the same measured request. The coordinator paused the
+other design model/CAD work and the integration browser tests during this window;
+ordinary machine/provider background variability was not controlled. All four
+candidates passed the specified bounds, authored-field/support checks, unchanged
+HEAD and expected provider-session continuity. These are small synthetic assembly
+tasks, not evidence of architectural design quality.
+
+| Task / condition | Wall seconds | Input | Cached input subset | Output | Tool calls | CAD builds | Failed tools |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cornice / continue | 35.194 | 123,488 | 115,712 | 613 | 3 | 1 | 0 |
+| Cornice / project | 72.461 | 182,823 | 141,952 | 906 | 4 | 1 | 0 |
+| Assembly / project | 73.070 | 276,709 | 228,864 | 1,196 | 6 | 1 | 1 |
+| Assembly / continue | 53.129 | 268,347 | 254,720 | 1,272 | 5 | 1 | 1 |
+
+Input totals already include cached input; the columns must not be added.
+These provider counters are not subscription charges. Exact model-call count
+and provider-internal retry count were unavailable. Recorded retry spans were
+zero, but both assembly agents recovered from an invalid first proposal; these
+are visible failed tool calls and subsequent corrections, not zero errors.
+
+The cornice project-state turn made an additional model-view request (132 ms of
+observed server work). The old-session turn did no visual inspection. Both also
+read candidate state and their proposal after the bounded execution result.
+The cornice traces attribute 31.056 s and 59.627 s to Agent activity; actual
+geometry-build spans were 3 ms and 15 ms. The additional image observation and
+different provider activity prevent attributing the wall-time difference to
+context reconstruction alone. One pair per task cannot establish a speedup,
+regression distribution, cache cause or model inference time.
+
+Both assembly agents initially supplied only `params.height`, losing the required
+profile because the current contract replaces the entire supplied `params`
+object. They then resubmitted complete profiles and succeeded. The exposed
+schema's broad "omitted fields retain" description did not state the nested
+replacement rule already present in the compiler prompt. This repeated failure
+was sent to the existing schema owner for a minimal wording correction; it is
+not evidence against either `contextMode`.
+
+Assembly traces contain a diagnostic missing-observations notice; the project
+arm retains an unfinished tool span despite the completed turn. That interval
+cannot be interpreted as completed tool latency. The continue arm's live report
+export failed, while its model completed successfully during normal shutdown.
+Its trace was reconstructed from the original Hub journal and the exact native
+session; the original retained candidate was read independently and passed.
+No model was rerun to replace this sample. The original child exception was not
+captured, so its exact cause remains unknown. `report_recovery` labels this case.
+
+Subsequent benchmark runs capture child stderr in `run.log`, retain failed-export
+metadata, and treat Monitor's documented busy-journal HTTP 503 as a missing
+snapshot rather than a failed model turn. Paired measurements now read Monitor
+only after the turn, reducing competing diagnostic reads. This is a measurement
+change; later repeats must name their new benchmark commit separately. The
+unpaired live demonstration keeps its live observations.
+
+Local sources are under `D:/MONKEYHUB_DEV/temp/context-bench-32/`, in
+`scalar-pair-1` and `assembly-pair-1`. Each has `comparison.json` and the two
+condition directories described above. Primer usage, wall time and visible
+history length are separately included in each condition's `preparation`;
+native provider-history token length remains unknown. Re-extract these retained
+reports without a model or service:
+
+```powershell
+python tests/monkeymonitor/run_turn_benchmark.py --summarize --scenario assembly-edit --output D:/MONKEYHUB_DEV/temp/context-bench-32/assembly-pair-1
+```

@@ -22,6 +22,7 @@ import threading
 import time
 from unittest.mock import patch
 from urllib.request import ProxyHandler, Request, build_opener
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +53,8 @@ def source_identity(repository):
 def measured_metrics(trace):
     """Project existing Monitor observations; missing counters remain unknown."""
     summary, spans = trace["summary"], trace["spans"]
+    views = [row for row in spans if row["phase"] == "api_request"
+             and "drawings/model-view" in row["details"].get("request_kind", "")]
     return {
         "wall_ms": summary["elapsed_ms"],
         **trace["usage"]["tokens"],
@@ -62,6 +65,11 @@ def measured_metrics(trace):
         "observed_failed_tools": sum(row["phase"] == "tool_call" and row["status"] == "failed" for row in spans),
         "observed_retry_spans": sum((row["details"].get("retry_attempt") or 0) > 0 for row in spans),
         "provider_internal_retries": None,
+        "model_view_calls": len(views),
+        "model_view_service_ms": (sum(row["duration_ms"] for row in views)
+                                  if all(row.get("duration_ms") is not None and row["status"] == "succeeded" for row in views) else None),
+        "unfinished_spans": sum(row["status"] == "running" for row in spans),
+        "missing_observations_notice": any(row["details"].get("missing_observations") for row in spans),
         "reported_models": sorted({row["model"] for row in spans if row.get("model_call") and row.get("model")}),
     }
 
@@ -95,17 +103,34 @@ def paired_benchmark(args, config):
     if args.prepare_only:
         print(json.dumps({"prepared": str(prepared), "identical_retained_inputs": True, "live_model_calls": 0}))
         return
+    failed_exports = {}
     for condition in args.order.split(","):
         command = [sys.executable, str(Path(__file__).resolve()), "--scenario", args.scenario,
                    "--model", args.model, "--timeout", str(args.timeout), "--no-preview",
                    "--condition", condition, "--output", str(args.output / condition),
                    "--retained-root", str(args.output / condition)]
         # Continue to the other arm even if one fails; failures are measurements.
-        result = subprocess.run(command, cwd=ROOT, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        with (args.output / condition / "run.log").open("w", encoding="utf-8") as log:
+            result = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode and not (args.output / condition / "trace.json").exists():
-            raise RuntimeError(f"{condition} failed before exporting a trace (exit {result.returncode})")
-    reports = {name: json.loads((args.output / name / "trace.json").read_text(encoding="utf-8"))
+            failed_exports[condition] = {"exit_code": result.returncode, "log": str(args.output / condition / "run.log"),
+                                         "detail": "Export failed; retain raw chat, project and diagnostics for offline recovery"}
+            write_json(args.output / condition / "failure.json", failed_exports[condition])
+    if failed_exports:
+        write_json(args.output / "comparison.json", {"comparable_successful_pair": False,
+                                                     "failed_exports": failed_exports, "order": args.order})
+        raise RuntimeError("One or more exports failed; both arms were attempted and raw sources remain retained")
+    summarize_pair(args.output)
+
+
+def summarize_pair(output):
+    """Re-extract retained traces, including explicitly labelled recovery."""
+    saved = json.loads((output / "prepared.json").read_text(encoding="utf-8"))
+    reports = {name: json.loads((output / name / "trace.json").read_text(encoding="utf-8"))
                for name in ("continue", "project")}
+    for row in reports.values():
+        row["metrics"] = measured_metrics(row["trace"])
     a, b = reports.values()
     equal = {key: a["benchmark"][key] == b["benchmark"][key] for key in
              ("build_revision", "source_diff_sha256", "provider", "model", "scenario", "prompt_sha256", "input_source")}
@@ -116,13 +141,16 @@ def paired_benchmark(args, config):
               "comparable_successful_pair": all(equal.values()) and models_known_equal and success,
               "order": saved["order"], "samples_per_condition": 1,
               "conditions": {name: {"metrics": row["metrics"], "task_success": row["task_success"],
-                                    "trace": str(args.output / name / "trace.json"),
+                                    "preparation": row.get("preparation"),
+                                    "recovery": row.get("report_recovery"),
+                                    "trace": str(output / name / "trace.json"),
                                     "project_dir": row["project_dir"]} for name, row in reports.items()},
               "limitations": ["Synthetic two-object project; not architectural design-quality evidence.",
+                              "End-to-end behavior comparison: tool/visual work may differ, so the elapsed difference is not isolated context-rebuild overhead.",
                               "Histories share a primer request but are generated independently; retained transcripts record any differences.",
                               "No browser preview measurement. Provider internal retries and account billing are unknown.",
                               "One ordered pair cannot establish causality or a latency distribution."]}
-    write_json(args.output / "comparison.json", report)
+    write_json(output / "comparison.json", report)
     print(json.dumps(report, ensure_ascii=False), flush=True)
 
 
@@ -131,6 +159,18 @@ def request(base, path, body=None):
                   headers={"Content-Type": "application/json"})
     with build_opener(ProxyHandler({})).open(req, timeout=30) as response:
         return json.load(response)
+
+
+def monitor_snapshot(base, observations):
+    try:
+        return request(base, "/api/traces")
+    except HTTPError as exc:
+        if exc.code != 503:
+            raise
+        # Monitor explicitly refuses a snapshot while its journal is busy.
+        # Missing telemetry is not a failed provider turn; poll again later.
+        observations.append({"status": exc.code, "detail": exc.read().decode("utf-8", errors="replace")})
+        return None
 
 
 def expected_geometry(readback, scenario):
@@ -227,6 +267,7 @@ def main():
                         help="Send the same incremental-edit prompt with this fixture's known source/digest/focus as designContext, so the turn is prepared before the provider starts")
     parser.add_argument("--session-pair", action="store_true", help="Compare old-session continuation with a project-state session; retain both projects and diagnostics")
     parser.add_argument("--prepare-only", action="store_true", help="Prepare and verify a --session-pair without starting services or calling a model")
+    parser.add_argument("--summarize", action="store_true", help="Re-extract a retained pair's trace reports without starting services or calling a model")
     parser.add_argument("--order", choices=("continue,project", "project,continue"), default="continue,project")
     parser.add_argument("--condition", choices=("continue", "project"), help=argparse.SUPPRESS)
     parser.add_argument("--retained-root", type=Path, help=argparse.SUPPRESS)
@@ -237,6 +278,9 @@ def main():
         parser.error("--context-pack names one existing object to edit; it applies to incremental-edit only")
     if args.prepare_only and not args.session_pair:
         parser.error("--prepare-only requires --session-pair")
+    if args.summarize:
+        summarize_pair(args.output)
+        return
     config = json.loads(Path(__file__).with_name("benchmarks.json").read_text())
     if args.model:
         config["model"] = args.model
@@ -336,11 +380,14 @@ def main():
                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             print(json.dumps({"state": "running", "scenario": scenario["id"], "turn_id": turn_id, "monitor_url": monitor}), flush=True)
             deadline = time.monotonic() + args.timeout
-            observed_live, last_count = False, -1
+            observed_live, last_count = (None if args.condition else False), -1
+            monitor_read_failures = []
             while time.monotonic() < deadline:
                 detail = request(base, f"/api/chat/sessions/{session['id']}")
-                snapshot = request(monitor, "/api/traces")
-                trace = next((row for row in snapshot["traces"] if row["turn_id"] == turn_id), None)
+                # Paired measurements do not need a live UI demonstration.
+                # Avoid competing with diagnostic writes throughout the turn.
+                snapshot = None if args.condition else monitor_snapshot(monitor, monitor_read_failures)
+                trace = next((row for row in (snapshot or {}).get("traces", []) if row["turn_id"] == turn_id), None)
                 if trace:
                     observed_live |= trace["status"] == "running"
                     if len(trace["spans"]) != last_count:
@@ -375,7 +422,15 @@ def main():
             if args.hold_seconds:
                 time.sleep(args.hold_seconds)
             preview_code = preview.wait(timeout=100) if preview else None
-            snapshot = request(monitor, "/api/traces")
+            snapshot = None
+            for attempt in range(5):
+                snapshot = monitor_snapshot(monitor, monitor_read_failures)
+                if snapshot is not None:
+                    break
+                time.sleep(0.2)
+            write_json(args.output / "monitor-read-failures.json", monitor_read_failures)
+            if snapshot is None:
+                raise RuntimeError("Final Monitor snapshot unavailable; raw Hub diagnostics and chat remain retained")
             trace = next(row for row in snapshot["traces"] if row["turn_id"] == turn_id)
             preparation = None
             if args.condition:
@@ -396,6 +451,7 @@ def main():
             report = {"benchmark": {**{key: config[key] for key in ("fixture", "fixture_revision", "provider", "model")},
                                     "scenario": scenario["id"], "build_revision": revision, "fixture_last_change": fixture_revision,
                                     "source_diff_sha256": hashlib.sha256(source_diff).hexdigest(),
+                                    "monitor_sampling": "after_turn" if args.condition else "live",
                                     "prompt_sha256": hashlib.sha256(message["content"].encode()).hexdigest(),
                                     "input_source": input_source,
                                     # Which condition this run was: the scenario and its
@@ -404,6 +460,7 @@ def main():
                                     "context_mode": args.condition or ("context_pack" if args.context_pack else "none")},
                       "task_success": task_success, "metrics": measured_metrics(trace),
                       "preparation": preparation,
+                      "monitor_read_failures": monitor_read_failures,
                       "observed_wall_ms": observed_wall_ms, "project_dir": str(project), "runtime_root": str(runtime),
                       "session_id": session['id'], "primer_provider_session_id": primer_session_id,
                       "provider_session_id": native_session_id, "session_continuity_ok": continuity_ok,
