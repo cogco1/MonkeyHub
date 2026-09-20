@@ -3,33 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-170",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Preserve declared revision dependencies, upstream support, task conditions and required images before ranking; compare full, graph, lexical and hybrid on an expanded public synthetic heldout set with real consumer costs.",
-      "depends_on": [],
-      "branch": "codex/170-revision-selection",
-      "worktree": ".",
-      "base_ref": "72f424800a4eadf71604648d2d93f8163f22b10e",
-      "contributor": "Codex",
-      "reviewer": null,
-      "modules": [
-        "adapters.cad_execution",
-        "state.record",
-        "monkeymonitor"
-      ],
-      "write_scope": [
-        "labs/spatial_observation/",
-        "probes/spatial-observation-v1/"
-      ],
-      "handoff": "Coordinator confirmed completed GH-195 source ownership handoff from PR #198. Old observation results remain unchanged; broader GH-195 research acceptance remains open. New GH-170 lab-only slice; no production ContextPack edits.",
-      "acceptance": [
-        "Reviewed development/heldout truth and negative freshness/image/coverage cases.",
-        "Reusable opt-in revision selector plus same-source real consumer comparisons including fallback, build, update and provider cost.",
-        "Focused dependency tests and architecture/scope checks; retain negative outcomes."
-      ]
-    },
-    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",

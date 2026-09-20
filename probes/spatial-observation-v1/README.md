@@ -7,6 +7,9 @@
 [原论文与实际系统调查](../../labs/spatial_observation/research.md)、
 [预定实验规则](../../labs/spatial_observation/protocol.md)。
 
+后续 #170 的 [修订证据与成本比较](revision-v2.md) 使用扩大后的 34 实体 fixture，
+保留本页既有实验结果；新比较包含完整依赖、上游条件、真实图片与保守回退。
+
 ## 可以据此作出的判断
 
 对本次已定义的对象身份、尺寸、实体距离/交叠、声明依赖和版本问题，完整结构化输入已经足够；

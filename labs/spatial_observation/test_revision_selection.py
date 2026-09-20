@@ -314,3 +314,39 @@ def test_consumer_duplicate_references_or_unverified_geometry_claims_fail(scored
     assert not score(duplicate, task, result, source)["valid"]
     answer["collision_verified"] = True
     assert not score(answer, task, result, source)["passed"]
+
+
+def test_consumer_cannot_claim_conditions_or_images_removed_in_transport(scored_evidence):
+    from labs.spatial_observation.revision_benchmark import score
+
+    source, task, result, answer = scored_evidence
+    result["context"]["conditions"].clear()
+    result["images"].clear()
+    scores = score(answer, task, result, source)
+    assert not scores["checks"]["conditions_supported"]
+    assert not scores["checks"]["images_supported"]
+    assert not scores["passed"]
+
+
+def test_expanded_p036_fixture_matches_reviewed_truth_and_exact_shell_clearance(tmp_path):
+    from archflow.adapters.occt_backend import occt_available
+    from labs.spatial_observation.fixture import Fixture
+    from labs.spatial_observation.revision_benchmark import ROOF, SCREEN, revision_record, tasks
+
+    if not occt_available():
+        pytest.skip("real OCCT runtime required")
+    fixture = Fixture.create(tmp_path / "project", authored=revision_record("heldout"), revision="revision-v2-heldout")
+    source = fixture.snapshot()
+    assert len(source["entities"]) == 34
+    assert fixture.record.closure(("entity:roof-post",)) == tuple(sorted(f"entity:{ref}" for ref in ROOF[1:]))
+    index = SelectionIndex(source, "graph")
+    by_id = {t["id"]: t for t in tasks()}
+    for task_id, expected in (("H2-upstream", set(ROOF)), ("H3-shared-drain", set(SCREEN))):
+        result = index.select_revision(by_id[task_id]["query"], snapshot=source, budget=8)
+        assert set(result["coverage"]["required_declared_refs"]) == expected
+    datum = index.select_revision(by_id["H8-datum"]["query"], snapshot=source, budget=8)
+    assert set(datum["entity_refs"]) == set(by_id["H8-datum"]["gold"]["relevant_entities"])
+    assert datum["coverage"]["fallback_to_full"]
+    pair = fixture.exact_query("pair", {"first": "insert", "second": "u-shell"}, source=fixture.source)["result"]
+    assert pair["distance_m"] == pytest.approx(.25)
+    assert pair["common_volume_m3"] == 0
