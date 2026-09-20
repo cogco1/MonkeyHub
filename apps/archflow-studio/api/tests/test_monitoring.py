@@ -14,7 +14,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from archflow_studio_api.application.intent_agent import DeterministicCompiler, Selection
 from archflow_studio_api.application.jobs import JobRegistry
