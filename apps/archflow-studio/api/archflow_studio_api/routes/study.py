@@ -12,10 +12,11 @@ from starlette.requests import Request
 
 from ..application import study as study_application
 from ..application.binding import bound_project
-from ..application.study import StudyView, read_study, save_study
+from ..application.study import StudyView, list_studies, read_study, save_study
 from ..transport.errors import StudioError
 from ..transport.study import (
     CompareStudiesRequestDto,
+    ProposeStudyRequestDto,
     SaveStudyRequestDto,
     StudyComparisonDto,
     StudyViewDto,
@@ -320,6 +321,11 @@ def retain_study(request: Request, payload: SaveStudyRequestDto) -> StudyViewDto
         page_index=source.page_index,
         evidence_rows=(row.model_dump() for row in payload.evidence),
         expected_previous_ref=payload.expected_previous_ref,
+        research=None if payload.research is None else payload.research.model_dump(),
+        comparison_results=None if payload.research is None else [
+            _compare_exact_revisions(binding, comparison.studies)
+            for comparison in payload.research.comparisons
+        ],
     ))
 
 
@@ -327,15 +333,27 @@ def retain_study(request: Request, payload: SaveStudyRequestDto) -> StudyViewDto
     "/studies/compare",
     response_model=StudyComparisonDto,
     response_model_by_alias=True,
-    include_in_schema=False,
 )
 def compare_studies(request: Request, payload: CompareStudiesRequestDto) -> StudyComparisonDto:
-    """Compare 2–6 exact retained revisions; this provisional seam has no UI SDK yet."""
+    """Compare 2–6 exact retained revisions without updating their ledgers."""
 
     binding = bound_project(request.app.state)
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The Study comparison names another project.")
     return study_comparison_dto(_compare_exact_revisions(binding, payload.studies))
+
+
+@router.get("/studies", response_model=list[StudyViewDto], response_model_by_alias=True)
+def discover_studies(
+    request: Request,
+    source_run_id: str | None = Query(default=None, alias="sourceRunId"),
+    asset_sha256: str | None = Query(default=None, alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
+    page_index: int | None = Query(default=None, alias="pageIndex", ge=0),
+) -> list[StudyViewDto]:
+    return [study_dto(view) for view in list_studies(
+        bound_project(request.app.state), source_run_id=source_run_id,
+        asset_sha256=asset_sha256, page_index=page_index,
+    )]
 
 
 @router.get("/studies/{study_id}", response_model=StudyViewDto, response_model_by_alias=True)
@@ -345,3 +363,14 @@ def reopen_study(
     ledger_ref: str | None = Query(default=None, alias="ledgerRef"),
 ) -> StudyViewDto:
     return study_dto(read_study(bound_project(request.app.state), study_id, ledger_ref))
+
+
+@router.post("/studies/propose", response_model=StudyViewDto, response_model_by_alias=True)
+def propose_study(request: Request, payload: ProposeStudyRequestDto) -> StudyViewDto:
+    from ..application.study_model import propose_study as propose
+
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The Study names another project.")
+    return study_dto(propose(binding, request.app.state.intent_compiler,
+        study_id=payload.study_id, expected_previous_ref=payload.expected_previous_ref, action=payload.action))

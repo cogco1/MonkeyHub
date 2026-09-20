@@ -1385,6 +1385,22 @@ export type CompareObjectDto = {
 };
 
 /**
+ * CompareStudiesRequestDto
+ *
+ * A bounded exact-revision comparison inside one bound project.
+ */
+export type CompareStudiesRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Studies
+     */
+    studies: Array<StudyRevisionRequestDto>;
+};
+
+/**
  * ComponentChangeDto
  */
 export type ComponentChangeDto = {
@@ -1497,6 +1513,36 @@ export type ComponentNodeDto = {
      * Revision
      */
     revision: number;
+};
+
+/**
+ * CompositionPatternDto
+ */
+export type CompositionPatternDto = {
+    /**
+     * Patternid
+     */
+    patternId: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Rule
+     */
+    rule: string;
+    /**
+     * Evidenceids
+     */
+    evidenceIds?: Array<string>;
+    /**
+     * Conditions
+     */
+    conditions?: Array<string>;
+    /**
+     * Exceptions
+     */
+    exceptions?: Array<string>;
 };
 
 /**
@@ -1806,6 +1852,41 @@ export type DesignHistoryDto = {
      * Stages
      */
     stages: Array<DesignStageDto>;
+};
+
+/**
+ * DesignPriorDto
+ */
+export type DesignPriorDto = {
+    /**
+     * Priorid
+     */
+    priorId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Patternid
+     */
+    patternId: string;
+    /**
+     * Hypothesisids
+     */
+    hypothesisIds?: Array<string>;
+    /**
+     * Conditions
+     */
+    conditions?: Array<string>;
+    /**
+     * Preference
+     */
+    preference?: string;
+    /**
+     * Preferencestatus
+     */
+    preferenceStatus?: 'unresolved' | 'stated';
+    changedContext?: StudyChangedContextDto | null;
 };
 
 /**
@@ -5172,6 +5253,28 @@ export type ProposalTargetDto = {
 };
 
 /**
+ * ProposeStudyRequestDto
+ */
+export type ProposeStudyRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Expectedpreviousref
+     */
+    expectedPreviousRef: string;
+    /**
+     * Action
+     */
+    action: 'trace' | 'reason';
+};
+
+/**
  * PushPullRequestDto
  */
 export type PushPullRequestDto = {
@@ -5424,6 +5527,7 @@ export type SaveStudyRequestDto = {
      * Expectedpreviousref
      */
     expectedPreviousRef?: string | null;
+    research?: StudyResearchRequestDto | null;
 };
 
 /**
@@ -7329,6 +7433,271 @@ export type StudioHealth = {
 };
 
 /**
+ * StudyChangedContextDto
+ */
+export type StudyChangedContextDto = {
+    /**
+     * Changedconditions
+     */
+    changedConditions?: Array<string>;
+    /**
+     * Decision
+     */
+    decision?: 'unresolved' | 'retain' | 'revise' | 'reject';
+    /**
+     * Reason
+     */
+    reason?: string;
+    /**
+     * Revisedstatement
+     */
+    revisedStatement?: string;
+};
+
+/**
+ * StudyComparisonDto
+ *
+ * Read-only comparison projection; it is neither a Study ledger nor design truth.
+ */
+export type StudyComparisonDto = {
+    /**
+     * Schema
+     */
+    schema: 'StudyComparison@1';
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Method
+     */
+    method: 'aspect-correct-composition-compare@1';
+    /**
+     * Metricframe
+     */
+    metricFrame: 'page-aspect-correct-long-edge@1';
+    /**
+     * Studies
+     */
+    studies: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Sharedtopology
+     */
+    sharedTopology: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Pairwise
+     */
+    pairwise: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Canonicalstatechanged
+     */
+    canonicalStateChanged: boolean;
+};
+
+/**
+ * StudyEvidenceGapDto
+ */
+export type StudyEvidenceGapDto = {
+    /**
+     * Gapid
+     */
+    gapId: string;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Evidenceids
+     */
+    evidenceIds?: Array<string>;
+};
+
+/**
+ * StudyHistoricalSourceDto
+ */
+export type StudyHistoricalSourceDto = {
+    /**
+     * Sourceid
+     */
+    sourceId: string;
+    /**
+     * Citation
+     */
+    citation: string;
+    /**
+     * Url
+     */
+    url?: string;
+    /**
+     * Locator
+     */
+    locator?: string;
+    /**
+     * Summary
+     */
+    summary?: string;
+};
+
+/**
+ * StudyHypothesisDto
+ */
+export type StudyHypothesisDto = {
+    /**
+     * Hypothesisid
+     */
+    hypothesisId: string;
+    /**
+     * Statement
+     */
+    statement: string;
+    /**
+     * Evidenceids
+     */
+    evidenceIds?: Array<string>;
+    /**
+     * Counterevidenceids
+     */
+    counterEvidenceIds?: Array<string>;
+    /**
+     * Historicalsourceids
+     */
+    historicalSourceIds?: Array<string>;
+    /**
+     * Assumptions
+     */
+    assumptions?: Array<string>;
+    /**
+     * Falsification
+     */
+    falsification?: string;
+    /**
+     * Competeswith
+     */
+    competesWith?: Array<string>;
+    /**
+     * Status
+     */
+    status?: 'open' | 'revised' | 'rejected';
+};
+
+/**
+ * StudyInterventionDto
+ */
+export type StudyInterventionDto = {
+    /**
+     * Counterfactualid
+     */
+    counterfactualId: string;
+    /**
+     * Hypothesisids
+     */
+    hypothesisIds?: Array<string>;
+    /**
+     * Targetevidenceid
+     */
+    targetEvidenceId: string;
+    /**
+     * Operation
+     */
+    operation: 'translate' | 'scale' | 'remove';
+    parameters?: StudyInterventionParametersDto;
+    /**
+     * Conditions
+     */
+    conditions?: Array<string>;
+    /**
+     * Prediction
+     */
+    prediction?: string;
+    /**
+     * Execute
+     */
+    execute?: boolean;
+};
+
+/**
+ * StudyInterventionParametersDto
+ */
+export type StudyInterventionParametersDto = {
+    /**
+     * Dx
+     */
+    dx?: number;
+    /**
+     * Dy
+     */
+    dy?: number;
+    /**
+     * Scale
+     */
+    scale?: number;
+};
+
+/**
+ * StudyResearchComparisonDto
+ */
+export type StudyResearchComparisonDto = {
+    /**
+     * Studies
+     */
+    studies: Array<StudyRevisionRequestDto>;
+};
+
+/**
+ * StudyResearchRequestDto
+ */
+export type StudyResearchRequestDto = {
+    /**
+     * Question
+     */
+    question?: string;
+    /**
+     * Historicalsources
+     */
+    historicalSources?: Array<StudyHistoricalSourceDto>;
+    /**
+     * Hypotheses
+     */
+    hypotheses?: Array<StudyHypothesisDto>;
+    /**
+     * Gaps
+     */
+    gaps?: Array<StudyEvidenceGapDto>;
+    /**
+     * Counterfactuals
+     */
+    counterfactuals?: Array<StudyInterventionDto>;
+    /**
+     * Comparisons
+     */
+    comparisons?: Array<StudyResearchComparisonDto>;
+    compositionPattern?: CompositionPatternDto | null;
+    designPrior?: DesignPriorDto | null;
+};
+
+/**
+ * StudyRevisionRequestDto
+ *
+ * One exact retained Study revision; comparison never guesses a current head.
+ */
+export type StudyRevisionRequestDto = {
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Ledgerref
+     */
+    ledgerRef: string;
+};
+
+/**
  * StudySourceRequestDto
  */
 export type StudySourceRequestDto = {
@@ -7414,6 +7783,18 @@ export type StudyViewDto = {
      * Counterfactuals
      */
     counterfactuals: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Research
+     */
+    research?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Modelinvocations
+     */
+    modelInvocations?: Array<{
         [key: string]: unknown;
     }>;
     /**
@@ -9409,6 +9790,56 @@ export type CreateElevationApiDrawingsElevationsPostResponses = {
 
 export type CreateElevationApiDrawingsElevationsPostResponse = CreateElevationApiDrawingsElevationsPostResponses[keyof CreateElevationApiDrawingsElevationsPostResponses];
 
+export type DiscoverStudiesApiStudiesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Sourcerunid
+         */
+        sourceRunId?: string | null;
+        /**
+         * Assetsha256
+         */
+        assetSha256?: string | null;
+        /**
+         * Pageindex
+         */
+        pageIndex?: number | null;
+    };
+    url: '/api/studies';
+};
+
+export type DiscoverStudiesApiStudiesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DiscoverStudiesApiStudiesGetError = DiscoverStudiesApiStudiesGetErrors[keyof DiscoverStudiesApiStudiesGetErrors];
+
+export type DiscoverStudiesApiStudiesGetResponses = {
+    /**
+     * Response Discover Studies Api Studies Get
+     *
+     * Successful Response
+     */
+    200: Array<StudyViewDto>;
+};
+
+export type DiscoverStudiesApiStudiesGetResponse = DiscoverStudiesApiStudiesGetResponses[keyof DiscoverStudiesApiStudiesGetResponses];
+
 export type RetainStudyApiStudiesPostData = {
     body: SaveStudyRequestDto;
     headers?: {
@@ -9443,6 +9874,41 @@ export type RetainStudyApiStudiesPostResponses = {
 };
 
 export type RetainStudyApiStudiesPostResponse = RetainStudyApiStudiesPostResponses[keyof RetainStudyApiStudiesPostResponses];
+
+export type CompareStudiesApiStudiesComparePostData = {
+    body: CompareStudiesRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/studies/compare';
+};
+
+export type CompareStudiesApiStudiesComparePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompareStudiesApiStudiesComparePostError = CompareStudiesApiStudiesComparePostErrors[keyof CompareStudiesApiStudiesComparePostErrors];
+
+export type CompareStudiesApiStudiesComparePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: StudyComparisonDto;
+};
+
+export type CompareStudiesApiStudiesComparePostResponse = CompareStudiesApiStudiesComparePostResponses[keyof CompareStudiesApiStudiesComparePostResponses];
 
 export type ReopenStudyApiStudiesStudyIdGetData = {
     body?: never;
@@ -9488,6 +9954,41 @@ export type ReopenStudyApiStudiesStudyIdGetResponses = {
 };
 
 export type ReopenStudyApiStudiesStudyIdGetResponse = ReopenStudyApiStudiesStudyIdGetResponses[keyof ReopenStudyApiStudiesStudyIdGetResponses];
+
+export type ProposeStudyApiStudiesProposePostData = {
+    body: ProposeStudyRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/studies/propose';
+};
+
+export type ProposeStudyApiStudiesProposePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProposeStudyApiStudiesProposePostError = ProposeStudyApiStudiesProposePostErrors[keyof ProposeStudyApiStudiesProposePostErrors];
+
+export type ProposeStudyApiStudiesProposePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: StudyViewDto;
+};
+
+export type ProposeStudyApiStudiesProposePostResponse = ProposeStudyApiStudiesProposePostResponses[keyof ProposeStudyApiStudiesProposePostResponses];
 
 export type ResolveApiPickResolvePostData = {
     body: PickRequestDto;

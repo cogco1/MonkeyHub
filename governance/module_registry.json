@@ -4435,7 +4435,8 @@
         "Disposable browser modeling drafts and action undo/redo on the exact viewed source; explicit Sync combines their frozen actions through existing typed proposal continuation and one candidate submission",
         "the acceptance evidence of a committed Stage: one AuditEvent@1 written into the accepted run's review area after the branch-head CAS succeeds, binding the request boundary's actor and origin to the exact base Stage, candidate and result, and the read that returns it with the Stage",
         "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
-        "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary"
+        "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary",
+        "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4457,7 +4458,8 @@
         "up to four registered document visual contexts with original and optional annotated PNGs, bound to one edit revision and explicit reference purposes",
         "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities",
         "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set; closed defaults true for existing face/prism actions, while false with zero height saves a 2+ point model curve",
-        "DocumentTracingRequestDto on POST /api/proposals/sketch names exact saved run/asset/drawing revision/page/annotation revision and selected line or polyline ids, a target component, base and height; scale and direction come only from the saved two-point calibration"
+        "DocumentTracingRequestDto on POST /api/proposals/sketch names exact saved run/asset/drawing revision/page/annotation revision and selected line or polyline ids, a target component, base and height; scale and direction come only from the saved two-point calibration",
+        "ModelInvocationRequest and structured schema/images from Study for the existing configured transport"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4574,7 +4576,8 @@
         "AcceptanceEvidence",
         "POST /api/proposals/elevation",
         "compile_task_context",
-        "POST /api/proposals/parameter-locks"
+        "POST /api/proposals/parameter-locks",
+        "invoke_structured"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -6662,30 +6665,45 @@
     {
       "module_id": "studio.study",
       "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/study.py",
-      "purpose": "Experimental API for retaining and inspecting corrected precedent-page trace evidence; its geometric rules are research proposals awaiting method and compatibility review.",
+      "purpose": "Retain corrected precedent evidence and conditional research in the existing Board document editor, with inspectable polygon tests and configured model proposals, without changing canonical design state.",
       "owns": [
         "Study evidence revisions tied to a registered document page, retained through P036 research-evidence-ledger records",
         "validation of trace inputs and confirmed/proposed/rejected status, deterministic geometric projections and bounded counterfactual experiments",
-        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence"
+        "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence",
+        "the Study side panel and independent evidence draft in the existing document page editor",
+        "editable, evidence-linked competing explanations, gaps, polygon counterfactual predictions/outcomes and conditional CompositionPattern/DesignPrior revisions",
+        "real RESEARCH model proposals through the existing configured intent transport, with source image identity and invocation receipts retained in the same ledger"
       ],
       "does_not_own": [
         "source document import and byte identity (studio.artifacts)",
         "Board scenes (studio.board), model proposal execution or canonical design state",
-        "image-model tracing, a user-facing Study workspace or validated architectural research methods"
+        "validated architectural family thresholds, recovery of historical author intent, automatic user preference or promotion of a prior into canonical state"
       ],
       "inputs": [
         "ProjectBinding",
-        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref"
+        "study id, registered document run/asset SHA/revision/page, normalized trace evidence and expected previous ledger ref",
+        "optional editable research statements with evidence references, predictions and changed applicability conditions",
+        "explicit trace/reason request against an exact retained Study revision and the configured model compiler",
+        "optional groups of 2-6 exact Study revision references for retained comparison"
       ],
       "outputs": [
         "StudyView with retained EvidenceLedger@1 and its CompositionGraph@1 reconstructed from that revision's retained evidence and relations",
-        "StudyViewDto"
+        "StudyViewDto",
+        "retained research polygon observations and bounded intervention results",
+        "conditional CompositionPattern/DesignPrior and true model invocation receipts",
+        "exact comparison references and computed snapshots retained with the research and supplied to model reasoning"
       ],
       "public_api": [
         "POST /api/studies",
         "GET /api/studies/{study_id}",
         "save_study",
-        "read_study"
+        "read_study",
+        "GET /api/studies",
+        "POST /api/studies/compare",
+        "POST /api/studies/propose",
+        "list_studies",
+        "polygon_observations",
+        "web: DocumentStudyPanel"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -6694,7 +6712,10 @@
         "project.ports",
         "project.repository",
         "project.refs",
-        "project.record_kinds"
+        "project.record_kinds",
+        "ports.model",
+        "studio.intent",
+        "studio.board"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py"
@@ -6703,18 +6724,29 @@
         "Study writes only its named study run and retained records; it does not accept a DesignStage, advance a branch or issue canonical HEAD",
         "only confirmed traces contribute geometric relations; proposed and rejected evidence stays inspectable",
         "stale corrections and competing retained revision heads are refused",
-        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered"
+        "a cold read verifies the exact source page and evidence and refuses a mismatch, then replays the retained measurements, relations, hypotheses and counterfactuals instead of re-deriving them; every answer names the method that produced those findings, and null names a revision retained before that stamp existed; a retained record that is not structurally readable is refused by name rather than answered",
+        "Study evidence uses the existing page canvas but never the annotation persistence or annotation undo controller",
+        "model traces remain proposed until corrected and confirmed; documentary evidence and user preferences cannot be invented by the model",
+        "historical bounds methods replay unchanged; new research observations name true polygon computations and do not claim a validated composition-family threshold",
+        "clients cannot supply computed comparison results; model continuation preserves the retained comparison inputs and cold reads replay their original results"
       ],
       "status": "provisional",
-      "source_paths": [
+      "tests": [
+        "apps/archflow-studio/api/tests/test_study.py",
+        "apps/archflow-studio/api/tests/test_study_compare.py",
+        "apps/archflow-studio/api/tests/test_study_research.py",
+        "apps/archflow-studio/api/tests/test_study_model.py",
+        "apps/monkeyhub/web/workspaces/test/documentStudy.test.ts",
+        "apps/monkeyhub/web/workspaces/test/documentStudy.browser.mjs"
+      ],
+      "notes": "EXTEND the existing Study owner. Document canvas and source store are reused; true polygon computation lives in MonkeyDiagram under this same capability. Historical bounds archive/compare behavior is retained, while polygon research results are independently named. Family judgments and historical causation remain unvalidated. Competing retained heads still require explicit reconciliation; exact archived revisions remain readable.",
+      "files": [
         "apps/archflow-studio/api/archflow_studio_api/application/study.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
-      ],
-      "tests": [
-        "apps/archflow-studio/api/tests/test_study.py"
-      ],
-      "notes": "CREATE registration for the existing draft implementation: artifacts owns source files, Board owns presentation scenes and intent owns design revisions; none owns retained precedent trace analysis. This is a provisional API-only research slice, with no user-facing consumer. Source revision pinning, retained-method compatibility and retained-revision self-consistency are now resolved: a revision pins the exact StudioSourceDocument record, an older revision is replayed rather than re-derived, and a read refuses a retained relation whose endpoint is not a confirmed trace of that same revision, or a retained reasoning receipt bound to another composition graph. What remains open: two competing retained heads block default head selection and corrections with no reconciliation route, while a revision named by ledgerRef remains readable; and an archived revision stays readable only while the current evidence validator still accepts its exact retained rows. Page metric normalization and the unvalidated similarity thresholds remain the author's research decision; no architectural method is endorsed by this registration."
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
+        "monkeydiagram/study.py"
+      ]
     }
   ]
 }

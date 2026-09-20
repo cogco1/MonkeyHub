@@ -240,7 +240,7 @@ class StudyComparisonTests(unittest.TestCase):
         )
         self.assertEqual(self.repository.read_head(), self.head)
 
-    def test_comparison_reads_named_archived_revision_and_stays_out_of_openapi(self) -> None:
+    def test_comparison_reads_named_archived_revision_and_is_available_to_document_ui(self) -> None:
         size = (120, 80)
         document_a = self.upload(*size, "purple")
         document_b = self.upload(*size, "orange")
@@ -276,11 +276,9 @@ class StudyComparisonTests(unittest.TestCase):
         self.assertEqual(duplicate.status_code, 422, duplicate.text)
         self.assertEqual(duplicate.json()["code"], "STUDY_COMPARE_DUPLICATE")
 
-        # Keep this experimental seam out of the generated web SDK while #113
-        # and #116 are integrating overlapping client/UI work. The endpoint is
-        # real and tested; publishing the OpenAPI contract is a later UI step.
+        # The same exact-revision comparison now has a document UI consumer.
         openapi = self.client.get("/openapi.json").json()
-        self.assertNotIn("/api/studies/compare", openapi["paths"])
+        self.assertIn("/api/studies/compare", openapi["paths"])
         self.assertEqual(self.repository.read_head(), self.head)
 
 

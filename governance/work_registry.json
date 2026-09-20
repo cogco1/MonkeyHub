@@ -28,11 +28,7 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/workspaces/src/api/client.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/",
         "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingContext.ts",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/documentInk.ts",
@@ -41,7 +37,7 @@
         "apps/monkeyhub/web/workspaces/test/documentAnnotations.test.ts",
         "apps/monkeyhub/web/workspaces/test/documentInk.test.ts"
       ],
-      "handoff": "Ready for independent PR review: corrected PNG paths, exact saved calibration, real OCCT candidate continuation, stable object updates and failure preservation pass against main 32fc10e1. App.tsx integration is coordinated; GH-148 elevation logic is retained and GH-137/136 Stage/viewport paths are unchanged. Automatic image interpretation and broader drawing semantics remain open in Issue #46."
+      "handoff": "Ready for independent PR review: corrected PNG paths, exact saved calibration, real OCCT candidate continuation, stable object updates and failure preservation pass against main 32fc10e1. App.tsx integration is coordinated; GH-148 elevation logic is retained and GH-137/136 Stage/viewport paths are unchanged. Automatic image interpretation and broader drawing semantics remain open in Issue #46. #46 owner stopped source writing at f27e31fe and handed DocumentCanvas, client and generated API seams to GH-73; the tracing PR remains an explicit review dependency."
     },
     {
       "id": "GH-185",
@@ -117,12 +113,11 @@
             "apps/monkeyhub/web/src/MonitorPage.css",
             "apps/monkeyhub/web/src/main.tsx",
             "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
           ],
           "depends_on": [],
-          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice."
+          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. Completed source handoff releases the provider transport seam in intent_agent.py to GH-73; current context integration continues in its separately coordinated lane."
         },
         {
           "id": "parameter-locks",
@@ -140,11 +135,8 @@
           ],
           "write_scope": [
             "archflow/state/state_record.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
             "apps/archflow-studio/api/tests/test_proposals.py",
             "apps/archflow-studio/api/tests/test_collaboration_auth.py",
             "apps/archflow-studio/api/tests/test_intents.py",
@@ -152,7 +144,7 @@
             "tests/test_state_record.py"
           ],
           "depends_on": [],
-          "handoff": "Explicit parameter lock/unlock proposals reuse the sole StateRecord operator and candidate/P036 writer; preserve locked bindings, cold readback and exact bases. Root owns Hub UI and generated clients. Parameter locks do not freeze whole geometry or accept Stage."
+          "handoff": "Explicit parameter lock/unlock proposals reuse the sole StateRecord operator and candidate/P036 writer; preserve locked bindings, cold readback and exact bases. Root owns Hub UI and generated clients. Parameter locks do not freeze whole geometry or accept Stage. Source writing stopped after #194 landed; the coordinator verified clean completed checkouts and released the shared App/client/generated and intent/proposal integration seams to current lanes. Remaining acceptance is retained here."
         },
         {
           "id": "lock-controls",
@@ -167,16 +159,13 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/api/client.ts",
-            "apps/monkeyhub/web/workspaces/src/api/generated/",
             "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
           ],
           "depends_on": [],
-          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics."
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. Source writing stopped after #194 landed; the coordinator verified clean completed checkouts and released the shared App/client/generated and intent/proposal integration seams to current lanes. Remaining acceptance is retained here."
         },
         {
           "id": "drawing-pages",
@@ -233,14 +222,47 @@
     {
       "id": "GH-73",
       "stream": "study",
-      "status": "active",
+      "status": "ready",
       "goal": "Retain exact precedent-page trace evidence, deterministic composition reasoning and falsifiable counterfactuals without creating a second design truth or writing canonical design state.",
-      "depends_on": [],
+      "depends_on": [
+        "GH-46"
+      ],
       "write_scope": [
         "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/study.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/study.py"
-      ]
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
+        "apps/archflow-studio/api/tests/test_study_research.py",
+        "apps/archflow-studio/api/tests/test_study_model.py",
+        "apps/archflow-studio/api/tests/study_fixture.py",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentStudyPanel.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentStudyPanel.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/documentStudy.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/useDocumentStudy.ts",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/test/documentStudy.test.ts",
+        "apps/monkeyhub/web/workspaces/test/documentStudy.browser.mjs",
+        "docs/research/study-evidence-method.md",
+        "docs/PROTOCOL.md",
+        "governance/module_registry.json",
+        "governance/work_registry.json",
+        "docs/SYSTEM_MAP.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md",
+        "monkeydiagram/study.py",
+        "governance/architecture_policy.json",
+        "apps/archflow-studio/api/tests/test_study_compare.py",
+        "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs"
+      ],
+      "branch": "codex/73-study-document",
+      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Ready for review: same-page Study tracing/correction, polygon measurements, competing hypotheses, checked counterfactuals, archived exact comparisons and conditional priors save/reopen through the existing ledger. Real Codex evidence-only and comparison-informed reasoning runs are documented. #181 f27e31fe is a merged development dependency awaiting its own review; #46 released DocumentCanvas/client. #183/#32 retains App/ProjectWorkspace/chat ownership. No main merge, installation, independent-precedent validation or Try on model delivery is implied; broader Issue #73 acceptance remains open."
     },
     {
       "id": "P115",

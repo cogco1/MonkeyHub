@@ -14,6 +14,9 @@ import { useDocumentAnnotations, type createDocumentAnnotationsController } from
 import { DocumentTextLayer } from "./DocumentTextLayer";
 import { renderDocumentVisual } from "./documentVisualInput";
 import { DocumentTracingPanel } from "./DocumentTracingPanel";
+import { DocumentStudyPanel } from "./DocumentStudyPanel";
+import { useDocumentStudy } from "./useDocumentStudy";
+import { studyEvidenceToGestures, studyEvidenceFromGestures } from "./documentStudy";
 import "./DocumentCanvas.css";
 
 type DrawingTool = "freehand" | "line" | "arrow" | "circle" | "polyline";
@@ -163,12 +166,14 @@ function editableVectorHandle(annotations: readonly DocumentGestureDto[], point:
 }
 
 /** Input stays in page coordinates. Only the current path is updated during a stroke. */
-export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo, timing, calibration = null }: {
+export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo, timing, calibration = null, evidenceOnly = false, focusedEvidenceId = null }: {
   file: File; page: DocumentPageDto; annotations: readonly DocumentGestureDto[];
   onChange(marks: readonly DocumentGestureDto[]): void; readOnly: boolean;
   canUndo: boolean; canRedo: boolean; onUndo(): void; onRedo(): void;
   timing?: ClientTimingSpan;
   calibration?: DocumentTracingCalibrationDto | null;
+  evidenceOnly?: boolean;
+  focusedEvidenceId?: string | null;
 }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
@@ -178,7 +183,9 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
   const frame = useRef<number | null>(null);
   const space = useRef(false);
   const fitted = useRef(false);
-  const [tool, setTool] = useState<DocumentTool>("freehand");
+  const [tool, setTool] = useState<DocumentTool>(evidenceOnly ? "polyline" : "freehand");
+  useEffect(() => { setTool(evidenceOnly ? "polyline" : "freehand"); setOutline([]); setSelectedVectorId(null); }, [evidenceOnly]);
+  useEffect(() => { if (focusedEvidenceId) { setTool("select"); setSelectedVectorId(focusedEvidenceId); } }, [focusedEvidenceId]);
   const [selectedVectorId, setSelectedVectorId] = useState<string | null>(null);
   const [outline, setOutline] = useState<PagePoint[]>([]);
   const [color, setColor] = useState("#2f80ed");
@@ -377,7 +384,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
 
   return <div className="document-canvas">
     <div className="document-tools" role="toolbar" aria-label={t("document.tools")}>
-      {(["select", "freehand", "line", "polyline", "arrow", "circle", "text", "eraser", "pan"] as const).map((kind) => <button key={kind} type="button"
+      {(["select", "freehand", "line", "polyline", "arrow", "circle", "text", "eraser", "pan"] as const).filter(kind => !evidenceOnly || ["select", "polyline", "eraser", "pan"].includes(kind)).map((kind) => <button key={kind} type="button"
         disabled={readOnly && kind !== "pan"} aria-pressed={tool === kind} aria-label={t(`document.tool.${kind}`)} title={t(`document.tool.${kind}`)}
         onClick={() => { cancel(); setOutline([]); setTool(kind); if (kind !== "select") setSelectedVectorId(null); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
       {tool === "polyline" && <button type="button" disabled={readOnly || outline.length < 3} onClick={closeOutline}>{t("document.trace.close")}</button>}
@@ -385,12 +392,12 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
       <span className="document-tools__separator" />
       <button type="button" disabled={!canUndo || readOnly} onClick={onUndo} title={t("document.undo")} aria-label={t("document.undo")}><Icon name="undo" /></button>
       <button type="button" disabled={!canRedo || readOnly} onClick={onRedo} title={t("document.redo")} aria-label={t("document.redo")}><Icon name="redo" /></button>
-      <label className="document-color" title={t("document.color")}><span className="visually-hidden">{t("document.color")}</span><input type="color" value={color} disabled={readOnly} onChange={(event) => setColor(event.target.value)} /></label>
+      {!evidenceOnly && <><label className="document-color" title={t("document.color")}><span className="visually-hidden">{t("document.color")}</span><input type="color" value={color} disabled={readOnly} onChange={(event) => setColor(event.target.value)} /></label>
       {tool === "text" ? <select aria-label={t("document.text.size")} value={fontSize} disabled={readOnly} onChange={(event) => setFontSize(Number(event.target.value))}>
         <option value={0.018}>{t("document.text.small")}</option><option value={0.024}>{t("document.medium")}</option><option value={0.032}>{t("document.text.large")}</option>
       </select> : <select aria-label={t("document.width")} value={lineWidth} disabled={readOnly} onChange={(event) => setLineWidth(Number(event.target.value))}>
         <option value={0.002}>{t("document.thin")}</option><option value={0.004}>{t("document.medium")}</option><option value={0.008}>{t("document.thick")}</option>
-      </select>}
+      </select>}</>}
       <span className="document-tools__spacer" />
       <button type="button" onClick={() => zoom(1 / 1.25)} aria-label={t("document.zoomOut")}>−</button>
       <span className="document-zoom" aria-live="polite">{Math.round(view.scale * 100)}%</span>
@@ -594,14 +601,23 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     // Never replace a local draft whose save is still pending or refused.
     if (active && draft.ready && !draft.dirty && !draft.saving) void draft.reload();
   }, [active, documentRun, selectedSha, selectedRevision, pageIndex, draft.reload]);
+  const [studyMode, setStudyMode] = useState(false);
+  const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
+  const studySource = page && selectedSha && documentRun ? { runId: documentRun, assetSha256: selectedSha,
+    revisionRef: selectedRevision, pageIndex } : null;
+  const study = useDocumentStudy(projectId, studyMode ? studySource : null);
+  const studyBusy = study.busy || uploading || sending || busy || !active;
+  const saveStudyIfDirty = async () => { if (study.ready && study.dirty) await study.save(); };
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
   useEffect(() => {
     onBeforeLeave?.(async () => {
+      if (study.busy || (studyMode && uploading)) throw new Error(language === "en" ? "Wait for the Study operation before leaving." : "请等待本次研究操作完成后再离开。");
+      await saveStudyIfDirty();
       if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
     });
     return () => onBeforeLeave?.(null);
-  }, [draft.ready, draft.readOnly, draft.dirty, draft.saving, draft.save, onBeforeLeave]);
+  }, [draft.ready, draft.readOnly, draft.dirty, draft.saving, draft.save, onBeforeLeave, study.ready, study.dirty, study.busy, study.save, studyMode, uploading]);
   useEffect(() => {
     let stopped = false;
     const request = ++listRequest.current;
@@ -654,6 +670,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   useEffect(() => { void refreshComments().catch((cause: unknown) => setError(asStudioApiError(cause))); }, [refreshComments]);
 
   const upload = async (value: File) => {
+    try { await saveStudyIfDirty(); } catch (cause) { setError(asStudioApiError(cause)); return; }
     setUploading(true); setError(null); setFeedback("");
     try {
       const result = await studio.uploadDocument(projectId, runId, value);
@@ -686,6 +703,8 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   };
   const switchDocumentPage = async (change: () => void) => {
     try {
+      if (study.busy || uploading) return;
+      await saveStudyIfDirty();
       if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
       change();
     } catch (cause) { setError(asStudioApiError(cause)); }
@@ -784,17 +803,19 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
   };
   return <div className="document-workspace" aria-label={t("document.workspace")} onKeyDown={(event) => {
     if (event.defaultPrevented || usesNativeTextEditing(event) || event.altKey || !(event.ctrlKey || event.metaKey)
-      || event.currentTarget.closest("[inert], [aria-hidden='true']") || !draft.ready || draft.readOnly || sending) return;
+      || event.currentTarget.closest("[inert], [aria-hidden='true']")
+      || (studyMode ? !study.ready || studyBusy : !draft.ready || draft.readOnly || sending)) return;
     const key = event.key.toLowerCase();
     if (key !== "z" && key !== "y") return;
     event.preventDefault(); event.stopPropagation();
-    if (event.shiftKey || key === "y") draft.redo(); else draft.undo();
+    if (event.shiftKey || key === "y") { if (studyMode) study.redo(); else draft.redo(); }
+    else { if (studyMode) study.undo(); else draft.undo(); }
   }}>
     <div className="document-header">
-      <button type="button" className="btn" disabled={uploading || sending || review !== null} onClick={() => input.current?.click()}>{t(uploading ? "document.uploading" : "document.open")}</button>
+      <button type="button" className="btn" disabled={uploading || sending || study.busy || review !== null} onClick={() => input.current?.click()}>{t(uploading ? "document.uploading" : "document.open")}</button>
       <input ref={input} className="visually-hidden" type="file" accept="application/pdf,image/png,image/jpeg,.pdf,.png,.jpg,.jpeg"
         aria-label={t("document.open")} onChange={(event) => { const selected = event.target.files?.[0]; event.target.value = ""; if (selected) void upload(selected); }} />
-      {documents.length > 0 && <select aria-label={t("document.source")} value={document ? optionKey(document) : selectedRevision ?? selectedSha ?? ""} disabled={sending || review !== null}
+      {documents.length > 0 && <select aria-label={t("document.source")} value={document ? optionKey(document) : selectedRevision ?? selectedSha ?? ""} disabled={uploading || sending || study.busy || review !== null}
         onChange={(event) => { const selected = documents.find((item) => optionKey(item) === event.target.value);
           if (selected) void switchDocumentPage(() => { setSelectedSha(selected.assetSha256); setSelectedRevision(selected.revisionRef ?? null); setSelectedRun(selected.runId); setPageIndex(0); setFeedback(""); }); }}>
         {selectedSha === null && <option value="">选择图纸</option>}
@@ -802,16 +823,25 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
         {documents.map((item) => <option key={optionKey(item)} value={optionKey(item)}>{item.fileName}{item.revisionRef ? ` · ${item.revisionRef.split("/").at(-1)?.slice(0, 8)}` : ""}</option>)}
       </select>}
       {document && <div className="document-pages">
-        <button type="button" aria-label={t("document.previousPage")} disabled={sending || pageIndex <= 0 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value - 1)); }}>‹</button>
-        <label><span className="visually-hidden">{t("document.page")}</span><select aria-label={t("document.page")} value={pageIndex} disabled={sending || review !== null} onChange={(event) => { const next = Number(event.target.value); void switchDocumentPage(() => setPageIndex(next)); }}>
+        <button type="button" aria-label={t("document.previousPage")} disabled={uploading || sending || study.busy || pageIndex <= 0 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value - 1)); }}>‹</button>
+        <label><span className="visually-hidden">{t("document.page")}</span><select aria-label={t("document.page")} value={pageIndex} disabled={uploading || sending || study.busy || review !== null} onChange={(event) => { const next = Number(event.target.value); void switchDocumentPage(() => setPageIndex(next)); }}>
           {!page && <option value={pageIndex} disabled>{t("document.linkUnavailable")}</option>}
           {document.pages.map((item) => <option key={item.pageIndex} value={item.pageIndex}>{item.pageIndex + 1} / {document.pageCount}</option>)}
         </select></label>
-        <button type="button" aria-label={t("document.nextPage")} disabled={sending || pageIndex >= document.pageCount - 1 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value + 1)); }}>›</button>
+        <button type="button" aria-label={t("document.nextPage")} disabled={uploading || sending || study.busy || pageIndex >= document.pageCount - 1 || review !== null} onClick={() => { void switchDocumentPage(() => setPageIndex((value) => value + 1)); }}>›</button>
       </div>}
-      <span className="document-save-state" role="status">{t(draft.saving ? "document.saving" : draft.dirty ? "document.unsaved" : draft.ready ? "document.saved" : "document.loading")}</span>
+      {studySource && <button type="button" aria-pressed={studyMode} disabled={studyBusy || review !== null}
+        onClick={() => { void (async () => { try {
+          if (studyMode) await saveStudyIfDirty();
+          else if (draft.ready && !draft.readOnly && (draft.dirty || draft.saving)) await draft.save();
+          setStudyMode(value => !value);
+        } catch (cause) { setError(asStudioApiError(cause)); } })(); }}>
+        {studyMode ? (language === "en" ? "Return to annotations" : "返回图页批注") : (language === "en" ? "Study this page" : "研究此图页")}
+      </button>}
+      <span className="document-save-state" role="status">{t(studyMode ? study.busy ? "document.saving" : study.dirty ? "document.unsaved" : study.ready ? "document.saved" : "document.loading"
+        : draft.saving ? "document.saving" : draft.dirty ? "document.unsaved" : draft.ready ? "document.saved" : "document.loading")}</span>
     </div>
-    {document && <div className="document-model-source" aria-label={t("document.modelSource.label")}
+    {document && !studyMode && <div className="document-model-source" aria-label={t("document.modelSource.label")}
       data-model-source-status={documentModelSource === null ? "unknown" : modelMatches ? "ready" : "mismatch"}>
       <div className="document-model-source__description">
         <span>{t("document.modelSource.label")}</span>{modelLabel && <strong>{modelLabel}</strong>}
@@ -841,12 +871,25 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     <div className="document-body">
       <div className="document-main">
         {file && page ? <DocumentPageCanvas key={`${documentRun}:${selectedSha}:${selectedRevision}:${pageIndex}`} file={file} page={page} timing={timing}
-          annotations={draft.annotations} onChange={draft.changeAnnotations} readOnly={!draft.ready || draft.readOnly || sending}
-          calibration={draft.tracingCalibration}
-          canUndo={draft.canUndo} canRedo={draft.canRedo} onUndo={draft.undo} onRedo={draft.redo} />
+          annotations={studyMode ? studyEvidenceToGestures(study.draft.evidence) : draft.annotations}
+          onChange={studyMode ? marks => study.change({ ...study.draft, evidence: studyEvidenceFromGestures(marks, study.draft.evidence) }) : draft.changeAnnotations}
+          readOnly={studyMode ? !study.ready || studyBusy || review !== null : !draft.ready || draft.readOnly || sending}
+          evidenceOnly={studyMode} focusedEvidenceId={studyMode ? focusedEvidenceId : null}
+          calibration={studyMode ? null : draft.tracingCalibration}
+          canUndo={studyMode ? !studyBusy && study.canUndo : draft.canUndo} canRedo={studyMode ? !studyBusy && study.canRedo : draft.canRedo}
+          onUndo={studyMode ? study.undo : draft.undo} onRedo={studyMode ? study.redo : draft.redo} />
           : <div className="document-empty"><p role={missingPage ? "alert" : undefined}>{t(missingPage ? "document.linkUnavailable" : loading || selectedSha ? "document.loadingPage" : "document.empty")}</p><p>{t("document.formats")}</p></div>}
       </div>
-      <aside className="document-notes" aria-label={t("document.notes")}>
+      {studyMode && studySource ? <DocumentStudyPanel source={studySource} sourceName={document?.fileName ?? ""}
+        draft={study.draft} study={study.view} dirty={study.dirty} onChange={study.change} busy={studyBusy} loading={!study.ready && !study.error}
+        error={study.error} onSave={() => { void study.save().catch(() => undefined); }}
+        onReopen={() => { void study.reload(); }} onSelectEvidence={setFocusedEvidenceId}
+        onPropose={action => { void study.propose(action); }}
+        comparisonTargets={study.choices.filter(row => row.studyId !== study.draft.studyId).map(row => ({
+          studyId: row.studyId, ledgerRef: row.ledgerRef,
+          label: `${documents.find(item => item.assetSha256 === row.source.assetSha256)?.fileName ?? row.studyId} · ${Number(row.source.pageIndex) + 1}`,
+        }))} onCompare={target => { void study.compare(target); }} />
+      : <aside className="document-notes" aria-label={t("document.notes")}>
         {file && page && <DocumentTracingPanel key={JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256])} draft={draft}
           disabled={busy || sending || !active} onSendingChange={setSending} />}
         {hasSheetAction && <section className="document-drawing-styles" aria-label={t("document.drawingStyles")}>
@@ -922,7 +965,7 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
               {t("document.openSubmittedPage", { page: ref.pageIndex + 1 })}</button>)}
           </article>)}
         </details>
-      </aside>
+      </aside>}
     </div>
   </div>;
 }

@@ -6,6 +6,9 @@
 
 import type { ServerConnection } from "./connection";
 import type { ElevationEditRequestDto } from "./generated";
+import type { SaveStudyRequestDto, StudyViewDto, ProposeStudyRequestDto } from "./generated";
+import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
+  proposeStudyApiStudiesProposePost } from "./generated";
 import {
   BLOCKED_NEEDS_HUMAN,
   MISSING_EDITABLE_CONTROL,
@@ -168,6 +171,15 @@ function base64Of(buffer: ArrayBuffer): string {
 // Workspace startup reads `/api/project` and `/api/state`; runtime liveness
 // belongs to the Hub that started it.
 export const createStudioClient = (connection: ServerConnection) => ({
+  studies(): Promise<StudyViewDto[]> {
+    return call("GET /api/studies", discoverStudiesApiStudiesGet({ client: connection.client }));
+  },
+  saveStudy(body: SaveStudyRequestDto): Promise<StudyViewDto> {
+    return call("POST /api/studies", retainStudyApiStudiesPost({ client: connection.client, body }));
+  },
+  proposeStudy(body: ProposeStudyRequestDto): Promise<StudyViewDto> {
+    return call("POST /api/studies/propose", proposeStudyApiStudiesProposePost({ client: connection.client, body }));
+  },
   board(): Promise<BoardDto> {
     return call("GET /api/board", readBoardApiBoardGet({ client: connection.client }));
   },
