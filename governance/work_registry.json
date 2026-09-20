@@ -125,9 +125,9 @@
         "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/src/api/generated/",
         "docs/CONTEXT_COMPILATION.md",
-              "apps/monkeyhub/api/tests/test_acp_chat.py",
-              "tests/monkeymonitor/run_stage_handoff_benchmark.py",
-              "tests/monkeymonitor/test_stage_handoff_benchmark.py"
+        "apps/monkeyhub/api/tests/test_acp_chat.py",
+        "tests/monkeymonitor/run_stage_handoff_benchmark.py",
+        "tests/monkeymonitor/test_stage_handoff_benchmark.py"
       ],
       "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
       "lanes": [
@@ -235,7 +235,7 @@
         {
           "id": "confirmed-stage",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/185",
-          "status": "active",
+          "status": "review",
           "branch": "codex/185-confirmed-stage-handoff",
           "worktree": "C:/Users/asus/.codex/worktrees/042c/ARCHFLOW_V4",
           "base_ref": "0dec7bf71372f31b4e5d2347e4321962eda9fe17",
@@ -261,10 +261,12 @@
             "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
             "apps/monkeyhub/api/monkeyhub_api/chat.py",
             "apps/monkeyhub/api/tests/test_chat.py",
-            "apps/monkeyhub/api/tests/test_acp_chat.py"
+            "apps/monkeyhub/api/tests/test_acp_chat.py",
+            "tests/monkeymonitor/run_stage_handoff_benchmark.py",
+            "tests/monkeymonitor/test_stage_handoff_benchmark.py"
           ],
           "depends_on": [],
-          "handoff": "Inherited #202 f4399f4f and exact #32 tool commit 0dec7bf preserving history. GH-32 released chat.py/test_chat.py; this slice owns ChatStore/provider preparation, retaining upstream tool completion. Shared ChatShell/browser work was coordinated with #90 and root; preserve candidate refresh, editing-base and Top locator checks. Stage experiment is an independent helper using existing benchmark statistics."
+          "handoff": "PR #211 implements confirmed-Stage continuation and startup-failure recovery, inheriting #202 f4399f4f and exact #32 tool commit 0dec7bf. Shared candidate-refresh and Top locator assertions are retained. Four synthetic provider arms passed all 25 checks at frozen 8143c5a; input fell but latency/cache results are mixed. Coordinator reviews, merges in dependency order and handles desktop delivery; issue #185 remains open for undeclared and non-adjacent dependencies."
         }
       ]
     },
