@@ -169,7 +169,7 @@
     {
       "id": "GH-137",
       "stream": "interaction",
-      "status": "blocked",
+      "status": "active",
       "goal": "V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1.",
       "depends_on": [],
       "branch": "codex/137-signed-normal",
@@ -185,9 +185,35 @@
         "apps/monkeyhub/web/workspaces/test/normalDrag.test.ts",
         "apps/monkeyhub/web/workspaces/test/pushPull.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/features/stage/ModelEditPanel.tsx",
-        "apps/monkeyhub/web/workspaces/test/translationGizmo.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/translationGizmo.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/cameraProjection.ts",
+        "apps/monkeyhub/web/workspaces/test/cameraProjection.test.ts",
+        "apps/monkeyhub/web/workspaces/test/viewportSelection.browser.mjs"
       ],
-      "handoff": "V1 and N1 are merged (#147/#155), Tracing Paper integration #153 is merged, and the #156/#157 viewport/document closeout is complete. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane."
+      "handoff": "V1 and N1 are merged (#147/#155), Tracing Paper integration #153 is merged, and the #156/#157 viewport/document closeout is complete. Remaining scene-wide Snap and later views stay paused pending a separate coordinated lane.",
+      "lanes": [
+        {
+          "id": "axonometric-fix",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/137",
+          "status": "active",
+          "branch": "codex/monkeyarch-axonometric-camera",
+          "worktree": "workspace/worktrees/codex-monkeyarch-axonometric-camera",
+          "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "depends_on": [],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/cameraProjection.ts",
+            "apps/monkeyhub/web/workspaces/test/cameraProjection.test.ts",
+            "apps/monkeyhub/web/workspaces/test/viewportSelection.browser.mjs"
+          ],
+          "handoff": "Fix the user-reported Iso preset using the existing orthographic camera. PR #182 owner confirmed scene-snapping is finished, clean and does not change this camera branch. Preserve its independent work; no installation or Stage change."
+        }
+      ]
     },
     {
       "id": "GH-73",
