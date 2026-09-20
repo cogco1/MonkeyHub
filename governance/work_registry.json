@@ -3,21 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-173",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Compare synchronous decision review timing and separate Critic roles on one bounded housing fixture with exact candidates, independent checks and real provider trials.",
-      "depends_on": [],
-      "branch": "codex/173-checkpoint-critique",
-      "worktree": "0609/ARCHFLOW_V4",
-      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
-      "contributor": "Codex",
-      "reviewer": null,
-      "modules": ["state.record", "state.massing_metrics", "project.repository"],
-      "write_scope": ["labs/checkpoint_critique/", "probes/checkpoint-critique/"],
-      "handoff": "Independent experiment only. Consume labs/candidate_evaluation without editing its owner; no production chat, observation, Study or FEA changes. Coordination task owns integration."
-    },
-    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
