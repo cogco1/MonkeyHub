@@ -330,6 +330,13 @@ def normalize(result: EvaluationResult, bounds: Mapping[str, tuple[float, float]
         low, high = bounds[item.objective.name]
         if not isfinite(low) or not isfinite(high) or high <= low:
             raise ValueError("normalization bounds must be finite and strictly increasing")
-        value = (item.value - low) / (high - low)
-        normalized[item.objective.name] = value if item.objective.direction == "maximize" else 1 - value
+        span = high - low
+        offset = item.value - low
+        if not isfinite(span) or not isfinite(offset):
+            raise ValueError("normalization arithmetic exceeds the finite floating-point domain")
+        value = offset / span
+        oriented = value if item.objective.direction == "maximize" else 1 - value
+        if not isfinite(oriented):
+            raise ValueError("normalized value exceeds the finite floating-point domain")
+        normalized[item.objective.name] = oriented
     return normalized
