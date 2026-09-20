@@ -4005,7 +4005,8 @@
       "inputs": [
         "ProjectBinding",
         "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
-        "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment"
+        "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment",
+        "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults"
       ],
       "outputs": [
         "BoardDto",
@@ -4044,7 +4045,8 @@
         "feedback edits exactly one registered drawing page and its declared model source; explicitly connected reference pages provide visual context only, and board position, rotation and scale never change source identity",
         "selected text includes native frame children and bound labels once per object, ordered by Board y, x and id; original text prefills the editable utterance without OCR, unselected nearby text or geometric text DTOs",
         "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
-        "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version"
+        "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version",
+        "Page export verifies the exact registered revision, including null versus a generated revision, and source digest before rendering; bounded previews preserve visible PDF crop/rotation and image orientation without persisting derived output"
       ],
       "status": "canonical",
       "tests": [
@@ -6203,7 +6205,8 @@
         "Mounted workspace view state and local drafts survive tool and project switches; Board page visits keep exact source/page/revision and return to the same canvas. These are UI projections, not a second project store.",
         "The single frontend build and generated clients for both Hub and Project Runtime OpenAPI schemas; workspace-only fixture entrypoints live under test and are not production builds.",
         "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
-        "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with"
+        "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with",
+        "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6285,7 +6288,8 @@
         "apps/shared-web/src/browserTranslator.js: prepareEnglishToChinese, translateEnglishToChinese and subscribeToEnglishToChineseReadiness",
         "apps/shared-web/src/base.css: appearance tokens and base controls",
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
-        "ProjectWorkspace: Arch/Board navigation, exact Board page visit and candidate preview without editing-base change"
+        "ProjectWorkspace: Arch/Board navigation, exact Board page visit and candidate preview without editing-base change",
+        "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6402,7 +6406,8 @@
         "monkeyfab",
         "studio.artifacts",
         "project.archive",
-        "monkeycontrol"
+        "monkeycontrol",
+        "studio.board"
       ]
     },
     {

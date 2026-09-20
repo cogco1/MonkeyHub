@@ -2359,6 +2359,134 @@ class ChatTests(unittest.TestCase):
         self.assertEqual(result, self.PACK)
         self.assertEqual(packs, [{"method": "POST", "base": "http://127.0.0.1:8791", "body": body}])
 
+    def test_registered_pdf_page_reaches_mcp_as_image_without_mutation_admission(self):
+        import io
+        import fitz
+        from PIL import Image
+        from urllib.error import HTTPError
+        from archflow_studio_api.main import create_app as studio_app
+        from archflow_studio_api.settings import StudioSettings
+
+        project = self.root / "chat-project"
+        FilesystemProjectRepository.initialize(project, project_id="chat-project", initial_state={"project_id": "chat-project", "version": 0})
+        session = self.create(project=project)
+        self.store._sessions[session.id].status = "running"
+        client = TestClient(studio_app(StudioSettings(project_dir=project, cad_export="off")))
+        self.addCleanup(client.close)
+        with fitz.open() as pdf:
+            pdf.new_page(width=400, height=300)
+            page = pdf.new_page(width=800, height=600)
+            page.draw_rect(fitz.Rect(200, 200, 400, 400), color=(0, 0, 1), fill=(0, 0, 1))
+            page.set_cropbox(fitz.Rect(100, 50, 700, 550))
+            page.set_rotation(90)
+            data = pdf.tobytes()
+        uploaded = client.post("/api/documents", json={"projectId": session.projectId, "fileName": "sheet.pdf",
+            "mimeType": "application/pdf", "contentBase64": base64.b64encode(data).decode()})
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        document = uploaded.json()
+        source = {key: document[key] for key in ("runId", "assetSha256", "revisionRef")}
+        source["pageIndex"] = 1
+        body = {"projectId": session.projectId, "pages": [source], "format": "png", "zip": False, "maxEdge": 600}
+        before = {p: p.read_bytes() for p in project.rglob("*") if p.is_file()}
+        http_request, requests = chat._request_json, []
+
+        def open_request(request, **kwargs):
+            requests.append((request.full_url, request.method, json.loads(request.data)))
+            reply = client.post("/api/board/export", json=json.loads(request.data))
+            stream = io.BytesIO(reply.content)
+            stream.headers = reply.headers
+            if reply.status_code >= 400:
+                raise HTTPError(request.full_url, reply.status_code, "refused", reply.headers, stream)
+            return stream
+
+        def request(base, path, method="GET", body=None, **kwargs):
+            if path == "/api/board/export":
+                return http_request(base, path, method, body, **kwargs)
+            if path == "/openapi.json":
+                return client.get(path).json()
+            return self.studio(session, [])(base, path, method, body, **kwargs)
+
+        class Stream(io.StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+
+        arguments = {"method": "POST", "path": "/api/board/export", "body": body}
+        missing = {**arguments, "body": {**body, "pages": [{**source, "pageIndex": 2}]}}
+        lines = [{"jsonrpc": "2.0", "id": index, "method": "tools/call", "params": {
+            "name": "studio_request", "arguments": arg}} for index, arg in enumerate((arguments, missing), 1)]
+        writer = Stream()
+        with patch.object(chat, "_request_json", side_effect=request), \
+             patch.object(chat, "build_opener") as opener, \
+             patch.object(chat.sys, "stdin", Stream("\n".join(json.dumps(line) for line in lines) + "\n")), \
+             patch.object(chat.sys, "stdout", writer):
+            opener.return_value.open.side_effect = open_request
+            schema = chat.call_tool(self.store.hub_url, session.id, "studio_schema",
+                                    {"method": "POST", "path": "/api/board/export"})
+            self.assertIn("maxEdge", schema["components"]["schemas"]["BoardExportRequestDto"]["properties"])
+            chat._mcp(self.store.hub_url, session.id)
+        success, failure = [json.loads(line)["result"] for line in writer.getvalue().splitlines()]
+        self.assertNotIn("isError", success)
+        text, image = success["content"]
+        metadata = json.loads(text["text"])
+        self.assertEqual(metadata["source"], {"projectId": session.projectId, **source})
+        self.assertEqual((metadata["width"], metadata["height"]), (500, 600))
+        self.assertFalse(metadata["annotationsIncluded"])
+        self.assertEqual(image["type"], "image")
+        self.assertEqual(image["mimeType"], "image/png")
+        self.assertNotIn("data", metadata)
+        with Image.open(io.BytesIO(base64.b64decode(image["data"]))) as picture:
+            self.assertEqual(picture.size, (500, 600))
+            self.assertIn((0, 0, 255), {color for _, color in picture.getcolors(picture.width * picture.height)})
+        self.assertTrue(failure["isError"])
+        self.assertEqual(json.loads(failure["content"][0]["text"])["code"], "DOCUMENT_PAGE_NOT_FOUND")
+        self.assertEqual(requests, [("http://127.0.0.1:8791/api/board/export", "POST", arg["body"])
+                                   for arg in (arguments, missing)])
+        self.assertEqual({p: p.read_bytes() for p in project.rglob("*") if p.is_file()}, before)
+        self.assertFalse((self.runtime / "operations").exists())
+
+    def test_drawing_page_tool_rejects_unbound_and_non_image_requests_before_export(self):
+        body = {"projectId": "chat-project", "pages": [{"runId": "run-001", "assetSha256": "a" * 64,
+                "revisionRef": None, "pageIndex": 0}], "format": "png", "zip": False}
+        arguments = {"method": "POST", "path": "/api/board/export", "body": body}
+        invalid = [{**arguments, "body": {**body, **change}} for change in (
+            {"projectId": "other"}, {"format": "merged-pdf"}, {"zip": True}, {"zip": 0},
+            {"pages": body["pages"] * 2}, {"pages": []}, {"pages": [{"runId": "run-001"}]},
+            {"maxEdge": True}, {"maxEdge": 2049}, {"maxEdge": None},
+        )]
+        invalid += [{**arguments, **change} for change in (
+            {"operationId": str(uuid4())}, {"awaitSeconds": 5}, {"path": "/api/board/export?path=private.pdf"},
+            {"method": "GET"}, {"path": "/api/documents/" + "a" * 64 + "/bytes"},
+        )]
+        with patch.object(chat, "_bound_studio", return_value=("http://127.0.0.1:8791", {"projectId": "chat-project"})), \
+             patch.object(chat, "_request_json") as request:
+            for value in invalid:
+                with self.subTest(value=value), self.assertRaises(HubFailure):
+                    chat.call_tool(self.store.hub_url, "chat", "studio_request", value)
+            request.assert_not_called()
+            request.return_value = {"data": "png", "mimeType": "image/png"}
+            chat.call_tool(self.store.hub_url, "chat", "studio_request", arguments)
+            self.assertEqual(request.call_args.kwargs, {"png": True})
+            self.assertEqual(request.call_args.args[3]["maxEdge"], 2048)
+
+    def test_drawing_page_transport_rejects_invalid_or_unbounded_png(self):
+        import io
+        from PIL import Image
+        oversized = io.BytesIO()
+        Image.new("RGB", (2049, 1)).save(oversized, format="PNG")
+        for mime, data, code in (
+            ("application/zip", b"zip", "CHAT_IMAGE_INVALID"),
+            ("image/png", b"not a png", "CHAT_IMAGE_INVALID"),
+            ("image/png", oversized.getvalue(), "CHAT_IMAGE_INVALID"),
+            ("image/png", b"x" * (4 * 1024 * 1024 + 1), "CHAT_IMAGE_TOO_LARGE"),
+        ):
+            with self.subTest(mime=mime, code=code), patch.object(chat, "build_opener") as opener:
+                response = io.BytesIO(data)
+                response.headers = {"Content-Type": mime}
+                opener.return_value.open.return_value = response
+                with self.assertRaises(HubFailure) as failure:
+                    chat._request_json("http://127.0.0.1:8791", "/api/board/export", "POST", {}, png=True)
+                self.assertEqual(failure.exception.error.code, code)
+
     def test_the_named_source_is_read_once_and_never_carried_into_the_next_turn(self):
         session = self.create()
         packs = []

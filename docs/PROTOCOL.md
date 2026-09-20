@@ -206,6 +206,24 @@ Incomplete/composed-only, Rhino-only or mismatched sources refuse; no bounding-b
 in for missing geometry. MonkeyHub exposes the image as native MCP image content and keeps
 source metadata in a separate text block.
 
+To inspect a registered PDF or image page, use the existing `POST /api/board/export` with
+`projectId`, `pages: [{runId, assetSha256, revisionRef, pageIndex}]`, `format: "png"` and
+`zip: false`. Copy the exact registration from `GET /api/documents` or the generated drawing
+response; `pageIndex` is a zero-based integer. A generated revision cannot be omitted or
+substituted, and the owner verifies the retained source bytes before rendering. Optional
+`maxEdge` (integer 1–2048) bounds PNG/JPEG raster dimensions before PDF rendering; omitting
+it preserves ordinary 144 dpi PDF export behavior. PDF CropBox/rotation and image EXIF
+orientation remain part of the visible page. This transient clean-source export adds no
+annotations and writes no drawing, board scene or project state.
+
+MonkeyHub exposes this POST through `studio_schema` and `studio_request` as a read, without
+mutation admission, `operationId` or `awaitSeconds`. MCP accepts one PNG page only, requires
+an explicit `revisionRef` (null when the registered source has none), defaults `maxEdge` to
+2048 and limits the received PNG to 4 MiB. It returns native MCP image content plus verified
+project/run/asset/revision/page identity, raster dimensions and `annotationsIncluded: false`.
+`CHAT_IMAGE_TOO_LARGE` means to read the same page at a smaller `maxEdge`; invalid PNG responses
+report `CHAT_IMAGE_INVALID`. Runtime source/revision/page refusals retain their code and status.
+
 **The program sheet.** A sheet is `ProgramSheet@1` and travels whole in both directions, carrying
 the `stateDigest` of the record it was read from. `POST /api/program` refuses `409 STALE_BASE` when
 that is not the state the project answers with now, and `422 PROGRAM_SHEET_INVALID` when the kernel
