@@ -235,6 +235,8 @@ def _validate_design_scope(answer: Mapping[str, Any], context: IntentContext) ->
     known = {**rows, **{"entity:" + key: None for key in created}}
     for key, row in entities.items():
         refs = _named_refs(row.get("fields", {}).get("references", {}), known)
+        if row.get("schema") == "Reading@1":
+            refs.update(_named_refs(row.get("fields", {}).get("subject_refs", ()), known))
         refs.update(_named_refs(row.get("parent_id"), known))
         refs.update(_named_refs(row.get("fields", {}).get("type_ref"), known))
         links.append({key} | ({ref.removeprefix("entity:") for ref in refs if ref.startswith("entity:")} & (targets | created)))

@@ -6,46 +6,28 @@
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
-      "goal": "Compile exact task state and let a fresh native provider session continue from it while preserving visible chat, editing-source identity and read-only candidate observation. This slice inherits the completed implementation of PR #184 at 550ee735; neither PR is merged by this work. Broader design-loop acceptance remains in issue #185.",
+      "goal": "Verify a real Hub provider massing-to-wall design loop, same-source visual revision, and cold-start continuation from exact retained project conditions. Extend existing intent/history owners only for reproduced gaps; issue #183 retains broader design quality acceptance.",
       "depends_on": [],
-      "branch": "codex/185-task-state",
-      "worktree": "workspace/worktrees/codex-185-task-state",
-      "base_ref": "550ee7357bc48497f255de21123e2e4d6e0c6931",
+      "branch": "codex/185-design-loop",
+      "worktree": "C:/Users/asus/.codex/worktrees/ca06/ARCHFLOW_V4",
+      "base_ref": "fe9bafcf6085777fe890c0439699abdd2c1bf605",
       "contributor": "Codex",
       "reviewer": null,
       "modules": [
-        "hub.shell",
-        "studio.shell",
-        "studio.intent",
-        "studio.artifacts"
+        "studio.intent"
       ],
       "write_scope": [
-        "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/intent_context.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
-        "apps/archflow-studio/api/tests/test_drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
         "apps/archflow-studio/api/tests/test_intent_context.py",
         "apps/archflow-studio/api/tests/test_intents.py",
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/monkeyhub_api/models.py",
-        "apps/monkeyhub/api/tests/test_acp_chat.py",
-        "apps/monkeyhub/api/tests/test_chat.py",
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/api/generated/types.gen.ts",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
-        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
-        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/workspace-fixture.tsx",
-        "apps/monkeyhub/web/src/ChatShell.css"
+        "apps/archflow-studio/api/tests/test_proposals.py",
+        "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
       ],
       "handoff": "Parallel implementation approved: integration in this checkout; GH-185 design-loop, GH-32 measurement and GH-123 evaluation each use independent worktrees. Shared UI changes return to the integration lane.",
       "lanes": [
@@ -59,17 +41,25 @@
           "contributor": "Codex",
           "reviewer": null,
           "modules": [
-            "hub.shell"
+            "hub.shell",
+            "studio.intent"
           ],
           "write_scope": [
             "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/MonitorPage.tsx",
             "apps/monkeyhub/web/src/MonitorPage.css",
             "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+            "apps/archflow-studio/api/tests/test_intent_request_schemas.py",
+            "apps/archflow-studio/api/tests/test_intents.py",
+            "apps/archflow-studio/api/tests/test_proposals.py"
           ],
           "depends_on": [],
-          "handoff": "Combine committed PR #188 task context and #187 Monitor navigation in one tested checkout; preserve hidden context sessions and visible native Monitor. Design-loop and performance work run in independent tasks. No mainline merge or current installation is implied."
+          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied."
         }
       ]
     },

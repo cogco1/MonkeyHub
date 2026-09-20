@@ -6395,6 +6395,22 @@ export type SemanticEditRequestDto = {
             label?: string | null;
             note?: string | null;
         };
+    } | {
+        entity_id: string;
+        schema?: 'Reading@1';
+        parent_id?: string | null;
+        basis_refs?: Array<string>;
+        fields?: {
+            /**
+             * A retained design condition, observation or assumption, with its status stated in the text. A reading is context, not approval or a lock.
+             */
+            note?: string;
+            /**
+             * Exact entity:/parameter:/relation: refs this reading concerns; empty for a project-wide condition.
+             */
+            subject_refs?: Array<string>;
+            source_ref?: string | null;
+        };
     }>;
     parameters?: Array<{
         key: string;
