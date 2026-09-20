@@ -1174,6 +1174,12 @@ export type OperationRecord = {
      * Sessionid
      */
     sessionId?: string | null;
+    /**
+     * Admissionsequence
+     *
+     * Project-scoped request order projected from the existing Hub admission journal. Not a completion order or design version; null for observations without a journal entry.
+     */
+    admissionSequence?: number | null;
 };
 
 /**

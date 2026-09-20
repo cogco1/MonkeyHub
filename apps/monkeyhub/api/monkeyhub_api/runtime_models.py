@@ -41,6 +41,10 @@ class OperationRecord(BaseModel):
     committed: bool = False
     reason: str | None = None
     sessionId: str | None = None
+    admissionSequence: int | None = Field(default=None, ge=1, description=(
+        "Project-scoped request order projected from the existing Hub admission journal. "
+        "Not a completion order or design version; null for observations without a journal entry."
+    ))
 
 
 class ProjectRuntimeDto(BaseModel):

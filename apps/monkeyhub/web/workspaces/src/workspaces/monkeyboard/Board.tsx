@@ -10,7 +10,7 @@ import type { BoardDto, FrameLevelDto, SourceDocumentDto } from "../../api/gener
 import { usePreferences } from "../../features/settings/preferences";
 import { renderDocumentVisual } from "../monkeydiagram/documentVisualInput";
 import { createBoardSaveQueue, type BoardSaveState } from "./boardSaveQueue";
-import { prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
+import { BoardFeedbackError, prepareBoardDesignRequest, type BoardDesignRequest } from "./boardFeedback";
 import { BoardFeedbackGeometryError, createBoardFeedback, type BoardFeedbackSelection } from "./boardFeedbackGeometry";
 import { boardViewAppState, captureBoardView, pageSourceAt, type BoardDocumentOpen, type BoardViewState } from "./boardNavigation";
 import { boardDocumentFrameName, documentKey, documentMime, findSource, imageSource, isTracingPaperReview, nextDocumentPosition, pageKey, pageReplacements, pageSource, selectedPageSource, type BoardDraft, type PageSource } from "./boardScene";
@@ -399,6 +399,35 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false, revisionSha256: board.revisionSha256 });
   const [queue] = useState(() => createBoardSaveQueue(board, studio.saveBoard, (state) => {
     if (alive.current) setSaveState(state);
+  }, 700, {
+    readLatest: async () => {
+      const latest = await studio.board();
+      if (latest.projectId !== board.projectId) throw new Error("The refreshed board belongs to another project.");
+      if (latest.revisionSha256 !== queue.getState().revisionSha256) {
+        const list = await studio.documents();
+        if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
+        const restored = await sceneFiles(latest, list.documents, preview);
+        if (alive.current) {
+          documentsRef.current = list.documents; setDocuments(list.documents);
+          canvas.current?.addFiles(Object.values(restored.files));
+          setPreviewFailed(restored.failures.length > 0);
+        }
+      }
+      return latest;
+    },
+    onRebase: (draft) => {
+      titleRef.current = draft.title; setTitle(draft.title);
+      seen.current = new Set(draft.seenDocuments);
+      const api = canvas.current;
+      const live = new Map(api?.getSceneElementsIncludingDeleted().map((element) => [element.id, element]));
+      // An in-progress stroke keeps mutating its live element. Replacing that
+      // unchanged object with a clone would cut off the rest of the gesture.
+      const elements = draft.elements.map((element) => {
+        const current = live.get(String(element.id));
+        return current && JSON.stringify(records([current])[0]) === JSON.stringify(element) ? current : element;
+      });
+      api?.updateScene({ elements: elements as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.NEVER });
+    },
   }));
   const work = useRef(Promise.resolve());
   const [initialData] = useState<ExcalidrawInitialDataState>(() => {
@@ -622,6 +651,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       try {
         await serial(async () => {
           try {
+            await queue.refresh();
             const list = await studio.documents();
             if (!live) return;
             if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
@@ -952,6 +982,21 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     busyRef.current = true;
     try {
       await queue.flush();
+      const api = canvas.current;
+      const current = api && createBoardFeedback(api.getSceneElements(), api.getAppState().selectedElementIds, documentsRef.current);
+      if (!current || pageKey(current.source) !== pageKey(feedback.source)) {
+        throw new BoardFeedbackError("SOURCE_CHANGED", "The drawing changed while saving its marks. Select its current page before sending feedback.");
+      }
+      const referenceKeys = (selection: BoardFeedbackSelection) => (selection.references ?? [])
+        .map((reference) => `${reference.image.id}:${pageKey(reference.source)}`).sort();
+      if (JSON.stringify(referenceKeys(current)) !== JSON.stringify(referenceKeys(feedback))) {
+        throw new BoardFeedbackError("REFERENCE_CHANGED", "A selected reference changed while saving. Select its current page before sending feedback.");
+      }
+      if (JSON.stringify(current.annotations) !== JSON.stringify(feedback.annotations)
+        || JSON.stringify(current.annotationGroups) !== JSON.stringify(feedback.annotationGroups)) {
+        throw new Error(language === "en" ? "The selected marks changed. Close this dialog and review them before sending."
+          : "选中的批注已发生变化，请关闭此窗口，核对后重新提交。");
+      }
       const request = await prepareBoardDesignRequest(studio, feedback, board.projectId, comment);
       if (alive.current) onSubmit(request);
     } finally { busyRef.current = false; }

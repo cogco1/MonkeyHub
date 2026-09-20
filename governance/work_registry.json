@@ -3,6 +3,59 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-183",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Deliver the bounded headless result display and Board compare-and-swap refresh follow-up. Broader architectural observation and correction acceptance remains on issue #183.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+        "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+        "apps/monkeyhub/api/tests/test_runtime_operations.py",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardSaveQueue.ts",
+        "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
+        "governance/module_registry.json",
+        "docs/SYSTEM_MAP.md"
+      ],
+      "lanes": [
+        {
+          "id": "headless-board-refresh",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/183",
+          "status": "review",
+          "branch": "codex/headless-board-refresh",
+          "worktree": "workspace/worktrees/codex-headless-board-refresh",
+          "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell",
+            "studio.board"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
+            "apps/monkeyhub/api/monkeyhub_api/runtime_models.py",
+            "apps/monkeyhub/api/tests/test_runtime_operations.py",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/api/generated/types.gen.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/boardSaveQueue.ts",
+            "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
+            "governance/module_registry.json",
+            "docs/SYSTEM_MAP.md"
+          ],
+          "depends_on": [],
+          "handoff": "Review only headless result display and Board CAS refresh, related to issues #183 and #32. Public source is ported from verified bf0d3c23 and 442321ef; those installation commits remain traceable. The base contains the completed GH-185 integration and lock controls. Preserve both this lane's headless refresh assertions and the parallel GH-183 explicit Continue/Monitor assertions when integrating their independent PRs; keep only one named Top selector replacement. Private project data and the separate component removal repair are excluded."
+        }
+      ]
+    },
+    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
@@ -71,17 +124,15 @@
             "studio.intent"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/src/ChatShell.tsx",
             "apps/monkeyhub/web/src/MonitorPage.tsx",
             "apps/monkeyhub/web/src/MonitorPage.css",
             "apps/monkeyhub/web/src/main.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_agent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
           ],
           "depends_on": [],
-          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice."
+          "handoff": "Combine committed project context, Monitor navigation and Reading proposal contracts in one tested checkout; regenerate the existing clients from the exact Runtime schema. Design-loop and performance acceptance run in independent tasks. No mainline merge or current installation is implied. After the verified integration, proposal transport and its proposal/intent tests transfer to the parameter-locks lane for the explicit lock follow-up. Generated client ownership moves to the lock-controls lane for the next slice. ChatShell.tsx and chatShell.browser.mjs are released after their integration reached main; GH-183/headless-board-refresh owns the bounded refresh follow-up in its independent PR, preserving the parallel explicit Continue/Monitor assertions."
         },
         {
           "id": "parameter-locks",

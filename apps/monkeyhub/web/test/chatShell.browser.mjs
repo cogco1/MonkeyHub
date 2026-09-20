@@ -547,7 +547,7 @@ try {
   assert.ok(!savedEditingBases?.includes("cand-A-1"), "viewing a candidate does not save it as an editing choice");
   await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
-  await visibleWorkspace().locator("#view-tools button").nth(1).click();
+  await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -799,7 +799,7 @@ try {
 
   // Refreshing a completed readback preserves the user's later camera view.
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
-  await visibleWorkspace().locator("#view-tools button").nth(1).click();
+  await visibleWorkspace().locator("#view-tools").getByRole("button", { name: "Top", exact: true }).click();
   await visibleWorkspace().locator('button[aria-controls="view-tools"]').click();
   await page.mouse.move(10, 10);
   const beforeRefreshCanvas = await visibleWorkspace().locator(".stage canvas").first().screenshot();
@@ -819,9 +819,83 @@ try {
   assert.deepEqual(await visibleWorkspace().locator(".stage canvas").first().screenshot(), beforeRefreshCanvas,
     "refreshing keeps the camera chosen after the candidate appeared");
 
+  // Headless API jobs have no chat message. Their completed results update the
+  // mounted project's candidate without taking the architect out of the Board.
+  const runtimeB = runtimes.get("D:\\fixture\\B");
+  const headlessJob = (candidateId, minute, status = "succeeded") => ({ jobId: `job-${candidateId}`, candidateId,
+    proposalId: `proposal-${candidateId}`, status, createdAt: `2026-09-20T01:${String(minute).padStart(2, "0")}:00Z` });
+  const headlessOperation = (job, overrides = {}) => ({ operationId: `operation-${job.candidateId}`, projectId: "B",
+    kind: "POST /api/proposals/fixture/candidate", source: "studio", sessionId: null, committed: false,
+    status: job.status === "succeeded" ? "completed" : "executing", candidateId: job.candidateId,
+    jobId: job.jobId, resultDigest: "d".repeat(64), admissionSequence: Number(job.createdAt.slice(14, 16)), ...overrides });
+  const headlessCandidate = (job, overrides = {}) => ({ candidateId: job.candidateId,
+    status: job.status === "succeeded" ? "completed" : job.status, resultStateDigest: "d".repeat(64),
+    receiptRef: `project://B/runs/${job.candidateId}/records/fixture.json`, ...overrides });
+  const oldJob = headlessJob("cand-B-headless-old", 10), newJob = headlessJob("cand-B-headless-new", 20);
+  const pendingJob = headlessJob("cand-B-headless-pending", 30, "running");
+  const failedJob = headlessJob("cand-B-headless-failed", 40, "failed");
+  const projectBFixture = workspaceFixture.projects.get("B");
+  for (const job of [oldJob, newJob, pendingJob]) projectBFixture.artifact(job.candidateId);
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await waitWorkspace("board");
+  await visibleWorkspace().evaluate((element) => { element.headlessBoardMarker = "retained"; });
+  const boardBeforeHeadless = structuredClone(projectBFixture.board);
+  const writesBeforeHeadless = workspaceFixture.requests.filter((row) => row.method !== "GET").length;
+  runtimeB.retained = { projectId: "B", projectDir: runtimeB.projectDir, jobs: [pendingJob, oldJob, failedJob, newJob],
+    candidates: [pendingJob, oldJob, failedJob, newJob].map((job) => headlessCandidate(job)) };
+  runtimeB.operations = [headlessOperation(newJob), headlessOperation(oldJob), headlessOperation(pendingJob),
+    headlessOperation(failedJob, { status: "completed" }),
+    headlessOperation(headlessJob("cand-A-wrong-project", 40), { projectId: "A" })];
+  emitRuntime();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("monkeyhub.chat-view.v1"))?.tools
+    .some((tool) => tool.candidate === "cand-B-headless-new"));
+  assert.equal(await page.getByRole("button", { name: "Board", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await visibleWorkspace().evaluate((element) => element.headlessBoardMarker), "retained");
+  assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B retained");
+  assert.deepEqual(projectBFixture.board, boardBeforeHeadless, "model completion preserves the Board and its marks");
+  assert.equal(workspaceFixture.requests.filter((row) => row.method !== "GET").length, writesBeforeHeadless,
+    "automatic preview makes no project write or editing-base change");
+  await page.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitCandidate(newJob.candidateId);
+  assert.ok(!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId === pendingJob.candidateId),
+    "a later unfinished job cannot become the displayed candidate");
+
+  // A manual historical preview survives repeated snapshots. Reopening the app
+  // starts at the newest reliably ordered headless result, even with an old tab.
+  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await waitCandidate("cand-B-final");
+  const manualBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+  emitRuntime(); emitRuntime();
+  await page.waitForTimeout(600);
+  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, manualBytes,
+    "polling does not steal the architect's explicit historical preview");
+  runtimeB.retained.jobs = [];
+  await page.reload();
+  await waitWorkspace();
+  await waitCandidate(newJob.candidateId);
+
+  // Slow older requests and unordered completion observations do not guess a
+  // new winner. The projected journal order works without in-memory job times.
+  const slowOldJob = headlessJob("cand-B-headless-slow-old", 15);
+  const tiedJobs = [headlessJob("cand-B-headless-tie-a", 35), headlessJob("cand-B-headless-tie-b", 35)];
+  const unordered = headlessJob("cand-B-headless-unordered", 45);
+  for (const job of [slowOldJob, ...tiedJobs, unordered]) projectBFixture.artifact(job.candidateId);
+  const stableBytes = workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length;
+  runtimeB.retained.candidates.push(headlessCandidate(slowOldJob)); runtimeB.operations.push(headlessOperation(slowOldJob)); emitRuntime();
+  await page.waitForTimeout(400);
+  runtimeB.retained.candidates.push(...tiedJobs.map((job) => headlessCandidate(job))); runtimeB.operations.push(...tiedJobs.map((job) => headlessOperation(job))); emitRuntime();
+  await page.waitForTimeout(400);
+  runtimeB.retained.candidates.push(headlessCandidate(unordered)); runtimeB.operations.push(headlessOperation(unordered, { admissionSequence: null })); emitRuntime();
+  await page.waitForTimeout(400);
+  assert.equal(workspaceFixture.requests.filter((row) => row.name.endsWith("/bytes")).length, stableBytes,
+    "older, tied, or unordered results never replace the known latest candidate");
+  runtimeB.operations = []; runtimeB.retained = null; emitRuntime();
+  await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
+  await waitCandidate("cand-B-final");
+  await visibleWorkspace().evaluate((element) => { element.completionMarker = "once"; });
+
   // Refresh and reconnect read the retained operation, without replaying a
   // modification. A crashed worker needs the person's explicit recovery.
-  const runtimeB = runtimes.get("D:\\fixture\\B");
   runtimeB.operations = [{ operationId: "committed-operation", projectId: "B", kind: "candidate.commit", source: "studio",
     status: "completed", committed: true, resultRevision: 1, candidateId: "cand-B-final" }];
   let releaseRuntimeOpen;
