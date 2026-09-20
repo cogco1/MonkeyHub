@@ -2074,7 +2074,7 @@ def _finish(base: str, started: Mapping, submitted: Mapping, deadline: float) ->
         # What the run saved, by the fields that say whether it is really there.
         "artifacts": [
             {key: row.get(key) for key in
-             ("runId", "fileName", "relativePath", "representation", "lengthUnit",
+             ("runId", "modelSource", "sourceStageRef", "fileName", "relativePath", "representation", "lengthUnit",
               "objectCount", "readbackVerified", "available", "unavailableReason", "sha256")
              if key in row}
             for row in candidate.get("artifacts", ())
@@ -2392,6 +2392,9 @@ def _mcp(hub: str, chat_id: str) -> None:
         "After observing it, start further changes from GET /api/state?run=<candidateId>, using that stateDigest and sourceRunId;",
         "sourceProposalId continues an unexecuted chain, not a newly selected candidate base.",
         "The numeric capability run also accepts awaitSeconds: 60 with sourceRunId in its body. Waiting posts the change once.",
+        "With awaitSeconds, candidate/artifacts/objects and compare, when present, are completed readbacks; reuse them for observation.",
+        "Use an available artifact's non-null modelSource unchanged for model-view. A missing source cannot be reconstructed from hashes.",
+        "Follow next for missing reads and retain any source/state/context checks the task still requires.",
         "On timeout, follow the returned job/candidate reads; never send the request again merely to wait.",
         "GET /api/candidates/{id} returns retained objects with bbox.min/max, lengthUnit and upAxis, plus objectReadbackError if inspection is unavailable.",
         "GET /api/candidates/{id}/compare?against=<runId> compares with the required source run. The first candidate has no prior run to compare.",
@@ -2407,7 +2410,7 @@ def _mcp(hub: str, chat_id: str) -> None:
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
         "OBSERVE: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image with exact source metadata.",
-        "Read modelSource from the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
+        "Read modelSource from the awaited result's artifacts or the candidate's 3dm artifact. Views: front/back/left/right/top. This is a read-only orthographic line projection from complete retained STEP; unsupported sources refuse rather than show a proxy.",
         "GET /api/drawings/styles and POST /api/drawings/sheets compose a sheet from exact modelSource, styleId and scaleDenominator.",
         "Top is an orthographic projection, not a cut plan. GET /api/documents?runId=<runId> reads that run's drawings.",
         'DRAWING PAGE: POST /api/board/export is a read-only native MCP image: body {projectId, pages:[{runId, assetSha256, revisionRef, pageIndex}], format:"png", zip:false, maxEdge:2048}. Copy exact source fields from GET /api/documents or the generated drawing result; revisionRef must be explicit (null for sources without a revision), pageIndex is zero-based. One clean source page, no annotations, at most 2048 pixels per edge and 4 MiB; use smaller maxEdge if too large. No operationId or awaitSeconds.',

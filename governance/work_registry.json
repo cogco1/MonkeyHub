@@ -3,6 +3,30 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-32",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Remove a measured redundant candidate read in the existing bounded MCP completion flow and repeat fixed numeric and multi-object edits with the same model and archived input. Keep necessary authored-state verification, partial readback failures, exact sources and unaccepted candidates explicit.",
+      "depends_on": [],
+      "branch": "codex/32-edit-latency",
+      "worktree": "C:/Users/asus/.codex/worktrees/fcf1/ARCHFLOW_V4",
+      "base_ref": "f4399f4f9db0cab3ceba6d2fd804d90bf0261afe",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": [
+        "hub.shell",
+        "monkeymonitor"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "tests/monkeymonitor/run_turn_benchmark.py",
+        "tests/monkeymonitor/test_turn_benchmark.py",
+        "docs/CONTEXT_COMPILATION.md"
+      ],
+      "handoff": "Explicitly inherits PR #202. Own only _finish and _mcp tool descriptions in chat.py; no ChatStore, prepared context, stage handoff or artifact refresh edits. Release chat.py to the new #185 slice immediately after the focused tool commit. Results stay in the existing nonproject benchmark directory; no raw transcripts or private data enter Git. Broader #32 acceptance remains open."
+    },
+    {
       "id": "GH-183",
       "stream": "planning",
       "status": "active",
@@ -30,14 +54,12 @@
         "apps/monkeyhub/web/test/monitorData.test.ts",
         "apps/monkeyhub/web/workspaces/src/app/App.tsx",
         "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
-        "docs/CONTEXT_COMPILATION.md",
         "monkeyarch/capabilities/element_producers.py",
         "monkeymonitor/README.md",
         "monkeymonitor/server.py",
         "monkeymonitor/store.py",
         "monkeymonitor/trace.py",
         "tests/monkeymonitor/run_design_loop.py",
-        "tests/monkeymonitor/run_turn_benchmark.py",
         "tests/monkeymonitor/test_core.py",
         "tests/monkeymonitor/test_design_loop.py",
         "tests/monkeymonitor/test_trace.py",
@@ -45,7 +67,7 @@
         "tests/test_element_producers.py",
         "tests/test_occt_execution.py"
       ],
-      "handoff": "Independent PR for #183 and #32; current desktop and mainline merge remain with the coordinator. Synthetic provider experiments retain failed runs in an explicit external workspace. No claim of general design quality or latency improvement."
+      "handoff": "Independent PR for #183 and #32; current desktop and mainline merge remain with the coordinator. Synthetic provider experiments retain failed runs in an explicit external workspace. No claim of general design quality or latency improvement. Coordinated #32 handoff: completed tool completion/readback helpers and benchmark results transfer to GH-32; chat.py session/context functions transfer onward to the new #185 slice after the isolated tool commit. This does not close either issue."
     },
     {
       "id": "GH-185",
@@ -192,8 +214,6 @@
             "studio.board"
           ],
           "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat.py",
             "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
             "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
             "apps/archflow-studio/api/archflow_studio_api/transport/boards.py",
@@ -203,7 +223,7 @@
             "docs/SYSTEM_MAP.md"
           ],
           "depends_on": [],
-          "handoff": "Merged coordinator-approved main without rewriting history. Exact Board maxEdge client generated; api:check, build and focused page/MCP checks pass headlessly. Root independently reviews the PR, merges and delivers the desktop update, then removes this completed lane. Generated types transfer to lock-controls after the verified maxEdge update, preserving one active generated-client owner."
+          "handoff": "Merged coordinator-approved main without rewriting history. Exact Board maxEdge client generated; api:check, build and focused page/MCP checks pass headlessly. Root independently reviews the PR, merges and delivers the desktop update, then removes this completed lane. Generated types transfer to lock-controls after the verified maxEdge update, preserving one active generated-client owner. Coordinated #32 handoff: completed tool completion/readback helpers and benchmark results transfer to GH-32; chat.py session/context functions transfer onward to the new #185 slice after the isolated tool commit. This does not close either issue."
         }
       ]
     },
