@@ -55,6 +55,14 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 const errors = [], writes = [], sessions = [], providerReads = [];
 const monitorReads = [];
+const monitorTrace = { trace_id: "finished-with-missing-end", started_at: "2026-09-20T00:00:00Z", ended_at: "2026-09-20T00:00:02Z",
+  status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
+    { span_id: "missing-end", label: "Model request", lane: "model", status: "incomplete", offset_ms: 100, duration_ms: null },
+  ] };
+const monitorCandidateTrace = { trace_id: "candidate-readback", started_at: "2026-09-20T00:01:00Z", status: "succeeded",
+  summary: { elapsed_ms: 80000, first_candidate_ms: 46241, verified_ms: null }, spans: [] };
+const monitorLegacyTrace = { trace_id: "legacy-no-candidate-timing", started_at: "2026-09-20T00:02:00Z", status: "succeeded",
+  summary: { elapsed_ms: 2000, verified_ms: 1500 }, spans: [] };
 let monitorFailure = false, monitorReadLocked = false, monitorReadConflicts = 0, documentLoads = 0;
 page.on("request", (request) => {
   if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documentLoads++;
@@ -134,7 +142,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       monitorReadLocked = true;
       try {
         await new Promise((resolve) => setTimeout(resolve, 40));
-        return await json(url.pathname === "/api/events" ? { events: [], warnings: [] } : { traces: [], warnings: [] });
+        return await json(url.pathname === "/api/events" ? { events: [], warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace], warnings: [] });
       } finally { monitorReadLocked = false; }
     }
     if (url.pathname === "/api/rates") return json({ rates: [] });
@@ -420,12 +428,30 @@ try {
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
+  const firstCandidateCard = page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("First candidate", { exact: true }) });
+  assert.equal(await firstCandidateCard.locator("strong").innerText(), "—", "missing candidate readback timing must not fall back to verification time");
+  await page.locator(".monitor-section__head select").selectOption(monitorCandidateTrace.trace_id);
+  assert.equal(await firstCandidateCard.locator("strong").innerText(), "46 s", "first candidate comes from the retained readback metric without requiring verification");
+  await page.locator(".monitor-section__head select").selectOption(monitorLegacyTrace.trace_id);
+  assert.equal(await firstCandidateCard.locator("strong").innerText(), "—", "older traces without the candidate field remain unknown");
+  await page.locator(".monitor-section__head select").selectOption(monitorTrace.trace_id);
+  const missingEndSpan = page.locator(".monitor-span").filter({ hasText: "Model request" });
+  await missingEndSpan.locator("summary").getByText("Model request · End not observed", { exact: true }).waitFor();
+  assert.equal(await missingEndSpan.locator("summary > span").last().innerText(), "—", "an unclosed span has unknown duration, not zero or a live timer");
+  await missingEndSpan.locator("summary").click();
+  assert.equal(await missingEndSpan.locator("dd").first().innerText(), "End not observed");
   await page.screenshot({ path: path.join(temporary, "monitor-panel.png") });
   assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage");
   assert.equal(documentLoads, beforeMonitorNavigation, "opening Monitor keeps the current Hub document and conversation");
   assert.equal(settings.projectDir, beforeIndependentProject, "independent tools leave the shared Studio on its existing project");
   assert.ok(writes.slice(beforeIndependent).every(([, pathname]) => ["/api/apps/monkeyfab/start", "/api/apps/monkeymonitor/start"].includes(pathname)),
     "independent tools neither stop Studio nor rewrite its project configuration");
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.locator("#language").selectOption("zh-CN");
+  assert.equal(await missingEndSpan.locator("dd").first().textContent(), "结束时间未观测");
+  assert.equal(await page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("首个候选", { exact: true }) }).locator("strong").textContent(), "—");
+  await page.locator("#language").selectOption("en");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
   // Failed data reads stay visible and do not drive a base/effect retry loop.
   monitorFailure = true;
   const beforeFailedRead = monitorReads.filter((route) => route === "/api/events").length;
@@ -1393,6 +1419,17 @@ try {
   assert.equal(continuePost.designContext.sourceRunId, "cand-A-1", "explicit continuation changes the bound context");
   assert.equal(continuePost.designContext.stateDigest, workspaceFixture.projects.get("A").assets.get("cand-A-1").dto.designStateDigest);
   assert.equal(await page.locator(".chat-message--user").count(), 2, "starting model context retains the visible chat");
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  await page.reload();
+  await waitWorkspace();
+  await page.waitForFunction(() => !document.querySelector('.chat-composer input[type="checkbox"]')?.disabled);
+  await page.locator("#chat-input").fill("Continue the saved candidate after reopening");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  const reopenedPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1)[2];
+  assert.equal(reopenedPost.designContext.sourceRunId, "cand-A-1", "reopening retains the explicitly chosen candidate as the chat base");
+  assert.equal(reopenedPost.designContext.stateDigest, continuePost.designContext.stateDigest);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 
   // With no building project, machine tools remain available and report a

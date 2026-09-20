@@ -194,6 +194,7 @@ def _trace_contract(result: dict) -> dict:
         outside = max(0, timeline - elapsed) if _measured(elapsed) and _measured(timeline) else None
         observed_lanes = {span.get("lane") for span in spans if span.get("lane")}
         dropped = any((span.get("details") or {}).get("missing_observations") for span in spans)
+        incomplete_tools = any(span.get("phase") == "tool_call" and span.get("status") == "incomplete" for span in spans)
         tool_rounds = summary.get("tool_rounds") or 0
         trace["coverage"] = {
             "basis": critical.get("basis", "unavailable"),
@@ -204,7 +205,7 @@ def _trace_contract(result: dict) -> dict:
             "blocking_ratio": ratio,
             "ratio_basis": "root_interval" if ratio is not None else "unavailable",
             "outside_root_ms": outside,
-            "tool_events": "incomplete" if dropped else ("observed" if tool_rounds else "observed-none"),
+            "tool_events": "incomplete" if dropped or incomplete_tools else ("observed" if tool_rounds else "observed-none"),
             "lanes": [
                 {"lane": lane, "status": "observed" if lane in observed_lanes else "unobserved"}
                 for lane in lanes

@@ -478,6 +478,101 @@ class SketchDirectGeometryTestCase(unittest.TestCase):
         self.assertIn(name, found, found)
         return tuple([round(c, 5) for c in found[name][key]] for key in ("min", "max"))
 
+    def semantic(self, edit: dict, run: str | None = None) -> str:
+        response = self.client.post("/api/proposals", json={
+            "stateDigest": self.digest(run), **({"sourceRunId": run} if run else {}),
+            "semanticEdit": edit, "keep": ["entity:portico-base", "parameter:plinth"],
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        job = self.run_candidate(response.json()["proposalId"])
+        self.assertEqual(job["status"], "succeeded", job)
+        return job["candidateId"]
+
+    def record(self, run: str):
+        from archflow_studio_api.application.binding import bound_project
+        from archflow_studio_api.application.projection import project_state
+
+        return project_state(bound_project(self.client.app.state), run).record
+
+    def loft(self, *, bound: bool = False) -> dict:
+        left, right = ("@loft_left", "@loft_right") if bound else (0, 3)
+        return {"entity_id": "editable-loft", "schema": "Element@1", "parent_id": "portico", "fields": {
+            "component_id": "portico", "producer": "loft", "references": {"base": {"level": "level-ground"}},
+            "params": {"profiles": [[[left, h, 0], [right, h, 0], [right, h, 2], [left, h, 2]] for h in (0, 2)],
+                       "profile_size": 4, "loft_type": "straight", "cap_ends": True},
+        }}
+
+    def test_loft_move_rotate_scale_copy_reopen_and_rollback_keep_source_identity(self):
+        head = self.repository.read_head().version
+        first = self.semantic({"summary": "Create an editable loft.", "entities": [self.loft()]})
+        original = self.record(first)
+        moved = self.action("transform", first, elementId="editable-loft", kind="move", translation=[2, 3, 4],
+                            keep=["entity:portico-base", "parameter:plinth"])
+        self.assertEqual(self.bounds(moved, "obj-editable-loft"), ([2, 4, 3], [5, 6, 5]))
+        rotated = self.action("transform", moved, elementId="editable-loft", kind="rotate", axis=[0, 1, 0],
+                              angleDegrees=90, origin=[0, 0, 0])
+        scaled = self.action("transform", rotated, elementId="editable-loft", kind="scale", scale=[2, 1, 0.5], origin=[0, 0, 0])
+        self.assertEqual(self.bounds(scaled, "obj-editable-loft"), ([8, -2.5, 3], [12, -1, 5]))
+        copied = self.action("transform", scaled, elementId="editable-loft", kind="copy", translation=[10, 0, 0],
+                             copyElementId="loft-copy")
+        self.assertEqual(self.bounds(copied, "obj-loft-copy"), ([18, -2.5, 3], [22, -1, 5]))
+        saved = self.record(copied)
+        original_by_id = {e.entity_id: e for e in original.entities}
+        for entity in saved.entities:
+            if entity.entity_id in {"editable-loft", "loft-copy"}:
+                source = original_by_id["editable-loft"]
+                self.assertEqual((entity.schema, entity.parent_id, entity.basis_refs, entity.fields["producer"], entity.fields["references"]),
+                                 (source.schema, source.parent_id, source.basis_refs, "loft", source.fields["references"]))
+            else:
+                self.assertEqual(entity, original_by_id[entity.entity_id])
+        self.assertEqual(saved.parameters, original.parameters)
+        self.assertEqual(saved.relations, original.relations)
+        self.client.close()
+        self.client = TestClient(create_app(StudioSettings(cad_export="occt", project_dir=self.project)))
+        self.addCleanup(self.client.close)
+        reopened = self.action("transform", copied, elementId="loft-copy", kind="move", translation=[1, 0, 0])
+        self.assertEqual(self.bounds(reopened, "obj-loft-copy"), ([19, -2.5, 3], [23, -1, 5]))
+        rolled_back = self.action("transform", first, elementId="editable-loft", kind="move", translation=[-1, 0, 0])
+        self.assertNotIn("loft-copy", {e.entity_id for e in self.record(rolled_back).entities})
+        self.assertEqual(self.bounds(rolled_back, "obj-editable-loft"), ([-1, 0, 0], [2, 2, 2]))
+        self.assertEqual(self.record(first).digest, original.digest)
+        self.assertEqual(self.repository.read_head().version, head)
+
+    def test_bound_loft_moves_through_existing_controls_without_detaching_bindings_or_locks(self):
+        head = self.repository.read_head().version
+        first = self.semantic({"summary": "Create a loft with a retained position control.", "entities": [self.loft(bound=True)],
+                               "parameters": [{"key": "loft_x", "value": 0, "unit": "m"},
+                                              {"key": "loft_left", "value": 0, "unit": "m", "expr": "loft_x", "inputs": ["loft_x"]},
+                                              {"key": "loft_right", "value": 3, "unit": "m", "expr": "loft_x + 3", "inputs": ["loft_x"]}]})
+        original = self.record(first)
+        direct = self.client.post("/api/proposals/transform", json={
+            "sourceRunId": first, "stateDigest": self.digest(first), "elementId": "editable-loft",
+            "kind": "move", "translation": [5, 0, 0],
+        })
+        self.assertEqual(direct.status_code, 422, direct.text)
+        self.assertEqual(direct.json()["code"], "DIRECT_EDIT_UNSUPPORTED")
+        self.assertIn("parameter-bound", direct.json()["detail"])
+        moved = self.semantic({"summary": "Move the loft five metres through its existing position control.",
+                               "parameters": [{"key": "loft_x", "value": 5}]}, first)
+        result = self.record(moved)
+        self.assertEqual(result.entities, original.entities)
+        self.assertEqual(result.relations, original.relations)
+        self.assertEqual(result.dependency_edges(), original.dependency_edges())
+        self.assertEqual(result.parameter("plinth"), original.parameter("plinth"))
+        self.assertEqual(result.parameter("loft_right").expr, "loft_x + 3")
+        self.assertEqual(self.bounds(moved, "obj-editable-loft"), ([5, 0, 0], [8, 2, 2]))
+        # The requested keep is enforceable even when the change is indirect.
+        kept = self.client.post("/api/proposals", json={
+            "sourceRunId": moved, "stateDigest": self.digest(moved), "keep": ["entity:editable-loft"],
+            "semanticEdit": {"summary": "Attempt to move the kept loft.", "parameters": [{"key": "loft_x", "value": 6}]},
+        })
+        self.assertEqual(kept.status_code, 201, kept.text)
+        self.assertEqual(kept.json()["status"], "conflict")
+        blocked = self.client.post(f"/api/proposals/{kept.json()['proposalId']}/candidate")
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        self.assertEqual(self.record(first).digest, original.digest)
+        self.assertEqual(self.repository.read_head().version, head)
+
     def test_model_curves_save_reopen_resolve_and_delete_on_the_same_source(self):
         head = self.repository.read_head().version
         plane = {"origin": [10, 4, 20], "xAxis": [1, 0, 0], "yAxis": [0, 1, 0], "normal": [0, 0, 1]}

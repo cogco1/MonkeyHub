@@ -101,6 +101,36 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(actual["usage"]["tokens"]["input_tokens"], 20)
         self.assertIsNone(actual["usage"]["tokens"]["output_tokens"])
 
+    def test_completed_root_does_not_grow_unfinished_child_or_invent_its_end(self):
+        rows = [event("root", "hub_turn", 0, 1000),
+                event("tool", "tool_call", 200, parent_event_id="root"),
+                event("request", "api_request", 300, source="studio", parent_event_id="tool"),
+                event("finished", "geometry_build", 400, 600, source="studio", parent_event_id="request")]
+        first = trace(rows)["traces"][0]
+        later = build_traces([row.to_dict() for row in rows], now=START + timedelta(days=1))["traces"][0]
+        self.assertEqual(first["summary"], later["summary"])
+        self.assertEqual(first["summary"]["timeline_ms"], 1000)
+        self.assertEqual(first["summary"]["blocking_ms"], 200)
+        self.assertEqual(first["summary"]["unattributed_ms"], 800)
+        for span in first["spans"]:
+            if span["event_id"] in {"tool", "request"}:
+                self.assertEqual(span["status"], "incomplete")
+                self.assertIsNone(span["duration_ms"])
+                self.assertIsNone(span["ended_at"])
+        self.assertTrue(any("未观测到结束" in warning for warning in first["warnings"]))
+        self.assertEqual(rows[1].status, "running", "the retained observation was not rewritten")
+
+    def test_late_child_completion_replaces_unknown_with_its_observed_interval(self):
+        root = event("root", "hub_turn", 0, 1000)
+        child = event("background", "model_projection", 800, source="studio", parent_event_id="root")
+        self.assertEqual(trace([root, child])["traces"][0]["spans"][1]["status"], "incomplete")
+        finished = replace(child, status="succeeded", ended_at=stamp(1500), duration_ms=700)
+        actual = trace([root, child, finished])["traces"][0]
+        self.assertEqual(actual["summary"]["elapsed_ms"], 1000)
+        self.assertEqual(actual["summary"]["timeline_ms"], 1500)
+        self.assertEqual(actual["spans"][1]["status"], "succeeded")
+        self.assertEqual(actual["spans"][1]["duration_ms"], 700)
+
     def test_host_activity_and_usage_metadata_do_not_establish_model_request_count(self):
         rows = [event("root", "hub_turn", 0, 4000),
                 event("first", "provider_round", 0, 1000),
@@ -159,6 +189,63 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(actual["summary"]["first_visible_ms"], 900)
         actual = trace(rows + [visible, event("paint-marker", "first_visible", 700, 700)])["traces"][0]
         self.assertEqual(actual["summary"]["first_visible_ms"], 700)
+
+    def test_first_candidate_is_successful_object_readback_not_job_or_compare_success(self):
+        rows = [event("root", "hub_turn", 0, 2000),
+                event("job", "candidate", 100, 400, source="studio", run_id="candidate-1", status="succeeded"),
+                event("partial", "candidate_readback", 400, 500, source="studio", run_id="candidate-1",
+                      status="succeeded", details={"success": False}),
+                event("read", "candidate_readback", 600, 900, source="studio", run_id="candidate-1",
+                      status="succeeded", details={"success": True}),
+                event("compare", "api_request", 600, 1000, source="studio", status="failed"),
+                event("read-again", "candidate_readback", 1200, 1400, source="studio", run_id="candidate-1",
+                      status="succeeded", details={"success": True})]
+        actual = trace(rows)["traces"][0]
+        self.assertEqual(actual["summary"]["first_candidate_ms"], 900)
+        self.assertIsNone(actual["summary"]["verified_ms"])
+        self.assertIsNone(actual["summary"]["first_visible_ms"])
+        self.assertIsNone(trace(rows[:3])["traces"][0]["summary"]["first_candidate_ms"])
+
+    def test_first_candidate_stays_unknown_without_complete_bound_readback(self):
+        root = event("root", "hub_turn", 0, 2000)
+        generated = event("generated", "candidate", 100, 400, source="studio", run_id="candidate-1", status="succeeded")
+        read = event("read", "candidate_readback", 500, 900, source="studio", run_id="candidate-1",
+                     status="succeeded", details={"success": True})
+        for fields in ({"status": "failed"}, {"details": {"success": False}}, {"details": {}},
+                       {"ended_at": None, "duration_ms": None}, {"ended_at": None},
+                       {"run_id": None}, {"source": "hub"}, {"phase": "candidate"}):
+            with self.subTest(fields=fields):
+                actual = trace([root, generated, replace(read, **fields)])["traces"][0]
+                self.assertIsNone(actual["summary"]["first_candidate_ms"])
+        self.assertIsNone(trace([read])["traces"][0]["summary"]["first_candidate_ms"])
+
+    def test_first_candidate_ignores_old_input_readback_before_new_result(self):
+        rows = [event("root", "hub_turn", 0, 10000),
+                event("old-read", "candidate_readback", 100, 250, source="studio", run_id="old-input",
+                      status="succeeded", details={"success": True}),
+                event("generated", "candidate", 1000, 7000, source="studio", run_id="new-result", status="succeeded"),
+                event("new-read", "candidate_readback", 7000, 7500, source="studio", run_id="new-result",
+                      status="succeeded", details={"success": True}),
+                event("compare", "api_request", 7000, 8000, source="studio", status="failed")]
+        self.assertEqual(trace(rows)["traces"][0]["summary"]["first_candidate_ms"], 7500)
+        self.assertIsNone(trace(rows[:2])["traces"][0]["summary"]["first_candidate_ms"])
+
+    def test_first_candidate_requires_complete_successful_same_turn_generation(self):
+        root = event("root", "hub_turn", 0, 10000)
+        generated = event("generated", "candidate", 1000, 7000, source="studio", run_id="new-result", status="succeeded")
+        read = event("read", "candidate_readback", 7000, 7500, source="studio", run_id="new-result",
+                     status="succeeded", details={"success": True})
+        for fields in ({"run_id": "different-result"}, {"run_id": None}, {"source": "hub"},
+                       {"phase": "candidate_queue"}, {"status": "failed"}, {"status": "running"},
+                       {"ended_at": None, "duration_ms": None}, {"ended_at": None},
+                       {"started_at": stamp(-100)},
+                       {"started_at": stamp(-100), "ended_at": stamp(-50)},
+                       {"ended_at": stamp(8000), "duration_ms": 7000}):
+            with self.subTest(fields=fields):
+                actual = trace([root, replace(generated, **fields), read])["traces"][0]
+                self.assertIsNone(actual["summary"]["first_candidate_ms"])
+        self.assertIsNone(trace([root, read])["traces"][0]["summary"]["first_candidate_ms"])
+        self.assertIsNone(trace([root, generated])["traces"][0]["summary"]["first_candidate_ms"])
 
     def test_native_time_binding_requires_unique_exact_session_and_never_expands_window(self):
         first = event("first", "hub_turn", 0, 1000, turn_id="hub-1")

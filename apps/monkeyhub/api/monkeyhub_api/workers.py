@@ -17,6 +17,7 @@ from .models import HubError, HubFailure
 
 
 WorkerState = Literal["starting", "ready", "busy", "stopping", "stopped", "crashed", "recovering", "unavailable"]
+_PROJECT_BINDING_TIMEOUT_S = 5
 
 
 def project_key(project_dir: str | None) -> str:
@@ -210,7 +211,11 @@ class WorkerSupervisor:
                         and all(health.get(key) == value for key, value in child.launch.health_fields.items())
                     )
                     if matches and child.launch.project_dir is not None:
-                        with opener.open(f"http://127.0.0.1:{child.port}/api/project", timeout=1) as response:
+                        # Unlike the small health response, the binding route
+                        # reads retained project records. A valid response can
+                        # take over one second without a dead or foreign worker.
+                        # Still require the exact project on every probe.
+                        with opener.open(f"http://127.0.0.1:{child.port}/api/project", timeout=_PROJECT_BINDING_TIMEOUT_S) as response:
                             binding = json.loads(response.read(65536))
                         matches = (
                             isinstance(binding, dict)

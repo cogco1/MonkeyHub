@@ -97,6 +97,15 @@ class TurnTraceContractTests(unittest.TestCase):
         self.assertEqual(trace["coverage"]["tool_events"], "incomplete")
         self.assertEqual(trace["coverage"]["blocking_ratio"], 0.0)
 
+    def test_missing_tool_end_is_incomplete_even_without_a_drop_notice(self):
+        tool = _row("tool", "tool_call", 20, 30)
+        tool.update(status="running", ended_at=None, duration_ms=None)
+        trace = _trace([_root(), tool])
+        self.assertEqual(trace["coverage"]["tool_events"], "incomplete")
+        self.assertEqual(trace["coverage"]["observed_blocking_ms"], 0)
+        self.assertEqual(trace["coverage"]["outside_root_ms"], 0)
+        self.assertIsNone(next(span for span in trace["spans"] if span["event_id"] == "tool")["duration_ms"])
+
 
 class DroppedObservationTests(unittest.TestCase):
     """UsageLog stamps the sticky notice on the next stored event, so a drop

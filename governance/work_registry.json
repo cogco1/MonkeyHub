@@ -88,7 +88,7 @@
       "id": "GH-183",
       "stream": "planning",
       "status": "active",
-      "goal": "Deliver the bounded headless result display and Board compare-and-swap refresh follow-up. Broader architectural observation and correction acceptance remains on issue #183.",
+      "goal": "Complete the assigned candidate context, loft revision and real provider spatial-observation follow-up for issue #183, with issue #32 first-candidate and missing-span diagnostics. Preserve exact editing sources, retained conditions, canonical authority and truthful timing limits; broader issue acceptance remains open.",
       "depends_on": [],
       "write_scope": [
         "apps/monkeyhub/api/monkeyhub_api/runtime.py",
@@ -102,7 +102,31 @@
         "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
         "governance/module_registry.json",
-        "docs/SYSTEM_MAP.md"
+        "docs/SYSTEM_MAP.md",
+        "apps/archflow-studio/api/tests/test_monitoring.py",
+        "apps/archflow-studio/api/tests/test_sketch.py",
+        "apps/monkeyhub/api/monkeyhub_api/workers.py",
+        "apps/monkeyhub/api/tests/test_workers.py",
+        "apps/monkeyhub/web/src/MonitorPage.css",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/monitorData.ts",
+        "apps/monkeyhub/web/test/monitorData.test.ts",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+        "docs/CONTEXT_COMPILATION.md",
+        "monkeyarch/capabilities/element_producers.py",
+        "monkeymonitor/README.md",
+        "monkeymonitor/server.py",
+        "monkeymonitor/store.py",
+        "monkeymonitor/trace.py",
+        "tests/monkeymonitor/run_design_loop.py",
+        "tests/monkeymonitor/run_turn_benchmark.py",
+        "tests/monkeymonitor/test_core.py",
+        "tests/monkeymonitor/test_design_loop.py",
+        "tests/monkeymonitor/test_trace.py",
+        "tests/monkeymonitor/test_turntrace_contract.py",
+        "tests/test_element_producers.py",
+        "tests/test_occt_execution.py"
       ],
       "lanes": [
         {
@@ -134,6 +158,49 @@
           ],
           "depends_on": [],
           "handoff": "Review only headless result display and Board CAS refresh, related to issues #183 and #32. Public source is ported from verified bf0d3c23 and 442321ef; those installation commits remain traceable. The base contains the completed GH-185 integration and lock controls. Preserve both this lane's headless refresh assertions and the parallel GH-183 explicit Continue/Monitor assertions when integrating their independent PRs; keep only one named Top selector replacement. Private project data and the separate component removal repair are excluded. Coordinator confirmed the clean public eda3ec97 head and released this source-edit lane to GH-90; PR #201 remains unmerged and no project acceptance is implied."
+        },
+        {
+          "status": "review",
+          "depends_on": [],
+          "branch": "codex/183-32-candidate-context",
+          "worktree": ".",
+          "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+          "contributor": "Codex",
+          "reviewer": null,
+          "modules": [
+            "hub.shell",
+            "capabilities.element_producers",
+            "monkeymonitor"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/tests/test_monitoring.py",
+            "apps/archflow-studio/api/tests/test_sketch.py",
+            "apps/monkeyhub/api/monkeyhub_api/workers.py",
+            "apps/monkeyhub/api/tests/test_workers.py",
+            "apps/monkeyhub/web/src/MonitorPage.css",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/monitorData.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/test/monitorData.test.ts",
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs",
+            "docs/CONTEXT_COMPILATION.md",
+            "monkeyarch/capabilities/element_producers.py",
+            "monkeymonitor/README.md",
+            "monkeymonitor/server.py",
+            "monkeymonitor/store.py",
+            "monkeymonitor/trace.py",
+            "tests/monkeymonitor/run_design_loop.py",
+            "tests/monkeymonitor/run_turn_benchmark.py",
+            "tests/monkeymonitor/test_core.py",
+            "tests/monkeymonitor/test_design_loop.py",
+            "tests/monkeymonitor/test_trace.py",
+            "tests/monkeymonitor/test_turntrace_contract.py",
+            "tests/test_element_producers.py",
+            "tests/test_occt_execution.py"
+          ],
+          "handoff": "Independent PR for #183 and #32; current desktop and mainline merge remain with the coordinator. Synthetic provider experiments retain failed runs in an explicit external workspace. No claim of general design quality or latency improvement.",
+          "id": "candidate-context"
         }
       ]
     },
@@ -206,8 +273,6 @@
             "studio.intent"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/src/MonitorPage.tsx",
-            "apps/monkeyhub/web/src/MonitorPage.css",
             "apps/monkeyhub/web/src/main.tsx",
             "apps/archflow-studio/api/archflow_studio_api/application/intent_requests.py",
             "apps/archflow-studio/api/tests/test_intent_request_schemas.py"
@@ -301,7 +366,9 @@
       "base_ref": "32fc10e1024a42ff9e8fb3a384686b7abc3a9016",
       "contributor": "Codex",
       "reviewer": "Repository owner",
-      "modules": ["hub.shell"],
+      "modules": [
+        "hub.shell"
+      ],
       "write_scope": [
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",

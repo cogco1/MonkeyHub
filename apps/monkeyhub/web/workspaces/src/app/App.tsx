@@ -847,6 +847,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   /** A semantic target lights only the exact object names in this run's catalog. */
   const selectSemanticTarget = useCallback((componentId: string, elementId: string | null) => {
+    pickRequestRef.current += 1;
     setSelection({ componentId, elementId });
     setPicked(null);
     const objectNames =
