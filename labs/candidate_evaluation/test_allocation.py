@@ -65,7 +65,13 @@ class AllocationTests(unittest.TestCase):
         candidates = (estimate("c"), estimate("a", cost=10), estimate("b"))
         chosen = [self.allocate(candidates, policy="round_robin", step=step,
                                 budget_unit="cost", remaining_budget=3).candidate_id for step in range(3)]
-        self.assertEqual(chosen, ["b", "b", "c"])
+        self.assertEqual(chosen, ["b", "c", "b"])
+
+    def test_round_robin_excludes_known_deterministic_without_duplicate_turns(self):
+        candidates = (estimate("a", variance=0, count=1, deterministic=True),
+                      estimate("b"), estimate("c"), estimate("d"))
+        chosen = [self.allocate(candidates, policy="round_robin", step=step).candidate_id for step in range(6)]
+        self.assertEqual(chosen, ["b", "c", "d", "b", "c", "d"])
 
     def test_variance_baseline_measures_uncertainty_of_mean(self):
         decision = self.allocate((estimate("a", variance=9, count=10), estimate("b", variance=5, count=5)),

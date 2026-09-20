@@ -18,7 +18,7 @@ from typing import Protocol
 from .evaluator import SampleStatistics
 
 
-VERSION = "sequential-ocba-v1"
+VERSION = "sequential-ocba-v2"
 
 
 def _finite(value: object, name: str, *, minimum: float | None = None) -> float:
@@ -127,7 +127,9 @@ class SequentialAllocator:
     """Choose one affordable next attempt; no randomness is shared with evaluators.
 
     Stable lexical candidate ordering supplies deterministic tie breaks. Equal
-    allocation balances successful counts; round robin rotates by attempted step.
+    allocation balances successful counts; round robin rotates by attempted step
+    over currently eligible, affordable candidates. Its phase may shift when that
+    set changes; fixed excluded candidates never receive or duplicate a turn.
     Repeated evaluator failures therefore consume budget even without increasing
     the successful count. A deterministic value is sampled at most once.
     """
@@ -153,10 +155,8 @@ class SequentialAllocator:
             chosen = min(affordable, key=lambda item: (item.statistics.count, item.candidate_id))
             return AllocationDecision(chosen.candidate_id, "least successful sample count", {"unit_cost": _cost(request, chosen)})
         if request.policy == "round_robin":
-            # Rotate over the fixed valid set, then skip known or unaffordable entries.
-            cycle = candidates[request.step % len(candidates):] + candidates[:request.step % len(candidates)]
-            chosen = next(item for item in cycle if item in affordable)
-            return AllocationDecision(chosen.candidate_id, "stable round robin over eligible affordable candidates",
+            chosen = affordable[request.step % len(affordable)]
+            return AllocationDecision(chosen.candidate_id, "round robin over current eligible affordable candidates; phase may shift when eligibility changes",
                                       {"unit_cost": _cost(request, chosen)})
         if request.policy == "variance":
             chosen = max(affordable, key=lambda item: (item.statistics.variance / item.statistics.count,

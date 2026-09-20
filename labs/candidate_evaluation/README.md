@@ -265,6 +265,7 @@ daylight/structure/composition evaluator.
 ```sh
 python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling tests.test_massing_metrics
 python -m labs.candidate_evaluation.allocation_benchmark --output <new-external-directory> --repetitions 200 --budgets 100 300 900 --workers 4
+python -m labs.candidate_evaluation.plot_benchmark <same-external-directory>
 ```
 
 The output directory must be explicit and existing results are not overwritten.
@@ -281,6 +282,8 @@ share that stream for a paired comparison; they are not extra independent trials
 PCS uses independent outer repetitions and Wilson 95% intervals. Mean simple
 regret is conditional on a selection; unselected trials are counted explicitly
 and contribute a PCS failure. Warmup-incomplete trials are also reported.
+The optional plot command needs matplotlib and writes PCS and one allocation/estimate
+trajectory as PNG/SVG in the same explicit directory.
 Fixed-budget exhaustion is the stopping policy. A target-PCS budget may be read
 from aggregate intervals; no per-trial confidence stopping certificate is claimed.
 

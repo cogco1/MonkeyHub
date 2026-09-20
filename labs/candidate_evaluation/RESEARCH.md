@@ -153,7 +153,7 @@ Failure attempts remain in cost and attempt totals but do not invent numeric
 observations. If failure depends on the latent value, successful-only statistics
 estimate a conditional mean; they need not estimate the intended unconditional
 objective. Synthetic failure fixtures therefore use a separately declared
-failure stream independent of observation noise. A same-seed replay verifies
+Bernoulli draw independent of observation noise within each candidate stream. A same-seed replay verifies
 reproducibility and is not an independent sample or Monte Carlo trial.
 
 ## Meaning of the benchmark
