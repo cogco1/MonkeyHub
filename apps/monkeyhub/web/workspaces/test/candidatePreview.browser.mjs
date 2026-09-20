@@ -284,6 +284,27 @@ try {
           if (projectionOnly) value.sourceStageRef = null;
           return await json(value);
         }
+        if (name === "/api/state/frame") {
+          // While a drawing is mounted the record's levels are read for the current
+          // local draft source, which is not necessarily the open document's own model
+          // source: exactly one such run is named. This record holds one floor
+          // element and declares no level or axis rows, so the frame is empty.
+          assert.deepEqual([...url.searchParams.keys()].filter((key) => key !== "run"), [],
+            `The frame read carries only its source run: ${url.search}`);
+          assert.ok(url.searchParams.getAll("run").length <= 1, `The frame read names one source run: ${url.search}`);
+          const requested = url.searchParams.get("run");
+          const ownedHere = (artifact) => artifact.projectId === projectId && artifact.runId === requested;
+          if (projectionOnly) {
+            assert.ok(requested === null || requested === "studio-projection",
+              `A project with no retained run must not name one in its frame read: ${requested}`);
+          } else {
+            assert.ok(requested !== null, "The frame read must name the current local draft source run");
+            assert.ok(allArtifacts.some(ownedHere) ||
+              [...candidates.values()].some((candidate) => candidate.artifacts.some(ownedHere)),
+              `The frame read must name a source this project retains: ${requested}`);
+          }
+          return await json({ levels: [], axes: [], honesty: [] });
+        }
         if (name === "/api/design-history") {
           const branchId = url.searchParams.get("branchId") ?? "main", gate = historyGate;
           if (gate?.branchId === branchId) {

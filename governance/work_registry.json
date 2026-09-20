@@ -3,27 +3,6 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
-      "id": "GH-137",
-      "stream": "interaction",
-      "status": "active",
-      "goal": "Repair reproduced viewport, candidate preview and exact-view-source browser harness integration failures while preserving existing behavior and authority assertions.",
-      "depends_on": [],
-      "branch": "codex/integrate-reviewed-prs",
-      "worktree": ".",
-      "base_ref": "5fb60fd0890d41da4aa6e287906209a2d6ebaff1",
-      "contributor": "Claude",
-      "reviewer": "Codex coordinator",
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/web/workspaces/test/viewportSelection.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/intentViewSource.browser.mjs"
-      ],
-      "handoff": "Combined #182/#210 viewport now consumes the existing preferences context; the dedicated harness lacks its provider. Combined candidate preview triggers an exact frame read absent from its mock. Reproduce and repair the harnesses without loosening assertions or production boundaries; wider issues remain open. The exact-view-source browser harness independently misses the same frame endpoint; its single-file repair is delegated separately with no overlapping source writes."
-    },
-    {
       "id": "P115",
       "stream": "planning",
       "status": "active",

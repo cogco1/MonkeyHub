@@ -84,7 +84,7 @@ let drawingBytes, referenceBytes, pixelAudit;
 let board = { projectId, title: "Intent source board", elements: [], seenDocuments: [], revisionSha256: null };
 const documentToken = "fixture-document-continuation";
 const comments = [];
-const errors = [], requests = [], intents = [], selections = [], escapedApiRequests = [];
+const errors = [], requests = [], intents = [], selections = [], escapedApiRequests = [], frameReads = [];
 const passed = [];
 let observationTransforms = 0, heldIntent = null, heldDocument = null, heldPick = null, phase = "setup", vite, browser, page;
 const http = createHttpServer();
@@ -244,6 +244,19 @@ try {
           const requestedRun = url.searchParams.get("run");
           assert.ok(!requestedRun || [runId, sourceC.runId].includes(requestedRun));
           return await json(requestedRun === sourceC.runId ? stateC : state);
+        }
+        if (url.pathname === "/api/state/frame") {
+          // The mounted document panel calibrates tracing against the frame of
+          // the model actually displayed: draftSource names the viewed
+          // projection's run, so cross-run C is read while B stays the editing
+          // base. Either way the run must be one this fixture retains, exactly
+          // as GET /api/state demands. This fixture positions nothing — one
+          // free floor, no Level@1 and no axis — so it declares no frame rows.
+          const requestedRun = url.searchParams.get("run");
+          assert.ok(requestedRun && [runId, sourceC.runId].includes(requestedRun),
+            `The frame must name a run this fixture retains: ${requestedRun}`);
+          frameReads.push(requestedRun);
+          return await json({ levels: [], axes: [], honesty: [] });
         }
         if (url.pathname === "/api/artifacts") return await json(artifacts);
         const model = /^\/api\/artifacts\/([^/]+)\/bytes$/.exec(url.pathname);
@@ -526,6 +539,8 @@ try {
     const beforeQuestion = await viewState();
     assert.equal(beforeQuestion.match, "different");
     assert.ok(beforeQuestion.editing.includes(optionB.label));
+    await until(() => frameReads.at(-1), (run) => run === sourceC.runId,
+      "The open document must recalibrate tracing against the displayed cross-run C frame");
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await page.evaluate(() => { window.__intentViewCalls = []; });
     delayed.release.resolve();
@@ -617,8 +632,12 @@ try {
     assert.equal(modelRequests(), requestsBefore, "Local history changes never GET or PUT model annotations");
   });
   assert.deepEqual(errors, []); assert.deepEqual(escapedApiRequests, []);
+  assert.ok(frameReads.length > 0, "The mounted document panel must read the frame it calibrates tracing against");
+  assert.deepEqual([...new Set(frameReads)].sort(), [runId, sourceC.runId].sort(),
+    "Tracing calibration follows the displayed model's run: the shared A/B run, and C's own while C is viewed");
   console.log(JSON.stringify({ passed: passed.length, projectId, sources: { A: sourceA, B: sourceB, C: sourceC },
-    interceptedIntents: intents.length, mockSelections: selections.length, pixelAudit, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
+    interceptedIntents: intents.length, mockSelections: selections.length, frameReads: frameReads.length,
+    pixelAudit, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
 } catch (error) {
   console.error(`FAIL ${phase}: ${error.stack ?? error}`); if (errors.length) console.error(JSON.stringify(errors, null, 2));
   if (page && !page.isClosed()) console.error(await page.locator("body").innerText().catch(() => "Cannot inspect failed page"));

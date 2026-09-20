@@ -36,6 +36,7 @@ import React, { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PerspectiveCamera, Vector3 } from "three";
 import { ThreeDmViewport } from "/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx";
+import { UserPreferencesProvider } from "/test/TestProviders.tsx";
 import { createInteractionSession } from "/src/workspaces/monkeyarch/interactionSession.ts";
 window.picks = []; window.resolved = 0; window.status = "idle";
 function Harness() {
@@ -54,7 +55,7 @@ function Harness() {
       onInspection: () => {}, onSource: () => {}, onRequestFile: () => {},
       onStatus: (value) => { window.status = value; }, onPick: pick }));
 }
-createRoot(document.getElementById("root")).render(React.createElement(Harness));
+createRoot(document.getElementById("root")).render(React.createElement(UserPreferencesProvider, null, React.createElement(Harness)));
 window.load = async (preserveCamera = false) => {
   const response = await fetch("/fixture.3dm");
   await window.viewport.current.openFile(new File([await response.arrayBuffer()], "fixture.3dm"), "FIXTURE", { preserveCamera });
