@@ -3,6 +3,43 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-46",
+      "stream": "interaction",
+      "status": "ready",
+      "goal": "Correct image traces in the existing Board page editor, calibrate scale and direction, and generate a source-bound editable 3D candidate through the existing sketch path.",
+      "depends_on": [],
+      "branch": "codex/46-editable-tracing",
+      "worktree": "c4e5/ARCHFLOW_V4",
+      "base_ref": "3a92b41460b52c04963278a3300a29c34744c43e",
+      "contributor": "Codex",
+      "reviewer": null,
+      "modules": ["studio.intent", "studio.candidate", "hub.shell"],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/workspaces/src/api/client.ts",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentCanvas.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingContext.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DocumentTracingPanel.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/documentInk.ts",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/useDocumentAnnotations.ts",
+        "apps/monkeyhub/web/workspaces/test/documentTracing.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/documentAnnotations.test.ts",
+        "apps/monkeyhub/web/workspaces/test/documentInk.test.ts"
+      ],
+      "handoff": "Ready for independent PR review: corrected PNG paths, exact saved calibration, real OCCT candidate continuation, stable object updates and failure preservation pass against main 3a92b414 after a conflict-only merge. Mainline parameter locks and elevation logic are retained; Stage/viewport paths match main. DocumentCanvas, client and generated API feature seams remain handed to GH-73 in its independent branch. Automatic image interpretation and broader drawing semantics remain open in Issue #46."
+    },
+    {
       "id": "GH-185",
       "stream": "planning",
       "status": "active",
@@ -99,11 +136,8 @@
           ],
           "write_scope": [
             "archflow/state/state_record.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/intent.py",
             "apps/archflow-studio/api/archflow_studio_api/application/proposals.py",
             "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/proposals.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/proposal.py",
             "apps/archflow-studio/api/tests/test_proposals.py",
             "apps/archflow-studio/api/tests/test_collaboration_auth.py",
             "apps/archflow-studio/api/tests/test_intents.py",
@@ -111,7 +145,7 @@
             "tests/test_state_record.py"
           ],
           "depends_on": [],
-          "handoff": "Explicit parameter lock/unlock proposals reuse the sole StateRecord operator and candidate/P036 writer; preserve locked bindings, cold readback and exact bases. Root owns Hub UI and generated clients. Parameter locks do not freeze whole geometry or accept Stage."
+          "handoff": "Explicit parameter lock/unlock proposals reuse the sole StateRecord operator and candidate/P036 writer; preserve locked bindings, cold readback and exact bases. Root owns Hub UI and generated clients. Parameter locks do not freeze whole geometry or accept Stage. Source writing stopped after #194 landed; the coordinator verified clean completed checkouts and released the shared App/client/generated and intent/proposal integration seams to current lanes. Remaining acceptance is retained here."
         },
         {
           "id": "lock-controls",
@@ -126,16 +160,13 @@
             "hub.shell"
           ],
           "write_scope": [
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/api/client.ts",
-            "apps/monkeyhub/web/workspaces/src/api/generated/",
             "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.tsx",
             "apps/monkeyhub/web/workspaces/src/features/stage/ParameterLocksPanel.css",
             "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
           ],
           "depends_on": [],
-          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics."
+          "handoff": "Expose the existing exact project parameter projection and explicit lock/unlock proposal in the modeling controls; backend parameter-locks lane owns kernel/API. Preserve dirty drafts, view/edit identities and candidate versus accepted Stage semantics. Source writing stopped after #194 landed; the coordinator verified clean completed checkouts and released the shared App/client/generated and intent/proposal integration seams to current lanes. Remaining acceptance is retained here."
         },
         {
           "id": "drawing-pages",

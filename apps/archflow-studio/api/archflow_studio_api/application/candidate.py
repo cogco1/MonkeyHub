@@ -118,6 +118,11 @@ def execute_candidate(
     from .proposals import operator_of
 
     operator = operator_of(proposal, base_record)
+    from .gestures import require_document_trace
+
+    for entity in operator.entities:
+        if entity.fields.get("sourceDocumentTrace") is not None:
+            require_document_trace(binding, entity.fields["sourceDocumentTrace"])
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = ()
     if proposal.compilation_receipt is not None:
         # A chat turn is work in progress; a run is shared (ADR-007). The receipt of

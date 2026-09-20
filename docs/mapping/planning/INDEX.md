@@ -4,6 +4,7 @@
 
 | ID | Status | Goal | Card |
 | --- | --- | --- | --- |
+| GH-46 | ready | Correct image traces in the existing Board page editor, calibrate scale and direction, and generate a source-bound editable 3D candidate through the existing sketch path. | [GH-46](https://github.com/cogco1/MonkeyHub/issues/46) |
 | GH-185 | active | Verify a real Hub provider massing-to-wall design loop, same-source visual revision, and cold-start continuation from exact retained project conditions. Extend existing intent/history owners only for reproduced gaps; issue #183 retains broader design quality acceptance. | [GH-185](https://github.com/cogco1/MonkeyHub/issues/185) |
 | GH-137 | blocked | V1 standard views and N1 signed-normal Push/Pull are delivered through merged PRs #147 and #155. Remaining S1 scene-wide snapping, later view slices and broader producer coverage are deferred; do not reimplement delivered N1. | [GH-137](https://github.com/cogco1/MonkeyHub/issues/137) |
 | GH-73 | active | Retain exact precedent-page trace evidence, deterministic composition reasoning and falsifiable counterfactuals without creating a second design truth or writing canonical design state. | [GH-73](https://github.com/cogco1/MonkeyHub/issues/73) |

@@ -111,6 +111,7 @@ import type {
   ProposalDto,
   ModelingInitializeDto,
   SketchBatchRequestDto,
+  DocumentTracingRequestDto,
   SketchPrismRequestDto,
   TransformElementRequestDto,
   PushPullRequestDto,
@@ -444,6 +445,9 @@ export const createStudioClient = (connection: ServerConnection) => ({
 
   /** Several finished drawing actions as one proposal; later items may reference earlier ones. */
   sketchBatch(body: SketchBatchRequestDto): Promise<ProposalDto> {
+    return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ client: connection.client, body }));
+  },
+  traceDocument(body: DocumentTracingRequestDto): Promise<ProposalDto> {
     return call("POST /api/proposals/sketch", createSketchProposalApiProposalsSketchPost({ client: connection.client, body }));
   },
 
