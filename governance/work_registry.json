@@ -462,6 +462,26 @@
       ],
       "lanes": [
         {
+          "id": "monitor-panel-navigation",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/186",
+          "status": "review",
+          "branch": "codex/monitor-panel-navigation",
+          "worktree": "workspace/worktrees/codex-monitor-panel-navigation",
+          "base_ref": "550ee7357bc48497f255de21123e2e4d6e0c6931",
+          "contributor": "Codex",
+          "reviewer": "Repository owner",
+          "modules": ["hub.shell"],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.css",
+            "apps/monkeyhub/web/src/main.tsx",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+          ],
+          "depends_on": [],
+          "handoff": "Monitor renders in the Hub panel without top-level redirects. Sequential journal views and stable active-only polling prevent self-contention and retry storms. Real Hub browser regression covers locked and failed diagnostics, navigation, drafts, legacy links and no-project restoration; build, Monitor data tests and architecture checks pass. Based on PR #184."
+        },
+        {
           "id": "design-observation-prompt",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/183",
           "status": "review",
