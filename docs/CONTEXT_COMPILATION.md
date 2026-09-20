@@ -327,9 +327,11 @@ replacement rule already present in the compiler prompt. This repeated failure
 was sent to the existing schema owner for a minimal wording correction; it is
 not evidence against either `contextMode`.
 
-Assembly traces contain a diagnostic missing-observations notice; the project
-arm retains an unfinished tool span despite the completed turn. That interval
-cannot be interpreted as completed tool latency. The continue arm's live report
+All four pilot traces contain a diagnostic missing-observations notice and an
+unfinished Studio mutation span; the assembly project arm additionally retains
+an unfinished tool span despite the completed turn. These intervals cannot be
+interpreted as completed service/tool latency, and counts above are observed
+events rather than a guarantee that every diagnostic was captured. The continue arm's live report
 export failed, while its model completed successfully during normal shutdown.
 Its trace was reconstructed from the original Hub journal and the exact native
 session; the original retained candidate was read independently and passed.
@@ -353,3 +355,9 @@ reports without a model or service:
 ```powershell
 python tests/monkeymonitor/run_turn_benchmark.py --summarize --scenario assembly-edit --output D:/MONKEYHUB_DEV/temp/context-bench-32/assembly-pair-1
 ```
+
+The primer is only one prior turn: 28.806/30.179 s for cornice continue/project,
+and 29.100/29.584 s for assembly continue/project. Visible prior histories range
+from 1,568 to 2,113 characters; they do not represent a long design conversation
+or the complete native system/tool context. The per-arm preparation JSON holds
+the corresponding input/cache/output counts, separately from the table.
