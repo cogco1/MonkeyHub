@@ -1,11 +1,13 @@
-# Candidate evaluation experiment — GH-123 first slice
+# Candidate evaluation and allocation experiments — GH-123 / GH-124
 
 This callable research slice measures declared massing candidates, reports failed
 and unavailable checks, and compares complete deterministic objective vectors. It
-implements part of [#123](https://github.com/cogco1/MonkeyHub/issues/123) within
+implements the deterministic/statistical slice of [#123](https://github.com/cogco1/MonkeyHub/issues/123) within
 the boundaries of [#119](https://github.com/cogco1/MonkeyHub/issues/119) and
 [#176](https://github.com/cogco1/MonkeyHub/issues/176). It is not a product API or
-an architectural preference model. The issue remains open.
+an architectural preference model. The independent sequential allocation
+experiment for [#124](https://github.com/cogco1/MonkeyHub/issues/124) consumes the
+same statistical values. See [research and implementation decisions](RESEARCH.md).
 
 ## 汇报用说明：现在可调用什么
 
@@ -25,11 +27,15 @@ an architectural preference model. The issue remains open.
 
 现有 benchmark 的完整 JSON 包含可重开的候选输入和独立记录的请求绑定。
 这些候选是公开的合成体量 fixture；回放成功只验证接口、计算和来源绑定，
-不是实际 CAD 成功或真实设计质量的证据。生产接入尚未实现。
+不是实际 CAD 成功或真实设计质量的证据。新增只读 P036 适配可读取已留存的
+`state-record`，保持调用前保存的预期绑定。另有 24 个经现有 MonkeyHub option
+变换生成、保存并重开的公开固定候选，用于比较预算分配；人为高斯噪声、费用
+与原始四项目标分别保存。它们仍是声明的体量，不代表任意 CAD 或物理性能。
 
 ## Run and call
 
-From the repository root, with Python 3.12 and no additional dependencies:
+From the repository root, with Python 3.12 and no additional dependencies for
+the original massing/synthetic benchmark:
 
 ```sh
 python -m unittest labs.candidate_evaluation.test_evaluator tests.test_massing_metrics
@@ -79,9 +85,9 @@ There is no filesystem lookup, automatic acceptance, or new persistence owner.
   objective comparison and this experiment caller. These live together in the
   lab under the existing [lab rules](../README.md); no production owner or public
   product contract changes. `CandidateEvaluator` is implemented here by massing
-  and synthetic evaluators, not a plugin-discovery mechanism. OCBA, FEA and
-  learned evaluators remain future consumers, not implementations implied by a
-  protocol name.
+  and synthetic evaluators, not a plugin-discovery mechanism. Sequential OCBA
+  is now an independent experimental consumer; FEA and learned evaluation are
+  still separate future capabilities.
 
 The input domain is the existing voxel massing representation: `Volume@1` boxes
 use inclusive bounds, x/z are plan, y is up, a plan cell is 1 m², and the declared
@@ -195,15 +201,97 @@ unit/version/context mismatches, empty and single-sample statistics, and raw
 sample/readback consistency. Lab tests are invoked explicitly and are not added
 to the product suite.
 
-## Concrete next inputs
+## Retained inputs and a frozen MonkeyHub candidate set
 
-**#124:** provide the existing OCBA implementation's repository/package, license,
-exact revision, callable signature, required warm-up sample count, budget/cost
-units, and seed/batch assumptions. Its adapter can then consume each objective's
-count/mean/sample variance plus measured amortized cost through this result.
-Start with uniform allocation and the known synthetic distributions. Incremental
-sample accumulation, PCS/regret, cost-aware allocation, utility policy and
-candidate × evaluator × fidelity selection are not implemented here.
+`retained.load_retained_request` uses the existing P036 integrity reader and
+StateRecord parser; `evaluate_retained` adds the retained URI to source evidence.
+Supply `repository`, `record_ref`, `expected_run`, `expected_content_digest`,
+`context_refs`, and `evaluator=MassingEvaluator(...)`. Expected values must come
+from the caller's previously saved binding. They are never reconstructed from
+the newly loaded record to make a mismatch pass. A caller mismatch returns
+`invalid`; missing/corrupt/unsupported retained input raises
+`RetainedEvaluationUnavailable`, with no fabricated observed record or score.
+This checks the explicit base, not whether it is today's HEAD; current-HEAD
+requirements must be established by the caller. There is no project writer in
+this adapter.
+
+`retained_fixture.create_public_massing_fixture(empty_project_root)` authors a
+public 6 × 4 cell study, calls the existing `studio.options.make_option`
+`scale_volume` / `add_floor` transforms for 24 fixed variants (width 4–7,
+depth 3–5, one/two floors), retains them via P036 and reopens them. HEAD does not
+advance. Repeating on a fresh root yields identical content and binding IDs.
+It requires the existing Studio Python dependencies, including FastAPI/Pydantic;
+no new package or dependency pin is introduced. Benchmark temporary projects are
+disposable; retained public inputs and results are included in benchmark output.
+
+## Sequential allocation experiment
+
+`allocation.EvaluationBudgetAllocator.allocate(EvaluationBudgetRequest)` returns
+one candidate or an explicit stop reason. `SequentialAllocator` implements equal,
+round-robin, variance-proportional sampling (largest variance/count), ε-greedy,
+classical OCBA ratios, and fixed-cost OCBA ratios. It consumes
+`CandidateEstimate(candidate_id, SampleStatistics, per_sample_cost, validity,
+deterministic)` only; it does not inspect geometry, draw samples or persist state.
+Only valid candidates are eligible. Unavailable statistics are never numeric
+defaults. Evaluator/context identity is fixed by the experiment caller and
+retained separately from this deliberately small mathematical input.
+
+The caller supplies remaining **attempt** or **cost** budget and pays for every
+attempt, including warmup and failures. Stochastic warmup is five successful
+observations per candidate here; a declared deterministic response needs one.
+Failed calls do not become zero observations. Equal balances successful counts;
+round-robin rotates by attempted step, so failure fixtures distinguish them.
+Cost OCBA requires a cost budget. Costs are positive known fixed experiment
+units; measured wall time remains a separate field, and no monetary claim is made.
+
+Exact ties, zero empirical variance and deterministic mixtures use an explicit
+balanced-sampling fallback. A zero sample variance does not certify determinism.
+The ratio calculation uses log arithmetic; retained counts are lower bounds,
+and sequential integer decisions use the largest remaining target deficit.
+These engineering choices carry no finite-budget PCS guarantee. See the
+[equations and assumptions](RESEARCH.md), including why non-best ratios are
+not simply divided by cost and why a jasima runtime adapter was rejected.
+
+`sampling.ControlledSampler` holds one frozen source result, noise policy and
+trial/candidate RNG stream. It uses the existing `summarize` function for every
+successful update; `estimate_from_evaluation` passes the resulting statistics
+to the allocator. The original objective vector remains in fixture metadata.
+Synthetic experiments use known Gaussian or Student-t distributions. For the
+24 MonkeyHub options only, the artificial response mean is **GFA/100**, with
+explicit Gaussian noise and artificial costs. This single-objective choice is
+an experiment preference, not a replacement for the objective vector or a
+daylight/structure/composition evaluator.
+
+```sh
+python -m unittest labs.candidate_evaluation.test_evaluator labs.candidate_evaluation.test_retained labs.candidate_evaluation.test_allocation labs.candidate_evaluation.test_sampling tests.test_massing_metrics
+python -m labs.candidate_evaluation.allocation_benchmark --output <new-external-directory> --repetitions 200 --budgets 100 300 900 --workers 4
+```
+
+The output directory must be explicit and existing results are not overwritten.
+`summary.json` retains exact public candidate inputs, evaluation vectors,
+configuration, provenance and aggregate metrics; `summary.csv` is the flat
+comparison. `trials.jsonl.gz` retains every repetition's seeds, selected candidate,
+stop reason, costs, failures, final statistics and **all** observation/allocation
+traces. `trace_columns` defines each trace row; the preceding rows reconstruct
+every candidate estimate used for the next decision. `--workers` only parallelizes
+independent Monte Carlo trials, not within-trial allocation.
+
+Each trial/candidate has a distinct seeded stream. Policies and budget conditions
+share that stream for a paired comparison; they are not extra independent trials.
+PCS uses independent outer repetitions and Wilson 95% intervals. Mean simple
+regret is conditional on a selection; unselected trials are counted explicitly
+and contribute a PCS failure. Warmup-incomplete trials are also reported.
+Fixed-budget exhaustion is the stopping policy. A target-PCS budget may be read
+from aggregate intervals; no per-trial confidence stopping certificate is claimed.
+
+The fixture suite includes easy separation, close leaders, heterogeneous variance,
+costs up to 20×, many inferior alternatives, deterministic mixtures, independent
+missing observations and heavy tails. Correlated noise, biased model responses,
+non-stationary versions and output-dependent failures are outside this IID
+experiment's guarantees; such responses require a different statistical model.
+Batch scheduling and Pareto-front identification remain optional later work.
+
+## Concrete next inputs
 
 **#125:** freeze one independently checkable structural case with connectivity,
 member/section dimensions, sourced physical material values and units, supports,
@@ -213,6 +301,6 @@ adapter can return physical measurements and declared error information through
 the same result without depending on OCBA. The current massing adapter supplies
 neither an FEA model nor evidence of structural safety.
 
-Production candidate ingestion, P036 retention/reopen, external core hard-check
-evidence, usable-area metrics, calibrated uncertainty, preference/learned scores,
-weighted utility and actual OCBA/FEA integrations remain outside this slice.
+External core hard-check evidence, usable-area metrics, calibrated physical
+uncertainty, preference/learned scores and FEA remain outside this slice. The
+allocation lab does not become a production search controller or acceptance gate.
