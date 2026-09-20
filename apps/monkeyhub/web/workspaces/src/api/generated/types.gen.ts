@@ -1910,6 +1910,7 @@ export type DocumentAnnotationsDto = {
      * Drawingrevisionref
      */
     drawingRevisionRef?: string | null;
+    tracingCalibration?: DocumentTracingCalibrationDto | null;
 };
 
 /**
@@ -1952,6 +1953,10 @@ export type DocumentAnnotationsRequestDto = {
      * Comment
      */
     comment?: string;
+    /**
+     * Explicitly calibrated origin, direction and distance for this saved page. Omit/null to save without a model scale.
+     */
+    tracingCalibration?: DocumentTracingCalibrationDto | null;
 };
 
 /**
@@ -2013,7 +2018,7 @@ export type DocumentGestureDto = {
     /**
      * Kind
      */
-    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text';
+    kind: 'circle' | 'arrow' | 'keep' | 'remove' | 'freehand' | 'line' | 'ruler' | 'arc' | 'text' | 'polyline';
     /**
      * Points
      *
@@ -2045,6 +2050,12 @@ export type DocumentGestureDto = {
      * Required only for text: font size as a fraction of the visible page's shorter side. Render at fontSize * min(displayedPageWidth, displayedPageHeight) CSS px with 1.25em line height. Absent on existing strokes; never derived from lineWidth.
      */
     fontSize?: number | null;
+    /**
+     * Closed
+     *
+     * Required only for polyline: whether the ordered editable vertices close into a contour. The first point is not repeated.
+     */
+    closed?: boolean | null;
 };
 
 /**
@@ -2146,6 +2157,127 @@ export type DocumentReplacementTargetDto = {
      * Revisionref
      */
     revisionRef?: string | null;
+};
+
+/**
+ * DocumentTracingCalibrationDto
+ *
+ * Explicit page origin/+X direction and the known distance in project length units.
+ */
+export type DocumentTracingCalibrationDto = {
+    /**
+     * Origin
+     */
+    origin: [
+        number,
+        number
+    ];
+    /**
+     * Axispoint
+     */
+    axisPoint: [
+        number,
+        number
+    ];
+    /**
+     * Distance
+     */
+    distance: number;
+};
+
+/**
+ * DocumentTracingRequestDto
+ *
+ * Read calibrated paths from saved annotations through the existing sketch action.
+ */
+export type DocumentTracingRequestDto = {
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Sourceproposalid
+     */
+    sourceProposalId?: string | null;
+    /**
+     * Keep
+     */
+    keep?: Array<string>;
+    tracing: DocumentTracingSourceDto;
+    /**
+     * Componentid
+     */
+    componentId: string;
+    /**
+     * Parentcomponentid
+     */
+    parentComponentId?: string | null;
+    /**
+     * Semantickind
+     */
+    semanticKind?: string | null;
+    /**
+     * Baselevel
+     */
+    baseLevel?: string | null;
+    /**
+     * Basedatum
+     */
+    baseDatum?: string | null;
+    /**
+     * Height
+     *
+     * Positive pull height in project length units when any closed contour is selected; open paths always become zero-height curves.
+     */
+    height: number;
+    /**
+     * Summary
+     */
+    summary?: string | null;
+};
+
+/**
+ * DocumentTracingSourceDto
+ *
+ * An exact saved page revision and the paths the user explicitly chose.
+ */
+export type DocumentTracingSourceDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Drawingrevisionref
+     */
+    drawingRevisionRef?: string | null;
+    /**
+     * Annotationids
+     */
+    annotationIds: Array<string>;
 };
 
 /**
@@ -9466,7 +9598,7 @@ export type CreateSketchProposalApiProposalsSketchPostData = {
     /**
      * Body
      */
-    body: SketchPrismRequestDto | SketchBatchRequestDto;
+    body: SketchPrismRequestDto | SketchBatchRequestDto | DocumentTracingRequestDto;
     headers?: {
         /**
          * X-Monkey-Operation

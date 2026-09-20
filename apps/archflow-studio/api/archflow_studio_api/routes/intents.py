@@ -125,6 +125,7 @@ def write_document_page_annotations(request: Request, payload: DocumentAnnotatio
     return document_annotations_dto(save_document_annotations(
         binding, payload.run_id, payload.asset_sha256, payload.page_index,
         payload.base_revision_sha256, [document_gesture_from(row) for row in payload.annotations], payload.comment, payload.drawing_revision_ref,
+        payload.tracing_calibration.to_domain() if payload.tracing_calibration is not None else None,
     ))
 
 

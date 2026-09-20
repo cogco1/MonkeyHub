@@ -4,7 +4,7 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError, type StudioApiError } from "../../api/client";
-import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, DocumentPageDto, DocumentVisualInputDto, ModelSourceDto, SourceDocumentDto } from "../../api/generated";
+import type { DocumentAnnotationRefDto, DocumentCommentDto, DocumentGestureDto, DocumentPageDto, DocumentTracingCalibrationDto, DocumentVisualInputDto, ModelSourceDto, SourceDocumentDto } from "../../api/generated";
 import { ErrorPanel } from "../../app/ErrorPanel";
 import { startClientTiming, type ClientTimingSpan } from "../../app/clientTiming";
 import { useT } from "../../i18n/useT";
@@ -13,9 +13,10 @@ import { eraseAt, inkPath, toPagePoint, zoomPageAt, type PagePoint, type PageVie
 import { useDocumentAnnotations, type createDocumentAnnotationsController } from "./useDocumentAnnotations";
 import { DocumentTextLayer } from "./DocumentTextLayer";
 import { renderDocumentVisual } from "./documentVisualInput";
+import { DocumentTracingPanel } from "./DocumentTracingPanel";
 import "./DocumentCanvas.css";
 
-type DrawingTool = "freehand" | "line" | "arrow" | "circle";
+type DrawingTool = "freehand" | "line" | "arrow" | "circle" | "polyline";
 type VectorEditTool = "select";
 type DocumentTool = DrawingTool | VectorEditTool | "eraser" | "pan" | "text";
 
@@ -30,6 +31,7 @@ function Icon({ name }: { name: DocumentTool | "undo" | "redo" | "fit" }) {
     text: "M3 4h16M11 4v16M7 20h8M3 4v3m16-3v3",
     select: "M4 3l14 8-7 2-3 7L4 3zm7 10 5 6",
     line: "M4 17L18 3", arrow: "M4 17L18 3M9 3h9v9",
+    polyline: "M3 18L5 4l14 3-3 12L3 18z",
     circle: "M19 10a9 7 0 1 1-18 0 9 7 0 1 1 18 0",
     eraser: "M3 12l9-9a2 2 0 0 1 3 0l4 4a2 2 0 0 1 0 3l-7 7H8l-5-5zm4-4 8 8M9 17h10",
     pan: "M7 10V5a2 2 0 0 1 3 0v5-7a2 2 0 0 1 3 0v7-5a2 2 0 0 1 3 0v6-3a2 2 0 0 1 3 0v6c0 5-3 7-6 7h-2c-2 0-3-1-4-3L3 12c-1-2 1-3 2-2l2 2",
@@ -142,7 +144,7 @@ type Interaction = {
 };
 
 function isEditableVector(mark: DocumentGestureDto): boolean {
-  return (mark.kind === "line" || mark.kind === "arrow") && mark.points.length >= 2;
+  return (mark.kind === "line" || mark.kind === "arrow" || mark.kind === "polyline") && mark.points.length >= 2;
 }
 
 function editableVectorHandle(annotations: readonly DocumentGestureDto[], point: PagePoint,
@@ -150,7 +152,7 @@ function editableVectorHandle(annotations: readonly DocumentGestureDto[], point:
   const radius = 12;
   for (const mark of [...annotations].reverse()) {
     if (!isEditableVector(mark)) continue;
-    for (const pointIndex of [0, mark.points.length - 1]) {
+    for (const pointIndex of mark.points.map((_, index) => index)) {
       const handle = mark.points[pointIndex];
       if (Math.hypot((handle[0] - point[0]) * width * scale, (handle[1] - point[1]) * height * scale) <= radius) {
         return { mark, pointIndex };
@@ -161,11 +163,12 @@ function editableVectorHandle(annotations: readonly DocumentGestureDto[], point:
 }
 
 /** Input stays in page coordinates. Only the current path is updated during a stroke. */
-export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo, timing }: {
+export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly, canUndo, canRedo, onUndo, onRedo, timing, calibration = null }: {
   file: File; page: DocumentPageDto; annotations: readonly DocumentGestureDto[];
   onChange(marks: readonly DocumentGestureDto[]): void; readOnly: boolean;
   canUndo: boolean; canRedo: boolean; onUndo(): void; onRedo(): void;
   timing?: ClientTimingSpan;
+  calibration?: DocumentTracingCalibrationDto | null;
 }) {
   const t = useT();
   const host = useRef<HTMLDivElement>(null);
@@ -177,6 +180,7 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
   const fitted = useRef(false);
   const [tool, setTool] = useState<DocumentTool>("freehand");
   const [selectedVectorId, setSelectedVectorId] = useState<string | null>(null);
+  const [outline, setOutline] = useState<PagePoint[]>([]);
   const [color, setColor] = useState("#2f80ed");
   const [lineWidth, setLineWidth] = useState(0.004);
   const [fontSize, setFontSize] = useState(0.024);
@@ -262,6 +266,12 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
   const pagePoint = (event: { clientX: number; clientY: number }): PagePoint => toPagePoint(
     event.clientX, event.clientY, host.current!.getBoundingClientRect(), viewRef.current, page.width, page.height,
   );
+  const closeOutline = () => {
+    if (readOnly || outline.length < 3) return;
+    const mark: DocumentGestureDto = { id: crypto.randomUUID(), kind: "polyline", closed: true,
+      points: outline, color, lineWidth };
+    onChange([...annotations, mark]); setOutline([]); setSelectedVectorId(mark.id); setTool("select");
+  };
   const paint = () => {
     frame.current = null;
     const current = active.current;
@@ -313,9 +323,20 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
     if (mode !== "pan" && (x < 0 || y < 0 || x > page.width * viewRef.current.scale || y > page.height * viewRef.current.scale)) return;
     event.preventDefault(); node.focus({ preventScroll: true });
     const point = pagePoint(event);
+    if (mode === "polyline") {
+      const first = outline[0];
+      if (outline.length >= 3 && Math.hypot((point[0] - first[0]) * page.width * view.scale,
+        (point[1] - first[1]) * page.height * view.scale) <= 12) closeOutline();
+      else if (outline.length < 512) setOutline((current) => [...current, point]);
+      return;
+    }
     if (mode === "select") {
       const hit = editableVectorHandle(annotations, point, page.width, page.height, viewRef.current.scale);
-      if (hit === null) { setSelectedVectorId(null); return; }
+      if (hit === null) {
+        const selected = [...annotations].reverse().find(mark => isEditableVector(mark) &&
+          eraseAt([mark], point, point, page.width * view.scale, page.height * view.scale, 8).length === 0);
+        setSelectedVectorId(selected?.id ?? null); return;
+      }
       setSelectedVectorId(hit.mark.id);
       active.current = { pointerId: event.pointerId, mode, start: [event.clientX, event.clientY], view: viewRef.current,
         points: [point], remaining: annotations, gesture: hit.mark, editingPoint: hit.pointIndex };
@@ -356,9 +377,11 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
 
   return <div className="document-canvas">
     <div className="document-tools" role="toolbar" aria-label={t("document.tools")}>
-      {(["select", "freehand", "line", "arrow", "circle", "text", "eraser", "pan"] as const).map((kind) => <button key={kind} type="button"
+      {(["select", "freehand", "line", "polyline", "arrow", "circle", "text", "eraser", "pan"] as const).map((kind) => <button key={kind} type="button"
         disabled={readOnly && kind !== "pan"} aria-pressed={tool === kind} aria-label={t(`document.tool.${kind}`)} title={t(`document.tool.${kind}`)}
-        onClick={() => { cancel(); setTool(kind); if (kind !== "select") setSelectedVectorId(null); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
+        onClick={() => { cancel(); setOutline([]); setTool(kind); if (kind !== "select") setSelectedVectorId(null); }}><Icon name={kind} /><span>{t(`document.tool.${kind}`)}</span></button>)}
+      {tool === "polyline" && <button type="button" disabled={readOnly || outline.length < 3} onClick={closeOutline}>{t("document.trace.close")}</button>}
+      {selectedVector && <button type="button" disabled={readOnly} onClick={() => onChange(annotations.filter(mark => mark.id !== selectedVector.id))}>{t("document.trace.delete")}</button>}
       <span className="document-tools__separator" />
       <button type="button" disabled={!canUndo || readOnly} onClick={onUndo} title={t("document.undo")} aria-label={t("document.undo")}><Icon name="undo" /></button>
       <button type="button" disabled={!canRedo || readOnly} onClick={onRedo} title={t("document.redo")} aria-label={t("document.redo")}><Icon name="redo" /></button>
@@ -381,7 +404,11 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
       onKeyDown={(event) => {
         if (event.defaultPrevented || usesNativeTextEditing(event)) return;
         if (event.code === "Space") { event.preventDefault(); space.current = true; setTemporaryPan(true); }
-        if (event.key === "Escape") { event.preventDefault(); if (active.current) cancel(); else setTool("pan"); }
+        if (event.key === "Escape") { event.preventDefault(); setOutline([]); if (active.current) cancel(); else setTool("pan"); }
+        if (event.key === "Enter" && tool === "polyline") { event.preventDefault(); closeOutline(); }
+        if ((event.key === "Delete" || event.key === "Backspace") && !readOnly && selectedVector) {
+          event.preventDefault(); event.stopPropagation(); onChange(annotations.filter(mark => mark.id !== selectedVector.id));
+        }
         // The workspace owns Undo/Redo for every document control; release any
         // unfinished ink here before that one history handles the bubbling key.
         if ((event.ctrlKey || event.metaKey) && !event.altKey && ["z", "y"].includes(event.key.toLowerCase())) cancel();
@@ -390,7 +417,15 @@ export function DocumentPageCanvas({ file, page, annotations, onChange, readOnly
         <DocumentSurface file={file} page={page} scale={view.scale} onReady={ready} timing={timing} />
         <svg ref={ink} className="document-page__ink" viewBox={`0 0 ${page.width} ${page.height}`} aria-hidden="true">
           <SavedInk annotations={annotations} width={page.width} height={page.height} />
-          {selectedVector && <g className="document-vector-selection">{[selectedVector.points[0], selectedVector.points[selectedVector.points.length - 1]].map((point, index) =>
+          {outline.length > 0 && <path data-outline-draft="true" d={inkPath({ id: "draft", kind: "polyline", closed: false, points: outline, color, lineWidth }, page.width, page.height)} fill="none" stroke={color} strokeWidth={lineWidth * Math.min(page.width, page.height)} />}
+          {calibration && <g className="document-calibration" stroke="#16804a" fill="#16804a">
+            <path d={`M${calibration.origin[0] * page.width} ${calibration.origin[1] * page.height} L${calibration.axisPoint[0] * page.width} ${calibration.axisPoint[1] * page.height}`} strokeWidth={2 / view.scale} strokeDasharray={`${6 / view.scale} ${4 / view.scale}`} />
+            {[calibration.origin, calibration.axisPoint].map((point, index) => <g key={index}>
+              <circle cx={point[0] * page.width} cy={point[1] * page.height} r={4 / view.scale} />
+              <text x={point[0] * page.width + 8 / view.scale} y={point[1] * page.height - 8 / view.scale} fontSize={14 / view.scale} stroke="none">{index === 0 ? "O" : "+X"}</text>
+            </g>)}
+          </g>}
+          {selectedVector && <g className="document-vector-selection">{selectedVector.points.map((point, index) =>
             <circle key={index} cx={point[0] * page.width} cy={point[1] * page.height} r={7 / view.scale} />)}</g>}
           <path ref={live} data-live-ink="true" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -805,12 +840,15 @@ export function DocumentCanvas({ projectId, runId, controller, busy, onSubmit, m
     {review && <div className="document-review-banner"><span>{t("document.reviewVersion")}</span><button type="button" onClick={() => { setReview(null); setPageIndex(0); }}>{t("document.returnToEdit")}</button></div>}
     <div className="document-body">
       <div className="document-main">
-        {file && page ? <DocumentPageCanvas key={`${documentRun}:${selectedSha}:${pageIndex}`} file={file} page={page} timing={timing}
+        {file && page ? <DocumentPageCanvas key={`${documentRun}:${selectedSha}:${selectedRevision}:${pageIndex}`} file={file} page={page} timing={timing}
           annotations={draft.annotations} onChange={draft.changeAnnotations} readOnly={!draft.ready || draft.readOnly || sending}
+          calibration={draft.tracingCalibration}
           canUndo={draft.canUndo} canRedo={draft.canRedo} onUndo={draft.undo} onRedo={draft.redo} />
           : <div className="document-empty"><p role={missingPage ? "alert" : undefined}>{t(missingPage ? "document.linkUnavailable" : loading || selectedSha ? "document.loadingPage" : "document.empty")}</p><p>{t("document.formats")}</p></div>}
       </div>
       <aside className="document-notes" aria-label={t("document.notes")}>
+        {file && page && <DocumentTracingPanel key={JSON.stringify([projectId, documentRun, selectedSha, selectedRevision, pageIndex, review?.ref.revisionSha256])} draft={draft}
+          disabled={busy || sending || !active} onSendingChange={setSending} />}
         {hasSheetAction && <section className="document-drawing-styles" aria-label={t("document.drawingStyles")}>
           <fieldset disabled={stylesLoading || sheetBusy}>
             <legend>{t("document.drawingStyles")}</legend>

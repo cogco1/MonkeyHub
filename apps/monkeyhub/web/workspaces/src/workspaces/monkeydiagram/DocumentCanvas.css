@@ -80,6 +80,13 @@
 .document-input-hint { margin: 0; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; background: var(--panel); }
 .document-notes { width: 240px; flex-shrink: 0; border-left: 1px solid var(--line); padding: 16px 12px; overflow-y: auto; background: var(--panel); }
 .document-notes > label { display: block; font-weight: 600; margin-bottom: 8px; }
+.document-tracing { display: grid; gap: 10px; margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.document-tracing p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.document-tracing form, .document-tracing label { display: grid; gap: 6px; font-size: 12px; }
+.document-tracing input[type="number"] { width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); color: var(--ink); font: inherit; }
+.document-tracing fieldset { display: grid; gap: 7px; min-width: 0; margin: 0; padding: 8px; border: 1px solid var(--line); max-height: 180px; overflow-y: auto; }
+.document-tracing .document-tracing__shape { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.document-tracing p[role="alert"] { color: var(--violated); }
 .document-notes textarea { resize: vertical; width: 100%; min-height: 140px; padding: 10px; line-height: 1.6; }
 .document-notes textarea::placeholder { color: var(--faint); }
 .document-note-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }

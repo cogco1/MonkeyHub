@@ -26,6 +26,7 @@ import threading
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_DOCUMENT_ANNOTATIONS, STUDIO_DOCUMENT_COMMENT
 from archflow.project.refs import ProjectRecordRef
+from archflow.contracts.canonical import canonical_digest, require_sha256
 
 from ..transport.errors import StudioError
 from .artifacts import ModelSource, SourceDocument, document_bytes, require_model_source
@@ -46,7 +47,8 @@ RULER = "ruler"
 ARC = "arc"
 KINDS = (CIRCLE, ARROW, KEEP, REMOVE, FREEHAND, LINE, RULER, ARC)
 TEXT = "text"
-DOCUMENT_KINDS = (*KINDS, TEXT)
+POLYLINE = "polyline"
+DOCUMENT_KINDS = (*KINDS, TEXT, POLYLINE)
 
 Vector = tuple[float, float, float]
 
@@ -102,6 +104,7 @@ class DocumentGesture:
     line_width: float
     label: str | None = None
     font_size: float | None = None
+    closed: bool | None = None
 
     def __post_init__(self) -> None:
         if not self.id or self.kind not in DOCUMENT_KINDS or not self.points:
@@ -121,6 +124,13 @@ class DocumentGesture:
             raise ValueError("fontSize belongs only to page text")
         elif self.label is not None and len(self.label) > 120:
             raise ValueError("a stroke label contains at most 120 characters")
+        if self.kind == POLYLINE:
+            if self.closed is None or len(self.points) < (3 if self.closed else 2) or len(self.points) > 512:
+                raise ValueError("a polyline needs closed and 2 to 512 points, or at least 3 when closed")
+            if len(set(self.points)) != len(self.points):
+                raise ValueError("polyline control points must be distinct; a closed contour closes itself")
+        elif self.closed is not None:
+            raise ValueError("closed belongs only to a page polyline")
 
     def to_dict(self) -> dict:
         result = {
@@ -130,6 +140,8 @@ class DocumentGesture:
         # Preserve the serialized shape (and identity) of existing stroke data.
         if self.font_size is not None:
             result["fontSize"] = self.font_size
+        if self.closed is not None:
+            result["closed"] = self.closed
         return result
 
 
@@ -150,6 +162,28 @@ class DocumentAnnotationRef:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentTracingCalibration:
+    """Two page points explicitly defining model origin, +X direction and scale."""
+
+    origin: tuple[float, float]
+    axis_point: tuple[float, float]
+    distance: float
+
+    def __post_init__(self) -> None:
+        if any(len(point) != 2 for point in (self.origin, self.axis_point)) or not all(
+            math.isfinite(value) and 0 <= value <= 1 for point in (self.origin, self.axis_point) for value in point
+        ):
+            raise ValueError("calibration points must lie in the normalized visible page")
+        if self.origin == self.axis_point:
+            raise ValueError("calibration points must be different")
+        if not math.isfinite(self.distance) or self.distance <= 0:
+            raise ValueError("calibration distance must be positive in project length units")
+
+    def to_dict(self) -> dict:
+        return {"origin": list(self.origin), "axisPoint": list(self.axis_point), "distance": self.distance}
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentAnnotationPage:
     project_id: str
     run_id: str
@@ -159,6 +193,7 @@ class DocumentAnnotationPage:
     annotations: tuple[DocumentGesture, ...] = ()
     comment: str = ""
     drawing_revision_ref: str | None = None
+    tracing_calibration: DocumentTracingCalibration | None = None
 
 
 # HTTP saves in this process must check and write a page revision together.
@@ -264,9 +299,14 @@ def _document_page_from(binding: ProjectBinding, run_id: str, asset_sha256: str,
             id=row["id"], kind=row["kind"], points=tuple(tuple(point) for point in row["points"]),
             color=row["color"], line_width=row["lineWidth"], label=row.get("label"),
             font_size=row.get("fontSize"),
+            closed=row.get("closed"),
         ) for row in payload["annotations"]) if payload is not None else (),
         comment=payload.get("comment", "") if payload is not None else "",
         drawing_revision_ref=drawing_revision_ref,
+        tracing_calibration=DocumentTracingCalibration(
+            tuple(payload["tracingCalibration"]["origin"]), tuple(payload["tracingCalibration"]["axisPoint"]),
+            payload["tracingCalibration"]["distance"],
+        ) if payload is not None and payload.get("tracingCalibration") is not None else None,
     )
 
 
@@ -288,6 +328,7 @@ def save_document_annotations(
     binding: ProjectBinding, run_id: str, asset_sha256: str, page_index: int,
     base_revision_sha256: str | None, annotations: Sequence[DocumentGesture], comment: str,
     drawing_revision_ref: str | None = None,
+    tracing_calibration: DocumentTracingCalibration | None = None,
 ) -> DocumentAnnotationPage:
     _document_page_source(binding, run_id, asset_sha256, page_index, drawing_revision_ref)
     if len({annotation.id for annotation in annotations}) != len(annotations):
@@ -304,12 +345,70 @@ def save_document_annotations(
             **({"drawingRevisionRef": drawing_revision_ref} if drawing_revision_ref is not None else {}),
             "previousRevisionSha256": latest,
             "annotations": [annotation.to_dict() for annotation in annotations], "comment": comment,
+            **({"tracingCalibration": tracing_calibration.to_dict()} if tracing_calibration is not None else {}),
         }
         ref = binding.repository.put_json(
             run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
             record_kind=STUDIO_DOCUMENT_ANNOTATIONS, payload=payload,
         )
     return _document_page_from(binding, run_id, asset_sha256, page_index, ref.sha256, payload, drawing_revision_ref)
+
+
+def read_document_tracing(
+    binding: ProjectBinding, reference: DocumentAnnotationRef, annotation_ids: Sequence[str],
+) -> tuple[Mapping, ...]:
+    """Map explicitly selected saved page paths to the existing XZ sketch profile."""
+
+    document = _document_page_source(binding, reference.run_id, reference.asset_sha256,
+                                     reference.page_index, reference.drawing_revision_ref)
+    page = read_document_annotations(binding, reference.run_id, reference.asset_sha256,
+                                     reference.page_index, reference.revision_sha256, reference.drawing_revision_ref)
+    calibration = page.tracing_calibration
+    if calibration is None:
+        raise StudioError(422, "TRACING_CALIBRATION_REQUIRED", "Save two calibration points and their known distance before generating a model.")
+    if not annotation_ids or len(set(annotation_ids)) != len(annotation_ids):
+        raise StudioError(422, "TRACING_SELECTION_INVALID", "Choose distinct saved lines or contours to model.")
+    visible = document.pages[reference.page_index]
+    ox, oy = calibration.origin
+    dx = (calibration.axis_point[0] - ox) * visible.width
+    dy = (calibration.axis_point[1] - oy) * visible.height
+    length = math.hypot(dx, dy)
+    scale = calibration.distance / length
+    ux, uy = dx / length, dy / length
+    source_identity = {key: value for key, value in reference.to_dict().items() if key != "revisionSha256"}
+    annotations = {annotation.id: annotation for annotation in page.annotations}
+    result = []
+    for annotation_id in annotation_ids:
+        annotation = annotations.get(annotation_id)
+        if annotation is None or annotation.kind not in (LINE, POLYLINE) or len(annotation.points) < 2:
+            raise StudioError(422, "TRACING_SELECTION_INVALID", "Only explicitly selected saved lines and polylines can become model geometry.")
+        identity = {**source_identity, "annotationId": annotation_id}
+        profile = []
+        for x, y in annotation.points:
+            px, py = (x - ox) * visible.width, (y - oy) * visible.height
+            # Image y points down. The perpendicular above the calibration axis
+            # maps to positive Z, consistently with the existing XZ sketch plane.
+            profile.append((scale * (px * ux + py * uy), scale * (px * uy - py * ux)))
+        result.append({
+            "elementId": "trace-" + canonical_digest(identity)[:24],
+            "profile": profile, "closed": bool(annotation.closed),
+            "sourceDocumentTrace": {**reference.to_dict(), "annotationId": annotation_id,
+                                    "calibration": calibration.to_dict()},
+        })
+    return tuple(result)
+
+
+def require_document_trace(binding: ProjectBinding, trace: Mapping) -> None:
+    """Recheck a modeled element's original saved tracing before its candidate writes."""
+
+    try:
+        reference = DocumentAnnotationRef(trace["runId"], require_sha256(trace["assetSha256"], "assetSha256"), trace["pageIndex"],
+                                          require_sha256(trace["revisionSha256"], "revisionSha256"), trace.get("drawingRevisionRef"))
+        [row] = read_document_tracing(binding, reference, (trace["annotationId"],))
+        if row["sourceDocumentTrace"] != trace:
+            raise ValueError("saved calibration does not match")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise StudioError(409, "TRACING_SOURCE_MISMATCH", "The modeled path's exact source and calibration do not match its saved page revision.") from exc
 
 
 def _document_facts(document: SourceDocument, page: DocumentAnnotationPage) -> tuple[str, ...]:
