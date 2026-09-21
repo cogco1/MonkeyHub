@@ -647,30 +647,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-226",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Capture and wait for GUI desktop version output in both existing release identity checks without weakening version/source verification.",
-      "depends_on": [],
-      "write_scope": [
-        ".github/workflows/desktop.yml",
-        "tests/test_package_monkeyapps.py",
-        "governance/work_registry.json",
-        "docs/mapping/planning/GH226-release-version-capture.md",
-        "docs/SYSTEM_MAP.md",
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md"
-      ],
-      "card": "docs/mapping/planning/GH226-release-version-capture.md",
-      "acceptance": [
-        "Both existing workflow steps wait for version JSON and retain version/source mismatch failures.",
-        "Regression executes actual workflow scripts and Windows GUI version capture; normal CI passes."
-      ],
-      "notes": [
-        "Issue #226; EXTEND tools.package_monkeyapps; branch codex/226-release-version-capture, assigned integration checkout; base 732060f8."
-      ]
     }
   ]
 }
