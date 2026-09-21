@@ -243,17 +243,21 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Verify release desktop version
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
-        shell: pwsh
+        shell: python {0}
         run: |
-          $identity = & "$env:PACKAGE_BUILD/desktop-target/release/MonkeyHub.exe" --version
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          $parsed = $identity | ConvertFrom-Json
-          if ($parsed.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
-            throw "Desktop version $($parsed.version) does not match release $env:MONKEYHUB_RELEASE_VERSION"
-          }
-          if ($parsed.sourceRevision -ne $env:MONKEYHUB_SOURCE_SHA) {
-            throw "Desktop source $($parsed.sourceRevision) does not match release source $env:MONKEYHUB_SOURCE_SHA"
-          }
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          # Wait for the GUI-subsystem executable and keep its output pipe open.
+          executable = Path(os.environ["PACKAGE_BUILD"]) / "desktop-target/release/MonkeyHub.exe"
+          result = subprocess.run([str(executable), "--version"], capture_output=True, text=True, check=True)
+          identity = json.loads(result.stdout)
+          if identity.get("version") != os.environ["MONKEYHUB_RELEASE_VERSION"]:
+              raise SystemExit("Desktop version does not match release version")
+          if identity.get("sourceRevision") != os.environ["MONKEYHUB_SOURCE_SHA"]:
+              raise SystemExit("Desktop source does not match release source")
       - name: Test host boundaries from the packaged snapshot
         shell: pwsh
         run: |
@@ -295,15 +299,19 @@ jobs:
           exit $LASTEXITCODE
       - name: Verify installed release identity
         if: env.MONKEYHUB_RELEASE_PUSH == 'true'
-        shell: pwsh
+        shell: python {0}
         run: |
-          $identity = (& "$env:MONKEYHUB_DESKTOP_EXE" --version) | ConvertFrom-Json
-          if ($identity.version -ne $env:MONKEYHUB_RELEASE_VERSION) {
-            throw "Installed desktop version $($identity.version) does not match release $env:MONKEYHUB_RELEASE_VERSION"
-          }
-          if ($identity.sourceRevision -ne $env:MONKEYHUB_SOURCE_SHA) {
-            throw "Installed source $($identity.sourceRevision) does not match release source $env:MONKEYHUB_SOURCE_SHA"
-          }
+          import json
+          import os
+          import subprocess
+
+          result = subprocess.run([os.environ["MONKEYHUB_DESKTOP_EXE"], "--version"],
+                                  capture_output=True, text=True, check=True)
+          identity = json.loads(result.stdout)
+          if identity.get("version") != os.environ["MONKEYHUB_RELEASE_VERSION"]:
+              raise SystemExit("Installed desktop version does not match release version")
+          if identity.get("sourceRevision") != os.environ["MONKEYHUB_SOURCE_SHA"]:
+              raise SystemExit("Installed source does not match release source")
       - name: Keep complete review package
         if: always()
         uses: actions/upload-artifact@v4
