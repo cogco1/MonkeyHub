@@ -3,7 +3,7 @@ import { asStudioApiError, StudioApiError } from "../api/client";
 import { useConnection, useStudio } from "../api/ProjectRuntimeContext";
 import type { ServerIdentity } from "../api/connection";
 import type { BoardDesignRequest } from "../workspaces/monkeyboard/boardFeedback";
-import type { BoardDocumentOpen } from "../workspaces/monkeyboard/boardNavigation";
+import type { PageSource } from "../workspaces/monkeyboard/boardScene";
 import type { BoardSketchRequest } from "../workspaces/monkeyboard/boardSketch";
 import App, { type WorkspaceDesignContext } from "./App";
 export type { WorkspaceDesignContext } from "./App";
@@ -23,13 +23,14 @@ export interface ProjectWorkspaceProps {
   candidateRunId?: string | null;
   active?: boolean;
   refreshKey?: number;
+  documentRequest?: { source: PageSource; requestId: number } | null;
   onWorkspaceChange(workspace: "arch" | "board"): void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }
 
 /** One mounted project: the Board, its page editor and the same local model draft. */
-export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, active = true, refreshKey = 0,
+export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, active = true, refreshKey = 0, documentRequest = null,
   onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
   const connection = useConnection();
   const studio = useStudio();
@@ -37,7 +38,8 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [server, setServer] = useState<Loadable<ServerIdentity>>(loading);
   const [refreshError, setRefreshError] = useState<ReturnType<typeof asStudioApiError> | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [visit, setVisit] = useState<BoardDocumentOpen | null>(null);
+  const [visit, setVisit] = useState<{ source: PageSource } | null>(null);
+  const openedDocumentRequest = useRef<number | null>(null);
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | undefined>();
   const [sketchRequest, setSketchRequest] = useState<BoardSketchRequest | undefined>();
   const [boardVisited, setBoardVisited] = useState(workspace === "board");
@@ -80,6 +82,13 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     setDocumentIntent(undefined); setSketchRequest(request); setVisit(null);
     onWorkspaceChange("arch");
   }, [onWorkspaceChange]);
+  useEffect(() => {
+    if (!active || server.status !== "ready" || !documentRequest ||
+        openedDocumentRequest.current === documentRequest.requestId) return;
+    openedDocumentRequest.current = documentRequest.requestId;
+    setVisit({ source: documentRequest.source });
+    onWorkspaceChange("board");
+  }, [active, server.status, documentRequest, onWorkspaceChange]);
 
   if (server.status === "failed") return <div className="project-workspace"><div className="refusal" role="alert">
     <ErrorPanel error={server.error} what="GET /api/protocol" />

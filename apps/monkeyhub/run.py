@@ -31,52 +31,10 @@ def _progress_chat_store():
     from monkeyhub_api.models import ChatMessage
 
     class ProgressChatStore(chat_module.ChatStore):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._progress_rows: dict[str, dict[str, ChatMessage]] = {}
-
         @staticmethod
         def _zh(session) -> bool:
             user = next((row for row in reversed(session.messages) if row.role == "user"), None)
             return bool(user and _CJK.search(user.content))
-
-        def _progress(self, session, key: str, text: str, *, append: bool = False,
-                      status: str = "complete") -> None:
-            """Publish one replaceable UI row without making it conversation history."""
-            redacted = chat_module._redact(text)
-            clean = redacted if append else redacted.strip()
-            if not clean:
-                return
-            rows = self._progress_rows.setdefault(session.id, {})
-            turn = chat_module._turn_id(session)
-            identifier = f"{turn}:progress:{key}"
-            row = rows.get(key)
-            if row is None or row.id != identifier:
-                row = ChatMessage(id=identifier, role="tool", content="", createdAt=chat_module._now(), status=status)
-                rows[key] = row
-            row.content = (row.content + clean if append else clean)[-2400:]
-            row.status = status
-            # The runtime already converts a chat change into agent/progress SSE;
-            # do not call _save merely to wake a browser.
-            if self.on_change is not None:
-                self.on_change(session)
-
-        def get(self, session_id: str):
-            detail = super().get(session_id)
-            with self._lock:
-                extra = [row.model_copy(deep=True) for row in self._progress_rows.get(session_id, {}).values()]
-                if detail.status != "running":
-                    ending = "interrupted" if detail.status == "interrupted" else "failed" if detail.status == "failed" else "complete"
-                    for row in extra:
-                        if row.status == "streaming":
-                            row.status = ending
-            detail.messages = sorted([*detail.messages, *extra], key=lambda row: (row.createdAt, row.id))
-            return detail
-
-        def post(self, session_id, request):
-            with self._lock:
-                self._progress_rows.pop(session_id, None)
-            return super().post(session_id, request)
 
         def _acp_update(self, session_id: str, event: dict, environment: dict) -> None:
             update = event.get("update") if isinstance(event.get("update"), dict) else {}

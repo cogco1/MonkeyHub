@@ -6,6 +6,8 @@ import type { AppStatus, ChatArchiveRequest, ChatCreateRequest, ChatDetail, Chat
 import { ProjectRuntimeProvider } from "../workspaces/src/api/ProjectRuntimeContext";
 import type { WorkspaceDesignContext } from "../workspaces/src/app/ProjectWorkspace";
 import { MonitorPage } from "./MonitorPage";
+import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessageContent";
+import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
 import "./ChatShell.css";
@@ -84,18 +86,20 @@ const fileData = (file: File, failure: string) => new Promise<string>((resolve, 
 });
 /** What this page looked like last time: the same conversation and the same frame. */
 function readView(): { chatId: string | null; projectDir: string | null; sidebar: boolean | null; panel: boolean | null; panelWidth: number | null; tools: SavedTool[]; activeTool: AppId | null } {
-  const empty = { chatId: null, projectDir: null, sidebar: null, panel: null, panelWidth: null, tools: [], activeTool: null };
+  const routeChatId = new URLSearchParams(window.location.search).get("chatId") || null;
+  const empty = { chatId: routeChatId, projectDir: null, sidebar: null, panel: null, panelWidth: null, tools: [], activeTool: null };
   try {
     const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? "null");
+    const changedRoute = routeChatId && routeChatId !== saved?.chatId;
     return {
-      chatId: typeof saved?.chatId === "string" ? saved.chatId : null,
-      projectDir: typeof saved?.projectDir === "string" ? saved.projectDir : null,
+      chatId: routeChatId ?? (typeof saved?.chatId === "string" ? saved.chatId : null),
+      projectDir: changedRoute ? null : typeof saved?.projectDir === "string" ? saved.projectDir : null,
       sidebar: typeof saved?.sidebar === "boolean" ? saved.sidebar : null,
-      panel: typeof saved?.panel === "boolean" ? saved.panel : null,
+      panel: changedRoute ? false : typeof saved?.panel === "boolean" ? saved.panel : null,
       panelWidth: typeof saved?.panelWidth === "number" && Number.isFinite(saved.panelWidth) ? saved.panelWidth : null,
-      tools: Array.isArray(saved?.tools) ? saved.tools.filter((item: SavedTool) => item && tools.some((tool) => tool.id === item.id))
+      tools: !changedRoute && Array.isArray(saved?.tools) ? saved.tools.filter((item: SavedTool) => item && tools.some((tool) => tool.id === item.id))
         .map((item: SavedTool) => ({ id: item.id, ...(typeof item.candidate === "string" ? { candidate: item.candidate } : {}) })) : [],
-      activeTool: tools.some((tool) => tool.id === saved?.activeTool) ? saved.activeTool : null,
+      activeTool: !changedRoute && tools.some((tool) => tool.id === saved?.activeTool) ? saved.activeTool : null,
     };
   } catch { return empty; }
 }
@@ -103,13 +107,6 @@ function readView(): { chatId: string | null; projectDir: string | null; sidebar
 /** One saved activity: its first line is the summary, the rest the diagnostics. */
 const activityLine = (content: string) => content.split("\n")[0] ?? "";
 const activityDetail = (content: string) => content.split("\n").slice(1).join("\n");
-
-/** Render text and fenced code as React nodes; never execute model-supplied HTML. */
-function MessageText({ text }: { text: string }) {
-  return <>{text.split(/(```[\s\S]*?```)/g).filter(Boolean).map((part, index) => part.startsWith("```")
-    ? <pre className="chat-code" key={index}><code>{part.replace(/^```[^\n]*\n?/, "").replace(/```$/, "")}</code></pre>
-    : <div className="chat-prose" key={index}>{part}</div>)}</>;
-}
 
 /**
  * One failure, told twice: a line the reader can act on, and the original text
@@ -174,6 +171,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const [panel, setPanel] = useState(() => initial.panel ?? false);
   const [tabs, setTabs] = useState<ToolTab[]>([]);
   const [activeTool, setActiveTool] = useState<AppId | null>(null);
+  const [documentRequests, setDocumentRequests] = useState<Record<string, { source: PageSource; requestId: number }>>({});
+  const documentRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => initial.panelWidth ?? 620);
   const [toolBusy, setToolBusy] = useState<AppId | null>(null);
   const [folder, setFolder] = useState("");
@@ -234,6 +233,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
   const running = chat?.id === chatId && chat.status === "running";
   const archived = chat?.id === chatId && chat.archived;
+  const external = chat?.id === chatId && Boolean(chat.sourceSessionId);
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
   // An existing conversation keeps the connection it was created with; only a
   // new one takes the saved default.
@@ -347,8 +347,12 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
           projectPreparations.current.delete(selectedProject);
         }
       }
-      if (selection.current.chatId === selectedId) setChat(detail);
-      if (!knownProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(knownProjects.find((item) => item.projectDir === configuredProject)?.projectDir ?? knownProjects[0]?.projectDir ?? null);
+      const detailProject = detail && knownProjects.find((item) => item.projectId === detail.projectId && item.projectDir === detail.projectDir);
+      if (selection.current.chatId === selectedId) {
+        setChat(detail);
+        if (detailProject && selection.current.projectDir !== detailProject.projectDir) setProjectDir(detailProject.projectDir);
+      }
+      if (!detailProject && !knownProjects.some((item) => item.projectDir === selection.current.projectDir)) setProjectDir(knownProjects.find((item) => item.projectDir === configuredProject)?.projectDir ?? knownProjects[0]?.projectDir ?? null);
       setLoading(false);
     } catch (cause) { setError(asFailure(cause)); setLoading(false); }
     finally { readLock.current = false; if (readAgain.current) { readAgain.current = false; void refresh(); } }
@@ -386,6 +390,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   useEffect(() => { setChat(null); setError(null); void refresh(); }, [chatId, refresh]);
   useEffect(() => { void refresh(); }, [archivedView, refresh]);
   useEffect(() => { if (!chatId) { setDraftModel(defaults.model); setCustomModel(null); } }, [chatId, defaults.model]);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (chatId) url.searchParams.set("chatId", chatId); else url.searchParams.delete("chatId");
+    window.history.replaceState(null, "", url);
+  }, [chatId]);
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, JSON.stringify({ chatId, projectDir, sidebar, panel, panelWidth, activeTool,
     tools: !restoredTools.current && initial.projectDir === projectDir ? initial.tools : currentTabs.map((item) => ({ id: item.id, candidate: item.candidate })),
   })); } catch { /* Navigation stays in this page. */ } }, [chatId, projectDir, sidebar, panel, panelWidth, tabs, activeTool, initial]);
@@ -505,7 +514,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!projectDir || (!draft.trim() && !attachments.length) || actionLock.current || running || archived) return;
+    if (!projectDir || (!draft.trim() && !attachments.length) || actionLock.current || running || archived || external) return;
     const target = projectDir, content = draft.trim(), key = draftKey, files = attachments;
     const requestedContext = designContext, requestedContextMode = contextMode, contextProjectId = workspaceContext?.projectId;
     if (requestedContextMode === "project" && !requestedContext) {
@@ -784,7 +793,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
           <button className="chat-project__name" title={item.projectDir} onClick={() => selectProject(item)}><Icon name="folder" /><span>{item.name}</span></button>
           {visibleSessions.filter((session) => session.projectDir === item.projectDir).map((session) => <div key={session.id} className="chat-thread-row">
             <button className="chat-thread" aria-current={session.id === chatId ? "page" : undefined} onClick={() => selectChat(session)} title={session.title}>
-              <span className="chat-thread__dot" data-status={session.status} /><span>{session.title}</span>
+              <span className="chat-thread__dot" data-status={session.status} /><span>{session.title}{session.sourceSessionId && <small className="chat-external-badge">{t.externalChat}</small>}</span>
             </button>
             <button className="chat-icon chat-thread-action" aria-label={`${session.archived ? t.restore : t.archive}: ${session.title}`}
               title={session.status === "running" ? t.archiveRunning : session.archived ? t.restore : t.archive}
@@ -797,7 +806,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       <button className="chat-settings" onClick={() => settingsDialog.current?.showModal()}><Icon name="settings" /><span>{t.settings}</span></button>
     </aside>
     <main className="chat-main">
-      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}</h1></div></header>
+      <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>
       {(!eventsConnected || crashed || recovering || recoverableOperation || workCopyRefusal) && <div className="chat-runtime" role="status" aria-live="polite">
         <div>{!eventsConnected && <p>{t.reconnecting}</p>}
           {(crashed || recovering) && <><p>{recovering ? t.recovering : t.workerCrashed}</p><small>{t.recoveryHint}</small></>}
@@ -825,17 +834,26 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             : <article className={`chat-message chat-message--${message.role}`} key={message.id}>
               {message.role === "user" && message.contextMode === "project" && <p className="chat-muted">{t.contextProjectMessage}</p>}
               {message.role === "user" && message.contextMode === "stage" && <p className="chat-muted">{t.contextStageMessage}: {message.confirmedStageLabel}</p>}
-              <MessageText text={message.content} />
-              {Boolean(message.attachments?.length) && <ul className="chat-attachments chat-attachments--saved" aria-label={t.attachments}>{message.attachments!.map((file) => <li key={file.id}>
-                <a href={`/api/chat/sessions/${encodeURIComponent(chat!.id)}/attachments/${encodeURIComponent(file.id)}`} download={file.name}><Icon name="file" /><span className="chat-attachment__name" title={file.name}>{file.name}</span><span className="chat-attachment__size">{fileSize(file.size)}</span></a>
-              </li>)}</ul>}
+              <ChatMarkdown text={message.content} />
+              <ChatMessageFiles sessionId={chat!.id} messageId={message.id} attachments={message.attachments} documents={message.documents} labels={t}
+                documentBusy={busy || Boolean(toolBusy)} onOpenDocument={project && project.projectId === chat!.projectId ? (document: ChatDocument) => {
+                  // Capture the project before preparation; changing chats while it
+                  // starts must never open this document in the new project.
+                  const target = project.projectDir;
+                  const requestId = ++documentRequestSequence.current;
+                  setDocumentRequests((current) => ({ ...current, [target]: { source: {
+                    runId: document.runId, assetSha256: document.assetSha256,
+                    revisionRef: document.revisionRef ?? null, pageIndex: document.pageIndex ?? 0,
+                  }, requestId } }));
+                  void openTool("monkeyboard");
+                } : undefined} />
               {message.status === "failed" || message.status === "interrupted" ? <p className="chat-muted">{t[message.status]}</p> : null}</article>)}</div>}
         {running && <div className="chat-thinking" role="status"><span className="chat-thread__dot" data-status="running" />{t.thinking}</div>}
       </div>
       <div className="chat-composer-wrap">
         {(error ?? (chat?.id === chatId ? chat?.error : null)) && <Failure failure={(error ?? chat!.error)!} language={preferences.language} labels={t} connection={connectionName}
           onClose={error ? () => setError(null) : undefined}
-          onChangeModel={running || archived ? undefined : () => {
+          onChangeModel={running || archived || external ? undefined : () => {
             const picker = document.getElementById("chat-model") as HTMLSelectElement | null;
             picker?.focus();
             try { (picker as unknown as { showPicker?: () => void })?.showPicker?.(); } catch { /* A browser that will not open it still focused it. */ }
@@ -843,7 +861,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         {archived ? <div className="chat-archived-notice">
           <p>{t.archivedNotice}</p>
           <button className="chat-activity__open" disabled={archiveBusy !== null} onClick={() => void setArchived(chat!, false)}><Icon name="restore" /><span>{t.restoreChat}</span></button>
-        </div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
+        </div> : external ? <div className="chat-external-notice" role="status"><strong>{t.externalChat}</strong><p>{t.externalNotice}</p></div> : <form className="chat-composer" data-dragging={draggingFiles} onSubmit={(event) => void send(event)}
           onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = !project || busy ? "none" : "copy"; setDraggingFiles(Boolean(project) && !busy); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingFiles(false); }}
           onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); addAttachments(Array.from(event.dataTransfer.files)); } setDraggingFiles(false); }}
@@ -900,6 +918,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
               <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} refreshKey={item.revision} onChatRequest={focusConversation}
+                documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)}
                 onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,

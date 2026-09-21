@@ -183,6 +183,20 @@ class ChatAttachmentInput(BaseModel):
         return value
 
 
+class ChatDocumentRef(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    runId: str = Field(min_length=1)
+    assetSha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    revisionRef: str | None = None
+    pageIndex: int = Field(default=0, ge=0)
+
+
+class ChatDocument(ChatDocumentRef):
+    fileName: str
+    mimeType: str
+
+
 class ChatMessage(BaseModel):
     id: str
     role: Literal["user", "assistant", "tool"]
@@ -194,6 +208,9 @@ class ChatMessage(BaseModel):
     candidateId: str | None = None
     permission: ChatPermission | None = None
     attachments: list[ChatAttachment] = Field(default_factory=list)
+    documents: list[ChatDocument] = Field(default_factory=list)
+    sourceTurnId: str | None = None
+    presentationRevision: int | None = None
     contextMode: Literal["continue", "project", "stage"] = "continue"
     confirmedStageRef: str | None = None
     confirmedStageLabel: str | None = None
@@ -211,6 +228,8 @@ class ChatSummary(BaseModel):
     createdAt: str
     updatedAt: str
     error: HubError | None = None
+    # External conversations are displayed here; their provider runs in the source host.
+    sourceSessionId: str | None = None
 
 
 class ChatDetail(ChatSummary):
@@ -231,6 +250,39 @@ class ChatCreateRequest(BaseModel):
     provider: ChatProviderId
     model: str | None = Field(default=None, min_length=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ChatPresentationBindRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectDir: str = Field(min_length=1)
+    sourceSessionId: str = Field(min_length=1, max_length=200)
+    provider: ChatProviderId = "codex"
+    chatId: str | None = None
+    title: str = Field(default="External conversation", min_length=1, max_length=200)
+
+
+class ChatPresentationBinding(BaseModel):
+    chatId: str
+    projectId: str
+    sourceSessionId: str
+    token: str
+    url: str
+
+
+class ChatPresentationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
+
+    projectId: str
+    sourceSessionId: str
+    turnId: str
+    messageId: str
+    revision: int = Field(default=0, ge=0)
+    kind: Literal["user", "progress", "assistant"]
+    content: str = Field(default="", max_length=200000)
+    status: Literal["streaming", "complete", "failed", "interrupted"] = "complete"
+    attachments: list[ChatAttachmentInput] = Field(default_factory=list, max_length=8)
+    documents: list[ChatDocumentRef] = Field(default_factory=list, max_length=8)
 
 
 class ChatWorkspace(BaseModel):

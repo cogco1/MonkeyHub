@@ -17,11 +17,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
 import importlib.util
+import mimetypes
 import os
 from pathlib import Path
 import platform
 import re
 import shutil
+import secrets
+from io import BytesIO
 import signal
 import subprocess
 import sys
@@ -52,6 +55,7 @@ from archflow_studio_api.settings import read_application_settings
 
 from .models import (
     ChatAttachment, ChatCreateRequest, ChatDesignContext, ChatDetail, ChatMessage, ChatPostRequest, ChatProject,
+    ChatDocument, ChatDocumentRef, ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ChatPermission, ChatPermissionOption, ChatPermissionRequest,
     ChatProjectRequest, ChatProvider, ChatSummary, ChatUsageSource, ChatWorkspace, HubError, HubFailure,
 )
@@ -60,6 +64,17 @@ from monkeymonitor.store import UsageLog
 
 _trace_headers = ContextVar("hub_tool_trace_headers", default={})
 _IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+def _verify_image(data: bytes, mime_type: str) -> None:
+    from PIL import Image
+    try:
+        with Image.open(BytesIO(data)) as image:
+            if Image.MIME.get(image.format) != mime_type:
+                raise ValueError("The image format does not match its MIME type.")
+            image.verify()
+    except Exception as exc:
+        raise HubFailure(422, "CHAT_IMAGE_INVALID", "This attachment is not a valid image of the declared type.") from exc
 
 
 def _attachment_read_paging(offset: int, limit: int, page: int) -> None:
@@ -183,6 +198,7 @@ _CLAUDE_APPROVED = (
     "mcp__monkeyhub__studio_request",
     "mcp__monkeyhub__fab_request",
     "mcp__monkeyhub__attachment_read",
+    "mcp__monkeyhub__chat_present",
 )
 
 
@@ -702,6 +718,8 @@ class ChatStore:
         self._lock = threading.RLock()
         self._sessions: dict[str, _SavedChat] = {}
         self._running: dict[str, _Running] = {}
+        self._progress_rows: dict[str, dict[str, ChatMessage]] = {}
+        self._presentation_tokens: dict[str, str] = {}
         self._loaded = False
         self._closing = False
         self.on_change = None
@@ -729,7 +747,7 @@ class ChatStore:
                 session.status = "interrupted"
                 session.error = HubError(code="CHAT_INTERRUPTED", detail="Hub closed before this turn finished. You can continue this conversation.")
                 for message in session.messages:
-                    if message.status == "streaming":
+                    if message.status == "streaming" and not session.sourceSessionId:
                         message.status = "interrupted"
                     message.permission = None
                 self._save(session)
@@ -1004,7 +1022,204 @@ class ChatStore:
 
     def get(self, session_id: str) -> ChatDetail:
         with self._lock:
-            return ChatDetail.model_validate(self._session(session_id).model_dump())
+            detail = ChatDetail.model_validate(self._session(session_id).model_dump())
+            extra = [row.model_copy(deep=True) for row in self._progress_rows.get(session_id, {}).values()]
+            if detail.status != "running":
+                ending = "interrupted" if detail.status == "interrupted" else "failed" if detail.status == "failed" else "complete"
+                for row in extra:
+                    if row.status == "streaming":
+                        row.status = ending
+            detail.messages = sorted([*detail.messages, *extra], key=lambda row: (row.createdAt, row.id))
+            return detail
+
+    def _progress(self, session, key: str, text: str, *, append: bool = False,
+                  status: str = "complete") -> None:
+        """One transient projection shared by native and external conversation events."""
+        clean = _redact(text) if append else _redact(text).strip()
+        if not clean:
+            return
+        rows = self._progress_rows.setdefault(session.id, {})
+        identifier = f"{_turn_id(session)}:progress:{key}"
+        row = rows.get(key)
+        if row is None or row.id != identifier:
+            row = ChatMessage(id=identifier, role="tool", content="", createdAt=_now(), status=status)
+            rows[key] = row
+        row.content = (row.content + clean if append else clean)[-2400:]
+        row.status = status
+        if self.on_change is not None:
+            self.on_change(session)
+
+    def presentation_token(self, session_id: str) -> str:
+        with self._lock:
+            self._session(session_id)
+            return self._presentation_tokens.setdefault(session_id, secrets.token_urlsafe(32))
+
+    def bind_presentation(self, request: ChatPresentationBindRequest) -> ChatPresentationBinding:
+        with self._lock:
+            self._load()
+            if self._closing:
+                raise HubFailure(409, "CHAT_CLOSING", "Hub is closing.")
+            project_id, project_dir = _project(request.projectDir)
+            if request.chatId:
+                session = self._session(request.chatId)
+            else:
+                session = next((row for row in self._sessions.values()
+                                if row.projectDir == project_dir and row.sourceSessionId == request.sourceSessionId), None)
+            if session is None:
+                now = _now()
+                session = _SavedChat(id=str(uuid4()), projectId=project_id, projectDir=project_dir,
+                                     title=request.title, provider=request.provider, sourceSessionId=request.sourceSessionId,
+                                     createdAt=now, updatedAt=now)
+                self._save(session)
+                self._sessions[session.id] = session
+            if (session.projectId, session.projectDir, session.sourceSessionId, session.provider) != (
+                    project_id, project_dir, request.sourceSessionId, request.provider):
+                raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "Bind the original source session and project; a native chat cannot be adopted.")
+            if session.archived:
+                raise HubFailure(409, "CHAT_ARCHIVED", "Restore this chat in Hub before binding it.")
+            if session.status == "interrupted" and session.error and session.error.code == "CHAT_INTERRUPTED":
+                # An external agent can outlive Hub. Explicit rebind resumes that same in-flight turn.
+                session = session.model_copy(update={"status": "running", "error": None, "updatedAt": _now()}, deep=True)
+                self._save(session)
+                self._sessions[session.id] = session
+            return ChatPresentationBinding(chatId=session.id, projectId=project_id, sourceSessionId=request.sourceSessionId,
+                                           token=self.presentation_token(session.id),
+                                           url=self.hub_url + "/?" + urlencode({"chatId": session.id}))
+
+    def _document(self, session, ref: ChatDocumentRef):
+        from archflow_studio_api.application.artifacts import document_bytes, list_documents
+        from archflow_studio_api.application.binding import ProjectBinding
+        from archflow_studio_api.settings import StudioSettings
+
+        project_id, project_dir = _project(session.projectDir)
+        if (project_id, project_dir) != (session.projectId, session.projectDir):
+            raise HubFailure(409, "CHAT_PROJECT_MISMATCH", "The conversation's project identity changed.")
+        root = Path(project_dir)
+        binding = ProjectBinding(FilesystemProjectRepository.open(root), project_id=project_id, project_dir=root,
+                                 settings=StudioSettings(project_dir=root, cad_export="off"))
+        document = next((row for row in list_documents(binding, ref.runId)
+                         if (row.run_id, row.asset_sha256, row.revision_ref) == (ref.runId, ref.assetSha256, ref.revisionRef)), None)
+        if document is None or ref.pageIndex not in {page.page_index for page in document.pages}:
+            raise HubFailure(409, "CHAT_DOCUMENT_MISMATCH", "This exact document revision or page is unavailable.")
+        # The legacy byte reader treats null revision as a wildcard. Select exact metadata first;
+        # bytes remain content-addressed and independently verified by their existing owner.
+        _, data = document_bytes(binding, ref.runId, ref.assetSha256, ref.revisionRef)
+        return document, data
+
+    def presentation_document(self, session_id: str, message_id: str, index: int):
+        with self._lock:
+            session = self._session(session_id)
+            message = next((row for row in session.messages if row.id == message_id), None)
+            if message is None or not 0 <= index < len(message.documents):
+                raise HubFailure(404, "CHAT_DOCUMENT_NOT_FOUND", "This document is not in this conversation.")
+            return self._document(session, message.documents[index])
+
+    def present(self, session_id: str, request: ChatPresentationRequest, token: str) -> ChatDetail:
+        """Upsert a public result without starting a provider or writing project state."""
+        with self._lock:
+            session = self._session(session_id).model_copy(deep=True)
+            expected = self._presentation_tokens.get(session_id)
+            if not expected or not secrets.compare_digest(expected, token):
+                raise HubFailure(403, "CHAT_PRESENTATION_BIND_REQUIRED", "Reconnect the bound presentation tool to this Hub.")
+            if self._closing or session.archived:
+                raise HubFailure(409, "CHAT_UNAVAILABLE", "Restore the conversation or reconnect after Hub restarts.")
+            if (request.projectId != session.projectId or request.sourceSessionId != (session.sourceSessionId or f"hub:{session_id}")
+                    or _project(session.projectDir) != (session.projectId, session.projectDir)):
+                raise HubFailure(409, "CHAT_PRESENTATION_MISMATCH", "The presentation belongs to a different project or source session.")
+            _identifier(request.messageId)
+            _identifier(request.turnId)
+            if request.kind == "user" and (not session.sourceSessionId or request.status != "complete"):
+                raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Only an external source can start a turn with a complete user message.")
+            if request.kind == "progress" and (request.attachments or request.documents):
+                raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Progress is transient text; publish media as an assistant result.")
+            if not request.content.strip() and not request.attachments and not request.documents:
+                raise HubFailure(422, "CHAT_MESSAGE_EMPTY", "Provide text or a result attachment/document.")
+            progress_key = f"external:{request.messageId}"
+            previous = (self._progress_rows.get(session_id, {}).get(progress_key) if request.kind == "progress" else
+                        next((row for row in session.messages if row.id == request.messageId), None))
+            content = _redact(request.content, _claude_env())
+            if request.kind == "progress":
+                content = content.strip()[-2400:]
+            if previous:
+                role = "tool" if request.kind == "progress" else request.kind
+                if previous.sourceTurnId != request.turnId or previous.role != role or previous.presentationRevision is None:
+                    raise HubFailure(409, "CHAT_PRESENTATION_CONFLICT", "This message id belongs to another item or turn.")
+                if request.revision < previous.presentationRevision:
+                    raise HubFailure(409, "CHAT_PRESENTATION_STALE", "An older presentation revision cannot replace this result.")
+                if request.revision == previous.presentationRevision:
+                    same_files = len(request.attachments) == len(previous.attachments) and all(
+                        upload.name == stored.name and upload.mimeType == stored.mimeType and
+                        upload.data == base64.b64encode(self._attachment_path(session_id, stored).read_bytes()).decode("ascii")
+                        for upload, stored in zip(request.attachments, previous.attachments))
+                    same_refs = [ref.model_dump() for ref in request.documents] == [
+                        ChatDocumentRef.model_validate(ref.model_dump(include=set(ChatDocumentRef.model_fields))).model_dump()
+                        for ref in previous.documents]
+                    settled_stream = request.status == "streaming" and previous.status != "streaming" and session.status != "running"
+                    if previous.content == content and (previous.status == request.status or settled_stream) and same_files and same_refs:
+                        return self.get(session_id)
+                    raise HubFailure(409, "CHAT_PRESENTATION_CONFLICT", "A revision identifies one exact message snapshot.")
+                if previous.status != "streaming" or request.kind == "user":
+                    raise HubFailure(409, "CHAT_PRESENTATION_COMPLETE", "A completed message cannot be rewritten.")
+            current_user = next((row for row in reversed(session.messages) if row.role == "user"), None)
+            current_turn = current_user.sourceTurnId or current_user.id if current_user else None
+            if request.kind == "user":
+                if session.status == "running" or any(row.sourceTurnId == request.turnId for row in session.messages):
+                    raise HubFailure(409, "CHAT_RUNNING", "Finish the active turn and use a new turn id for the next request.")
+            elif session.status != "running" or current_turn != request.turnId:
+                raise HubFailure(409, "CHAT_PRESENTATION_TURN_CLOSED", "Start a user turn or use the currently running turn id.")
+            if request.kind == "progress":
+                self._progress(session, progress_key, content, status=request.status)
+                row = self._progress_rows[session_id][progress_key]
+                row.sourceTurnId, row.presentationRevision = request.turnId, request.revision
+                return self.get(session_id)
+            attachments, writes = [], []
+            total = 0
+            for index, upload in enumerate(request.attachments):
+                try:
+                    data = base64.b64decode(upload.data, validate=True)
+                except (ValueError, binascii.Error) as exc:
+                    raise HubFailure(422, "CHAT_ATTACHMENT_INVALID", "The attached file could not be decoded.") from exc
+                total += len(data)
+                if len(data) > 20 * 1024 * 1024 or total > 40 * 1024 * 1024:
+                    raise HubFailure(413, "CHAT_ATTACHMENT_TOO_LARGE", "Files are limited to 20 MiB each and 40 MiB per message.")
+                if upload.mimeType in _IMAGE_MIMES:
+                    _verify_image(data, upload.mimeType)
+                old = previous.attachments[index] if previous and index < len(previous.attachments) else None
+                if old:
+                    if (old.name, old.mimeType) != (upload.name, upload.mimeType) or self._attachment_path(session_id, old).read_bytes() != data:
+                        raise HubFailure(409, "CHAT_ATTACHMENT_CONFLICT", "Publish a changed image as a new message; existing attachments stay exact.")
+                    attachment = old
+                else:
+                    attachment = ChatAttachment(id=str(uuid4()), name=upload.name, mimeType=upload.mimeType, size=len(data))
+                    writes.append((attachment, data))
+                attachments.append(attachment)
+            if previous and len(attachments) < len(previous.attachments):
+                raise HubFailure(409, "CHAT_ATTACHMENT_CONFLICT", "An update must retain existing attachments.")
+            documents = []
+            for ref in request.documents:
+                document, _ = self._document(session, ref)
+                documents.append(ChatDocument(**ref.model_dump(), fileName=document.file_name, mimeType=document.mime_type))
+            message = ChatMessage(id=request.messageId, role=request.kind, content=content,
+                                  createdAt=previous.createdAt if previous else _now(), status=request.status,
+                                  sourceTurnId=request.turnId, presentationRevision=request.revision,
+                                  attachments=attachments, documents=documents)
+            if previous:
+                session.messages[session.messages.index(previous)] = message
+            else:
+                session.messages.append(message)
+            if request.kind == "user":
+                session.status, session.error = "running", None
+            elif session.sourceSessionId and request.status != "streaming":
+                session.status = "idle" if request.status == "complete" else request.status
+                for row in session.messages:
+                    if row.sourceTurnId == request.turnId and row.status == "streaming":
+                        row.status = request.status
+            session.updatedAt = _now()
+            self._save(session, tuple(writes))
+            self._sessions[session_id] = session
+            if request.kind == "user":
+                self._progress_rows.pop(session_id, None)
+            return self.get(session_id)
 
     def set_archived(self, session_id: str, archived: bool) -> ChatDetail:
         """Hide or restore a conversation without changing its native session."""
@@ -1059,6 +1274,8 @@ class ChatStore:
     def post(self, session_id: str, request: ChatPostRequest) -> ChatDetail:
         with self._lock:
             session = self._session(session_id).model_copy(deep=True)
+            if session.sourceSessionId:
+                raise HubFailure(409, "CHAT_EXTERNAL_SOURCE", "Continue this conversation in its external source; Hub only displays its results.")
             if self._closing:
                 raise HubFailure(409, "CHAT_CLOSING", "Hub is closing.")
             if session.archived:
@@ -1093,6 +1310,7 @@ class ChatStore:
             session.status, session.error, session.updatedAt = "running", None, _now()
             self._save(session, tuple(attachments))
             self._sessions[session_id] = session
+            self._progress_rows.pop(session_id, None)
             running = _Running(design_context=request.designContext, context_mode=request.contextMode,
                                attachments=tuple((attachment, self._attachment_path(session.id, attachment))
                                                  for attachment, _ in attachments), trace=HubTurnObserver(
@@ -1134,10 +1352,11 @@ class ChatStore:
             raise HubFailure(503, "CHAT_CONFIG_INVALID", "The installed Codex MCP configuration could not be read.") from exc
         from . import computer_tools
 
-        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read",
+        tool_names = ("studio_schema", "studio_request", "fab_request", "attachment_read", "chat_present",
                       *computer_tools.TOOL_NAMES)
         mcp_servers["monkeyhub"] = {
             **mcp, "enabled": True, "required": True,
+            "env_vars": ["MONKEYHUB_PRESENTATION_TOKEN"],
             "enabled_tools": list(tool_names),
             "tools": {name: {"approval_mode": "approve"} for name in tool_names},
         }
@@ -1147,6 +1366,7 @@ class ChatStore:
         commands = self.commands if self.commands is not None else _cli_commands()
         kind = "codex" if session.provider == "codex" else "claude"
         environment = _claude_env() if kind == "claude" else dict(os.environ)
+        environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session.id)
         mcp = self._tool_connection(session)
         model = session.model
         # The assistant works where the work is: this Hub's own source tree when
@@ -1295,6 +1515,7 @@ class ChatStore:
         from .acp_session import AcpCancelled, CodexAcpSession
 
         environment = dict(os.environ)
+        environment["MONKEYHUB_PRESENTATION_TOKEN"] = self.presentation_token(session_id)
         try:
             with self._lock:
                 session = self._sessions[session_id]
@@ -1569,6 +1790,8 @@ class ChatStore:
                     except ValueError:
                         continue
                     with self._lock:
+                        # A media presentation can atomically replace the saved chat between CLI events.
+                        session = self._sessions[session_id]
                         event_error, finished = self._event(session, event, environment)
                         completed_turn = completed_turn or finished
                         if event_error:
@@ -1715,7 +1938,16 @@ class ChatStore:
 
     def stop(self, session_id: str) -> ChatDetail:
         with self._lock:
-            self._session(session_id)
+            session = self._session(session_id)
+            if session.sourceSessionId and session.status == "running":
+                updated = session.model_copy(deep=True)
+                updated.status, updated.updatedAt = "interrupted", _now()
+                for message in updated.messages:
+                    if message.status == "streaming":
+                        message.status = "interrupted"
+                self._save(updated)
+                self._sessions[session_id] = updated
+                return self.get(session_id)
             running = self._running.get(session_id)
             if running is None:
                 return self.get(session_id)
@@ -2209,6 +2441,8 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     from . import computer_tools
 
+    if name == "chat_present":
+        return _present_tool(hub, chat_id, arguments, os.environ.get("MONKEYHUB_PRESENTATION_TOKEN", ""))
     if name == "attachment_read":
         if not isinstance(arguments, dict) or set(arguments) - {"attachmentId", "offset", "limit", "page"}:
             raise HubFailure(422, "CHAT_ATTACHMENT_READ_INVALID", "Use attachmentId and optional offset, limit, and page only.")
@@ -2387,11 +2621,58 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     return _finish(base, started, comparison, time.monotonic() + wait)
 
 
-def _mcp(hub: str, chat_id: str) -> None:
+_PRESENTATION_INSTRUCTIONS = (
+    "This connection displays results in the bound MonkeyHub conversation. Call presentation_bind once if available. "
+    "For each external user request, call chat_present with kind=user and fresh UUID turnId/messageId; "
+    "then default to publishing public progress, answers and selected images here without asking the user again. "
+    "Use kind=progress only for public commentary, never hidden reasoning. Use kind=assistant for text and media. "
+    "A streaming snapshot uses the same messageId and a strictly increasing revision, with full content and retained attachments. "
+    "Use status=streaming while work continues; finish with complete, failed or interrupted. "
+    "Keep the source host response concise with the Hub URL. This does not suppress mandatory host output. "
+    "No call here starts another model. On disconnect or refusal, report it in the source host; reconnect with presentation_bind, "
+    "then replay only the same presentation snapshot, never a design mutation. "
+    "For Hub-native conversations, normal answers already stream automatically; use chat_present for media with status=streaming. "
+    "Project drawings belong to existing project document APIs; reference runId/assetSha256/revisionRef/pageIndex exactly. "
+    "A display reference does not mean a Board write succeeded."
+)
+
+
+def _present_tool(hub: str, chat_id: str, arguments: dict, token: str):
+    session = _request_json(hub, f"/api/chat/sessions/{_identifier(chat_id)}")
+    body = dict(arguments)
+    if set(body) - {"turnId", "messageId", "revision", "kind", "content", "status", "attachments", "documents"}:
+        raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "Use only the documented presentation fields; this connection fixes its destination.")
+    if not session.get("sourceSessionId") and "turnId" not in body:
+        user = next((row for row in reversed(session.get("messages", [])) if row["role"] == "user"), None)
+        if user:
+            body["turnId"] = user["id"]
+    uploads = []
+    for item in body.get("attachments", []):
+        item = dict(item)
+        if "path" in item:
+            if set(item) - {"path", "name", "mimeType"}:
+                raise HubFailure(422, "CHAT_ATTACHMENT_INVALID", "A local file takes path and optional name/mimeType.")
+            path = Path(item.pop("path")).resolve(strict=True)
+            if not path.is_file() or path.stat().st_size > 20 * 1024 * 1024:
+                raise HubFailure(413, "CHAT_ATTACHMENT_TOO_LARGE", "Select one file no larger than 20 MiB.")
+            item.setdefault("name", path.name)
+            item.setdefault("mimeType", mimetypes.guess_type(path.name)[0] or "application/octet-stream")
+            item["data"] = base64.b64encode(path.read_bytes()).decode("ascii")
+        uploads.append(item)
+    body.update(projectId=session["projectId"], sourceSessionId=session.get("sourceSessionId") or f"hub:{chat_id}", attachments=uploads)
+    request = ChatPresentationRequest.model_validate(body)
+    result = _request_json(hub, f"/api/chat/sessions/{chat_id}/presentation", "POST", request.model_dump(),
+                           headers={"Authorization": "Bearer " + token})
+    return {"chatId": chat_id, "messageId": request.messageId, "revision": request.revision,
+            "status": result["status"], "url": hub + "/?" + urlencode({"chatId": chat_id})}
+
+
+def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | None = None) -> None:
     from . import computer_tools
 
     sys.stdin.reconfigure(encoding="utf-8")
     sys.stdout.reconfigure(encoding="utf-8")
+    presentation_binding = None
     request_fields = {
         "method": {"type": "string", "enum": ["GET", "POST", "PUT"]},
         "path": {"type": "string"},
@@ -2487,6 +2768,12 @@ def _mcp(hub: str, chat_id: str) -> None:
         "Stage acceptance, formal issue and printer upload are separate from this tool's reversible design actions.",
     ])
     tools = [
+        {"name": "chat_present", "description": _PRESENTATION_INSTRUCTIONS, "inputSchema": {
+            **ChatPresentationRequest.model_json_schema(),
+            "properties": {key: value for key, value in ChatPresentationRequest.model_json_schema()["properties"].items()
+                           if key not in {"projectId", "sourceSessionId"}},
+            "required": ["turnId", "messageId", "kind"] if external else ["messageId", "kind"],
+        }},
         {"name": "studio_schema", "description": "Read the exact request/response schema of an allowed Studio action. "
          "Use it to discover inputs, clarify a field or correct a request. Paths may contain template segments, "
          "such as /api/proposals/{id}/candidate. For semantic authoring, supply producer to select its request inputs.", "inputSchema": schema_input},
@@ -2508,6 +2795,16 @@ def _mcp(hub: str, chat_id: str) -> None:
         # it with the file that would.
         *computer_tools.tool_definitions(),
     ]
+    # Only the local stdio adapter reads an explicitly selected path. HTTP takes bytes/references only.
+    tools[0]["inputSchema"]["properties"]["attachments"] = {"type": "array", "maxItems": 8, "items": {"anyOf": [
+        {"$ref": "#/$defs/ChatAttachmentInput"},
+        {"type": "object", "properties": {"path": {"type": "string"}, "name": {"type": "string"},
+                                            "mimeType": {"type": "string"}}, "required": ["path"], "additionalProperties": False},
+    ]}}
+    if external:
+        tools.insert(0, {"name": "presentation_bind", "description": "Connect this source session to its configured Hub project, "
+                        "reusing the same conversation across turns/reconnects. Returns its URL and default presentation instructions.",
+                        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}})
     for line in sys.stdin:
         try:
             request = json.loads(line)
@@ -2515,12 +2812,26 @@ def _mcp(hub: str, chat_id: str) -> None:
                 continue
             method, params = request.get("method"), request.get("params", {})
             if method == "initialize":
-                result = {"protocolVersion": params.get("protocolVersion", "2024-11-05"), "capabilities": {"tools": {}}, "serverInfo": {"name": "monkeyhub", "version": "0.1.0"}}
+                result = {"protocolVersion": params.get("protocolVersion", "2024-11-05"), "capabilities": {"tools": {}},
+                          "serverInfo": {"name": "monkeyhub", "version": "0.1.0"}, "instructions": _PRESENTATION_INSTRUCTIONS}
             elif method == "tools/list":
                 result = {"tools": tools}
             elif method == "tools/call":
                 try:
-                    value = call_tool(hub, chat_id, params.get("name", ""), params.get("arguments", {}))
+                    name, arguments = params.get("name", ""), params.get("arguments", {})
+                    if external and name == "presentation_bind":
+                        if arguments:
+                            raise HubFailure(422, "CHAT_PRESENTATION_INVALID", "The connection already fixes its project and source session.")
+                        presentation_binding = _request_json(hub, "/api/chat/presentation/bind", "POST", external.model_dump())
+                        chat_id = presentation_binding["chatId"]
+                        value = {key: value for key, value in presentation_binding.items() if key != "token"}
+                        value["instructions"] = _PRESENTATION_INSTRUCTIONS
+                    elif external and presentation_binding is None:
+                        raise HubFailure(409, "CHAT_PRESENTATION_BIND_REQUIRED", "Call presentation_bind before publishing or using project tools.")
+                    elif external and name == "chat_present":
+                        value = _present_tool(hub, chat_id, arguments, presentation_binding["token"])
+                    else:
+                        value = call_tool(hub, chat_id, name, arguments)
                     arguments = params.get("arguments", {})
                     image_read = (params.get("name") == "studio_request"
                                   and (str(arguments.get("method", "GET")).upper(),
@@ -2556,6 +2867,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mcp", action="store_true", required=True)
     parser.add_argument("--hub-url", required=True)
-    parser.add_argument("--chat-id", required=True)
+    parser.add_argument("--chat-id")
+    parser.add_argument("--project-dir")
+    parser.add_argument("--source-session-id")
+    parser.add_argument("--provider", choices=("codex", "claude", "coding-plan"), default="codex")
+    parser.add_argument("--title", default="External conversation")
     args = parser.parse_args()
-    _mcp(_url(args.hub_url), _identifier(args.chat_id))
+    if args.source_session_id and args.project_dir:
+        external = ChatPresentationBindRequest(projectDir=args.project_dir, sourceSessionId=args.source_session_id,
+                                               provider=args.provider, chatId=args.chat_id, title=args.title)
+        _mcp(_url(args.hub_url), args.chat_id, external)
+    elif args.chat_id and not args.source_session_id and not args.project_dir:
+        _mcp(_url(args.hub_url), _identifier(args.chat_id))
+    else:
+        parser.error("Use --chat-id for a Hub-owned conversation, or --project-dir and --source-session-id for external presentation.")

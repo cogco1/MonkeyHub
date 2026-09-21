@@ -14,6 +14,7 @@ import time
 import queue
 import socket
 from urllib.parse import urlsplit
+from urllib.parse import quote
 from uuid import UUID
 import webbrowser
 
@@ -49,6 +50,7 @@ from .models import (
     ChatProvider, ChatProject, ChatProjectRequest, ChatSummary, ChatDetail, ChatCreateRequest,
     ChatModelRequest, ChatPostRequest, ChatUsageSource, ChatWorkspace, ChatPermissionRequest, ChatArchiveRequest,
     ChatAttachmentContent,
+    ChatPresentationBindRequest, ChatPresentationBinding, ChatPresentationRequest,
     ProjectArchiveExportRequest, ProjectArchiveRestoreRequest, ProjectArchiveRestoreResult, ProjectArchiveSummary,
     ComputerActionRequest, ComputerInspectRequest, ComputerRecordingRequest,
 )
@@ -367,6 +369,32 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     def create_chat(body: ChatCreateRequest):
         return chats.create(body)
 
+    def local_presenter(request: Request) -> None:
+        if request.client is None or request.client.host not in {"127.0.0.1", "::1"}:
+            raise HubFailure(403, "LOCAL_PRESENTER_REQUIRED", "Presentation tools must connect from this machine.")
+
+    @app.post("/api/chat/presentation/bind", response_model=ChatPresentationBinding)
+    def bind_chat_presentation(request: Request, body: ChatPresentationBindRequest):
+        local_presenter(request)
+        return chats.bind_presentation(body)
+
+    @app.post("/api/chat/sessions/{session_id}/presentation", response_model=ChatDetail)
+    def present_chat(request: Request, session_id: str, body: ChatPresentationRequest):
+        local_presenter(request)
+        authorization = request.headers.get("authorization", "")
+        token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
+        return chats.present(session_id, body, token)
+
+    @app.get("/api/chat/sessions/{session_id}/documents/{message_id}/{index}", response_class=Response)
+    def read_chat_document(session_id: str, message_id: str, index: int, download: bool = False):
+        document, data = chats.presentation_document(session_id, message_id, index)
+        safe_inline = document.mime_type in chat_tools._IMAGE_MIMES | {"application/pdf"}
+        disposition = "attachment" if download or not safe_inline else "inline"
+        return Response(data, media_type=document.mime_type if safe_inline else "application/octet-stream",
+                        headers={"Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(document.file_name, safe='')}",
+                                 "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store",
+                                 "ETag": f'"{document.asset_sha256}"'})
+
     @app.get("/api/chat/sessions/{session_id}", response_model=ChatDetail)
     def read_chat(session_id: str):
         return chats.get(session_id)
@@ -376,9 +404,14 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         return chats.post(session_id, body)
 
     @app.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}", response_class=FileResponse)
-    def read_chat_attachment(session_id: str, attachment_id: str):
+    def read_chat_attachment(session_id: str, attachment_id: str, inline: bool = False):
         attachment, path = chats.attachment(session_id, attachment_id)
-        return FileResponse(path, media_type="application/octet-stream", filename=attachment.name,
+        if inline:
+            if attachment.mimeType not in chat_tools._IMAGE_MIMES:
+                raise HubFailure(422, "CHAT_IMAGE_INVALID", "Only supported raster images can be previewed inline.")
+            chat_tools._verify_image(path.read_bytes(), attachment.mimeType)
+        return FileResponse(path, media_type=attachment.mimeType if inline else "application/octet-stream", filename=attachment.name,
+                            content_disposition_type="inline" if inline else "attachment",
                             headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
     @app.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/read", response_model=ChatAttachmentContent)

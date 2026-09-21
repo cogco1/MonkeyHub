@@ -37,6 +37,21 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": asset.bytes.length });
     res.end(asset.bytes); return;
   }
+  const chatAttachment = /^\/api\/chat\/sessions\/([^/]+)\/attachments\/([^/]+)$/.exec(pathname);
+  if (chatAttachment) {
+    const file = uploadedAttachments.get(chatAttachment[2]);
+    if (!file || file.sessionId !== chatAttachment[1]) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { "Content-Type": file.mimeType, "Content-Disposition": `attachment; filename="${file.name}"` });
+    res.end(Buffer.from(file.data, "base64")); return;
+  }
+  const chatDocument = /^\/api\/chat\/sessions\/([^/]+)\/documents\/([^/]+)\/(\d+)$/.exec(pathname);
+  if (chatDocument) {
+    const session = sessions.find((item) => item.id === chatDocument[1]);
+    const document = session?.messages.find((item) => item.id === chatDocument[2])?.documents?.[Number(chatDocument[3])];
+    if (!document) { res.writeHead(404); res.end(); return; }
+    res.writeHead(200, { "Content-Type": document.mimeType, "Content-Disposition": `attachment; filename="${document.fileName}"` });
+    res.end(Buffer.from(externalImage, "base64")); return;
+  }
   if (pathname === "/tool") {
     toolLoads.push(req.url);
     res.setHeader("Content-Type", "text/html");
@@ -75,6 +90,7 @@ let chatCreationFailureFor = null;
 let chatMessageFailureFor = null;
 let chatMessageResponseGate = Promise.resolve();
 const uploadedAttachments = new Map();
+const externalImage = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB8sAAAAASUVORK5CYII=";
 let projectListGate = null;
 let runtimeOpenGate = null;
 let runtimeOpenCaptured = null;
@@ -266,11 +282,19 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
     const file = uploadedAttachments.get(attachmentMatch[2]);
     assert.equal(file?.sessionId, attachmentMatch[1]);
     return route.fulfill({ body: Buffer.from(file.data, "base64"), contentType: file.mimeType,
-      headers: { "Content-Disposition": `attachment; filename="${file.name}"` } });
+      headers: { "Content-Disposition": `${url.searchParams.get("inline") === "true" ? "inline" : "attachment"}; filename="${file.name}"` } });
+  }
+  const documentMatch = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)\/documents\/([^/]+)\/(\d+)$/);
+  if (documentMatch) {
+    const session = sessions.find((item) => item.id === documentMatch[1]);
+    const document = session?.messages.find((item) => item.id === documentMatch[2])?.documents?.[Number(documentMatch[3])];
+    assert.ok(document, "only a document retained on this chat message can be displayed");
+    return route.fulfill({ body: Buffer.from(externalImage, "base64"), contentType: document.mimeType });
   }
   const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)(?:\/(messages|stop|model|archive|fail))?$/);
   if (match) {
     const session = sessions.find((item) => item.id === match[1]);
+    if (!session) return json({ code: "CHAT_NOT_FOUND", detail: "This conversation is no longer available." }, 404);
     if (match[2] === "messages") {
       assert.equal(Boolean(session.archived), false, "archived chats must be restored before sending");
       assert.equal(data().projectId, session.projectId);
@@ -1278,7 +1302,7 @@ try {
     { name: "clipboard.png", mimeType: "image/png", data: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64") },
     { name: "notes.txt", mimeType: "text/plain", data: Buffer.from("Dropped notes B").toString("base64") },
   ]);
-  const savedAttachments = page.locator(".chat-attachments--saved a");
+  const savedAttachments = page.locator(".chat-attachments--saved > li > a");
   assert.equal(await savedAttachments.count(), 2);
   const attachedSession = sessions.find((session) => session.title === "clipboard.png");
   assert.equal(await savedAttachments.first().getAttribute("href"), `/api/chat/sessions/${attachedSession.id}/attachments/${attachedSession.messages[0].attachments[0].id}`);
@@ -1454,6 +1478,87 @@ try {
   await page.getByText("Continuing from confirmed stage: Massing approved", { exact: true }).waitFor();
   assert.equal(await page.locator(".chat-message--user").count(), 4, "the stage handoff remains visible after reopening");
   confirmedStageForChat = null;
+
+  // A source application owns the external session; Hub shows its retained
+  // Markdown and media without accidentally starting a second provider turn.
+  const externalSession = { id: "external-214", projectId: "B", projectDir: "D:\\fixture\\B", title: "Exterior review",
+    provider: "codex", sourceSessionId: "source-task-214", status: "idle", archived: false,
+    createdAt: "2026-09-20", updatedAt: "2026-09-20", messages: [
+      { id: "external-progress", role: "tool", status: "complete", content: "Facade comparison ready\nPublic progress summary" },
+      { id: "external-result", role: "assistant", status: "complete", content: [
+        "## Facade comparison", "", "A **retained** candidate with `same base`.", "", "- First option", "- Second option", "",
+        "| Option | Decision |", "| --- | --- |", "| A | Review |", "", "```js", "const accepted = false;", "```", "",
+        "[Source](https://example.com/reference) [unsafe](javascript:alert(1))",
+        '<img src="https://invalid.example/untrusted.png" onerror="alert(1)">',
+        "![Remote image](https://example.com/remote.png)",
+      ].join("\n"), attachments: [
+        { id: "external-image", name: "facade.png", mimeType: "image/png", size: Buffer.from(externalImage, "base64").length },
+        { id: "external-broken", name: "broken.png", mimeType: "image/png", size: 6 },
+        { id: "external-svg", name: "diagram.svg", mimeType: "image/svg+xml", size: 11 },
+      ], documents: [{ runId: "document-B", assetSha256: "d".repeat(64), revisionRef: "revision-B", pageIndex: 0,
+        fileName: "registered.png", mimeType: "image/png" }] },
+    ] };
+  uploadedAttachments.set("external-image", { sessionId: externalSession.id, name: "facade.png", mimeType: "image/png", data: externalImage });
+  uploadedAttachments.set("external-broken", { sessionId: externalSession.id, name: "broken.png", mimeType: "image/png", data: Buffer.from("broken").toString("base64") });
+  uploadedAttachments.set("external-svg", { sessionId: externalSession.id, name: "diagram.svg", mimeType: "image/svg+xml", data: Buffer.from("<svg></svg>").toString("base64") });
+  sessions.unshift(externalSession);
+  const beforeExternalTurns = writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length;
+  await page.goto(`${origin}/?chatId=${externalSession.id}`);
+  await page.locator(".chat-header h1").filter({ hasText: "Exterior review" }).waitFor();
+  await page.locator(".chat-external-notice").getByText("External conversation", { exact: true }).waitFor();
+  assert.equal(await page.locator('.chat-project[data-selected="true"] .chat-project__name').innerText(), "Project B",
+    "a deep link takes its project from the selected chat, not stale local preferences");
+  assert.equal(await page.locator("#chat-input").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).count(), 0);
+  assert.equal(await page.locator(".chat-prose strong").innerText(), "retained");
+  assert.deepEqual(await page.locator(".chat-prose li").allTextContents(), ["First option", "Second option"]);
+  assert.equal(await page.locator(".chat-prose table tbody").innerText(), "A\tReview");
+  assert.equal(await page.locator(".chat-code code").innerText(), "const accepted = false;");
+  assert.equal(await page.locator(".chat-prose img, .chat-prose script").count(), 0, "model markup and remote image syntax cannot introduce image requests or executable HTML");
+  assert.equal(await page.locator('.chat-prose a[href^="javascript:"]').count(), 0);
+  assert.equal(await page.getByRole("link", { name: "Source", exact: true }).getAttribute("rel"), "noopener noreferrer");
+  await page.getByText("This image could not be loaded. You can still download the file.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Enlarge image: diagram.svg", exact: true }).count(), 0);
+  const preview = page.getByRole("button", { name: "Enlarge image: facade.png", exact: true });
+  await preview.click();
+  const imageDialog = page.getByRole("dialog", { name: "facade.png", exact: true });
+  await imageDialog.waitFor();
+  assert.equal(await imageDialog.getByRole("img").evaluate((image) => image.complete && image.naturalWidth > 0), true);
+  const imageDownload = page.waitForEvent("download");
+  await imageDialog.getByRole("link", { name: "Download", exact: true }).click();
+  const savedImage = await imageDownload;
+  assert.equal(savedImage.suggestedFilename(), "facade.png");
+  assert.deepEqual(await readFile(await savedImage.path()), Buffer.from(externalImage, "base64"));
+  await page.keyboard.press("Escape");
+  await imageDialog.waitFor({ state: "hidden" });
+  assert.equal(await preview.evaluate((button) => button === document.activeElement), true);
+  await page.getByRole("button", { name: "Enlarge image: registered.png", exact: true }).click();
+  const documentDialog = page.getByRole("dialog", { name: "registered.png", exact: true });
+  assert.equal(await documentDialog.getByRole("link", { name: "Download", exact: true }).getAttribute("href"),
+    `/api/chat/sessions/${externalSession.id}/documents/external-result/0?download=true`);
+  const documentDownload = page.waitForEvent("download");
+  await documentDialog.getByRole("link", { name: "Download", exact: true }).click();
+  const savedDocument = await documentDownload;
+  assert.equal(savedDocument.suggestedFilename(), "registered.png");
+  assert.deepEqual(await readFile(await savedDocument.path()), Buffer.from(externalImage, "base64"));
+  await documentDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.screenshot({ path: path.join(temporary, "external-presentation.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await preview.click();
+  const previewBounds = await imageDialog.boundingBox();
+  assert.ok(previewBounds.x >= 0 && previewBounds.x + previewBounds.width <= 390, "the image dialog fits a narrow viewport");
+  await page.screenshot({ path: path.join(temporary, "external-image-mobile.png") });
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.locator(".chat-sidebar__top .chat-icon").click();
+  await page.reload();
+  await page.getByRole("button", { name: "Enlarge image: facade.png", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+  await page.locator("#chat-input").waitFor();
+  await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+  await page.locator(".chat-external-notice").waitFor();
+  assert.equal(writes.filter(([, name]) => /\/(messages|stop|model)$/.test(name)).length, beforeExternalTurns);
 
   // With no building project, machine tools remain available and report a
   // missing dependency directly instead of asking the person to bind Studio.

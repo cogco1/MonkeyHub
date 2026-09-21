@@ -330,9 +330,65 @@ export type ChatDetail = {
     updatedAt: string;
     error?: HubError | null;
     /**
+     * Sourcesessionid
+     */
+    sourceSessionId?: string | null;
+    /**
      * Messages
      */
     messages?: Array<ChatMessage>;
+};
+
+/**
+ * ChatDocument
+ */
+export type ChatDocument = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex?: number;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Mimetype
+     */
+    mimeType: string;
+};
+
+/**
+ * ChatDocumentRef
+ */
+export type ChatDocumentRef = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex?: number;
 };
 
 /**
@@ -368,6 +424,18 @@ export type ChatMessage = {
      * Attachments
      */
     attachments?: Array<ChatAttachment>;
+    /**
+     * Documents
+     */
+    documents?: Array<ChatDocument>;
+    /**
+     * Sourceturnid
+     */
+    sourceTurnId?: string | null;
+    /**
+     * Presentationrevision
+     */
+    presentationRevision?: number | null;
     /**
      * Contextmode
      */
@@ -465,6 +533,104 @@ export type ChatPostRequest = {
      * Contextmode
      */
     contextMode?: 'continue' | 'project' | 'stage';
+};
+
+/**
+ * ChatPresentationBindRequest
+ */
+export type ChatPresentationBindRequest = {
+    /**
+     * Projectdir
+     */
+    projectDir: string;
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Provider
+     */
+    provider?: 'codex' | 'claude' | 'coding-plan';
+    /**
+     * Chatid
+     */
+    chatId?: string | null;
+    /**
+     * Title
+     */
+    title?: string;
+};
+
+/**
+ * ChatPresentationBinding
+ */
+export type ChatPresentationBinding = {
+    /**
+     * Chatid
+     */
+    chatId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Token
+     */
+    token: string;
+    /**
+     * Url
+     */
+    url: string;
+};
+
+/**
+ * ChatPresentationRequest
+ */
+export type ChatPresentationRequest = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId: string;
+    /**
+     * Turnid
+     */
+    turnId: string;
+    /**
+     * Messageid
+     */
+    messageId: string;
+    /**
+     * Revision
+     */
+    revision?: number;
+    /**
+     * Kind
+     */
+    kind: 'user' | 'progress' | 'assistant';
+    /**
+     * Content
+     */
+    content?: string;
+    /**
+     * Status
+     */
+    status?: 'streaming' | 'complete' | 'failed' | 'interrupted';
+    /**
+     * Attachments
+     */
+    attachments?: Array<ChatAttachmentInput>;
+    /**
+     * Documents
+     */
+    documents?: Array<ChatDocumentRef>;
 };
 
 /**
@@ -600,6 +766,10 @@ export type ChatSummary = {
      */
     updatedAt: string;
     error?: HubError | null;
+    /**
+     * Sourcesessionid
+     */
+    sourceSessionId?: string | null;
 };
 
 /**
@@ -2180,6 +2350,102 @@ export type ChatUsageSourcesApiChatUsageSourcesGetResponses = {
 
 export type ChatUsageSourcesApiChatUsageSourcesGetResponse = ChatUsageSourcesApiChatUsageSourcesGetResponses[keyof ChatUsageSourcesApiChatUsageSourcesGetResponses];
 
+export type BindChatPresentationApiChatPresentationBindPostData = {
+    body: ChatPresentationBindRequest;
+    path?: never;
+    query?: never;
+    url: '/api/chat/presentation/bind';
+};
+
+export type BindChatPresentationApiChatPresentationBindPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BindChatPresentationApiChatPresentationBindPostError = BindChatPresentationApiChatPresentationBindPostErrors[keyof BindChatPresentationApiChatPresentationBindPostErrors];
+
+export type BindChatPresentationApiChatPresentationBindPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatPresentationBinding;
+};
+
+export type BindChatPresentationApiChatPresentationBindPostResponse = BindChatPresentationApiChatPresentationBindPostResponses[keyof BindChatPresentationApiChatPresentationBindPostResponses];
+
+export type PresentChatApiChatSessionsSessionIdPresentationPostData = {
+    body: ChatPresentationRequest;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/api/chat/sessions/{session_id}/presentation';
+};
+
+export type PresentChatApiChatSessionsSessionIdPresentationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PresentChatApiChatSessionsSessionIdPresentationPostError = PresentChatApiChatSessionsSessionIdPresentationPostErrors[keyof PresentChatApiChatSessionsSessionIdPresentationPostErrors];
+
+export type PresentChatApiChatSessionsSessionIdPresentationPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ChatDetail;
+};
+
+export type PresentChatApiChatSessionsSessionIdPresentationPostResponse = PresentChatApiChatSessionsSessionIdPresentationPostResponses[keyof PresentChatApiChatSessionsSessionIdPresentationPostResponses];
+
+export type ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetData = {
+    body?: never;
+    path: {
+        /**
+         * Session Id
+         */
+        session_id: string;
+        /**
+         * Message Id
+         */
+        message_id: string;
+        /**
+         * Index
+         */
+        index: number;
+    };
+    query?: {
+        /**
+         * Download
+         */
+        download?: boolean;
+    };
+    url: '/api/chat/sessions/{session_id}/documents/{message_id}/{index}';
+};
+
+export type ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetError = ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetErrors[keyof ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetErrors];
+
+export type ReadChatDocumentApiChatSessionsSessionIdDocumentsMessageIdIndexGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type ReadChatApiChatSessionsSessionIdGetData = {
     body?: never;
     path: {
@@ -2252,7 +2518,12 @@ export type ReadChatAttachmentApiChatSessionsSessionIdAttachmentsAttachmentIdGet
          */
         attachment_id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Inline
+         */
+        inline?: boolean;
+    };
     url: '/api/chat/sessions/{session_id}/attachments/{attachment_id}';
 };
 

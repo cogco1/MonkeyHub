@@ -796,6 +796,43 @@ limitation remains; this HTTP collaboration path does not depend on an SSE conne
 
 ## MonkeyHub project runtime
 
+### External conversation presentation
+
+`POST /api/chat/presentation/bind` accepts an existing `projectDir`, stable `sourceSessionId`,
+provider, optional external `chatId`, and title. It reuses the same project/source conversation
+and returns `chatId`, `projectId`, `sourceSessionId`, a process-local bearer capability and a
+Hub deep link. It cannot adopt a native conversation or rebind a conversation to another project.
+Bind and presentation mutations require a loopback peer as well as the existing Host/Origin
+checks. The local machine remains the trust boundary; this is not a remote collaboration API.
+
+`POST /api/chat/sessions/{id}/presentation` requires that bearer capability plus the exact
+project/source binding. Its body contains UUID `turnId`/`messageId`, monotonically increasing
+`revision`, `kind: user|progress|assistant`, full `content`, status, and optional attachments or
+exact document references. A new external user item starts one turn without a model invocation.
+Progress uses the existing transient projection. Assistant snapshots persist in ChatStore,
+and the terminal result settles the turn's earlier streaming results. Identical retries return
+the existing result; stale, conflicting, cross-turn and post-stop writes are refused.
+An external process may outlive Hub: reopening marks its conversation interrupted while keeping
+its streaming snapshots, and explicit source rebind resumes that turn with a new capability.
+Explicitly stopped turns remain terminal. Native provider tools use a capability supplied by
+their owning Hub in the process environment, never command-line credentials.
+
+Chat summaries expose nullable `sourceSessionId`; non-null identifies an external, display-only
+conversation. Messages add optional `sourceTurnId`, `presentationRevision`, and `documents`.
+Document entries bind `runId`, `assetSha256`, `revisionRef`, `pageIndex`, verified `fileName` and
+`mimeType`. `GET /api/chat/sessions/{id}/documents/{messageId}/{index}` only reads a reference
+already retained in that conversation, rechecking project identity, exact revision/page and
+owner-verified bytes. `?download=true` downloads it. It never accepts a caller-selected file path.
+The existing attachment download accepts `?inline=true` for validated PNG/JPEG/WebP/GIF bytes;
+other formats remain downloads. Responses are `no-store` and `nosniff`.
+
+The same stdio adapter exposes `presentation_bind` for external connections and `chat_present`
+for both external and native conversations. The adapter alone can read an explicitly selected
+local attachment path and convert it to the existing bounded upload. Provider summaries,
+public commentary and document views confer no design acceptance or Board write authority.
+
+### Runtime lifecycle
+
 The runtime's process contract — what the Hub supplies, what it owns, identity, isolation and
 the direct development start — is [PROJECT_RUNTIME.md](PROJECT_RUNTIME.md); this section is its
 wire protocol on the Hub side. The runtime is API-only. One Hub frontend renders Arch and Board

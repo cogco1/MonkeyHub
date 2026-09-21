@@ -96,6 +96,52 @@ No StudioSettings object is created for the Hub. Choose an existing complete pro
 
 ## HTTP contract
 
+### Show an external agent conversation in Hub
+
+Connect the external agent to the existing Hub stdio adapter, using the running Hub URL,
+an existing project folder, and that agent's actual stable session ID:
+
+```powershell
+python apps/monkeyhub/api/monkeyhub_api/chat.py --mcp --hub-url http://127.0.0.1:8790 --project-dir "<project folder>" --source-session-id "<source session id>" --title "Design review"
+```
+
+This is an MCP server command to register in the external host, not a second Hub launcher.
+Use `--provider claude` for Claude; the default is `codex`. No global agent settings are changed
+by Hub. Call `presentation_bind` once to create or recover the same project/source conversation
+and open its returned URL. A local, session-bound capability stays inside the adapter; it is
+not printed to the agent or saved in the transcript. Hub restart requires rebinding, not
+replaying design operations. An interrupted external turn resumes on explicit rebind; an
+explicitly stopped turn remains closed.
+
+The tool instructions make Hub the default result destination for subsequent turns. Each
+turn begins with `chat_present` kind `user`, fresh UUID `turnId` and `messageId`, then public
+`progress` or `assistant` snapshots. Reuse a message ID and increase `revision` when streaming
+the same result; submit the whole text and attachment list. Keep `status: streaming` while
+work continues, and finish with `complete`, `failed` or `interrupted`. Replaying the identical
+revision is harmless. Earlier revisions and attempts to rewrite completed results are refused.
+Progress is transient and never enters saved history or later provider context.
+
+`attachments` accept the existing `{name, mimeType, data}` upload or, in the local MCP adapter
+only, `{path, name?, mimeType?}` for an explicitly selected file. Raster images preview in chat,
+enlarge with keyboard-accessible controls and remain downloadable after reopening. Arbitrary
+Markdown images are links rather than automatic network requests. HTML is displayed as text.
+Project drawings stay in the existing document store: use `documents` entries with exact
+`runId`, `assetSha256`, `revisionRef` (including explicit null for an original upload) and
+`pageIndex`. Hub verifies their retained bytes and opens that exact page in the existing
+Board/Diagram review flow. Displaying a document does not itself write a Board layout.
+
+External conversations show their source and have no model-send composer. Continue in the
+source agent; Hub does not invoke a second provider. A disconnected tool reports its failure
+in that source host. This integration does not intercept private desktop events or suppress
+the host's required output. Native Hub conversations receive the same `chat_present` tool for
+media; their ordinary text continues through the existing ACP/CLI stream.
+
+The item/turn lifecycle follows the public [Codex App Server integration model](https://learn.chatgpt.com/docs/app-server).
+Its [open-source protocol](https://github.com/openai/codex/tree/57567b8d9e5a158ddce2a8bb5f75ac455b1e9b83/codex-rs/app-server-protocol/src/protocol)
+was used as a reference; no Codex source was copied and the existing ACP transport is retained.
+
+### Existing chat and project APIs
+
 Agents use this same Hub: read the conversation's project, its scoped application status and health, then use that project's actual running service URL and its relevant API contract. Hub's chat CLI receives its bound project and a small stdio tool connection that reads the selected Studio action schema on demand. Source development uses `devctl module`, and shared toolbox lookup uses `hgs skills list/show`; the shared skill catalog is not yet an executable chat tool.
 
 Chat API: `GET /api/chat/providers` (add `?refresh=true` to check the installed CLIs again), `GET /api/chat/workspace`, `POST /api/chat/projects`, `GET /api/chat/projects`, `GET /api/chat/sessions`, `POST /api/chat/sessions`, `GET /api/chat/sessions/{id}`, `POST /api/chat/sessions/{id}/messages`, `PUT /api/chat/sessions/{id}/model`, `PUT /api/chat/sessions/{id}/archive`, `POST /api/chat/sessions/{id}/permissions/{permission_id}` and `POST /api/chat/sessions/{id}/stop`. Permission decisions require the bound `projectId` and one offered `optionId`, or explicit null to cancel; stale requests return 409. The same native session is resumed on the next turn; an interrupted Hub run remains visible and can be continued after reopening.
