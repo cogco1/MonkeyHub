@@ -15,6 +15,7 @@ import rhino3dm from "rhino3dm";
 const webRoot = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 // Run the independent model timing cases without requiring the drawing/history UI tour.
 const modelTimingOnly = process.argv.includes("--model-timing");
+const candidateDeliveryOnly = process.argv.includes("--candidate-delivery");
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-candidate-preview-test-"));
 const rhino = await rhino3dm();
 const published = { version: 0, stateSha256: "1".repeat(64) };
@@ -221,16 +222,29 @@ try {
 ` + marker), map: null };
         }
         if (modulePath !== `${webRoot.replaceAll("\\", "/")}/src/app/App.tsx`) return;
+        if (candidateDeliveryOnly) {
+          source = source.replace("export default function App(", "function CandidateApp(") + `
+            export default function DeliveryFixture(props: Parameters<typeof CandidateApp>[0]) {
+              const [request, setRequest] = useState({ runId: props.initialRunId, refreshKey: 0 });
+              (window as unknown as { __openCandidate: unknown }).__openCandidate = (runId: string) =>
+                setRequest(current => ({ runId, refreshKey: current.refreshKey + 1 }));
+              return <CandidateApp {...props} initialRunId={request.runId} refreshKey={request.refreshKey} />;
+            }
+          `;
+        }
         const marker = '  const booting = !canOpenDocuments && (session.status === "idle" || session.status === "loading");';
         assert.equal(source.split(marker).length, 2);
         return { code: source.replace(marker, marker + `
           (window as unknown as { __candidatePreview: unknown }).__candidatePreview = {
             camera: () => viewportRef.current?.camera(), run: runCandidate, changeBase: changeEditingBase, reload, propose,
             view: (artifact: ProjectArtifactDto) => { manualLoadRef.current = true; return loadArtifactIntoViewer(artifact, artifact.fileName); },
+            edit: commitLocalCommand,
             snapshot: { loadedRunId: loadedArtifact?.runId, loadedFileName: loadedArtifact?.fileName, status: viewerStatus, loadingSha: artifactLoadingSha,
               projectId: project?.projectId, editingRunId: projection?.referenceRun.runId, changingBase, runs: candidateRuns.runs,
               sourceStageRef: projection?.sourceStageRef, history: designHistory, historyError, documentView,
               loadedModelSource, editingModelSource, baseError: baseError?.code ?? null,
+              draftReady: draftProjection !== null, localCommands: draftSnapshot?.commands ?? [],
+              artifactShas: artifacts.status === "ready" ? artifacts.value.artifacts.map((row) => row.sha256) : [],
               artifacts: artifacts.status === "ready" ? artifacts.value.artifacts.map((row) => row.runId) : [],
               entries: transcript.entries.map((entry) => entry.kind === "system" ? entry.text : entry.kind),
               candidateEntries: candidateEntries.map((entry) => ({ candidateId: entry.candidateId, proposalId: entry.proposalId })) }
@@ -436,6 +450,126 @@ try {
   await page.goto(`${origin}/?lang=en`, { waitUntil: "domcontentloaded" });
   await rendered(home.runId);
 
+  if (candidateDeliveryOnly) {
+    const bytesReads = artifact => requests.filter(row => row.name === `/api/artifacts/${artifact.sha256}/bytes`).length;
+    const delivery = (id) => {
+      const native = { ...makeArtifact(id, 3), fileName: `${id}-native.3dm`, representation: "preview", modelSource: null };
+      const composed = { ...makeArtifact(id, 7), fileName: `${id}-composed.3dm` };
+      allArtifacts.push(native);
+      return { native, composed };
+    };
+    const open = async ({ native }) => {
+      await page.evaluate(runId => window.__openCandidate(runId), native.runId);
+      await rendered(native.runId, native.fileName);
+      await until(snapshot, value => value.draftReady, "The candidate state did not become editable");
+    };
+    const register = async artifact => {
+      allArtifacts.push(artifact);
+      await emit("model_asset.registered");
+      await until(snapshot, value => value.artifactShas.includes(artifact.sha256), "The registered asset was not discovered");
+    };
+    const edit = async () => {
+      await page.evaluate(() => window.__candidatePreview.edit({ kind: "delete", elementId: "fixture-floor" }));
+      await until(snapshot, value => value.localCommands.length === 1, "The local command was not retained");
+    };
+
+    await step("a late composed asset replaces the automatic native preview once, preserving its camera", async () => {
+      const value = delivery("delivery-upgrade"); await open(value);
+      const camera = await page.evaluate(() => window.__candidatePreview.camera());
+      assert.ok(camera);
+      await register(value.composed);
+      await rendered(value.composed.runId, value.composed.fileName);
+      assert.deepEqual((await snapshot()).loadedModelSource, value.composed.modelSource);
+      assert.deepEqual(await page.evaluate(() => window.__candidatePreview.camera()), camera);
+      const reads = requests.filter(row => row.name === "/api/artifacts").length;
+      await emit("model_asset.registered");
+      await page.evaluate(runId => window.__openCandidate(runId), value.native.runId);
+      await until(() => requests.filter(row => row.name === "/api/artifacts").length, count => count > reads, "Repeated delivery did not refresh the list");
+      await delay(300);
+      assert.equal(bytesReads(value.native), 1);
+      assert.equal(bytesReads(value.composed), 1);
+      assert.deepEqual(await page.evaluate(() => window.__candidatePreview.camera()), camera);
+    });
+
+    await step("a manual historical choice, including returning to the native preview, wins over late delivery", async () => {
+      const value = delivery("delivery-manual"); await open(value);
+      await view(other); await view(value.native);
+      await register(value.composed); await delay(300);
+      assert.equal((await snapshot()).loadedFileName, value.native.fileName);
+      assert.equal(bytesReads(value.composed), 0);
+    });
+
+    await step("repeated presentation refreshes do not interrupt an in-flight composed delivery", async () => {
+      const value = delivery("delivery-refresh-in-flight"); await open(value);
+      const gate = deferred(); modelGates.set(value.composed.sha256, gate);
+      await register(value.composed);
+      await until(() => bytesReads(value.composed), count => count === 1, "The complete model download did not start");
+      const reads = requests.filter(row => row.name === "/api/artifacts").length;
+      await page.evaluate(runId => window.__openCandidate(runId), value.native.runId);
+      await emit("model_asset.registered");
+      await until(() => requests.filter(row => row.name === "/api/artifacts").length, count => count > reads, "The repeated delivery was not observed");
+      gate.resolve();
+      await rendered(value.composed.runId, value.composed.fileName);
+      assert.equal(bytesReads(value.native), 1);
+      assert.equal(bytesReads(value.composed), 1);
+    });
+
+    await step("same-run composed assets with a different state cannot replace the native preview", async () => {
+      const value = delivery("delivery-wrong-state"); await open(value);
+      const mismatch = { ...value.composed, modelSource: { ...value.composed.modelSource, stateDigest: stateDigest("different-state") } };
+      await register(mismatch); await delay(300);
+      assert.equal((await snapshot()).loadedFileName, value.native.fileName);
+      assert.equal(bytesReads(mismatch), 0);
+    });
+
+    await step("unsubmitted local model edits survive late composed delivery", async () => {
+      const value = delivery("delivery-edited"); await open(value); await edit();
+      await register(value.composed); await delay(300);
+      assert.equal((await snapshot()).loadedFileName, value.native.fileName);
+      assert.deepEqual((await snapshot()).localCommands, [{ kind: "delete", elementId: "fixture-floor" }]);
+      assert.equal(bytesReads(value.composed), 0);
+    });
+
+    await step("editing during the composed download cancels installation without losing the draft", async () => {
+      const value = delivery("delivery-edit-in-flight"); await open(value);
+      const gate = deferred(); modelGates.set(value.composed.sha256, gate);
+      await register(value.composed);
+      await until(() => bytesReads(value.composed), count => count === 1, "The complete model download did not start");
+      await edit(); gate.resolve();
+      await until(() => loadTimings(value.native.runId), rows => rows.some(row => row.body.status === "cancelled"), "The stale delivery was not cancelled");
+      assert.equal((await snapshot()).loadedFileName, value.native.fileName);
+      assert.deepEqual((await snapshot()).localCommands, [{ kind: "delete", elementId: "fixture-floor" }]);
+    });
+
+    await step("manual model selection during composed parsing cancels the background installation", async () => {
+      const value = delivery("delivery-manual-in-flight"); await open(value);
+      await page.evaluate(fileName => {
+        let resolve; const promise = new Promise(done => { resolve = done; });
+        window.__previewParseGates[fileName] = { waiting: false, promise, resolve };
+      }, value.composed.fileName);
+      await register(value.composed);
+      await until(() => page.evaluate(fileName => window.__previewParseGates[fileName].waiting, value.composed.fileName), Boolean, "The complete model parser did not start");
+      await view(other);
+      await page.evaluate(fileName => window.__previewParseGates[fileName].resolve(), value.composed.fileName);
+      await until(() => loadTimings(value.native.runId), rows => rows.some(row => row.body.status === "cancelled"), "The stale parser did not cancel");
+      assert.equal((await snapshot()).loadedFileName, other.fileName);
+    });
+
+    await step("delivery discovered while the first native model parses is installed afterwards", async () => {
+      const value = delivery("delivery-during-native");
+      await page.evaluate(fileName => {
+        let resolve; const promise = new Promise(done => { resolve = done; });
+        window.__previewParseGates[fileName] = { waiting: false, promise, resolve };
+      }, value.native.fileName);
+      await page.evaluate(runId => window.__openCandidate(runId), value.native.runId);
+      await until(() => page.evaluate(fileName => window.__previewParseGates[fileName].waiting, value.native.fileName), Boolean, "Native parsing did not start");
+      await register(value.composed);
+      await page.evaluate(fileName => window.__previewParseGates[fileName].resolve(), value.native.fileName);
+      await rendered(value.composed.runId, value.composed.fileName);
+      assert.equal(bytesReads(value.native), 1);
+      assert.equal(bytesReads(value.composed), 1);
+    });
+  } else {
   if (!modelTimingOnly) {
   await step("the loaded model retains its exact runtime source", async () => {
     assert.equal((await snapshot()).loadedFileName, home.fileName);
@@ -1239,6 +1373,7 @@ try {
       assert.equal(requests.filter(row => row.name === `/api/proposals/${candidate.proposalId}/candidate`).length, 0);
       assert.equal(stages.size, 1);
     });
+  }
   }
   assert.deepEqual(errors, []);
   console.log(`Passed ${passed.length} candidate preview scenarios; actual 3DM files parsed in an isolated headless browser.`);

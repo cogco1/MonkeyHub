@@ -953,6 +953,23 @@ try {
   assert.ok(!workspaceFixture.requests.some((row) => row.name.endsWith("/bytes") && row.runId === pendingJob.candidateId),
     "a later unfinished job cannot become the displayed candidate");
 
+  // A headless result is also visible when no tool tab was ever saved. The
+  // hidden chat-context workspace becomes the real tab without another worker.
+  await page.evaluate(() => {
+    const key = "monkeyhub.chat-view.v1", view = JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify({ ...view, tools: [], activeTool: null, panel: false }));
+  });
+  const beforeHeadlessReopen = writes.length;
+  await page.reload();
+  await waitWorkspace();
+  await waitCandidate(newJob.candidateId);
+  assert.equal(await page.locator(".chat-shell").getAttribute("data-panel"), "true",
+    "a retained headless delivery opens its project panel without a saved tool tab");
+  assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.deepEqual(projectBFixture.board, boardBeforeHeadless, "automatic navigation keeps all Board marks");
+  assert.ok(writes.slice(beforeHeadlessReopen).every(([, pathname]) => pathname === "/api/runtime/projects/open"),
+    "showing the retained delivery only reattaches its existing project runtime");
+
   // A manual historical preview survives repeated snapshots. Reopening the app
   // starts at the newest reliably ordered headless result, even with an old tab.
   await page.locator(".chat-activity").filter({ hasText: "Final checkpoint completed" }).getByRole("button", { name: "Open this candidate on the right" }).click();
@@ -1400,8 +1417,16 @@ try {
     "restoring Monitor also retains its surrounding project navigation");
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
+  // A deliberate system-page link wins even with a retained headless model.
+  runtimeB.retained = { projectId: "B", projectDir: runtimeB.projectDir, jobs: [], candidates: [headlessCandidate(newJob)] };
+  runtimeB.operations = [headlessOperation(newJob)];
   await page.goto(`${origin}/?view=monitor`);
   await waitMonitor();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("monkeyhub.chat-view.v1"))?.tools
+    .some((tool) => tool.candidate === "cand-B-headless-new"));
+  assert.equal(await page.getByRole("button", { name: "Usage", exact: true }).getAttribute("aria-pressed"), "true",
+    "automatic candidate delivery must not override an explicit Monitor deep link");
+  runtimeB.retained = null; runtimeB.operations = []; emitRuntime();
   assert.equal(await page.getByRole("textbox", { name: "What would you like to do in this project?" }).isVisible(), true,
     "a legacy Monitor deep link opens a panel without replacing the conversation");
   const afterMonitorLink = documentLoads;

@@ -54,6 +54,8 @@ const oldDocument = sourceDocument(oldBytes, "Original two pages.pdf", 2, "old-d
 const headlessBytes = pdfBytes([[0.75, 0.3, 0.85]]);
 const headlessDocument = { ...sourceDocument(headlessBytes, "Headless updated.pdf", 1, "headless-drawing-revision"),
   replacesPages: [{ ...pageSource(oldDocument, 0), newPageIndex: 0 }] };
+const distantBytes = pdfBytes([[0.2, 0.7, 0.8]]);
+const distantDocument = sourceDocument(distantBytes, "Headless new frame.pdf", 1, "distant-drawing-revision");
 let headlessPreviewAvailable = false, headlessPreviewFailures = 0;
 let replacementBytes, replacement;
 const uploadBytes = pdfBytes([[0.3, 0.3, 0.3], [0.9, 0.7, 0.1]]);
@@ -98,6 +100,18 @@ async function readScene() {
 const byId = (scene, id) => scene.elements.find((element) => element.id === id);
 const geometry = ({ x, y, width, height, angle, scale, frameId }) => ({ x, y, width, height, angle, scale, frameId });
 const activeIds = (scene, type) => scene.elements.filter((element) => !element.isDeleted && element.type === type).map(({ id }) => id).sort();
+const viewport = (scene) => [scene.zoom, scene.scrollX, scene.scrollY];
+const scrollCount = () => page.evaluate(() => window.__boardScrolls.length);
+async function waitForPageInView(id) {
+  await page.waitForFunction((id) => {
+    const api = window.__boardApi, state = api.getAppState();
+    const image = api.getSceneElements().find((element) => element.id === id);
+    if (!image) return false;
+    const left = (image.x + state.scrollX) * state.zoom.value, top = (image.y + state.scrollY) * state.zoom.value;
+    return left >= -2 && top >= -2 && left + image.width * state.zoom.value <= state.width + 2
+      && top + image.height * state.zoom.value <= state.height + 2;
+  }, id);
+}
 // JSON omits undefined fields; Board uses Excalidraw's restored empty bindings.
 const persisted = (elements) => JSON.parse(JSON.stringify(elements.map((element) => ({ ...element, boundElements: element.boundElements ?? [] }))));
 
@@ -119,7 +133,18 @@ try {
       if (filename === `${root}/src/workspaces/monkeyboard/Board.tsx`) {
         const callback = "excalidrawAPI={(api) => { canvas.current = api; }}";
         assert.equal(source.split(callback).length, 2, "The test must expose the existing Excalidraw callback exactly once");
-        return { code: source.replace(callback, "excalidrawAPI={(api) => { canvas.current = api; window.__boardApi = api; }}"), map: null };
+        return { code: source.replace(callback, `excalidrawAPI={(api) => {
+          canvas.current = api;
+          if (window.__boardApi !== api) {
+            window.__boardScrolls ??= [];
+            const scroll = api.scrollToContent;
+            api.scrollToContent = (elements, options) => {
+              window.__boardScrolls.push(Array.isArray(elements) ? elements.map((element) => element.id) : []);
+              return scroll(elements, options);
+            };
+          }
+          window.__boardApi = api;
+        }}`), map: null };
       }
     } }, react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
   http.on("request", (request, response) => {
@@ -189,6 +214,10 @@ try {
               json: { code: "DOCUMENT_UNAVAILABLE", detail: "The saved preview is temporarily unavailable." } });
           }
           return await route.fulfill({ contentType: "application/pdf", body: headlessBytes });
+        }
+        if (url.pathname === `/api/documents/${distantDocument.assetSha256}/bytes`) {
+          assert.equal(url.searchParams.get("revisionRef"), distantDocument.revisionRef);
+          return await route.fulfill({ contentType: "application/pdf", body: distantBytes });
         }
         if (url.pathname === `/api/documents/${uploadedReplacement.assetSha256}/bytes`) {
           assert.equal(url.searchParams.get("revisionRef"), uploadedReplacement.revisionRef);
@@ -309,6 +338,7 @@ try {
   });
   await page.waitForFunction(() => window.__boardApi.getSceneElements().some(({ id }) => id === "mark-during-preview"));
   const edited = await readScene();
+  const scrollsBeforeReplacement = await scrollCount();
   assert.equal(byId(edited, "deleted-copy").isDeleted, true);
   releasePreview();
   await page.waitForFunction((sha) => window.__boardApi.getSceneElements().some((element) =>
@@ -332,7 +362,9 @@ try {
   assert.deepEqual(activeIds(updated, "image"), ["kept-image", "unmapped-image"]);
   assert.equal(updated.elements.length, edited.elements.length, "No replacement elements or frames are appended");
   assert.equal(byId(updated, "kept-image").customData.note, "keep this custom field");
-  assert.deepEqual([updated.zoom, updated.scrollX, updated.scrollY], [edited.zoom, edited.scrollX, edited.scrollY], "Receiving a replacement must not refit the user's viewport");
+  await page.waitForFunction((count) => window.__boardScrolls.length === count + 1, scrollsBeforeReplacement);
+  await waitForPageInView("kept-image");
+  assert.notDeepEqual(viewport(await readScene()), viewport(edited), "Receiving a replacement must reveal its new page automatically");
   const previewPixel = await page.evaluate(async () => {
     const api = window.__boardApi, image = api.getSceneElements().find(({ id }) => id === "kept-image");
     const bitmap = new Image(); bitmap.src = api.getFiles()[image.fileId].dataURL; await bitmap.decode();
@@ -343,8 +375,7 @@ try {
   assert.ok(previewPixel[1] > 150 && previewPixel[0] < 80, `The displayed replacement must be the green new page: ${previewPixel}`);
   await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "Saved");
 
-  // A replacement the poll brought in reports itself once, politely, and offers
-  // to show the page it swapped — without touching what gets saved.
+  // The one automatic focus and its optional View action change no saved elements.
   const quiet = page.locator(".monkeyboard-update");
   await quiet.waitFor();
   assert.equal(await quiet.count(), 1, "One arriving replacement produces exactly one quiet notice");
@@ -571,6 +602,7 @@ try {
   assert.equal(byId(failedHeadless, "headless-local-note").text, "Keep this critique");
   assert.equal(await page.locator(".monkeyboard-update").count(), 0,
     "An unreadable replacement must not announce a reviewable update");
+  const scrollsBeforeRecovery = await scrollCount();
   headlessPreviewAvailable = true;
   await retryPreviews.click();
   await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
@@ -582,9 +614,8 @@ try {
   assert.equal(byId(afterHeadless, "headless-local-note").text, "Keep this critique");
   assert.equal(saved.elements.find((element) => element.id === "headless-local-note").text, "Keep this critique");
   assert.deepEqual(geometry(byId(afterHeadless, "unmapped-image")), geometry(byId(beforeHeadless, "unmapped-image")));
-  assert.equal(afterHeadless.zoom, beforeHeadless.zoom);
-  assert.equal(afterHeadless.scrollX, beforeHeadless.scrollX);
-  assert.equal(afterHeadless.scrollY, beforeHeadless.scrollY);
+  await page.waitForFunction((count) => window.__boardScrolls.length === count + 1, scrollsBeforeRecovery);
+  await waitForPageInView("unmapped-image");
   assert.equal(await chineseUpdate.isEnabled(), true, "Recovered canvas can still submit/upload");
   const rebasedNotice = page.locator(".monkeyboard-update");
   await rebasedNotice.waitFor({ timeout: 3000 });
@@ -624,9 +655,21 @@ try {
     return { id: element?.id, points: element?.points };
   });
   assert.ok(partialStroke.id && partialStroke.points.length > 1, "A native stroke must still be in progress");
-  saved = { ...structuredClone(saved), title: "Remote update during live stroke", revisionSha256: "d".repeat(64) };
+  const beforeDistantDelivery = await readScene(), scrollsBeforeDistant = await scrollCount();
+  const distantElements = await page.evaluate((source) => window.__boardHelpers.convertToExcalidrawElements([
+    { type: "image", id: "distant-image", fileId: "distant-file", x: 21344, y: 100, width: 1200, height: 720,
+      status: "saved", customData: { sourceDocument: source } },
+    { type: "frame", id: "distant-frame", children: ["distant-image"], name: "Remote prototype" },
+  ], { regenerateIds: false }), pageSource(distantDocument, 0));
+  documents = [...documents, distantDocument];
+  saved = { ...structuredClone(saved), title: "Remote update during live stroke",
+    elements: [...structuredClone(saved.elements), ...distantElements],
+    seenDocuments: [...saved.seenDocuments, documentKey(distantDocument)], revisionSha256: "d".repeat(64) };
   await page.keyboard.press("Control+s");
   await page.waitForFunction(() => document.querySelector('input[aria-label="画布标题"]')?.value === "Remote update during live stroke");
+  assert.ok(byId(await readScene(), "distant-image"), "The remote frame must merge while the stroke is still live");
+  assert.deepEqual(viewport(await readScene()), viewport(beforeDistantDelivery), "Remote delivery must not pan during a native stroke");
+  assert.equal(await scrollCount(), scrollsBeforeDistant, "Focus waits for pointer-up");
   await page.mouse.move(strokeX + 140, strokeY + 95, { steps: 8 });
   const continuedStroke = await page.evaluate(() => {
     const element = window.__boardApi.getAppState().newElement;
@@ -635,12 +678,29 @@ try {
   assert.equal(continuedStroke.id, partialStroke.id, "A remote save must leave the current gesture active");
   assert.ok(continuedStroke.points.length > partialStroke.points.length, "The stroke continues after rebase");
   await page.mouse.up();
+  await page.waitForFunction((count) => window.__boardScrolls.length === count + 1, scrollsBeforeDistant);
+  await waitForPageInView("distant-image");
   await page.waitForFunction(() => document.querySelector(".monkeyboard-save-state")?.textContent === "已保存");
   const completedStroke = byId(await readScene(), partialStroke.id);
   assert.deepEqual(completedStroke.points.slice(0, continuedStroke.points.length), continuedStroke.points,
     "Rebasing must retain points drawn after the refreshed board arrived");
   assert.deepEqual(saved.elements.find((element) => element.id === partialStroke.id)?.points, completedStroke.points,
     "The retained board must contain the complete stroke");
+  assert.deepEqual(geometry(byId(await readScene(), "kept-image")), geometry(byId(beforeDistantDelivery, "kept-image")));
+  assert.equal(byId(await readScene(), "headless-local-note").text, "Keep this critique");
+  const deliveredIds = (await readScene()).elements.map((element) => element.id);
+  await page.evaluate(() => window.__boardApi.updateScene({ appState: { zoom: { value: 0.65 }, scrollX: 31, scrollY: -47 },
+    captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER }));
+  const userViewport = viewport(await readScene()), settledScrolls = await scrollCount(), settledWrites = writes.length;
+  for (let repeat = 0; repeat < 2; repeat++) {
+    await Promise.all([page.waitForResponse((response) => new URL(response.url()).pathname === "/api/documents"),
+      page.evaluate(() => window.dispatchEvent(new Event("focus")))]);
+  }
+  await page.waitForTimeout(1000);
+  assert.equal(await scrollCount(), settledScrolls, "Polling an unchanged delivery must never refocus it");
+  assert.deepEqual(viewport(await readScene()), userViewport, "Later user navigation wins over polling");
+  assert.deepEqual((await readScene()).elements.map((element) => element.id), deliveredIds, "Polling never duplicates the delivered frame");
+  assert.equal(writes.length, settledWrites, "Automatic focus and repeat polling author no Board revision");
   await page.evaluate((appState) => window.__boardApi.updateScene({ appState,
     captureUpdate: window.__boardHelpers.CaptureUpdateAction.NEVER }), beforeStrokeTool);
   const recoveredConflicts = conflicts;
@@ -657,7 +717,7 @@ try {
   assert.equal(await chineseUpdate.isDisabled(), true, "Conflicted local state cannot upload another replacement");
   assert.equal(uploads.length, 1);
   assert.deepEqual(failures, []); assert.deepEqual(escaped, []);
-  console.log(JSON.stringify({ passed: "Excalidraw explicit image/frame replacement, exact source mapping and crop/marks preservation, explicit editable work copy, quiet received-update notice whose View never writes the board, clear annotations and undo/redo in normal/Crit modes, save/reopen and CAS", writes: writes.length, uploads: uploads.length, workCopies: workCopies.length, conflicts, documentReads, fileReads: fileReads.length }));
+  console.log(JSON.stringify({ passed: "Excalidraw replacement and remote-frame autofocus once, deferred until a live stroke ends, exact source/crop/marks preservation, repeated polling preserves user navigation, editable work copy, clear annotations and undo/redo, save/reopen and CAS", writes: writes.length, uploads: uploads.length, workCopies: workCopies.length, conflicts, documentReads, fileReads: fileReads.length }));
 } catch (error) {
   console.error(JSON.stringify({ failures, escaped, writes: writes.length, documentReads,
     visible: await page?.locator("body").innerText().catch(() => "") }));
