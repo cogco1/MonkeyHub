@@ -387,6 +387,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   // A replacement this tab uploaded itself is never announced back to its author.
   const originated = useRef(new Set<string>());
   const [update, setUpdate] = useState<BoardUpdateNotice | null>(null);
+  const pendingFocus = useRef<PageSource[] | null>(null);
+  const focusFrame = useRef<number | null>(null);
   const refreshedPreviews = useRef(new Set<string>());
   const [previewFailed, setPreviewFailed] = useState(failures.length > 0);
   const [sourceError, setSourceError] = useState("");
@@ -410,8 +412,9 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       const left = item.document.generatedAt ?? "", right = best.document.generatedAt ?? "";
       return left > right || (left === right && item.order > best.order) ? item : best;
     });
-    setUpdate({ fileName: newest.document.fileName, others: arrived.length - 1,
-      sources: [newest.source, ...arrived.filter((item) => item !== newest).map((item) => item.source)] });
+    const sourcesToShow = [newest.source, ...arrived.filter((item) => item !== newest).map((item) => item.source)];
+    pendingFocus.current = sourcesToShow;
+    setUpdate({ fileName: newest.document.fileName, others: arrived.length - 1, sources: sourcesToShow });
   }, []);
   const [saveState, setSaveState] = useState<BoardSaveState>({ dirty: false, saving: false, error: null, conflict: false, revisionSha256: board.revisionSha256 });
   const [queue] = useState(() => createBoardSaveQueue(board, studio.saveBoard, (state) => {
@@ -470,13 +473,13 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       api?.updateScene({ elements: elements as ExcalidrawElement[], captureUpdate: CaptureUpdateAction.NEVER });
       // Another Board can already have saved the replacement. In that case
       // receive() has nothing left to swap, but this canvas still received new
-      // reviewable bytes. Announce only changed existing pages with a loaded
-      // preview, after the safe merge succeeds; unchanged reads stay quiet.
+      // reviewable bytes. Include remotely added pages, which may be far outside
+      // the current viewport, only after their previews and safe merge succeed.
       announceUpdates(elements.flatMap((element) => {
         const previous = live.get(String(element.id));
         const before = previous && !previous.isDeleted && imageSource(previous);
         const after = !element.isDeleted && imageSource(element);
-        return before && after && pageKey(before) !== pageKey(after) && refreshedPreviews.current.has(pageKey(after))
+        return after && (!before || pageKey(before) !== pageKey(after)) && refreshedPreviews.current.has(pageKey(after))
           ? [after] : [];
       }), documentsRef.current);
     },
@@ -553,13 +556,14 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     const elements = [...api.getSceneElementsIncludingDeleted(), ...additions];
     api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
     capture(elements);
-    if (!automatic || elements.length === additions.length) api.scrollToContent(additions, { fitToContent: true, animate: false });
+    if (!automatic) api.scrollToContent(additions, { fitToContent: true, animate: false });
   }, [capture, preview, queue]);
   const acceptDocuments = useCallback((next: SourceDocumentDto[]) => {
     documentsRef.current = next;
     setDocuments(next);
   }, []);
   const receive = useCallback(async (next: SourceDocumentDto[]) => {
+    const received: PageSource[] = [];
     const replacements = pageReplacements(next);
     const pending = next.filter((document) => !seen.current.has(documentKey(document)) && (document.replacesPages?.length ?? 0) > 0);
     if (pending.length > 0) {
@@ -601,9 +605,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       api.addFiles([...rendered.values()].map((item) => ({ id: item.fileId, dataURL: item.preview.dataURL, mimeType: "image/png", created: Date.now() })));
       api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
       capture(elements);
-      // Everything this batch actually swapped on the scene, minus this tab's own
-      // upload, becomes one quiet notice that replaces any earlier one.
-      announceUpdates([...applied].flatMap((key) => rendered.get(key)?.source ?? []), next);
+      received.push(...[...applied].flatMap((key) => rendered.get(key)?.source ?? []));
     }
     for (const document of next) {
       const key = documentKey(document);
@@ -614,6 +616,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         const latest = target ? findSource(next, target) : document;
         if (!latest) throw new Error("The replacement drawing page is unavailable.");
         await addPage(latest, target?.pageIndex ?? document.pages[0].pageIndex, true);
+        received.push(pageSource(latest, target?.pageIndex ?? document.pages[0].pageIndex));
         seen.current.add(key);
       }
       catch (error) { skipped.current.add(key); if (alive.current) setNotice(`${document.fileName}: ${errorText(error)}`); }
@@ -627,6 +630,8 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
       if (!waitingForPreview.has(documentKey(document))) seen.current.add(documentKey(document));
     }
     capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []);
+    // One received batch owns one focus request; ordinary discovery stays quiet.
+    announceUpdates(received, next);
   }, [addPage, announceUpdates, capture, preview, queue]);
   const upload = useCallback((incoming: File[]) => serial(async () => {
     for (const file of incoming) {
@@ -841,23 +846,45 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     } catch (cause) { setNotice(errorText(cause)); }
     finally { if (alive.current) setExporting(false); }
   };
-  // The quiet notice never moves the canvas by itself; only this explicit action
-  // does, and it stands aside for an open dialog or a gesture in progress. The
-  // save queue persists title, elements and seenDocuments only, so selecting
-  // here changes nothing that is written back.
-  const focusUpdate = () => {
+  // Remote delivery becomes visible once, after any current gesture or dialog.
+  // Camera changes never enter the saved scene or clear the user's selection.
+  const focusSources = useCallback((sources: PageSource[], select: boolean) => {
     const api = canvas.current;
-    if (!api || !ready || !update || feedbackOpen.current || replacementOpen.current) return;
+    if (!api || !alive.current || !active || !ready || document.hidden || queue.getState().conflict || feedbackOpen.current || replacementOpen.current) return false;
     const state = api.getAppState();
-    if (state.selectedElementsAreBeingDragged || state.newElement || state.editingTextElement || state.isResizing || state.isRotating) return;
-    const keys = new Set(update.sources.map(pageKey));
+    if (state.cursorButton === "down" || state.selectionElement || state.selectedElementsAreBeingDragged || state.newElement || state.editingTextElement || state.isResizing || state.isRotating) return false;
+    const keys = new Set(sources.map(pageKey));
     const targets = api.getSceneElements().filter((element) => {
       const source = imageSource(element);
       return !!source && keys.has(pageKey(source));
     });
-    if (targets.length === 0) return;
-    api.updateScene({ appState: { selectedElementIds: Object.fromEntries(targets.map((element) => [element.id, true])), selectedGroupIds: {} }, captureUpdate: CaptureUpdateAction.NEVER });
+    if (targets.length === 0) return true;
+    if (select) api.updateScene({ appState: { selectedElementIds: Object.fromEntries(targets.map((element) => [element.id, true])), selectedGroupIds: {} }, captureUpdate: CaptureUpdateAction.NEVER });
     api.scrollToContent(targets, { fitToContent: true, animate: false });
+    return true;
+  }, [active, ready, queue]);
+  const scheduleUpdateFocus = useCallback(() => {
+    if (!pendingFocus.current || focusFrame.current !== null) return;
+    focusFrame.current = window.requestAnimationFrame(() => {
+      focusFrame.current = null;
+      const sources = pendingFocus.current;
+      // Clear before scrolling: its onChange must not queue the same focus again.
+      pendingFocus.current = null;
+      if (sources && !focusSources(sources, false)) pendingFocus.current = sources;
+    });
+  }, [focusSources]);
+  useEffect(() => {
+    scheduleUpdateFocus();
+    const visible = () => scheduleUpdateFocus();
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      document.removeEventListener("visibilitychange", visible);
+      if (focusFrame.current !== null) window.cancelAnimationFrame(focusFrame.current);
+      focusFrame.current = null;
+    };
+  }, [update, feedback, replacement, scheduleUpdateFocus]);
+  const focusUpdate = () => {
+    if (update && focusSources(update.sources, true)) pendingFocus.current = null;
   };
   // The entry point of the edit loop: an explicit editable copy of one registered
   // document, reported by its project-relative path. A document whose pages were
@@ -1128,6 +1155,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             setHasAnnotations(elements.some((element) => isAnnotation(element, sketchFrames)));
             updateContext(elements, appState);
             capture(elements);
+            scheduleUpdateFocus();
           }}>
           <MainMenu><MainMenu.Item onSelect={() => input.current?.click()}>{text.upload}</MainMenu.Item><MainMenu.Item onSelect={() => { void queue.flush().catch(() => {}); }}>{text.save}</MainMenu.Item><MainMenu.DefaultItems.ClearCanvas /></MainMenu>
           <WelcomeScreen><WelcomeScreen.Center><WelcomeScreen.Center.Heading>{boardText.welcome}</WelcomeScreen.Center.Heading><div className="monkeyboard-welcome-body"><p>{boardText.gestures}</p><span className="monkeyboard-welcome-example">{boardText.example}</span><p>{boardText.designHint}</p></div><WelcomeScreen.Center.Menu><button type="button" className="monkeyboard-welcome-upload" onClick={() => input.current?.click()}>{text.upload}</button></WelcomeScreen.Center.Menu></WelcomeScreen.Center></WelcomeScreen>

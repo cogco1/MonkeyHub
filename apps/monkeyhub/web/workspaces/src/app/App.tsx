@@ -1919,17 +1919,17 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   }, [refreshKey, session.status, reload, loadArtifacts]);
 
   const candidateSelection = useMemo(() => ({ runId: initialRunId }), [initialRunId]);
-  const installedCandidate = useRef<typeof candidateSelection | null>(null);
+  const installedCandidate = useRef<{ selection: typeof candidateSelection; viewRequest: number } | null>(null);
   const candidateRequestKey = JSON.stringify([initialRunId, refreshKey]);
-  const candidateRequest = useRef(candidateRequestKey);
-  candidateRequest.current = candidateRequestKey;
+  const candidateRequest = useRef({ key: candidateRequestKey, selection: candidateSelection });
+  candidateRequest.current = { key: candidateRequestKey, selection: candidateSelection };
   useEffect(() => {
     if (!active || !initialRunId || session.status !== "ready" || !project || !viewportRef.current) return;
     const projectId = project.projectId;
     const request = candidateRequestKey;
     const controller = new AbortController();
     let live = true;
-    const isCurrent = () => live && candidateRequest.current === request && artifactProjectRef.current === projectId;
+    const isCurrent = () => live && candidateRequest.current.key === request && artifactProjectRef.current === projectId;
     setArtifactError(null);
     // A new chat result owns a fresh listing read; the previous candidate's list
     // may predate this export and workspace events may not have arrived yet.
@@ -1941,15 +1941,43 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (!rows.length) throw new Error("The selected candidate has no available registered model export.");
       // Refreshing the runtime only rereads an already opened choice. Its mounted
       // camera, local edits and any later manual version selection stay in place.
-      if (installedCandidate.current === candidateSelection) return;
+      if (installedCandidate.current?.selection === candidateSelection) return;
       // Opening a chat result only changes the view. Continuing it is a separate explicit action.
       manualLoadRef.current = true;
       if (await loadRunIntoViewer(rows, candidateSourceLabel(initialRunId), false, isCurrent) && isCurrent()) {
-        installedCandidate.current = candidateSelection;
+        installedCandidate.current = { selection: candidateSelection, viewRequest: modelLoadRequest.current };
       }
     }).catch((cause) => { if (isCurrent()) setArtifactError(asStudioApiError(cause)); });
     return () => { live = false; controller.abort(); };
   }, [initialRunId, candidateSelection, candidateRequestKey, session.status, project?.projectId, studio, loadRunIntoViewer, active]);
+
+  useEffect(() => {
+    const installed = installedCandidate.current;
+    if (!active || !initialRunId || session.status !== "ready" || artifacts.status !== "ready" ||
+        artifacts.value.projectId !== project?.projectId || viewerStatus !== "ready" ||
+        installed?.selection !== candidateSelection || installed.viewRequest !== modelLoadRequest.current ||
+        localEditingRef.current || loadedArtifacts.length === 0 ||
+        loadedArtifacts.some(row => row.runId !== initialRunId || row.representation === "composed")) return;
+    const composed = viewableArtifacts(artifacts.value.artifacts).find(row => {
+      const source = row.modelSource;
+      return row.representation === "composed" && row.runId === initialRunId &&
+        source?.runId === initialRunId && source.assetSha256 === row.sha256 &&
+        loadedArtifacts.every(preview => (preview.modelSource?.stateDigest ?? preview.designStateDigest) === source.stateDigest);
+    });
+    if (!composed) return;
+    // Headless delivery registers the complete model after the native preview.
+    // Upgrade only our untouched automatic view, never a later manual choice or
+    // local edit. The existing load request also cancels a stale in-flight swap.
+    const interaction = modelInteractionEpoch.current;
+    const isCurrent = () => installedCandidate.current === installed && candidateRequest.current.selection === installed.selection &&
+      modelInteractionEpoch.current === interaction && !localEditingRef.current;
+    const loading = loadArtifactIntoViewer(composed, candidateSourceLabel(initialRunId), true, isCurrent, undefined, true);
+    const viewRequest = modelLoadRequest.current;
+    void loading.then(() => {
+      if (isCurrent() && modelLoadRequest.current === viewRequest) installed.viewRequest = viewRequest;
+    });
+  }, [active, initialRunId, session.status, project?.projectId, artifacts, loadedArtifacts, viewerStatus,
+    candidateSelection, candidateRequestKey, loadArtifactIntoViewer]);
 
   useEffect(() => {
     if (!initialDocumentIntent || documentIntentStarted.current || documentIntentStatus !== "pending" ||
