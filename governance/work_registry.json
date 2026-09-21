@@ -3,6 +3,35 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-219",
+      "stream": "delivery",
+      "status": "active",
+      "goal": "Deliver the existing UI alignment, Board import/title and responsive toolbar fixes on current main while preserving chat presentation and embedded Monitor behavior.",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/219",
+      "branch": "codex/219-ui-delivery",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-219-ui-delivery",
+      "base_ref": "1edca68cc592d2c288aedab9148057b21c639d0d",
+      "contributor": "Codex",
+      "reviewer": null,
+      "handoff": "Parent integration task reviews and merges the PR; desktop package and release follow together with GH-220.",
+      "modules": [
+        "hub.shell",
+        "studio.board"
+      ],
+      "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/FabPage.tsx",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/styles.css",
+        "apps/monkeyhub/web/workspaces/src/styles.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/board.css",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs"
+      ],
+      "depends_on": []
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
