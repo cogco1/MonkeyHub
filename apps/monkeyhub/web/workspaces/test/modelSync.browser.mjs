@@ -1,5 +1,7 @@
 import { workspaceFixture } from "./workspaceFixture.mjs";
-/** Real Studio/OCCT: local edits remain in memory until explicit Sync. */
+/** Real Studio/OCCT: local recovery persists edits; only explicit Sync builds candidates. */
+// Run normally for the existing gesture/Sync regression, or set
+// MONKEYARCH_AUTOSAVE=1 for recovery, concurrency and milestone coverage.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer as createHttpServer, request as httpRequest } from "node:http";
@@ -28,6 +30,7 @@ const authoredOnly = process.env.MONKEYARCH_AUTHORED_ONLY === "1" || authoredInp
 const moveCopyOnly = process.env.MONKEYARCH_MOVE_COPY === "1";
 const rotateOnly = process.env.MONKEYARCH_ROTATE === "1";
 const scaleOnly = process.env.MONKEYARCH_SCALE === "1";
+const autosaveOnly = process.env.MONKEYARCH_AUTOSAVE === "1";
 let api, vite, browser, page, closing = false;
 const http = createHttpServer();
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -138,8 +141,9 @@ async function exported(runId) {
 }
 
 async function runIds() {
+  // Recovery commands have their own P036 storage; this counts geometry runs.
   return (await readdir(path.join(projectDir, "runs"), { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    .filter((entry) => entry.isDirectory() && entry.name !== "studio-working-draft").map((entry) => entry.name).sort();
 }
 
 // ---- one candidate ahead of the page, so the embed opens on a run the
@@ -152,7 +156,9 @@ const seedProposal = await call("POST", "/api/proposals/sketch", {
   stateDigest: home.stateDigest, componentId: "portico", elementId: "seed-block",
   profile: rotateOnly || scaleOnly ? [[10, 0], [13, 0], [10.5, 2]] : [[10, 0], [12, 0], [12, 2], [10, 2]], height: 1.5, baseLevel: "level-ground",
 });
-seedRun = (await finished((await call("POST", `/api/proposals/${seedProposal.proposalId}/candidate`)).jobId)).candidateId;
+const seedJob = await finished((await call("POST", `/api/proposals/${seedProposal.proposalId}/candidate`)).jobId);
+assert.equal(seedJob.status,"succeeded",`seed candidate failed: ${seedJob.error}`);
+seedRun = seedJob.candidateId;
 assert.ok((await exported(seedRun)).has("obj-seed-block"), "the seed candidate exported nothing");
 }
 
@@ -251,13 +257,17 @@ vite = await createServer({ root: webRoot, configFile: false, resolve: { dedupe:
     assert.equal(source.split(marker).length, 2);
     return { code:source.replace(marker, marker+"\n"+insert), map:null };
   } }, react()], server: { middlewareMode: true, hmr: false, ws: { server: http }, watch: null } });
-const sent=[], requests=[];
+// Existing gesture assertions count model writes; recovery persistence is
+// checked separately without treating a local snapshot as a generated model.
+const sent=[], requests=[], draftWrites=[];
 http.on("request", (request,response)=>{
   if(!request.url?.startsWith('/api/')) { vite.middlewares(request,response);return; }
   requests.push({method:request.method,path:request.url});
   if(['POST','PUT','DELETE'].includes(request.method)) {
     const chunks=[]; request.on('data',chunk=>chunks.push(chunk)); request.on('end',()=>{
-      const body=Buffer.concat(chunks).toString('utf8'); sent.push({path:request.url,body:body?JSON.parse(body):null});
+      const body=Buffer.concat(chunks).toString('utf8');
+      const destination=request.url.startsWith('/api/working-draft')?draftWrites:sent;
+      destination.push({path:request.url,body:body?JSON.parse(body):null});
     });
   }
   const proxy=httpRequest({host:'127.0.0.1',port:apiPort,path:request.url,method:request.method,
@@ -329,7 +339,95 @@ async function pick(id,top=false){
   await page.mouse.click(p.x,p.y);await wait(s=>s.picked===id,'local pick');return p;
 }
 const candidateCalls=()=>sent.filter(row=>/^\/api\/proposals\/[^/]+\/candidate$/.test(row.path));
-if (authoredOnly) {
+if (autosaveOnly) {
+  const readDraft=()=>call('GET','/api/working-draft');
+  async function savedDraft(predicate,label) {
+    const end=Date.now()+15000;let draft;
+    while(Date.now()<end){draft=await readDraft();if(predicate(draft))return draft;await delay(100);}
+    throw new Error(`${label}: ${JSON.stringify(draft)}`);
+  }
+  await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool`);
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&!s.busy,'restored current source',120000);
+  const initial=await snap(),originalRuns=await runIds();
+  const primaryPage=page,otherPage=await context.newPage();
+  page=otherPage;
+  await page.goto(primaryPage.url());
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&!s.busy,'second editor current source',120000);
+  page=primaryPage;
+  const object=await rectangle(2,1.25);
+  const saved=await savedDraft(d=>d.localDraft?.commands.length===1,'local commands were not retained');
+  assert.equal(saved.localDraft.source.sourceRunId,seedRun);
+  assert.equal(saved.localDraft.source.stateDigest,initial.stateDigest);
+  assert.equal(candidateCalls().length,0,'ordinary edits never create a candidate');
+  assert.deepEqual(await runIds(),originalRuns,'autosave creates no geometry run');
+  assert.ok(draftWrites.some(row=>row.path==='/api/working-draft/local'&&row.body.draft?.commands.length===1));
+  try {
+    page=otherPage;
+    await rectangle(1,.75);
+    await wait(s=>s.error?.includes('另一窗口'),'older editor silently replaced the newer recovery');
+    assert.deepEqual((await readDraft()).localDraft.commands,saved.localDraft.commands,'a stale editor cannot overwrite another window');
+  } finally {page=primaryPage;await otherPage.close();}
+
+  // Cold restoration can learn the state before the artifact list arrives.
+  // The original model and the exact local preview must both survive that order.
+  await page.route(/\/api\/artifacts(?:\?.*)?$/,async route=>{await delay(700);await route.continue();},{times:1});
+  await page.reload();
+  await wait(s=>s.status==='ready'&&s.loaded===seedRun&&s.base===seedRun&&s.view?.hasBaseModel&&
+    s.view.drafts.some(row=>row.id===object),'cold restoration lost the base model or local preview',30000);
+  assert.deepEqual((await snap()).commands,saved.localDraft.commands);
+  assert.equal(candidateCalls().length,0,'restoring local commands never starts Sync');
+  await deselect();await page.keyboard.press('Control+z');
+  await wait(s=>!s.dirty&&!s.view.drafts.some(row=>row.id===object),'Undo did not return to the original model');
+  await savedDraft(d=>d.localDraft===null,'Undo to baseline did not clear recovery');
+  await page.keyboard.press('Control+y');
+  await wait(s=>s.dirty&&s.view.drafts.some(row=>row.id===object),'Redo did not recover the local object');
+  await savedDraft(d=>d.localDraft?.commands.length===1,'Redo was not retained');
+
+  let delayedClear=false;
+  const delayClear=async route=>{
+    if(route.request().method()==='PUT'&&route.request().postDataJSON()?.draft===null&&!delayedClear){
+      delayedClear=true;await delay(700);
+    }
+    await route.continue();
+  };
+  await page.route('**/api/working-draft/local',delayClear);
+  await button('Sync').evaluate(node=>{node.click();node.click();});
+  const completed=await wait(s=>!s.syncBusy&&!s.dirty&&s.candidates.length===1&&
+    s.loaded===s.candidates[0]&&s.base===s.candidates[0],'quiet Sync did not adopt the completed candidate',120000);
+  assert.equal(candidateCalls().length,1,'repeated Sync clicks must reuse one candidate request');
+  const current=completed.candidates[0];
+  await savedDraft(d=>d.localDraft===null&&d.current?.runId===current,'completed Sync did not clear recovery and update current');
+  assert.equal(delayedClear,true,'the clear/adoption race was exercised');
+  await page.unroute('**/api/working-draft/local',delayClear);
+  assert.ok((await exported(current)).has('obj-'+object),'retained candidate must contain the restored geometry');
+
+  await page.locator('.stage__versions-toggle').click();
+  const recovery=page.locator('.versions details').filter({has:page.locator('summary').filter({hasText:'最近 24 小时的自动恢复'})});
+  assert.equal(await recovery.evaluate(node=>node.open),false,'automatic recovery starts collapsed');
+  assert.equal(await page.locator('[data-working-draft]:visible').count(),1,'only current is expanded before saving a milestone');
+  await page.getByRole('textbox',{name:'重点版本名称',exact:true}).fill('Autosave milestone');
+  await page.getByRole('button',{name:'保存重点版本',exact:true}).click();
+  await savedDraft(d=>d.saved.some(row=>row.runId===current&&row.label==='Autosave milestone'),'manual milestone was not saved');
+  await page.getByText('Autosave milestone',{exact:true}).waitFor();
+  assert.equal(await page.locator('[data-working-draft]:visible').count(),2,'current and the explicit milestone stay visible');
+  assert.equal(await recovery.evaluate(node=>node.open),false,'saving a milestone does not expand recovery');
+  // Retained commands can be from another app version. A replay failure must
+  // leave the original recovery untouched instead of autosaving an empty base.
+  const beforeInvalid=await readDraft();
+  const clearsBeforeInvalid=draftWrites.filter(row=>row.body?.draft===null).length;
+  const invalid={source:{...saved.localDraft.source,sourceRunId:current,stateDigest:completed.stateDigest},
+    commands:[{kind:'delete',elementId:'missing-recovery-fixture-object'}]};
+  await call('PUT','/api/working-draft/local',{projectId:beforeInvalid.projectId,
+    baseRevisionSha256:beforeInvalid.revisionSha256,draft:invalid});
+  await page.reload();
+  await wait(s=>s.status==='ready'&&s.loaded===current&&!s.busy,'source for incompatible recovery',30000);
+  await page.locator('.stage__versions-toggle').click();
+  await page.getByRole('alert').filter({hasText:'草稿恢复失败'}).waitFor();
+  await delay(700);
+  assert.deepEqual((await readDraft()).localDraft?.commands,invalid.commands,'failed replay must not clear retained recovery');
+  assert.equal(draftWrites.filter(row=>row.body?.draft===null).length,clearsBeforeInvalid,'failed replay must not even submit an automatic clear');
+  console.log('PASS working draft: local PUT without candidate, stale-window refusal, cold preview/base restoration, Undo clears recovery, one explicit Sync, current/manual milestone, collapsed recovery, incompatible recovery preserved');
+} else if (authoredOnly) {
   assert.deepEqual(await runIds(),[], 'authored-only fixture must begin with no retained run');
   assert.deepEqual((await call('GET','/api/artifacts')).artifacts,[], 'authored-only fixture must begin with no export');
   await page.goto(`http://127.0.0.1:${http.address().port}/?embedded=tool`);
@@ -848,6 +946,9 @@ console.log('TIMING quiet Sync click → visible candidate',Math.round(performan
 await stages(quietSyncWall,'quiet auto display');
 state=await snap();assert.equal(candidateCalls().length,2);assert.ok((await exported(state.candidates[1])).has('obj-'+later));
 assert.equal(state.view.drafts.length,0,'the completed batch must not overlap its saved model');
+const continuedDraft=await call('GET','/api/working-draft');
+assert.equal(continuedDraft.current?.runId,state.candidates[1],'a second Sync after late edits must retain the adopted successor, not the previous completed candidate');
+assert.equal(continuedDraft.localDraft,null,'quiet adoption clears the old source recovery before changing the editing base');
 console.log('6 · a delayed 422 after Undo releases Sync; corrected geometry replaces the failed snapshot');
 const failedObject=await rectangle(.9,.9), failedBase=(await snap()).base;
 let releaseFailure, failureReady;

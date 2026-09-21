@@ -25,6 +25,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..transport.errors import StudioError
 from .artifacts import document_bytes
+from .binding import retained_sources
 from .binding import ProjectBinding, record_kind
 
 BOARD_RUN_ID = "studio-board"
@@ -274,6 +275,7 @@ def _validate_scene(
     return content
 
 
+@retained_sources
 def save_board(
     binding: ProjectBinding, base_revision_sha256: str | None, title: str,
     elements: Sequence[Mapping[str, Any]], seen_documents: Sequence[str],

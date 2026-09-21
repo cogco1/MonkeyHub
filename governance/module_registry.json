@@ -1908,7 +1908,8 @@
         "SEAT_PACK_PATH",
         "PROGRAM_SHEET_PATH",
         "ProjectLayout.design_branches",
-        "cad_workspace_path"
+        "cad_workspace_path",
+        "ProjectLayout.working_draft"
       ],
       "depends_on": [
         "project.refs"
@@ -2059,7 +2060,8 @@
         "WorkspaceSink",
         "PersistenceDestinationRequired",
         "DesignBranchStore",
-        "ProjectTransferStore"
+        "ProjectTransferStore",
+        "WorkingDraftStore"
       ],
       "depends_on": [
         "project.manifest",
@@ -2122,7 +2124,8 @@
         "geometry_proposal_round",
         "is_registered",
         "require_registered",
-        "stage_geometry_program"
+        "stage_geometry_program",
+        "STUDIO_LOCAL_DRAFT"
       ],
       "depends_on": [
         "project.ports"
@@ -2388,7 +2391,8 @@
         "same-format retained snapshot and candidate dependency transfer, complete pre-install verification, and same-published-HEAD local branch synchronization; archive callers may include all retained runs and their referenced artifacts without promoting candidates or copying runtime workspaces",
         "Read-only classification of the declared project format as current, supported legacy, too new or invalid",
         "Ephemeral retained-format inventories, preserved retained kinds and migration blockers through the existing guarded transfer closure; no second format manifest",
-        "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written; every retained record is restated at the pointers its schema owner declares (project.version_refs) and re-hashed, and the rename cascades to a fixed point so every record ref, project:// URI and design branch naming it moves with it; a record carrying a legacy identity no owner declares blocks the migration; everything the declarations do not own is copied byte for byte; the migration retains its own ProjectFormatMigration@1 receipt in a format-migration run inside the project it produced"
+        "Forward format-1 to format-2 migration into a new empty directory from a disposable staging copy: the source is never written; every retained record is restated at the pointers its schema owner declares (project.version_refs) and re-hashed, and the rename cascades to a fixed point so every record ref, project:// URI and design branch naming it moves with it; a record carrying a legacy identity no owner declares blocks the migration; everything the declarations do not own is copied byte for byte; the migration retains its own ProjectFormatMigration@1 receipt in a format-migration run inside the project it produced",
+        "The project working position and explicit retention choices in design/working.json; CAS updates and reference-safe removal of expired, explicitly automatic runs and local recovery snapshots."
       ],
       "does_not_own": [
         "path naming inside a project (project.layout)",
@@ -2441,7 +2445,14 @@
         "ProjectMigrationPlan",
         "ProjectFormatMigration",
         "RetainedFormatEntry",
-        "FilesystemProjectRepository.lock_paths"
+        "FilesystemProjectRepository.lock_paths",
+        "FilesystemProjectRepository.read_working_draft",
+        "FilesystemProjectRepository.compare_and_swap_working_draft",
+        "FilesystemProjectRepository.protect_working_run",
+        "FilesystemProjectRepository.release_working_run",
+        "FilesystemProjectRepository.prune_working_draft",
+        "StaleWorkingDraft",
+        "FilesystemProjectRepository.working_draft_guard"
       ],
       "depends_on": [
         "project.digests",
@@ -2480,7 +2491,9 @@
         "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
-        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written"
+        "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
+        "Current work, explicitly saved runs, all retained references, recent 24-hour recovery and unfinished executions protect their complete run ancestry; unclassified runs, inputs and shared objects are never cleanup candidates.",
+        "Source validation and reference writes share the same cross-process guard as cleanup; in-process and filesystem locks are acquired in project, HEAD, design order. Full project archives preserve working metadata and local recovery; candidate synchronization never replaces the local working position."
       ],
       "status": "canonical",
       "tests": [
@@ -2488,7 +2501,8 @@
         "tests/test_project_repository.py",
         "tests/test_record_kinds.py",
         "tests/test_project_transfer.py",
-        "tests/test_project_format_migration.py"
+        "tests/test_project_format_migration.py",
+        "tests/test_project_working_draft.py"
       ],
       "notes": "1311 lines carrying the whole persistence concept, including Windows sharing-violation retries around the HEAD swap; PreparedTransition and RecoveryReport are returned but never imported by name."
     },
@@ -3963,7 +3977,8 @@
         "a work copy names one exact registration - run, asset sha256 and revisionRef together, where a null revisionRef selects the registration that carries none and never the newest different one; its own identity is the origin document, so the same registration resolves to the same file across restarts, and it holds the origin's own media type because that is the kind of file it contains; a document whose pages are answered for by different documents, whose page has become another page of one document, whose current replacement has a different page count or is a different kind of file, or whose registered media type has no editable copy at all, has no one file that can stand for it: the row carries that reason and the request is refused as not editable, naming any copy already made; the row names the whole registration it answers for and no page number, because one file answers for the whole document",
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
-        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources."
+        "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources.",
+        "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance and remain eligible for unreferenced automatic cleanup. Legacy registrations are conservatively protected."
       ],
       "status": "canonical",
       "tests": [
@@ -4087,7 +4102,8 @@
         "explicitly configured shared-project HTTP pull/bootstrap and candidate upload through the existing P036 transfer port; no direct project file writes",
         "explicitly preparing an empty project for its first modeling candidate through P036 initial-input persistence: a modeling root, zero level, setup basis and seat; existing authored or retained design and Board assets are preserved",
         "Projecting a checked in-memory proposed StateRecord for another edit without writing or claiming a retained candidate",
-        "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing."
+        "Read-only element elevation facts and their actual base/top references, plus named Level datums, projected from the exact StateRecord for contextual Stage 1 editing.",
+        "The current project working position, 24-hour automatic recovery listing, independent explicit saved versions and exact-source local command recovery through the P036 working-draft port; readback never executes a recovered request."
       ],
       "does_not_own": [
         "issuing a project version, and direct project file writes: the ProjectBinding object stays read-only, initial authored-input preparation and configured sync use project.repository ports; runtime.project_runner is the writer of a modeling run and project.issue the only issuer. A configured pull advances this Runtime's local design branch, and it does so entirely through project.repository's transfer and branch compare-and-swap ports; this owner writes no project file itself and moves no canonical HEAD",
@@ -4161,7 +4177,17 @@
         "project_proposed_record",
         "drawing_context",
         "reference_value",
-        "elevation_reference"
+        "elevation_reference",
+        "GET /api/working-draft",
+        "PUT /api/working-draft",
+        "POST /api/working-draft/save",
+        "PUT /api/working-draft/local",
+        "read_working_draft",
+        "select_working_draft",
+        "save_working_draft",
+        "retain_local_draft",
+        "record_candidate_draft",
+        "retained_sources"
       ],
       "depends_on": [
         "project.inputs",
@@ -4181,7 +4207,8 @@
         "contracts.fields",
         "state.design_portfolio",
         "state.state_record",
-        "capabilities.element_producers"
+        "capabilities.element_producers",
+        "contracts.canonical"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/projection.py",
@@ -4212,7 +4239,8 @@
         "apps/archflow-studio/api/tests/test_conventions.py",
         "apps/archflow-studio/api/tests/test_frame.py",
         "apps/archflow-studio/api/tests/test_collaboration_http.py",
-        "apps/archflow-studio/api/tests/test_boards.py"
+        "apps/archflow-studio/api/tests/test_boards.py",
+        "apps/archflow-studio/api/tests/test_working_draft.py"
       ],
       "notes": "Every other Studio concern reads the project through this one binding.",
       "files": [
@@ -4227,7 +4255,10 @@
         "apps/archflow-studio/api/archflow_studio_api/application/conventions.py",
         "apps/archflow-studio/api/archflow_studio_api/application/frame.py",
         "apps/archflow-studio/api/archflow_studio_api/application/synchronization.py",
-        "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py"
+        "apps/archflow-studio/api/archflow_studio_api/routes/synchronization.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/working_draft.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/working_draft.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/working_draft.py"
       ]
     },
     {
@@ -4249,7 +4280,8 @@
         "arranging composed-model continuation after native candidate execution: matching retained seat programs and CAD exports, calling the existing CAD composition adapter, and registering the complete result through studio.artifacts",
         "retaining each candidate typed operator, exact immediate source and committed base Stage; replaying its chain against the saved materialized result",
         "retaining combined candidate source ids with one normalized operator against their common Stage; replaying all sources before acceptance",
-        "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run"
+        "Read-only runtime inspection of live jobs, exact retained candidates and branch-reachable committed Stages; managed candidate admission may accept a preallocated run id without weakening exact-base checks or re-executing an existing run",
+        "Protecting an executing candidate and its input from automatic cleanup, and advancing its exact current working position after successful execution without accepting a Stage."
       ],
       "does_not_own": [
         "seat execution, geometry and every record it writes - runtime.project_runner",
@@ -6221,7 +6253,8 @@
         "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with",
         "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
         "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write.",
-        "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner."
+        "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
+        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6421,7 +6454,8 @@
         "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
         "tests/monkeymonitor/test_stage_handoff_benchmark.py",
-        "apps/monkeyhub/api/tests/test_chat_presentation.py"
+        "apps/monkeyhub/api/tests/test_chat_presentation.py",
+        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py"
       ],
       "depends_on": [
         "project.repository",

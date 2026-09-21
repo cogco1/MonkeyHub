@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, BinaryIO, Mapping, Protocol
+from typing import ContextManager, Any, BinaryIO, Mapping, Protocol
 
 from archflow.project.manifest import ProjectManifest
 from archflow.project.refs import (
@@ -109,6 +109,24 @@ class DesignBranchStore(Protocol):
         expected_head: ProjectRecordRef | None,
         branch: Mapping[str, Any],
     ) -> dict[str, Any]: ...
+
+
+class WorkingDraftStore(Protocol):
+    """P036 owns mutable working positions and cleanup of explicitly automatic runs."""
+
+    def working_draft_guard(self) -> ContextManager[None]: ...
+
+    def read_working_draft(self) -> tuple[dict[str, Any], str | None]: ...
+
+    def compare_and_swap_working_draft(
+        self, *, expected_revision: str | None, value: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], str]: ...
+
+    def protect_working_run(self, run_id: str, source_run_id: str | None, *, dependencies: tuple[str, ...] = ()) -> None: ...
+
+    def release_working_run(self, run_id: str) -> None: ...
+
+    def prune_working_draft(self, *, now: str, protected_run_ids: tuple[str, ...] = ()) -> tuple[str, ...]: ...
 
 
 class ProjectTransferStore(Protocol):

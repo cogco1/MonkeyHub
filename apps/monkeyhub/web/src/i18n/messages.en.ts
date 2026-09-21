@@ -654,6 +654,8 @@ export const messagesEn = {
   "stage.sketch.line": "Line",
   "stage.sync.label": "Sync",
   "stage.sync.dirty": "Unsynced",
+  "stage.sync.autosaved": "Draft saved automatically",
+  "stage.sync.autosaving": "Saving draft…",
   "stage.sync.busy": "Syncing; keep editing",
   "stage.sync.readFailed": "Sync status is unavailable. Sync again to reconnect.",
   "stage.sketch.lineTools": "Line tools",

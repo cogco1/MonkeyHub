@@ -64,6 +64,7 @@ from archflow.project.repository import ProjectRepositoryError
 
 from ..ports import StudioEventSink
 from ..transport.errors import StudioError, error_sentence
+from .binding import retained_sources
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .projection import StateProjection, project_state, require_actionable
 
@@ -494,6 +495,7 @@ def _png_with_content_identity(data: bytes, identity: str) -> bytes:
     return data[:-len(PNG_END)] + chunk + PNG_END
 
 
+@retained_sources
 def save_document(
     binding: ProjectBinding, run_id: str | None, file_name: str, mime_type: str, content_base64: str,
     model_source: ModelSource | None = None,
@@ -592,6 +594,7 @@ def save_document(
 _document_source_lock = threading.RLock()
 
 
+@retained_sources
 def bind_document_model_source(
     binding: ProjectBinding, run_id: str, asset_sha256: str, source: ModelSource,
 ) -> SourceDocument:
@@ -824,6 +827,7 @@ def _work_copy(
     )
 
 
+@retained_sources
 def open_document_work_copy(
     binding: ProjectBinding, run_id: str, asset_sha256: str, *, revision_ref: str | None = None,
 ) -> DocumentWorkCopy:
@@ -905,6 +909,7 @@ def list_document_work_copies(binding: ProjectBinding) -> tuple[DocumentWorkCopy
     return tuple(copy for copy in copies if copy.path.is_file())
 
 
+@retained_sources
 def save_viewport_capture(
     binding: ProjectBinding,
     run_id: str,
@@ -1091,6 +1096,7 @@ WORK_MODEL_TIMEOUT_S = 900.0
 _work_model_lock = threading.RLock()
 
 
+@retained_sources
 def export_rhino_work_model(
     binding: ProjectBinding, settings: Any, *, run_id: str, sha256: str,
 ) -> ArtifactRecord:
@@ -1435,9 +1441,10 @@ def _work_model_failure(execution: Any) -> str:
 _model_asset_lock = threading.RLock()
 
 
+@retained_sources
 def register_model_asset(
     binding: ProjectBinding, run_id: str, state_digest: str, file_name: str, content_base64: str,
-    *, event_sink: StudioEventSink | None = None,
+    *, event_sink: StudioEventSink | None = None, generated: bool = False,
 ) -> ArtifactRecord:
     """Retain an explicitly supplied composed model; never claim a native export."""
 
@@ -1461,6 +1468,12 @@ def register_model_asset(
         existing = next((row for row in _registered_model_assets(binding, run_id) if row.model_source == source), None)
         if existing is not None:
             require_model_source(binding, source, projection)
+            if not generated:
+                original = binding.repository.load_json(record_ref_from_uri(existing.receipt_ref, binding.project_id))
+                if original.get("origin") == "generated":
+                    binding.repository.put_json(run=projection.run,
+                        destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+                        record_kind=STUDIO_MODEL_ASSET, payload=original | {"origin": "uploaded"})
             return existing
         try:
             inspected = inspect_three_dm_contents(data)
@@ -1478,6 +1491,7 @@ def register_model_asset(
             record_kind=STUDIO_MODEL_ASSET,
             payload={
                 "schema": "StudioModelAsset@1", "projectId": binding.project_id,
+                "origin": "generated" if generated else "uploaded",
                 "modelSource": source.to_dict(), "stateRecordRef": projection.record_source,
                 "artifact": asdict(artifact), "fileName": file_name, "sizeBytes": len(data),
                 "objectCount": inspected.object_count, "lengthUnit": unit,
@@ -1520,7 +1534,10 @@ def _registered_model_assets(
             design_state_digest=source.state_digest, length_unit=payload["lengthUnit"], up_axis="Z-up",
             receipt_ref=ref.uri, format=FORMAT_3DM, representation="composed", model_source=source,
         ))
-    return tuple(records)
+    unique = {}
+    for record in records:
+        unique.setdefault(record.model_source, record)
+    return tuple(unique.values())
 
 
 def artifact_bytes(

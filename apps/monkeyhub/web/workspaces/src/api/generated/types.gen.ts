@@ -3741,6 +3741,86 @@ export type LevelFootprintDto = {
 };
 
 /**
+ * LocalDraftDto
+ */
+export type LocalDraftDto = {
+    source: LocalDraftSourceDto;
+    /**
+     * Commands
+     */
+    commands: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Attempt
+     */
+    attempt?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Updatedat
+     */
+    updatedAt: string;
+};
+
+/**
+ * LocalDraftInputDto
+ */
+export type LocalDraftInputDto = {
+    source: LocalDraftSourceDto;
+    /**
+     * Commands
+     */
+    commands: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Attempt
+     */
+    attempt?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * LocalDraftRequestDto
+ */
+export type LocalDraftRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    draft: LocalDraftInputDto | null;
+    expectedSource?: LocalDraftSourceDto | null;
+};
+
+/**
+ * LocalDraftSourceDto
+ */
+export type LocalDraftSourceDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Sourcerunid
+     */
+    sourceRunId?: string | null;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+};
+
+/**
  * MassingMetricsDto
  *
  * What one massing measures, and what could not be measured.
@@ -8597,6 +8677,104 @@ export type WorkingCopySelectionRequestDto = {
     optionId: string;
 };
 
+/**
+ * WorkingDraftDto
+ */
+export type WorkingDraftDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Revisionsha256
+     */
+    revisionSha256?: string | null;
+    current?: WorkingDraftEntryDto | null;
+    /**
+     * Recovery
+     */
+    recovery?: Array<WorkingDraftEntryDto>;
+    /**
+     * Saved
+     */
+    saved?: Array<WorkingDraftEntryDto>;
+    /**
+     * Managedrunids
+     */
+    managedRunIds?: Array<string>;
+    localDraft?: LocalDraftDto | null;
+};
+
+/**
+ * WorkingDraftEntryDto
+ */
+export type WorkingDraftEntryDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+    /**
+     * Updatedat
+     */
+    updatedAt: string;
+    /**
+     * Label
+     */
+    label?: string | null;
+};
+
+/**
+ * WorkingDraftSaveDto
+ */
+export type WorkingDraftSaveDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Label
+     */
+    label?: string | null;
+};
+
+/**
+ * WorkingDraftSelectionDto
+ */
+export type WorkingDraftSelectionDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Baserevisionsha256
+     */
+    baseRevisionSha256: string | null;
+    /**
+     * Runid
+     */
+    runId: string | null;
+    /**
+     * Branchid
+     */
+    branchId?: string | null;
+};
+
 export type ReadHealthApiHealthGetData = {
     body?: never;
     headers?: {
@@ -11959,3 +12137,143 @@ export type PushCandidateApiSyncPushPostResponses = {
 };
 
 export type PushCandidateApiSyncPushPostResponse = PushCandidateApiSyncPushPostResponses[keyof PushCandidateApiSyncPushPostResponses];
+
+export type ReadCurrentWorkingDraftApiWorkingDraftGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-draft';
+};
+
+export type ReadCurrentWorkingDraftApiWorkingDraftGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadCurrentWorkingDraftApiWorkingDraftGetError = ReadCurrentWorkingDraftApiWorkingDraftGetErrors[keyof ReadCurrentWorkingDraftApiWorkingDraftGetErrors];
+
+export type ReadCurrentWorkingDraftApiWorkingDraftGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDraftDto;
+};
+
+export type ReadCurrentWorkingDraftApiWorkingDraftGetResponse = ReadCurrentWorkingDraftApiWorkingDraftGetResponses[keyof ReadCurrentWorkingDraftApiWorkingDraftGetResponses];
+
+export type SelectCurrentWorkingDraftApiWorkingDraftPutData = {
+    body: WorkingDraftSelectionDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-draft';
+};
+
+export type SelectCurrentWorkingDraftApiWorkingDraftPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SelectCurrentWorkingDraftApiWorkingDraftPutError = SelectCurrentWorkingDraftApiWorkingDraftPutErrors[keyof SelectCurrentWorkingDraftApiWorkingDraftPutErrors];
+
+export type SelectCurrentWorkingDraftApiWorkingDraftPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDraftDto;
+};
+
+export type SelectCurrentWorkingDraftApiWorkingDraftPutResponse = SelectCurrentWorkingDraftApiWorkingDraftPutResponses[keyof SelectCurrentWorkingDraftApiWorkingDraftPutResponses];
+
+export type SaveCurrentWorkingDraftApiWorkingDraftSavePostData = {
+    body: WorkingDraftSaveDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-draft/save';
+};
+
+export type SaveCurrentWorkingDraftApiWorkingDraftSavePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SaveCurrentWorkingDraftApiWorkingDraftSavePostError = SaveCurrentWorkingDraftApiWorkingDraftSavePostErrors[keyof SaveCurrentWorkingDraftApiWorkingDraftSavePostErrors];
+
+export type SaveCurrentWorkingDraftApiWorkingDraftSavePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDraftDto;
+};
+
+export type SaveCurrentWorkingDraftApiWorkingDraftSavePostResponse = SaveCurrentWorkingDraftApiWorkingDraftSavePostResponses[keyof SaveCurrentWorkingDraftApiWorkingDraftSavePostResponses];
+
+export type RetainLocalWorkingDraftApiWorkingDraftLocalPutData = {
+    body: LocalDraftRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/working-draft/local';
+};
+
+export type RetainLocalWorkingDraftApiWorkingDraftLocalPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetainLocalWorkingDraftApiWorkingDraftLocalPutError = RetainLocalWorkingDraftApiWorkingDraftLocalPutErrors[keyof RetainLocalWorkingDraftApiWorkingDraftLocalPutErrors];
+
+export type RetainLocalWorkingDraftApiWorkingDraftLocalPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkingDraftDto;
+};
+
+export type RetainLocalWorkingDraftApiWorkingDraftLocalPutResponse = RetainLocalWorkingDraftApiWorkingDraftLocalPutResponses[keyof RetainLocalWorkingDraftApiWorkingDraftLocalPutResponses];

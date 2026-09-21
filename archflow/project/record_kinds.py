@@ -106,6 +106,7 @@ STUDIO_DOCUMENT_COMMENT = "studio-document-comment"
 STUDIO_MODEL_ASSET = "studio-model-asset"
 STUDIO_DOCUMENT_MODEL_SOURCE = "studio-document-model-source"
 STUDIO_WORKING_COPY = "studio-working-copy"
+STUDIO_LOCAL_DRAFT = "studio-local-draft"
 STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
 DESIGN_STAGE = "design-stage"
 STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
@@ -171,6 +172,12 @@ _TABLE: tuple[RecordKind, ...] = (
         "StudioWorkingCopy@1",
         _RUN_RECORD,
         "one local work item's explicit model options and selected option, retained in its common-base run",
+    ),
+    RecordKind(
+        STUDIO_LOCAL_DRAFT,
+        "StudioLocalDraft@1",
+        PersistenceArea.RUN_RECOVERY.value,
+        "recoverable unsynced commands and their original submission identity; never a design Stage or an instruction to execute",
     ),
     RecordKind(
         STUDIO_MODEL_ANNOTATIONS,

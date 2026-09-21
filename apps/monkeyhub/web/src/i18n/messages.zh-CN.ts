@@ -625,6 +625,8 @@ export const messagesZhCN = {
   "stage.sketch.line": "直线",
   "stage.sync.label": "同步",
   "stage.sync.dirty": "未同步",
+  "stage.sync.autosaved": "草稿已自动保存",
+  "stage.sync.autosaving": "正在保存草稿…",
   "stage.sync.busy": "正在同步，可继续编辑",
   "stage.sync.readFailed": "同步状态暂时不可用，点同步可重新连接。",
   "stage.sketch.lineTools": "线工具",

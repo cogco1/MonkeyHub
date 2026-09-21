@@ -54,6 +54,7 @@ from ..transport.errors import StudioError
 from .clarification import property_in
 from .proposals import PERSISTENCE, Proposal, write_refs_of
 from .artifacts import ModelSource, require_model_source
+from .binding import retained_sources
 from .binding import ProjectBinding, record_kind
 from .projection import project_state
 from .pick import COMPONENT_KEY, OBJECT_REF_KEY, OBJECT_REF_PREFIX, element_of_object
@@ -224,6 +225,7 @@ def _retain_working_copy(binding: ProjectBinding, item: WorkingCopy, previous: s
     return replace(item, revision_sha256=ref.sha256)
 
 
+@retained_sources
 def create_working_copy(
     binding: ProjectBinding, group_id: str, label: str, stage_id: str, common_base: ModelSource,
     scope: Sequence[str], options: Sequence[WorkingCopyOption],
@@ -241,6 +243,7 @@ def create_working_copy(
                                                         None if base_stage is None else base_stage.uri), None)
 
 
+@retained_sources
 def select_working_copy_option(binding: ProjectBinding, group_id: str, base_revision: str, option_id: str) -> WorkingCopy:
     with _working_copy_lock:
         item = read_working_copy(binding, group_id)
@@ -255,6 +258,7 @@ def select_working_copy_option(binding: ProjectBinding, group_id: str, base_revi
         return _retain_working_copy(binding, replace(item, selected_option_id=option_id), item.revision_sha256)
 
 
+@retained_sources
 def add_working_copy_option(
     binding: ProjectBinding, group_id: str, base_revision: str, option: WorkingCopyOption,
     *, event_sink: StudioEventSink | None = None,

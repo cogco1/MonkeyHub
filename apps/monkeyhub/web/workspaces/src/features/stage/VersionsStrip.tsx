@@ -6,7 +6,7 @@ import { useConnection } from "../../api/ProjectRuntimeContext";
  */
 
 import { useState } from "react";
-import type { DesignHistoryDto, DesignStageDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto } from "../../api/generated";
+import type { DesignHistoryDto, DesignStageDto, ModelSourceDto, ProjectArtifactDto, WorkingCopyDto, WorkingCopyOptionDto, WorkingDraftDto } from "../../api/generated";
 import { sha8 } from "../../app/format";
 import { useT } from "../../i18n/useT";
 import { usePreferences } from "../settings/preferences";
@@ -44,6 +44,9 @@ export interface DesignHistoryControls {
   onAccept(candidateId: string): void;
   onFork(stage: DesignStageDto, name: string): void;
   onCombine(candidateIds: string[]): void;
+  workingDraft?: WorkingDraftDto | null;
+  onRestoreDraft?(runId: string): void;
+  onSaveDraft?(runId: string, label: string): void;
 }
 
 export function VersionsStrip({
@@ -79,6 +82,7 @@ export function VersionsStrip({
   const [forkStage, setForkStage] = useState<DesignStageDto | null>(null);
   const [branchName, setBranchName] = useState("");
   const [combineIds, setCombineIds] = useState<string[]>([]);
+  const [saveName, setSaveName] = useState("");
   if (design) {
     const history = design.history;
     const branch = history?.branches.find((item) => item.branchId === history.branchId);
@@ -86,9 +90,33 @@ export function VersionsStrip({
     const commonSource = selectedCandidates[0]?.sourceStageRef;
     const knownModels = new Set([...design.acceptedModelSources, ...design.candidates.map((candidate) => candidate.modelSource),
       ...workingCopies.flatMap((copy) => copy.options.map((option) => option.modelSource))].map((source) => `${source.runId}:${source.assetSha256}`));
-    const legacy = groups.map((group) => ({ ...group, exports: group.exports.filter(({ artifact }) =>
+    const draft = design.workingDraft;
+    const managed = new Set(draft?.managedRunIds ?? []);
+    const legacy = groups.filter((group) => !managed.has(group.runId)).map((group) => ({ ...group, exports: group.exports.filter(({ artifact }) =>
       !knownModels.has(`${artifact.runId}:${artifact.sha256}`)) })).filter((group) => group.exports.length > 0);
+    const draftRow = (row: NonNullable<WorkingDraftDto["current"]>, label: string, save = false) => {
+      const selected = row.runId === design.currentModelSource?.runId;
+      return <div className="vcard" role="listitem" key={`${label}:${row.runId}`} data-working-draft={row.runId}>
+        <div className="vcard__head"><strong>{label}</strong><time>{new Date(row.updatedAt).toLocaleString()}</time></div>
+        <div className="vcard__exports"><button className="btn btn--small" disabled={design.busy} aria-pressed={selected}
+          onClick={() => design.onRestoreDraft?.(row.runId)}>打开并继续修改</button>
+          {selected && branch && design.currentStageRef === branch.headStageRef &&
+            !history?.stages.some((stage) => stage.modelSource.runId === row.runId) &&
+            <button className="btn btn--small" disabled={design.busy} onClick={() => design.onAccept(row.runId)}>确认下一 Stage</button>}
+        </div>
+        {save && <form className="vcard__exports" onSubmit={(event) => { event.preventDefault(); design.onSaveDraft?.(row.runId, saveName.trim()); }}>
+          <input aria-label="重点版本名称" placeholder="重点版本名称（可选）" value={saveName} onChange={(event) => setSaveName(event.target.value)} />
+          <button className="btn btn--small" disabled={design.busy}>保存重点版本</button>
+        </form>}
+      </div>;
+    };
     return <div className="versions" role="list" aria-label="Stage 历史">
+      {draft?.current && draftRow(draft.current, "当前工作草稿 · 自动保存", true)}
+      {draft?.saved?.map((row) => draftRow(row, row.label || "已保存版本"))}
+      {draft && <details className="vcard"><summary>最近 24 小时的自动恢复 · {(draft.recovery ?? []).length}</summary>
+        <p className="quiet">普通修改更新工作草稿。重点版本与已确认 Stage 长期保留。</p>
+        {draft.recovery?.map((row) => draftRow(row, "恢复点"))}
+      </details>}
       <div className="vcard"><div className="vcard__head"><strong>设计历史</strong>
         {history && history.branches.length > 0 && <select aria-label="Branch" value={history.branchId} disabled={design.busy}
           onChange={(event) => design.onBranch(event.target.value)}>{history.branches.map((item) =>
@@ -113,11 +141,13 @@ export function VersionsStrip({
       {workingCopies.map((copy) => <div key={copy.groupId} className="vcard" data-working-copy={copy.groupId}><strong>探索 · {copy.label}</strong>
         <div className="vcard__exports">{copy.options.map((option) => <button key={option.id} className="btn btn--small" disabled={design.busy}
           onClick={() => design.onCandidate(option.modelSource)}>{option.label}{copy.selectedOptionId === option.id ? " · ✓" : ""}</button>)}</div></div>)}
+      <details className="vcard"><summary>候选方案与已有历史</summary>
       {design.candidates.length > 1 && <div className="vcard"><button className="btn btn--small"
         disabled={design.busy || selectedCandidates.length < 2 || selectedCandidates.some((candidate) => candidate.sourceStageRef !== commonSource)}
         onClick={() => design.onCombine(selectedCandidates.map((candidate) => candidate.modelSource.runId))}>合并选中候选并预览</button>
         <span className="quiet">选择同一 Stage 下的候选，合并后仍需接受。</span></div>}
-      {design.candidates.map(({ label, modelSource, sourceStageRef }) => {
+      {design.candidates.filter((candidate) => !managed.has(candidate.modelSource.runId) ||
+        draft?.recovery?.some((row) => row.runId === candidate.modelSource.runId)).map(({ label, modelSource, sourceStageRef }) => {
         const selected = modelSource.runId === design.currentModelSource?.runId && modelSource.assetSha256 === design.currentModelSource.assetSha256;
         return <div className="vcard" role="listitem" key={`${modelSource.runId}:${modelSource.assetSha256}`} data-preview-candidate={modelSource.runId}>
           <div className="vcard__head"><label><input type="checkbox" aria-label={`合并 ${label}`} checked={combineIds.includes(modelSource.runId)}
@@ -130,6 +160,7 @@ export function VersionsStrip({
             {selected && branch && design.currentStageRef !== branch.headStageRef && <span className="quiet">此候选来自历史阶段，请先从该阶段新建分支。</span>}
           </div></div>;
       })}
+      </details>
       {legacy.length > 0 && <details className="vcard"><summary>已有模型与历史运行 · 尚未归入 Stage</summary>
         <VersionsStrip groups={legacy} loadingSha={loadingSha} loadedShas={loadedShas} loadedRunId={loadedRunId}
           onOpen={onOpen} onOpenRun={onOpenRun} onCompare={onCompare} />

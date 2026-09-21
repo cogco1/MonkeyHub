@@ -135,6 +135,11 @@ class ProjectLayout:
         """Working design history positions; independent of issued HEAD."""
         return self.root / "design" / "branches.json"
 
+    @property
+    def working_draft(self) -> Path:
+        """Current working position and retention choices, independent of issued HEAD."""
+        return self.root / "design" / "working.json"
+
     def run(self, run_id: str) -> RunLayout:
         require_identifier(run_id, "run_id")
         return RunLayout(self.runs / run_id)
