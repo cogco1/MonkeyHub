@@ -808,6 +808,144 @@ def inline_python(run: str) -> str:
     return "\n".join(lines[opens[0] + 1:closes[0]])
 
 
+class ReleaseDesktopIdentityTests(unittest.TestCase):
+    """Execute both release scripts against real child processes and output pipes."""
+
+    STEPS = ("Verify release desktop version", "Verify installed release identity")
+    VERSION = "0.1.77"
+    SOURCE_SHA = "c" * 40
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="Hub identity executable ")
+        cls.addClassCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        cls.fixture = root / "MonkeyHub.exe"
+        if sys.platform == "win32":
+            # A GUI-subsystem child is the release failure's actual boundary.
+            # .NET Framework's compiler is part of the Windows build host; no
+            # product executable, service or console window is launched here.
+            compiler = Path(os.environ["WINDIR"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
+            source = root / "identity.cs"
+            source.write_text('''using System;
+using System.IO;
+using System.Threading;
+class Identity {
+    static int Main(string[] args) {
+        if (args.Length != 1 || args[0] != "--version") return 89;
+        string output = Environment.GetEnvironmentVariable("IDENTITY_STDOUT");
+        int middle = output.Length / 2;
+        Console.Write(output.Substring(0, middle));
+        Console.Out.Flush();
+        Thread.Sleep(Int32.Parse(Environment.GetEnvironmentVariable("IDENTITY_DELAY_MS")));
+        Console.Write(output.Substring(middle));
+        Console.Out.Flush();
+        Thread.Sleep(Int32.Parse(Environment.GetEnvironmentVariable("IDENTITY_AFTER_OUTPUT_MS")));
+        File.WriteAllText(Environment.GetEnvironmentVariable("IDENTITY_FINISHED"), "complete");
+        return Int32.Parse(Environment.GetEnvironmentVariable("IDENTITY_EXIT_CODE"));
+    }
+}
+''', encoding="utf-8")
+            subprocess.run([str(compiler), "/nologo", "/target:winexe", f"/out:{cls.fixture}", str(source)],
+                           capture_output=True, text=True, check=True, timeout=30)
+        else:
+            cls.fixture.write_text('''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+import time
+if sys.argv[1:] != ["--version"]:
+    raise SystemExit(89)
+output = os.environ["IDENTITY_STDOUT"]
+middle = len(output) // 2
+sys.stdout.write(output[:middle])
+sys.stdout.flush()
+time.sleep(int(os.environ["IDENTITY_DELAY_MS"]) / 1000)
+sys.stdout.write(output[middle:])
+sys.stdout.flush()
+time.sleep(int(os.environ["IDENTITY_AFTER_OUTPUT_MS"]) / 1000)
+Path(os.environ["IDENTITY_FINISHED"]).write_text("complete", encoding="utf-8")
+raise SystemExit(int(os.environ["IDENTITY_EXIT_CODE"]))
+''', encoding="utf-8")
+            cls.fixture.chmod(0o755)
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="Hub release identity ")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+
+    def verify(self, step: str, *, executable: Path | None = None, identity: dict | None = None,
+               version: str = VERSION, source: str = SOURCE_SHA,
+               delay_ms: int = 0, after_output_ms: int = 0, exit_code: int = 0) -> subprocess.CompletedProcess:
+        run, declared = workflow_step(step)
+        script = self.root / "verify-identity.py"
+        script.write_text(run, encoding="utf-8", newline="\n")
+        built = self.root / "package build/desktop-target/release/MonkeyHub.exe"
+        built.parent.mkdir(parents=True, exist_ok=True)
+        selected = executable or self.fixture
+        shutil.copy2(selected, built)
+        finished = self.root / "process-finished.txt"
+        finished.unlink(missing_ok=True)
+        environment = dict(os.environ, **declared)
+        environment.update({
+            "PACKAGE_BUILD": str(self.root / "package build"),
+            "MONKEYHUB_DESKTOP_EXE": str(selected),
+            "MONKEYHUB_RELEASE_VERSION": version,
+            "MONKEYHUB_SOURCE_SHA": source,
+            "IDENTITY_STDOUT": json.dumps(identity if identity is not None else {
+                "version": self.VERSION, "sourceRevision": self.SOURCE_SHA}),
+            "IDENTITY_DELAY_MS": str(delay_ms),
+            "IDENTITY_AFTER_OUTPUT_MS": str(after_output_ms),
+            "IDENTITY_EXIT_CODE": str(exit_code),
+            "IDENTITY_FINISHED": str(finished),
+            "PYTHONUTF8": "1",
+        })
+        completed = subprocess.run([sys.executable, str(script)], env=environment,
+                                   capture_output=True, text=True, encoding="utf-8", timeout=30)
+        if executable is None:
+            self.assertEqual(finished.read_text(encoding="utf-8"), "complete",
+                             "the workflow waits until the child exits, including after its final stdout byte")
+        return completed
+
+    def test_complete_and_delayed_gui_stdout_are_captured_before_identity_validation(self) -> None:
+        for step in self.STEPS:
+            for delay in (0, 200):
+                with self.subTest(step=step, delay_ms=delay):
+                    completed = self.verify(step, delay_ms=delay, after_output_ms=200)
+                    self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_nonzero_exit_is_refused_even_with_matching_identity_json(self) -> None:
+        for step in self.STEPS:
+            with self.subTest(step=step):
+                completed = self.verify(step, exit_code=7)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("CalledProcessError", completed.stderr)
+                self.assertIn("exit status 7", completed.stderr)
+
+    def test_different_version_or_source_is_refused(self) -> None:
+        for step in self.STEPS:
+            for field, wrong, message in (("version", "0.0.0", "version does not match release version"),
+                                          ("sourceRevision", "d" * 40, "source does not match release source")):
+                with self.subTest(step=step, field=field):
+                    identity = {"version": self.VERSION, "sourceRevision": self.SOURCE_SHA, field: wrong}
+                    completed = self.verify(step, identity=identity)
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(message, completed.stderr)
+
+    def test_packaged_windows_gui_executable_matches_its_retained_build_identity(self) -> None:
+        if sys.platform != "win32" or not os.environ.get("MONKEYHUB_DESKTOP_EXE"):
+            self.skipTest("set MONKEYHUB_DESKTOP_EXE to the installed Windows desktop executable")
+        executable = Path(os.environ["MONKEYHUB_DESKTOP_EXE"]).resolve()
+        self.assertTrue(executable.is_file(), executable)
+        evidence = json.loads((executable.parent / "build-info.json").read_text(encoding="utf-8"))
+        version, source = evidence["desktop"]["version"], evidence["sourceCommit"]
+        self.assertEqual(evidence["desktop"]["sourceCommit"], source)
+        for step in self.STEPS:
+            with self.subTest(step=step):
+                completed = self.verify(step, executable=executable, version=version, source=source)
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+
 class ReleaseCandidateNormalizationTests(unittest.TestCase):
     """The release-candidate normalisation in desktop.yml, without a real build.
 
