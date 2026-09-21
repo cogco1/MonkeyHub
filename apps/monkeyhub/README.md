@@ -59,7 +59,7 @@ For new Codex chats in a source checkout, install the pinned ACP adapter once wi
 Each new Codex chat keeps one adapter process between turns. Hub saves its opaque ACP session ID separately from old CLI IDs and restores it after reopening; a failed restore is reported without creating another chat or resending the turn. Existing Codex CLI chats and Claude chats continue through their original transport. Model choices still apply to that conversation and use the installed native configuration. Permission requests appear in the tool activity with the adapter's own options; only a submitted choice responds, and stop or shutdown cancels pending requests.
 
 ```powershell
-& $Python .\apps\monkeyhub\run.py --runtime-root 'E:\MonkeyHub local test' --port 8790 --hub-web-dir .\apps\monkeyhub\web\dist --no-browser
+& $Python .\apps\monkeyhub\run.py --runtime-root '<workspace-root>\temp\monkeyhub-local-test' --port 8790 --hub-web-dir .\apps\monkeyhub\web\dist --no-browser
 ```
 
 run.py adds the source and API import paths explicitly, including for embedded Python that ignores PYTHONPATH. Its fixed --service studio and --service monitor forms call the existing service entry points; child processes use the same sys.executable.

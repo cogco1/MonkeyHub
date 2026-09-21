@@ -647,6 +647,42 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-220",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Keep ordinary edits in the current work draft, retain 24-hour automatic recovery and explicit saved versions, and clean only unreferenced automatic data through existing project and Hub owners.",
+      "depends_on": [],
+      "write_scope": [
+        "archflow/project/",
+        "apps/archflow-studio/api/",
+        "apps/monkeyhub/api/",
+        "apps/monkeyhub/web/",
+        "apps/monkeyhub/README.md",
+        "tests/test_project_working_draft.py",
+        "tests/test_project_repository.py",
+        "tests/test_project_transfer.py",
+        "governance/module_registry.json",
+        "governance/work_registry.json",
+        "docs/mapping/planning/GH220-working-draft-retention.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md",
+        "tools/package_monkeyapps.py",
+        "tools/workspace.py",
+        "tests/test_package_monkeyapps.py"
+      ],
+      "card": "docs/mapping/planning/GH220-working-draft-retention.md",
+      "acceptance": [
+        "Ordinary local edits recover their exact commands without starting a candidate; the current working position and explicit saved versions survive restart.",
+        "Automatic recovery older than 24 hours is removed only when unreferenced; current work, accepted Stages, issued history, original materials, unfinished execution and all surviving run dependencies remain intact.",
+        "Existing Hub lifecycle schedules maintenance, and the version UI presents current/saved work without a card per automatic update.",
+        "Focused behavior tests, frontend checks and archcheck pass."
+      ],
+      "notes": [
+        "Issue #220; branch codex/220-autosave-retention-final; integrate origin/main ee643f30 after PR 224."
+      ]
     }
   ]
 }

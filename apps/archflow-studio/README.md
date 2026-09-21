@@ -416,10 +416,10 @@ For the shared process, configure:
 ```powershell
 $env:ARCHFLOW_STUDIO_MODE = 'remote'
 $env:ARCHFLOW_STUDIO_SERVICE_ROLE = 'shared_project'
-$env:ARCHFLOW_STUDIO_ACTORS_FILE = 'E:\YourRuntime\config\actors.json'
+$env:ARCHFLOW_STUDIO_ACTORS_FILE = '<runtime-root>\config\actors.json'
 $env:ARCHFLOW_STUDIO_ORIGINS = 'http://127.0.0.1:8891'
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'off'
-python -m archflow_studio_api.main --project-dir E:\YourRuntime\workspace\shared\projects\demo-project --host 127.0.0.1 --port 8890
+python -m archflow_studio_api.main --project-dir '<runtime-root>\workspace\shared\projects\demo-project' --host 127.0.0.1 --port 8890
 ```
 
 The external actor file names unique credentials and explicit actions. Replace the example
@@ -441,7 +441,7 @@ $env:ARCHFLOW_STUDIO_SYNC_URL = 'http://127.0.0.1:8890'
 $env:ARCHFLOW_STUDIO_SYNC_PROJECT_ID = 'demo-project'
 $env:ARCHFLOW_STUDIO_SYNC_TOKEN = 'REPLACE_ALICE_TOKEN'
 $env:ARCHFLOW_STUDIO_CAD_EXPORT = 'occt'
-python -m archflow_studio_api.main --project-dir E:\YourRuntime\workspace\alice\projects\demo-project --host 127.0.0.1 --port 8891
+python -m archflow_studio_api.main --project-dir '<runtime-root>\workspace\alice\projects\demo-project' --host 127.0.0.1 --port 8891
 ```
 
 Initialize the shared project's first Stage with the existing model-source endpoint. Then

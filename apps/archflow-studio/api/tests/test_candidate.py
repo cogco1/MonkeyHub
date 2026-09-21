@@ -977,6 +977,246 @@ class CandidateContinuationTests(CandidateTestCase):
         )
 
 
+class CandidateComponentRemovalTests(CandidateTestCase):
+    """Explicit component deletion changes only the new run's seat ownership."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        record = json.loads(json.dumps(RECORD_PAYLOAD))
+        for index, name in enumerate(("finish-a", "finish-b")):
+            record["entities"].extend([
+                {"entity_id": name, "schema": "Component@1", "parent_id": "building",
+                 "fields": {"semantic_kind": "roof", "intent": "removable layer", "source_refs": ["evidence:demo"]}},
+                {"entity_id": f"{name}-panel", "schema": "Element@1", "parent_id": name,
+                 "fields": {"component_id": name, "producer": "prism",
+                            "references": {"base": {"level": "level-ground"}},
+                            "params": {"profile": [[10 + index * 2, 0], [11 + index * 2, 0],
+                                                   [11 + index * 2, 1], [10 + index * 2, 1]], "height": 0.1}},
+                 "basis_refs": ["evidence:demo"]},
+            ])
+        pack = json.loads(json.dumps(SEATS_PAYLOAD))
+        pack["seats"][0]["owned_component_ids"] = ["finish-a", "finish-b", "portico"]
+        self.repository = FilesystemProjectRepository.initialize(
+            self.root / PROJECT_ID, project_id=PROJECT_ID,
+            initial_state={"project_id": PROJECT_ID, "version": 0},
+            authored_record=record, seat_pack=pack,
+        )
+        self.open_client()
+        self.before_head = self.repository.read_head()
+        self.state_digest = self.client.get("/api/state").json()["stateDigest"]
+
+    def open_client(self, cad_export: str = "off") -> None:
+        self.app = create_app(StudioSettings(cad_export=cad_export, project_dir=self.repository.layout.root))
+        self.client = TestClient(self.app)
+        self.addCleanup(self.client.close)
+
+    def source(self, height: float = 0.7) -> tuple[str, dict]:
+        accepted, job = self.run_candidate(f"set height to {height}", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded", job)
+        run_id = accepted["candidateId"]
+        return run_id, self.client.get("/api/state", params={"run": run_id}).json()
+
+    def remove(self, source_id: str, state: dict, ids: list[str]) -> tuple[dict, dict]:
+        response = self.client.post("/api/proposals", json={
+            "sourceRunId": source_id, "stateDigest": state["stateDigest"],
+            "semanticEdit": {"summary": "Remove the named components and their panels.", "removeEntityIds": ids},
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        accepted = self.start(response.json()["proposalId"])
+        return accepted, self.finished(accepted["jobId"])
+
+    def saved_seats(self, run_id: str) -> dict:
+        return {row["seat_id"]: row for ref in self.repository.list_json(
+            run=self.repository.load_run(run_id), destination=_run_records(run_id))
+            if record_kind(ref) == "discipline-seat" for row in (self.repository.load_json(ref),)}
+
+    def test_removed_roots_survive_cold_continuation_without_changing_old_candidates(self) -> None:
+        source_id, state = self.source()
+        original = {path: path.read_bytes() for path in self.repository.layout.run(source_id).root.rglob("*.json")}
+        authored = self.repository.layout.resolve_relative(RUNNER_SEATS_PATH).read_bytes()
+        removed, job = self.remove(source_id, state, ["finish-a", "finish-a-panel", "finish-b", "finish-b-panel"])
+        self.assertEqual(job["status"], "succeeded", job)
+        removed_id = removed["candidateId"]
+        self.assertEqual(self.saved_seats(removed_id)["seat-portico"]["owned_component_ids"], ["portico"])
+        receipt = _load_kind(self.repository, removed_id, "runner-run-receipt")
+        self.assertEqual(receipt["coverage_mode"], "strict")
+        self.assertEqual(receipt["seat_results"][0]["objects"], 2)
+
+        self.client.close()
+        self.open_client()
+        after = self.client.get("/api/state", params={"run": removed_id}).json()
+        continued, job = self.run_candidate("set height to 0.8", elementId="portico-base",
+            sourceRunId=removed_id, stateDigest=after["stateDigest"])
+        self.assertEqual(job["status"], "succeeded", job)
+        binding = bound_project(self.app.state)
+        replayed = replay_candidate(binding, continued["candidateId"])
+        self.assertFalse(any(entity.entity_id.startswith("finish-") for entity in replayed.entities))
+        self.assertEqual(self.saved_seats(continued["candidateId"])["seat-portico"]["owned_component_ids"], ["portico"])
+
+        older, job = self.run_candidate("set height to 0.9", elementId="portico-base",
+            sourceRunId=source_id, stateDigest=state["stateDigest"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(self.saved_seats(older["candidateId"])["seat-portico"]["owned_component_ids"],
+                         ["finish-a", "finish-b", "portico"])
+        self.assertEqual(replay_candidate(binding, source_id).digest,
+                         _load_kind(self.repository, source_id, "runner-run-receipt")["state_record_digest"])
+        self.assertEqual(self.repository.layout.resolve_relative(RUNNER_SEATS_PATH).read_bytes(), authored)
+        self.assertEqual(self.repository.read_head(), self.before_head)
+        self.assertEqual({path: path.read_bytes() for path in original}, original)
+
+    def test_deleting_only_the_last_panel_still_fails_strict_coverage(self) -> None:
+        source_id, state = self.source()
+        for endpoint in ("semantic", "delete"):
+            with self.subTest(endpoint=endpoint):
+                if endpoint == "semantic":
+                    _, job = self.remove(source_id, state, ["finish-a-panel"])
+                else:
+                    response = self.client.post("/api/proposals/delete", json={
+                        "sourceRunId": source_id, "stateDigest": state["stateDigest"], "elementId": "finish-a-panel",
+                    })
+                    self.assertEqual(response.status_code, 201, response.text)
+                    accepted = self.start(response.json()["proposalId"])
+                    job = self.finished(accepted["jobId"])
+                self.assertEqual(job["status"], "failed", job)
+                self.assertIn("no element and no declination", job["error"])
+                self.assertIn("finish-a", job["error"])
+
+    def test_a_missing_authored_root_is_not_treated_as_an_explicit_removal(self) -> None:
+        path = self.repository.layout.resolve_relative(RUNNER_SEATS_PATH)
+        pack = json.loads(path.read_text(encoding="utf-8"))
+        pack["seats"][0]["owned_component_ids"].append("never-declared")
+        write_runner_seats(self.repository, pack)
+        _, job = self.run_candidate("set height to 0.7", elementId="portico-base")
+        self.assertEqual(job["status"], "failed", job)
+        self.assertIn("owned roots are absent", job["error"])
+        self.assertIn("never-declared", job["error"])
+
+    def test_a_fully_removed_seat_releases_its_schedule_without_inventing_a_reviewer(self) -> None:
+        original = json.loads(self.repository.layout.resolve_relative(RUNNER_SEATS_PATH).read_text(encoding="utf-8"))
+        author = original["seats"][0]
+        original["seats"] = [
+            {**author, "owned_component_ids": ["portico"], "consumes": ["seat-finish"]},
+            {**author, "seat_id": "seat-finish", "owned_component_ids": ["finish-a", "finish-b"]},
+            {**author, "seat_id": "seat-review", "owned_component_ids": [], "reviewer": True},
+        ]
+        write_runner_seats(self.repository, original)
+        source_id, state = self.source()
+        removed, job = self.remove(source_id, state, ["finish-a", "finish-a-panel", "finish-b", "finish-b-panel"])
+        self.assertEqual(job["status"], "succeeded", job)
+        saved = self.saved_seats(removed["candidateId"])
+        self.assertEqual(set(saved), {"seat-portico", "seat-review"})
+        self.assertEqual(saved["seat-portico"]["consumes"], [])
+        self.assertFalse(saved["seat-portico"]["reviewer"])
+        self.client.close()
+        self.open_client()
+        after = self.client.get("/api/state", params={"run": removed["candidateId"]}).json()
+        continued, job = self.run_candidate("set height to 0.8", elementId="portico-base",
+            sourceRunId=removed["candidateId"], stateDigest=after["stateDigest"])
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(set(self.saved_seats(continued["candidateId"])), {"seat-portico", "seat-review"})
+        self.assertEqual(json.loads(self.repository.layout.resolve_relative(RUNNER_SEATS_PATH).read_text(encoding="utf-8")), original)
+
+    def test_retained_seat_refs_cannot_fall_back_when_missing_or_bound_to_another_run(self) -> None:
+        from archflow.project.refs import record_ref_from_uri
+        from archflow.state.state_record import StateRecord, StateRecordEditKind, StateRecordOperator
+        from archflow_studio_api.adapters.seats import candidate_seats, SeatsError
+
+        source_id, _ = self.source()
+        source = StateRecord.from_dict(_run_state_record(self.repository, source_id))
+        original = _load_kind(self.repository, source_id, "runner-run-receipt")
+        pack = json.loads(self.repository.layout.resolve_relative(RUNNER_SEATS_PATH).read_text(encoding="utf-8"))
+        operator = StateRecordOperator(kind=StateRecordEditKind.EDIT_COMPONENTS,
+            base_record_digest=source.digest, base_state_digest=source.state_digest,
+            remove_entity_ids=("finish-a", "finish-a-panel"))
+        missing = json.loads(json.dumps(original))
+        missing["seat_results"][0]["receipt_ref"] = None
+        with self.assertRaisesRegex(SeatsError, "no retained round receipt"):
+            candidate_seats(self.repository, pack, source, operator, source_receipt=missing)
+
+        other = self.repository.create_run("unrelated-seat-source")
+        foreign_seat_ref = self.repository.put_json(run=other, destination=_run_records(other.run_id),
+            record_kind="discipline-seat", payload=self.saved_seats(source_id)["seat-portico"])
+        round_ref = record_ref_from_uri(original["seat_results"][0]["receipt_ref"], PROJECT_ID)
+        changed_round = {**self.repository.load_json(round_ref), "seat_ref": foreign_seat_ref.uri}
+        changed_ref = self.repository.put_json(run=self.repository.load_run(source_id), destination=_run_records(source_id),
+            record_kind="seat-round-receipt", payload=changed_round)
+        foreign = json.loads(json.dumps(original))
+        foreign["seat_results"][0]["receipt_ref"] = changed_ref.uri
+        with self.assertRaisesRegex(SeatsError, "another run"):
+            candidate_seats(self.repository, pack, source, operator, source_receipt=foreign)
+
+    def test_deleting_every_authoring_scope_does_not_report_an_empty_success(self) -> None:
+        source_id, state = self.source()
+        removed, job = self.remove(source_id, state, [
+            "finish-a", "finish-a-panel", "finish-b", "finish-b-panel",
+            "portico", "portico-base", "portico-cornice",
+        ])
+        self.assertEqual(job["status"], "failed", job)
+        self.assertIn("no authoring seat", job["error"])
+        self.assertFalse(self.repository.layout.run(removed["candidateId"]).root.exists())
+
+    def test_component_removal_disappears_from_the_real_composed_model(self) -> None:
+        import base64
+        from archflow.adapters import occt_backend
+        from archflow.adapters.cad_execution import patch_composed_three_dm
+        from archflow.adapters.three_dm_inspector import inspect_three_dm_contents
+        from archflow_studio_api.application.artifacts import ModelSource
+        from monkeyarch.capabilities.geometry_proposal import load_compiled_geometry_program
+        if not occt_backend.occt_available():
+            self.skipTest("cadquery-ocp is not installed")
+
+        self.client.close()
+        self.open_client("occt")
+        source_id, state = self.source(2.2)
+        artifacts = self.client.get(f"/api/candidates/{source_id}").json()["artifacts"]
+        preview = next(row for row in artifacts if row["representation"] == "preview")
+        native = self.client.get(f"/api/artifacts/{preview['sha256']}/bytes")
+        self.assertEqual(native.status_code, 200, native.text)
+        self.assertEqual(inspect_three_dm_contents(native.content).object_count, 4)
+        # The existing synthetic composed fixture contains the two portico
+        # solids plus imported context. Use the CAD owner to add our layers,
+        # preserving that context, then exercise their removal from this source.
+        native_removed, job = self.remove(source_id, state,
+            ["finish-a", "finish-a-panel", "finish-b", "finish-b-panel"])
+        self.assertEqual(job["status"], "succeeded", job)
+        prior_program = load_compiled_geometry_program(_load_kind(
+            self.repository, native_removed["candidateId"], "seat-geometry-program"))
+        source_program = load_compiled_geometry_program(_load_kind(self.repository, source_id, "seat-geometry-program"))
+        fixture = (Path(__file__).parent / "fixtures/model-source-composed.3dm").read_bytes()
+        composed_source = patch_composed_three_dm(fixture, prior_program=prior_program,
+            program=source_program, replacement_3dm=native.content)
+        before = inspect_three_dm_contents(composed_source)
+        registered = self.client.post("/api/model-assets", json={
+            "projectId": PROJECT_ID, "runId": source_id, "stateDigest": state["stateDigest"],
+            "fileName": "synthetic-context.3dm", "contentBase64": base64.b64encode(composed_source).decode(),
+        })
+        self.assertEqual(registered.status_code, 201, registered.text)
+        response = self.client.post("/api/proposals", json={
+            "sourceRunId": source_id, "stateDigest": state["stateDigest"],
+            "semanticEdit": {"summary": "Remove the two layers.",
+                "removeEntityIds": ["finish-a", "finish-a-panel", "finish-b", "finish-b-panel"]},
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        proposal = self.app.state.proposals.get(response.json()["proposalId"])
+        # The worker already accepts an exact complete-model source beside
+        # every typed operator, regardless of the request that compiled it.
+        proposal = replace(proposal, model_source=ModelSource.from_dict(registered.json()["modelSource"]))
+        run_id = "component-removal-composed"
+        execute_candidate(bound_project(self.app.state), self.app.state.settings, proposal, run_id)
+        artifacts = self.client.get(f"/api/candidates/{run_id}").json()["artifacts"]
+        composed = next(row for row in artifacts if row["representation"] == "composed")
+        downloaded = self.client.get(f"/api/artifacts/{composed['sha256']}/bytes")
+        self.assertEqual(downloaded.status_code, 200, downloaded.text)
+        result = inspect_three_dm_contents(downloaded.content)
+        names = [row["name"] for row in result.object_geometry_sha256]
+        self.assertEqual(result.object_count, before.object_count - 2)
+        self.assertFalse(any("finish-" in name for name in names), names)
+        external = tuple(row for row in before.object_geometry_sha256 if row["name"].startswith("imported-"))
+        self.assertTrue(external)
+        self.assertEqual(tuple(row for row in result.object_geometry_sha256 if row["name"].startswith("imported-")), external)
+
+
 class CandidateFailureTests(CandidateTestCase):
     def test_a_value_the_runner_refuses_fails_the_job_out_loud(self) -> None:
         accepted, job = self.run_candidate(

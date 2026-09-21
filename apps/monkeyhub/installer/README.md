@@ -18,7 +18,7 @@
 安装目录也可在 PowerShell 中明确指定，例如：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\installer\install.ps1' -InstallDirectory 'E:\我的应用\MonkeyHub 候选'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\apps\monkeyhub\installer\install.ps1' -InstallDirectory '<安装目录>'
 ```
 
 再次安装同一源码版本会返回原安装目录。提交不同或目标存在其他文件时，安装器拒绝覆盖，请选择新目录。

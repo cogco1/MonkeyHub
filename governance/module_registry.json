@@ -4269,7 +4269,7 @@
         "arranging the run - new run id, harness stage guard, seat pack, RunOptions - and calling run_project",
         "retaining the intent compilation receipt in the candidate run as intent-compilation",
         "the studio candidate harness workflow and stage, explicitly not a project stage advance",
-        "turning the authored seat pack project.inputs read onto SeatSpec, and refusing a pack that declares no seat",
+        "turning the authored seat pack project.inputs read onto SeatSpec and refusing an empty pack; inheriting exact retained source seat definitions for continuation, and projecting explicit Component removals into only the new run ownership without rewriting authored inputs",
         "the worker pool and queue: closure-based conflicts, the exclusive Rhino export lane, and per-job lifecycle state",
         "the bounded in-process event log, its replay and its live subscribers",
         "CandidateRun: seat outcomes, relation totals as three counts and two flags, artifacts, and honesty lines; candidate reads also expose the retained inspected object bounds and their declared units/frame, with explicit unavailable readback",
@@ -4346,7 +4346,8 @@
         "ClientTimingDetailsDto",
         "inspect_runtime",
         "GET /api/runtime",
-        "JobRegistry.list"
+        "JobRegistry.list",
+        "candidate_seats"
       ],
       "depends_on": [
         "capabilities.declaration",
@@ -4392,7 +4393,8 @@
         "Shutdown closes admission before draining all accepted queued and running jobs, and only then closes the executor",
         "Candidate service timing begins at worker entry and includes nested geometry export; browser load timing is separately marked client_wait and validates the project, run and optional retained source",
         "configured Runtime acceptance delegates to its shared service and then pulls the retained result; shared acceptance records the authenticated actor in existing accepted_by; older records retain their original attribution",
-        "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage"
+        "Runtime inspection never starts a worker, replays a change, executes CAD or writes project records; a live job or an incomplete retained candidate cannot prove successful execution or a committed Stage",
+        "candidate ownership continues the selected source run through its retained seat round and discipline-seat refs; only explicitly deleted Component roots retire, legacy sources without a seat schedule keep authored-pack behavior, and missing or ambiguous retained ownership is refused"
       ],
       "status": "canonical",
       "tests": [
