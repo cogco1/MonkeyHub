@@ -3,6 +3,25 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-170",
+      "stream": "research",
+      "status": "active",
+      "goal": "Preserve the existing local read-only OCCT observation pilot and its synthetic tests on a dedicated research branch; no product promotion.",
+      "depends_on": [],
+      "branch": "codex/170-local-observation-pilot",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-170-local-observation-pilot",
+      "base_ref": "1edca68cc592d2c288aedab9148057b21c639d0d",
+      "contributor": "Codex",
+      "reviewer": "Repository coordinator",
+      "write_scope": [
+        "labs/spatial_observation/observation.py",
+        "labs/spatial_observation/test_observation.py",
+        "labs/spatial_observation/LOCAL_PILOT.md",
+        "labs/spatial_observation/README.md"
+      ],
+      "handoff": "Preserve three ec46 untracked sources without its already-integrated tracked WIP. Source README is retained as LOCAL_PILOT.md because main already has a later experiment README. No production caller or provider invocation."
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
