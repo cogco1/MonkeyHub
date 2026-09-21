@@ -6,8 +6,12 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+
+from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.refs import record_ref_from_uri
 
 from archflow_studio_api.application.binding import ProjectBinding
 from archflow_studio_api.main import create_app
@@ -128,6 +132,20 @@ class BoundProjectTests(unittest.TestCase):
         self.assertIsNotNone(reference.receipt)
         # The raw kernel record, so this is the receipt's own schema field.
         self.assertEqual(reference.receipt["schema"], "RunnerRunReceipt@3")
+
+    def test_reference_selection_reads_receipts_then_verifies_only_the_selected_state(self) -> None:
+        add_harness_run(self.repository)
+        binding = ProjectBinding.open(self.settings)
+        with patch.object(binding.repository, "load_json", wraps=binding.repository.load_json) as load:
+            reference = binding.reference_run()
+        self.assertEqual(reference.run.run_id, REFERENCE_RUN_ID)
+        self.assertNotIn(STATE_RECORD, [call.args[0].record_kind for call in load.call_args_list])
+        ref, _ = binding.exact_state_record(reference)
+        self.assertEqual(ref, record_ref_from_uri(reference.receipt["state_record_ref"], PROJECT_ID))
+        binding.repository.layout.resolve_record(ref).write_bytes(b"broken selected state")
+        with self.assertRaises(StudioError) as broken:
+            binding.exact_state_record(reference)
+        self.assertEqual(broken.exception.code, "REFERENCE_STATE_NOT_EXACT")
 
     def test_the_configured_run_beats_the_rule(self) -> None:
         add_harness_run(self.repository)

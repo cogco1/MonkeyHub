@@ -2117,10 +2117,17 @@ class FilesystemProjectRepository:
         *,
         run: RunRef,
         destination: PersistenceDestination,
+        record_kind: str | None = None,
     ) -> tuple[ProjectRecordRef, ...]:
-        """Discover verified JSON records in one assigned project area."""
+        """Discover verified records, optionally selecting one exact kind first.
+
+        Kind selection uses the retained filename, not payload contents. Reads
+        still accept historical kinds and verify every selected record's bytes.
+        """
 
         self._validate_run(run)
+        if record_kind is not None:
+            require_identifier(record_kind, "record_kind")
         directory = self._destination_directory(run, destination)
         if destination.area in {
             PersistenceArea.OBJECT,
@@ -2131,9 +2138,18 @@ class FilesystemProjectRepository:
         if not directory.exists():
             return ()
         refs = []
-        for path in sorted(directory.glob("*.json")):
-            data = _read_bytes(path)
-            ref = self._record_ref(path, _sha256(data), "application/json")
+        pattern = "*.json" if record_kind is None else f"{record_kind}-*.json"
+        for path in sorted(directory.glob(pattern)):
+            if record_kind is None:
+                digest = _sha256(_read_bytes(path))
+            else:
+                try:
+                    kind, digest = parse_record_file_name(path.name)
+                except ValueError as exc:
+                    raise ProjectIntegrityError(str(exc)) from exc
+                if kind != record_kind:
+                    continue
+            ref = self._record_ref(path, digest, "application/json")
             self.load_json(ref)
             refs.append(ref)
         return tuple(refs)

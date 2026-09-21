@@ -59,18 +59,19 @@ class RuntimeSnapshot:
 
 def inspect_runtime(
     binding: ProjectBinding, *, jobs: JobRegistry | None = None,
-    limit: int = 50, candidate_ids: tuple[str, ...] = (),
+    limit: int = 50, offset: int = 0, candidate_ids: tuple[str, ...] = (),
 ) -> RuntimeSnapshot:
     """Inspect bounded recent runs and explicitly tracked operations without writes.
 
-    Recent runs use the binding's stable name ordering. Explicit candidate ids
+    Recent runs use the binding's stable name ordering, newest names first.
+    Offset pages that window without changing candidate classification. Explicit candidate ids
     and active jobs remain visible even when they precede that window. Jobs
     describe process execution; only retained candidate and committed branch
     readers establish the durable result.
     """
 
-    if not 1 <= limit <= 200 or len(candidate_ids) > 200:
-        raise ValueError("Runtime inspection accepts 1..200 recent runs and at most 200 explicit candidates.")
+    if not 1 <= limit <= 200 or offset < 0 or len(candidate_ids) > 200:
+        raise ValueError("Runtime inspection accepts 1..200 recent runs, a nonnegative offset and at most 200 explicit candidates.")
     for candidate_id in candidate_ids:
         require_identifier(candidate_id, "candidate_id")
     live = () if jobs is None else jobs.list()
@@ -122,7 +123,8 @@ def inspect_runtime(
             errors.append(f"Branch {branch_id}: {exc}")
     run_ids = binding.run_ids()
     active_ids = tuple(job.candidate_id for job in live if job.status in (QUEUED, RUNNING))
-    selected = tuple(dict.fromkeys((*candidate_ids, *active_ids, *reversed(run_ids[-limit:]))))
+    recent = tuple(reversed(run_ids))[offset:offset + limit]
+    selected = tuple(dict.fromkeys((*candidate_ids, *active_ids, *recent)))
     tracked = set(candidate_ids) | set(by_candidate)
     candidates: list[RuntimeCandidate] = []
     for candidate_id in selected:
@@ -180,4 +182,4 @@ def inspect_runtime(
         raise StudioError(409, "RUNTIME_CHANGED", "Design branches changed during runtime inspection; read the next snapshot.")
     return RuntimeSnapshot(binding.project_id, str(binding.project_dir), binding.head(), live,
                            tuple(candidates), tuple(branches), tuple(stages.values()), tuple(errors),
-                           len(selected), len(run_ids) > limit)
+                           len(selected), len(run_ids) > offset + limit)

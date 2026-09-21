@@ -2422,6 +2422,7 @@
       ],
       "public_api": [
         "FilesystemProjectRepository",
+        "FilesystemProjectRepository.list_json",
         "ProjectRepositoryError",
         "ProjectAlreadyExists",
         "ProjectIntegrityError",
@@ -2488,7 +2489,7 @@
         "only an accepted PromotionDecision@1 naming the exact expected version may prepare a canonical transition",
         "a record lands in the area its PersistenceDestination names; events/ and canonical/ areas are re-checked on swap",
         "put_workspace_file writes an immutable binary only below the assigned run workspace and never changes HEAD",
-        "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable",
+        "put_json writes only kinds registered in project.record_kinds; reads (load_json, list_json) are unrestricted so retained runs from the archived lanes stay readable; list_json may select an exact filename record_kind before loading and verifying selected payloads",
         "design branch creation expects no existing branch; advancement compares the exact Stage ref and preserves fork identity; canonical HEAD is unchanged",
         "candidate transfer installs immutable dependencies only and never accepts a Stage or changes published HEAD; pull checks the expected local branch mapping, preserves local runs and inputs, and refuses a different published HEAD",
         "Format planning refuses a source missing the existing advisory lock files rather than creating them; declared schema inventory is not a typed reference migration plan, and a supported legacy format 1 is upgradeable only through migrate_project_format into a new directory; the source is never written",
@@ -4300,7 +4301,8 @@
         "StudioSettings",
         "run id",
         "optional exact ModelSource on run_operator and execute_option_candidate; the existing harness retains its composed-model registration reference in workflow basis_refs",
-        "Optional client operation correlation captured on candidate admission and content-free client timing events at the existing events route"
+        "Optional client operation correlation captured on candidate admission and content-free client timing events at the existing events route",
+        "Runtime inspection limit/offset over recent runs in stable descending name order, plus explicit candidateIds independent of that window"
       ],
       "outputs": [
         "runner receipt mapping",

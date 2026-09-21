@@ -9087,6 +9087,10 @@ export type ReadRuntimeApiRuntimeGetData = {
          */
         limit?: number;
         /**
+         * Offset
+         */
+        offset?: number;
+        /**
          * Candidateid
          */
         candidateId?: Array<string>;

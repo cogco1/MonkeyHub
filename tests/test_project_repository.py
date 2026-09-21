@@ -345,6 +345,29 @@ class ProjectRepositoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectIntegrityError, "record digest mismatch"):
             self.repository.load_json(ref)
 
+    def test_json_kind_selection_avoids_other_payloads_and_verifies_selected_bytes(self) -> None:
+        run = self.repository.create_run("kind-selection")
+        destination = PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id)
+        selected = self.repository.put_json(run=run, destination=destination, record_kind=STATE_RECORD,
+                                            payload={"schema": "StateRecord@1", "value": 1})
+        unrelated = self.repository.put_json(run=run, destination=destination, record_kind=DESIGN_STAGE,
+                                             payload={"schema": "DesignStage@1", "value": 2})
+        path = self.repository.layout.resolve_record(selected)
+        # A historical, longer kind sharing the prefix is not this kind.
+        historical = path.with_name(path.name.replace("state-record-", "state-record-archived-", 1))
+        historical.write_bytes(path.read_bytes())
+        self.repository.layout.resolve_record(unrelated).write_bytes(b"unrelated incomplete payload")
+        with patch.object(self.repository, "load_json", wraps=self.repository.load_json) as load:
+            self.assertEqual(self.repository.list_json(run=run, destination=destination, record_kind=STATE_RECORD), (selected,))
+        self.assertEqual([call.args[0] for call in load.call_args_list], [selected])
+        legacy = self.repository.list_json(run=run, destination=destination, record_kind="state-record-archived")
+        self.assertEqual(len(legacy), 1, "readable historical kinds need not be registered for new writes")
+        with self.assertRaises(ProjectIntegrityError):
+            self.repository.list_json(run=run, destination=destination)
+        path.write_bytes(b'{"schema":"StateRecord@1","value":3}\n')
+        with self.assertRaisesRegex(ProjectIntegrityError, "record digest mismatch"):
+            self.repository.list_json(run=run, destination=destination, record_kind=STATE_RECORD)
+
     def test_workspace_binary_lands_only_in_the_assigned_run_and_leaves_head_unchanged(
         self,
     ) -> None:

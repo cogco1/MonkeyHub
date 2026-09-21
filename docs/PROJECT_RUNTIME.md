@@ -74,7 +74,7 @@ Every project-scoped responsibility the product needs, behind `/api` (`routes/__
 | Massing options | `POST`\|`GET /api/options`, `POST /api/options/{id}/select` | `studio.options` |
 | Proposals and picking | `POST /api/proposals*`, `POST /api/pick/resolve`, `GET /api/proposals/{id}`, decisions | `studio.intent`, geometry owners in `monkeyarch` |
 | Candidates, jobs, validation | `POST /api/proposals/{id}/candidate`, `POST /api/candidates/combine`, `GET /api/jobs/{id}`, `GET /api/candidates/{id}*` | `studio.candidate`, `studio.validation`, `runtime.project_runner` |
-| Runtime status of this process | `GET /api/runtime` — live jobs and retained candidate outcomes, read-only | `studio.candidate` |
+| Runtime status of this process | `GET /api/runtime` — live jobs and retained candidate outcomes, read-only; `limit` / `offset` page recent runs in descending name order, while explicit `candidateId` values remain visible outside that window | `studio.candidate` |
 | Stages, branches, working copies, episodes | `GET /api/design-history`, `POST /api/design-stages/initialize`, `POST /api/candidates/{id}/accept`, `/api/design-branches`, `/api/working-copies*`, `/api/episodes*` | `studio.intent` |
 | Documents, artifacts, captures, drawings, board, studies | `/api/documents*`, `/api/artifacts*`, `/api/model-assets`, `/api/captures`, `/api/drawings*`, `/api/board*`, `/api/studies*` | `studio.artifacts`, `studio.board`, `studio.study`, `documentation.drawings` |
 | Annotations and intents | `/api/model-annotations`, `/api/document-annotations`, `/api/document-comments`, `/api/intents*` | `studio.intent` |
