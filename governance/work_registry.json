@@ -647,6 +647,31 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-220",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Keep ordinary edits in the current work draft, retain 24-hour automatic recovery and explicit saved versions, and clean only unreferenced automatic data through existing project and Hub owners.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/tests/test_restored_continuation.py",
+        "governance/work_registry.json",
+        "docs/mapping/planning/GH220-working-draft-retention.md",
+        "docs/SYSTEM_MAP.md",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md"
+      ],
+      "card": "docs/mapping/planning/GH220-working-draft-retention.md",
+      "acceptance": [
+        "Ordinary local edits recover their exact commands without starting a candidate; the current working position and explicit saved versions survive restart.",
+        "Automatic recovery older than 24 hours is removed only when unreferenced; current work, accepted Stages, issued history, original materials, unfinished execution and all surviving run dependencies remain intact.",
+        "Existing Hub lifecycle schedules maintenance, and the version UI presents current/saved work without a card per automatic update.",
+        "Focused behavior tests, frontend checks and archcheck pass."
+      ],
+      "notes": [
+        "Issue #220 PR #225 CI follow-up: distinguish byte-identical archive restoration from the mutable current position after a new continuation."
+      ]
     }
   ]
 }

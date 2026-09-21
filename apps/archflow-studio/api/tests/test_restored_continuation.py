@@ -129,6 +129,12 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
         restored_root = self.root / "restored" / PROJECT_ID
         restored = restore_archive(restored_root, archive)
         self.assertEqual(restored.read_head(), source_head)
+        for path, digest in rows.items():
+            self.assertEqual(
+                hashlib.sha256((restored_root / path).read_bytes()).hexdigest(), digest, path
+            )
+        working_a, _ = restored.read_working_draft()
+        self.assertEqual(working_a["current"], run_a)
 
         # B: continue from A on the restored project.
         with self.client(restored_root) as client:
@@ -158,8 +164,20 @@ class RestoredContinuationWithoutCadTests(unittest.TestCase):
             )
         )
         self.assertEqual(delta["source_run_ref"]["run_id"], run_a)
-        # Every restored file is exactly what the archive carried; only B was added.
+        # Continuing advances the mutable working position, while A and every
+        # other archived file remain byte-identical to the restored source.
+        working_b, _ = restored.read_working_draft()
+        self.assertEqual(working_b["current"], run_b)
+        self.assertEqual(working_b["runs"][run_a], working_a["runs"][run_a])
+        self.assertEqual(set(working_b["runs"]), set(working_a["runs"]) | {run_b})
+        self.assertTrue(working_b["runs"][run_b]["automatic"])
+        for key in working_a.keys() - {"current", "runs"}:
+            self.assertEqual(working_b[key], working_a[key], key)
+        working_path = restored.layout.working_draft.relative_to(restored_root).as_posix()
+        self.assertIn(working_path, rows)
         for path, digest in rows.items():
+            if path == working_path:
+                continue
             self.assertEqual(
                 hashlib.sha256((restored_root / path).read_bytes()).hexdigest(), digest, path
             )
