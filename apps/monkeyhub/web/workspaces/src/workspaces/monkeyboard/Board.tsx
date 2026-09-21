@@ -1048,7 +1048,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   const boardText = whiteboardCopy[language];
   return <section className={`monkeyboard${critMode ? " monkeyboard--crit" : ""}`} aria-label="MonkeyBoard">
     <header className="monkeyboard-topbar">
-      <div className="monkeyboard-heading"><span className="monkeyboard-brand">MonkeyBoard</span><input aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} /></div>
+      <div className="monkeyboard-heading"><input aria-label={text.title} value={title} maxLength={200} onChange={(event) => { const value = event.target.value; setTitle(value); titleRef.current = value; capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} onBlur={() => { const value = titleRef.current.trim() || "MonkeyBoard"; titleRef.current = value; setTitle(value); capture(canvas.current?.getSceneElementsIncludingDeleted() ?? []); }} /></div>
       <span className={`monkeyboard-save-state${saveState.error ? " is-error" : ""}`} role="status">{saveState.error ? text.dirty : saveState.saving ? text.saving : saveState.dirty ? text.dirty : text.saved}</span>
       <button aria-expanded={sourcesOpen} aria-controls="monkeyboard-project-documents" onClick={() => setSourcesOpen((open) => !open)}>{text.sources}</button>
       <button className="monkeyboard-primary" disabled={!ready || busy || saveState.conflict} onClick={() => input.current?.click()}>{text.upload}</button>
@@ -1130,7 +1130,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
             capture(elements);
           }}>
           <MainMenu><MainMenu.Item onSelect={() => input.current?.click()}>{text.upload}</MainMenu.Item><MainMenu.Item onSelect={() => { void queue.flush().catch(() => {}); }}>{text.save}</MainMenu.Item><MainMenu.DefaultItems.ClearCanvas /></MainMenu>
-          <WelcomeScreen><WelcomeScreen.Center><WelcomeScreen.Center.Heading>{boardText.welcome}</WelcomeScreen.Center.Heading><div className="monkeyboard-welcome-body"><p>{boardText.gestures}</p><span className="monkeyboard-welcome-example">{boardText.example}</span><p>{boardText.designHint}</p></div><WelcomeScreen.Center.Menu><WelcomeScreen.Center.MenuItem onSelect={() => input.current?.click()}>{text.upload}</WelcomeScreen.Center.MenuItem></WelcomeScreen.Center.Menu></WelcomeScreen.Center></WelcomeScreen>
+          <WelcomeScreen><WelcomeScreen.Center><WelcomeScreen.Center.Heading>{boardText.welcome}</WelcomeScreen.Center.Heading><div className="monkeyboard-welcome-body"><p>{boardText.gestures}</p><span className="monkeyboard-welcome-example">{boardText.example}</span><p>{boardText.designHint}</p></div><WelcomeScreen.Center.Menu><button type="button" className="monkeyboard-welcome-upload" onClick={() => input.current?.click()}>{text.upload}</button></WelcomeScreen.Center.Menu></WelcomeScreen.Center></WelcomeScreen>
         </Excalidraw>
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}

@@ -500,11 +500,12 @@ try {
   assert.equal(documentLoads, beforeMonitorNavigation, "hiding Monitor cannot reload or redirect the Hub");
   await page.getByRole("button", { name: "Show tools" }).click();
   await waitMonitor();
-  await page.locator(".monitor-page").getByRole("button", { name: "Back to chat", exact: true }).click();
+  assert.equal(await page.locator(".monitor-page").getByRole("button", { name: "Back to chat", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Hide tools" }).click();
   await page.locator(".monitor-page").waitFor({ state: "hidden" });
   assert.equal(await composer.inputValue(), "Keep this conversation while viewing usage",
     "returning from Monitor preserves the existing conversation draft");
-  assert.equal(documentLoads, beforeMonitorNavigation, "Back to chat does not reload the Hub into a restored Monitor tab");
+  assert.equal(documentLoads, beforeMonitorNavigation, "closing the tool panel does not reload the Hub into a restored Monitor tab");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
   for (const [label, workspace] of [["Board", "board"], ["Modeling", "arch"]]) {
@@ -597,6 +598,32 @@ try {
   // panel keeps as it was.
   await page.getByRole("button", { name: "Open this candidate on the right" }).first().click();
   await waitCandidate("cand-A-1");
+  const originalPanelWidth = Number(await page.locator('.chat-resizer').getAttribute('aria-valuenow'));
+  await page.setViewportSize({ width: 1920, height: 960 });
+  const resizePanel = async (width) => {
+    const separator = page.locator('.chat-resizer');
+    for (let step = 0; step < 32; step++) {
+      const current = Number(await separator.getAttribute('aria-valuenow'));
+      if (Math.abs(current - width) < 16) break;
+      await separator.press(current < width ? 'ArrowLeft' : 'ArrowRight');
+    }
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+  };
+  for (const width of [940, 620, 332]) {
+    await resizePanel(width);
+    const layout = await visibleWorkspace().locator('.model-tools').evaluate(node => {
+      const box = node.getBoundingClientRect();
+      return { width: box.width, height: box.height, overflow: [...node.children].some(child => { const rect=child.getBoundingClientRect(); return rect.x < box.x - 1 || rect.right > box.right + 1; }),
+        groups: [...node.children].map(group => ({ height: group.getBoundingClientRect().height, overflow: [...group.children].some(child => { const box=child.getBoundingClientRect(), parent=group.getBoundingClientRect(); return box.width > 0 && (box.x < parent.x - 1 || box.right > parent.right + 1); }) })) };
+    });
+    console.log(JSON.stringify({ toolbar: width, layout }));
+    assert.ok(!layout.overflow && layout.groups.every(group => !group.overflow), 'toolbar fits the project pane');
+    assert.ok(layout.groups.every(group => group.height <= 50), 'each toolbar group stays on one line');
+    if (width === 940) assert.ok(layout.height <= 52, 'wide toolbar is one strip');
+    await visibleWorkspace().locator('.stage').screenshot({ path: path.join(temporary, `toolbar-${width}.png`) });
+  }
+  await resizePanel(originalPanelWidth);
+  await page.setViewportSize({ width: 1440, height: 960 });
   const savedEditingBases = await page.evaluate(() => localStorage.getItem("archflow-studio.user-preferences"));
   assert.ok(!savedEditingBases?.includes("cand-A-1"), "viewing a candidate does not save it as an editing choice");
   await visibleWorkspace().evaluate((element) => { element.switchMarker = "retained"; element.retainedCanvas = element.querySelector(".stage canvas"); });
@@ -609,6 +636,18 @@ try {
   const beforePeerWorkspaces = writes.length;
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
+  assert.equal(await visibleWorkspace().locator('.monkeyboard-heading input').count(), 1);
+  assert.equal(await visibleWorkspace().locator('.monkeyboard-brand').count(), 0);
+  const upload = visibleWorkspace().locator('.monkeyboard-welcome-upload');
+  await upload.waitFor();
+  const alignment = await upload.evaluate(node => {
+    const button = node.getBoundingClientRect(), center = node.closest('.welcome-screen-center').getBoundingClientRect();
+    return Math.abs(button.x + button.width / 2 - center.x - center.width / 2);
+  });
+  assert.ok(alignment <= 2, `welcome upload centered: ${alignment}`);
+  const chooser = page.waitForEvent('filechooser');
+  await upload.click(); await chooser;
+  await visibleWorkspace().locator('.monkeyboard').screenshot({ path: path.join(temporary, 'board-welcome.png') });
   await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board A retained");
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
@@ -1097,6 +1136,11 @@ try {
   await page.getByRole("button", { name: "Hub settings", exact: true }).click();
   await page.getByText("More launch options", { exact: true }).click();
   const diagnostics = page.getByRole("checkbox", { name: "Developer / Research Mode", exact: true });
+  const checkBox = await diagnostics.boundingBox();
+  const labelBox = await diagnostics.locator('..').boundingBox();
+  assert.ok(checkBox.width <= 20 && checkBox.height <= 20, 'checkbox stays compact');
+  assert.ok(Math.abs(checkBox.y + checkBox.height / 2 - labelBox.y - labelBox.height / 2) < 2, 'checkbox aligns with its label');
+  await page.getByRole('dialog').screenshot({ path: path.join(temporary, 'settings-checkbox.png') });
   await diagnostics.check();
   assert.equal(await page.getByRole("checkbox", { name: "Event stream", exact: true }).isVisible(), true);
   await diagnostics.uncheck();
