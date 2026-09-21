@@ -1,3 +1,4 @@
+import { captureRenderCamera, type RenderCamera } from "../../render/renderCamera";
 import {
   forwardRef,
   useCallback,
@@ -232,6 +233,8 @@ export interface ViewportController {
   sampleAt(clientX: number, clientY: number): SampleHit | null;
   /** The camera as it stands, or null before the renderer exists. */
   camera(): CameraState | null;
+  /** Full projection captured before Render navigation can resize the viewport. */
+  renderCamera(): RenderCamera | null;
   /** CSS viewport dimensions, paired with the camera for screen-space ink. */
   viewportSize(): [number, number] | null;
   /**
@@ -1866,6 +1869,10 @@ export const ThreeDmViewport = forwardRef<
       draftPreview,
       elevationGuide,
       camera: cameraState,
+      renderCamera: () => {
+        const runtime = runtimeRef.current;
+        return runtime ? captureRenderCamera(runtime.camera, runtime.controls.target, runtimeAspect(runtime)) : null;
+      },
       unprojectOnPlane,
       loadSecondary,
       clearSecondary,

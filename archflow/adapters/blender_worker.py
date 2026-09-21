@@ -155,6 +155,41 @@ def _read_object(obj) -> dict:
     return row
 
 
+def _captured_camera(scene, camera, captured, resolution):
+    from mathutils import Matrix, Vector
+
+    position, target, up = (Vector(captured[name]) for name in ("position", "target", "up"))
+    forward = (target - position).normalized()
+    right = forward.cross(up).normalized()
+    up = right.cross(forward)
+    camera.location = position
+    camera.rotation_euler = Matrix((right, up, -forward)).transposed().to_euler()
+    data = camera.data
+    data.sensor_fit = "HORIZONTAL"
+    data.clip_start, data.clip_end = captured["near"], captured["far"]
+    aspect = captured["aspect"]
+    if captured["projection"] == "perspective":
+        data.type = "PERSP"
+        data.sensor_width = 36
+        data.lens = data.sensor_width / (2 * math.tan(math.radians(captured["vertical_fov"]) / 2) * aspect)
+    else:
+        data.type = "ORTHO"
+        left, right_bound, top, bottom = captured["orthographic_bounds"]
+        data.ortho_scale = right_bound - left
+        data.shift_x = (left + right_bound) / (2 * data.ortho_scale)
+        data.shift_y = (top + bottom) / (2 * data.ortho_scale)
+    if aspect >= 1:
+        width, height = resolution, max(1, round(resolution / aspect))
+    else:
+        width, height = max(1, round(resolution * aspect)), resolution
+    scene.render.resolution_x, scene.render.resolution_y = width, height
+    # Preserve the captured frustum even when raster dimensions must be rounded.
+    ratio = width / (height * aspect)
+    scene.render.pixel_aspect_x = max(1, 1 / ratio)
+    scene.render.pixel_aspect_y = max(1, ratio)
+    camera["projection_captured_camera"] = True
+
+
 def _presentation(scene, settings):
     import bpy
     from mathutils import Vector
@@ -203,6 +238,8 @@ def _presentation(scene, settings):
     scene.cycles.use_adaptive_sampling = False
     scene.render.resolution_x = scene.render.resolution_y = settings["resolution"]
     scene.render.resolution_percentage = 100
+    if settings.get("camera") is not None:
+        _captured_camera(scene, camera, settings["camera"], settings["resolution"])
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
     scene.render.film_transparent = False
@@ -219,7 +256,7 @@ def _visual_state(scene):
         return [float(v) for v in value]
     lights = sorted((obj for obj in scene.objects if obj.type == "LIGHT"), key=lambda obj: obj.get("projection_light_id", ""))
     materials = sorted((obj for obj in scene.objects if obj.type == "MESH"), key=lambda obj: obj.get("archflow:object_ref", ""))
-    return {"camera_id": camera.get("projection_camera_id"), "camera_position": vector(camera.location),
+    state = {"camera_id": camera.get("projection_camera_id"), "camera_position": vector(camera.location),
             "camera_rotation": vector(camera.rotation_euler), "camera_type": camera.data.type,
             "ortho_scale": camera.data.ortho_scale, "clip": [camera.data.clip_start, camera.data.clip_end],
             "lights": [{"id": o.get("projection_light_id"), "position": vector(o.location),
@@ -236,6 +273,18 @@ def _visual_state(scene):
             "gamma": scene.view_settings.gamma,
             "world_color": vector(scene.world.node_tree.nodes["Background"].inputs[0].default_value),
             "world_strength": scene.world.node_tree.nodes["Background"].inputs[1].default_value}
+    if camera.get("projection_captured_camera"):
+        import bpy
+        matrix = camera.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(),
+                    x=scene.render.resolution_x, y=scene.render.resolution_y,
+                    scale_x=scene.render.pixel_aspect_x, scale_y=scene.render.pixel_aspect_y)
+        state["captured_camera"] = {
+            "lens": camera.data.lens, "sensor_width": camera.data.sensor_width,
+            "sensor_fit": camera.data.sensor_fit, "shift": [camera.data.shift_x, camera.data.shift_y],
+            "pixel_aspect": [scene.render.pixel_aspect_x, scene.render.pixel_aspect_y],
+            "projection_matrix": [vector(row) for row in matrix],
+        }
+    return state
 
 
 def inspect(model_path: Path, render_path: Path | None = None) -> None:
@@ -259,13 +308,17 @@ def inspect(model_path: Path, render_path: Path | None = None) -> None:
     }
     if projection_json:
         settings = json.loads(projection_json)["presentation"]
+        resolution = settings["resolution"]
+        aspect = (settings.get("camera") or {}).get("aspect", 1)
+        size = ([resolution, max(1, round(resolution / aspect))] if aspect >= 1 else
+                [max(1, round(resolution * aspect)), resolution])
         visual_state = _visual_state(scene)
         readback.update(projection_json=projection_json, visual_state=visual_state,
                         presentation_verified=(visual_state == json.loads(scene["projection_visual_state"])
                             and visual_state["camera_id"] == settings["camera_id"]
                             and visual_state["engine"] == settings["engine"]
                             and visual_state["samples"] == settings["samples"]
-                            and visual_state["resolution"] == [settings["resolution"], settings["resolution"], 100]))
+                            and visual_state["resolution"] == [*size, 100]))
     if render_path is not None:
         if not projection_json or not readback.get("presentation_verified"):
             raise ValueError("render requires verified projection presentation")

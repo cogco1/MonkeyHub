@@ -12,7 +12,7 @@ const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspa
 import { presentFailure } from "./chatError";
 import "./ChatShell.css";
 
-type AppId = AppStatus["appId"];
+type AppId = AppStatus["appId"] | "render";
 type Props = {
   preferences: AppearancePreferences;
   settings: ReactNode;
@@ -32,8 +32,9 @@ const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
 import { chatCopyCatalog as words } from "./i18n/catalogs";
 /** The rail's two kinds of entry: places you work in this project, and the
     tools that report on the machine rather than on the design. */
-const tools: { id: AppId; label: "model" | "diagram" | "board" | "fab" | "monitor"; icon: string; group: "workspace" | "system" }[] = [
+const tools: { id: AppId; label: "model" | "diagram" | "board" | "render" | "fab" | "monitor"; icon: string; group: "workspace" | "system" }[] = [
   { id: "monkeyarch", label: "model", icon: "cube", group: "workspace" },
+  { id: "render", label: "render", icon: "render", group: "workspace" },
   { id: "monkeyboard", label: "board", icon: "board", group: "workspace" }, { id: "monkeyfab", label: "fab", icon: "fab", group: "workspace" },
   { id: "monkeymonitor", label: "monitor", icon: "chart", group: "system" },
 ];
@@ -51,6 +52,7 @@ function Icon({ name }: { name: string }) {
     cube: <><path d="m12 3 9 5v9l-9 5-9-5V8Zm0 10 9-5M3 8l9 5v9M7.5 5.5l9 5" /></>,
     file: <><path d="M5 3h9l5 5v13H5ZM14 3v6h5M8 13h8M8 17h6" /></>,
     board: <><rect x="3" y="4" width="18" height="15" rx="2" /><path d="M7 8h4v5H7Zm7 0h3M14 12h3M8 22l4-3 4 3" /></>,
+    render: <><rect x="3" y="5" width="18" height="15" rx="2" /><circle cx="9" cy="10" r="2" /><path d="m4 18 6-5 4 3 3-4 4 5" /></>,
     fab: <><path d="M6 8V3h12v5M6 17H3V8h18v9h-3M6 13h12v8H6Z" /><path d="M17 10h1" /></>,
     chart: <><path d="M4 4v16h17M8 16v-4M13 16V7M18 16v-7" /></>,
     refresh: <path d="M20 10a8 8 0 1 0-2 8M20 4v6h-6" />,
@@ -458,7 +460,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       const statuses = await preparation.promise;
       preparation.apps = statuses;
       if (selection.current.projectDir === target) setProjectApps({ projectDir: target, apps: statuses });
-      const url = statuses.find((item) => item.appId === appId && item.state === "running")?.url;
+      const url = statuses.find((item) => item.appId === (appId === "render" ? "monkeyarch" : appId) && item.state === "running")?.url;
       if (!url) throw new Error("The project workspace is unavailable.");
       return url;
     } catch (cause) {
@@ -668,7 +670,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     if (existing) {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
         candidate: view?.candidate ?? item.candidate,
-        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : "arch" })}` : item.url } : item));
+        url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "render" ? "render" : id === "monkeyboard" ? "board" : "arch" })}` : item.url } : item));
       setPanel(true); setActiveTool(id); setError(null);
       return true;
     }
@@ -692,7 +694,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
         tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate, revision: 0,
-          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : "arch" })}` };
+          url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "render" ? "render" : id === "monkeyboard" ? "board" : "arch" })}` };
       } else {
         tab = { id, url: applicationUrl(location, preferences), revision: 0 };
       }
@@ -724,7 +726,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
     if (!match) return;
     if (projectDir !== match.projectDir) { selectProject(match); return; }
     if (actionLock.current || busy || toolBusy || !attached.workers?.some((worker) => worker.serviceId === "studio" && worker.healthy)) return;
-    const id = query.get("view") === "board" ? "monkeyboard" : "monkeyarch";
+    const id = query.get("view") === "render" ? "render" : query.get("view") === "board" ? "monkeyboard" : "monkeyarch";
     const saved = initial.projectDir === match.projectDir && initial.activeTool === id
       ? initial.tools.find((item) => item.id === id) : undefined;
     void openTool(id, saved?.candidate ? { candidate: saved.candidate } : undefined)
@@ -739,10 +741,10 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       url.searchParams.set("view", "monitor");
     } else if (selectedTab?.runtimeId) {
       url.searchParams.set("runtimeId", selectedTab.runtimeId);
-      url.searchParams.set("view", selectedTab.id === "monkeyboard" ? "board" : "arch");
+      url.searchParams.set("view", selectedTab.id === "render" ? "render" : selectedTab.id === "monkeyboard" ? "board" : "arch");
     } else {
       url.searchParams.delete("runtimeId");
-      if (["arch", "board", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
+      if (["arch", "board", "render", "monitor"].includes(url.searchParams.get("view") ?? "")) url.searchParams.delete("view");
     }
     window.history.replaceState(null, "", url);
   }, [selectedTab?.runtimeId, selectedTab?.id, projectDir, panel]);
@@ -916,11 +918,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         if (item.runtimeId) return <div className="chat-project-workspace project-workspace" key={item.runtimeId} hidden={!visible} inert={!visible}>
           <ProjectRuntimeProvider baseUrl={`${window.location.origin}/api/runtime/projects/${item.runtimeId}/studio`}>
             <ErrorBoundary label={t.tools}><Suspense fallback={<div role="status">{t.working}</div>}>
-              <ProjectWorkspace workspace={item.id === "monkeyboard" ? "board" : "arch"} active={visible}
+              <ProjectWorkspace workspace={item.id === "render" ? "render" : item.id === "monkeyboard" ? "board" : "arch"} active={visible}
                 expectedProjectId={item.projectId} candidateRunId={item.candidate} refreshKey={item.revision} onChatRequest={focusConversation}
                 documentRequest={item.projectDir ? documentRequests[item.projectDir] : undefined}
                 onDesignContextChange={workspaceContextCallback(item.runtimeId)}
-                onWorkspaceChange={(workspace) => { const id = workspace === "board" ? "monkeyboard" : "monkeyarch";
+                onWorkspaceChange={(workspace) => { const id = workspace === "render" ? "render" : workspace === "board" ? "monkeyboard" : "monkeyarch";
                   setTabs((items) => items.map((tab) => tab.runtimeId === item.runtimeId ? { ...tab, id,
                     url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: workspace })}` } : tab));
                   if (selection.current.projectDir === item.projectDir) setActiveTool(id);
@@ -943,7 +945,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         {tools.filter((item) => item.group === group.id).map((item) => {
           const needsProject = item.id !== "monkeyfab" && item.id !== "monkeymonitor";
           const statuses = needsProject ? (projectApps?.projectDir === projectDir ? projectApps.apps : null) : apps;
-          const status = statuses?.find((app) => app.appId === item.id);
+          const status = statuses?.find((app) => app.appId === (item.id === "render" ? "monkeyarch" : item.id));
           const state = needsProject && studioWorker?.state === "crashed" ? "error" : status?.state;
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
             : state === "running" ? t.toolRunning : state === "starting" ? t.toolStarting

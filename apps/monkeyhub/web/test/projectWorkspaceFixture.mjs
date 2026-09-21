@@ -25,7 +25,11 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       assets.set(runId, { dto, bytes }); return dto;
     };
     artifact(home);
-    const value = { runtime, published, home, assets, artifact,
+    const imageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jB8sAAAAASUVORK5CYII=", "base64");
+    const renderDocument = { projectId: id, runId: home, assetSha256: digest(imageBytes),
+      fileName: `render-${id}.png`, mimeType: "image/png", sizeBytes: imageBytes.length,
+      pageCount: 1, pages: [{ pageIndex: 0, width: 1, height: 1, rotation: 0 }], modelSource: assets.get(home).dto.modelSource };
+    const value = { runtime, published, home, assets, artifact, documents: [], renderDocument, imageBytes, imageReadFailures: 0,
       board: { projectId: id, title: `Board ${id}`, elements: [], seenDocuments: [], revisionSha256: null } };
     projects.set(id, value); return value;
   }
@@ -64,7 +68,15 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
         return json({ projectId, artifacts, skippedRuns: [] });
       }
       if (name === "/api/state/frame") return json({ levels: [], axes: [], honesty: [] });
-      if (name === "/api/documents") return json({ projectId, runId: null, documents: [] });
+      if (name === "/api/documents") return json({ projectId, runId: null, documents: current.documents });
+      if (name === `/api/documents/${current.documents[0]?.assetSha256}/bytes`) {
+        assert.equal(url.searchParams.get("runId"), current.home);
+        if (current.imageReadFailures > 0) {
+          current.imageReadFailures--;
+          await route.fulfill({ status: 503, json: { code: "IMAGE_UNAVAILABLE", detail: "Image bytes temporarily unavailable" } });
+        } else await route.fulfill({ body: current.imageBytes, contentType: "image/png" });
+        return true;
+      }
       if (name === "/api/board") return json(current.board);
       if (name === "/api/drawings/styles") return json({ styles: [] });
       const bytes = name.match(/^\/api\/artifacts\/([^/]+)\/bytes$/);

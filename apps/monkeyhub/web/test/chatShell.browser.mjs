@@ -648,7 +648,10 @@ try {
   const chooser = page.waitForEvent('filechooser');
   await upload.click(); await chooser;
   await visibleWorkspace().locator('.monkeyboard').screenshot({ path: path.join(temporary, 'board-welcome.png') });
+  const savedBoardA = page.waitForResponse(response => response.request().method() === "PUT" &&
+    response.url().endsWith("/api/board") && response.request().postDataJSON()?.title === "Board A retained");
   await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board A retained");
+  await savedBoardA;
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
   for (const [label, kind] of [["Board", "board"], ["Modeling", "arch"]]) {
@@ -855,7 +858,10 @@ try {
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
   assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board B");
+  const savedBoardB = page.waitForResponse(response => response.request().method() === "PUT" &&
+    response.url().endsWith("/api/board") && response.request().postDataJSON()?.title === "Board B retained");
   await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board B retained");
+  await savedBoardB;
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await waitWorkspace("board");
@@ -869,6 +875,40 @@ try {
   await page.screenshot({ path: path.join(temporary, "hub-board.png") });
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
+
+  // Native Render keeps the same mounted model and project-bound image reader.
+  const fixtureB = workspaceFixture.projects.get("B");
+  fixtureB.documents = [fixtureB.renderDocument];
+  await visibleWorkspace().locator(".stage canvas").first().evaluate(node => { node.renderReturnMarker = true; });
+  const beforeRenderWrites = workspaceFixture.requests.filter(row => row.method !== "GET" && row.name !== "/api/board").length;
+  await visibleWorkspace().getByRole("button", { name: "Send to Render", exact: true }).click();
+  const renderPanel = page.locator(".render-workspace:visible");
+  await renderPanel.getByText("View received; render job integration is not connected yet.", { exact: true }).waitFor();
+  await renderPanel.locator(".render-image img").waitFor();
+  await page.waitForFunction(() => document.querySelector(".render-workspace .render-image img")?.naturalWidth > 0);
+  assert.match(await renderPanel.innerText(), /render-B.png/);
+  assert.match(page.url(), /view=render/);
+  assert.equal(workspaceFixture.requests.filter(row => row.method !== "GET" && row.name !== "/api/board").length, beforeRenderWrites,
+    "camera handoff and gallery do not write design state");
+  await renderPanel.getByRole("button", { name: "Zoom in", exact: true }).click();
+  assert.equal(await renderPanel.locator(".render-image img").evaluate(node => node.style.width), "125%");
+  await renderPanel.getByRole("button", { name: "Fit", exact: true }).click();
+  fixtureB.imageReadFailures = 1;
+  await renderPanel.getByRole("button", { name: "Refresh", exact: true }).click();
+  await renderPanel.getByRole("alert").waitFor();
+  await renderPanel.getByRole("button", { name: "Retry", exact: true }).click();
+  await renderPanel.getByRole("alert").waitFor({ state: "hidden" });
+  await renderPanel.locator(".render-image img").waitFor();
+  assert.equal(await page.locator(".excalidraw:visible").count(), 0, "inactive Board canvas is hidden in Render");
+  assert.equal(await page.locator(".chat-project-workspace[hidden] button:visible").count(), 0,
+    "another project's Board controls cannot leak over the Render workspace");
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.screenshot({ path: path.join(temporary, "hub-render.png") });
+  await renderPanel.getByRole("button", { name: "Modeling", exact: true }).click();
+  await waitWorkspace();
+  assert.equal(await visibleWorkspace().locator(".stage canvas").first().evaluate(node => node.renderReturnMarker), true,
+    "Render navigation preserves the Modeling canvas");
+  fixtureB.documents = [];
 
   // A successful candidate opens immediately while the same turn continues
   // working. Neither repeated clicks nor terminal-state polling reload it.

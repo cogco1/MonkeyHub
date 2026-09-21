@@ -904,7 +904,7 @@ export const chatCopy = {
     previewImage: "Enlarge image", download: "Download", imageLoading: "Loading image…", imageFailed: "This image could not be loaded. You can still download the file.", openDocument: "Open document",
     externalChat: "External conversation", externalNotice: "Replies and progress from your connected agent appear here. Continue the conversation in the source application.",
     attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
-    working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", model: "Modeling", diagram: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
+    working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", model: "Modeling", diagram: "Drawings", board: "Board", render: "Render", fab: "Fabrication", monitor: "Usage",
     refresh: "Reload page", browser: "Project browser", modelName: "Model (leave empty for CLI default)", defaultModel: "CLI default model", provider: "Connection",
     toolEmpty: "Project tools", toolHint: "Choose modeling, board or fabrication. Open drawing pages from the board.",
     loading: "Loading…", toolActivity: "Tool activity", retry: "Reload", projectRequired: "Add or choose a project first.", expand: "Show projects", collapse: "Hide projects",

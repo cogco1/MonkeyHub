@@ -223,7 +223,7 @@ export type WorkspaceDesignContext = {
   unavailableReason: "unsaved" | "loading" | "unavailable" | null;
 };
 
-export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange }: {
+export default function App({ server, expectedProjectId, initialDocumentIntent, initialSketchRequest, initialRunId, documentSource = null, active = true, refreshKey = 0, onReturnToBoard, onOpenBoard, onChatRequest, onDesignContextChange, onSendToRender }: {
   server: ServerIdentity; initialDocumentIntent?: BoardDesignRequest;
   expectedProjectId?: string;
   /** One calibrated board sketch frame, to be run as a sketch proposal once the session is ready. */
@@ -238,6 +238,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   onOpenBoard?: () => void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
+  onSendToRender?: (selection: import("../workspaces/render/renderCamera").RenderSelection) => void;
 }) {
   const studio = useStudio();
   const t = useT();
@@ -3216,6 +3217,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             key={binding?.projectId ?? "unbound"}
             active={active}
             onOpenBoard={onOpenBoard}
+            onSendToRender={onSendToRender && project && loadedModelSource && !documentView.open && blendState === null && !modelLoading && !(localModel && unsynced(localModel)) ? () => {
+              const camera = viewportRef.current?.renderCamera();
+              if (camera) onSendToRender({ projectId: project.projectId, modelSource: { ...loadedModelSource }, camera });
+            } : undefined}
             onChatRequest={onChatRequest}
             hasModel={sourceLabel !== null || hasLocalGeometry}
             onSketch={runSketch}

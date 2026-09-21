@@ -21,6 +21,59 @@ from archflow.contracts.canonical import canonical_json
 
 
 @dataclass(frozen=True)
+class BlenderCamera:
+    """Captured view in source-model units and Z-up; no design write authority."""
+    position: tuple[float, float, float]
+    target: tuple[float, float, float]
+    up: tuple[float, float, float]
+    projection: str
+    near: float
+    far: float
+    aspect: float
+    vertical_fov: float | None = None
+    orthographic_bounds: tuple[float, float, float, float] | None = None
+
+    def __post_init__(self):
+        def numbers(value, count):
+            return isinstance(value, (tuple, list)) and len(value) == count and all(
+                type(v) in (int, float) and math.isfinite(v) for v in value)
+        for name in ("position", "target", "up"):
+            value = getattr(self, name)
+            if not numbers(value, 3):
+                raise cad.CadExecutionError(f"invalid camera {name}")
+            object.__setattr__(self, name, tuple(value))
+        if not numbers((self.near, self.far, self.aspect), 3) or not (
+                0 < self.near < self.far and 0.01 <= self.aspect <= 100):
+            raise cad.CadExecutionError("invalid camera clipping or aspect")
+        direction = [b - a for a, b in zip(self.position, self.target)]
+        cross = [direction[1] * self.up[2] - direction[2] * self.up[1],
+                 direction[2] * self.up[0] - direction[0] * self.up[2],
+                 direction[0] * self.up[1] - direction[1] * self.up[0]]
+        if sum(v * v for v in cross) <= 1e-20:
+            raise cad.CadExecutionError("camera direction and up must span a frame")
+        if self.projection == "perspective":
+            if not numbers((self.vertical_fov,), 1) or not 1 <= self.vertical_fov <= 175 or self.orthographic_bounds is not None:
+                raise cad.CadExecutionError("invalid perspective camera")
+        elif self.projection == "orthographic":
+            bounds = self.orthographic_bounds
+            if not numbers(bounds, 4) or self.vertical_fov is not None:
+                raise cad.CadExecutionError("invalid orthographic camera")
+            left, right, top, bottom = bounds
+            if not left < right or not bottom < top:
+                raise cad.CadExecutionError("empty orthographic bounds")
+            if not math.isclose((right - left) / (top - bottom), self.aspect, rel_tol=1e-6):
+                raise cad.CadExecutionError("orthographic bounds and aspect differ")
+            object.__setattr__(self, "orthographic_bounds", tuple(bounds))
+        else:
+            raise cad.CadExecutionError("unknown camera projection")
+
+    def to_dict(self):
+        return {**self.__dict__, "position": list(self.position), "target": list(self.target),
+                "up": list(self.up), "orthographic_bounds": (
+                    list(self.orthographic_bounds) if self.orthographic_bounds is not None else None)}
+
+
+@dataclass(frozen=True)
 class BlenderPresentation:
     """Explicit visual settings reused across full rebuilds; never design state."""
     camera_id: str = "overview"
@@ -29,8 +82,13 @@ class BlenderPresentation:
     samples: int = 16
     azimuth: float = -55.0
     elevation: float = 30.0
+    camera: BlenderCamera | None = None
 
     def __post_init__(self):
+        if isinstance(self.camera, dict):
+            object.__setattr__(self, "camera", BlenderCamera(**self.camera))
+        if self.camera is not None and not isinstance(self.camera, BlenderCamera):
+            raise cad.CadExecutionError("invalid captured camera")
         if self.camera_id != "overview" or self.render_preset != "preview-v1":
             raise cad.CadExecutionError("V1 supports overview / preview-v1 only")
         for name, maximum in (("resolution", 2048), ("samples", 256)):
@@ -45,8 +103,19 @@ class BlenderPresentation:
             raise cad.CadExecutionError("camera elevation must be within [-85,85]")
 
     def to_dict(self):
-        return {**self.__dict__, "engine": "CYCLES", "device": "CPU", "seed": 0,
+        values = {key: value for key, value in self.__dict__.items() if key != "camera"}
+        if self.camera is not None:
+            values["camera"] = self.camera.to_dict()
+        return {**values, "engine": "CYCLES", "device": "CPU", "seed": 0,
                 "denoising": False, "view_transform": "Standard", "light_preset": "two-area-v1"}
+
+    @property
+    def image_size(self):
+        if self.camera is None:
+            return self.resolution, self.resolution
+        aspect = self.camera.aspect
+        return ((self.resolution, max(1, round(self.resolution / aspect))) if aspect >= 1 else
+                (max(1, round(self.resolution * aspect)), self.resolution))
 
 
 def _source(request, result):
@@ -119,6 +188,48 @@ def _verify_scene(plan, readback):
             raise cad.CadExecutionError("projection material differs")
     if not readback.get("presentation_verified") or not readback.get("blender_version"):
         raise cad.CadExecutionError("saved camera/light/render settings differ")
+    camera = plan["projection"]["presentation"].get("camera")
+    if camera is not None:
+        _verify_captured_camera(BlenderCamera(**camera), readback.get("visual_state") or {})
+
+
+def _verify_captured_camera(camera, visual):
+    """Compare host output with the requested frustum, including host clamps."""
+    near, far = camera.near, camera.far
+    if camera.projection == "perspective":
+        y = 1 / math.tan(math.radians(camera.vertical_fov) / 2)
+        expected = [[y / camera.aspect, 0, 0, 0], [0, y, 0, 0],
+                    [0, 0, -(far + near) / (far - near), -2 * far * near / (far - near)],
+                    [0, 0, -1, 0]]
+    else:
+        left, right, top, bottom = camera.orthographic_bounds
+        expected = [[2 / (right - left), 0, 0, -(right + left) / (right - left)],
+                    [0, 2 / (top - bottom), 0, -(top + bottom) / (top - bottom)],
+                    [0, 0, -2 / (far - near), -(far + near) / (far - near)], [0, 0, 0, 1]]
+    actual = (visual.get("captured_camera") or {}).get("projection_matrix", [])
+    def close(a, b):
+        return len(a) == len(b) and all(math.isclose(x, y, rel_tol=2e-5, abs_tol=2e-5) for x, y in zip(a, b))
+    if len(actual) != 4 or any(not close(a, b) for a, b in zip(actual, expected)):
+        raise cad.CadExecutionError("saved camera projection differs from captured view")
+    if not close(visual.get("camera_position", []), camera.position) or not close(visual.get("clip", []), (near, far)):
+        raise cad.CadExecutionError("saved camera pose or clipping differs")
+    rotation = visual.get("camera_rotation", [])
+    if len(rotation) != 3:
+        raise cad.CadExecutionError("saved camera orientation missing")
+    x, y, z = rotation
+    cx, cy, cz, sx, sy, sz = math.cos(x), math.cos(y), math.cos(z), math.sin(x), math.sin(y), math.sin(z)
+    actual_right = [cz * cy, sz * cy, -sy]
+    actual_up = [cz * sy * sx - sz * cx, sz * sy * sx + cz * cx, cy * sx]
+    def normalized(v):
+        length = math.sqrt(sum(n * n for n in v))
+        return [n / length for n in v]
+    def cross(a, b):
+        return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]
+    forward = normalized([b - a for a, b in zip(camera.position, camera.target)])
+    right = normalized(cross(forward, camera.up))
+    up = cross(right, forward)
+    if not close(actual_right, right) or not close(actual_up, up):
+        raise cad.CadExecutionError("saved camera orientation differs")
 
 
 def _readback(output):
@@ -183,7 +294,7 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
                 receipt.update(readback=readback, blender_version=readback["blender_version"])
         from PIL import Image
         with Image.open(paths["render"]) as image:
-            if image.format != "PNG" or image.size != (presentation.resolution, presentation.resolution):
+            if image.format != "PNG" or image.size != presentation.image_size:
                 raise cad.CadExecutionError("render is not the requested PNG")
             image.verify()
         _source(request, source)
@@ -206,7 +317,7 @@ def verify_projection_artifacts(request, source, receipt):
             or receipt.get("failures")):
         raise cad.CadExecutionError("projection receipt crossed source binding or failed")
     settings = receipt["presentation"]
-    presentation = BlenderPresentation(**{key: settings[key] for key in BlenderPresentation.__dataclass_fields__})
+    presentation = BlenderPresentation(**{key: settings[key] for key in BlenderPresentation.__dataclass_fields__ if key in settings})
     if settings != presentation.to_dict():
         raise cad.CadExecutionError("retained presentation differs")
     _verify_scene(_plan(request, source, presentation), receipt["readback"])

@@ -1,5 +1,7 @@
 """Real OCCT -> saved/reopened Blender -> PNG, with source-bound failures."""
 import os
+import json
+import math
 import subprocess
 import tempfile
 import unittest
@@ -14,6 +16,34 @@ from tests.test_occt_execution import _box, _program_of
 from tests.test_cad_execution import _binding
 
 BLENDER = os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE")
+
+
+class CapturedCameraValidationTests(unittest.TestCase):
+    def test_invalid_frames_and_inconsistent_projections_are_refused(self):
+        values = dict(position=(2, -5, 3), target=(2, 0, 3), up=(0, 0, 1),
+                      projection="perspective", near=.1, far=100, aspect=1.5, vertical_fov=60)
+        for change in ({"up": (0, 1, 0)}, {"near": 0}, {"far": .01},
+                       {"position": (float("nan"), 0, 0)}, {"vertical_fov": 180},
+                       {"projection": "unknown"}, {"orthographic_bounds": (-1, 1, 1, -1)}):
+            with self.subTest(change=change), self.assertRaises(cad.CadExecutionError):
+                projection.BlenderCamera(**(values | change))
+        with self.assertRaisesRegex(cad.CadExecutionError, "aspect"):
+            projection.BlenderCamera(**(values | dict(projection="orthographic", vertical_fov=None,
+                orthographic_bounds=(-1, 1, 1, -1))))
+
+    def test_snapshot_is_immutable_and_legacy_settings_keep_their_shape(self):
+        position = [2, -5, 3]
+        camera = projection.BlenderCamera(position, [2, 0, 3], [0, 0, 1],
+                                          "perspective", .1, 100, 1.5, 60)
+        position[0] = 999
+        self.assertEqual(camera.position, (2, -5, 3))
+        settings = projection.BlenderPresentation(camera=camera, resolution=128)
+        self.assertEqual(settings.image_size, (128, 85))
+        retained = settings.to_dict()
+        restored = projection.BlenderPresentation(**{
+            key: value for key, value in retained.items() if key in projection.BlenderPresentation.__dataclass_fields__})
+        self.assertEqual(restored.to_dict(), retained)
+        self.assertNotIn("camera", projection.BlenderPresentation().to_dict())
 
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is optional")
@@ -88,6 +118,52 @@ class ProjectionTests(unittest.TestCase):
         image.write_bytes(b"tampered PNG")
         with self.assertRaises(cad.CadExecutionError):
             projection.verify_projection_artifacts(self.request, self.source, results[0])
+
+    @unittest.skipUnless(BLENDER, "set ARCHFLOW_BLENDER_EXECUTABLE for real Blender")
+    def test_captured_camera_projects_same_points_after_saved_scene_reopen(self):
+        for kind, aspect in (("perspective", 1.7), ("orthographic", .75)):
+            with self.subTest(projection=kind):
+                camera = projection.BlenderCamera(
+                    (2, -5, 3), (2, 0, 3), (1, 0, 1), kind, .1, 100, aspect,
+                    vertical_fov=60 if kind == "perspective" else None,
+                    orthographic_bounds=(-1, 2, 3, -1) if kind == "orthographic" else None)
+                settings = projection.BlenderPresentation(camera=camera, resolution=64, samples=1)
+                request = replace(self.request, artifact_stem=kind)
+                result = projection.execute_blender_projection(
+                    request, self.source, blender_executable=BLENDER, presentation=settings)
+                self.assertEqual(result["status"], "succeeded", result["failures"])
+                projection.verify_projection_artifacts(request, self.source, result)
+                tampered = deepcopy(result)
+                tampered["readback"]["visual_state"]["captured_camera"]["projection_matrix"][0][0] *= 2
+                with self.assertRaisesRegex(cad.CadExecutionError, "projection differs"):
+                    projection.verify_projection_artifacts(request, self.source, tampered)
+                self.assertEqual(result["readback"]["visual_state"]["resolution"][:2], list(settings.image_size))
+                # World point = camera position + forward*5 + right*1 + corrected-up*.5.
+                # The nonstandard up vector makes this verify roll as well as field of view.
+                k = math.sqrt(.5)
+                point = (2 + 1.5 * k, 0, 3 - .5 * k)
+                scene = self.workspace / result["artifacts"][0]["relative_path"]
+                expression = ("import bpy,json; from mathutils import Vector; "
+                    "from bpy_extras.object_utils import world_to_camera_view; "
+                    f"bpy.ops.wm.open_mainfile(filepath={str(scene)!r},use_scripts=False); "
+                    "bpy.context.view_layer.update(); "
+                    f"p=world_to_camera_view(bpy.context.scene,bpy.context.scene.camera,Vector({point!r})); "
+                    "print('POINT:'+json.dumps(list(p)))")
+                output = subprocess.run([BLENDER, "--background", "--factory-startup", "--disable-autoexec",
+                    "--python-exit-code", "1", "--python-expr", expression], capture_output=True,
+                    text=True, check=True, timeout=120,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                actual = json.loads(next(row[6:] for row in output.stdout.splitlines() if row.startswith("POINT:")))
+                expected = ((.5 + 1 / (10 * math.tan(math.pi / 6) * aspect),
+                             .5 + .5 / (10 * math.tan(math.pi / 6))) if kind == "perspective" else
+                            ((1 + 1) / 3, (.5 + 1) / 4))
+                for a, b in zip(actual, (*expected, 5)):
+                    self.assertAlmostEqual(a, b, places=5)
+                # Stored camera pose and clipping remain in the original model unit.
+                visual = result["readback"]["visual_state"]
+                self.assertEqual(visual["camera_position"], [2, -5, 3])
+                self.assertAlmostEqual(visual["clip"][0], .1, places=6)
+                self.assertEqual(visual["clip"][1], 100)
 
     @unittest.skipUnless(BLENDER, "set ARCHFLOW_BLENDER_EXECUTABLE for real Blender")
     def test_blender_geometry_edit_is_rejected_without_changing_source(self):

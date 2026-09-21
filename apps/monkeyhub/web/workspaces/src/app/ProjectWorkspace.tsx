@@ -10,21 +10,23 @@ export type { WorkspaceDesignContext } from "./App";
 import { ErrorPanel } from "./ErrorPanel";
 import { LoadingOverlay } from "./LoadingOverlay";
 import { failed, loading, ready, type Loadable } from "./loadable";
+import type { RenderSelection } from "../workspaces/render/renderCamera";
 
 const Board = lazy(async () => {
   (window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH =
     new URL("excalidraw/", document.baseURI).href;
   return import("../workspaces/monkeyboard/Board");
 });
+const RenderWorkspace = lazy(() => import("../workspaces/render/RenderWorkspace"));
 
 export interface ProjectWorkspaceProps {
-  workspace: "arch" | "board";
+  workspace: "arch" | "board" | "render";
   expectedProjectId?: string;
   candidateRunId?: string | null;
   active?: boolean;
   refreshKey?: number;
   documentRequest?: { source: PageSource; requestId: number } | null;
-  onWorkspaceChange(workspace: "arch" | "board"): void;
+  onWorkspaceChange(workspace: "arch" | "board" | "render"): void;
   onChatRequest?: () => void;
   onDesignContextChange?: (context: WorkspaceDesignContext | null) => void;
 }
@@ -43,10 +45,13 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [documentIntent, setDocumentIntent] = useState<BoardDesignRequest | undefined>();
   const [sketchRequest, setSketchRequest] = useState<BoardSketchRequest | undefined>();
   const [boardVisited, setBoardVisited] = useState(workspace === "board");
+  const [renderVisited, setRenderVisited] = useState(workspace === "render");
+  const [renderSelection, setRenderSelection] = useState<RenderSelection | null>(null);
   const pageOpen = workspace === "board" && visit !== null;
   const modelVisible = workspace === "arch" || pageOpen;
   useEffect(() => {
     if (workspace === "board") setBoardVisited(true);
+    if (workspace === "render") setRenderVisited(true);
   }, [workspace]);
   useEffect(() => {
     if (workspace === "arch") setVisit(null);
@@ -102,12 +107,20 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} documentSource={pageOpen ? visit.source : null}
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
-        onDesignContextChange={onDesignContextChange} />
+        onDesignContextChange={onDesignContextChange}
+        onSendToRender={selection => { setRenderSelection(selection); onWorkspaceChange("render"); }} />
     </div>
-    {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={modelVisible} inert={!active || modelVisible}
-      style={{ height: "100%", minHeight: 0, display: modelVisible ? "none" : "block" }}>
+    {(renderVisited || workspace === "render") && <div hidden={workspace !== "render"} inert={!active || workspace !== "render"}
+      style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
+      <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
+        <RenderWorkspace active={active && workspace === "render"} refreshKey={refreshKey + attempt}
+          selection={renderSelection} onModel={() => onWorkspaceChange("arch")} />
+      </Suspense>
+    </div>}
+    {(boardVisited || workspace === "board") && <div data-project-surface="board" hidden={workspace !== "board" || modelVisible} inert={!active || workspace !== "board" || modelVisible}
+      style={{ height: "100%", minHeight: 0, display: workspace === "board" && !modelVisible ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="MonkeyBoard" />}>
-        <Board expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt} active={active && !modelVisible} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} />
+        <Board expectedProjectId={boundProjectId.current} refreshKey={refreshKey + attempt} active={active && workspace === "board" && !modelVisible} onSubmit={submitFeedback} onSketch={submitSketch} onOpenDocument={setVisit} />
       </Suspense>
     </div>}
   </div>;

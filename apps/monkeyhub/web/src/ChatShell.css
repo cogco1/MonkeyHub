@@ -84,3 +84,5 @@
 @media(max-width:500px){.chat-runtime{align-items:flex-start;flex-direction:column;padding-inline:16px}}
 
 .chat-project-workspace{position:absolute;inset:0;min-width:0;min-height:0;overflow:hidden}.chat-project-workspace[hidden]{display:block;visibility:hidden;pointer-events:none}
+/* Keep inactive canvas dimensions, but prevent child controls from overriding inherited visibility. */
+.chat-project-workspace[hidden] *,.chat-browser[hidden] *{visibility:hidden!important}

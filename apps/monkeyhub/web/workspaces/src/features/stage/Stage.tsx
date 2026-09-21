@@ -115,6 +115,7 @@ function sketchControls(state: SketchState) {
 export function Stage({
   active = true,
   onOpenBoard,
+  onSendToRender,
   onChatRequest,
   viewportRef,
   message,
@@ -334,6 +335,7 @@ export function Stage({
   /** A host page already shows the workspace entries and the project's position. */
   active?: boolean;
   onOpenBoard?: () => void;
+  onSendToRender?: () => void;
   onChatRequest?: () => void;
 }) {
   const t = useT();
@@ -1183,7 +1185,8 @@ export function Stage({
     <section ref={stageElement} className="stage" data-footer="true" aria-label={t("stage.ariaLabel")}
       onPointerDownCapture={() => modelKeysRef.current?.onInteraction?.()}
       onKeyDownCapture={() => modelKeysRef.current?.onInteraction?.()}>
-      {(picked !== null || onReturnToBoard) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
+      {(picked !== null || onReturnToBoard || onSendToRender) && <div className="stage-mode-switch" role="group" aria-label={t("workspace.switcher")}>
+        {onSendToRender && <button type="button" onClick={onSendToRender}>{zh ? "发送到渲染" : "Send to Render"}</button>}
         {(onReturnToBoard || onOpenBoard) && <button type="button" onClick={onReturnToBoard ?? onOpenBoard}>{t("workspace.monkeyboard")}</button>}
         {picked && (
           <div

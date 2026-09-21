@@ -3,6 +3,47 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-216",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Implement the native Render workspace and GH-218 camera handoff in MonkeyHub; retain exact design source and project-owned presentation.",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/216",
+      "branch": "feature/blender-experiment",
+      "worktree": "feature-blender-experiment",
+      "base_ref": "db7aba96",
+      "contributor": "YNNAP-HelloWorld",
+      "reviewer": null,
+      "handoff": "Draft PR #235; source implementation and visual acceptance in progress.",
+      "depends_on": [],
+      "modules": ["hub.shell", "studio.artifacts", "adapters.cad_execution"],
+      "write_scope": [
+        "apps/monkeyhub/web/src/ChatShell.tsx",
+        "apps/monkeyhub/web/src/ChatShell.css",
+        "apps/monkeyhub/web/src/i18n/messages.en.ts",
+        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+        "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+        "apps/monkeyhub/web/workspaces/src/features/stage/Stage.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/",
+        "apps/monkeyhub/web/workspaces/test/renderCamera.test.ts",
+        "archflow/adapters/blender_projection.py",
+        "archflow/adapters/blender_worker.py",
+        "tests/test_blender_projection.py",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
+        "governance/module_registry.json",
+        "docs/mapping/planning/NATIVE_RENDER_V01.md",
+        "docs/NATIVE_RENDER_V01.md"
+      ],
+      "card": "docs/NATIVE_RENDER_V01.md",
+      "acceptance": [
+        "Native Render navigation, persisted real gallery images, same-camera render execution and source return pass in actual Hub.",
+        "GH-218 perspective/orthographic handoff preserves exact model source without changing design state.",
+        "Do not mark complete before backend execution, restart and UI evidence are verified."
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",

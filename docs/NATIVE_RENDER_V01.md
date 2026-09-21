@@ -4,8 +4,36 @@ Implementation plan for [GH-216](https://github.com/cogco1/MonkeyHub/issues/216)
 and [GH-218](https://github.com/cogco1/MonkeyHub/issues/218), aligned with the
 representation investigation in [GH-223](https://github.com/cogco1/MonkeyHub/issues/223).
 
-Status: planning only. This document does not claim that the workspace or
-same-camera rendering is implemented. Baseline inspected: `db7aba96`.
+Status: implementation in progress. Baseline inspected: `db7aba96`.
+
+The first frontend slice adds native Render navigation, project image browsing,
+thumbnails, zoom/pan/download and Modeling-to-Render source/camera handoff.
+The gallery currently includes all registered project images, including references;
+render-specific registration/filtering is still pending. It reads existing document
+bytes through the project runtime and creates no independent scene store.
+Switching workspaces preserves the mounted Modeling view.
+The handoff is unavailable for unsynced geometry, document pages and comparison
+blends; these cannot silently borrow an unrelated model camera. Inactive project
+controls cannot override the shell's hidden visibility and leak into Render.
+
+The Blender adapter now accepts an immutable captured camera with perspective or
+orthographic projection, roll, clipping and rectangular output. Pixel aspect
+preserves the requested frustum when raster dimensions round. Host cold readback
+compares its projection matrix and pose against the requested camera, catching
+host clamping or saved-scene changes. Legacy overview receipts retain their shape.
+
+Validation: TypeScript checking, Vite production build, two frontend camera matrix
+tests, seven Blender projection tests (including real Blender 4.3 save/reopen/render,
+point projection and tampered-camera refusal), the Hub browser walk and architecture
+checking passed. Browser fixtures verify the native workspace, project image reads,
+zoom/fit, retry after byte-read failure, unchanged Modeling canvas and no design
+writes during handoff. These tests do not establish end-to-end job execution.
+
+Still required: render task API/persistence and adapter integration, accurate
+historical model/camera restore, source-linked Drawing workflow, gallery result
+classification, real retained penguin registration, frontend behavioral tests and
+end-to-end UI/render evidence. The displayed source handoff explicitly reports that
+render execution is not connected yet. Neither issue is complete.
 
 ## User-visible outcome
 
@@ -33,9 +61,8 @@ Do not build another design store or a render-specific dependency graph.
 - `archflow/adapters/blender_projection.py` already consumes verified OCCT source,
   reconstructs a Blender scene, cold-reads source identity/geometry/presentation,
   and validates the resulting PNG. Extend this execution owner.
-- `BlenderPresentation` currently supports only `overview` / `preview-v1`, square
-  output resolution and azimuth/elevation. It cannot express an arbitrary captured
-  modeling camera yet.
+- `BlenderPresentation` retains legacy `overview` / `preview-v1` settings and now
+  accepts `BlenderCamera` for a captured viewport with rectangular output.
 - `tests/test_blender_projection.py` and
   `tests/test_blender_projection_runner.py` provide existing projection coverage;
   native UI and arbitrary-camera acceptance require additional behavioral evidence.
