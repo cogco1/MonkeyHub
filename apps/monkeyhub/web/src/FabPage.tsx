@@ -13,7 +13,7 @@ type Props = {
 };
 const copy = {
   "zh-CN": {
-    back: "返回 MonkeyHub", intro: "缩放与拆件，或发送已切片的打印任务。",
+    intro: "缩放与拆件，或发送已切片的打印任务。",
     prepare: "准备打印分件", prepareHelp: "粘贴本机 STL / OBJ 文件的完整路径，并选择原模型单位。",
     source: "源模型文件", unit: "原模型单位", chooseUnit: "请选择单位", scale: "模型比例", printer: "目标打印机",
     output: "输出目录（新建或空目录）", advanced: "拆件余量", xy: "XY 每侧余量（mm）", z: "顶部留量（mm）",
@@ -27,7 +27,7 @@ const copy = {
     busyLeave: "正在处理文件，请等待操作完成。", bytes: "字节", settings: "显示设置",
   },
   en: {
-    back: "Back to MonkeyHub", intro: "Scale and split models, or upload a sliced print job.",
+    intro: "Scale and split models, or upload a sliced print job.",
     prepare: "Prepare print parts", prepareHelp: "Paste the full path of a local STL / OBJ file and choose its source units.",
     source: "Source model", unit: "Source units", chooseUnit: "Choose units", scale: "Model scale", printer: "Target printer",
     output: "Output directory (new or empty)", advanced: "Part clearances", xy: "Margin on each XY side (mm)", z: "Top clearance (mm)",
@@ -120,7 +120,7 @@ export function FabPage({ preferences, client, readResult }: Props) {
   };
   const home = applicationUrl(window.location.origin + "/", preferences);
   return <>
-    <header className="toolbar"><a className="btn" href={home}>{t.back}</a><strong className="wordmark">MonkeyFab</strong><a className="btn fab-settings-link" href={home + "#settings"}>{t.settings}</a></header>
+    <header className="toolbar"><strong className="wordmark">MonkeyFab</strong><a className="btn fab-settings-link" href={home + "#settings"}>{t.settings}</a></header>
     <main className="hub fab-page"><div className="section-heading"><div><h1>MonkeyFab</h1><p className="help">{t.intro}</p></div></div>
       {profileError ? <div className="error-message" role="alert"><p>{profileError}</p><button className="btn" type="button" onClick={() => setProfileAttempt((value) => value + 1)}>{t.retry}</button></div> : !profiles ? <p role="status">{t.loading}</p> : null}
       <div className="fab-forms">

@@ -1063,6 +1063,7 @@ button.chip:hover {
    wrapping are measured against it, and lets pointer events through except
    where a control actually is. */
 .viewtools-wrap {
+  container-type: inline-size;
   position: absolute;
   left: 14px;
   right: 14px;
@@ -2676,7 +2677,8 @@ button.chip:hover {
 /* Compact model tools share one icon, selection and tooltip treatment. */
 .model-tools__group {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex: none;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   max-width: 100%;
@@ -2687,7 +2689,7 @@ button.chip:hover {
 .stage[data-footer="true"] .viewtools-wrap {
   bottom: calc(26px + var(--stage-footer-height, 36px));
 }
-.model-tools .model-tools__plane { max-width: 78px; min-height: 40px; padding-inline: 4px; border: 0; border-radius: var(--radius); color: var(--ink-2); }
+.model-tools .model-tools__plane { width: 64px; min-height: 40px; padding-inline: 4px; border: 0; border-radius: var(--radius); color: var(--ink-2); }
 .stage-pushpull { cursor: ns-resize; }
 @media (max-width: 800px) {
   .viewtools-wrap > .viewtools { max-width: 100%; }
@@ -2756,6 +2758,14 @@ button.model-tool-button,
   width: 20px;
   height: 20px;
   pointer-events: none;
+}
+
+/* Follow the project pane width, including when the Hub divider is dragged. */
+@container (max-width: 680px) {
+  .model-tools__group { gap: 2px; padding: 3px; }
+  .model-tools .model-tools__group + .model-tools__group { margin-left: 2px; padding-left: 5px; }
+  .model-tools button.model-tool-button { width: 36px; min-width: 36px; height: 36px; min-height: 36px; }
+  .model-tools .model-tools__plane { width: 56px; min-height: 36px; }
 }
 
 button.model-tool-button:hover:not(:disabled):not([aria-pressed="true"]) {
