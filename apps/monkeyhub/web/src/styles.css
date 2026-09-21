@@ -37,7 +37,9 @@ button:disabled{cursor:not-allowed}
 .settings h2{font-size:calc(14px * var(--font-scale,1));font-weight:600;margin-bottom:14px}
 .help{font-size:calc(12px * var(--font-scale,1));line-height:1.8;color:var(--muted);margin:9px 0 13px}
 label{display:flex;flex-direction:column;gap:7px;font-size:calc(12px * var(--font-scale,1));color:var(--muted)}
-input,select{min-width:0;width:100%;min-height:36px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--ink);font-size:calc(13px * var(--font-scale,1))}
+input:not([type=checkbox]):not([type=radio]),select{min-width:0;width:100%;min-height:36px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--ink);font-size:calc(13px * var(--font-scale,1))}
+.settings label:has(>input[type=checkbox]){flex-direction:row;align-items:center;gap:8px}
+input:is([type=checkbox],[type=radio]){flex:none;width:16px;height:16px;min-height:0;margin:0;padding:0;accent-color:var(--accent)}
 input::placeholder{color:var(--faint)}
 .appearance-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}

@@ -7,7 +7,7 @@ import {
 } from "./monitorData";
 import "./MonitorPage.css";
 
-type Props = { preferences: AppearancePreferences; active: boolean; onClose: () => void };
+type Props = { preferences: AppearancePreferences; active: boolean };
 type EventResponse = { events: MonitorEvent[]; warnings: string[] };
 type TraceResponse = { traces: MonitorTrace[]; warnings: string[]; lanes?: Array<{ id: string; label: string }> };
 type Rate = {
@@ -22,7 +22,7 @@ type Quote = { currency: string; amount_usd: string | null; known_subtotal_usd: 
 
 const words = {
   "zh-CN": {
-    back: "回到聊天", title: "用量与任务记录", subtitle: "查看任务进度、耗时与模型用量。",
+    title: "用量与任务记录", subtitle: "查看任务进度、耗时与模型用量。",
     refresh: "刷新", connecting: "正在连接监控服务…", retry: "重新连接", ready: "监控服务在线", failed: "监控服务暂不可用",
     allProjects: "全部项目", project: "项目", calls: "模型调用", cached: "缓存输入", uncached: "未缓存输入", output: "输出", wait: "请求往返 P50",
     coverage: (known: number, missing: number) => `${known} 次已记录${missing ? ` · ${missing} 次未知` : ""}`,
@@ -34,7 +34,7 @@ const words = {
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
   },
   en: {
-    back: "Back to chat", title: "Usage and task records", subtitle: "Follow task progress, timing and model usage.",
+    title: "Usage and task records", subtitle: "Follow task progress, timing and model usage.",
     refresh: "Refresh", connecting: "Connecting to monitoring service…", retry: "Reconnect", ready: "Monitoring service online", failed: "Monitoring service unavailable",
     allProjects: "All projects", project: "Project", calls: "Model calls", cached: "Cached input", uncached: "Uncached input", output: "Output", wait: "Request round-trip P50",
     coverage: (known: number, missing: number) => `${known} recorded${missing ? ` · ${missing} unknown` : ""}`,
@@ -73,7 +73,7 @@ function dateText(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function MonitorPage({ preferences, active, onClose }: Props) {
+export function MonitorPage({ preferences, active }: Props) {
   const t = words[preferences.language];
   const [base, setBase] = useState<string | null>(null);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
@@ -231,7 +231,7 @@ export function MonitorPage({ preferences, active, onClose }: Props) {
   const selectedWarnings = selectedTrace?.warnings ?? [];
 
   return <div className="monitor-page">
-    <header className="toolbar monitor-toolbar"><button className="btn" type="button" onClick={onClose}>{t.back}</button><strong className="wordmark">MonkeyMonitor</strong><span className={`monitor-health ${error ? "monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span><button className="btn" type="button" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</button></header>
+    <header className="toolbar monitor-toolbar"><strong className="wordmark">MonkeyMonitor</strong><span className={`monitor-health ${error ? "monitor-health--error" : ""}`}>{loading ? t.connecting : error ? t.failed : t.ready}</span><button className="btn" type="button" onClick={() => void readAll(true)} disabled={loading}>{t.refresh}</button></header>
     <main className="monitor-shell">
       <div className="monitor-heading"><div><p className="monitor-eyebrow">MonkeyMonitor</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><label>{t.project}<select value={project} onChange={(event) => { invalidateQuote(); setProject(event.target.value); }}><option value="">{t.allProjects}</option>{projects.map((id) => <option key={id}>{id}</option>)}</select></label></div>
       {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
