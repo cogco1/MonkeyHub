@@ -10,6 +10,7 @@
       "depends_on": [],
       "write_scope": [
         "OPEN_MONKEYHUB.cmd",
+        "apps/monkeyhub/",
         "apps/shared-web/",
         "tools/package_monkeyapps.py",
         "tools/workspace.py",
@@ -211,6 +212,7 @@
         "docs/ARCHITECTURE.md",
         "docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md",
         "docs/DYNAMIC_MAP.md",
+        "docs/PROTOCOL.md",
         "docs/REPO_LAYOUT.md",
         "docs/STAGE_BRANCH_CANDIDATE_PLAN.md",
         "docs/SYSTEM_MAP.md",
@@ -304,6 +306,8 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/",
         "apps/monkeyhub/web/workspaces/test/boardScene.test.ts",
         "apps/monkeyhub/web/workspaces/test/boardSaveQueue.test.ts",
+        "apps/monkeyhub/web/package.json",
+        "apps/monkeyhub/web/package-lock.json",
         "apps/monkeyhub/web/workspaces/index.html",
         "apps/monkeyhub/web/workspaces/vite.config.ts",
         "apps/monkeyhub/web/workspaces/src/app/Connected.tsx",
@@ -419,8 +423,7 @@
         "2026-09-09: six-question diagnostics completed locally in the isolated source worktree. Existing Monitor values, Studio request/client spans and runtime observers now expose parent-linked intervals, actual execution inputs and cache comparisons. A real 1.2-to-1.8 m window edit verified OCCT preview, object reuse, drawing generation and exact cache hit; its model answer was a controlled local CLI fixture, and the existing unchecked relation correctly refused Stage acceptance. Relevant API/runtime/Monitor checks, 35 browser scenarios, generated client, build and archcheck passed. Frozen packages and running services remain unchanged; other P115 acceptance remains open.",
         "2026-09-09 authorized overnight local-first slice: EXTEND project.repository/ports for same-format snapshot and candidate transfer, studio.binding for configured HTTP synchronization, studio.shell for authenticated project actions and service roles, and studio.candidate for attributed shared acceptance. Isolated from the delivered 4a887f15 baseline; current installations and other worktrees remain outside this scope. Three independent project roots and HTTP processes with real OCCT outputs are the acceptance target; no remote deployment or formal issue is included.",
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
-        "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied.",
-        "GH-214 temporarily owns the explicit Hub chat presentation paths in its independent main-based worktree; the previous umbrella Hub claim is handed off for this change and restored on closeout. Other P115 scopes remain unchanged."
+        "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
       "lanes": []
     },
@@ -643,48 +646,6 @@
       ],
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
-      ]
-    },
-    {
-      "id": "GH-214",
-      "stream": "implementation",
-      "status": "active",
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/214",
-      "goal": "Display externally bound agent answers, progress and images in the existing Hub conversation without invoking another model.",
-      "branch": "codex/214-hub-presentation",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-214-hub-presentation",
-      "base_ref": "26cadb140d1a5b35506d77c610a3efe87447a1d0",
-      "contributor": "Codex",
-      "reviewer": "Independent Codex subagent",
-      "handoff": "P115 Hub presentation paths delegated to GH-214 until its acceptance is complete; restore the original remaining P115 scope on closeout.",
-      "modules": [
-        "hub.shell"
-      ],
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/monkeyhub_api/main.py",
-        "apps/monkeyhub/api/monkeyhub_api/models.py",
-        "apps/monkeyhub/api/tests/test_chat_presentation.py",
-        "apps/monkeyhub/api/tests/test_chat.py",
-        "apps/monkeyhub/api/tests/test_acp_chat.py",
-        "apps/monkeyhub/run.py",
-        "apps/monkeyhub/web/src/ChatShell.tsx",
-        "apps/monkeyhub/web/src/ChatShell.css",
-        "apps/monkeyhub/web/src/ChatMessageContent.tsx",
-        "apps/monkeyhub/web/src/ChatMessageContent.css",
-        "apps/monkeyhub/web/src/i18n/messages.en.ts",
-        "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
-        "apps/monkeyhub/web/src/api/generated/",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs",
-        "apps/monkeyhub/web/package.json",
-        "apps/monkeyhub/web/package-lock.json",
-        "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-        "apps/monkeyhub/README.md",
-        "docs/PROTOCOL.md"
-      ],
-      "acceptance": [
-        "Issue 214 presentation, image, isolation, restart and browser acceptance; affected tests and architecture checks."
       ]
     }
   ]
