@@ -1,5 +1,5 @@
 /** Submit one frozen local edit prefix. Only its final proposal becomes a run. */
-import type { CandidateAcceptedDto, FrameDto } from "../../api/generated/types.gen";
+import type { CandidateAcceptedDto, FrameDto, WorkingDraftDto, LocalDraftInputDto, LocalDraftSourceDto } from "../../api/generated/types.gen";
 import type { StudioClient } from "../../api/client";
 import type { DraftCommand, DraftSnapshot } from "./modelDraft";
 
@@ -25,6 +25,27 @@ export type ModelDraftSyncApi = Pick<StudioClient,
 
 export function createModelDraftSyncAttempt(requestId: string = crypto.randomUUID()): ModelDraftSyncAttempt {
   return { requestId, nextCommand: 0, sourceProposalId: null, finalProposalId: null };
+}
+
+/** The local-draft witness belongs to this editor, not whichever window wrote last. */
+export function createLocalDraftWriter(api: Pick<StudioClient, "workingDraft" | "retainLocalDraft">, initial: WorkingDraftDto) {
+  let observed = JSON.stringify(initial.localDraft ?? null);
+  let queue: Promise<unknown> = Promise.resolve();
+  return (draft: LocalDraftInputDto | null, expectedSource?: LocalDraftSourceDto): Promise<WorkingDraftDto> => {
+    const frozen = draft === null ? null : JSON.parse(JSON.stringify(draft)) as LocalDraftInputDto;
+    const next = queue.catch(() => {}).then(async () => {
+      const current = await api.workingDraft();
+      if (current.projectId !== initial.projectId || JSON.stringify(current.localDraft ?? null) !== observed) {
+        throw new Error("另一窗口已更新工作草稿。当前修改仍在本窗口；请先保留修改，再重新打开项目读取最新草稿。");
+      }
+      const result = await api.retainLocalDraft({ projectId: initial.projectId,
+        baseRevisionSha256: current.revisionSha256 ?? null, draft: frozen, expectedSource });
+      observed = JSON.stringify(result.localDraft ?? null);
+      return result;
+    });
+    queue = next;
+    return next;
+  };
 }
 
 const buildingVector = ([x, y, z]: readonly [number, number, number]): [number, number, number] => [x, z, y];
@@ -90,7 +111,7 @@ async function propose(command: DraftCommand, source: ModelDraftSource, frame: F
 }
 
 async function submit(snapshot: DraftSnapshot, source: ModelDraftSource, frame: FrameDto,
-  attempt: ModelDraftSyncAttempt, api: ModelDraftSyncApi): Promise<CandidateAcceptedDto | null> {
+  attempt: ModelDraftSyncAttempt, api: ModelDraftSyncApi, checkpoint?: () => Promise<void>): Promise<CandidateAcceptedDto | null> {
   if (attempt.accepted) return attempt.accepted;
   if (!attempt.finalProposalId) {
     let replayed = false;
@@ -116,6 +137,9 @@ async function submit(snapshot: DraftSnapshot, source: ModelDraftSource, frame: 
     if (!attempt.sourceProposalId) return null;
     attempt.finalProposalId = attempt.sourceProposalId;
   }
+  // Retain the same request identity before it can cross the Hub boundary.
+  // A failed recovery write must not submit an untracked candidate.
+  await checkpoint?.();
   try {
     attempt.accepted = await api.startCandidate(attempt.finalProposalId, undefined, attempt.requestId);
   } catch (error) {
@@ -139,9 +163,9 @@ async function submit(snapshot: DraftSnapshot, source: ModelDraftSource, frame: 
 
 /** The caller pairs this attempt with the same frozen snapshot, frame and base until it resolves. */
 export function syncModelDraft(snapshot: DraftSnapshot, source: ModelDraftSource, frame: FrameDto,
-  attempt: ModelDraftSyncAttempt, api: ModelDraftSyncApi): Promise<CandidateAcceptedDto | null> {
+  attempt: ModelDraftSyncAttempt, api: ModelDraftSyncApi, checkpoint?: () => Promise<void>): Promise<CandidateAcceptedDto | null> {
   if (attempt.inFlight) return attempt.inFlight;
-  const pending = submit(snapshot, source, frame, attempt, api);
+  const pending = submit(snapshot, source, frame, attempt, api, checkpoint);
   attempt.inFlight = pending;
   void pending.finally(() => { delete attempt.inFlight; }).catch(() => {});
   return pending;

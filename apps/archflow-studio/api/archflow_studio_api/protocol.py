@@ -61,6 +61,7 @@ BASE_CAPABILITIES: tuple[str, ...] = (
     "proposals",
     "validation",
     "working-copies",
+    "working-draft",
 )
 
 # The two features that depend on this process's configuration rather than on

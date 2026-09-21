@@ -4,7 +4,7 @@ import test, { type TestContext } from "node:test";
 
 import { createServer } from "vite";
 
-import type { WorkingCopyDto } from "../src/api/generated/index.ts";
+import type { WorkingCopyDto, WorkingDraftDto } from "../src/api/generated/index.ts";
 
 test("concurrent project clients retain their runtime, token, exact source and responses", async (t) => {
   const vite = await createServer({ root: fileURLToPath(new URL("..", import.meta.url)), configFile: false,
@@ -200,6 +200,9 @@ async function editingSessionHarness(t: TestContext) {
     designHistoryReply: null as null | (() => Response | Promise<Response>),
     workingCopies: [workingCopy],
     workingCopiesReply: null as null | (() => Response | Promise<Response>),
+    workingDraft: null as WorkingDraftDto | null,
+    draftWriteStatus: 200,
+    draftWrites: [] as Record<string, unknown>[],
   };
   Object.defineProperty(globalThis, "window", { configurable: true, value: {
     location: { href: "http://studio.test/", search: "" },
@@ -234,6 +237,17 @@ async function editingSessionHarness(t: TestContext) {
   t.mock.method(globalThis, "fetch", async (request: Request) => {
     const url = new URL(request.url);
     requests.push(`${request.method} ${url.pathname}${url.search}`);
+    if (url.pathname === "/api/working-draft") {
+      if (request.method === "PUT") {
+        const body = await request.json();
+        control.draftWrites.push(body);
+        if (control.draftWriteStatus !== 200) return Response.json({ code: "STALE_WORKING_DRAFT", detail: "The draft changed in another window." }, { status: control.draftWriteStatus });
+        assert.equal(body.baseRevisionSha256, control.workingDraft?.revisionSha256);
+        control.workingDraft = { ...control.workingDraft!, revisionSha256: "updated",
+          current: body.runId ? { runId: body.runId, updatedAt: new Date().toISOString() } : null };
+      }
+      return Response.json(control.workingDraft);
+    }
     assert.equal(request.method, "GET", "restoring a choice must not submit design work");
     if (url.pathname === "/api/project") return control.projectReply ? control.projectReply() : Response.json({ projectId: control.projectId, published });
     if (url.pathname === "/api/working-copies") {
@@ -252,6 +266,77 @@ async function editingSessionHarness(t: TestContext) {
     studio, editingBasePreferences, requests, control, projection, storage, key, oldPreferences,
   };
 }
+
+test("project draft survives a new browser session and outranks old localStorage without submitting work", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.editingBasePreferences.writeChoice("", "project-a", { runId: "obsolete", sourceStageRef: null, branchId: null });
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "first", current: { runId: "chosen-a", updatedAt: "2026-09-21T00:00:00Z" } };
+  const cold = h.createSessionController("", ["working-draft"]);
+  assert.equal((await cold.reload()).sourceRunId, "chosen-a");
+  assert.equal(h.control.draftWrites.length, 0);
+  h.storage.clear();
+  const reopened = h.createSessionController("", ["working-draft"]);
+  assert.equal((await reopened.reload()).sourceRunId, "chosen-a");
+  assert.ok(h.requests.every(request => request.startsWith("GET ")));
+});
+
+test("unexecuted recovery restores its exact source before the later candidate position", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "first",
+    current: { runId: "candidate-b", updatedAt: "2026-09-21T00:00:00Z" },
+    localDraft: { source: { projectId: "project-a", stateDigest: "a".repeat(64), sourceRunId: "chosen-a", sourceStageRef: null },
+      commands: [{ kind: "delete", elementId: "wall" }], updatedAt: "2026-09-21T00:00:00Z" } };
+  const controller = h.createSessionController("", ["working-draft"]);
+  const restored = await controller.reload();
+  assert.equal(restored.sourceRunId, "chosen-a");
+  assert.deepEqual(restored.workingDraft.localDraft.commands, [{ kind: "delete", elementId: "wall" }]);
+  assert.equal(h.control.draftWrites.length, 0);
+});
+
+test("first upgrade carries the prior explicit browser choice into P036 without losing it", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.editingBasePreferences.writeChoice("", "project-a", { runId: "chosen-a", sourceStageRef: null, branchId: null });
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: null, current: null };
+  const controller = h.createSessionController("", ["working-draft"]);
+  assert.equal((await controller.reload()).sourceRunId, "chosen-a");
+  assert.equal(h.control.draftWrites.length, 1);
+  assert.equal(h.control.workingDraft.current?.runId, "chosen-a");
+  assert.equal(h.control.draftWrites[0]?.baseRevisionSha256, null);
+});
+
+test("explicit selection persists with CAS; a concurrent refusal keeps the prior session", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "first", current: null };
+  const controller = h.createSessionController("", ["working-draft"]);
+  await controller.reload();
+  assert.equal((await controller.reload("chosen-a")).sourceRunId, "chosen-a");
+  assert.equal(h.control.draftWrites[0]?.baseRevisionSha256, "first");
+  h.control.draftWriteStatus = 409;
+  assert.equal(await controller.reload("candidate-b"), null);
+  assert.equal(controller.getSnapshot().session.value.sourceRunId, "chosen-a");
+  assert.equal(controller.getSnapshot().baseError.code, "STALE_WORKING_DRAFT");
+});
+
+test("a project mismatch in the retained draft refuses cold recovery", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-b", revisionSha256: null, current: null };
+  const controller = h.createSessionController("", ["working-draft"]);
+  assert.equal(await controller.reload(), null);
+  assert.equal(controller.getSnapshot().baseError.code, "EDITING_PROJECT_CHANGED");
+  assert.ok(!h.requests.some(request => request.startsWith("GET /api/state")));
+});
+
+test("quiet adoption of the position already retained by the worker does not write twice", async (t) => {
+  const h = await editingSessionHarness(t);
+  h.control.workingDraft = { projectId: "project-a", revisionSha256: "worker-position",
+    current: { runId: "chosen-a", updatedAt: "2026-09-21T00:00:00Z" } };
+  const controller = h.createSessionController("", ["working-draft"]);
+  await controller.reload();
+  h.control.workingDraft.current = { runId: "candidate-b", updatedAt: "2026-09-21T00:01:00Z" };
+  await controller.reload("candidate-b", undefined, undefined, true);
+  assert.equal(h.control.draftWrites.length, 0);
+  assert.equal(controller.getSnapshot().session.value.sourceRunId, "candidate-b");
+});
 
 test("working-copy capability permits a cold list read without selecting its option as the editing base", async (t) => {
   const h = await editingSessionHarness(t);

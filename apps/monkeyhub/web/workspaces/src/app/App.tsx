@@ -81,7 +81,7 @@ import { applyDraftCommand, createModelDraft, currentDraft, drawnShapeFromSpec,
   redoDraft, specFromDrawnShape, undoDraft, snapshotsEquivalent, elevationOf, elevationFromProjection,
   type DraftCommand, type DraftObject, type DraftSnapshot, type ModelDraftHistory,
 } from "../features/stage/modelDraft";
-import { createModelDraftSyncAttempt, syncModelDraft,
+import { createModelDraftSyncAttempt, createLocalDraftWriter, syncModelDraft,
   type ModelDraftSource, type ModelDraftSyncAttempt,
 } from "../features/stage/syncModelDraft";
 
@@ -92,9 +92,10 @@ interface LocalModelSession {
   pending: { snapshot: DraftSnapshot; attempt: ModelDraftSyncAttempt; interactionEpoch: number; viewRequest: number } | null;
   busy: boolean;
   error: string | null;
+  recoverySaved?: DraftSnapshot;
 }
 
-/** Local geometry the project has not been given yet; it lives only in this page. */
+/** Local geometry not yet incorporated in a completed candidate. */
 function unsynced(session: LocalModelSession): boolean {
   return session.pending !== null || !snapshotsEquivalent(currentDraft(session.history), session.synced);
 }
@@ -251,7 +252,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     },
     [append],
   );
-  const { binding, session, changingBase, baseError, reload, refreshWorkingCopies, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
+  const { binding, session, changingBase, baseError, reload, refreshWorkingCopies, refreshWorkingDraft, recoverFromStaleBase } = useSession(pushNotice, server.capabilities,
     initialDocumentIntent ? { runId: initialDocumentIntent.modelSource.runId, sourceStageRef: initialDocumentIntent.sourceStageRef }
       : undefined, true, expectedProjectId);
   const [documentIntentStatus, setDocumentIntentStatus] = useState<"pending" | "switching" | "ready" | "done">(initialDocumentIntent ? "pending" : "done");
@@ -267,6 +268,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const workingCopies = session.status === "ready" ? session.value.workingCopies : [];
   const designHistoryEnabled = server.capabilities.includes("design-history");
   const designHistory = session.status === "ready" ? session.value.designHistory ?? null : null;
+  const workingDraft = session.status === "ready" ? session.value.workingDraft ?? null : null;
+  const autosaveEnabled = server.capabilities.includes("working-draft");
   const stageModelSource = session.status === "ready" ? session.value.stageModelSource ?? null : null;
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -721,7 +724,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // The Hub keeps this model workspace mounted while the Board is visible.
   const returnToBoard = onReturnToBoard && (documentView.open || documentSource !== null) ? leaveToBoard : undefined;
   const refreshLocalModel = useCallback(() => setLocalRevision(value => value + 1), []);
-  const ensureLocalModel = useCallback((): LocalModelSession => {
+  const ensureLocalModel = useCallback((install = true): LocalModelSession => {
     if (!draftKey || !draftSource || !draftProjection) throw new Error(t("stage.sketch.noComponent"));
     const retained = localModels.current.get(draftKey);
     if (retained) return retained;
@@ -735,9 +738,79 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     const history = createModelDraft(objects, draftProjection.levels ?? []);
     const session: LocalModelSession = { history, source: draftSource, synced: currentDraft(history),
       pending: null, busy: false, error: null };
-    localModels.current.set(draftKey, session);
+    if (install) localModels.current.set(draftKey, session);
     return session;
   }, [draftKey, draftSource?.stateDigest, draftProjection, semanticCatalog, t]);
+  const restoredDraft = useRef<string | null>(null);
+  const recoveryFailure = useRef<string | null>(null);
+  useEffect(() => {
+    const saved = workingDraft?.localDraft;
+    if (!saved || !draftKey || !draftSource || restoredDraft.current === draftKey || localModels.current.has(draftKey)) return;
+    // A saved local overlay must not prevent the exact retained base from loading.
+    // Source-free authored projects are the only drafts without a retained export.
+    if (saved.source.sourceRunId && (loadedArtifact?.runId !== saved.source.sourceRunId || modelLoading)) return;
+    if (saved.source.projectId !== draftSource.projectId || saved.source.stateDigest !== draftSource.stateDigest ||
+      saved.source.sourceRunId !== draftSource.sourceRunId || saved.source.sourceStageRef !== draftSource.sourceStageRef) return;
+    restoredDraft.current = draftKey;
+    try {
+      const local = ensureLocalModel(false);
+      const initial = local.history;
+      const replay = (commands: readonly DraftCommand[]) => commands.reduce(applyDraftCommand, initial);
+      local.history = replay(saved.commands as unknown as DraftCommand[]);
+      const retained = saved.attempt as { syncedCommands?: DraftCommand[];
+        pending?: { commands: DraftCommand[]; attempt: ModelDraftSyncAttempt } | null } | null;
+      local.synced = currentDraft(replay(retained?.syncedCommands ?? []));
+      if (retained?.pending) {
+        const attempt = { ...retained.pending.attempt };
+        delete attempt.inFlight;
+        local.pending = { snapshot: currentDraft(replay(retained.pending.commands)), attempt,
+          interactionEpoch: modelInteractionEpoch.current, viewRequest: modelLoadRequest.current };
+        if (attempt.accepted && attempt.finalProposalId) append({ kind: "candidate", proposalId: attempt.finalProposalId,
+          candidateId: attempt.accepted.candidateId, jobId: attempt.accepted.jobId, status: attempt.accepted.status });
+      }
+      local.recoverySaved = currentDraft(local.history);
+      local.error = retained?.pending ? "已恢复尚未完成同步的草稿。检查后点击同步继续。" : null;
+      localModels.current.set(draftKey, local);
+      refreshLocalModel();
+    } catch (cause) {
+      recoveryFailure.current = draftKey;
+      setHistoryError(`草稿恢复失败，原始记录已保留：${asStudioApiError(cause).detail}`);
+    }
+  }, [workingDraft?.localDraft, draftKey, draftSource?.stateDigest, loadedArtifact?.runId, modelLoading, ensureLocalModel, refreshLocalModel, append]);
+  // Serialize this workspace's recovery writes; every write still uses P036 CAS
+  // so a second window cannot silently replace an in-flight save.
+  const recoveryWriter = useRef<{ projectId: string; write: ReturnType<typeof createLocalDraftWriter> } | null>(null);
+  if (workingDraft && recoveryWriter.current?.projectId !== workingDraft.projectId) {
+    recoveryWriter.current = { projectId: workingDraft.projectId, write: createLocalDraftWriter(studio, workingDraft) };
+  }
+  const retainLocalModel = useCallback((local: LocalModelSession, clear = false) => {
+    if (!autosaveEnabled) return Promise.resolve();
+    const key = `${local.source.projectId}:${local.source.sourceRunId}:${local.source.stateDigest}:${local.source.sourceStageRef ?? ""}`;
+    if (recoveryFailure.current === key) return Promise.reject(new Error("原有草稿未能恢复，已阻止覆盖；请先解决恢复错误。"));
+    const draft = clear ? null : JSON.parse(JSON.stringify({ source: local.source,
+      commands: currentDraft(local.history).commands, attempt: { syncedCommands: local.synced.commands,
+        pending: local.pending ? { commands: local.pending.snapshot.commands,
+          attempt: { ...local.pending.attempt, inFlight: undefined } } : null } }));
+    const savedSnapshot = currentDraft(local.history);
+    const pending = (async () => {
+      const writer = recoveryWriter.current;
+      if (!writer || writer.projectId !== local.source.projectId) throw new Error("工作草稿尚未读取，无法自动保存。");
+      await writer.write(draft, clear ? local.source : undefined);
+      local.recoverySaved = savedSnapshot;
+      if (local.error?.startsWith("自动恢复保存失败：")) local.error = null;
+      refreshLocalModel();
+    })();
+    return pending;
+  }, [autosaveEnabled, studio, refreshLocalModel]);
+  useEffect(() => {
+    if (!autosaveEnabled || !localModel) return;
+    const timer = window.setTimeout(() => {
+      void retainLocalModel(localModel, !unsynced(localModel)).catch((cause) => {
+        localModel.error = `自动恢复保存失败：${asStudioApiError(cause).detail}`; refreshLocalModel();
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [autosaveEnabled, localModel, draftSnapshot, retainLocalModel, refreshLocalModel]);
   useEffect(() => {
     if (!localModel || !draftSnapshot) { viewportRef.current?.draftPreview(null); return; }
     const initial = localModel.history.snapshots[0]!.objects;
@@ -966,7 +1039,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     versionRefreshHandled.current = versionRefreshRequest;
     void loadArtifacts(true);
     void refreshWorkingCopies().catch(() => { /* The existing choices remain usable. */ });
-  }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies]);
+    void refreshWorkingDraft().catch((cause) => setHistoryError(asStudioApiError(cause).detail));
+  }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies, refreshWorkingDraft]);
 
   const openLocalFile = useCallback((file: File) => {
     finishEditTiming(activeEditTiming.current, "cancelled");
@@ -1773,6 +1847,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
 
   const changeEditingBase = useCallback(async (runId: string | null, modelSource?: ModelSourceDto, sourceStageRef?: string, branchId?: string, keepDocument = false) => {
     if (changingBase || selectingWorkingCopy || proposalBusy || candidateBusy || refiningEntryId !== null) return null;
+    if (autosaveEnabled && [...localModels.current.values()].some(unsynced)) {
+      setHistoryError("当前编辑已留在工作草稿中，请先同步模型，再切换版本。");
+      return null;
+    }
     pickRequestRef.current += 1;
     const selectedSource = modelSource ?? (loadedModelSource?.runId === runId ? loadedModelSource : null);
     const group = selectedSource ? workingCopies.find((copy) => copy.options.some((option) =>
@@ -1830,7 +1908,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       }
     }
     return next;
-  }, [artifacts, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
+  }, [artifacts, autosaveEnabled, candidateBusy, changingBase, clearComparison, loadedArtifact, loadedModelSource, loadArtifactIntoViewer, loadRunIntoViewer, modelSources, proposalBusy, refiningEntryId, reload, runSourceLabel, selectingWorkingCopy, workingCopies]);
 
   const refreshed = useRef(refreshKey);
   useEffect(() => {
@@ -2536,17 +2614,20 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     }
     try {
       const frame = await studio.frame(session.source.sourceRunId ?? undefined);
-      const accepted = await syncModelDraft(pending.snapshot, session.source, frame, pending.attempt, studio);
+      await retainLocalModel(session);
+      const accepted = await syncModelDraft(pending.snapshot, session.source, frame, pending.attempt, studio,
+        () => retainLocalModel(session));
       if (accepted) append({ kind: "candidate", proposalId: pending.attempt.finalProposalId!,
         candidateId: accepted.candidateId, jobId: accepted.jobId, status: accepted.status });
       if (!accepted) { session.synced = pending.snapshot; session.pending = null; }
+      await retainLocalModel(session, !unsynced(session));
     } catch (cause) {
       session.error = asStudioApiError(cause).detail;
     } finally {
       if (!pending.attempt.accepted) { session.busy = false; setModelSyncBusy(false); }
       refreshLocalModel();
     }
-  }, [localModel, modelSyncBusy, append, refreshLocalModel, candidateRuns.refresh]);
+  }, [localModel, modelSyncBusy, append, refreshLocalModel, candidateRuns.refresh, retainLocalModel]);
   useEffect(() => {
     let changed = false;
     for (const session of localModels.current.values()) {
@@ -2557,10 +2638,16 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       if (run?.job.status !== "ready") continue;
       const status = run.job.value.status;
       if (status !== "succeeded" && status !== "failed" && status !== "cancelled") continue;
-      if (status === "succeeded") {
-        const candidate = candidates[accepted.candidateId];
-        if (!candidate) continue;
-        session.synced = pending.snapshot;
+      const candidate = status === "succeeded" ? candidates[accepted.candidateId] : null;
+      if (status === "succeeded" && !candidate) continue;
+      if (candidate) session.synced = pending.snapshot;
+      else session.error = run.job.value.error ?? `Sync ${status}`;
+      session.pending = null; session.busy = false; changed = true;
+      const persisted = retainLocalModel(session, status === "succeeded" && !unsynced(session));
+      void persisted.then(() => refreshWorkingDraft()).catch((cause) => {
+        session.error = `自动恢复保存失败：${asStudioApiError(cause).detail}`; refreshLocalModel();
+      });
+      if (candidate) {
         // A quiet, completed batch naturally becomes the next editing base.
         // Bytes and parsing run behind the old interactive model. Any input
         // since Sync cancels adoption, including an unfinished next gesture.
@@ -2571,6 +2658,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             viewableArtifacts(candidate.artifacts)[0];
           if (model) void (async () => {
             try {
+              await persisted;
+              if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
               const nextProjection = await studio.state(model.runId);
               if (!stable() || modelLoadRequest.current !== pending.viewRequest) return;
               const shown = await loadArtifactIntoViewer(model, candidateSourceLabel(accepted.candidateId), true,
@@ -2583,14 +2672,13 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             } catch (cause) { session.error = asStudioApiError(cause).detail; refreshLocalModel(); }
           })();
         }
-      } else session.error = run.job.value.error ?? `Sync ${status}`;
-      session.pending = null; session.busy = false; changed = true;
+      }
     }
     if (changed) {
       setModelSyncBusy([...localModels.current.values()].some(session => session.busy));
       refreshLocalModel();
     }
-  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel]);
+  }, [candidateRuns.runs, candidates, draftKey, localModel, loadArtifactIntoViewer, reload, refreshLocalModel, retainLocalModel, refreshWorkingDraft]);
 
   // A different model on screen is a different set of objects. What was *picked*
   // belonged to the picture that went away, so it stops being picked, its mark
@@ -3151,6 +3239,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               interactionBlocked: modelNavigationBusy,
               onInteraction: () => { modelInteractionEpoch.current += 1; },
               sync: { dirty: !!localModel && unsynced(localModel),
+                autosave: autosaveEnabled ? localModel?.recoverySaved === draftSnapshot ? "saved" : "saving" : undefined,
                 busy: localModel?.busy ?? false, error: localModel?.error ?? null, onSync: () => void syncLocalModel() },
               pushPullTarget, pushPullReason: pickedShape?.drawnShapeReason,
               onApply: (action) => void applyDirectModelAction(action),
@@ -3216,7 +3305,18 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
               acceptedModelSources,
               currentModelSource: loadedModelSource,
               candidates: retainedCandidates,
-              busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy,
+              workingDraft,
+              onRestoreDraft: (runId) => { void changeEditingBase(runId, modelSources.find((row) => row.modelSource.runId === runId)?.modelSource); },
+              onSaveDraft: (runId, label) => {
+                if (!project) return;
+                setHistoryBusy(true); setHistoryError(null);
+                void studio.workingDraft().then((current) => studio.saveWorkingDraft({ projectId: project.projectId,
+                  runId, label: label || undefined, baseRevisionSha256: current.revisionSha256 ?? null }))
+                  .then(() => refreshWorkingDraft()).catch((cause) => setHistoryError(asStudioApiError(cause).detail))
+                  .finally(() => setHistoryBusy(false));
+              },
+              busy: historyBusy || changingBase || selectingWorkingCopy || modelLoading || proposalBusy || candidateBusy ||
+                (autosaveEnabled && (modelSyncBusy || unsavedChatDraft)),
               error: historyError,
               onInitialize: () => { if (project && loadedModelSource) void updateDesignHistory(() => studio.initializeStage({ projectId: project.projectId, modelSource: loadedModelSource, branchId: "main", label: "S0" })); },
               onStage: (stage) => { void openDesignStage(stage); },

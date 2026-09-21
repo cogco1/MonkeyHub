@@ -45,6 +45,7 @@ from .artifacts import (
     require_model_source,
 )
 from .authentication import ActorAttribution, LOCAL_ACTOR_ID, ORIGIN_STUDIO
+from .binding import retained_sources
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .candidate import describe, read_candidate_delta, replay_candidate
 from .jobs import SUCCEEDED
@@ -599,6 +600,7 @@ def _stage_from_model(
     )
 
 
+@retained_sources
 def initialize_design_stage(
     binding: ProjectBinding,
     *,
@@ -692,6 +694,7 @@ def _accepted_retry(
     return None
 
 
+@retained_sources
 def accept_design_candidate(
     binding: ProjectBinding,
     *,
@@ -861,6 +864,7 @@ def accept_design_candidate(
     return read_stage(binding, ref)
 
 
+@retained_sources
 def fork_design_branch(
     binding: ProjectBinding,
     *,

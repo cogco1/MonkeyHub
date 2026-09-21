@@ -12,7 +12,9 @@ import threading
 import tempfile
 import time
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from pathlib import PurePath
 from pathlib import PurePosixPath
@@ -32,6 +34,7 @@ from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import (
     DESIGN_STAGE,
     PROJECT_FORMAT_MIGRATION,
+    STUDIO_LOCAL_DRAFT,
     is_registered,
     require_registered,
 )
@@ -81,6 +84,10 @@ class StaleDesignBranch(ProjectRepositoryError):
     """The design branch advanced since this change was prepared."""
 
 
+class StaleWorkingDraft(ProjectRepositoryError):
+    """The working position changed since this view was read."""
+
+
 class PromotionAuthorityError(ProjectRepositoryError):
     pass
 
@@ -100,7 +107,7 @@ def _transfer_path(value: str) -> str:
         or any(ord(char) < 32 for char in part) for part in path.parts
     ):
         raise ProjectIntegrityError("TRANSFER_PATH_INVALID: unsafe project path")
-    allowed = value in ("project.json", "HEAD", "design/branches.json",
+    allowed = value in ("project.json", "HEAD", "design/branches.json", "design/working.json",
                         "input/runner/state-record.json", "input/runner/seats.json",
                         "input/runner/program-sheet.json")
     if not allowed and path.parts[0] not in (
@@ -1597,7 +1604,7 @@ class FilesystemProjectRepository:
             "run_id": run.run_id,
             "base": run.base.to_dict(),
         }
-        with self._lock:
+        with self.working_draft_guard():
             _write_immutable(run_layout.manifest, _json_bytes(payload))
             for directory in (
                 run_layout.records,
@@ -1752,7 +1759,8 @@ class FilesystemProjectRepository:
         data = _json_bytes(payload)
         digest = _sha256(data)
         path = directory / record_file_name(record_kind, digest)
-        with self._lock:
+        with self.working_draft_guard():
+            self.load_run(run.run_id)
             _write_immutable(path, data)
         return self._record_ref(path, digest, "application/json")
 
@@ -1868,6 +1876,200 @@ class FilesystemProjectRepository:
             self._require_design_stage(ref)
             result[field] = ref.to_dict()
         return result
+
+    @contextmanager
+    def working_draft_guard(self):
+        """Keep exact source reads and retaining their references atomic with GC.
+
+        HEAD already exists for every project. Do not create a design lock merely
+        to validate a first request that may be refused without a project write.
+        Nested position writes acquire the design lock after this HEAD lock.
+        """
+        with self._lock, self._head_lock:
+            yield
+
+    def read_working_draft(self) -> tuple[dict[str, Any], str | None]:
+        """Read the project's working position; reading an old project writes nothing."""
+        path = self.layout.working_draft
+        if not path.exists():
+            return {"schema": "ProjectWorkingDraft@1", "projectId": self.layout.project_id,
+                    "current": None, "runs": {}, "active": {}, "localDraftRef": None}, None
+        value = _read_shared_json(path)
+        self._require_working_draft(value)
+        return value, _sha256(_json_bytes(value))
+
+    def _require_working_draft(self, value: Mapping[str, Any]) -> None:
+        if (not isinstance(value, Mapping) or set(value) != {
+                "schema", "projectId", "current", "runs", "active", "localDraftRef"}
+                or value.get("schema") != "ProjectWorkingDraft@1"
+                or value.get("projectId") != self.layout.project_id
+                or not isinstance(value.get("runs"), dict) or not isinstance(value.get("active"), dict)):
+            raise ProjectIntegrityError("working draft metadata is invalid")
+        if value["current"] is not None and (not isinstance(value["current"], str) or value["current"] not in value["runs"]):
+            raise ProjectIntegrityError("working draft current position is not retained")
+        for run_id, row in value["runs"].items():
+            require_identifier(run_id, "working run_id")
+            if (not isinstance(row, dict) or set(row) != {"updatedAt", "sourceStageRef", "branchId", "label", "automatic"}
+                    or type(row["automatic"]) is not bool
+                    or any(row[key] is not None and not isinstance(row[key], str)
+                           for key in ("sourceStageRef", "branchId", "label"))):
+                raise ProjectIntegrityError("working run retention metadata is invalid")
+            self._working_time(row["updatedAt"])
+        for run_id, sources in value["active"].items():
+            require_identifier(run_id, "active run_id")
+            if not isinstance(sources, list):
+                raise ProjectIntegrityError("active sources must be retained run ids")
+            for source in sources:
+                require_identifier(source, "active source run_id")
+        if value["localDraftRef"] is not None:
+            ref = ProjectRecordRef.from_dict(value["localDraftRef"])
+            if ref.project_id != self.layout.project_id or ref.record_kind != STUDIO_LOCAL_DRAFT:
+                raise ProjectIntegrityError("working recovery must name this project's local draft")
+
+    @staticmethod
+    def _working_time(value: str) -> datetime:
+        try:
+            result = datetime.fromisoformat(value)
+            if result.tzinfo is None:
+                raise ValueError("timestamp must include its timezone")
+            return result
+        except (TypeError, ValueError) as exc:
+            raise ProjectIntegrityError("working draft timestamp is invalid") from exc
+
+    def compare_and_swap_working_draft(
+        self, *, expected_revision: str | None, value: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], str]:
+        with self._lock, self._design_lock:
+            _, actual = self.read_working_draft()
+            if actual != expected_revision:
+                raise StaleWorkingDraft("the working draft changed; read it before updating this position")
+            self._require_working_draft(value)
+            data = _json_bytes(value)
+            _replace_atomic(self.layout.working_draft, data)
+            return _parse_json_document(data, "working draft"), _sha256(data)
+
+    def protect_working_run(self, run_id: str, source_run_id: str | None, *, dependencies: tuple[str, ...] = ()) -> None:
+        """Pin a candidate's exact input before it is read, without serializing workers."""
+        require_identifier(run_id, "active run_id")
+        with self._lock, self._design_lock:
+            sources = sorted(set(dependencies) | ({source_run_id} if source_run_id is not None else set()))
+            for source in sources:
+                self.load_run(source)
+            value, revision = self.read_working_draft()
+            if run_id in value["active"]:
+                raise ProjectRepositoryError("this candidate already has an active or interrupted execution")
+            value["active"][run_id] = sources
+            self.compare_and_swap_working_draft(expected_revision=revision, value=value)
+
+    def release_working_run(self, run_id: str) -> None:
+        with self._lock, self._design_lock:
+            value, revision = self.read_working_draft()
+            if run_id in value["active"]:
+                del value["active"][run_id]
+                self.compare_and_swap_working_draft(expected_revision=revision, value=value)
+
+    def prune_working_draft(self, *, now: str, protected_run_ids: tuple[str, ...] = ()) -> tuple[str, ...]:
+        """Remove only expired automatic runs unreachable from every retained source.
+
+        Old/unclassified runs, shared objects and input files are never collection
+        candidates. The graph also follows bare run ids used by Board pages,
+        WorkingCopy options and combined candidates, alongside exact project URIs.
+        """
+        cutoff = self._working_time(now) - timedelta(hours=24)
+        with self._lock, self._head_lock, self._design_lock:
+            value, revision = self.read_working_draft()
+            eligible = {run_id for run_id, row in value["runs"].items()
+                        if row["automatic"] and row["label"] is None and self._working_time(row["updatedAt"]) < cutoff}
+            runs = {path.parent.name for path in self.layout.runs.glob("*/run.json")}
+            roots = (runs - eligible) | set(protected_run_ids) | set(value["active"])
+            roots.update(source for sources in value["active"].values() for source in sources)
+            if value["current"] is not None:
+                roots.add(value["current"])
+
+            def references(item: Any) -> set[str]:
+                if isinstance(item, Mapping):
+                    return set().union(*(references(child) for child in item.values())) if item else set()
+                if isinstance(item, (list, tuple)):
+                    return set().union(*(references(child) for child in item)) if item else set()
+                if isinstance(item, str):
+                    if item in runs:
+                        return {item}
+                    path = item
+                    if item.startswith("project://"):
+                        uri = urlsplit(item)
+                        if uri.netloc != self.layout.project_id:
+                            return set()
+                        path = unquote(uri.path.lstrip("/"))
+                    parts = PurePosixPath(path.replace("\\", "/")).parts
+                    if len(parts) >= 2 and parts[0] == "runs" and parts[1] in runs:
+                        return {parts[1]}
+                return set()
+
+            def read(path: Path) -> dict:
+                return _parse_json_document(_read_bytes(path), path.name)
+
+            # The current local draft survives even when older than the recovery
+            # window. Other frozen command snapshots protect inputs for 24 hours.
+            current_local = value["localDraftRef"]
+            current_path = None if current_local is None else current_local["relative_path"]
+            expired_recovery: list[Path] = []
+            for path in self.layout.runs.glob(f"*/recovery/{STUDIO_LOCAL_DRAFT}-*.json"):
+                payload = read(path)
+                if payload.get("schema") != "StudioLocalDraft@1" or payload.get("projectId") != self.layout.project_id:
+                    raise ProjectIntegrityError("local recovery has an inconsistent project binding")
+                if path.relative_to(self.layout.root).as_posix() == current_path or self._working_time(payload["updatedAt"]) >= cutoff:
+                    roots.update(references(payload))
+                else:
+                    expired_recovery.append(path)
+            if not eligible and not expired_recovery:
+                return ()
+            for base in (self.layout.inputs, self.layout.events, self.layout.canonical, self.layout.exports):
+                if base.exists():
+                    for path in base.rglob("*.json"):
+                        roots.update(references(read(path)))
+            if self.layout.design_branches.exists():
+                roots.update(references(read(self.layout.design_branches)))
+            graph: dict[str, set[str]] = {}
+            for run_id in runs:
+                deps = references(read(self.layout.run(run_id).manifest))
+                for area in ("records", "reviews", "candidates", "branches"):
+                    for path in (self.layout.run(run_id).root / area).rglob("*.json"):
+                        payload = read(path)
+                        # Original source material, including documents registered
+                        # inside an automatic model run, is a permanent root.
+                        if (payload.get("schema") in {"StudioSourceDocument@1", "StudioBoardScene@1", "StudioWorkingCopy@1"}
+                                or (payload.get("schema") == "StudioModelAsset@1" and payload.get("origin") != "generated")):
+                            roots.add(run_id)
+                        deps.update(references(payload))
+                graph[run_id] = deps
+            pending = list(roots)
+            reachable = set()
+            while pending:
+                run_id = pending.pop()
+                if run_id not in reachable:
+                    reachable.add(run_id)
+                    pending.extend(graph.get(run_id, ()))
+            removed = tuple(sorted(eligible - reachable))
+            paths = []
+            for run_id in removed:
+                path = self.layout.run(run_id).root
+                if path.exists():
+                    if path.resolve().parent != self.layout.runs.resolve() or path.is_symlink():
+                        raise ProjectIntegrityError("automatic cleanup target escaped the project runs directory")
+                    paths.append(path)
+                value["runs"].pop(run_id, None)
+            if removed:
+                # Publish the retirement before removal. A crash can leave extra
+                # unclassified files, but never a current pointer to deleted data.
+                self.compare_and_swap_working_draft(expected_revision=revision, value=value)
+                for path in paths:
+                    shutil.rmtree(path)
+            for path in expired_recovery:
+                if path.exists():
+                    if not path.resolve().is_relative_to(self.layout.runs.resolve()) or path.is_symlink():
+                        raise ProjectIntegrityError("recovery cleanup target escaped the project")
+                    path.unlink()
+            return removed
 
     def read_design_branches(self) -> dict[str, dict[str, Any]]:
         """Read verified design references, including projects predating them."""
@@ -2247,7 +2449,8 @@ class FilesystemProjectRepository:
 
         This is a transport value, not a new project format. All identities and
         file bytes are the existing P036 ones. Only receipt-named workspace
-        artifacts travel; speculative scripts, logs and recovery files do not.
+        artifacts travel; speculative scripts and runtime logs do not. Full
+        archives also retain the current position and local command recovery.
         Archives may include all retained runs, including project documents,
         boards and unaccepted candidates; ordinary synchronization stays scoped.
         """
@@ -2405,6 +2608,11 @@ class FilesystemProjectRepository:
                     if (self.layout.root / path).is_file():
                         add(path)
                 if include_all_runs:
+                    if self.layout.working_draft.exists():
+                        add("design/working.json")
+                    for local in self.layout.runs.glob(f"*/recovery/{STUDIO_LOCAL_DRAFT}-*.json"):
+                        _, digest = parse_record_file_name(local.name)
+                        add(local.relative_to(self.layout.root).as_posix(), digest)
                     for manifest in sorted(self.layout.runs.glob("*/run.json")):
                         add_run(manifest.parent.name)
             else:
@@ -2460,14 +2668,15 @@ class FilesystemProjectRepository:
         if not target.is_relative_to(self.layout.root):
             raise ProjectIntegrityError("TRANSFER_PATH_INVALID: target escapes project root")
         parts = PurePosixPath(path).parts
-        metadata = path in ("project.json", "HEAD", "design/branches.json",
+        metadata = path in ("project.json", "HEAD", "design/branches.json", "design/working.json",
                             "input/runner/state-record.json", "input/runner/seats.json",
                             "input/runner/program-sheet.json")
         run_id = parts[1] if parts[0] == "runs" and len(parts) >= 3 else None
         run_manifest = run_id is not None and len(parts) == 3 and parts[2] == "run.json"
         record_area = (parts[0] in ("canonical", "events") and len(parts) == 2) or (
             run_id is not None and (
-                (len(parts) == 4 and parts[2] in ("records", "reviews", "candidates"))
+                (len(parts) == 4 and (parts[2] in ("records", "reviews", "candidates")
+                                     or (parts[2] == "recovery" and parts[-1].startswith(f"{STUDIO_LOCAL_DRAFT}-"))))
                 or (len(parts) == 6 and parts[2] == "branches" and parts[4] == "records")
             )
         )
@@ -2604,7 +2813,7 @@ class FilesystemProjectRepository:
                 parts[0] == "runs" and len(parts) >= 4 and parts[2] == "workspaces"
             )
             if path.endswith(".json") and not workspace and path not in (
-                "project.json", "design/branches.json", "input/runner/state-record.json",
+                "project.json", "design/branches.json", "design/working.json", "input/runner/state-record.json",
                 "input/runner/seats.json", "input/runner/program-sheet.json",
             ) and not (parts[0] == "runs" and len(parts) == 3 and parts[2] == "run.json"):
                 try:
@@ -3061,7 +3270,7 @@ class FilesystemProjectRepository:
     def _install_transfer_files(self, files: Mapping[str, bytes]) -> None:
         writes: list[tuple[Path, bytes]] = []
         for path, data in files.items():
-            if path == "design/branches.json" or path.startswith("input/"):
+            if path in ("design/branches.json", "design/working.json") or path.startswith("input/"):
                 continue
             target = (self.layout.root / path).resolve()
             if not target.is_relative_to(self.layout.root):
@@ -3177,6 +3386,24 @@ class FilesystemProjectRepository:
                     reachable.add(stage_ref.relative_path)
                     parent = stage.get("parent_stage")
                     stage_ref = None if parent is None else ProjectRecordRef.from_dict(parent, "parent_stage")
+        working, working_revision = self.read_working_draft()
+        if working_revision is not None:
+            reachable.add("design/working.json")
+            for run_id in working["runs"]:
+                self.load_run(run_id)
+                reachable.add(f"runs/{run_id}/run.json")
+            if working["localDraftRef"] is not None:
+                ref = ProjectRecordRef.from_dict(working["localDraftRef"])
+                local = self.load_json(ref)
+                if local.get("schema") != "StudioLocalDraft@1" or local.get("projectId") != self.layout.project_id:
+                    raise ProjectIntegrityError("working recovery binding is invalid")
+                self._working_time(local["updatedAt"])
+                source = local["draft"]["source"]
+                if source.get("projectId") != self.layout.project_id:
+                    raise ProjectIntegrityError("working recovery source belongs to another project")
+                if source.get("sourceRunId") is not None:
+                    self.load_run(source["sourceRunId"])
+                reachable.add(ref.relative_path)
         retained = {
             path.relative_to(self.layout.root).as_posix()
             for base in (self.layout.events, self.layout.canonical)
@@ -3503,7 +3730,7 @@ def _retained_category(path: str) -> tuple[str, str, bool | None]:
 
     if path in ("project.json", "HEAD"):
         return "envelope", path, None
-    if path == "design/branches.json":
+    if path in ("design/branches.json", "design/working.json"):
         return "design", path, None
     if path.startswith("input/"):
         return "authored_input", path, None

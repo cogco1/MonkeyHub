@@ -30,6 +30,7 @@ from .artifacts import (
     ModelSource, SourceDocument, _document_pages, _document_source_lock,
     document_bytes, list_artifacts, list_documents, require_complete_model, require_model_source, save_document,
 )
+from .binding import retained_sources
 from .binding import ProjectBinding
 from .monitoring import StudioMonitor
 from .projection import project_state
@@ -139,6 +140,7 @@ def model_view(binding: ProjectBinding, *, model_source: ModelSource, view: str)
     return projected.png, width, height
 
 
+@retained_sources
 def generate_elevation(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     view: str, drawing_id: str | None = None, hidden_lines: bool = False, scale_denominator: int = 100,
@@ -271,6 +273,7 @@ def _sheet_fonts() -> dict[str, Path]:
     raise StudioError(503, "DRAWING_FONT_UNAVAILABLE", "Install Arial, DejaVu Sans or Liberation Sans regular and bold TTF fonts to render this sheet.")
 
 
+@retained_sources
 def generate_sheet(
     binding: ProjectBinding, *, source_stage_ref: str | None, model_source: ModelSource | None,
     style_id: str, scale_denominator: int = 20, hidden_object_ids: tuple[str, ...] = (),

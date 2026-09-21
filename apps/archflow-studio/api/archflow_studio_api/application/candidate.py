@@ -185,7 +185,7 @@ def _retain_composed_candidate(
         _, donor = artifact_bytes(binding, donors[0].sha256, run_id=run_id)
         composed = patch_composed_three_dm(composed, prior_program=prior_program, program=program, replacement_3dm=donor)
     projection = project_state(binding, run_id)
-    register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode())
+    register_model_asset(binding, run_id, projection.state_digest, f"{run_id}-composed.3dm", base64.b64encode(composed).decode(), generated=True)
 
 
 def execute_option_candidate(
@@ -377,8 +377,31 @@ def run_operator(
 ) -> Mapping[str, Any]:
     """Replay a typed operator against its selected or default exact base and run it."""
 
+    from .working_draft import record_candidate_draft
+
+    with binding.repository.working_draft_guard():
+        projection = project_state(binding, run_id=source_run_id, source_stage_ref=source_stage_ref)
+        pinned_source = projection.run.run_id if projection.run.run_id in binding.run_ids() else None
+        binding.repository.protect_working_run(run_id, pinned_source, dependencies=combined_candidate_ids)
+    try:
+        receipt = _run_operator(binding, settings, operator, run_id, source_run_id=source_run_id,
+            retain=retain, model_source=model_source, source_stage_ref=source_stage_ref,
+            combined_candidate_ids=combined_candidate_ids, monitor=monitor, projection=projection)
+        delta = read_candidate_delta(binding, run_id)
+        record_candidate_draft(binding, run_id, delta["source_run_ref"]["run_id"])
+        return receipt
+    finally:
+        binding.repository.release_working_run(run_id)
+
+
+def _run_operator(
+    binding: ProjectBinding, settings: StudioSettings, operator: StateRecordOperator, run_id: str,
+    *, source_run_id: str | None = None, retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
+    model_source: ModelSource | None = None, source_stage_ref: ProjectRecordRef | None = None,
+    combined_candidate_ids: tuple[str, ...] = (), monitor: StudioMonitor | None = None, projection: StateProjection,
+) -> Mapping[str, Any]:
+
     seat_pack = load_seat_pack(binding.repository)
-    projection = project_state(binding, run_id=source_run_id, source_stage_ref=source_stage_ref)
     require_actionable(projection)
     if model_source is None and projection.source_stage_ref is not None:
         stage = binding.design_stage(projection.source_stage_ref)

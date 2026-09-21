@@ -11,6 +11,7 @@ no client has to guess which run a number belongs to.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
@@ -856,3 +857,12 @@ def _is_complete(receipt: Mapping[str, Any]) -> bool:
     if receipt.get("schema") == RUNNER_RECEIPT_V3:
         return bool(receipt.get("seat_execution_complete"))
     return bool(receipt.get("accepted"))
+
+
+def retained_sources(operation):
+    """Keep exact-source validation and its retained write atomic with cleanup."""
+    @wraps(operation)
+    def guarded(binding: ProjectBinding, *args, **kwargs):
+        with binding.repository.working_draft_guard():
+            return operation(binding, *args, **kwargs)
+    return guarded

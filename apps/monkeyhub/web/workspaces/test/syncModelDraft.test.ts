@@ -4,7 +4,7 @@ import test from "node:test";
 import { createServer } from "vite";
 import type { CandidateAcceptedDto, FrameDto, ProposalDto, RuntimeDto } from "../src/api/generated/types.gen.ts";
 import type { DraftCommand, DraftSnapshot } from "../src/features/stage/modelDraft.ts";
-import { createModelDraftSyncAttempt, syncModelDraft,
+import { createModelDraftSyncAttempt, createLocalDraftWriter, syncModelDraft,
   type ModelDraftSource, type ModelDraftSyncApi } from "../src/features/stage/syncModelDraft.ts";
 
 const source: ModelDraftSource = { projectId: "project", stateDigest: "original-base", sourceRunId: "base-run", sourceStageRef: "stage:one" };
@@ -34,6 +34,45 @@ function fixture() {
   };
   return { api, calls };
 }
+
+test("autosave retains its final proposal and request before dispatch; failed storage cannot submit", async () => {
+  const { api, calls } = fixture(), attempt = createModelDraftSyncAttempt(requestId);
+  const frozen = snapshot(draw());
+  const retained: string[] = [];
+  await assert.rejects(syncModelDraft(frozen, source, frame, attempt, api, async () => {
+    assert.equal(calls.filter(call => call.kind === "candidate").length, 0);
+    retained.push(attempt.finalProposalId!);
+    throw new Error("disk unavailable");
+  }), /disk unavailable/);
+  assert.equal(calls.filter(call => call.kind === "candidate").length, 0);
+  const restored = JSON.parse(JSON.stringify(attempt));
+  delete restored.inFlight;
+  await syncModelDraft(frozen, source, frame, restored, api, async () => { retained.push(restored.finalProposalId!); });
+  assert.deepEqual(retained, ["p1", "p1"]);
+  assert.equal(calls.filter(call => call.kind === "sketch").length, 1);
+  assert.deepEqual(calls.at(-1)?.body, { id: "p1", trace: undefined, key: requestId });
+});
+
+test("two windows cannot overwrite or clear each other's local draft even after a fresh index read", async () => {
+  let state: any = { projectId: "project", revisionSha256: "initial", localDraft: null };
+  let writes = 0;
+  const api = { workingDraft: async () => structuredClone(state), retainLocalDraft: async (body: any) => {
+    assert.equal(body.baseRevisionSha256, state.revisionSha256);
+    state = { ...state, revisionSha256: `r${++writes}`, localDraft: body.draft && { ...body.draft, updatedAt: `t${writes}` } };
+    return structuredClone(state);
+  } };
+  const first = createLocalDraftWriter(api, state), second = createLocalDraftWriter(api, state);
+  const draft = { source, commands: [{ kind: "delete", elementId: "a" }] };
+  await first(draft);
+  await assert.rejects(second(draft), /另一窗口/);
+  await assert.rejects(second(null, source), /另一窗口/);
+  assert.equal(writes, 1);
+  // An index-only candidate update does not change this editor's local witness.
+  state.revisionSha256 = "candidate-completed";
+  await first(null, source);
+  assert.equal(state.localDraft, null);
+  assert.equal(writes, 2);
+});
 
 test("mixed actions preserve their exact base and stable copy dependency; only the last proposal runs", async () => {
   const { api, calls } = fixture(), attempt = createModelDraftSyncAttempt(requestId);

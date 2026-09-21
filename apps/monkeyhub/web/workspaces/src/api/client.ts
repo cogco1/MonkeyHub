@@ -22,6 +22,10 @@ import {
   type FieldsResult,
 } from "./error";
 import {
+  readCurrentWorkingDraftApiWorkingDraftGet,
+  selectCurrentWorkingDraftApiWorkingDraftPut,
+  saveCurrentWorkingDraftApiWorkingDraftSavePost,
+  retainLocalWorkingDraftApiWorkingDraftLocalPut,
   readBoardApiBoardGet,
   updateBoardApiBoardPut,
   readCommittedDesignHistoryApiDesignHistoryGet,
@@ -79,6 +83,7 @@ import {
   writeSavedModelAnnotationsApiModelAnnotationsPut,
 } from "./generated";
 import type {
+  WorkingDraftDto, WorkingDraftSelectionDto, WorkingDraftSaveDto, LocalDraftRequestDto,
   BoardDto, BoardExportRequestDto, BoardRequestDto,
   DesignHistoryDto, DesignStageDto, DesignBranchDto,
   ElevationRequestDto, CombineCandidatesRequestDto,
@@ -171,6 +176,18 @@ function base64Of(buffer: ArrayBuffer): string {
 // Workspace startup reads `/api/project` and `/api/state`; runtime liveness
 // belongs to the Hub that started it.
 export const createStudioClient = (connection: ServerConnection) => ({
+  workingDraft(): Promise<WorkingDraftDto> {
+    return call("GET /api/working-draft", readCurrentWorkingDraftApiWorkingDraftGet({ client: connection.client }));
+  },
+  selectWorkingDraft(body: WorkingDraftSelectionDto): Promise<WorkingDraftDto> {
+    return call("PUT /api/working-draft", selectCurrentWorkingDraftApiWorkingDraftPut({ client: connection.client, body }));
+  },
+  saveWorkingDraft(body: WorkingDraftSaveDto): Promise<WorkingDraftDto> {
+    return call("POST /api/working-draft/save", saveCurrentWorkingDraftApiWorkingDraftSavePost({ client: connection.client, body }));
+  },
+  retainLocalDraft(body: LocalDraftRequestDto): Promise<WorkingDraftDto> {
+    return call("PUT /api/working-draft/local", retainLocalWorkingDraftApiWorkingDraftLocalPut({ client: connection.client, body }));
+  },
   studies(): Promise<StudyViewDto[]> {
     return call("GET /api/studies", discoverStudiesApiStudiesGet({ client: connection.client }));
   },

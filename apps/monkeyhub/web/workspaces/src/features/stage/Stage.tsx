@@ -308,7 +308,7 @@ export function Stage({
    */
   model?: {
     onInteraction?(): void;
-    sync?: { dirty: boolean; busy: boolean; error: string | null; onSync(): void };
+    sync?: { dirty: boolean; busy: boolean; error: string | null; autosave?: "saved" | "saving"; onSync(): void };
     onDelete(): void;
     canDelete: boolean;
     deleting: boolean;
@@ -1138,7 +1138,7 @@ export function Stage({
   const loadedOptionLabel = workingCopies.flatMap((copy) => copy.options)
     .find((option) => option.modelSource.runId === loadedRunId && loadedShas.includes(option.modelSource.assetSha256))?.label;
   const acceptedStage = designHistory?.history?.stages.find((stage) => stage.modelSource.runId === loadedRunId && loadedShas.includes(stage.modelSource.assetSha256));
-  const contextLabel = designHistory ? acceptedStage?.label ?? (designHistory.candidates.some((candidate) => candidate.modelSource.runId === loadedRunId)
+  const contextLabel = designHistory?.workingDraft?.current?.runId === loadedRunId ? "当前工作草稿" : designHistory ? acceptedStage?.label ?? (designHistory.candidates.some((candidate) => candidate.modelSource.runId === loadedRunId)
     ? `${designHistory.history?.stages.find((stage) => stage.stageRef === designHistory.currentStageRef)?.label ?? "历史 Stage"} · 候选未提交` : "尚未确认 Stage") : loadedOptionLabel;
   const sessionStatus = <>
     {editingBaseRunId !== null && (
@@ -1709,7 +1709,8 @@ export function Stage({
                 onClick={model.sync.onSync} />
               {(model.sync.dirty || model.sync.busy || model.sync.error) && <span className="model-tools__sync-status"
                 role={model.sync.error ? "alert" : "status"}>
-                {model.sync.error ?? t(model.sync.busy ? "stage.sync.busy" : "stage.sync.dirty")}
+                {model.sync.error ?? (model.sync.busy ? t("stage.sync.busy") : model.sync.autosave
+                  ? t(model.sync.autosave === "saved" ? "stage.sync.autosaved" : "stage.sync.autosaving") : t("stage.sync.dirty"))}
               </span>}
             </div>}
           </div>

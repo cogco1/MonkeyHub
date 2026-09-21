@@ -78,6 +78,10 @@ To try uncommitted work, build both web apps and start `launch-hub.ps1` with an 
 
 The default runtime root is LOCALAPPDATA/MonkeyHub; --runtime-root selects another absolute nonproject directory.
 
+Completed local modeling gestures automatically update one project working draft. Reopening restores the exact source and local preview; editing alone does not create a candidate. **Sync** submits one frozen batch through the existing candidate workflow. The version panel shows the current draft, explicitly saved milestones and confirmed Stages, with automatic recovery points grouped under **Last 24 hours**. Saving a milestone does not accept a Stage or issue the project.
+
+P036 retains the working position and local recovery inside the project. Hub periodically asks it to remove expired automatic data only when no retained source depends on it. Current drafts, named saves, Stages, issued history, source documents, Board references and unfinished work remain protected; old unclassified runs are retained. Consequently a model's required ancestors may remain on disk longer than 24 hours. Concurrent or failed saves report an error and preserve the previous recovery record.
+
 | Content | Owner and location |
 | --- | --- |
 | Language, theme, font scale, model defaults, and the default chat connection and model | Existing Studio settings owner; APPDATA/MonkeyArch/settings.json |

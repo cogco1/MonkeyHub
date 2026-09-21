@@ -103,6 +103,7 @@ NO_VERSION_IDENTITY = {
     "StudioDocumentAnnotations@1": "annotations on a document; no base",
     "StudioDocumentComment@1": "a comment; no base",
     "StudioDocumentModelSource@1": "links a document to a model asset",
+    "StudioLocalDraft@1": "local commands bound to a state content digest and retained source refs; no canonical version",
     "StudioModelAnnotations@1": "annotations on a model; no base",
     "StudioModelAsset@1": "an asset by digest; no base",
     "StudioSourceDocument@1": "an uploaded document by digest; no base",
