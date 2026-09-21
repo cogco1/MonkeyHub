@@ -425,7 +425,34 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": []
+      "lanes": [
+        {
+          "id": "headless-delivery",
+          "status": "review",
+          "issue": "GH-230",
+          "branch": "codex/230-view-sync",
+          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-230-headless-delivery-refresh",
+          "base_ref": "db7aba968163319f0d0631595f228fe67bcbad4b",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": "Focused browser regressions passed; PR and installed desktop verification in progress.",
+          "modules": [
+            "hub.shell",
+            "studio.board",
+            "studio.artifacts"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/README.md",
+            "apps/monkeyhub/web/src/ChatShell.tsx",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs",
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+            "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
+            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+          ],
+          "depends_on": []
+        }
+      ]
     },
     {
       "id": "P105",
