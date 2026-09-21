@@ -425,7 +425,26 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": []
+      "lanes": [
+        {
+          "id": "chat-checkbox-alignment",
+          "status": "active",
+          "issue": "User-reported project-context checkbox and label alignment",
+          "branch": "codex/chat-checkbox-alignment",
+          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-chat-checkbox-alignment",
+          "base_ref": "6de7b4432b1c5b7ffe23abac1b08c44c7914a9e3",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/ChatShell.css"
+          ],
+          "depends_on": []
+        }
+      ]
     },
     {
       "id": "P105",
