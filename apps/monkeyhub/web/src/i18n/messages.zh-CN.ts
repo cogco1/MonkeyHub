@@ -855,6 +855,8 @@ export const chatCopy = {
     empty: "开始项目对话", emptyHint: "描述你想做的事。需要看模型或图纸时，在右侧打开工具。", noProject: "添加一个项目，开始对话",
     placeholder: "想在这个项目里做些什么？", send: "发送", stop: "停止", thinking: "正在处理", interrupted: "已中断", failed: "未完成",
     attach: "添加附件", attachments: "附件", removeAttachment: "移除附件", dropFiles: "松开添加附件",
+    previewImage: "放大图片", download: "下载", imageLoading: "正在加载图片…", imageFailed: "图片加载失败，仍可下载文件。", openDocument: "打开文档",
+    externalChat: "外部对话", externalNotice: "已连接 agent 的回复和进度会在这里显示。请回到原应用继续对话。",
     attachmentCount: "每条消息最多添加 8 个附件。", attachmentSize: "每个附件不能超过 20 MiB。", attachmentTotal: "附件合计不能超过 40 MiB。", attachmentRead: "无法读取附件，请重新选择。",
     working: "正在连接项目…", tools: "项目工具", hideTools: "收起工具", model: "建模", diagram: "图纸", board: "画板", fab: "制作", monitor: "用量",
     refresh: "刷新页面", browser: "项目浏览器", modelName: "模型（留空使用 CLI 默认值）", defaultModel: "CLI 默认模型", provider: "执行连接",

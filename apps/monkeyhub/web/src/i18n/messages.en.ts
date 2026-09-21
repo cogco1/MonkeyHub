@@ -899,6 +899,8 @@ export const chatCopy = {
     empty: "Start a project conversation", emptyHint: "Describe what you want to do. Open project tools on the right when you need them.", noProject: "Add a project to start a conversation",
     placeholder: "What would you like to do in this project?", send: "Send", stop: "Stop", thinking: "Working", interrupted: "Interrupted", failed: "Incomplete",
     attach: "Add attachments", attachments: "Attachments", removeAttachment: "Remove attachment", dropFiles: "Drop to attach files",
+    previewImage: "Enlarge image", download: "Download", imageLoading: "Loading image…", imageFailed: "This image could not be loaded. You can still download the file.", openDocument: "Open document",
+    externalChat: "External conversation", externalNotice: "Replies and progress from your connected agent appear here. Continue the conversation in the source application.",
     attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
     working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", model: "Modeling", diagram: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
     refresh: "Reload page", browser: "Project browser", modelName: "Model (leave empty for CLI default)", defaultModel: "CLI default model", provider: "Connection",

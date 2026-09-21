@@ -6220,7 +6220,8 @@
         "Project archive export/restore routes over project.archive: the Hub normalizes the locations a request named and states the summary or refusal, choosing no path and writing no byte of its own.",
         "Computer-use HTTP routes and MCP tool names over monkeycontrol: the policy file that enables desktop automation on this machine, the one runtime composed from it, and the refusal statuses its routes answer with",
         "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
-        "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write."
+        "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write.",
+        "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6235,7 +6236,8 @@
         "Explicit local model/output paths, preparation options, or a sliced file and request-local printer access code",
         "An existing complete project folder, chosen installed CLI/model and user chat message with optional base64 file attachments (8 files, 20 MiB each, 40 MiB total)",
         "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext",
-        "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext"
+        "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext",
+        "ChatPresentationBindRequest and ChatPresentationRequest: explicit project/source session, turn/message UUIDs, revisioned full snapshots, attachment bytes and exact document/page references"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
@@ -6244,7 +6246,8 @@
         "The independent Fab CLI result; geometry files stay in the caller-selected output directory",
         "Project-bound chat transcripts, session-scoped attachment downloads and continuation of the same native CLI session under the explicit Hub runtime root",
         "Typed project/session metadata for the owned Monitor Codex source connection",
-        "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures and recovery observations only, with no request bodies or canonical results"
+        "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures and recovery observations only, with no request bodies or canonical results",
+        "External conversation deep link and process-local presentation capability; retained final results/media, transient progress and exact project document readback"
       ],
       "public_api": [
         "create_app",
@@ -6304,7 +6307,11 @@
         "apps/shared-web/src/base.css: appearance tokens and base controls",
         "ProjectRuntimeProvider / useStudio / useConnection: project-bound client and protocol identity",
         "ProjectWorkspace: Arch/Board navigation, exact Board page visit and candidate preview without editing-base change",
-        "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request"
+        "studio_request POST /api/board/export: one registered clean-source page as a native MCP PNG image; studio_schema exposes the existing export request",
+        "POST /api/chat/presentation/bind",
+        "POST /api/chat/sessions/{id}/presentation",
+        "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
+        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6330,7 +6337,8 @@
         "Opening a candidate only changes the viewed run; continuing it remains explicit. A hidden mounted workspace does not consume another workspace keyboard input.",
         "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory",
         "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained.",
-        "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff"
+        "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff",
+        "External presentation cannot launch a provider or write project state; mutations require loopback plus the exact source/project capability, images use bounded session attachments or verified retained document references, and progress is never saved or replayed as model context."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6385,7 +6393,9 @@
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
         "apps/monkeyhub/web/workspaces/src/api/ProjectRuntimeContext.tsx",
         "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-        "apps/monkeyhub/web/workspaces/scripts/dump-openapi.py"
+        "apps/monkeyhub/web/workspaces/scripts/dump-openapi.py",
+        "apps/monkeyhub/web/src/ChatMessageContent.tsx",
+        "apps/monkeyhub/web/src/ChatMessageContent.css"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -6410,7 +6420,8 @@
         "apps/monkeyhub/web/workspaces/test/preferences.test.ts",
         "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
-        "tests/monkeymonitor/test_stage_handoff_benchmark.py"
+        "tests/monkeymonitor/test_stage_handoff_benchmark.py",
+        "apps/monkeyhub/api/tests/test_chat_presentation.py"
       ],
       "depends_on": [
         "project.repository",
