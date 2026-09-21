@@ -10,8 +10,10 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from archflow.project.record_kinds import STATE_RECORD
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import PROJECT_STAGE_WORKFLOW, STATE_RECORD
 from archflow.project.refs import record_ref_from_uri
+from archflow.state.stage_workflow import DesignPhase
 
 from archflow_studio_api.application.binding import ProjectBinding
 from archflow_studio_api.main import create_app
@@ -23,6 +25,7 @@ from .support import (
     PROJECT_ID,
     REFERENCE_RUN_ID,
     add_harness_run,
+    freeze_workflow,
     make_empty_project,
     make_project,
 )
@@ -146,6 +149,37 @@ class BoundProjectTests(unittest.TestCase):
         with self.assertRaises(StudioError) as broken:
             binding.exact_state_record(reference)
         self.assertEqual(broken.exception.code, "REFERENCE_STATE_NOT_EXACT")
+
+    def test_frozen_phase_reads_only_project_workflows_and_preserves_stage_order_and_ambiguity(self) -> None:
+        add_harness_run(self.repository)
+        uri = freeze_workflow(self.repository, phase=DesignPhase.SCHEMATIC_DESIGN)
+        ref = record_ref_from_uri(uri, PROJECT_ID)
+        payload = self.repository.load_json(ref)
+        first = payload["stages"][0]
+        self.repository.put_json(run=self.repository.load_run("workflow-001"),
+            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id="workflow-001"),
+            record_kind=PROJECT_STAGE_WORKFLOW,
+            payload={**payload, "stages": [first, {**first, "stage_id": "stage-1", "stage_index": 1,
+                                                   "phase": DesignPhase.DESIGN_DEVELOPMENT.value}]})
+        binding = ProjectBinding.open(self.settings)
+        with patch.object(binding.repository, "load_json", wraps=binding.repository.load_json) as load:
+            self.assertEqual(binding.frozen_workflow_first_phase(), DesignPhase.SCHEMATIC_DESIGN.value)
+        self.assertEqual({call.args[0].record_kind for call in load.call_args_list}, {PROJECT_STAGE_WORKFLOW})
+        freeze_workflow(self.repository, phase=DesignPhase.SCHEMATIC_DESIGN, run_id="a-same-phase")
+        self.assertEqual(binding.frozen_workflow_first_phase(), DesignPhase.SCHEMATIC_DESIGN.value)
+        freeze_workflow(self.repository, phase=DesignPhase.DESIGN_DEVELOPMENT, run_id="z-competing-phase")
+        self.assertIsNone(binding.frozen_workflow_first_phase(), "neither run order nor recency chooses between different ladders")
+
+    def test_frozen_phase_verifies_selected_payload_and_recovers_after_restoration(self) -> None:
+        uri = freeze_workflow(self.repository, phase=DesignPhase.SCHEMATIC_DESIGN)
+        path = self.repository.layout.resolve_record(record_ref_from_uri(uri, PROJECT_ID))
+        original = path.read_bytes()
+        binding = ProjectBinding.open(self.settings)
+        self.assertEqual(binding.frozen_workflow_first_phase(), DesignPhase.SCHEMATIC_DESIGN.value)
+        path.write_bytes(original.replace(DesignPhase.SCHEMATIC_DESIGN.value.encode(), DesignPhase.DESIGN_DEVELOPMENT.value.encode()))
+        self.assertIsNone(binding.frozen_workflow_first_phase(), "a readable JSON payload still needs the retained digest")
+        path.write_bytes(original)
+        self.assertEqual(binding.frozen_workflow_first_phase(), DesignPhase.SCHEMATIC_DESIGN.value)
 
     def test_the_configured_run_beats_the_rule(self) -> None:
         add_harness_run(self.repository)

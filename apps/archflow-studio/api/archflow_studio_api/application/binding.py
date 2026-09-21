@@ -655,7 +655,7 @@ class ProjectBinding:
         phases: set[str] = set()
         for run_id in self.run_ids():
             try:
-                refs = self.record_refs(run_id)
+                refs = self.record_refs(run_id, kind=PROJECT_STAGE_WORKFLOW)
             except (StudioError, ProjectRepositoryError, ValueError, OSError):
                 continue
             for ref in refs:

@@ -436,7 +436,7 @@
           "base_ref": "db7aba968163319f0d0631595f228fe67bcbad4b",
           "contributor": "Codex",
           "reviewer": null,
-          "handoff": "Large-project refresh pages fresh retained observations and selects reference receipts without unrelated payload reads. Read-only cold startup reached projection ready within the unchanged per-request budget, recovered the completed candidate and preserved HEAD. Repository, Studio, Hub operation and isolated-worker recovery tests passed; architecture check passed. Desktop package validation remains.",
+          "handoff": "Large-project refresh pages fresh retained observations and selects reference receipts and frozen workflow records without unrelated payload reads. Bundled-Python real HTTP cold/second projection reads completed in 0.109/0.125 seconds with identical complete JSON, phase and HEAD. Seventy binding/projection tests pass in addition to the repository, Studio, Hub operation and worker recovery checks. Final desktop package validation remains.",
           "modules": [
             "hub.shell",
             "studio.board",
