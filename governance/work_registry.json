@@ -3,6 +3,30 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-221",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Continue explicit Component removals using exact retained source seats, preserve cold candidate continuity and old runs, and sync generic runtime/install examples.",
+      "depends_on": [],
+      "branch": "codex/sync-component-removal",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-sync-component-removal",
+      "base_ref": "1edca68cc592d2c288aedab9148057b21c639d0d",
+      "contributor": "Codex",
+      "reviewer": "Repository coordinator",
+      "modules": [
+        "studio.candidate"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/adapters/seats.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "apps/archflow-studio/api/tests/test_candidate.py",
+        "apps/archflow-studio/README.md",
+        "apps/monkeyhub/README.md",
+        "apps/monkeyhub/installer/README.md"
+      ],
+      "handoff": "Selective port of bad05b1b plus three local README path edits. Preserve main document-trace validation and all UI/chat work. Coordinator owns merge and release."
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",

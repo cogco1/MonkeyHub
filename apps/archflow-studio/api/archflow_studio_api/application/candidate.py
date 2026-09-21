@@ -31,6 +31,7 @@ from monkeyarch.capabilities.geometry_proposal import (
     GeometryProposalProviderIdentity,
     load_compiled_geometry_program,
 )
+from monkeyarch.capabilities.discipline_seats import SeatSpec
 from archflow.adapters.cad_execution import patch_composed_three_dm
 from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -56,7 +57,7 @@ from archflow.state.state_record import (
 )
 
 from ..adapters.harness import HARNESS_PHASE, STAGE_ID, harness_guard
-from ..adapters.seats import load_seat_pack, seats_of
+from ..adapters.seats import candidate_seats, load_seat_pack
 from ..settings import StudioSettings
 from ..transport.errors import StudioError
 from .artifacts import (
@@ -269,6 +270,7 @@ def _run_successor(
     successor: StateRecord,
     run_id: str,
     *,
+    seats: tuple[SeatSpec, ...],
     retain: tuple[tuple[str, Mapping[str, Any]], ...] = (),
     model_source_ref: str | None = None,
     source_run_receipt_ref: ProjectRecordRef | None = None,
@@ -283,7 +285,6 @@ def _run_successor(
     """
 
     repository = binding.repository
-    seats = seats_of(seat_pack)
     if successor.base is None:
         raise StateRecordError("candidate successor carries no project base")
     run = repository.create_run(run_id, base=successor.base)
@@ -395,6 +396,10 @@ def run_operator(
     if source_model is not None and source_model.representation != "composed":
         source_model = None
     successor = apply_state_record_operator(projection.record, operator)
+    seats = candidate_seats(
+        binding.repository, seat_pack, projection.record, operator,
+        source_receipt=projection.reference.receipt if projection.reference_state_exact else None,
+    )
     source_record_ref = (
         record_ref_from_uri(projection.record_source, binding.project_id)
         if projection.reference_state_exact else None
@@ -418,6 +423,7 @@ def run_operator(
         "combined_candidate_ids": list(combined_candidate_ids),
     }
     receipt = _run_successor(binding, settings, seat_pack, successor, run_id,
+                             seats=seats,
                              retain=(*retain, (STUDIO_CANDIDATE_DELTA, delta)),
                              model_source_ref=source_model.receipt_ref if source_model is not None else None,
                              source_run_receipt_ref=runner_ref, monitor=monitor)
