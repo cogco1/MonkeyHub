@@ -435,11 +435,12 @@
           "base_ref": "db7aba968163319f0d0631595f228fe67bcbad4b",
           "contributor": "Codex",
           "reviewer": null,
-          "handoff": "Focused browser regressions passed; PR and installed desktop verification in progress.",
+          "handoff": "Display and replacement regressions passed. Lightweight exact-project worker health is verified; PR and installed desktop follow-up in progress.",
           "modules": [
             "hub.shell",
             "studio.board",
-            "studio.artifacts"
+            "studio.artifacts",
+            "studio.shell"
           ],
           "write_scope": [
             "apps/monkeyhub/README.md",
@@ -448,7 +449,13 @@
             "apps/monkeyhub/web/workspaces/src/app/App.tsx",
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
             "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+            "apps/archflow-studio/api/archflow_studio_api/routes/health.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/health.py",
+            "apps/archflow-studio/api/tests/test_health.py",
+            "apps/monkeyhub/api/monkeyhub_api/workers.py",
+            "apps/monkeyhub/api/tests/test_workers.py",
+            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
           ],
           "depends_on": []
         }

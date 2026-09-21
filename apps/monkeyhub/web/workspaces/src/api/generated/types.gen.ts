@@ -7578,6 +7578,14 @@ export type StudioHealth = {
      */
     projectBound: boolean;
     /**
+     * Projectid
+     */
+    projectId?: string | null;
+    /**
+     * Projectdir
+     */
+    projectDir?: string | null;
+    /**
      * Serverversion
      */
     serverVersion?: string | null;

@@ -47,19 +47,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         if seen.exists():
             seen.unlink()
-        if self.path == "/api/project" and outage.with_suffix(".slow-project").exists():
-            time.sleep(1.2)
+        if self.path == "/api/health":
+            with outage.with_suffix(".health-seen").open("a") as observed:
+                observed.write("x")
+        if self.path == "/api/project":
             with outage.with_suffix(".project-seen").open("a") as observed:
                 observed.write("x")
-        result = {
-            "managedInstanceId": args.managed_instance_id,
-            "sourceRevision": ("b" if outage.with_suffix(".mismatch").exists() else "a") * 40,
-            "processId": os.getpid(), "parentProcessId": os.getppid(),
-            "serverVersion": "0.1.0", "projectBound": True,
-        } if self.path == "/api/health" else {
+            if outage.with_suffix(".slow-project").exists():
+                time.sleep(6)
+        binding = {
             "projectId": "other-project" if outage.with_suffix(".project-mismatch").exists() else os.environ["PROJECT_ID"],
             "projectDir": os.environ["PROJECT_DIR"],
         }
+        result = {
+            "managedInstanceId": os.environ.get("REPORTED_INSTANCE_ID", args.managed_instance_id),
+            "sourceRevision": ("b" if outage.with_suffix(".mismatch").exists() else "a") * 40,
+            "processId": int(os.environ.get("REPORTED_PROCESS_ID", os.getpid())), "parentProcessId": os.getppid(),
+            "serverVersion": "0.1.0", "projectBound": True,
+            **binding,
+        } if self.path == "/api/health" else binding
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -180,11 +186,15 @@ class WorkerSupervisorTests(unittest.TestCase):
             self.assertEqual(refused.instance_id, original.instance_id)
             self.assertTrue(port_open(launch.port))
 
-    def test_exact_project_identity_and_path_are_verified(self):
-        for mismatch in ("id", "path"):
+    def test_exact_project_path_process_and_instance_are_verified(self):
+        for mismatch, changed in (
+            ("id", {"PROJECT_ID": "other-project"}),
+            ("path", {"PROJECT_DIR": str(self.root / "other-path")}),
+            ("process", {"REPORTED_PROCESS_ID": "0"}),
+            ("instance", {"REPORTED_INSTANCE_ID": "another-launch"}),
+        ):
             with self.subTest(mismatch=mismatch):
                 launch = self.launch(mismatch)
-                changed = {"PROJECT_ID": "other-project"} if mismatch == "id" else {"PROJECT_DIR": str(self.root / "other-path")}
                 launch = replace(launch, environment={**launch.environment, **changed})
                 self.supervisor.start(launch)
                 rejected = self.wait_state(launch.worker_id, "unavailable")
@@ -219,25 +229,26 @@ class WorkerSupervisorTests(unittest.TestCase):
         self.assertEqual(ready.instance_id, original.instance_id)
         self.assertIsNone(ready.error)
 
-    def test_slow_project_check_stays_ready_and_still_rejects_changed_identity(self):
+    def test_slow_project_summary_is_not_polled_and_still_rejects_changed_identity(self):
         launch = self.launch("slow-binding")
-        self.supervisor.start(launch)
-        original = self.wait_state(launch.worker_id, "ready")
         outage = Path(launch.environment["OUTAGE_FILE"])
         outage.with_suffix(".slow-project").touch()
-        seen = outage.with_suffix(".project-seen")
-        # Four actual 1.2 s HTTP responses cross the old one-second timeout
-        # and its five-second outage grace; a single fast probe cannot pass.
-        wait_for(lambda: seen.exists() and len(seen.read_text()) >= 4,
-                 "Worker did not finish four slow binding checks", timeout=15)
+        self.supervisor.start(launch)
+        original = self.wait_state(launch.worker_id, "ready")
+        seen = outage.with_suffix(".health-seen")
+        # Observe repeated real heartbeats beyond the five-second outage grace.
+        # The full summary would exceed its former timeout even on startup.
+        wait_for(lambda: seen.exists() and len(seen.read_text()) >= 7,
+                 "Worker did not finish seven health checks", timeout=10)
+        self.assertFalse(outage.with_suffix(".project-seen").exists())
         current = self.supervisor.snapshot(launch.worker_id)
         self.assertEqual(current.state, "ready")
         self.assertTrue(current.healthy)
         self.assertIsNone(current.error)
         self.assertEqual((current.instance_id, current.process_id),
                          (original.instance_id, original.process_id))
-        # The longer budget never permits a foreign binding, even on the
-        # already-owned process with unchanged health identity and PID.
+        # An already-owned process with unchanged instance and PID still
+        # cannot switch to a different project between heartbeats.
         outage.with_suffix(".project-mismatch").touch()
         rejected = self.wait_state(launch.worker_id, "unavailable")
         self.assertEqual(rejected.error.code, "SERVICE_IDENTITY_MISMATCH")

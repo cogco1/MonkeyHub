@@ -17,7 +17,6 @@ from .models import HubError, HubFailure
 
 
 WorkerState = Literal["starting", "ready", "busy", "stopping", "stopped", "crashed", "recovering", "unavailable"]
-_PROJECT_BINDING_TIMEOUT_S = 5
 
 
 def project_key(project_dir: str | None) -> str:
@@ -211,17 +210,13 @@ class WorkerSupervisor:
                         and all(health.get(key) == value for key, value in child.launch.health_fields.items())
                     )
                     if matches and child.launch.project_dir is not None:
-                        # Unlike the small health response, the binding route
-                        # reads retained project records. A valid response can
-                        # take over one second without a dead or foreign worker.
-                        # Still require the exact project on every probe.
-                        with opener.open(f"http://127.0.0.1:{child.port}/api/project", timeout=_PROJECT_BINDING_TIMEOUT_S) as response:
-                            binding = json.loads(response.read(65536))
+                        # Verify the exact binding on this same identity probe.
+                        # /api/project selects a reference run from retained
+                        # design history and is not a worker liveness check.
                         matches = (
-                            isinstance(binding, dict)
-                            and binding.get("projectId") == child.launch.project_id
-                            and isinstance(binding.get("projectDir"), str)
-                            and project_key(binding["projectDir"]) == project_key(child.launch.project_dir)
+                            health.get("projectId") == child.launch.project_id
+                            and isinstance(health.get("projectDir"), str)
+                            and project_key(health["projectDir"]) == project_key(child.launch.project_dir)
                         )
                     with self._lock:
                         if child.desired_state == "running" and child.process.poll() is None:

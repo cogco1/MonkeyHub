@@ -213,6 +213,8 @@ folder`. Receipts, screenshots, recordings and their replayable overlay projecti
 
 Hub keeps one runtime for each exact project identity and resolved path. Switching or reopening a page attaches to that runtime; it does not stop another project or restart a crashed worker. `GET /api/runtime` reports project bindings, the published P036 position, committed Stage history, owned worker health, attached chats, and active/recent operations. `GET /api/runtime/events` streams changes and begins every connection with a fresh snapshot, including after an old or foreign event cursor. The runtime process contract itself is [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md); this section is the Hub's side of it.
 
+Owned local workers verify their project, process, instance and source revision in the same lightweight health response. Worker liveness does not survey retained design history through `/api/project`; the full project summary keeps its existing behavior.
+
 Worker and session observation continues every second. Retained history refreshes for active work, submitted mutations, attachment and worker changes; an idle runtime reuses its current projection and checks external project changes every 30 seconds. Status reads verify retained receipts and exact sources without rebuilding candidate previews. The Hub entry point closes SSE subscriptions before draining accepted HTTP work and owned processes during shutdown.
 
 | Request | Result |

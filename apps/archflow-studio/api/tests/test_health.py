@@ -20,9 +20,10 @@ from urllib.request import urlopen
 
 from fastapi.testclient import TestClient
 
+from archflow_studio_api.application.binding import ProjectBinding
 from archflow_studio_api.main import _source_revision, _watch_managed_stdin, create_app, main
 from archflow_studio_api.protocol import SERVER_VERSION
-from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.settings import REMOTE_MODE, StudioSettings
 
 from .support import PROJECT_ID, make_project
 
@@ -66,6 +67,30 @@ class BoundHealthTests(unittest.TestCase):
         response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
         self.assertIs(response.json()["projectBound"], True)
+        self.assertEqual(response.json()["projectId"], PROJECT_ID)
+        self.assertEqual(Path(response.json()["projectDir"]), (self.root / PROJECT_ID).resolve())
+
+    def test_health_keeps_exact_identity_when_project_summary_cannot_finish(self) -> None:
+        with patch.object(ProjectBinding, "reference_run", side_effect=TimeoutError("retained run survey timed out")):
+            for _ in range(2):
+                response = self.client.get("/api/health")
+                self.assertEqual(response.status_code, 200)
+                self.assertIs(response.json()["projectBound"], True)
+                self.assertEqual(response.json()["projectId"], PROJECT_ID)
+                self.assertEqual(Path(response.json()["projectDir"]), (self.root / PROJECT_ID).resolve())
+            with self.assertRaises(TimeoutError):
+                self.client.get("/api/project")
+
+    def test_anonymous_remote_health_does_not_expose_project_identity(self) -> None:
+        with TestClient(create_app(StudioSettings(
+            cad_export="off", project_dir=self.root / PROJECT_ID,
+            mode=REMOTE_MODE, api_token="health-test-token", origins=("https://studio.example",),
+        ))) as client:
+            response = client.get("/api/health")
+            self.assertEqual(response.status_code, 200)
+            self.assertIs(response.json()["projectBound"], True)
+            self.assertNotIn("projectId", response.json())
+            self.assertNotIn("projectDir", response.json())
 
 
 class ManagedStudioTests(unittest.TestCase):
