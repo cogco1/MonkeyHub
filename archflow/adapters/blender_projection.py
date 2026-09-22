@@ -250,8 +250,67 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
     presentation = presentation or BlenderPresentation()
     cad._positive_finite(timeout_seconds, "timeout_seconds")
     plan = _plan(request, source, presentation)
-    workspace = request.speculative_workspace
-    stem = request.artifact_stem + ".projection"
+    return _execute_projection_plan(plan, request.speculative_workspace, request.artifact_stem,
+        presentation, blender_executable, timeout_seconds, lambda: _source(request, source))
+
+
+def mesh_projection_plan(data: bytes, source: dict, presentation: BlenderPresentation) -> dict:
+    """Project-owned 3DM mesh bytes; refuse unsupported geometry rather than omit it."""
+    import hashlib
+    import rhino3dm
+    if hashlib.sha256(data).hexdigest() != source["sha256"]:
+        raise cad.CadExecutionError("render source digest differs")
+    document = rhino3dm.File3dm.FromByteArray(data)
+    if document is None:
+        raise cad.CadExecutionError("render source is not a readable 3DM")
+    units = {rhino3dm.UnitSystem.Meters: "meter", rhino3dm.UnitSystem.Millimeters: "millimeter",
+             rhino3dm.UnitSystem.Inches: "inch", rhino3dm.UnitSystem.Feet: "foot"}
+    unit = units.get(document.Settings.ModelUnitSystem)
+    if unit is None:
+        raise cad.CadExecutionError("render source requires explicit meter/millimeter/inch/foot units")
+    objects = []
+    for item in document.Objects:
+        geometry = item.Geometry
+        if not isinstance(geometry, rhino3dm.Mesh):
+            raise cad.CadExecutionError("This render path supports mesh 3DM only; convert other geometry explicitly.")
+        object_id = str(item.Attributes.Id)
+        vertices = [[v.X, v.Y, v.Z] for v in geometry.Vertices]
+        faces = []
+        for face in geometry.Faces:
+            a, b, c, d = face
+            faces.append([a, b, c] if c == d else [a, b, c, d])
+        if not vertices or not faces or any(not math.isfinite(n) for v in vertices for n in v):
+            raise cad.CadExecutionError("render source has an empty or invalid mesh")
+        if any(i < 0 or i >= len(vertices) for face in faces for i in face):
+            raise cad.CadExecutionError("render source has invalid mesh indices")
+        layer = document.Layers.FindIndex(item.Attributes.LayerIndex)
+        visible = item.Attributes.Visible and (layer is None or layer.Visible)
+        objects.append({"object_id": object_id, "object_digest": cad._sha256_bytes(
+            canonical_json({"vertices": vertices, "faces": faces}).encode()),
+            "vertices": vertices, "faces": faces,
+            "semantics": {"user_text": {"archflow:object_ref": "cad-object:" + object_id},
+                          "layer": layer.Name if layer else "Imported model", "visible": visible},
+            "material": {"name": "preview-neutral", "color": [.7, .73, .77, 1]}})
+    if not objects or not any(row["semantics"]["visible"] for row in objects):
+        raise cad.CadExecutionError("render source has no visible meshes")
+    if len({row["object_id"] for row in objects}) != len(objects):
+        raise cad.CadExecutionError("render source has duplicate object identities")
+    return {"binding_json": canonical_json(source), "provenance_json": canonical_json({"source": "retained-mesh"}),
+            "length_unit": unit, "objects": sorted(objects, key=lambda row: row["object_id"]),
+            "readback_tolerance": 1e-5,
+            "projection": {"source_artifact": source, "presentation": presentation.to_dict()}}
+
+
+def execute_mesh_projection(data: bytes, source: dict, *, workspace, blender_executable: str,
+                            presentation: BlenderPresentation, timeout_seconds: float = 180) -> dict:
+    plan = mesh_projection_plan(data, source, presentation)
+    return _execute_projection_plan(plan, workspace, "render", presentation,
+                                    blender_executable, timeout_seconds, lambda: None)
+
+
+def _execute_projection_plan(plan, workspace, artifact_stem, presentation, blender_executable,
+                             timeout_seconds, verify_source):
+    stem = artifact_stem + ".projection"
     paths = {role: workspace / (stem + suffix) for role, suffix in
              (("plan", ".json"), ("scene", ".blend"), ("render", ".png"),
               ("build_log", ".build.log"), ("inspect_log", ".inspect.log"), ("render_log", ".render.log"))}
@@ -260,7 +319,7 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
         if path.exists():
             raise cad.CadExecutionError(f"projection refuses to overwrite {path.name}")
     receipt = {"schema": "BlenderProjectionReceipt@1", "request_id": stem,
-               "binding": request.binding.to_dict(), "source_artifact": plan["projection"]["source_artifact"],
+               "binding": json.loads(plan["binding_json"]), "source_artifact": plan["projection"]["source_artifact"],
                "presentation": presentation.to_dict(), "status": "failed", "artifacts": [], "logs": [],
                "blender_version": None, "readback": None, "failures": []}
     stage = "launch"
@@ -297,7 +356,7 @@ an explicit failed receipt, preserving logs and never claiming partial artifacts
             if image.format != "PNG" or image.size != presentation.image_size:
                 raise cad.CadExecutionError("render is not the requested PNG")
             image.verify()
-        _source(request, source)
+        verify_source()
         receipt.update(status="succeeded", artifacts=[_artifact(paths["scene"], "blend"), _artifact(paths["render"], "png")])
     except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError) as exc:
         receipt["failures"] = [{"stage": stage, "code": "blender.projection_failed", "detail": str(exc)}]

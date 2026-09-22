@@ -175,6 +175,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
     app.state.jobs.shutdown()
+    app.state.render_jobs.shutdown()
 
 
 async def _diagnostic_request(request: Request,
@@ -234,6 +235,8 @@ def create_app(settings: StudioSettings) -> FastAPI:
     # and therefore loses on restart, is stated at the top of the application.
     app.state.events = StudioEvents()
     app.state.jobs = JobRegistry(app.state.events, max_workers=settings.workers, monitor=app.state.monitor)
+    from .application.rendering import RenderJobs
+    app.state.render_jobs = RenderJobs()
     if shared_project:
         app.state.jobs.stop_accepting()
     # One validation per candidate, remembered so that reading a verdict twice

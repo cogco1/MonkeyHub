@@ -51,8 +51,24 @@ from ..transport.artifacts import (
     work_copy_dto,
 )
 from ..transport.errors import StudioError
+from ..transport.rendering import RenderRequestDto, RenderJobDto, RenderJobListDto
 
 router = APIRouter(tags=["artifacts"])
+
+
+@router.post("/render/jobs", response_model=RenderJobDto, status_code=202)
+def create_render_job(request: Request, payload: RenderRequestDto):
+    return request.app.state.render_jobs.submit(bound_project(request.app.state), payload)
+
+
+@router.get("/render/jobs", response_model=RenderJobListDto)
+def list_render_jobs(request: Request):
+    return RenderJobListDto(jobs=request.app.state.render_jobs.list(bound_project(request.app.state)))
+
+
+@router.get("/render/jobs/{job_id}", response_model=RenderJobDto)
+def read_render_job(request: Request, job_id: str):
+    return request.app.state.render_jobs.get(bound_project(request.app.state), job_id)
 
 
 @router.post("/model-assets", response_model=ProjectArtifactDto, response_model_by_alias=True, status_code=201)

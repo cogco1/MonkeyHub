@@ -375,6 +375,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const candidateTimings = useRef(new Map<string, EditTimingTicket>());
   const manualLoadRef = useRef(false);
   const localEditingRef = useRef(false);
+  const [renderLocalFile, setRenderLocalFile] = useState<File | null>(null);
   const modelInteractionEpoch = useRef(0);
   // The first seat on screen answers for the picture wherever one row is
   // wanted: the run it belongs to, the receipt a pick is resolved against,
@@ -1051,7 +1052,10 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     setArtifactLoadingSha(null);
     setArtifactLoadPhase(null);
     manualLoadRef.current = true;
-    void viewportRef.current?.openFile(file);
+    setRenderLocalFile(null);
+    void viewportRef.current?.openFile(file).then(() => {
+      if (viewerStatusRef.current === "ready") setRenderLocalFile(file);
+    }).catch(cause => setArtifactError(asStudioApiError(cause)));
   }, []);
 
   const monitorLoads = server.capabilities.includes("operation-timing");
@@ -1151,6 +1155,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             previous.every((row) => row.lengthUnit === artifact.lengthUnit),
         });
         succeeded = isCurrent() && viewerStatusRef.current === "ready";
+        if (succeeded) setRenderLocalFile(null);
         return succeeded;
       } catch (cause) {
         if (isCurrent()) setArtifactError(asStudioApiError(cause));
@@ -3217,9 +3222,11 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             key={binding?.projectId ?? "unbound"}
             active={active}
             onOpenBoard={onOpenBoard}
-            onSendToRender={onSendToRender && project && loadedModelSource && !documentView.open && blendState === null && !modelLoading && !(localModel && unsynced(localModel)) ? () => {
+            onSendToRender={onSendToRender && project && (loadedModelSource || renderLocalFile) && !documentView.open && blendState === null && !modelLoading && !(localModel && unsynced(localModel)) ? () => {
               const camera = viewportRef.current?.renderCamera();
-              if (camera) onSendToRender({ projectId: project.projectId, modelSource: { ...loadedModelSource }, camera });
+              if (camera) onSendToRender({ projectId: project.projectId,
+                ...(sourceLabel === LOCAL_SOURCE_LABEL && renderLocalFile ? { localFile: renderLocalFile } :
+                  loadedModelSource ? { modelSource: { ...loadedModelSource } } : { localFile: renderLocalFile! }), camera });
             } : undefined}
             onChatRequest={onChatRequest}
             hasModel={sourceLabel !== null || hasLocalGeometry}

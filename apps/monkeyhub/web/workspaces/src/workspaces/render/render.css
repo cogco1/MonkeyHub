@@ -13,3 +13,7 @@
 .render-detail footer { padding: 12px; border-top: 1px solid #8884; overflow-wrap: anywhere; }
 .render-detail footer p { margin: 6px 0 0; opacity: .7; }
 .render-empty { margin: auto; padding: 24px; text-align: center; }
+.render-job { padding: 10px 12px; border-bottom: 1px solid #8884; }
+.render-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
+.render-toolbar button,.render-list button { border: 1px solid #8884; border-radius: 6px; background: transparent; color: inherit; padding: 6px 10px; cursor: pointer; }
+.render-toolbar button:disabled { opacity: .5; cursor: default; }

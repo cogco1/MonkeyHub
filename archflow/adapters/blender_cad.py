@@ -227,7 +227,7 @@ def _run_worker(executable, workspace, timeout, *arguments):
     return subprocess.run(
         [str(executable), "--background", "--factory-startup", "--disable-autoexec", "--python-exit-code", "1",
          "--python", str(Path(__file__).with_name("blender_worker.py")), "--", *map(str, arguments)],
-        cwd=workspace, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
+        cwd=workspace, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
         timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
     )
 

@@ -15,7 +15,13 @@
       "reviewer": null,
       "handoff": "Draft PR #235; source implementation and visual acceptance in progress.",
       "depends_on": [],
-      "modules": ["hub.shell", "studio.artifacts", "adapters.cad_execution"],
+      "modules": [
+        "hub.shell",
+        "studio.artifacts",
+        "adapters.cad_execution",
+        "studio.shell",
+        "project.record_kinds"
+      ],
       "write_scope": [
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/ChatShell.css",
@@ -34,7 +40,15 @@
         "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
         "governance/module_registry.json",
         "docs/mapping/planning/NATIVE_RENDER_V01.md",
-        "docs/NATIVE_RENDER_V01.md"
+        "docs/NATIVE_RENDER_V01.md",
+        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/artifacts.py",
+        "apps/archflow-studio/api/archflow_studio_api/main.py",
+        "archflow/project/record_kinds.py",
+        "archflow/adapters/blender_cad.py",
+        "apps/monkeyhub/web/src/api/generated/",
+        "apps/monkeyhub/web/workspaces/src/api/generated/"
       ],
       "card": "docs/NATIVE_RENDER_V01.md",
       "acceptance": [

@@ -883,7 +883,7 @@ try {
   const beforeRenderWrites = workspaceFixture.requests.filter(row => row.method !== "GET" && row.name !== "/api/board").length;
   await visibleWorkspace().getByRole("button", { name: "Send to Render", exact: true }).click();
   const renderPanel = page.locator(".render-workspace:visible");
-  await renderPanel.getByText("View received; render job integration is not connected yet.", { exact: true }).waitFor();
+  await renderPanel.getByRole("button", { name: "Start render", exact: true }).waitFor();
   await renderPanel.locator(".render-image img").waitFor();
   await page.waitForFunction(() => document.querySelector(".render-workspace .render-image img")?.naturalWidth > 0);
   assert.match(await renderPanel.innerText(), /render-B.png/);

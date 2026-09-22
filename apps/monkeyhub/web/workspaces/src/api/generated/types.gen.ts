@@ -5538,6 +5538,142 @@ export type RelationChecksDto = {
 };
 
 /**
+ * RenderCameraDto
+ */
+export type RenderCameraDto = {
+    /**
+     * Position
+     */
+    position: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Target
+     */
+    target: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Up
+     */
+    up: [
+        number,
+        number,
+        number
+    ];
+    /**
+     * Projection
+     */
+    projection: 'perspective' | 'orthographic';
+    /**
+     * Near
+     */
+    near: number;
+    /**
+     * Far
+     */
+    far: number;
+    /**
+     * Aspect
+     */
+    aspect: number;
+    /**
+     * Verticalfov
+     */
+    verticalFov?: number | null;
+    /**
+     * Orthographicbounds
+     */
+    orthographicBounds?: [
+        number,
+        number,
+        number,
+        number
+    ] | null;
+};
+
+/**
+ * RenderJobDto
+ */
+export type RenderJobDto = {
+    /**
+     * Jobid
+     */
+    jobId: string;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Status
+     */
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted';
+    /**
+     * Sourcesha256
+     */
+    sourceSha256: string;
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Error
+     */
+    error?: string | null;
+    document?: SourceDocumentDto | null;
+};
+
+/**
+ * RenderJobListDto
+ */
+export type RenderJobListDto = {
+    /**
+     * Jobs
+     */
+    jobs: Array<RenderJobDto>;
+};
+
+/**
+ * RenderRequestDto
+ */
+export type RenderRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Requestid
+     */
+    requestId: string;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Filename
+     */
+    fileName?: string | null;
+    /**
+     * Contentbase64
+     */
+    contentBase64?: string | null;
+    camera?: RenderCameraDto | null;
+    /**
+     * Resolution
+     */
+    resolution?: number;
+    /**
+     * Samples
+     */
+    samples?: number;
+};
+
+/**
  * RhinoWorkExportRequestDto
  *
  * Which run's export is being made editable.
@@ -9374,6 +9510,116 @@ export type ReadSemanticsApiSemanticsGetResponses = {
 };
 
 export type ReadSemanticsApiSemanticsGetResponse = ReadSemanticsApiSemanticsGetResponses[keyof ReadSemanticsApiSemanticsGetResponses];
+
+export type ListRenderJobsApiRenderJobsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/jobs';
+};
+
+export type ListRenderJobsApiRenderJobsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListRenderJobsApiRenderJobsGetError = ListRenderJobsApiRenderJobsGetErrors[keyof ListRenderJobsApiRenderJobsGetErrors];
+
+export type ListRenderJobsApiRenderJobsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderJobListDto;
+};
+
+export type ListRenderJobsApiRenderJobsGetResponse = ListRenderJobsApiRenderJobsGetResponses[keyof ListRenderJobsApiRenderJobsGetResponses];
+
+export type CreateRenderJobApiRenderJobsPostData = {
+    body: RenderRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/jobs';
+};
+
+export type CreateRenderJobApiRenderJobsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRenderJobApiRenderJobsPostError = CreateRenderJobApiRenderJobsPostErrors[keyof CreateRenderJobApiRenderJobsPostErrors];
+
+export type CreateRenderJobApiRenderJobsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RenderJobDto;
+};
+
+export type CreateRenderJobApiRenderJobsPostResponse = CreateRenderJobApiRenderJobsPostResponses[keyof CreateRenderJobApiRenderJobsPostResponses];
+
+export type ReadRenderJobApiRenderJobsJobIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/render/jobs/{job_id}';
+};
+
+export type ReadRenderJobApiRenderJobsJobIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadRenderJobApiRenderJobsJobIdGetError = ReadRenderJobApiRenderJobsJobIdGetErrors[keyof ReadRenderJobApiRenderJobsJobIdGetErrors];
+
+export type ReadRenderJobApiRenderJobsJobIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderJobDto;
+};
+
+export type ReadRenderJobApiRenderJobsJobIdGetResponse = ReadRenderJobApiRenderJobsJobIdGetResponses[keyof ReadRenderJobApiRenderJobsJobIdGetResponses];
 
 export type CreateModelAssetApiModelAssetsPostData = {
     body: ModelAssetRequestDto;

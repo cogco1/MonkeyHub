@@ -68,6 +68,7 @@ SEAT_RHINO_EXECUTION = "seat-rhino-execution"
 SEAT_OCCT_EXECUTION = "seat-occt-execution"
 SEAT_BLENDER_EXECUTION = "seat-blender-execution"
 BLENDER_PROJECTION = "blender-projection"
+STUDIO_RENDER_JOB = "studio-render-job"
 SEAT_3DM_INSPECTION = "seat-3dm-inspection"
 RUNNER_RUN_FAILURE = "runner-run-failure"
 RUNNER_RUN_RECEIPT = "runner-run-receipt"
@@ -299,8 +300,10 @@ _TABLE: tuple[RecordKind, ...] = (
         BLENDER_PROJECTION,
         "BlenderProjectionReceipt@1",
         _RUN_RECORD,
-        "OCCT-bound Blender scene and headless render with independent cold read and artifact hashes",
+        "Source-bound Blender scene and headless render with independent cold read and artifact hashes",
     ),
+    RecordKind(STUDIO_RENDER_JOB, "StudioRenderJob@1", _RUN_RECORD,
+               "immutable render request and job transitions, bound to retained source bytes and presentation"),
     RecordKind(
         SEAT_BLENDER_EXECUTION,
         "BlenderExecutionReceipt@1",

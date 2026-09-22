@@ -3,6 +3,7 @@ import os
 import json
 import math
 import subprocess
+import sys
 import tempfile
 import unittest
 from copy import deepcopy
@@ -44,6 +45,33 @@ class CapturedCameraValidationTests(unittest.TestCase):
             key: value for key, value in retained.items() if key in projection.BlenderPresentation.__dataclass_fields__})
         self.assertEqual(restored.to_dict(), retained)
         self.assertNotIn("camera", projection.BlenderPresentation().to_dict())
+
+
+class ManagedWorkerTests(unittest.TestCase):
+    @unittest.skipUnless(BLENDER, "requires real Blender")
+    def test_render_finishes_while_parent_control_stdin_remains_open(self):
+        # Hub keeps its runtime control pipe open. Blender must not read that pipe.
+        script = """
+import hashlib, os, tempfile
+from pathlib import Path
+from archflow.adapters.blender_projection import execute_mesh_projection, BlenderPresentation
+source = Path('tests/fixtures/render-mesh.3dm').read_bytes()
+with tempfile.TemporaryDirectory() as root:
+    result = execute_mesh_projection(source, {'sha256': hashlib.sha256(source).hexdigest()},
+        workspace=Path(root), blender_executable=os.environ['ARCHFLOW_BLENDER_EXECUTABLE'],
+        presentation=BlenderPresentation(resolution=64, samples=1), timeout_seconds=15)
+    assert result['status'] == 'succeeded', result['failures']
+"""
+        with subprocess.Popen([sys.executable, '-X', 'utf8', '-c', script],
+                cwd=Path(__file__).resolve().parents[1], stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+            try:
+                child.wait(timeout=30)  # Deliberately do not close/send EOF to stdin.
+            except subprocess.TimeoutExpired:
+                child.kill()
+                self.fail('Blender blocked on the runtime control pipe')
+            _, error = child.communicate()
+            self.assertEqual(child.returncode, 0, error.decode('utf8', errors='replace'))
 
 
 @unittest.skipUnless(occt_available(), "cadquery-ocp is optional")

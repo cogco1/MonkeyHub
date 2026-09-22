@@ -4,7 +4,8 @@ import type { ModelSourceDto } from "../../api/generated";
 
 export interface RenderSelection {
   projectId: string;
-  modelSource: ModelSourceDto;
+  modelSource?: ModelSourceDto;
+  localFile?: File;
   camera: RenderCamera;
 }
 

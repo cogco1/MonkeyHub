@@ -6,39 +6,44 @@ representation investigation in [GH-223](https://github.com/cogco1/MonkeyHub/iss
 
 Status: implementation in progress. Baseline inspected: `db7aba96`.
 
-The first frontend slice adds native Render navigation, project image browsing,
-thumbnails, zoom/pan/download and Modeling-to-Render source/camera handoff.
-The gallery currently includes all registered project images, including references;
-render-specific registration/filtering is still pending. It reads existing document
-bytes through the project runtime and creates no independent scene store.
-Switching workspaces preserves the mounted Modeling view.
-The handoff is unavailable for unsynced geometry, document pages and comparison
-blends; these cannot silently borrow an unrelated model camera. Inactive project
-controls cannot override the shell's hidden visibility and leak into Render.
+Native Render now submits asynchronous Blender jobs from the current Modeling
+mesh and captured camera. Sources, immutable recipes, execution transitions,
+verified receipts and PNG documents belong to the existing P036 project. The
+Render gallery lists only documents registered with a render recipe. It polls
+task status and automatically opens the finished image with zoom/pan/download.
+Refreshing reads retained results without resubmitting a job.
 
-The Blender adapter now accepts an immutable captured camera with perspective or
-orthographic projection, roll, clipping and rectangular output. Pixel aspect
-preserves the requested frustum when raster dimensions round. Host cold readback
-compares its projection matrix and pose against the requested camera, catching
-host clamping or saved-scene changes. Legacy overview receipts retain their shape.
+The first execution path accepts mesh-only 3DM, default neutral materials and
+lighting, and a captured perspective/orthographic camera. Imported local meshes
+retain exact source bytes without inventing a design revision; certified model
+sources retain their original association. Neither path advances HEAD. Unsupported
+geometry is refused explicitly. Shutdown drains accepted work; jobs interrupted
+by a process crash are reported as interrupted after restart.
 
-Validation: TypeScript checking, Vite production build, two frontend camera matrix
-tests, seven Blender projection tests (including real Blender 4.3 save/reopen/render,
-point projection and tampered-camera refusal), the Hub browser walk and architecture
-checking passed. Browser fixtures verify the native workspace, project image reads,
-zoom/fit, retry after byte-read failure, unchanged Modeling canvas and no design
-writes during handoff. These tests do not establish end-to-end job execution.
+Validation includes real Blender API submission, idempotent request reuse,
+conflicting request refusal, exact retained source/result hashes, cold result
+readback after runtime restart and unchanged HEAD. Camera adapter tests cover
+real Blender save/reopen, projection agreement and tampered-camera refusal.
 
-Still required: render task API/persistence and adapter integration, accurate
-historical model/camera restore, source-linked Drawing workflow, gallery result
-classification, real retained penguin registration, frontend behavioral tests and
-end-to-end UI/render evidence. The displayed source handoff explicitly reports that
-render execution is not connected yet. Neither issue is complete.
+Live Hub acceptance (2026-09-21): the Modeling toolbar sent
+`snow-penguin-20260914-hub.3dm` to Render, and Start render submitted job
+`render-d59a64bc04874266ad3bb6d2834f63b1`. Blender produced a 730 x 768 neutral
+penguin image, automatically registered and displayed in Render. Source SHA-256
+is `ba29e83ef3b84281eb8fd58dd408e9860cb3d261479579a5be7e2e71a3007154`.
+Zoom in/out changed the displayed image dimensions; refresh reopened the retained
+result without another task. The original failed attempt is retained honestly.
+Blender now receives DEVNULL stdin rather than the Hub runtime control pipe,
+which otherwise blocked its startup on Windows. A real subprocess regression
+keeps the parent pipe open throughout rendering.
+
+Remaining issue scope: cancellation, historical source/camera restoration,
+source-linked Drawing workflow, richer geometry/material support and expanded
+interaction acceptance. Neither GH-216 nor GH-218 is marked complete.
 
 ## User-visible outcome
 
 From Modeling, Send to Render captures the current model version and viewport,
-opens a native Render workspace and starts one asynchronous preview. The user
+opens a native Render workspace; Start render submits one asynchronous preview. The user
 can view and download the result, reopen it from the project gallery, and return
 to its source model with the saved camera. Modeling, Drawing and Render retain
 the same project context. No separate Blender-control web application is needed.
@@ -107,3 +112,13 @@ Do not build another design store or a render-specific dependency graph.
 
 V0.2 scene editing, V0.3 expanded history/drawing workflows and V0.4 AI features
 remain later reviewed stages. GH-217's penguin eye repair remains a separate bug.
+
+## Running the local preview
+
+Set `ARCHFLOW_BLENDER_EXECUTABLE` to the installed Blender executable in the Hub
+launch environment, then start the existing Hub and frontend. Hub inherits this
+value into the project runtime; no separate renderer launcher is introduced.
+Load a mesh-only 3DM in Modeling, choose Send to Render, then Start render.
+The rendered image is a project document; its Render details expose the source
+hash, captured camera recipe and verification receipt. Inputs are limited to
+32 MiB; defaults are 768 pixels on the long side and 16 samples.
