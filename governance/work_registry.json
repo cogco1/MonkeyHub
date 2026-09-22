@@ -648,6 +648,69 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-185",
+      "stream": "planning",
+      "status": "active",
+      "goal": "Retain the architect's own scoped decisions where the conversation already happens, so a later turn reads what was settled instead of the transcript. One narrow slice: studio.intent gains immutable scoped-decision revisions in one fixed explicit P036 run (studio-decisions, StudioScopedDecision@1 in RUN_REVIEW), three fixture families only - drawing hatch avoid/reject, copy style avoid, design keep/lock of a real parameter or declared relation. Every decision keeps its raw wording, its exact source evidence (a retained Board revision and its live element ids, a registered document page at its exact revision, or a real retained design run and state digest), its explicit scope, strength and applicability, plus the caller's claimed message and sourceKind provenance. POST/GET /api/decisions, GET /api/decisions/{id}, POST /api/decisions/{id}/revisions and an additive decisionContext / scopedDecisions on the existing POST /api/intents/context. It is a data boundary: no provider call, no Hub product loop, no Stage, HEAD or lock effect, and no second canonical state. GH-183 owns the real observe-judge-revise provider tool and Hub consumption.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+        "archflow/project/record_kinds.py",
+        "apps/archflow-studio/README.md",
+        "apps/monkeyhub/web/workspaces/src/api/generated"
+      ],
+      "card": "docs/mapping/planning/GH-185-scoped-decisions.md",
+      "acceptance": [
+        "Decisions survive a cold reopen with their exact UTF-8 wording, message reference and source evidence; a Board revision named as evidence stays readable after the board moves on.",
+        "Chains are immutable and complete: supersede/revoke are new revisions under CAS, prior wording is never rewritten, superseded is derived from the chain, and a competing, branching or incomplete chain - or a damaged decisions run - fails closed.",
+        "A next turn's ContextPack carries only the decisions that still apply to its domain, Stage and actual focus, with exact-source and parameter/target staleness derived at read time; revoked and deferred ones are never injected as requirements.",
+        "No representation decision touches design state: HEAD, design branches and parameter locks are unchanged, and P036 GC preserves the automatic runs a decision's evidence names.",
+        "apps/archflow-studio/api/tests/test_decisions.py plus the existing boards, intent-context and collaboration-auth suites and python tools/archcheck.py."
+      ],
+      "notes": [
+        "2026-09-22: implementation complete on codex/185-scoped-decisions; the persistence lane is in review and the parent removes this card in the completion commit. The consumer product loop and provider acceptance belong to GH-183 and are not claimed here."
+      ],
+      "lanes": [
+        {
+          "id": "persistence",
+          "status": "review",
+          "issue": "GH-185 scoped decision persistence and next-turn context",
+          "branch": "codex/185-scoped-decisions",
+          "worktree": "C:/Users/asus/.codex/worktrees/042c/ARCHFLOW_V4",
+          "base_ref": "5217609c593477b71aeeb82bcbbbba77b756c3f8",
+          "contributor": "claude",
+          "reviewer": null,
+          "handoff": "GH-183 consumes GET /api/decisions and the additive scopedDecisions field; the wire contract is frozen and this lane does not edit Hub product files.",
+          "modules": [
+            "studio.intent",
+            "studio.board",
+            "project.record_kinds"
+          ],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/boards.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/authentication.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+            "archflow/project/record_kinds.py",
+            "apps/archflow-studio/README.md",
+            "apps/monkeyhub/web/workspaces/src/api/generated"
+          ],
+          "depends_on": []
+        }
+      ]
     }
   ]
 }

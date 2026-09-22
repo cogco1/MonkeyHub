@@ -141,6 +141,10 @@ Three groups of refusal are **shared**, and the table below does not repeat them
 | GET | `/api/jobs/{id}` | `JobDto` | 404 `JOB_NOT_FOUND` |
 | GET | `/api/candidates/{id}` | `CandidateDto` | 404 `CANDIDATE_NOT_FOUND` — this process ran no such candidate, its run is still queued or running, or its job failed; the detail says which, and a failed job carries the reason |
 | GET | `/api/candidates/{id}/validation` | `ValidationDto` | 409 `CANDIDATE_NOT_FINISHED`, 404 `CANDIDATE_NOT_FOUND` |
+| GET | `/api/decisions` | `DecisionListDto` | 409 `DECISION_CONFLICT`, 409 `DECISION_BINDING_MISMATCH` |
+| GET | `/api/decisions/{decisionId}` | `DecisionHistoryDto` — every revision, oldest first | 404 `DECISION_NOT_FOUND`, 409 `DECISION_CONFLICT` |
+| POST | `/api/decisions` → 201 | `DecisionDto` (body `DecisionRequestDto`) | 404 `DECISION_SOURCE_UNKNOWN`, 404 `DECISION_TARGET_UNKNOWN`, 409 `DECISION_SOURCE_STALE`, 409 `DECISION_LOCK_ABSENT`, 422 `DECISION_INVALID`, 403 `PROJECT_MISMATCH` |
+| POST | `/api/decisions/{decisionId}/revisions` → 201 | `DecisionDto` (body `DecisionRevisionRequestDto`) | 404 `DECISION_NOT_FOUND`, 409 `DECISION_STALE`, 409 `DECISION_REVOKED`, 422 `DECISION_INVALID` |
 | GET | `/api/events?limit=N` | SSE of `StudioEventDto` | — |
 
 `GET /api/events` without `limit` holds the connection open and carries live events; a client
@@ -151,6 +155,88 @@ terminates, even on a quiet process.
 `GET /api/health` is an operator's question — is the process up, does its binding open. The
 browser does not ask it: its own first question is stronger, and `GET /api/project` plus
 `GET /api/state` either return the binding or fail with a code the top bar renders.
+
+### Scoped project decisions
+
+An architect settles something in passing — "这面墙不要打填充", "stop writing it that way",
+"module 就保持 1.2 m". `POST /api/decisions` retains that sentence so a later turn can read it
+without the transcript. Every revision lands in **one fixed explicit P036 run**,
+`studio-decisions`, as a `studio-scoped-decision` record (`StudioScopedDecision@1`) in its
+review area. The run is created on the first explicit save and nowhere else; there is no
+second index, cache, database or HEAD.
+
+A decision **accepts no Stage, moves no HEAD, writes no geometry, and takes and releases no
+lock.** `disposition: "lock"` *records and verifies* a lock the record already carries — a
+parameter nobody locked is refused with `DECISION_LOCK_ABSENT` — and revoking that decision
+does not unlock the parameter.
+
+```jsonc
+POST /api/decisions
+{
+  "projectId": "villa",
+  "rawLanguage": "这面墙不要打填充——留白就行",
+  "messageSource": {"sessionId": "chat-2026-09-22", "messageId": "message-07"},
+  "disposition": "avoid",                 // keep | reject | avoid | require | lock | defer
+  "strength": "strong_preference",        // hard | strong_preference | soft_preference | temporary
+  "targetRef": "drawing:hatch",
+  "scope": {"domain": "drawing", "extent": "project"},
+  "source": {"kind": "board", "revisionSha256": "<exact board revision>",
+             "elementIds": ["wall-outline"]},
+  "applicability": "scope",               // scope | exact-source
+  "sourceKind": "agent"                   // human | agent | evaluator | deterministic-rule
+}
+```
+
+**Source evidence is not applicability.** The `source` says what the decision was *said
+against* and is always checked exactly: a board revision is an exact retained revision plus the
+element ids that were actually live on it, a document page is its exact registered
+`revisionRef` (a `null` is never answered with a generated drawing revision), and a design
+source is a real retained actionable run with its `stateDigest`. A drawing or copy decision is
+never asked for a Design run it never had. `applicability` then says how long that judgement
+travels: `scope` survives later revisions of the source inside its scope, while `exact-source`
+applies only while the caller is reading the very same source identity and is otherwise
+reported as derived-stale.
+
+`scope.extent` is `project`, `stage` (with an exact committed `stageRef`, checked against
+design history rather than against the drawing it was said on) or `targets` (design refs the
+record really declares). A `typedBinding` of kind `parameter` makes the server read that
+parameter's own value, unit, epistemic status and lock — never a value the caller claims.
+
+**Provenance claims.** `sourceKind` says who settled the decision's *fields*: use `agent`
+whenever an agent interpreted the disposition, scope or target out of the words. `human` does
+not mean a person typed the sentence; it means a person settled every field the decision now
+claims. `messageSource` says which chat message the words came from, and
+`revisionMessageSource` (on `POST /api/decisions/{id}/revisions`) says which message asked for
+that revocation or supersession — a revocation keeps the original wording and its original
+`messageSource` and carries the revoking message beside them. Both are the caller's claims and
+neither is a credential: the boundary's own `attribution` (actor, whether it was authenticated,
+and the surface) is resolved from configured actors and this process, and no request body takes
+part in it. Creating and revising use the existing **accept** grant; reading uses the existing
+**read** grant.
+
+Revisions are an immutable chain: stable `decisionId`, exact `previousRevisionRef`, compare-and-
+swap on `expectedRevisionRef`. Nothing is rewritten — `GET /api/decisions/{id}` reports the
+older revisions as `superseded`, which is derived from standing outside the chain's tip, and a
+competing, branching or incomplete chain refuses with `DECISION_CONFLICT` rather than picking a
+newest file.
+
+**The next turn.** `POST /api/intents/context` takes an optional additive
+`decisionContext: {domain, stageRef?, targetRefs?, source?}` and answers with an additive
+top-level `scopedDecisions`. Absent that field the turn is the design turn it already is: the
+source this pack projects, the Stage that source is under, and the design refs its focus really
+covers (the focused elements, the parameters their rows are explicitly bound to, and the
+relations incident to them). An explicit design `source` must be the same source this pack
+projects; a drawing or copy turn brings its own representation evidence, which is never coerced
+into a Design run — omitting it is allowed and costs exactly the `exact-source` decisions,
+which then have no current identity to be compared against. A target scope applies when it
+intersects the task's relevant targets: keeping a relation between A and B still matters when
+only A changes. Every applicable decision is returned; none is silently truncated or discarded
+to meet a decision-count limit. Explicit design evidence is compared with the already verified
+ContextPack source without another project survey.
+
+The product loop around this — the provider tool that saves and revokes a decision from a real
+conversation, and the Hub surface that fills `messageSource` from the message the user actually
+sent — belongs to GH-183 and is not implemented or claimed here.
 
 ## 4. The slice
 

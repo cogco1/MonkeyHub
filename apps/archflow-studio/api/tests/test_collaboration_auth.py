@@ -108,6 +108,38 @@ class CollaborationAuthTests(unittest.TestCase):
         self.assertEqual(client.post(path, headers=self.headers("reviewer"), json={**body, "lockAuthority": "forged"}).status_code, 422)
         self.assertEqual(self.client().post(path, headers=self.headers("reviewer"), json=body).status_code, 403)
 
+    def test_scoped_decisions_read_widely_and_are_written_only_with_accept(self) -> None:
+        for shared in (True, False):
+            client = self.client(shared=shared)
+            with self.subTest(shared=shared):
+                self.assertEqual(client.get("/api/decisions", headers=self.headers("reader")).status_code, 200)
+                for path in ("/api/decisions", "/api/decisions/some-id/revisions"):
+                    for actor in ("reader", "designer", "issuer", "outsider"):
+                        response = client.post(path, headers=self.headers(actor), json={})
+                        self.assertEqual(response.status_code, 403, response.text)
+                    # A permitted caller reaches DTO validation, not the gate.
+                    self.assertEqual(client.post(path, headers=self.headers("reviewer"), json={}).status_code, 422)
+                self.assertEqual(client.get("/api/decisions", headers=self.headers("outsider")).status_code, 403)
+
+        local = self.client(shared=False)
+        board = local.put("/api/board", headers=self.headers("designer"), json={
+            "projectId": PROJECT_ID, "baseRevisionSha256": None, "title": "Feedback",
+            "elements": [{"id": "wall", "type": "rectangle", "x": 0, "y": 0, "width": 10, "height": 10}],
+            "seenDocuments": [],
+        })
+        self.assertEqual(board.status_code, 200, board.text)
+        saved = local.post("/api/decisions", headers=self.headers("reviewer"), json={
+            "projectId": PROJECT_ID, "rawLanguage": "这面墙不要填充", "disposition": "avoid",
+            "strength": "soft_preference", "targetRef": "drawing:hatch",
+            "scope": {"domain": "drawing", "extent": "project"}, "applicability": "scope",
+            "source": {"kind": "board", "revisionSha256": board.json()["revisionSha256"], "elementIds": ["wall"]},
+            "sourceKind": "agent", "messageSource": {"sessionId": "claimed-session", "messageId": "claimed-message"},
+        })
+        self.assertEqual(saved.status_code, 201, saved.text)
+        self.assertEqual(saved.json()["attribution"],
+                         {"actorId": "reviewer", "authenticated": True, "origin": "studio"})
+        self.assertEqual(saved.json()["sourceKind"], "agent")
+
     def test_body_cannot_replace_actor_or_project_scope(self) -> None:
         client = self.client(shared=False)
 
