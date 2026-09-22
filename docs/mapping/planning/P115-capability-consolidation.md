@@ -1290,6 +1290,8 @@ diffuse (82,52,74)，玻璃 diffuse (150,200,225)、透明度 0.6。来源不动
 
 ## 7. 本卡边界与检查
 
+2026-09-21 `headless-delivery` 继续处理大项目候选完成后的状态刷新：沿 `hub.shell` 的 retained 观测和 Studio 精确 `candidateId` 读取，将最近运行窗口分页读取，每次重新验证，避免冻结旧完成状态。`project.repository` 允许按精确记录类别选择，`studio.binding` 据此只读选择参考运行所需的 runner receipts，选中 StateRecord 仍完整校验。验证冷启动、同 run 完成、产物晚到、删除恢复与 worker 实例变化。候选详情的 `changedVsProjection` 保持当前项目投影的公开比较含义；不以扩大超时替代刷新修复。
+
 - 文档：本卡、原 P111 的来源限制／简化条目、ARCHITECTURE 的入口链接、work registry 及其生成索引。
 - 首个代码切片：`archflow/compilers/geometry.py` 与 `tests/test_geometry_compiler.py`。
 - 今晚 API 实现沿已有 P108 的工作范围：controls 三文件、main／router 挂载、episodes／candidate／proposal decision 路由、intents／intent／intent_agent／clarification 入口与对应测试；PROTOCOL、模块 registry 和 OpenAPI 生成 SDK 由主代理统一同步。P115 只索引这些子项，不重复占有 P108 的 API 路径。

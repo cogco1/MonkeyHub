@@ -40,9 +40,9 @@ def no_design_projection():
 
 
 class RuntimeTests(CandidateTestCase):
-    def cold(self, *candidate_ids: str, limit: int = 50) -> dict:
+    def cold(self, *candidate_ids: str, limit: int = 50, offset: int = 0) -> dict:
         binding = ProjectBinding.open(StudioSettings(project_dir=self.root / PROJECT_ID, cad_export="off"))
-        return runtime_dto(inspect_runtime(binding, candidate_ids=candidate_ids, limit=limit)).model_dump(by_alias=True)
+        return runtime_dto(inspect_runtime(binding, candidate_ids=candidate_ids, limit=limit, offset=offset)).model_dump(by_alias=True)
 
     def test_completed_result_is_reconstructed_without_jobs_or_writes(self) -> None:
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
@@ -128,6 +128,27 @@ class RuntimeTests(CandidateTestCase):
         self.assertEqual(self.client.get("/api/runtime?limit=201").status_code, 422)
         self.assertEqual(self.client.get("/api/runtime?candidateId=../other").status_code, 422)
 
+    def test_recent_pages_find_candidates_without_turning_reference_runs_into_candidates(self) -> None:
+        accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
+        self.assertEqual(job["status"], "succeeded")
+        self.repository.create_run("z-ordinary-project-run")
+        run_ids = tuple(reversed(bound_project(self.app.state).run_ids()))
+        seen = []
+        for offset, run_id in enumerate(run_ids):
+            response = self.client.get("/api/runtime", params={"limit": 1, "offset": offset})
+            self.assertEqual(response.status_code, 200, response.text)
+            page = response.json()
+            self.assertEqual(page["runsScanned"], 1)
+            self.assertEqual(page["hasMore"], offset + 1 < len(run_ids))
+            seen.extend(row["candidateId"] for row in page["candidates"])
+            if run_id != accepted["candidateId"]:
+                self.assertEqual(page["candidates"], [])
+        self.assertEqual(seen, [accepted["candidateId"]])
+        exact = self.cold(accepted["candidateId"], limit=1, offset=len(run_ids))
+        self.assertEqual(exact["runsScanned"], 1)
+        self.assertEqual(exact["candidates"][0]["status"], "completed")
+        self.assertEqual(self.client.get("/api/runtime?offset=-1").status_code, 422)
+
     def test_completed_receipt_must_match_its_exact_retained_state_record(self) -> None:
         accepted, job = self.run_candidate("set height to 2.2", elementId="portico-base")
         self.assertEqual(job["status"], "succeeded")
@@ -182,6 +203,11 @@ class RuntimeTests(CandidateTestCase):
         row = self.cold(candidate_id)["candidates"][0]
         self.assertEqual(row["status"], "needs_recovery")
         self.assertIn("no completed composed model", row["error"])
+        before = self.client.get("/api/runtime", params={"limit": 1, "candidateId": candidate_id}).json()
+        self.assertEqual(next(row["status"] for row in before["candidates"] if row["candidateId"] == candidate_id), "needs_recovery")
+        register_model(self.client, candidate_id, receipt["design_state_digest"], model_bytes)
+        after = self.client.get("/api/runtime", params={"limit": 1, "candidateId": candidate_id}).json()
+        self.assertEqual(next(row["status"] for row in after["candidates"] if row["candidateId"] == candidate_id), "completed")
 
     def test_prepared_stage_is_not_commit_and_post_commit_cold_read_is_exact(self) -> None:
         model_bytes = (Path(__file__).parent / "fixtures/model-source-a.3dm").read_bytes()

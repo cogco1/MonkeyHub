@@ -18,6 +18,8 @@ The rail's project entry answers for the conversation's own project: its name, f
 
 When the current turn successfully reads back a candidate, the right panel opens it once, even while the conversation continues working on drawings. The result row also offers to open it manually. The existing project workspace receives that exact candidate run as a view request while the conversation stays where it was. It retains its editing base and local draft. Repeated clicks on the same open candidate and later transcript polls retain the loaded workspace; an already running project can open its candidate directly from its scoped application URL. A slow opening response is discarded if the selected chat or project changed in the meantime. A run that cannot be opened is refused by name; no default view stands in for a conversation's own result. Opening a candidate is looking at it — it is not acceptance, endorsement or issue.
 
+Headless deliveries use the same workspace: a completed, retained candidate opens the selected project's panel even without a saved tool tab. A composed model registered after its native preview replaces that preview once, preserving the camera, unless the architect selected a different model or has unsaved edits. Board brings newly received or replaced pages into view after an active gesture or dialog finishes; later polling keeps the chosen view and all existing marks.
+
 The rail exposes Modeling, Board, Usage and Fabrication. Double-click a registered page on Board to edit it in Diagram and return to the same canvas. Diagram has no separate app entry.
 
 MonkeyHub opens without a building project. It starts MonkeyMonitor independently and one API-only Project Runtime per open project. Arch and Board render directly in the same Hub page, with independent project clients and retained view state.
@@ -210,6 +212,8 @@ folder`. Receipts, screenshots, recordings and their replayable overlay projecti
 ## Project runtime and recovery
 
 Hub keeps one runtime for each exact project identity and resolved path. Switching or reopening a page attaches to that runtime; it does not stop another project or restart a crashed worker. `GET /api/runtime` reports project bindings, the published P036 position, committed Stage history, owned worker health, attached chats, and active/recent operations. `GET /api/runtime/events` streams changes and begins every connection with a fresh snapshot, including after an old or foreign event cursor. The runtime process contract itself is [docs/PROJECT_RUNTIME.md](../../docs/PROJECT_RUNTIME.md); this section is the Hub's side of it.
+
+Owned local workers verify their project, process, instance and source revision in the same lightweight health response. Worker liveness does not survey retained design history through `/api/project`; the full project summary keeps its existing behavior.
 
 Worker and session observation continues every second. Retained history refreshes for active work, submitted mutations, attachment and worker changes; an idle runtime reuses its current projection and checks external project changes every 30 seconds. Status reads verify retained receipts and exact sources without rebuilding candidate previews. The Hub entry point closes SSE subscriptions before draining accepted HTTP work and owned processes during shutdown.
 

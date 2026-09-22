@@ -293,8 +293,8 @@ class ProjectBinding:
                 f"bound project: {error_sentence(exc)}",
             ) from exc
 
-    def record_refs(self, run_id: str) -> tuple[ProjectRecordRef, ...]:
-        """Every retained JSON record of one run, digest-verified by P036."""
+    def record_refs(self, run_id: str, *, kind: str | None = None) -> tuple[ProjectRecordRef, ...]:
+        """Retained JSON records of one run, optionally of one exact kind."""
 
         return self.repository.list_json(
             run=self.load_run(run_id),
@@ -302,6 +302,7 @@ class ProjectBinding:
                 PersistenceArea.RUN_RECORD,
                 run_id=run_id,
             ),
+            record_kind=kind,
         )
 
     def newest_runner_receipt(
@@ -563,7 +564,7 @@ class ProjectBinding:
     ) -> tuple[tuple[ProjectRecordRef, Mapping[str, Any]], ...]:
         return tuple(
             (ref, self.repository.load_json(ref))
-            for ref in self.record_refs(run_id)
+            for ref in self.record_refs(run_id, kind=RUNNER_RUN_RECEIPT)
             if record_kind(ref) == RUNNER_RUN_RECEIPT
         )
 
@@ -654,7 +655,7 @@ class ProjectBinding:
         phases: set[str] = set()
         for run_id in self.run_ids():
             try:
-                refs = self.record_refs(run_id)
+                refs = self.record_refs(run_id, kind=PROJECT_STAGE_WORKFLOW)
             except (StudioError, ProjectRepositoryError, ValueError, OSError):
                 continue
             for ref in refs:

@@ -498,23 +498,45 @@ class ProjectRuntimeManager:
         from archflow_studio_api.application.runtime import inspect_runtime
         from archflow_studio_api.transport.runtime import runtime_dto
         ids = runtime.operations.candidate_ids()
-        chunks = [ids[offset:offset + 200] for offset in range(0, len(ids), 200)] or [()]
-        result = None
+        run_ids = runtime.binding.run_ids()
         candidates = {}
-        for chunk in chunks:
+        if worker is not None:
+            # Preserve the existing recent window and tracked operations, but
+            # never make one HTTP request parse fifty large retained results.
+            # A page discovers ordinary runs without misclassifying them as
+            # explicit candidates. Every refresh revalidates its evidence.
+            recent = tuple(reversed(run_ids[-50:]))
+            reads = [(offset, (run_id,) if run_id in ids else ())
+                     for offset, run_id in enumerate(recent)]
+            reads.extend((len(run_ids), (candidate_id,)) for candidate_id in ids if candidate_id not in recent)
+            reads = reads or [(0, ())]
+        else:
+            # In-process cold/recovery reads have no HTTP deadline. They use
+            # the same inspector and never trust a previous completed row.
+            reads = [(0, ids[offset:offset + 200]) for offset in range(0, len(ids), 200)] or [(0, ())]
+        result = None
+        scanned = 0
+        for offset, chunk in reads:
             if worker is None:
                 current = runtime_dto(inspect_runtime(runtime.binding, candidate_ids=chunk)).model_dump(by_alias=True)
             else:
-                query = urlencode([("candidateId", value) for value in chunk])
-                response = request_http(worker.url, "/api/runtime" + (f"?{query}" if query else ""), timeout=10)
+                query = urlencode([("limit", "1"), ("offset", str(offset)), *(("candidateId", value) for value in chunk)])
+                response = request_http(worker.url, f"/api/runtime?{query}", timeout=10)
                 if response.status != 200:
                     raise HubFailure(503, "RUNTIME_READ_FAILED", "The bound Studio could not read its runtime state.")
                 current = response.json()
+            if current.get("projectId") != runtime.project_id or project_key(current.get("projectDir", "")) != project_key(runtime.project_dir):
+                raise HubFailure(409, "PROJECT_MISMATCH", "The runtime snapshot belongs to another project.")
             if result is not None and (result.get("published"), result.get("branches")) != (current.get("published"), current.get("branches")):
                 raise HubFailure(409, "RUNTIME_CHANGED", "The project changed during runtime inspection; read its next snapshot.")
             candidates.update((row["candidateId"], row) for row in current.get("candidates", []))
+            scanned += current.get("runsScanned", 0)
             result = current
+        if runtime.binding.run_ids() != run_ids:
+            raise HubFailure(409, "RUNTIME_CHANGED", "Project runs changed during runtime inspection; read its next snapshot.")
         result["candidates"] = list(candidates.values())
+        result["runsScanned"] = scanned
+        result["hasMore"] = len(run_ids) > 50
         return result
 
     def refresh(self, runtime: ProjectRuntime, *, cold: bool = False) -> None:
@@ -547,17 +569,18 @@ class ProjectRuntimeManager:
         # its binding while stale so the same worker/base can recover without
         # another expensive state read; a new instance or base still rebuilds.
         projection_key = (worker.instance_id, retained.get("published"), retained.get("branches")) if alive else runtime.projection_key
+        with runtime.lock:
+            previous = runtime.retained
+            runtime.retained = retained
+            runtime.operations.reconcile(retained, worker_alive=alive)
         if alive and projection_key != runtime.projection_key:
-            # Rebuild through the existing state projection owner after a
-            # worker/retained-base change. This is a read, never candidate replay.
+            # A verified candidate remains observed even if the independent
+            # default-view rebuild is slow. It does not make that view ready.
             projection = request_http(worker.url, "/api/state", timeout=10)
             if projection.status != 200:
                 raise HubFailure(503, "PROJECTION_UNAVAILABLE", "The recovered Studio could not rebuild its retained state projection.")
         with runtime.lock:
-            previous = runtime.retained
-            runtime.retained = retained
             runtime.error = None
-            runtime.operations.reconcile(retained, worker_alive=alive)
             runtime.projection = "ready" if alive else "stale" if worker else "unknown"
             runtime.projection_key = projection_key
         busy = any(row.status in _ACTIVE for row in runtime.operations.records()) or any(row.get("status") in {"queued", "running"} for row in retained.get("jobs", []))

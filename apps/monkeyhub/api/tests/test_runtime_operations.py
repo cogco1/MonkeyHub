@@ -11,6 +11,7 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import DESIGN_STAGE, RUNNER_RUN_RECEIPT
+from archflow.project.refs import record_ref_from_uri
 from archflow_studio_api.application.binding import ProjectBinding, bound_project
 from archflow_studio_api.application.runtime import inspect_runtime
 from archflow_studio_api.main import create_app
@@ -262,6 +264,109 @@ class OperationRecoveryTests(unittest.TestCase):
         self.assertEqual(observed.status, "completed")
         self.assertEqual(observed.source, "retained")
         self.assertIsNone(observed.admissionSequence, "a receipt without an admission journal cannot invent request order")
+
+    def test_runtime_pages_revalidate_completed_and_new_candidates_without_a_full_history_probe(self):
+        first, first_result = self.candidate()
+        second, second_result = self.candidate()
+        binding = bound_project(self.app.state)
+        snapshot = self.snapshot(live=True)
+        self.manager.reconcile(snapshot, worker_alive=True)
+        runtime = ProjectRuntime("bounded-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, binding, retained=snapshot)
+        manager = ProjectRuntimeManager(None, None)
+        worker = SimpleNamespace(url="http://owned-worker/")
+        queried = []
+
+        def bounded_read(_url, path, **_kwargs):
+            query = parse_qs(urlsplit(path).query)
+            # Model the reported failure: a broad history response exceeds
+            # the transport budget, while the existing exact API can finish.
+            if query.get("limit") != ["1"] or len(query.get("candidateId", [])) > 1:
+                raise TimeoutError("a full project history cannot finish in one probe")
+            response = self.client.get(path)
+            queried.extend(row["candidateId"] for row in response.json()["candidates"])
+            return HttpResult(response.status_code, response.content, dict(response.headers))
+
+        with patch("monkeyhub_api.runtime.request_http", side_effect=bounded_read):
+            runtime.retained = manager._read_retained(runtime, worker=worker)
+            self.assertIn(first_result["candidateId"], queried)
+            self.assertIn(second_result["candidateId"], queried)
+            self.assertEqual({row["candidateId"] for row in runtime.retained["candidates"]},
+                             {first_result["candidateId"], second_result["candidateId"]})
+            self.assertTrue(all(row["status"] == "completed" for row in runtime.retained["candidates"]))
+
+            # A new run must be found even if its operation is not in this
+            # Hub's journal; the project remains the source of its identity.
+            third, third_result = self.candidate()
+            self.manager._operations.pop(third.record.operationId)
+            queried.clear()
+            runtime.retained = manager._read_retained(runtime, worker=worker)
+            self.assertIn(third_result["candidateId"], queried)
+            self.assertEqual(next(row["status"] for row in runtime.retained["candidates"]
+                                  if row["candidateId"] == third_result["candidateId"]), "completed")
+
+            # Every completed run is still checked. Losing its retained
+            # evidence must replace the old completed observation, and the
+            # same run can complete again when that evidence becomes readable.
+            row = next(row for row in runtime.retained["candidates"] if row["candidateId"] == second_result["candidateId"])
+            receipt_path = binding.repository.layout.resolve_record(record_ref_from_uri(row["receiptRef"], self.fixture.PROJECT_ID))
+            receipt_bytes = receipt_path.read_bytes()
+            receipt_path.unlink()
+            try:
+                runtime.retained = manager._read_retained(runtime, worker=worker)
+                self.assertEqual(next(row["status"] for row in runtime.retained["candidates"]
+                                      if row["candidateId"] == second_result["candidateId"]), "needs_recovery")
+            finally:
+                receipt_path.write_bytes(receipt_bytes)
+            runtime.retained = manager._read_retained(runtime, worker=worker)
+            self.assertEqual(next(row["status"] for row in runtime.retained["candidates"]
+                                  if row["candidateId"] == second_result["candidateId"]), "completed")
+
+            # Cold/recovery reads do not reuse even a formerly completed row.
+            row = next(row for row in runtime.retained["candidates"] if row["candidateId"] == first_result["candidateId"])
+            receipt_path = binding.repository.layout.resolve_record(record_ref_from_uri(row["receiptRef"], self.fixture.PROJECT_ID))
+            receipt_bytes = receipt_path.read_bytes()
+            receipt_path.unlink()
+            try:
+                cold = manager._read_retained(runtime)
+                self.assertEqual(next(row["status"] for row in cold["candidates"]
+                                      if row["candidateId"] == first_result["candidateId"]), "needs_recovery")
+            finally:
+                receipt_path.write_bytes(receipt_bytes)
+
+    def test_slow_projection_preserves_verified_candidate_and_rebuilds_for_a_new_worker(self):
+        admission, accepted = self.candidate()
+        binding = bound_project(self.app.state)
+        runtime = ProjectRuntime("projection-runtime", self.fixture.PROJECT_ID, str(self.settings.project_dir),
+                                 self.manager, binding)
+        worker = SimpleNamespace(url="http://owned-worker/", instance_id="worker-a", state="ready", healthy=True)
+        applications = SimpleNamespace(worker_snapshots=lambda **_kwargs: (worker,), set_busy=lambda **_kwargs: None)
+        manager = ProjectRuntimeManager(applications, None)
+        state_reads = []
+
+        def read(_url, path, **_kwargs):
+            if path == "/api/state":
+                state_reads.append(worker.instance_id)
+                if len(state_reads) == 1:
+                    raise TimeoutError("projection still rebuilding")
+            response = self.client.get(path)
+            return HttpResult(response.status_code, response.content, dict(response.headers))
+
+        with patch("monkeyhub_api.runtime.request_http", side_effect=read):
+            with self.assertRaises(TimeoutError):
+                manager.refresh(runtime)
+            self.assertNotEqual(runtime.projection, "ready")
+            self.assertEqual(self.record(admission).status, "completed")
+            self.assertEqual(next(row["status"] for row in runtime.retained["candidates"]
+                                  if row["candidateId"] == accepted["candidateId"]), "completed")
+            manager.refresh(runtime)
+            self.assertEqual(runtime.projection, "ready")
+            manager.refresh(runtime)
+            self.assertEqual(state_reads, ["worker-a", "worker-a"], "same worker and base reuse the ready projection")
+            worker.instance_id = "worker-b"
+            manager.refresh(runtime)
+            self.assertEqual(runtime.projection, "ready")
+            self.assertEqual(state_reads[-1], "worker-b", "a new process must rebuild its projection")
 
     def test_http_acceptance_and_live_process_do_not_prove_a_candidate_finished(self):
         admission, _ = self.admission("/api/proposals/unexecuted/candidate")
