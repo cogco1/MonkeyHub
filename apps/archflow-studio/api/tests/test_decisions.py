@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,6 +19,8 @@ from fastapi.testclient import TestClient
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_SCOPED_DECISION, STUDIO_SOURCE_DOCUMENT
 from archflow.project.refs import ProjectRecordRef, record_file_name
+from archflow.project.repository import undeclared_version_identities
+from archflow.project.version_refs import locations, restate
 from archflow.state.state_record import StateRecord
 from archflow_studio_api.application.binding import ProjectBinding, bound_project
 from archflow_studio_api.application.decisions import (
@@ -317,6 +320,41 @@ class DecisionPersistenceTests(DecisionFixture):
         self.assertEqual(self.client.post("/api/decisions", json=self.spec(
             source=board_source(revision, "wall-outline"))).status_code, 409)
 
+    def test_a_retained_decision_names_content_and_never_a_canonical_version(self) -> None:
+        """What a format migration would find in these records, through the real writer."""
+
+        revision = self.save_board("wall-outline")
+        document = self.upload(two_page_pdf())
+        self.save(source=board_source(revision, "wall-outline"))
+        self.save(rawLanguage=COPY_WORDS, targetRef="copy:style",
+                  scope={"domain": "copy", "extent": "project"}, source=document_source(document, 1))
+        keep = self.save(rawLanguage=KEEP_WORDS, disposition="keep", strength="hard",
+                         targetRef="parameter:module", source=self.design_source(),
+                         scope={"domain": "design", "extent": "project"},
+                         typedBinding={"kind": "parameter", "parameterKey": "module"})
+        self.revise(keep, action="revoke", reason="不再保留")
+
+        base = self.repository.read_head()
+        run = self.repository.load_run(DECISIONS_RUN_ID)
+        payloads = [self.repository.load_json(ref) for ref in self.repository.list_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_REVIEW, run_id=DECISIONS_RUN_ID),
+            record_kind=STUDIO_SCOPED_DECISION)]
+        self.assertEqual(len(payloads), 4)
+        # Remap both the project's canonical base and the design state one of
+        # these decisions names, so a content digest that survives is a content
+        # digest nothing mistook for a project version.
+        remapping = {base.state_sha256: "f" * 64, self.state_digest: "e" * 64}
+        for payload in payloads:
+            with self.subTest(target=payload["targetRef"]):
+                self.assertEqual(locations(payload), [])
+                self.assertEqual(undeclared_version_identities(payload, {base.require_digest(): base.version}), [])
+                self.assertEqual(restate(payload, remapping), payload)
+        # The base these revisions stand on is P036's own, on the run manifest
+        # that owns it - which is why the records themselves carry none.
+        manifest = json.loads(self.repository.layout.run(DECISIONS_RUN_ID).manifest.read_text(encoding="utf-8"))
+        self.assertEqual([(pointer, digest) for pointer, _, digest in locations(manifest)],
+                         [("/base", base.state_sha256)])
+        self.assertEqual(restate(manifest, remapping)["base"]["state_sha256"], "f" * 64)
 
     def test_a_damaged_decisions_run_refuses_instead_of_reading_as_empty(self) -> None:
         revision = self.save_board("wall-outline")
