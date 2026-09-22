@@ -426,55 +426,7 @@
         "2026-09-11: user authorized completion of the current integration, GitHub push and consolidation of all committed branches into main. Unique Board clear/undo, model-list summaries, explicit run phases, planar geometry and MonkeyDiagram drawing output are integrated; local-first synchronization has also passed transfer, actor authorization, three-process real HTTP/OCCT and affected project/Stage checks on the integrated source. Existing worktree drafts and current application installations are preserved.",
         "Issue #12 lane: codex/hub-runtime, assigned efa8 worktree, base f3b928399a092f2a0b51853a737377fd969aa96a (main/merged PR #11). EXTEND hub.shell and existing Studio runtime readers/admission only. Independent of #13 compiled-cad-execution/backend dispatch; private test projects, runtime and ports only. Runtime snapshot/SSE, idempotent proxy admission, explicit worker recovery, real managed-process pre/post-commit crashes, multi-project isolation, browser reattachment and retained-proof checks pass in isolation. Admission remains in-process; no installation or active-service change is implied."
       ],
-      "lanes": [
-        {
-          "id": "headless-delivery",
-          "status": "review",
-          "issue": "GH-230",
-          "branch": "codex/230-view-sync",
-          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-230-headless-delivery-refresh",
-          "base_ref": "db7aba968163319f0d0631595f228fe67bcbad4b",
-          "contributor": "Codex",
-          "reviewer": null,
-          "handoff": "Large-project refresh pages fresh retained observations and selects reference receipts and frozen workflow records without unrelated payload reads. Bundled-Python real HTTP cold/second projection reads completed in 0.109/0.125 seconds with identical complete JSON, phase and HEAD. Seventy binding/projection tests pass in addition to the repository, Studio, Hub operation and worker recovery checks. Final desktop package validation remains.",
-          "modules": [
-            "hub.shell",
-            "studio.board",
-            "studio.artifacts",
-            "studio.shell",
-            "studio.binding",
-            "studio.candidate",
-            "project.repository"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/README.md",
-            "apps/monkeyhub/web/src/ChatShell.tsx",
-            "apps/monkeyhub/web/test/chatShell.browser.mjs",
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
-            "apps/monkeyhub/web/workspaces/test/boardReplacement.browser.mjs",
-            "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-            "apps/archflow-studio/api/archflow_studio_api/routes/health.py",
-            "apps/archflow-studio/api/archflow_studio_api/transport/health.py",
-            "apps/archflow-studio/api/tests/test_health.py",
-            "apps/monkeyhub/api/monkeyhub_api/workers.py",
-            "apps/monkeyhub/api/tests/test_workers.py",
-            "apps/monkeyhub/api/monkeyhub_api/runtime.py",
-            "apps/monkeyhub/api/tests/test_runtime_operations.py",
-            "apps/monkeyhub/api/tests/test_project_runtime.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/binding.py",
-            "apps/archflow-studio/api/archflow_studio_api/application/runtime.py",
-            "apps/archflow-studio/api/archflow_studio_api/routes/runtime.py",
-            "apps/archflow-studio/api/tests/test_binding.py",
-            "apps/archflow-studio/api/tests/test_runtime.py",
-            "archflow/project/repository.py",
-            "tests/test_project_repository.py",
-            "docs/PROJECT_RUNTIME.md",
-            "apps/monkeyhub/web/workspaces/src/api/generated/types.gen.ts"
-          ],
-          "depends_on": []
-        }
-      ]
+      "lanes": []
     },
     {
       "id": "P105",
