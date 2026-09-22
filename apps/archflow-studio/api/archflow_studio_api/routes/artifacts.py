@@ -51,24 +51,23 @@ from ..transport.artifacts import (
     work_copy_dto,
 )
 from ..transport.errors import StudioError
-from ..transport.rendering import RenderRequestDto, RenderJobDto, RenderJobListDto
+from ..transport.rendering import RenderJobDto, RenderJobListDto
+
+from ..application.visualization import read_visualization, save_visualization, set_source, source_bytes
+from ..transport.visualization import VisualizationDto, VisualizationSaveDto, VisualizationSourceDto
+from ..transport.rendering import NativeRenderRequestDto, NativeRenderCompleteDto, NativeRenderFailureDto
 
 router = APIRouter(tags=["artifacts"])
 
 
-@router.post("/render/jobs", response_model=RenderJobDto, status_code=202)
-def create_render_job(request: Request, payload: RenderRequestDto):
-    return request.app.state.render_jobs.submit(bound_project(request.app.state), payload)
-
-
 @router.get("/render/jobs", response_model=RenderJobListDto)
 def list_render_jobs(request: Request):
-    return RenderJobListDto(jobs=request.app.state.render_jobs.list(bound_project(request.app.state)))
+    return RenderJobListDto(jobs=request.app.state.native_render_jobs.list(bound_project(request.app.state)))
 
 
 @router.get("/render/jobs/{job_id}", response_model=RenderJobDto)
 def read_render_job(request: Request, job_id: str):
-    return request.app.state.render_jobs.get(bound_project(request.app.state), job_id)
+    return request.app.state.native_render_jobs.get(bound_project(request.app.state), job_id)
 
 
 @router.post("/model-assets", response_model=ProjectArtifactDto, response_model_by_alias=True, status_code=201)
@@ -165,13 +164,13 @@ def read_documents(request: Request, run_id: str | None = Query(default=None, al
 
 @router.get("/documents/{asset_sha256}/bytes", response_class=Response)
 def read_document_bytes(request: Request, asset_sha256: str, run_id: str = Query(alias="runId", min_length=1),
-                        revision_ref: str | None = Query(default=None, alias="revisionRef")) -> Response:
+                        revision_ref: str | None = Query(default=None, alias="revisionRef"), download: bool = False) -> Response:
     document, data = document_bytes(bound_project(request.app.state), run_id, asset_sha256, revision_ref)
     return Response(
         content=data, media_type=document.mime_type,
         headers={
             "ETag": f'"{document.asset_sha256}"',
-            "Content-Disposition": _content_disposition(document.file_name, asset_sha256).replace("attachment;", "inline;", 1),
+            "Content-Disposition": _content_disposition(document.file_name, asset_sha256) if download else _content_disposition(document.file_name, asset_sha256).replace("attachment;", "inline;", 1),
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
@@ -310,3 +309,34 @@ def _content_disposition(file_name: str, sha256: str) -> str:
         f'attachment; filename="{fallback}"; '
         f"filename*=UTF-8''{quote(name, safe='')}"
     )
+
+
+
+@router.get('/visualization', response_model=VisualizationDto)
+def read_project_visualization(request: Request):
+    return read_visualization(bound_project(request.app.state))
+
+@router.put('/visualization', response_model=VisualizationDto)
+def save_project_visualization(request: Request, payload: VisualizationSaveDto):
+    return save_visualization(bound_project(request.app.state), payload)
+
+@router.post('/visualization/source', response_model=VisualizationDto)
+def set_visualization_source(request: Request, payload: VisualizationSourceDto):
+    return set_source(bound_project(request.app.state), payload)
+
+@router.get('/visualization/source')
+def read_visualization_source(request: Request):
+    return Response(source_bytes(bound_project(request.app.state)), media_type='model/vnd.rhino.3dm')
+
+
+@router.post('/render/native-jobs',response_model=RenderJobDto,status_code=202)
+def create_native_render(request:Request,payload:NativeRenderRequestDto):
+    return request.app.state.native_render_jobs.submit_native(bound_project(request.app.state),payload)
+
+@router.post('/render/native-jobs/{job_id}/complete',response_model=RenderJobDto)
+def complete_native_render(request:Request,job_id:str,payload:NativeRenderCompleteDto):
+    return request.app.state.native_render_jobs.complete_native(bound_project(request.app.state),job_id,payload)
+
+@router.post('/render/native-jobs/{job_id}/fail',response_model=RenderJobDto)
+def fail_native_render(request:Request,job_id:str,payload:NativeRenderFailureDto):
+    return request.app.state.native_render_jobs.fail_native(bound_project(request.app.state),job_id,payload.detail)

@@ -6,21 +6,22 @@
       "id": "GH-216",
       "stream": "planning",
       "status": "active",
-      "goal": "Implement the native Render workspace and GH-218 camera handoff in MonkeyHub; retain exact design source and project-owned presentation.",
+      "goal": "Native Render Workspace: project visualization state, live Three.js preview, look development and native final PNG. Preserve current 3DM loading; neutral asset migration is deferred.",
       "issue": "https://github.com/cogco1/MonkeyHub/issues/216",
       "branch": "feature/blender-experiment",
       "worktree": "feature-blender-experiment",
       "base_ref": "db7aba96",
       "contributor": "YNNAP-HelloWorld",
       "reviewer": null,
-      "handoff": "Draft PR #235; source implementation and visual acceptance in progress.",
+      "handoff": "Draft PR #235: native visualization/preview/look development/PNG implemented and locally verified; broader Drawing/history restoration remains later scope.",
       "depends_on": [],
       "modules": [
         "hub.shell",
         "studio.artifacts",
         "adapters.cad_execution",
         "studio.shell",
-        "project.record_kinds"
+        "project.record_kinds",
+        "visualization.state"
       ],
       "write_scope": [
         "apps/monkeyhub/web/src/ChatShell.tsx",
@@ -48,13 +49,16 @@
         "archflow/project/record_kinds.py",
         "archflow/adapters/blender_cad.py",
         "apps/monkeyhub/web/src/api/generated/",
-        "apps/monkeyhub/web/workspaces/src/api/generated/"
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "archflow/visualization.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/visualization.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/visualization.py"
       ],
       "card": "docs/NATIVE_RENDER_V01.md",
       "acceptance": [
-        "Native Render navigation, persisted real gallery images, same-camera render execution and source return pass in actual Hub.",
-        "GH-218 perspective/orthographic handoff preserves exact model source without changing design state.",
-        "Do not mark complete before backend execution, restart and UI evidence are verified."
+        "Native Render Workspace phases 1–4: persisted engine-independent state, read-only 3D preview, live look development and independent WebGL2 PNG without Blender/Rhino Desktop.",
+        "Model/camera handoff retains exact source and projection; presentation changes do not change design HEAD.",
+        "Legacy images remain readable; native result history, zoom, download and restart readback are verified. Neutral 3DM asset migration remains deferred."
       ]
     },
     {

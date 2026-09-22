@@ -417,16 +417,6 @@
       "kind": "adapter_workspace",
       "owner": "adapters.cad_execution",
       "reason": "Writes transport plan and logs only in the supplied speculative workspace for OCCT or retained mesh inputs. P036 owns durable sources, receipts and results."
-    },
-    {
-      "path": "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
-      "function": "_execute",
-      "operations": [
-        "mkdir"
-      ],
-      "kind": "speculative_workspace",
-      "owner": "studio.artifacts",
-      "reason": "Creates the P036-owned render job workspace before passing it to the adapter; source and result writes use repository ports."
     }
   ],
   "forbidden_layer_imports": [

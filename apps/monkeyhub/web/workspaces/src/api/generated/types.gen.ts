@@ -4313,6 +4313,44 @@ export type MonitorWriteDto = {
 };
 
 /**
+ * NativeRenderCompleteDto
+ */
+export type NativeRenderCompleteDto = {
+    /**
+     * Snapshotsha256
+     */
+    snapshotSha256: string;
+    /**
+     * Contentbase64
+     */
+    contentBase64: string;
+};
+
+/**
+ * NativeRenderFailureDto
+ */
+export type NativeRenderFailureDto = {
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * NativeRenderRequestDto
+ */
+export type NativeRenderRequestDto = {
+    /**
+     * Requestid
+     */
+    requestId: string;
+    /**
+     * Revision
+     */
+    revision: number;
+};
+
+/**
  * ObjectBindingDto
  *
  * One exported object and the element the catalog can name for it.
@@ -5629,6 +5667,16 @@ export type RenderJobDto = {
      */
     error?: string | null;
     document?: SourceDocumentDto | null;
+    /**
+     * Snapshot
+     */
+    snapshot?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Snapshotsha256
+     */
+    snapshotSha256?: string | null;
 };
 
 /**
@@ -5639,38 +5687,6 @@ export type RenderJobListDto = {
      * Jobs
      */
     jobs: Array<RenderJobDto>;
-};
-
-/**
- * RenderRequestDto
- */
-export type RenderRequestDto = {
-    /**
-     * Projectid
-     */
-    projectId: string;
-    /**
-     * Requestid
-     */
-    requestId: string;
-    modelSource?: ModelSourceDto | null;
-    /**
-     * Filename
-     */
-    fileName?: string | null;
-    /**
-     * Contentbase64
-     */
-    contentBase64?: string | null;
-    camera?: RenderCameraDto | null;
-    /**
-     * Resolution
-     */
-    resolution?: number;
-    /**
-     * Samples
-     */
-    samples?: number;
 };
 
 /**
@@ -8620,6 +8636,68 @@ export type ViewportCaptureRequestDto = {
 };
 
 /**
+ * VisualizationDto
+ */
+export type VisualizationDto = {
+    /**
+     * Revision
+     */
+    revision: number;
+    /**
+     * State
+     */
+    state?: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Source
+     */
+    source?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * VisualizationSaveDto
+ */
+export type VisualizationSaveDto = {
+    /**
+     * Expectedrevision
+     */
+    expectedRevision: number;
+    /**
+     * State
+     */
+    state: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * VisualizationSourceDto
+ */
+export type VisualizationSourceDto = {
+    /**
+     * Expectedrevision
+     */
+    expectedRevision: number;
+    /**
+     * Jobid
+     */
+    jobId?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Filename
+     */
+    fileName?: string | null;
+    /**
+     * Contentbase64
+     */
+    contentBase64?: string | null;
+    camera?: RenderCameraDto | null;
+};
+
+/**
  * VolumeDto
  *
  * One ``Volume@1`` a transform can name.
@@ -9546,41 +9624,6 @@ export type ListRenderJobsApiRenderJobsGetResponses = {
 
 export type ListRenderJobsApiRenderJobsGetResponse = ListRenderJobsApiRenderJobsGetResponses[keyof ListRenderJobsApiRenderJobsGetResponses];
 
-export type CreateRenderJobApiRenderJobsPostData = {
-    body: RenderRequestDto;
-    headers?: {
-        /**
-         * X-Monkey-Operation
-         */
-        'x-monkey-operation'?: string | null;
-        /**
-         * X-Monkey-Parent
-         */
-        'x-monkey-parent'?: string | null;
-    };
-    path?: never;
-    query?: never;
-    url: '/api/render/jobs';
-};
-
-export type CreateRenderJobApiRenderJobsPostErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type CreateRenderJobApiRenderJobsPostError = CreateRenderJobApiRenderJobsPostErrors[keyof CreateRenderJobApiRenderJobsPostErrors];
-
-export type CreateRenderJobApiRenderJobsPostResponses = {
-    /**
-     * Successful Response
-     */
-    202: RenderJobDto;
-};
-
-export type CreateRenderJobApiRenderJobsPostResponse = CreateRenderJobApiRenderJobsPostResponses[keyof CreateRenderJobApiRenderJobsPostResponses];
-
 export type ReadRenderJobApiRenderJobsJobIdGetData = {
     body?: never;
     headers?: {
@@ -9833,6 +9876,10 @@ export type ReadDocumentBytesApiDocumentsAssetSha256BytesGetData = {
          * Revisionref
          */
         revisionRef?: string | null;
+        /**
+         * Download
+         */
+        download?: boolean;
     };
     url: '/api/documents/{asset_sha256}/bytes';
 };
@@ -10040,6 +10087,259 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
      */
     200: unknown;
 };
+
+export type ReadProjectVisualizationApiVisualizationGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/visualization';
+};
+
+export type ReadProjectVisualizationApiVisualizationGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadProjectVisualizationApiVisualizationGetError = ReadProjectVisualizationApiVisualizationGetErrors[keyof ReadProjectVisualizationApiVisualizationGetErrors];
+
+export type ReadProjectVisualizationApiVisualizationGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisualizationDto;
+};
+
+export type ReadProjectVisualizationApiVisualizationGetResponse = ReadProjectVisualizationApiVisualizationGetResponses[keyof ReadProjectVisualizationApiVisualizationGetResponses];
+
+export type SaveProjectVisualizationApiVisualizationPutData = {
+    body: VisualizationSaveDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/visualization';
+};
+
+export type SaveProjectVisualizationApiVisualizationPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SaveProjectVisualizationApiVisualizationPutError = SaveProjectVisualizationApiVisualizationPutErrors[keyof SaveProjectVisualizationApiVisualizationPutErrors];
+
+export type SaveProjectVisualizationApiVisualizationPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisualizationDto;
+};
+
+export type SaveProjectVisualizationApiVisualizationPutResponse = SaveProjectVisualizationApiVisualizationPutResponses[keyof SaveProjectVisualizationApiVisualizationPutResponses];
+
+export type ReadVisualizationSourceApiVisualizationSourceGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/visualization/source';
+};
+
+export type ReadVisualizationSourceApiVisualizationSourceGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadVisualizationSourceApiVisualizationSourceGetError = ReadVisualizationSourceApiVisualizationSourceGetErrors[keyof ReadVisualizationSourceApiVisualizationSourceGetErrors];
+
+export type ReadVisualizationSourceApiVisualizationSourceGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type SetVisualizationSourceApiVisualizationSourcePostData = {
+    body: VisualizationSourceDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/visualization/source';
+};
+
+export type SetVisualizationSourceApiVisualizationSourcePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SetVisualizationSourceApiVisualizationSourcePostError = SetVisualizationSourceApiVisualizationSourcePostErrors[keyof SetVisualizationSourceApiVisualizationSourcePostErrors];
+
+export type SetVisualizationSourceApiVisualizationSourcePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: VisualizationDto;
+};
+
+export type SetVisualizationSourceApiVisualizationSourcePostResponse = SetVisualizationSourceApiVisualizationSourcePostResponses[keyof SetVisualizationSourceApiVisualizationSourcePostResponses];
+
+export type CreateNativeRenderApiRenderNativeJobsPostData = {
+    body: NativeRenderRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/render/native-jobs';
+};
+
+export type CreateNativeRenderApiRenderNativeJobsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateNativeRenderApiRenderNativeJobsPostError = CreateNativeRenderApiRenderNativeJobsPostErrors[keyof CreateNativeRenderApiRenderNativeJobsPostErrors];
+
+export type CreateNativeRenderApiRenderNativeJobsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: RenderJobDto;
+};
+
+export type CreateNativeRenderApiRenderNativeJobsPostResponse = CreateNativeRenderApiRenderNativeJobsPostResponses[keyof CreateNativeRenderApiRenderNativeJobsPostResponses];
+
+export type CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostData = {
+    body: NativeRenderCompleteDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/render/native-jobs/{job_id}/complete';
+};
+
+export type CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostError = CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostErrors[keyof CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostErrors];
+
+export type CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderJobDto;
+};
+
+export type CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostResponse = CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostResponses[keyof CompleteNativeRenderApiRenderNativeJobsJobIdCompletePostResponses];
+
+export type FailNativeRenderApiRenderNativeJobsJobIdFailPostData = {
+    body: NativeRenderFailureDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/render/native-jobs/{job_id}/fail';
+};
+
+export type FailNativeRenderApiRenderNativeJobsJobIdFailPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FailNativeRenderApiRenderNativeJobsJobIdFailPostError = FailNativeRenderApiRenderNativeJobsJobIdFailPostErrors[keyof FailNativeRenderApiRenderNativeJobsJobIdFailPostErrors];
+
+export type FailNativeRenderApiRenderNativeJobsJobIdFailPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: RenderJobDto;
+};
+
+export type FailNativeRenderApiRenderNativeJobsJobIdFailPostResponse = FailNativeRenderApiRenderNativeJobsJobIdFailPostResponses[keyof FailNativeRenderApiRenderNativeJobsJobIdFailPostResponses];
 
 export type ReadBoardApiBoardGetData = {
     body?: never;

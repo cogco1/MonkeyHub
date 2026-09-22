@@ -1,8 +1,8 @@
 """Native Render requests name retained model content or explicit imported bytes."""
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from .artifacts import ModelSourceDto, SourceDocumentDto
+from pydantic import BaseModel, ConfigDict, Field
+from .artifacts import SourceDocumentDto
 
 
 class RenderCameraDto(BaseModel):
@@ -18,27 +18,6 @@ class RenderCameraDto(BaseModel):
     orthographic_bounds: tuple[float, float, float, float] | None = Field(default=None, alias="orthographicBounds")
 
 
-class RenderRequestDto(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="forbid", frozen=True)
-    project_id: str = Field(alias="projectId")
-    request_id: UUID = Field(alias="requestId")
-    model_source: ModelSourceDto | None = Field(default=None, alias="modelSource")
-    file_name: str | None = Field(default=None, alias="fileName", max_length=240)
-    content_base64: str | None = Field(default=None, alias="contentBase64", max_length=44739244)
-    camera: RenderCameraDto | None = None
-    resolution: int = Field(default=768, ge=64, le=2048, strict=True)
-    samples: int = Field(default=16, ge=1, le=128, strict=True)
-
-    @model_validator(mode="after")
-    def one_source(self):
-        if (self.model_source is None) == (self.content_base64 is None):
-            raise ValueError("Choose an exact retained model or the opened local model bytes.")
-        if self.content_base64 is not None and (not self.file_name or not self.file_name.lower().endswith(".3dm")
-                or any(c in self.file_name for c in "/\\\r\n\0")):
-            raise ValueError("A local model requires a .3dm filename, not a server path.")
-        return self
-
-
 class RenderJobDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     job_id: str = Field(alias="jobId")
@@ -49,7 +28,26 @@ class RenderJobDto(BaseModel):
     created_at: str = Field(alias="createdAt")
     error: str | None = None
     document: SourceDocumentDto | None = None
+    snapshot: dict | None = None
+    snapshot_sha256: str | None = Field(default=None, alias='snapshotSha256')
 
 
 class RenderJobListDto(BaseModel):
     jobs: list[RenderJobDto]
+
+
+class NativeRenderRequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra='forbid')
+    request_id: UUID = Field(alias='requestId')
+    revision: int = Field(ge=1)
+
+
+class NativeRenderCompleteDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra='forbid')
+    snapshot_sha256: str = Field(alias='snapshotSha256', pattern='^[a-f0-9]{64}$')
+    content_base64: str = Field(alias='contentBase64', max_length=100663296)
+
+
+class NativeRenderFailureDto(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    detail: str = Field(max_length=1000)

@@ -3863,7 +3863,7 @@
         "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states",
         "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
         "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
-        "Project-bound Blender render queue with immutable source bytes, camera recipe, transitions and document results retained through P036"
+        "retaining native browser render requests, immutable visualization snapshots and verified PNG results; reading legacy render history"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3933,10 +3933,15 @@
         "DocumentWorkCopy",
         "GET /api/drawings/model-view",
         "model_view",
-        "POST /api/render/jobs",
         "GET /api/render/jobs",
         "GET /api/render/jobs/{job_id}",
-        "RenderJobs"
+        "GET/PUT /api/visualization",
+        "POST /api/visualization/source",
+        "GET /api/visualization/source",
+        "NativeRenderJobs",
+        "POST /api/render/native-jobs",
+        "POST /api/render/native-jobs/{job_id}/complete",
+        "POST /api/render/native-jobs/{job_id}/fail"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3958,7 +3963,7 @@
         "contracts.canonical",
         "studio.binding",
         "studio.shell",
-        "archflow.adapters.blender_projection"
+        "visualization.state"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3989,7 +3994,8 @@
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
         "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources.",
         "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance and remain eligible for unreferenced automatic cleanup. Legacy registrations are conservatively protected.",
-        "Imported meshes retain exact bytes without fabricated design-state binding; jobs never advance HEAD; interrupted jobs are reported and never silently replayed"
+        "Imported meshes retain exact bytes without fabricated design-state binding; jobs never advance HEAD; interrupted jobs are reported and never silently replayed",
+        "Visualization revisions are engine-independent P036 records separate from design HEAD. Native job completion verifies the retained snapshot binding, PNG format and dimensions; the browser performs GPU rendering without external processes. Legacy render results remain readable."
       ],
       "status": "canonical",
       "tests": [
@@ -3999,7 +4005,9 @@
         "apps/archflow-studio/api/tests/test_documents.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
         "apps/archflow-studio/api/tests/test_drawings.py",
-        "apps/archflow-studio/api/tests/test_rendering.py"
+        "apps/archflow-studio/api/tests/test_rendering.py",
+        "apps/archflow-studio/api/tests/test_visualization.py",
+        "apps/archflow-studio/api/tests/test_native_render.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -4010,7 +4018,9 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/visualization.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/visualization.py"
       ]
     },
     {
@@ -6820,6 +6830,45 @@
         "apps/archflow-studio/api/archflow_studio_api/application/study_model.py",
         "monkeydiagram/study.py"
       ]
+    },
+    {
+      "module_id": "visualization.state",
+      "owner_path": "archflow/visualization.py",
+      "purpose": "Engine-independent project visualization values and validation, separate from design geometry.",
+      "owns": [
+        "Camera, material, lighting, environment and output settings values"
+      ],
+      "does_not_own": [
+        "Geometry mutations",
+        "Persistence paths",
+        "GPU execution"
+      ],
+      "inputs": [
+        "JSON visualization values"
+      ],
+      "outputs": [
+        "Validated ProjectVisualizationState"
+      ],
+      "public_api": [
+        "ProjectVisualizationState",
+        "default_visualization"
+      ],
+      "depends_on": [],
+      "used_by": [
+        "studio.artifacts"
+      ],
+      "invariants": [
+        "No filesystem or engine dependency",
+        "No geometry commands or transforms in visualization values"
+      ],
+      "status": "canonical",
+      "tests": [
+        "tests/test_visualization.py"
+      ],
+      "files": [
+        "archflow/visualization.py"
+      ],
+      "notes": "CREATE: artifact persistence does not own portable visualization value semantics; existing BlenderPresentation is engine-specific and cannot own the native contract."
     }
   ]
 }

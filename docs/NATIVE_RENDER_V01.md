@@ -1,124 +1,45 @@
-# Native Render Workspace V0.1
+# MonkeyHub Native Render Workspace V1
 
-Implementation plan for [GH-216](https://github.com/cogco1/MonkeyHub/issues/216)
-and [GH-218](https://github.com/cogco1/MonkeyHub/issues/218), aligned with the
-representation investigation in [GH-223](https://github.com/cogco1/MonkeyHub/issues/223).
+Tracks [GH-216](https://github.com/cogco1/MonkeyHub/issues/216) and the current-model/camera handoff in [GH-218](https://github.com/cogco1/MonkeyHub/issues/218). Penguin geometry repair remains GH-217.
 
-Status: implementation in progress. Baseline inspected: `db7aba96`.
+## Delivered sequence
 
-Native Render now submits asynchronous Blender jobs from the current Modeling
-mesh and captured camera. Sources, immutable recipes, execution transitions,
-verified receipts and PNG documents belong to the existing P036 project. The
-Render gallery lists only documents registered with a render recipe. It polls
-task status and automatically opens the finished image with zoom/pan/download.
-Refreshing reads retained results without resubmitting a job.
+1. **Project Visualization State.** Camera, saved cameras, material overrides, lights, environment and render settings are engine-independent values validated by `archflow.visualization`. Studio retains revisioned `ProjectVisualizationState@1` records through P036 in `studio-visualization`. Compare-and-swap rejects stale editors. Geometry and design HEAD are unchanged.
+2. **Native Preview.** The Render workspace opens the exact retained model through the existing Rhino3dmLoader pipeline. Three.js owns a display scene with Orbit, Pan, Zoom and Fit. This component receives bytes and visualization callbacks, with no geometry/design command writer.
+3. **Look development.** Perspective/orthographic camera, FOV, saved cameras, default and object-specific base color/roughness/metallic/opacity, editable lights and shadows, background/ambient lighting, exposure and output dimensions update immediately and autosave. An explicit Modeling camera transfer updates framing while retaining existing look development for the same model.
+4. **Native final image.** A project-runtime request retains an immutable source/settings snapshot. The browser renders that snapshot to an independent multisampled floating-point WebGL2 target, applies ACES/exposure/sRGB through OutputPass, reads pixels and encodes a PNG at the requested dimensions. Preview uses the same color pipeline. The result is registered through the existing document persistence path and opens in History with zoom, pan and download.
 
-The first execution path accepts mesh-only 3DM, default neutral materials and
-lighting, and a captured perspective/orthographic camera. Imported local meshes
-retain exact source bytes without inventing a design revision; certified model
-sources retain their original association. Neither path advances HEAD. Unsupported
-geometry is refused explicitly. Shutdown drains accepted work; jobs interrupted
-by a process crash are reported as interrupted after restart.
+The production Render API no longer imports or starts Blender, discovers its executable, creates `.blend` files or accepts the old `POST /api/render/jobs`. Existing GET job readers and previous PNG documents remain compatible. Optional historical Blender adapters/CLI experiments outside this workspace are not invoked by Native Render and are not expanded in this change.
 
-Validation includes real Blender API submission, idempotent request reuse,
-conflicting request refusal, exact retained source/result hashes, cold result
-readback after runtime restart and unchanged HEAD. Camera adapter tests cover
-real Blender save/reopen, projection agreement and tampered-camera refusal.
+## API and authority
 
-Live Hub acceptance (2026-09-21): the Modeling toolbar sent
-`snow-penguin-20260914-hub.3dm` to Render, and Start render submitted job
-`render-d59a64bc04874266ad3bb6d2834f63b1`. Blender produced a 730 x 768 neutral
-penguin image, automatically registered and displayed in Render. Source SHA-256
-is `ba29e83ef3b84281eb8fd58dd408e9860cb3d261479579a5be7e2e71a3007154`.
-Zoom in/out changed the displayed image dimensions; refresh reopened the retained
-result without another task. The original failed attempt is retained honestly.
-Blender now receives DEVNULL stdin rather than the Hub runtime control pipe,
-which otherwise blocked its startup on Windows. A real subprocess regression
-keeps the parent pipe open throughout rendering.
+- `GET /api/visualization`: saved state, revision and exact source reference.
+- `PUT /api/visualization`: engine-independent state plus expected revision.
+- `POST /api/visualization/source`: one certified model source, explicit local 3DM bytes, or retained legacy job source; optional captured viewport camera.
+- `GET /api/visualization/source`: hash-verified immutable model bytes.
+- `POST /api/render/native-jobs`: request UUID and saved visualization revision.
+- `POST /api/render/native-jobs/{job_id}/complete`: snapshot digest and generated PNG.
+- `POST /api/render/native-jobs/{job_id}/fail`: explicit rendering failure.
+- Existing `GET /api/render/jobs`, single-job reads and document APIs serve history.
 
-Remaining issue scope: cancellation, historical source/camera restoration,
-source-linked Drawing workflow, richer geometry/material support and expanded
-interaction acceptance. Neither GH-216 nor GH-218 is marked complete.
+Models are limited to 32 MiB; output is 64–4096 pixels per axis, additionally bounded by GPU support. Completion validates PNG format, dimensions, exact request digest and idempotent content. It does not claim server-side proof of browser pixel provenance. Source bytes and visualization are retained in the job independently of subsequent edits. Imported models do not acquire a fabricated design-state association.
 
-## User-visible outcome
+Native rendering currently runs in the open browser. Closing it abandons an in-flight job; after 120 seconds or runtime restart, unfinished work is reported as interrupted, never silently replayed. Explicit failures remain failures; there is no Blender/Rhino fallback.
 
-From Modeling, Send to Render captures the current model version and viewport,
-opens a native Render workspace; Start render submits one asynchronous preview. The user
-can view and download the result, reopen it from the project gallery, and return
-to its source model with the saved camera. Modeling, Drawing and Render retain
-the same project context. No separate Blender-control web application is needed.
+## Verification
 
-## Ownership
+- Domain tests reject geometry/engine fields and invalid camera/material/light/output values.
+- API tests cover state persistence across restart, stale revision refusal, immutable snapshots during later edits, PNG dimension/digest validation, idempotent completion, conflicting result refusal, interrupted jobs and unchanged design HEAD.
+- API native tests forbid process launches and executable discovery. A retained legacy result remains downloadable after the old submission route is removed.
+- Actual Hub preview used `snow-penguin-20260914-hub.3dm`, source SHA-256 `ba29e83ef3b84281eb8fd58dd408e9860cb3d261479579a5be7e2e71a3007154`. Blue perspective and gold orthographic variants use the native flow, not fixtures or canvas screenshots. The Hub was launched with a nonexistent Blender executable path.
 
-MonkeyHub Design State remains the only architectural design authority. Render
-presentation settings do not redefine building geometry or architectural material
-semantics. As specified by GH-218/GH-223, camera and lighting belong to the
-representation owner and must not create a design revision when changed alone.
+## Deliberately deferred
 
-MonkeyHub manages retained editable presentation settings through existing project
-owners and P036. Blender receives an immutable, exact-source-bound snapshot; its
-scene is derived and must be reconstructable without treating a manually edited
-blend file as authoritative. Artifact and job records reference that snapshot.
-Do not build another design store or a render-specific dependency graph.
+- Neutral-asset migration: `.3dm`, `rhino3dm` and Rhino3dmLoader stay in place. They do not require Rhino Desktop. The unchanged design/drawing export pathways are outside this rendering migration.
+- Texture/HDRI support, offline/headless rendering, cancellation and richer history-to-scene restoration.
+- Cross-module Drawing source restoration remains further GH-218 work; this delivery is not a claim that every requirement in that issue is closed.
+- Area lights without shadows use Three.js RectAreaLight. Area shadows use four emission samples, explicitly labelled as an approximation in the editor. This is raster rendering, not path tracing.
 
-## Verified reusable implementation
+## Local use
 
-- `archflow/adapters/blender_projection.py` already consumes verified OCCT source,
-  reconstructs a Blender scene, cold-reads source identity/geometry/presentation,
-  and validates the resulting PNG. Extend this execution owner.
-- `BlenderPresentation` retains legacy `overview` / `preview-v1` settings and now
-  accepts `BlenderCamera` for a captured viewport with rectangular output.
-- `tests/test_blender_projection.py` and
-  `tests/test_blender_projection_runner.py` provide existing projection coverage;
-  native UI and arbitrary-camera acceptance require additional behavioral evidence.
-- Hub workspace composition and project runtime own navigation and application
-  execution. Resolve their precise contracts and real callers before modifying them.
-
-## Implementation sequence
-
-1. Inspect current Hub navigation/viewer, runtime APIs, artifact readers and live
-   source scopes. Extend registered owners and reserve only actual edited paths.
-2. Define and validate a reusable captured-camera value: position, orientation/up,
-   projection mode, field of view or orthographic bounds, aspect ratio and clipping.
-   Capture it before workspace navigation changes viewport dimensions.
-3. Extend the projection adapter for that camera and rectangular output; account
-   explicitly for viewer/engine coordinate systems and model units. Keep visible
-   objects and source transforms consistent with the captured view.
-4. Retain a representation recipe bound to the exact model source using existing
-   project ports. Identify missing persistence with a reopen test before adding
-   new record types. Each job retains one immutable recipe/source combination.
-5. Wire native Render navigation, reusable viewport, source/camera information,
-   basic settings and gallery. Send to Render starts exactly one default preview.
-6. Connect asynchronous preparation/rendering/completion/failure/cancellation and
-   result retrieval. Refresh observes retained execution; it never resubmits a job.
-   Show percentages only when backed by real progress information.
-7. Return to the available exact source and restore its camera. Preserve historical
-   results and flag changed/missing sources rather than silently rebinding them.
-
-## Acceptance evidence required before V0.1 completion
-
-- Actual Hub UI: Send to Render, real preview, gallery/download and source return.
-- Perspective and orthographic source screenshots, camera data and rendered
-  landmark/outline comparisons demonstrating matching composition.
-- Correct project/model/version bindings, visibility and unit conversion.
-- Failed/canceled jobs preserve saved data; reopening or refreshing does not
-  duplicate execution; project switching does not mix results.
-- An edit while rendering leaves the in-flight snapshot unchanged.
-- Presentation-only changes do not produce architectural design revisions.
-- Existing Modeling and Drawing behavior checks plus relevant project tests and
-  architecture checks; no claim based solely on an isolated Blender script.
-- Startup instructions, changed modules/API documentation, actual UI screenshots,
-  test results and explicit limitations.
-
-V0.2 scene editing, V0.3 expanded history/drawing workflows and V0.4 AI features
-remain later reviewed stages. GH-217's penguin eye repair remains a separate bug.
-
-## Running the local preview
-
-Set `ARCHFLOW_BLENDER_EXECUTABLE` to the installed Blender executable in the Hub
-launch environment, then start the existing Hub and frontend. Hub inherits this
-value into the project runtime; no separate renderer launcher is introduced.
-Load a mesh-only 3DM in Modeling, choose Send to Render, then Start render.
-The rendered image is a project document; its Render details expose the source
-hash, captured camera recipe and verification receipt. Inputs are limited to
-32 MiB; defaults are 768 pixels on the long side and 16 samples.
+Start the existing MonkeyHub and frontend; no renderer executable configuration is needed. Open a 3DM model in Modeling, send it to Render, adjust the preview, wait for the saved indicator and choose **Native Render → PNG**. History retains all completed images; **返回实时预览** returns to the current editable visualization.

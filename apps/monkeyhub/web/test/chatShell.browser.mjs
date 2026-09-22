@@ -876,14 +876,14 @@ try {
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
 
-  // Native Render keeps the same mounted model and project-bound image reader.
+  // Native history keeps the same mounted model and project-bound image reader. Live GPU rendering is verified separately.
   const fixtureB = workspaceFixture.projects.get("B");
   fixtureB.documents = [fixtureB.renderDocument];
   await visibleWorkspace().locator(".stage canvas").first().evaluate(node => { node.renderReturnMarker = true; });
   const beforeRenderWrites = workspaceFixture.requests.filter(row => row.method !== "GET" && row.name !== "/api/board").length;
-  await visibleWorkspace().getByRole("button", { name: "Send to Render", exact: true }).click();
-  const renderPanel = page.locator(".render-workspace:visible");
-  await renderPanel.getByRole("button", { name: "Start render", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Render", exact: true }).click();
+  const renderPanel = page.locator(".native-workspace:visible");
+  await renderPanel.getByRole("button", { name: "History · 渲染结果", exact: true }).click();
   await renderPanel.locator(".render-image img").waitFor();
   await page.waitForFunction(() => document.querySelector(".render-workspace .render-image img")?.naturalWidth > 0);
   assert.match(await renderPanel.innerText(), /render-B.png/);
@@ -904,7 +904,7 @@ try {
     "another project's Board controls cannot leak over the Render workspace");
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.screenshot({ path: path.join(temporary, "hub-render.png") });
-  await renderPanel.getByRole("button", { name: "Modeling", exact: true }).click();
+  await renderPanel.getByRole("button", { name: "建模", exact: true }).click();
   await waitWorkspace();
   assert.equal(await visibleWorkspace().locator(".stage canvas").first().evaluate(node => node.renderReturnMarker), true,
     "Render navigation preserves the Modeling canvas");

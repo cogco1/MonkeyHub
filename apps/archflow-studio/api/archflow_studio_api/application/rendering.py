@@ -1,42 +1,33 @@
 """Project-runtime render queue. P036 owns every source, transition and result."""
 import base64
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from dataclasses import asdict
 from io import BytesIO
-import os
 import re
-import shutil
 import threading
 from uuid import uuid4
 
-from archflow.adapters.blender_projection import (
-    BlenderCamera, BlenderPresentation, execute_mesh_projection, mesh_projection_plan,
-)
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_RENDER_JOB, BLENDER_PROJECTION
-from ..transport.artifacts import model_source_from, document_dto
+from archflow.project.record_kinds import STUDIO_RENDER_JOB
+from ..transport.artifacts import document_dto
 from ..transport.errors import StudioError
 from ..transport.rendering import RenderJobDto
-from .artifacts import artifact_bytes, require_model_source, save_document, list_documents
+from .artifacts import save_document, list_documents
 
 
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
 
-class RenderJobs:
+class RenderJobRecords:
     def __init__(self):
         self.instance = uuid4().hex
         self.lock = threading.RLock()
-        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="studio-render")
         self.stopping = False
 
     def shutdown(self):
         with self.lock:
             self.stopping = True
-        self.pool.shutdown(wait=True)
 
     def _record(self, binding, row):
         binding.repository.put_json(run=binding.load_run(row["jobId"]),
@@ -73,86 +64,92 @@ class RenderJobs:
                 if re.fullmatch(r"render-[0-9a-f]{32}", run_id)
                 and any(ref.record_kind == STUDIO_RENDER_JOB for ref in binding.record_refs(run_id))]
 
-    def submit(self, binding, payload):
-        if payload.project_id != binding.project_id:
-            raise StudioError(403, "PROJECT_MISMATCH", "The render request names another project.")
-        source_model = model_source_from(payload.model_source) if payload.model_source else None
-        if source_model:
-            require_model_source(binding, source_model)
-            artifact, data = artifact_bytes(binding, source_model.asset_sha256, run_id=source_model.run_id)
-            file_name = artifact.file_name
-        else:
-            try:
-                data = base64.b64decode(payload.content_base64, validate=True)
-            except ValueError as exc:
-                raise StudioError(422, "RENDER_SOURCE_INVALID", "The model bytes are not valid base64.") from exc
-            file_name = payload.file_name
-        if not data or len(data) > 32 * 1024 * 1024:
-            raise StudioError(413, "RENDER_SOURCE_SIZE", "Render inputs must be nonempty and at most 32 MiB.")
-        import hashlib
-        digest = hashlib.sha256(data).hexdigest()
-        try:
-            presentation = BlenderPresentation(resolution=payload.resolution, samples=payload.samples,
-                camera=BlenderCamera(**payload.camera.model_dump()) if payload.camera else None)
-            # Validate the entire mesh before retaining a job or starting Blender.
-            mesh_projection_plan(data, {"sha256": digest}, presentation)
-        except (ValueError, TypeError) as exc:
-            raise StudioError(422, "RENDER_SOURCE_UNSUPPORTED", str(exc)) from exc
-        executable = shutil.which(os.environ.get("ARCHFLOW_BLENDER_EXECUTABLE", "blender"))
-        if not executable:
-            raise StudioError(503, "BLENDER_UNAVAILABLE", "Configure ARCHFLOW_BLENDER_EXECUTABLE for the project runtime.")
-        job_id = "render-" + payload.request_id.hex
-        signature = canonical_json({"sha256": digest, "presentation": presentation.to_dict(),
-            "fileName": file_name, "modelSource": source_model.to_dict() if source_model else None})
-        with self.lock:
-            if self.stopping:
-                raise StudioError(503, "RENDER_STOPPING", "The runtime is shutting down.")
-            if job_id in binding.run_ids():
-                row = self._load(binding, job_id)
-                if row["signature"] != signature:
-                    raise StudioError(409, "RENDER_REQUEST_CONFLICT", "This render request ID already names different inputs.")
-                return self.get(binding, job_id)
-            run = binding.repository.create_run(job_id)
-            source_ref = binding.repository.ingest(run=run,
-                destination=PersistenceDestination(PersistenceArea.OBJECT), artifact_id="render-source",
-                media_type="model/vnd.rhino.3dm", source=BytesIO(data))
-            row = {"schema": "StudioRenderJob@1", "jobId": job_id, "projectId": binding.project_id,
-                "instance": self.instance, "sequence": 0, "status": "queued", "createdAt": _now(),
-                "fileName": file_name, "source": asdict(source_ref), "signature": signature,
-                "presentation": presentation.to_dict(), "modelSource": source_model.to_dict() if source_model else None}
-            self._record(binding, row)
-            self.pool.submit(self._execute, binding, row, data, presentation, executable, source_model)
-            return self.get(binding, job_id)
+class NativeRenderJobs(RenderJobRecords):
+    """Browser GPU worker; the runtime retains requests and verifies returned PNGs."""
+    def __init__(self):
+        self.instance=uuid4().hex
+        self.lock=threading.RLock()
+        self.stopping=False
 
-    def _execute(self, binding, initial, data, presentation, executable, source_model):
-        row = dict(initial, sequence=1, status="running")
+    def shutdown(self):
+        self.stopping=True
+
+    def get(self,binding,job_id):
+        import time
+        with self.lock:
+            row=self._load(binding,job_id)
+            if row.get('renderer')!='monkeyhub-three-webgl2-v1':
+                return super().get(binding,job_id)
+            if row['status']=='running' and (row['instance']!=self.instance or time.time()>row['expiresAt']):
+                row=dict(row,status='interrupted',sequence=row['sequence']+1,error='Native renderer disconnected or timed out. Start a new render to retry.')
+            result=super().get(binding,job_id)
+            changes={'snapshot':row['visualization'],'snapshot_sha256':row['snapshotSha256']}
+            if row['status']=='interrupted': changes.update(status='interrupted',error=row['error'])
+            return result.model_copy(update=changes)
+
+    def submit_native(self,binding,payload):
+        import hashlib,time
+        from .visualization import read_visualization,source_bytes
+        with self.lock,binding.repository.working_draft_guard():
+            if self.stopping: raise StudioError(503,'RENDER_STOPPING','Runtime is stopping.')
+            job_id='render-'+payload.request_id.hex
+            if job_id in binding.run_ids():
+                old=self._load(binding,job_id)
+                if old.get('visualizationRevision')!=payload.revision or old.get('renderer')!='monkeyhub-three-webgl2-v1':
+                    raise StudioError(409,'RENDER_REQUEST_CONFLICT','Request ID names another snapshot.')
+                return self.get(binding,job_id)
+            current=read_visualization(binding)
+            if current['revision']!=payload.revision or not current['source']:
+                raise StudioError(409,'VISUALIZATION_CONFLICT','Save the current visualization before rendering.')
+            source_bytes(binding,current['source'])
+            binding.repository.create_run(job_id)
+            snapshot={'source':current['source'],'state':current['state']}
+            digest=hashlib.sha256(canonical_json(snapshot).encode()).hexdigest()
+            row={'schema':'StudioRenderJob@1','jobId':job_id,'projectId':binding.project_id,
+                'instance':self.instance,'sequence':0,'status':'running','createdAt':_now(),
+                'source':current['source']['artifact'],'modelSource':current['source']['modelSource'],
+                'fileName':current['source']['fileName'],'visualization':current['state'],
+                'visualizationRevision':current['revision'],'snapshotSha256':digest,
+                'renderer':'monkeyhub-three-webgl2-v1','expiresAt':time.time()+120}
+            self._record(binding,row)
+            return self.get(binding,job_id)
+
+    def complete_native(self,binding,job_id,payload):
+        import hashlib
+        from PIL import Image
+        from .artifacts import ModelSource
         try:
-            with self.lock:
-                self._record(binding, row)
-            workspace = binding.repository.layout.run(row["jobId"]).workspaces / "render"
-            workspace.mkdir(parents=True, exist_ok=False)
-            receipt = execute_mesh_projection(data, row["source"], workspace=workspace,
-                blender_executable=executable, presentation=presentation)
-            receipt_ref = binding.repository.put_json(run=binding.load_run(row["jobId"]),
-                destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=row["jobId"]),
-                record_kind=BLENDER_PROJECTION, payload={**receipt,
-                    "workspace": workspace.relative_to(binding.project_dir).as_posix()})
-            if receipt["status"] != "succeeded":
-                raise ValueError("; ".join(item["detail"] for item in receipt["failures"]))
-            image = next(item for item in receipt["artifacts"] if item["format"] == "png")
-            png = (workspace / image["relative_path"]).read_bytes()
-            import hashlib
-            if hashlib.sha256(png).hexdigest() != image["sha256"]:
-                raise ValueError("Rendered image changed before registration.")
-            document = save_document(binding, row["jobId"], row["fileName"][:-4] + "-render.png",
-                "image/png", base64.b64encode(png).decode(), model_source=source_model,
-                view_recipe={"kind": "render", "jobId": row["jobId"], "source": row["source"],
-                    "presentation": presentation.to_dict(), "receiptRef": receipt_ref.uri},
+            data=base64.b64decode(payload.content_base64,validate=True)
+            if len(data)>72*1024*1024: raise ValueError('Image is too large')
+            with Image.open(BytesIO(data)) as image:
+                if image.format!='PNG': raise ValueError('Expected PNG')
+                size=image.size;image.verify()
+        except Exception as exc: raise StudioError(422,'RENDER_IMAGE_INVALID','The native result must be a valid PNG.') from exc
+        with self.lock,binding.repository.working_draft_guard():
+            result=self.get(binding,job_id);row=self._load(binding,job_id)
+            if row.get('renderer')!='monkeyhub-three-webgl2-v1' or payload.snapshot_sha256!=row.get('snapshotSha256'):
+                raise StudioError(409,'RENDER_SNAPSHOT_MISMATCH','The result names a different render snapshot.')
+            if result.status=='succeeded':
+                if hashlib.sha256(data).hexdigest()!=row['documentSha256']:
+                    raise StudioError(409,'RENDER_RESULT_CONFLICT','A different result already exists.')
+                return result
+            if result.status!='running': raise StudioError(409,'RENDER_FINISHED','This task no longer accepts results.')
+            settings=row['visualization']['renderSettings']
+            if size!=(settings['width'],settings['height']):
+                raise StudioError(422,'RENDER_IMAGE_SIZE','PNG dimensions do not match the retained snapshot.')
+            document=save_document(binding,job_id,row['fileName'][:-4]+'-native.png','image/png',payload.content_base64,
+                model_source=ModelSource.from_dict(row['modelSource']) if row.get('modelSource') else None,
+                view_recipe={'kind':'render','renderer':row['renderer'],'jobId':job_id,'source':row['source'],
+                    'visualization':row['visualization'],'visualizationRevision':row['visualizationRevision'],
+                    'snapshotSha256':row['snapshotSha256'],'validation':'PNG format, dimensions and exact request binding; browser GPU pixels'},
                 generated_at=_now())
-            row.update(status="succeeded", documentSha256=document.asset_sha256)
-        except Exception as exc:
-            row.update(status="failed", error=str(exc)[:2000])
-        finally:
-            row.update(sequence=2, finishedAt=_now())
-            with self.lock:
-                self._record(binding, row)
+            row.update(sequence=row['sequence']+1,status='succeeded',finishedAt=_now(),documentSha256=document.asset_sha256)
+            self._record(binding,row); return self.get(binding,job_id)
+
+    def fail_native(self,binding,job_id,detail):
+        with self.lock:
+            result=self.get(binding,job_id);row=self._load(binding,job_id)
+            if result.status=='running' and row.get('renderer')=='monkeyhub-three-webgl2-v1':
+                row.update(sequence=row['sequence']+1,status='failed',error=detail,finishedAt=_now())
+                self._record(binding,row)
+            return self.get(binding,job_id)

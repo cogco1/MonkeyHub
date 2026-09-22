@@ -68,6 +68,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
         return json({ projectId, artifacts, skippedRuns: [] });
       }
       if (name === "/api/state/frame") return json({ levels: [], axes: [], honesty: [] });
+      if (name === "/api/visualization") return json({revision:0,state:null,source:null});
       if (name === "/api/render/jobs") return json({ jobs: [] });
       if (name === "/api/documents") return json({ projectId, runId: null, documents: current.documents });
       if (name === `/api/documents/${current.documents[0]?.assetSha256}/bytes`) {
