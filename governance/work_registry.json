@@ -654,7 +654,7 @@
       "issue": "https://github.com/cogco1/MonkeyHub/issues/260",
       "stream": "implementation",
       "status": "ready",
-      "goal": "First native-project harness slice: exact retained 3DM identity index, paged GUID lookup through the existing Runtime and Hub read tool. Shared prerequisite for GH-255; native editing and scope admission remain later slices.",
+      "goal": "First native-project harness slice: exact retained 3DM identity index, paged GUID lookup through the existing Runtime and Hub read tool. Shared prerequisite for GH-255; native editing and scope admission remain later slices. Preserve existing native object GUIDs through the composed-model replacement path and verify exact geometry/preserved content on cold readback. A candidate that failed changed-component coverage remains unavailable after Runtime restart.",
       "depends_on": [],
       "write_scope": [
         "archflow/adapters/three_dm_inspector.py",
@@ -672,7 +672,12 @@
         "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
         "docs/SYSTEM_MAP.md",
         "governance/module_registry.json",
-        "apps/archflow-studio/api/tests/fixtures/native-source-index.3dm"
+        "apps/archflow-studio/api/tests/fixtures/native-source-index.3dm",
+        "archflow/adapters/cad_execution.py",
+        "tests/test_cad_patch.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+        "apps/archflow-studio/api/tests/test_sketch.py",
+        "apps/archflow-studio/api/tests/test_cad_export.py"
       ],
       "lanes": [
         {
@@ -687,7 +692,9 @@
           "modules": [
             "adapters.three_dm_inspector",
             "studio.artifacts",
-            "hub.shell"
+            "hub.shell",
+            "adapters.cad_execution",
+            "studio.candidate"
           ],
           "write_scope": [
             "archflow/adapters/three_dm_inspector.py",
@@ -705,7 +712,12 @@
             "docs/WORK_ENVIRONMENT_AND_EXTENSION_GUIDE.md",
             "docs/SYSTEM_MAP.md",
             "governance/module_registry.json",
-            "apps/archflow-studio/api/tests/fixtures/native-source-index.3dm"
+            "apps/archflow-studio/api/tests/fixtures/native-source-index.3dm",
+            "archflow/adapters/cad_execution.py",
+            "tests/test_cad_patch.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
+            "apps/archflow-studio/api/tests/test_sketch.py",
+            "apps/archflow-studio/api/tests/test_cad_export.py"
           ],
           "depends_on": [],
           "status": "review",

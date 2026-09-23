@@ -468,18 +468,32 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
                     for path in (RUNNER_RECORD_PATH, RUNNER_SEATS_PATH)}
         original, before = self.composed_source()
         self.assert_model_height(before, "portico-base", 2.2)
+        def native_ids(inspection):
+            return {row["name"]: row["object_id"] for row in inspection.object_geometry_sha256
+                    if row["name"].startswith("obj-")}
+        identities = native_ids(before)
+        self.assertTrue(identities)
         with no_process():
             accepted, job = self.edit_model(self.client, original["modelSource"], "set height to 2.6")
         self.assertEqual(job["status"], "succeeded", job)
         composed_c, after_c = self.composed_result(self.client, accepted["candidateId"])
         self.assert_imported_unchanged(before, after_c)
         self.assert_model_height(after_c, "portico-base", 2.6)
+        self.assertEqual(native_ids(after_c), identities)
         self.assertNotEqual(original["sha256"], composed_c["sha256"])
 
         restarted = self.open_client(self.settings)
         with no_cad_at_all(), no_process():
-            cold_c, _ = self.composed_result(restarted, accepted["candidateId"])
+            cold_c, cold_inspection = self.composed_result(restarted, accepted["candidateId"])
             self.assertEqual(cold_c["modelSource"], composed_c["modelSource"])
+            self.assertEqual(native_ids(cold_inspection), identities)
+            source = cold_c["modelSource"]
+            indexed = restarted.get(f"/api/model-assets/{source['assetSha256']}/index", params={
+                "runId": source["runId"], "stateDigest": source["stateDigest"],
+                "objectId": list(identities.values()),
+            })
+            self.assertEqual(indexed.status_code, 200, indexed.text)
+            self.assertEqual({row["name"]: row["object_id"] for row in indexed.json()["objects"]}, identities)
             self.bytes_of(restarted, original)
         with no_process():
             accepted_d, job_d = self.edit_model(
@@ -490,6 +504,7 @@ class ComposedCandidateExportTests(OcctCandidateTestCase):
         self.assert_imported_unchanged(before, after_d)
         self.assert_model_height(after_d, "portico-base", 2.6)
         self.assert_model_height(after_d, "portico-cornice", 0.6)
+        self.assertEqual(native_ids(after_d), identities)
         self.assertEqual(self.repository.read_head(), before_head)
         for path, content in authored.items():
             self.assertEqual(self.repository.layout.resolve_relative(path).read_bytes(), content)

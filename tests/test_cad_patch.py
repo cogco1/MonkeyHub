@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -408,6 +409,11 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
         self.add_imported_equipment(base)
         before = r.File3dm.FromByteArray(self.encoded(base))
         selected = select_patch_operations(self.changed, self.prior)
+        original_ids = {o.Attributes.Name: o.Attributes.Id for o in before.Objects
+                        if o.Attributes.Name in selected.delete_object_names}
+        donor_ids = {o.Attributes.Name: o.Attributes.Id for o in donor.Objects
+                     if o.Attributes.Name in selected.delete_object_names}
+        self.assertTrue(all(original_ids[name] != donor_ids[name] for name in original_ids))
         survivors = {o.Attributes.Id: o for o in before.Objects
                      if o.Attributes.Name not in selected.delete_object_names}
         after = r.File3dm.FromByteArray(self.patch(base, donor))
@@ -425,10 +431,150 @@ class ComposedThreeDmPatchTests(unittest.TestCase):
         replacements = [o for o in after.Objects if o.Attributes.Name in selected.delete_object_names]
         self.assertEqual(len(replacements), 6)
         for item in replacements:
+            self.assertEqual(item.Attributes.Id, original_ids[item.Attributes.Name])
             self.assertAlmostEqual(item.Geometry.GetBoundingBox().Max.X, 2.0 / 0.3048, places=5)
             self.assertEqual(after.Layers.FindIndex(item.Attributes.LayerIndex).FullPath, "native::replacement")
             self.assertEqual(after.Materials.FindIndex(item.Attributes.MaterialIndex).Name, "new finish")
             self.assertEqual([after.Groups.FindIndex(i).Name for i in item.Attributes.GetGroupList2()], ["new native"])
+
+    def test_replaced_native_object_keeps_its_guid_after_file_save_and_cold_reopen(self):
+        base = self.native_model(self.prior)
+        donor = self.native_model(self.changed, replacement=True)
+        selected = select_patch_operations(self.changed, self.prior)
+        original_ids = {o.Attributes.Name: str(o.Attributes.Id) for o in base.Objects}
+        donor_ids = {o.Attributes.Name: str(o.Attributes.Id) for o in donor.Objects}
+        self.assertTrue(all(original_ids[name] != donor_ids[name]
+                            for name in selected.changed_object_ids))
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "revised.3dm"
+            destination.write_bytes(self.patch(base, donor))
+            reopened = subprocess.run(
+                [sys.executable, "-c",
+                 "import json,sys,rhino3dm; model=rhino3dm.File3dm.Read(sys.argv[1]); "
+                 "print(json.dumps({o.Attributes.Name:str(o.Attributes.Id) for o in model.Objects}))",
+                 str(destination)],
+                check=True, capture_output=True, text=True,
+            )
+        self.assertEqual(json.loads(reopened.stdout), original_ids)
+
+    def test_new_object_cannot_take_a_preserved_or_retired_native_guid(self):
+        rows = list(_rows())
+        rows[-1] = replace(rows[-1], element_id="pediment-new")
+        changed = _compile(rows)
+        selection = select_patch_operations(changed, self.prior)
+        self.assertIn("obj-pediment-west", selection.retired_object_ids)
+        self.assertIn("obj-pediment-new", selection.added_object_ids)
+        for source_name in ("obj-columns-west-0", "obj-pediment-west"):
+            with self.subTest(source_name=source_name):
+                base = self.native_model(self.prior)
+                original = self.encoded(base)
+                source_id = next(o.Attributes.Id for o in base.Objects
+                                 if o.Attributes.Name == source_name)
+                donor = self.native_model(changed, replacement=True)
+                added = next(o for o in donor.Objects if o.Attributes.Name == "obj-pediment-new")
+                added.Attributes.Id = source_id
+                with self.assertRaisesRegex(
+                    CadPatchError, "new native object GUID collides with source identity: obj-pediment-new"
+                ):
+                    patch_composed_three_dm(
+                        original, prior_program=self.prior, program=changed,
+                        replacement_3dm=self.encoded(donor),
+                    )
+                retained = self.rhino.File3dm.FromByteArray(original).Objects.FindId(source_id)
+                self.assertEqual(retained.Attributes.Name, source_name)
+
+    def test_window_and_wall_opening_lower_300mm_while_roof_and_unnamed_source_stay(self):
+        """Compose actual OCCT exports; this does not stand in for Stage admission."""
+        try:
+            import OCP  # noqa: F401 - optional native execution dependency
+        except ImportError:
+            self.skipTest("OCCT is not installed")
+        from archflow.state.geometry_program import (
+            GeometryOperation, GeometryOperationKind, GeometryParameter,
+            GeometryParameterKind, LengthUnit,
+        )
+        from archflow.adapters.cad_execution import CadExecutionStatus, execute_occt_export
+        from archflow.adapters.cad_program import expected_object_bounds
+
+        r = self.rhino
+
+        def build(sill):
+            boxes = {
+                "host-wall": ([0, 0, 0], [6, 6, 0.3]),
+                "opening-tool": ([1, sill, -0.1], [1.5, 1.5, 0.5]),
+                "window": ([1.05, sill + 0.05, 0.12], [1.4, 1.4, 0.06]),
+                "roof": ([0, 6, 0], [6, 0.2, 4]),
+            }
+            operations = tuple(GeometryOperation(
+                op_id=name, kind=GeometryOperationKind.SOLID,
+                output_object_ids=(name,), input_object_ids=(), frame_id="world",
+                parameters=tuple(GeometryParameter.create(
+                    name=key, kind=GeometryParameterKind.VECTOR3,
+                    value=value, unit=LengthUnit.METER,
+                ) for key, value in zip(("origin", "size"), box)),
+                semantic_binding_ids=("building-binding",),
+            ) for name, box in boxes.items())
+            operations += (GeometryOperation(
+                op_id="wall-cut", kind=GeometryOperationKind.BOOLEAN_DIFFERENCE,
+                output_object_ids=("wall-cut",),
+                input_object_ids=("host-wall", "opening-tool"), frame_id="world",
+                parameters=(),
+                semantic_binding_ids=("building-binding",),
+            ),)
+            state = _state()
+            proposal = _only(_proposal(state), operations, ())
+            result = compile_geometry_program(state, proposal, active_commitment_refs=(COMMITMENT,))
+            self.assertIsNotNone(result.program, result.receipt.issues)
+            return result.program
+
+        def native(program, workspace, stem):
+            with patch("subprocess.Popen", side_effect=AssertionError("OCCT must not start Rhino or any process")):
+                receipt = execute_occt_export(
+                    program, binding=_binding(program), speculative_workspace=workspace,
+                    artifact_stem=stem,
+                )
+            self.assertIs(receipt.status, CadExecutionStatus.SUCCEEDED, receipt.failures)
+            self.assertIsNotNone(receipt.preview_artifact)
+            return r.File3dm.Read(str(workspace / receipt.preview_artifact["relative_path"]))
+
+        prior, current = build(3.5), build(3.2)
+        selection = select_patch_operations(current, prior)
+        self.assertEqual(selection.kept_object_ids, ("roof",))
+        self.assertIn("wall-cut", selection.changed_object_ids)
+        self.assertIn("window", selection.changed_object_ids)
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            base = native(prior, workspace, "prior-window")
+            donor = native(current, workspace, "lowered-window")
+        external_id = base.Objects.AddPoint(r.Point3d(12, 2, 4))
+        before = r.File3dm.FromByteArray(self.encoded(base))
+        original = {item.Attributes.Name: item for item in before.Objects if item.Attributes.Name}
+        after = r.File3dm.FromByteArray(patch_composed_three_dm(
+            self.encoded(base), prior_program=prior, program=current,
+            replacement_3dm=self.encoded(donor),
+        ))
+        saved = {item.Attributes.Name: item for item in after.Objects if item.Attributes.Name}
+        for name in ("window", "wall-cut", "roof"):
+            self.assertEqual(saved[name].Attributes.Id, original[name].Attributes.Id)
+        self.assertEqual(saved["roof"].Geometry.Encode(), original["roof"].Geometry.Encode())
+        self.assertEqual(saved["roof"].Attributes.Encode(), original["roof"].Attributes.Encode())
+        external = after.Objects.FindId(external_id)
+        self.assertEqual(external.Attributes.Name, "")
+        self.assertEqual(external.Geometry.Encode(), before.Objects.FindId(external_id).Geometry.Encode())
+        self.assertEqual(external.Attributes.Encode(), before.Objects.FindId(external_id).Attributes.Encode())
+        self.assertAlmostEqual(
+            saved["window"].Geometry.GetBoundingBox().Min.Z - original["window"].Geometry.GetBoundingBox().Min.Z,
+            -0.3, places=5,
+        )
+        self.assertEqual({round(p.Z, 4) for p in saved["wall-cut"].Geometry.Vertices}, {0, 3.2, 4.7, 6})
+        self.assertEqual({round(p.Z, 4) for p in original["wall-cut"].Geometry.Vertices}, {0, 3.5, 5, 6})
+        expected = expected_object_bounds(current)
+        for name, item in saved.items():
+            bbox = item.Geometry.GetBoundingBox()
+            for actual, planned in zip((bbox.Min.X, bbox.Min.Z, bbox.Min.Y), expected[name]["bbox_min"]):
+                self.assertAlmostEqual(actual, planned, places=5)
+            for actual, planned in zip((bbox.Max.X, bbox.Max.Z, bbox.Max.Y), expected[name]["bbox_max"]):
+                self.assertAlmostEqual(actual, planned, places=5)
 
     def test_retired_and_added_native_objects_preserve_imported_assets(self):
         short = _compile(_rows()[:3])

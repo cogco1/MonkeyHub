@@ -439,6 +439,15 @@ class SketchNewComponentTestCase(unittest.TestCase):
         self.assertEqual(refused.exception.code, "COMPONENT_NOT_BUILT")
         self.assertIn("building", refused.exception.detail)
 
+        # The runner has retained its successful seat outputs, but none built
+        # this operator's element. Losing process-local jobs must not turn that
+        # incomplete run into a successful candidate.
+        with TestClient(create_app(settings)) as restarted:
+            cold = restarted.get("/api/candidates/studio-cand-unowned-check")
+        self.assertEqual(cold.status_code, 404, cold.text)
+        self.assertEqual(cold.json()["code"], "CANDIDATE_NOT_FOUND")
+        self.assertIn("building", cold.json()["detail"])
+
     def test_continuing_on_that_run_changes_the_new_element_and_keeps_the_rest(self) -> None:
         first = self.draw(componentId="small-house", parentComponentId="portico", semanticKind="building",
                           elementId="small-house-main", height=3.3)[1]
