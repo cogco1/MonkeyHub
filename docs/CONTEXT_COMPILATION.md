@@ -968,12 +968,15 @@ The evidence projection was 9,790 bytes including its identity/limitation wrappe
 No model was called for this comparison; it establishes payload reduction on
 this fixture, not token savings, architectural quality or end-to-end latency.
 
-This implements one precise evidence consumer for #122. It does not complete the
-four retrieval baselines, regulation/jurisdiction filtering, document extraction,
-or the audited query corpus. #32 still needs matched real-provider performance
-measurements; #185 still needs a building task that tests whether a transferred
-prior applies, plus the remaining non-adjacent Stage interfaces. References unify
-access; neither a citation nor a delivered context establishes design correctness.
+This implements one precise evidence consumer for #122. The independent
+[retrieval development comparison](../labs/retrieval/RESULTS.md) now measures four
+methods, metadata filtering and companion budgets; human-reviewed held-out queries,
+broader precedents and downstream generation remain open. The paired #32 experiment
+below tested separate tool guidance and found no supported efficiency improvement;
+it did not measure this Study transport. The non-adjacent Stage construction test
+in this document verifies a declared window/lintel dependency, not whole-building
+usability or whether a transferred precedent applies. References unify access;
+neither a citation nor a delivered context establishes design correctness.
 
 ## Covered-fact guidance: three paired negative results (#32, 2026-09-23)
 
