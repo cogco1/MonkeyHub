@@ -77,7 +77,7 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(result.status_code, 200, result.text)
         return result.json()
 
-    def commit_edit(self, edit):
+    def commit_edit(self, edit, branch_id="main"):
         result = self.client.post("/api/proposals", json={"projectId": PROJECT_ID,
             "stateDigest": self.model["stateDigest"], "sourceRunId": self.model["runId"],
             "sourceStageRef": self.stage["stageRef"], "semanticEdit": edit})
@@ -85,7 +85,7 @@ class CutPlanTests(CandidateTestCase):
         job = self.start(result.json()["proposalId"])
         self.assertEqual(self.finished(job["jobId"])["status"], "succeeded")
         accepted = self.client.post(f"/api/candidates/{job['candidateId']}/accept", json={
-            "projectId": PROJECT_ID, "branchId": "main", "expectedHeadStageRef": self.stage["stageRef"]})
+            "projectId": PROJECT_ID, "branchId": branch_id, "expectedHeadStageRef": self.stage["stageRef"]})
         self.assertEqual(accepted.status_code, 200, accepted.text)
         stage = accepted.json()
         model = next(row["modelSource"] for row in self.client.get(f"/api/candidates/{job['candidateId']}").json()["artifacts"] if row["format"] == "3dm")
@@ -197,3 +197,64 @@ class CutPlanTests(CandidateTestCase):
         self.assertEqual(self.status(document)["status"], "outdated")
         unknown = self.status(document, targetStageRef="not-a-retained-stage")
         self.assertEqual(unknown["status"], "unknown", unknown)
+
+    def test_multiple_accepted_stages_require_explicit_source_even_after_both_heads_advance(self):
+        original_stage, original_model = self.stage, self.model
+        alternate = self.client.post("/api/design-stages/initialize", json={
+            "projectId": PROJECT_ID, "modelSource": self.model, "branchId": "alternate"})
+        self.assertEqual(alternate.status_code, 201, alternate.text)
+        self.assertNotEqual(alternate.json()["stageRef"], self.stage["stageRef"])
+        for advanced in (False, True):
+            if advanced:
+                self.commit_edit({"summary": "Advance main", "parameters": [{"key": "front_shift", "value": .2}]})
+                self.stage = alternate.json()
+                self.stage, self.model = self.commit_edit({"summary": "Advance alternate",
+                    "parameters": [{"key": "front_shift", "value": .4}]}, branch_id="alternate")
+            with self.subTest(heads_advanced=advanced):
+                refused = self.client.post("/api/drawings/plans", json={
+                    "projectId": PROJECT_ID, "modelSource": original_model})
+                self.assertEqual(refused.status_code, 409, refused.text)
+                self.assertEqual(refused.json()["code"], "DRAWING_SOURCE_AMBIGUOUS")
+                current = self.generate()
+                proposal = self.client.post("/api/drawings/plans/dimension-proposal", json={
+                    "projectId": PROJECT_ID, "runId": current["runId"], "assetSha256": current["assetSha256"],
+                    "revisionRef": current["revisionRef"], "dimensionId": "door-width", "value": 1.2,
+                    "targetModelSource": self.model, "targetStageRef": self.stage["stageRef"]})
+                self.assertEqual(proposal.status_code, 201, proposal.text)
+                self.assertEqual(proposal.json()["sourceStageRef"], self.stage["stageRef"])
+        old = self.generate(sourceStageRef=original_stage["stageRef"], modelSource=original_model)
+        self.assertEqual(old["sourceStageRef"], original_stage["stageRef"])
+        self.assertFalse(self.status(old, targetStageRef=original_stage["stageRef"])["dimensions"][0]["canDrive"])
+
+    def test_unaccepted_drawing_remains_valid_but_later_ambiguous_acceptance_cannot_drive(self):
+        proposed = self.client.post("/api/proposals", json={"projectId": PROJECT_ID,
+            "stateDigest": self.model["stateDigest"], "sourceRunId": self.model["runId"],
+            "sourceStageRef": self.stage["stageRef"], "semanticEdit": {
+                "summary": "Unaccepted width candidate", "parameters": [{"key": "passage_width", "value": 1.8}]}})
+        self.assertEqual(proposed.status_code, 201, proposed.text)
+        job = self.start(proposed.json()["proposalId"])
+        self.assertEqual(self.finished(job["jobId"])["status"], "succeeded")
+        candidate = self.client.get(f"/api/candidates/{job['candidateId']}").json()
+        model = next(row["modelSource"] for row in candidate["artifacts"] if row["format"] == "3dm")
+        document = self.generate(sourceStageRef=None, modelSource=model)
+        self.assertIsNone(document["sourceStageRef"])
+        payload = {"projectId": PROJECT_ID, "runId": document["runId"], "assetSha256": document["assetSha256"],
+            "revisionRef": document["revisionRef"], "dimensionId": "door-width", "value": 1.2, "targetModelSource": model}
+        allowed = self.client.post("/api/drawings/plans/dimension-proposal", json=payload)
+        self.assertEqual(allowed.status_code, 201, allowed.text)
+        self.assertEqual(allowed.json()["sourceStageRef"], self.stage["stageRef"])
+        for branch in ("first", "second"):
+            initial = self.client.post("/api/design-stages/initialize", json={
+                "projectId": PROJECT_ID, "modelSource": model, "branchId": branch})
+            self.assertEqual(initial.status_code, 201, initial.text)
+            self.stage, self.model = initial.json(), model
+            self.commit_edit({"summary": f"Advance {branch}", "parameters": [{"key": "front_shift", "value": .2}]}, branch_id=branch)
+        unknown = self.status(document, targetModelSource=model)
+        self.assertEqual(unknown["status"], "unknown", unknown)
+        self.assertEqual(unknown["dimensions"], [])
+        refused = self.client.post("/api/drawings/plans/dimension-proposal", json=payload)
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["code"], "DRAWING_SOURCE_AMBIGUOUS")
+        retained = next(row for row in self.client.get("/api/documents").json()["documents"]
+                        if row["revisionRef"] == document["revisionRef"])
+        self.assertEqual(retained, document, "Ambiguity must not rewrite the retained drawing's source.")

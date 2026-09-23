@@ -33,6 +33,22 @@ from ..transport.errors import StudioError
 UNIT_METRES = {"meter": 1.0, "millimeter": .001, "inch": .0254, "foot": .3048}
 
 
+def _plan_source(binding, source_stage_ref, model_source):
+    model, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+    if stage_ref is None:
+        # No inferred Stage can mean either an unaccepted candidate or several
+        # accepted histories. Only the former is a genuinely stage-less source.
+        matches = {ref for branch_id in binding.repository.read_design_branches()
+                   for ref, stage in binding.design_history(branch_id)
+                   if stage.candidate_id == model.run_id and stage.model_sha256 == model.asset_sha256}
+        if len(matches) > 1:
+            raise StudioError(409, "DRAWING_SOURCE_AMBIGUOUS",
+                              "This model belongs to multiple accepted Stages. Select its exact source Stage.")
+        if matches:
+            stage_ref = next(iter(matches))
+    return model, stage_ref
+
+
 def plan_frame(recipe) -> ElevationView:
     frame = recipe["frame"]
     return ElevationView(
@@ -68,11 +84,7 @@ def generate_plan(binding, *, source_stage_ref=None, model_source=None, drawing_
     old = {} if previous is None else previous.view_recipe
     if previous is not None and drawing_id not in (None, previous.drawing_id):
         raise StudioError(409, "DRAWING_REVISION_MISMATCH", "Continue the selected drawing identity.")
-    model_source, stage_ref = _selected_source(binding, source_stage_ref, model_source)
-    if stage_ref is None:
-        inferred = project_state(binding, model_source.run_id).source_stage_ref
-        if inferred is not None and binding.design_stage(inferred).candidate_id == model_source.run_id:
-            stage_ref = inferred
+    model_source, stage_ref = _plan_source(binding, source_stage_ref, model_source)
     source, cad_receipt = _complete_source(binding, model_source, stage_ref)
     unit = cad_receipt["identity"]["length_unit"]
     drawing_id = drawing_id or (previous.drawing_id if previous else "floor-plan")
@@ -184,16 +196,18 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
     result = {"status": "unknown", "detail": "The exact target could not be verified.", "dimensions": [],
               "targetModelSource": None, "targetStageRef": target_stage_ref, "lengthUnit": None, "bindingChanged": False}
     try:
+        # Recheck retained stage-less drawings too: their model may since have
+        # been accepted into multiple histories. Never silently rebind the page.
+        _, old_stage = _plan_source(binding, document.source_stage_ref, document.model_source)
         if target_model_source is None and target_stage_ref is None:
             target_stage_ref = _branch_target(binding, document)
-        target, stage_ref = _selected_source(binding, target_stage_ref, target_model_source)
+        target, stage_ref = _plan_source(binding, target_stage_ref, target_model_source)
         result.update(targetModelSource=target.to_dict(), targetStageRef=None if stage_ref is None else stage_ref.uri,
                       bindingChanged=target != document.model_source or (None if stage_ref is None else stage_ref.uri) != document.source_stage_ref)
         source, receipt = _complete_source(binding, target, stage_ref)
         unit = receipt["identity"]["length_unit"]
         result["lengthUnit"] = unit
         frame = plan_frame(document.view_recipe)
-        old_stage = None if not document.source_stage_ref else record_ref_from_uri(document.source_stage_ref, binding.project_id)
         _, old_receipt = _complete_source(binding, document.model_source, old_stage)
         if unit != old_receipt["identity"]["length_unit"]:
             raise ValueError("The target unit changed; explicitly revise the view instead of reinterpreting its coordinates.")
@@ -236,7 +250,7 @@ def plan_status(binding, *, run_id, asset_sha256, revision_ref, target_model_sou
 
 
 def plan_dimension_choices(binding, model_source, source_stage_ref=None):
-    model, stage_ref = _selected_source(binding, source_stage_ref, model_source)
+    model, stage_ref = _plan_source(binding, source_stage_ref, model_source)
     _, receipt = _complete_source(binding, model, stage_ref)
     return {"lengthUnit": receipt["identity"]["length_unit"],
             "dimensions": list(list_plan_dimension_intents(binding, model, stage_ref))}
@@ -245,7 +259,7 @@ def plan_dimension_choices(binding, model_source, source_stage_ref=None):
 def dimension_proposal(binding, *, run_id, asset_sha256, revision_ref, dimension_id, value,
                        target_model_source=None, target_stage_ref=None):
     document = _plan_document(binding, run_id, asset_sha256, revision_ref)
-    source, stage_ref = _selected_source(binding, document.source_stage_ref, document.model_source)
+    source, stage_ref = _plan_source(binding, document.source_stage_ref, document.model_source)
     projection = project_state(binding, source.run_id, source_stage_ref=stage_ref)
     # A pinned historical view stays readable, but cannot pretend its old base
     # is the current accepted branch merely by supplying that same old target.
