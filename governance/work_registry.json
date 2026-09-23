@@ -648,6 +648,46 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-32",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/32",
+      "status": "active",
+      "goal": "Reconcile Monitor model-call totals with the paginated usage detail view.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/monkeyhub/web/src/monitorData.ts",
+        "apps/monkeyhub/web/src/MonitorPage.tsx",
+        "apps/monkeyhub/web/src/MonitorPage.css",
+        "apps/monkeyhub/web/test/monitorData.test.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
+        "governance/work_registry.json"
+      ],
+      "lanes": [
+        {
+          "id": "token-totals",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/32",
+          "branch": "codex/32-monitor-token-totals",
+          "worktree": "D:\\MONKEYHUB_DEV\\workspace\\worktrees\\32-monitor-token-totals",
+          "base_ref": "5217609c593477b71aeeb82bcbbbba77b756c3f8",
+          "contributor": "Codex",
+          "reviewer": "Codex independent read-only review",
+          "handoff": null,
+          "modules": [
+            "hub.shell"
+          ],
+          "write_scope": [
+            "apps/monkeyhub/web/src/monitorData.ts",
+            "apps/monkeyhub/web/src/MonitorPage.tsx",
+            "apps/monkeyhub/web/src/MonitorPage.css",
+            "apps/monkeyhub/web/test/monitorData.test.ts",
+            "apps/monkeyhub/web/test/chatShell.browser.mjs"
+          ],
+          "depends_on": [],
+          "status": "review",
+          "blocked_reason": null
+        }
+      ]
     }
   ]
 }
