@@ -2103,7 +2103,8 @@
         "deliberation-episode (DeliberationEpisode@1): written by the studio into the candidate run at accept / reject / modify",
         "the StudioModelAsset@1, StudioDocumentModelSource@1, StudioModelAnnotations@1 and StudioWorkingCopy@1 run-record kinds",
         "seat-blender-execution (BlenderExecutionReceipt@1): the existing runner retains a verified Blender scene export and its exact source binding in the run-record area",
-        "audit-event (AuditEvent@1): the actor/origin binding the studio retains beside an authoritative decision, in the review area of the run that decision produced"
+        "audit-event (AuditEvent@1): the actor/origin binding the studio retains beside an authoritative decision, in the review area of the run that decision produced",
+        "studio-scoped-decision (StudioScopedDecision@1): one immutable revision of one scoped project decision, written by the studio into the review area of its fixed studio-decisions run"
       ],
       "does_not_own": [
         "the file name a record is stored under, and reading a kind back out of one - project.refs",
@@ -2146,7 +2147,8 @@
         "tests/test_record_kinds.py",
         "monkeydiagram/drawing_elevation.py",
         "tests/test_drawing_elevation.py",
-        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py"
+        "apps/archflow-studio/api/archflow_studio_api/application/gestures.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
       ],
       "invariants": [
         "a kind is matched exactly, or by its declared pattern; never as a prefix",
@@ -4011,7 +4013,8 @@
         "on-demand print and transfer packs assembled only from caller-ordered registered board pages, without retaining a derived project artifact or changing source bytes",
         "mapping one explicitly selected edit drawing and its board marks to page coordinates, then handing its exact saved annotations, user feedback and up to three explicitly connected reference pages to the existing Studio intent workflow",
         "receiving explicitly mapped PDF/image revisions into the existing board image ids, frames and geometry while preserving all other live scene edits; source histories remain registered documents",
-        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work"
+        "opening an exact registered Board page in the existing document editor and returning with saved annotations, viewport and selection, without discarding unsynced model work",
+        "reading one exact retained scene revision by name, so an older revision can answer as evidence without changing the board's current revision"
       ],
       "does_not_own": [
         "original PDF/image upload or drawing generation (studio.artifacts and runtime.drawing_elevation)",
@@ -4022,7 +4025,8 @@
         "ProjectBinding",
         "project id, title, Excalidraw scene elements, seen-document identities and expected scene revision",
         "one selected registered edit drawing or frame, selected board marks and text, optional registered reference pages joined by explicit selected connectors, and an explicitly reviewed design comment",
-        "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults"
+        "Caller-ordered exact registered document pages and export format; optional maxEdge (1-2048) bounds transient PNG/JPEG previews without changing ordinary export defaults",
+        "an optional exact scene revision sha256 to read instead of the latest"
       ],
       "outputs": [
         "BoardDto",
@@ -4038,7 +4042,8 @@
         "save_board",
         "export_board_pages",
         "web: createBoardFeedback",
-        "web: prepareBoardDesignRequest"
+        "web: prepareBoardDesignRequest",
+        "read_board(binding, revision_sha256=None)"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -4051,7 +4056,8 @@
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/routes/boards.py",
-        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx"
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py"
       ],
       "invariants": [
         "reading an empty board creates no run; a valid first save uses runs/studio-board/records through P036",
@@ -4062,7 +4068,8 @@
         "selected text includes native frame children and bound labels once per object, ordered by Board y, x and id; original text prefills the editable utterance without OCR, unselected nearby text or geometric text DTOs",
         "returning board marks merges their own stable groups into the current Diagram page under its existing CAS rule, preserving unrelated ink and unfinished page comment",
         "feedback reaches the existing intent, clarification and candidate controls once; no board action accepts a Stage or issues a project version",
-        "Page export verifies the exact registered revision, including null versus a generated revision, and source digest before rendering; bounded previews preserve visible PDF crop/rotation and image orientation without persisting derived output"
+        "Page export verifies the exact registered revision, including null versus a generated revision, and source digest before rendering; bounded previews preserve visible PDF crop/rotation and image orientation without persisting derived output",
+        "a named scene revision is read from the same validated chain the latest one comes from, and reading one changes nothing; the board's run is asked for by name, and a damaged board run refuses rather than reading as an empty board"
       ],
       "status": "canonical",
       "tests": [
@@ -4474,7 +4481,9 @@
         "Contextual upright-prism Base/Top/Height edits and simple Level reference creation through typed component proposals; explicit level or mass-top binding, absolute free placement, local propagation preview and existing Sync/undo history.",
         "Compiling explicit parameter lock/unlock decisions into ordinary retained candidates; deterministic requests name existing keys and exact source state, with lock attribution supplied by the Runtime boundary",
         "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation",
-        "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review"
+        "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review",
+        "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
+        "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack"
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4482,7 +4491,9 @@
         "writing to the record - runtime.project_runner, through studio.candidate",
         "the record and its projection - studio.binding",
         "the request and receipt contracts themselves - ports.model",
-        "the HTTP error body and the DTOs - studio.shell"
+        "the HTTP error body and the DTOs - studio.shell",
+        "acquiring, releasing or verifying anything about a parameter lock beyond recording the lock the record already carries (state.record owns locks; state.decision_operator changes them)",
+        "the provider tool, chat surface and product loop that saves or revokes a decision from a real conversation, and the message identities it claims (GH-183)"
       ],
       "inputs": [
         "utterance text",
@@ -4497,7 +4508,9 @@
         "Optional compiler operation_observer for the actual provider request boundary, preserving existing receipt counters and content-free input identities",
         "Optional sourceProposalId on scalar, sketch, transform, push-pull and delete proposals; ordered sketches on POST /api/proposals/sketch share one exact base and keep set; closed defaults true for existing face/prism actions, while false with zero height saves a 2+ point model curve",
         "DocumentTracingRequestDto on POST /api/proposals/sketch names exact saved run/asset/drawing revision/page/annotation revision and selected line or polyline ids, a target component, base and height; scale and direction come only from the saved two-point calibration",
-        "ModelInvocationRequest and structured schema/images from Study for the existing configured transport"
+        "ModelInvocationRequest and structured schema/images from Study for the existing configured transport",
+        "One scoped decision as the caller states it: rawLanguage, optional messageSource claim, disposition, strength, targetRef, scope, exact source evidence union (board revision + live element ids / document run+asset+revision+page / design run+stateDigest+optional Stage), applicability, sourceKind and an optional parameter typedBinding",
+        "Optional decisionContext on POST /api/intents/context: the domain this turn is about, and for a drawing or copy turn its own representation evidence"
       ],
       "outputs": [
         "ParsedIntent",
@@ -4509,7 +4522,9 @@
         "DecisionOperator",
         "DocumentAnnotationPage",
         "retained document comment reference",
-        "working_copy.option_added event identifying the added option source run when an event sink is supplied"
+        "working_copy.option_added event identifying the added option source run when an event sink is supplied",
+        "retained StudioScopedDecision@1 revisions and their DTOs",
+        "scopedDecisions on ContextPack@1: the applicable decisions in the architect's own words with their exact provenance, never a transcript"
       ],
       "public_api": [
         "POST /api/intents",
@@ -4615,7 +4630,20 @@
         "POST /api/proposals/elevation",
         "compile_task_context",
         "POST /api/proposals/parameter-locks",
-        "invoke_structured"
+        "invoke_structured",
+        "POST /api/decisions",
+        "GET /api/decisions",
+        "GET /api/decisions/{decision_id}",
+        "POST /api/decisions/{decision_id}/revisions",
+        "list_decisions",
+        "decision_history",
+        "save_decision",
+        "revise_decision",
+        "compile_scoped_decisions",
+        "decision_context_for",
+        "focus_refs",
+        "DecisionRevision",
+        "DecisionContext"
       ],
       "depends_on": [
         "contracts.canonical",
@@ -4637,7 +4665,8 @@
         "studio.shell",
         "state.design_portfolio",
         "project.repository",
-        "state.stage_workflow"
+        "state.stage_workflow",
+        "studio.board"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -4694,7 +4723,14 @@
         "acceptance evidence names ids only - actor, origin, project, base Stage, candidate, result Stage and record digest - and never a token, prompt or filesystem path; a failed evidence write is answered as a failure naming the committed Stage, never as a successful acceptance",
         "ContextPack@1 accepts exact scalar, multiple, component or whole-project focus; design detail is budgeted with explicit omissions and reference supplements. No focus or supplement grants edits, and an omitted run cannot select a retained candidate implicitly.",
         "Parameter lock proposals require candidate retention before proposal continuation; ordinary semantic edits cannot author or clear locks, and candidate execution does not accept Stage or advance HEAD",
-        "confirmedStage is a derived view, never another persisted authority; isSource requires the exact accepted run/record/digest; bounded changed/affected/review references disclose omissions and unresolved non-adjacent or undeclared dependencies"
+        "confirmedStage is a derived view, never another persisted authority; isSource requires the exact accepted run/record/digest; bounded changed/affected/review references disclose omissions and unresolved non-adjacent or undeclared dependencies",
+        "every revision of a scoped decision is retained in the one fixed explicit studio-decisions run and read only from it; decision reads and context compilation never enumerate the project's runs",
+        "a decision is one complete chain: stable decisionId, exact previousRevisionRef, one root and one tip. Competing, branching, incomplete chains and a damaged decisions run fail closed rather than picking a newest revision or reading as no decisions; superseded is derived from the chain and no retained revision is rewritten",
+        "source evidence is checked as evidence: a board revision is an exact retained revision and its live element ids, a document page is its exact registered revision (null is never answered with a generated one), a design source is a real retained actionable run and its stateDigest. No representation decision is asked for a Design run, and none writes geometry, a Stage or HEAD",
+        "lock records and verifies the lock the record already carries: a decision never acquires one, and revoking a decision never releases one",
+        "applicability 'scope' survives later revisions inside its scope; 'exact-source' applies only while the caller supplies the same source identity. A target that is gone, a parameter value or unit that moved and a released lock are derived stale at read time, and revoked, superseded and deferred decisions are never injected as requirements",
+        "sourceKind and messageSource are the caller's own provenance claims, kept apart from the boundary's resolved attribution; neither is a credential and neither grants an action",
+        "every applicable decision is returned without a decision-count cutoff; a target scope applies when any of its members intersects the task's relevant targets, so changing one end of a kept relation does not discard that decision"
       ],
       "status": "canonical",
       "tests": [
@@ -4726,7 +4762,8 @@
         "apps/monkeyhub/web/workspaces/test/modelSync.browser.mjs",
         "apps/archflow-studio/api/tests/test_acceptance_audit.py",
         "apps/archflow-studio/api/tests/test_elevation.py",
-        "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
+        "apps/archflow-studio/api/tests/test_decisions.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
@@ -4758,7 +4795,10 @@
         "apps/monkeyhub/web/workspaces/src/api/client.ts",
         "apps/archflow-studio/api/archflow_studio_api/application/elevation.py",
         "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.tsx",
-        "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.css"
+        "apps/monkeyhub/web/workspaces/src/features/stage/ElevationPanel.css",
+        "apps/archflow-studio/api/archflow_studio_api/application/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/decisions.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/decisions.py"
       ]
     },
     {
@@ -6258,7 +6298,8 @@
         "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
         "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write.",
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
-        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations."
+        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations.",
+        "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6348,7 +6389,8 @@
         "POST /api/chat/presentation/bind",
         "POST /api/chat/sessions/{id}/presentation",
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
-        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation"
+        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation",
+        "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6459,7 +6501,8 @@
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
         "tests/monkeymonitor/test_stage_handoff_benchmark.py",
         "apps/monkeyhub/api/tests/test_chat_presentation.py",
-        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py"
+        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
+        "apps/monkeyhub/api/tests/test_chat_feedback.py"
       ],
       "depends_on": [
         "project.repository",

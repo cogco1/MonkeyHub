@@ -111,6 +111,7 @@ STUDIO_MODEL_ANNOTATIONS = "studio-model-annotations"
 DESIGN_STAGE = "design-stage"
 STUDIO_CANDIDATE_DELTA = "studio-candidate-delta"
 STUDIO_BOARD_SCENE = "studio-board-scene"
+STUDIO_SCOPED_DECISION = "studio-scoped-decision"
 AUDIT_EVENT = "audit-event"
 
 # ---- read by the spine, written by nobody on it
@@ -145,6 +146,16 @@ _TABLE: tuple[RecordKind, ...] = (
         "StudioBoardScene@1",
         _RUN_RECORD,
         "Single-operator whiteboard scene with exact registered document-page sources; retained in its studio-board run, separate from design Stages.",
+    ),
+    RecordKind(
+        STUDIO_SCOPED_DECISION,
+        "StudioScopedDecision@1",
+        PersistenceArea.RUN_REVIEW.value,
+        "one immutable revision of one scoped project decision in the fixed "
+        "studio-decisions run: the architect's own words, the disposition, "
+        "strength, target, scope and exact source evidence it was said "
+        "against, and the revision it supersedes; it accepts no Stage, "
+        "acquires no lock and changes no design state",
     ),
     RecordKind(
         DESIGN_STAGE,

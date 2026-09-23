@@ -221,6 +221,26 @@ export type AuthoredControlDraftDto = {
 };
 
 /**
+ * BoardDecisionSourceDto
+ *
+ * An exact historic board revision and the elements named on it.
+ */
+export type BoardDecisionSourceDto = {
+    /**
+     * Kind
+     */
+    kind: 'board';
+    /**
+     * Revisionsha256
+     */
+    revisionSha256: string;
+    /**
+     * Elementids
+     */
+    elementIds: Array<string>;
+};
+
+/**
  * BoardDto
  */
 export type BoardDto = {
@@ -1666,6 +1686,12 @@ export type ContextPackDto = {
      */
     confirmedStage?: ConfirmedStageContextDto | null;
     /**
+     * Scopeddecisions
+     *
+     * the decisions this project retains that still apply to this domain, Stage and focus, in the architect's own words with their exact provenance. Revoked, deferred, superseded and derived-stale ones are left out, and no transcript is carried; it authorizes nothing and changes no reference
+     */
+    scopedDecisions?: Array<DecisionDto>;
+    /**
      * Honesty
      */
     honesty?: Array<string>;
@@ -1734,6 +1760,10 @@ export type ContextPackRequestDto = {
      * offset into the bounded reference index; it changes no focus or edit scope
      */
     contextOffset?: number;
+    /**
+     * what this turn is about for the scoped decisions it should be handed: the domain, and for a drawing or copy turn its own exact evidence. Absent, the design domain, this source's Stage and the focus already named above answer for it
+     */
+    decisionContext?: DecisionContextDto | null;
 };
 
 /**
@@ -1792,6 +1822,315 @@ export type CoverageDto = {
      * Unknowncomponent
      */
     unknownComponent: number;
+};
+
+/**
+ * DecisionAttributionDto
+ */
+export type DecisionAttributionDto = {
+    /**
+     * Actorid
+     */
+    actorId: string;
+    /**
+     * Authenticated
+     */
+    authenticated: boolean;
+    /**
+     * Origin
+     */
+    origin: string;
+};
+
+/**
+ * DecisionContextDto
+ *
+ * What a next turn is about, for the decisions it should be handed.
+ *
+ * Absent, the design domain, the projection's own Stage and the focus the
+ * request already names answer for it. Present, it is checked exactly like a
+ * decision's own evidence; it never invents a Stage or a design source.
+ */
+export type DecisionContextDto = {
+    /**
+     * Domain
+     */
+    domain: 'drawing' | 'copy' | 'design';
+    /**
+     * Stageref
+     */
+    stageRef?: string | null;
+    /**
+     * Targetrefs
+     */
+    targetRefs?: Array<string> | null;
+    /**
+     * Source
+     */
+    source?: ({
+        kind: 'board';
+    } & BoardDecisionSourceDto) | ({
+        kind: 'document';
+    } & DocumentDecisionSourceDto) | ({
+        kind: 'design';
+    } & DesignDecisionSourceDto) | null;
+};
+
+/**
+ * DecisionDto
+ *
+ * One decision at one revision, as this project retains it.
+ */
+export type DecisionDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Decisionid
+     */
+    decisionId: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    /**
+     * Previousrevisionref
+     */
+    previousRevisionRef: string | null;
+    /**
+     * Status
+     *
+     * what this revision is now. 'superseded' is derived, not retained: it is what a revision that is no longer its chain's tip reads as, and the record it was written into is unchanged
+     */
+    status: 'active' | 'deferred' | 'revoked' | 'superseded';
+    /**
+     * Rawlanguage
+     */
+    rawLanguage: string;
+    messageSource: MessageSourceDto | null;
+    /**
+     * Disposition
+     */
+    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer';
+    /**
+     * Strength
+     */
+    strength: 'hard' | 'strong_preference' | 'soft_preference' | 'temporary';
+    /**
+     * Targetref
+     */
+    targetRef: string;
+    scope: DecisionScopeDto;
+    /**
+     * Source
+     */
+    source: ({
+        kind: 'board';
+    } & BoardDecisionSourceDto) | ({
+        kind: 'document';
+    } & DocumentDecisionSourceDto) | ({
+        kind: 'design';
+    } & DesignDecisionSourceDto);
+    /**
+     * Applicability
+     */
+    applicability: 'scope' | 'exact-source';
+    /**
+     * Sourcekind
+     */
+    sourceKind: 'human' | 'agent' | 'evaluator' | 'deterministic-rule';
+    typedBinding: DecisionTypedBindingDto | null;
+    attribution: DecisionAttributionDto;
+    /**
+     * Createdat
+     */
+    createdAt: string;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * the message that asked for this revision, when one was named. Null on a first revision; a revocation carries this beside the original message it revokes
+     */
+    revisionMessageSource?: MessageSourceDto | null;
+};
+
+/**
+ * DecisionHistoryDto
+ */
+export type DecisionHistoryDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Decisionid
+     */
+    decisionId: string;
+    /**
+     * Revisions
+     */
+    revisions: Array<DecisionDto>;
+};
+
+/**
+ * DecisionListDto
+ */
+export type DecisionListDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Decisions
+     */
+    decisions: Array<DecisionDto>;
+};
+
+/**
+ * DecisionRequestDto
+ *
+ * One decision as the caller states it.
+ */
+export type DecisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Rawlanguage
+     *
+     * the architect's own words, retained unedited; no rule is manufactured from them
+     */
+    rawLanguage: string;
+    /**
+     * which chat message these words came from, as the caller claims it; it is provenance, not a credential, and it grants nothing
+     */
+    messageSource?: MessageSourceDto | null;
+    /**
+     * Disposition
+     */
+    disposition: 'keep' | 'reject' | 'avoid' | 'require' | 'lock' | 'defer';
+    /**
+     * Strength
+     */
+    strength: 'hard' | 'strong_preference' | 'soft_preference' | 'temporary';
+    /**
+     * Targetref
+     */
+    targetRef: string;
+    scope: DecisionScopeDto;
+    /**
+     * Source
+     */
+    source: ({
+        kind: 'board';
+    } & BoardDecisionSourceDto) | ({
+        kind: 'document';
+    } & DocumentDecisionSourceDto) | ({
+        kind: 'design';
+    } & DesignDecisionSourceDto);
+    /**
+     * Applicability
+     *
+     * 'scope' survives later revisions inside the scope; 'exact-source' applies only while the caller reads the very source it was said against
+     */
+    applicability: 'scope' | 'exact-source';
+    /**
+     * Sourcekind
+     *
+     * who this decision's disposition, scope and target were settled by, as the caller claims it, kept apart from the boundary's own attribution. Use 'agent' whenever an agent interpreted any of those fields from the words: 'human' does not mean a person typed the sentence, it means a person settled every field the decision now claims
+     */
+    sourceKind: 'human' | 'agent' | 'evaluator' | 'deterministic-rule';
+    typedBinding?: TypedBindingRequestDto | null;
+};
+
+/**
+ * DecisionRevisionRequestDto
+ *
+ * Revoke or supersede one decision, against the revision the caller read.
+ */
+export type DecisionRevisionRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Expectedrevisionref
+     */
+    expectedRevisionRef: string;
+    /**
+     * Action
+     */
+    action: 'revoke' | 'supersede';
+    /**
+     * Reason
+     */
+    reason?: string | null;
+    /**
+     * which chat message asked for this revocation or supersession; the wording being revised keeps its own messageSource
+     */
+    revisionMessageSource?: MessageSourceDto | null;
+    replacement?: DecisionRequestDto | null;
+};
+
+/**
+ * DecisionScopeDto
+ *
+ * How far one decision reaches, said in a field rather than guessed.
+ */
+export type DecisionScopeDto = {
+    /**
+     * Domain
+     */
+    domain: 'drawing' | 'copy' | 'design';
+    /**
+     * Extent
+     */
+    extent: 'project' | 'stage' | 'targets';
+    /**
+     * Stageref
+     */
+    stageRef?: string | null;
+    /**
+     * Targetrefs
+     */
+    targetRefs?: Array<string> | null;
+};
+
+/**
+ * DecisionTypedBindingDto
+ *
+ * What the record said about that parameter when the decision was made.
+ */
+export type DecisionTypedBindingDto = {
+    /**
+     * Kind
+     */
+    kind: 'parameter';
+    /**
+     * Parameterkey
+     */
+    parameterKey: string;
+    /**
+     * Value
+     */
+    value: number;
+    /**
+     * Unit
+     */
+    unit: string;
+    /**
+     * Epistemicstatus
+     */
+    epistemicStatus: string;
+    /**
+     * Lockauthority
+     *
+     * the existing lock this decision records; a decision never takes or releases one
+     */
+    lockAuthority: string | null;
 };
 
 /**
@@ -1893,6 +2232,30 @@ export type DesignBranchDto = {
      * Headstageref
      */
     headStageRef: string;
+};
+
+/**
+ * DesignDecisionSourceDto
+ *
+ * A real retained design run, its state digest and its Stage when named.
+ */
+export type DesignDecisionSourceDto = {
+    /**
+     * Kind
+     */
+    kind: 'design';
+    /**
+     * Sourcerunid
+     */
+    sourceRunId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
 };
 
 /**
@@ -2147,6 +2510,34 @@ export type DocumentCommentsDto = {
      * Comments
      */
     comments: Array<DocumentCommentDto>;
+};
+
+/**
+ * DocumentDecisionSourceDto
+ *
+ * One registered page of one document at the exact revision it was read at.
+ */
+export type DocumentDecisionSourceDto = {
+    /**
+     * Kind
+     */
+    kind: 'document';
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef?: string | null;
+    /**
+     * Pageindex
+     */
+    pageIndex: number;
 };
 
 /**
@@ -4018,6 +4409,27 @@ export type MassingOptionRequestDto = {
     programTargets?: {
         [key: string]: number;
     } | null;
+};
+
+/**
+ * MessageSourceDto
+ *
+ * Which chat message a decision's words came from, as the caller states it.
+ *
+ * A claim of provenance, never a credential and never an authorization: the
+ * boundary's own ``attribution`` is resolved from configured actors and this
+ * process's surface, and no request body takes part in it. The Hub fills
+ * this in from the message the user actually sent; nothing here verifies it.
+ */
+export type MessageSourceDto = {
+    /**
+     * Sessionid
+     */
+    sessionId: string;
+    /**
+     * Messageid
+     */
+    messageId: string;
 };
 
 /**
@@ -8239,6 +8651,22 @@ export type TransformElementRequestDto = {
 };
 
 /**
+ * TypedBindingRequestDto
+ *
+ * The parameter a decision is bound to; the server reads its value itself.
+ */
+export type TypedBindingRequestDto = {
+    /**
+     * Kind
+     */
+    kind: 'parameter';
+    /**
+     * Parameterkey
+     */
+    parameterKey: string;
+};
+
+/**
  * UnknownCoverageDto
  *
  * The components no edge touches: unknown impact, not zero impact.
@@ -9909,6 +10337,156 @@ export type ExportBoardApiBoardExportPostResponses = {
      */
     200: unknown;
 };
+
+export type ReadDecisionsApiDecisionsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/decisions';
+};
+
+export type ReadDecisionsApiDecisionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDecisionsApiDecisionsGetError = ReadDecisionsApiDecisionsGetErrors[keyof ReadDecisionsApiDecisionsGetErrors];
+
+export type ReadDecisionsApiDecisionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DecisionListDto;
+};
+
+export type ReadDecisionsApiDecisionsGetResponse = ReadDecisionsApiDecisionsGetResponses[keyof ReadDecisionsApiDecisionsGetResponses];
+
+export type CreateDecisionApiDecisionsPostData = {
+    body: DecisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/decisions';
+};
+
+export type CreateDecisionApiDecisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateDecisionApiDecisionsPostError = CreateDecisionApiDecisionsPostErrors[keyof CreateDecisionApiDecisionsPostErrors];
+
+export type CreateDecisionApiDecisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DecisionDto;
+};
+
+export type CreateDecisionApiDecisionsPostResponse = CreateDecisionApiDecisionsPostResponses[keyof CreateDecisionApiDecisionsPostResponses];
+
+export type ReadDecisionApiDecisionsDecisionIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Decision Id
+         */
+        decision_id: string;
+    };
+    query?: never;
+    url: '/api/decisions/{decision_id}';
+};
+
+export type ReadDecisionApiDecisionsDecisionIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadDecisionApiDecisionsDecisionIdGetError = ReadDecisionApiDecisionsDecisionIdGetErrors[keyof ReadDecisionApiDecisionsDecisionIdGetErrors];
+
+export type ReadDecisionApiDecisionsDecisionIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DecisionHistoryDto;
+};
+
+export type ReadDecisionApiDecisionsDecisionIdGetResponse = ReadDecisionApiDecisionsDecisionIdGetResponses[keyof ReadDecisionApiDecisionsDecisionIdGetResponses];
+
+export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostData = {
+    body: DecisionRevisionRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Decision Id
+         */
+        decision_id: string;
+    };
+    query?: never;
+    url: '/api/decisions/{decision_id}/revisions';
+};
+
+export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostError = ReviseDecisionApiDecisionsDecisionIdRevisionsPostErrors[keyof ReviseDecisionApiDecisionsDecisionIdRevisionsPostErrors];
+
+export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DecisionDto;
+};
+
+export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponse = ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses[keyof ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses];
 
 export type ReadModelViewApiDrawingsModelViewGetData = {
     body?: never;

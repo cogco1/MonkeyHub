@@ -37,6 +37,7 @@ from ..application.intent import (
     parse_utterance,
 )
 from ..application.capability import capability, describe_capability
+from ..application.decisions import compile_scoped_decisions, decision_context_for, focus_refs
 from ..application.intent_agent import (
     AGENT_FAILED,
     DETERMINISTIC,
@@ -315,7 +316,36 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
         confirmed_stage = confirmed_stage_context(
             projection, accepted, stage, stage_ref=projection.source_stage_ref.uri,
         )
-    return context_pack_dto(description, context, preflight, model_context(context), confirmed_stage=confirmed_stage)
+    decisions, _ = compile_scoped_decisions(
+        binding, _decision_context(binding, body, projection, element_ids or context.target_ids),
+        projection.record,
+    )
+    return context_pack_dto(description, context, preflight, model_context(context),
+                            confirmed_stage=confirmed_stage, scoped_decisions=decisions)
+
+
+def _decision_context(
+    binding, body: ContextPackRequestDto, projection: StateProjection, element_ids: tuple[str, ...],
+):
+    """What this turn is about, for the decisions it should be handed.
+
+    This route only says what this pack is actually reading — the source it
+    projected, the Stage that source is under, and the design refs its focus
+    really covers. Every check on those belongs to the decisions owner, so
+    one validator answers for a saved decision and for a turn asking about
+    one.
+    """
+
+    stage_ref = None if projection.source_stage_ref is None else projection.source_stage_ref.uri
+    return decision_context_for(
+        binding,
+        requested=None if body.decision_context is None else body.decision_context.model_dump(by_alias=True),
+        design_source={"kind": "design", "sourceRunId": projection.run.run_id,
+                       "stateDigest": projection.state_digest, "sourceStageRef": stage_ref},
+        stage_ref=stage_ref,
+        focus=focus_refs(projection.record, element_ids),
+        record=projection.record,
+    )
 
 
 @router.post(
