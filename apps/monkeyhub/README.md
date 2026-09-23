@@ -4,6 +4,21 @@ MonkeyHub opens into project conversations: projects and chats on the left, conv
 
 New project creates one in the workspace: name it, and Hub initializes an empty P036 project at version 0 through the same path `tools/create_project.py` uses, then opens a conversation in it. The workspace is a location in Hub settings — the saved folder, else the folder the current project already lives in, else `workspace/projects` under this Hub's runtime root. A name that is not a project id, a name that would leave that folder, and a folder that already holds anything are each refused by their own reason, and nothing existing is written over. An existing complete ArchFlow project folder can still be added directly. Send a message to start.
 
+When a user asks the conversation to retain an avoid/keep direction, its existing
+`studio_request` tool can save that feedback against the observed source through
+`POST /api/decisions`. Hub binds the current user message's exact words and IDs;
+the model supplies the interpreted target and scope, recorded as `sourceKind=agent`.
+It cannot write invented user wording or claim human approval of that interpretation.
+For a long message, `feedbackQuote` selects a unique continuous passage; Hub
+verifies and extracts those exact words while retaining the whole message's ID.
+The same tool can revoke these chat-origin feedback records at the revision read,
+retaining both the original message and the new withdrawal message. Runtime
+authorization still applies; saving feedback neither accepts a Stage nor changes
+HEAD or parameter locks, and does not add an internal-grant confirmation dialog.
+Subsequent design, drawing and copy tasks read only their applicable
+`scopedDecisions` from the existing context API. Unsupported execution effects are
+reported as deferred; a saved preference is not proof that an artifact complied.
+
 Hub settings, bottom left, hold the global choices: language, theme, text size, the default CLI connection and the default model. Each connection is checked once per run, read-only: whether its CLI is installed, whether that CLI reports itself signed in, and which models it lists. Codex answers `model/list` on its own app-server protocol and Claude Code carries its list in the SDK control protocol's initialize answer — the same one `supportedModels()` reads — so each catalogue is that account's own. A connection that cannot be read says why and still accepts a model id typed by hand. Nothing is guessed, no conversation is started to find out, and no credential is read or reported. A check is reused until it ages out; the transcript's polling never starts a CLI, and Hub settings can ask again.
 
 A new conversation starts from those defaults; an existing conversation keeps the connection, model and native CLI session it was created with, and changing a default never reaches one. The composer states which connection is answering and offers that conversation's model. Changing it applies to that conversation's next messages only: its connection, its native CLI session and its project stay as they are, the global default is not rewritten, and a reply already running keeps the model it started with. The connection itself is still chosen once, in Hub settings. Coding Plan uses the installed Claude CLI's configured Anthropic-compatible endpoint and authentication. A connection being available means its executable/configuration was found; login or provider errors are reported when the CLI runs.

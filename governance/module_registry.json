@@ -6298,7 +6298,8 @@
         "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
         "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write.",
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
-        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations."
+        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations.",
+        "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6388,7 +6389,8 @@
         "POST /api/chat/presentation/bind",
         "POST /api/chat/sessions/{id}/presentation",
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
-        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation"
+        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation",
+        "studio_request /api/decisions: GET latest/history, POST current-user avoid/keep feedback and POST feedback-only revoke through existing Runtime authorization; studio_schema derives the narrowed inputs from Runtime OpenAPI"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6499,7 +6501,8 @@
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
         "tests/monkeymonitor/test_stage_handoff_benchmark.py",
         "apps/monkeyhub/api/tests/test_chat_presentation.py",
-        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py"
+        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
+        "apps/monkeyhub/api/tests/test_chat_feedback.py"
       ],
       "depends_on": [
         "project.repository",
