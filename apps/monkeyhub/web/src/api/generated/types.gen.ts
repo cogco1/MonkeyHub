@@ -809,6 +809,16 @@ export type ChatWorkspace = {
 };
 
 /**
+ * CompleteUpdate
+ */
+export type CompleteUpdate = {
+    /**
+     * Fromcommit
+     */
+    fromCommit: string;
+};
+
+/**
  * ComputerActionRequest
  *
  * One ComputerAction@1 payload; monkeycontrol owns what is inside it.
@@ -1361,6 +1371,36 @@ export type OperationRecord = {
 };
 
 /**
+ * PreparedUpdate
+ */
+export type PreparedUpdate = {
+    /**
+     * Targetversion
+     */
+    targetVersion: string;
+    /**
+     * Targetrevision
+     */
+    targetRevision: string;
+    /**
+     * Changedbytes
+     */
+    changedBytes: number;
+    /**
+     * Changedfiles
+     */
+    changedFiles: number;
+    /**
+     * Removedfiles
+     */
+    removedFiles: number;
+    /**
+     * Reusedfiles
+     */
+    reusedFiles: number;
+};
+
+/**
  * ProjectArchiveExportRequest
  *
  * Write one retained project as the portable archive file this names.
@@ -1533,6 +1573,20 @@ export type ProjectVersionDto = {
 };
 
 /**
+ * RollbackUpdate
+ */
+export type RollbackUpdate = {
+    /**
+     * Fromcommit
+     */
+    fromCommit: string;
+    /**
+     * Targetcommit
+     */
+    targetCommit: string;
+};
+
+/**
  * RuntimeCandidateDto
  */
 export type RuntimeCandidateDto = {
@@ -1659,6 +1713,38 @@ export type RuntimeProjectRequest = {
      * Projectid
      */
     projectId: string;
+};
+
+/**
+ * UpdateStatus
+ */
+export type UpdateStatus = {
+    /**
+     * Currentversion
+     */
+    currentVersion: string;
+    /**
+     * Currentrevision
+     */
+    currentRevision: string | null;
+    /**
+     * Mode
+     */
+    mode: 'local' | 'unsupported';
+    /**
+     * State
+     */
+    state: 'idle' | 'preparing' | 'ready' | 'applying' | 'failed';
+    prepared?: PreparedUpdate | null;
+    /**
+     * Canapply
+     */
+    canApply?: boolean;
+    /**
+     * Message
+     */
+    message?: string | null;
+    error?: HubError | null;
 };
 
 /**
@@ -1821,6 +1907,124 @@ export type HealthApiHealthGetResponses = {
 };
 
 export type HealthApiHealthGetResponse = HealthApiHealthGetResponses[keyof HealthApiHealthGetResponses];
+
+export type UpdateStatusApiUpdatesStatusGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/updates/status';
+};
+
+export type UpdateStatusApiUpdatesStatusGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: UpdateStatus;
+};
+
+export type UpdateStatusApiUpdatesStatusGetResponse = UpdateStatusApiUpdatesStatusGetResponses[keyof UpdateStatusApiUpdatesStatusGetResponses];
+
+export type UpdateRestartApiUpdatesRestartGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/updates/restart';
+};
+
+export type UpdateRestartApiUpdatesRestartGetResponses = {
+    /**
+     * Response Update Restart Api Updates Restart Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type UpdateRestartApiUpdatesRestartGetResponse = UpdateRestartApiUpdatesRestartGetResponses[keyof UpdateRestartApiUpdatesRestartGetResponses];
+
+export type PrepareUpdateApiUpdatesPreparePostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/updates/prepare';
+};
+
+export type PrepareUpdateApiUpdatesPreparePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: UpdateStatus;
+};
+
+export type PrepareUpdateApiUpdatesPreparePostResponse = PrepareUpdateApiUpdatesPreparePostResponses[keyof PrepareUpdateApiUpdatesPreparePostResponses];
+
+export type ApplyUpdateApiUpdatesApplyPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/updates/apply';
+};
+
+export type ApplyUpdateApiUpdatesApplyPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: UpdateStatus;
+};
+
+export type ApplyUpdateApiUpdatesApplyPostResponse = ApplyUpdateApiUpdatesApplyPostResponses[keyof ApplyUpdateApiUpdatesApplyPostResponses];
+
+export type CompleteUpdateApiUpdatesCompletePostData = {
+    body: CompleteUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/updates/complete';
+};
+
+export type CompleteUpdateApiUpdatesCompletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompleteUpdateApiUpdatesCompletePostError = CompleteUpdateApiUpdatesCompletePostErrors[keyof CompleteUpdateApiUpdatesCompletePostErrors];
+
+export type CompleteUpdateApiUpdatesCompletePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: UpdateStatus;
+};
+
+export type CompleteUpdateApiUpdatesCompletePostResponse = CompleteUpdateApiUpdatesCompletePostResponses[keyof CompleteUpdateApiUpdatesCompletePostResponses];
+
+export type RollbackUpdateApiUpdatesRollbackPostData = {
+    body: RollbackUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/updates/rollback';
+};
+
+export type RollbackUpdateApiUpdatesRollbackPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RollbackUpdateApiUpdatesRollbackPostError = RollbackUpdateApiUpdatesRollbackPostErrors[keyof RollbackUpdateApiUpdatesRollbackPostErrors];
+
+export type RollbackUpdateApiUpdatesRollbackPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: UpdateStatus;
+};
+
+export type RollbackUpdateApiUpdatesRollbackPostResponse = RollbackUpdateApiUpdatesRollbackPostResponses[keyof RollbackUpdateApiUpdatesRollbackPostResponses];
 
 export type ListAppsApiAppsGetData = {
     body?: never;

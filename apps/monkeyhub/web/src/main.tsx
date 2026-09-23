@@ -270,6 +270,7 @@ function App() {
       </div>
     </section></>;
   return <UserPreferencesProvider appearance={preferences}><ChatShell preferences={preferences} configuredProject={savedLaunch?.projectDir ?? null} settings={settings}
+    settingsDirty={appearanceDirty || launchDirty || savingAppearance || savingLaunch || busyServices.size > 0}
     defaults={{ provider: savedChatDefaults.chatProvider ?? "codex", model: savedChatDefaults.chatModel }}
     workspace={workspace} apps={statusIssue ? null : apps} /></UserPreferencesProvider>;
 }

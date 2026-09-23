@@ -26,14 +26,30 @@ if options.get("crash"):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = json.dumps({
+        health = {
             "status": "ok", "service": "monkeyhub-api", "serverVersion": "0.1.0",
             "processId": os.getpid(), "parentProcessId": os.getppid(),
             "managedInstanceId": args.managed_instance_id,
             "sourceRevision": (Path.cwd() / "source-version.txt").read_text().strip(),
-        }).encode()
+        }
+        body = json.dumps({"targetCommit": None} if self.path == "/api/updates/restart" else health).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = json.loads(self.rfile.read(length))
+        record = {
+            "path": self.path, "payload": payload, "desktopPid": os.getppid(),
+            "hubPid": os.getpid(), "port": args.port,
+            "sourceRevision": (Path.cwd() / "source-version.txt").read_text().strip(),
+        }
+        (args.runtime_root / "activation.json").write_text(json.dumps(record))
+        body = b'{}'
+        self.send_response(500 if options.get("activation_failure") else 200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

@@ -73,6 +73,15 @@ def _progress_chat_store():
             # Let the existing fail-closed parser decide whether this call really
             # succeeded and whether a candidate is actually readable.
             super()._tool_message(session, item, kind, environment)
+            message_id = f"{chat_module._turn_id(session)}:{item.get('id') or 'tool'}"
+            message = next((row for row in session.messages if row.id == message_id), None)
+            if message is not None:
+                # Providers need not publish a summary. Keep one live, factual
+                # activity line using the already redacted tool receipt, without
+                # copying arguments/results or claiming an architectural outcome.
+                zh = self._zh(session)
+                prefix = ("当前操作：" if zh else "Current activity: ") if message.status == "streaming" else ("最近操作：" if zh else "Latest activity: ")
+                self._progress(session, "activity", prefix + message.content.split("\n", 1)[0][:240], status=message.status)
             # Reading a PUT/POST schema is not performing the operation it names.
             if item.get("server") != "monkeyhub" or item.get("tool") != "studio_request":
                 return
@@ -82,8 +91,6 @@ def _progress_chat_store():
             path = urlsplit(raw_path).path
             status = str(item.get("status") or "")
             running = kind in {"item.started", "item.updated"} and status not in _TERMINAL_TOOL_STATES
-            message_id = f"{chat_module._turn_id(session)}:{item.get('id') or 'tool'}"
-            message = next((row for row in session.messages if row.id == message_id), None)
             failed = (status in {"failed", "cancelled", "interrupted"}
                       or (message is not None and message.status == "failed"))
             zh = self._zh(session)

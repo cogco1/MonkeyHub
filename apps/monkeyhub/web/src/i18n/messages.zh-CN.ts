@@ -829,6 +829,19 @@ export const messagesZhCN = {
 } satisfies MessageCatalog;
 
 export const hubCopy = {
+    softwareUpdate: "软件更新", updateCurrent: "当前版本", updateTarget: "已准备版本", updateChangedBytes: "变更文件体积",
+    updateLocalMode: "本地补丁模式 · 尚未配置自动下载更新。",
+    updateUnsupported: "补丁更新需要使用已安装的 MonkeyHub 桌面客户端。",
+    updateTrustLocal: "本地开发补丁包含可执行代码，请选择来源可信的 ZIP 包（最大 256 MiB）。",
+    updateChoosePatch: "选择补丁 ZIP", updateRefresh: "刷新状态", updateRestart: "重启更新",
+    updateUploading: "正在上传补丁…", updatePreparing: "正在校验和准备补丁…", updateReady: "补丁已就绪，保存工作后即可重启更新。",
+    updateApplying: "正在重启更新…", updateFailed: "补丁准备或应用失败。", updateLoading: "正在读取更新状态…",
+    updateZipRequired: "请选择 ZIP 格式的补丁包。", updateTooLarge: "补丁超过 256 MiB，请选择较小的补丁 ZIP。",
+    updateDraftsBlocked: "有对话包含未发送的文字或附件，请先发送或移除，再重启更新。",
+    updateModelBlocked: "有模型修改尚未同步，请先同步或保存，再重启更新。",
+    updateSettingsBlocked: "请先保存设置修改，再重启更新。",
+    updateBusyBlocked: "请等待当前任务和工作区加载结束，再重启更新。",
+    updateRecovery: "项目、聊天和设置会保留；旧版本也会保留，更新失败时可恢复。",
     apps: "工作区", settings: "设置", refresh: "刷新", connected: "Hub 已连接", connecting: "正在连接", disconnected: "无法读取工作区状态",
     closeNote: "关闭此网页不会停止工作区。请使用停止按钮，或从托盘退出 MonkeyHub。",
     archTitle: "建模", diagramTitle: "图纸", monitorTitle: "用量", boardTitle: "展示", fabTitle: "制作",
@@ -856,6 +869,7 @@ export const chatCopy = {
     folder: "项目文件夹", folderHelp: "选择已有的 ArchFlow 项目，粘贴文件夹完整路径。", folderPlaceholder: "例如 D:\\projects\\my-project",
     empty: "开始项目对话", emptyHint: "描述你想做的事。需要看模型或图纸时，在右侧打开工具。", noProject: "添加一个项目，开始对话",
     placeholder: "想在这个项目里做些什么？", send: "发送", stop: "停止", thinking: "正在处理", interrupted: "已中断", failed: "未完成",
+    progress: "进展",
     attach: "添加附件", attachments: "附件", removeAttachment: "移除附件", dropFiles: "松开添加附件",
     previewImage: "放大图片", download: "下载", imageLoading: "正在加载图片…", imageFailed: "图片加载失败，仍可下载文件。", openDocument: "打开文档",
     externalChat: "外部对话", externalNotice: "已连接 agent 的回复和进度会在这里显示。请回到原应用继续对话。",

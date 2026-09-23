@@ -6258,12 +6258,13 @@
         "Native MCP image reads of one exact registered PDF/image page through studio.board export, with explicit revision/page identity, bounded PNG transport and no mutation admission or project write.",
         "At an exact explicitly accepted Stage boundary, prepare project facts and replace native provider continuity once; retain visible chat and usage identities, with no Stage acceptance or project write.",
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
-        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations."
+        "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations.",
+        "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
         "Alternative preference persistence; user and application configuration are read and saved through the Project Runtime package's settings module (studio.shell), while the settings authority and its UI are the Hub's",
-        "Plugin discovery, installation, auto-updates or attaching to and stopping foreign processes"
+        "Plugin discovery or installation, unattended remote update delivery, or attaching to and stopping foreign processes"
       ],
       "inputs": [
         "Explicit nonproject runtime root",
@@ -6274,7 +6275,8 @@
         "An existing complete project folder, chosen installed CLI/model and user chat message with optional base64 file attachments (8 files, 20 MiB each, 40 MiB total)",
         "Optional explicit sourceRunId/stateDigest/targetComponentId/elementId/sourceStageRef in ChatPostRequest.designContext",
         "ChatPostRequest.contextMode: continue (legacy default), project (manual fresh source), or stage (fresh only for a newly selected exact committed Stage); project/stage require designContext",
-        "ChatPresentationBindRequest and ChatPresentationRequest: explicit project/source session, turn/message UUIDs, revisioned full snapshots, attachment bytes and exact document/page references"
+        "ChatPresentationBindRequest and ChatPresentationRequest: explicit project/source session, turn/message UUIDs, revisioned full snapshots, attachment bytes and exact document/page references",
+        "Explicitly chosen local developer patch ZIP and installed exact-version desktop bundle; no remote feed or publisher identity is inferred"
       ],
       "outputs": [
         "Hub FastAPI and OpenAPI",
@@ -6284,7 +6286,8 @@
         "Project-bound chat transcripts, session-scoped attachment downloads and continuation of the same native CLI session under the explicit Hub runtime root",
         "Typed project/session metadata for the owned Monitor Codex source connection",
         "Minimal operation admission journal at runtime/operations/<runtimeId>.json under the explicit Hub runtime root; signatures and recovery observations only, with no request bodies or canonical results",
-        "External conversation deep link and process-local presentation capability; retained final results/media, transient progress and exact project document readback"
+        "External conversation deep link and process-local presentation capability; retained final results/media, transient progress and exact project document readback",
+        "Prepared sibling application version, nonproject update transaction status, and health-verified desktop restart or startup rollback"
       ],
       "public_api": [
         "create_app",
@@ -6348,7 +6351,13 @@
         "POST /api/chat/presentation/bind",
         "POST /api/chat/sessions/{id}/presentation",
         "GET /api/chat/sessions/{id}/documents/{messageId}/{index}",
-        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation"
+        "presentation_bind and chat_present: local MCP binding and result presentation without provider invocation",
+        "GET /api/updates/status",
+        "GET /api/updates/restart",
+        "POST /api/updates/prepare",
+        "POST /api/updates/apply",
+        "POST /api/updates/complete",
+        "POST /api/updates/rollback"
       ],
       "invariants": [
         "Hub construction never fabricates a Studio project or relaxes StudioSettings.project_dir",
@@ -6375,7 +6384,8 @@
         "Computer use is permitted only by diagnostics/monkeycontrol/policy.json under the explicit runtime root, read again on every request and never written by the Hub; one runtime exists per Hub, rebuilt when that policy changed and closed on shutdown, and every desktop write goes through monkeycontrol's own trace directory",
         "Chat designContext is supplied per turn by the verified editing projection, never a browsed candidate or unsaved local draft. Explicit project context starts a fresh provider session only after the exact state read succeeds; visible chat and prior usage identities remain retained.",
         "Automatic Stage context starts only from confirmedStage.isSource after an exact successful read; a persisted providerStageRef prevents repeated resets across restart, and inherited candidate Stage references never trigger a handoff",
-        "External presentation cannot launch a provider or write project state; mutations require loopback plus the exact source/project capability, images use bounded session attachments or verified retained document references, and progress is never saved or replayed as model context."
+        "External presentation cannot launch a provider or write project state; mutations require loopback plus the exact source/project capability, images use bounded session attachments or verified retained document references, and progress is never saved or replayed as model context.",
+        "Updates do not overwrite the running application or alter project data. Restart blocks active requests, running conversations/jobs, unsent drafts, attachments and unsynchronized model edits. A trial desktop cannot open the working UI before exact owned-Hub health and activation succeed; failed trials drain before the old host reopens. This startup rollback does not authorize later project-format downgrades."
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6432,7 +6442,9 @@
         "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/scripts/dump-openapi.py",
         "apps/monkeyhub/web/src/ChatMessageContent.tsx",
-        "apps/monkeyhub/web/src/ChatMessageContent.css"
+        "apps/monkeyhub/web/src/ChatMessageContent.css",
+        "apps/monkeyhub/api/monkeyhub_api/updates.py",
+        "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -6459,7 +6471,10 @@
         "apps/monkeyhub/api/tests/test_stage_handoff.py",
         "tests/monkeymonitor/test_stage_handoff_benchmark.py",
         "apps/monkeyhub/api/tests/test_chat_presentation.py",
-        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py"
+        "apps/monkeyhub/api/tests/test_working_draft_cleanup.py",
+        "apps/monkeyhub/api/tests/test_updates.py",
+        "apps/monkeyhub/desktop/tests/updates.rs",
+        "apps/monkeyhub/desktop/tests/test_update_handoff.py"
       ],
       "depends_on": [
         "project.repository",
@@ -6475,7 +6490,8 @@
         "studio.artifacts",
         "project.archive",
         "monkeycontrol",
-        "studio.board"
+        "studio.board",
+        "tools.package_monkeyapps"
       ]
     },
     {
@@ -6535,7 +6551,8 @@
         "Fresh-version Windows installation and the thin root Hub entry; actual application lifecycle stays with hub.shell",
         "Optional --desktop builds and verifies MonkeyHub.exe from the same exact source snapshot, includes it in the existing candidate tree and binds its version and Cargo lock in build-info.json",
         "Derived unsigned release manifests, assembled-runtime and build-input CycloneDX inventories, and read-only verification of the distributed file set and bundled metadata digests",
-        "Installer-side verification of a detached publisher signature over that same manifest, and the binding of the verified manifest to the candidate archive and extracted package before any installation"
+        "Installer-side verification of a detached publisher signature over that same manifest, and the binding of the verified manifest to the candidate archive and extracted package before any installation",
+        "Exact-base file delta generation, complete file verification and reconstruction of a new sibling desktop version; activate-installed reuses the existing shortcut logic without copying or starting processes"
       ],
       "does_not_own": [
         "Project data, project initialization, candidate execution or formal project issue",
@@ -6545,18 +6562,22 @@
       "inputs": [
         "One exact Hub source Git commit or ref, including apps/monkeyfab",
         "Saved development root and optional task name, or explicit external staging, cache and output directories",
-        "Builder Node/npm and Windows Python runtime inputs"
+        "Builder Node/npm and Windows Python runtime inputs",
+        "Explicit base/target desktop bundle directories and output ZIP, or a local developer patch with explicit base and staging parent"
       ],
       "outputs": [
         "Windows candidate application directory with embedded Python/Node, locked ACP adapter and built web assets",
         "ZIP, checksum and source/build metadata",
         "Read-only resolved packaging paths, or one-time personal root configuration through tools.workspace",
-        "ReleaseManifest@1 and CycloneDX 1.6 SBOM beside the candidate ZIP; identical SBOM inside the bundle"
+        "ReleaseManifest@1 and CycloneDX 1.6 SBOM beside the candidate ZIP; identical SBOM inside the bundle",
+        "MonkeyHubPatch@1 ZIP containing only changed files plus complete base/target inventories; a fully verified new sibling version when staged"
       ],
       "public_api": [
         "main",
         "package",
-        "verify_release"
+        "verify_release",
+        "apps.monkeyhub.installer.patch: create_patch, describe_patch, inspect_patch, stage_patch, verify_target",
+        "install.ps1 -ActivateInstalled [-CreateDesktopShortcut] [-DesktopDirectory PATH]"
       ],
       "depends_on": [
         "tools.workspace",
@@ -6571,7 +6592,8 @@
         "--show-paths creates no directories and --configure writes only the personal root setting; neither command builds or accesses project data",
         "--verify reads the release directory without building or installing; matching hashes establish consistency with that unsigned manifest, not publisher authenticity",
         "install.ps1 -RequireSignedRelease verifies the pinned publisher signature and binds the manifest to the archive, the source commit and every file of the tree that becomes the installation, before the first shortcut, launch or current-version move, and never falls back to an unsigned installation",
-        "An installation without -RequireSignedRelease stays labelled candidate-unsigned; the builder signs nothing and no publisher key is held in this repository"
+        "An installation without -RequireSignedRelease stays labelled candidate-unsigned; the builder signs nothing and no publisher key is held in this repository",
+        "Local patches are explicitly unsigned developer artifacts. Full base and target file hashes, exact commits and executable identity are checked; traversal, Windows path aliases and reparse points are rejected. Unchanged files are copied, never hardlinked; existing versions are never overwritten. Python runtime bytecode caches are excluded."
       ],
       "used_by": [
         "apps/monkeyhub/installer/README.md"
@@ -6581,11 +6603,13 @@
         "OPEN_MONKEYHUB.cmd",
         "apps/monkeyhub/installer/INSTALL_MONKEYHUB.cmd",
         "apps/monkeyhub/installer/install.ps1",
-        ".github/workflows/desktop.yml"
+        ".github/workflows/desktop.yml",
+        "apps/monkeyhub/installer/patch.py"
       ],
       "tests": [
         "tests/test_package_monkeyapps.py",
-        "tests/test_installer_signed_release.py"
+        "tests/test_installer_signed_release.py",
+        "tests/test_monkeyhub_patch.py"
       ],
       "notes": "Workspace tests cover restart reuse, task/cache placement, explicit overrides and preservation of project files. Signed-installation tests use an ephemeral in-process key and a fixture candidate; they exercise the verifier, not a real publisher identity. Distribution acceptance still requires an explicit candidate build plus isolated installer and installed-application smoke checks."
     },

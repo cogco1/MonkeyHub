@@ -1046,6 +1046,9 @@ class ChatStore:
             rows[key] = row
         row.content = (row.content + clean if append else clean)[-2400:]
         row.status = status
+        # This row is a live snapshot, not a retained transcript entry. Keep
+        # its latest update beside the current activity as new tool rows arrive.
+        row.createdAt = _now()
         if self.on_change is not None:
             self.on_change(session)
 

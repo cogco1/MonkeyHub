@@ -44,6 +44,7 @@ from .computer_tools import ComputerService
 from .runtime import ProjectRuntimeManager
 from .runtime_models import HubRuntimeDto, ProjectRuntimeDto, OpenRuntimeRequest, RuntimeProjectRequest, RuntimeEvent
 from .fabrication import Fabrication
+from .updates import DesktopUpdates, UpdateStatus, CompleteUpdate, RollbackUpdate, MAX_PATCH_BYTES
 from .models import (
     AppId, AppStatus, FabPrepareRequest, FabPrepareResult, FabProfile,
     FabSendRequest, FabSendResult, HubError, HubFailure, HubHealth,
@@ -157,6 +158,20 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     runtimes = ProjectRuntimeManager(applications, chats)
     chats.on_change = runtimes.chat_changed
 
+    def update_busy() -> str | None:
+        if any(row.status == "running" for row in chats.list()):
+            return "Wait for the running conversations to finish before restarting."
+        snapshot = runtimes.snapshot()
+        for project in snapshot.projects:
+            if any(row.status in {"queued", "planning", "validated", "executing", "committing"} for row in project.operations):
+                return "Wait for the accepted project operations to finish before restarting."
+            if project.retained and any(row.status in {"queued", "running"} for row in project.retained.jobs):
+                return "Wait for the project jobs to finish before restarting."
+        return None
+
+    updates = DesktopUpdates(source_root, settings.runtime_root / "updates",
+                             managed=settings.managed_instance_id is not None, busy=update_busy)
+
     @asynccontextmanager
     async def lifespan(app):
         try:
@@ -166,6 +181,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
             # and an explicit retry through the existing application route.
             logging.getLogger(__name__).warning("MonkeyMonitor could not be prepared: %s", exc)
         yield
+        await asyncio.to_thread(updates.shutdown)
         await asyncio.to_thread(chats.shutdown)
         await asyncio.to_thread(applications.shutdown)
         await asyncio.to_thread(runtimes.shutdown)
@@ -176,6 +192,7 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     app.state.applications = applications
     app.state.chats = chats
     app.state.runtimes = runtimes
+    app.state.updates = updates
     app.state.studio_event_sockets = set()
     # Desktop automation costs two PowerShell hosts, so it is composed on first
     # use rather than started with the Hub, and there is only ever one.
@@ -203,6 +220,8 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                 {"code": "COMPUTER_ACTION_INVALID", "detail": "Invalid computer request. Check application/depth, the action object, or command/name."},
                 status_code=422,
             )
+        if request.url.path.startswith("/api/updates/"):
+            return JSONResponse({"code": "UPDATE_REQUEST_INVALID", "detail": "Invalid desktop update request."}, status_code=422)
         return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(StudioError)
@@ -244,7 +263,14 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
         if request.method == "OPTIONS" and origin in worker_origins:
             response = Response(status_code=204)
         else:
-            response = await call_next(request)
+            try:
+                if request.method not in {"GET", "HEAD", "OPTIONS"} and not request.url.path.startswith("/api/updates/"):
+                    with updates.mutation():
+                        response = await call_next(request)
+                else:
+                    response = await call_next(request)
+            except HubFailure as exc:
+                response = JSONResponse(exc.error.model_dump(), status_code=exc.status)
         if origin in worker_origins:
             response.headers.update({"Access-Control-Allow-Origin": origin, "Vary": "Origin",
                 "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
@@ -258,6 +284,47 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
     @app.get("/api/health", response_model=HubHealth)
     def health() -> HubHealth:
         return HubHealth(processId=os.getpid(), parentProcessId=os.getppid(), managedInstanceId=settings.managed_instance_id, sourceRevision=applications.source_revision)
+
+    @app.get("/api/updates/status", response_model=UpdateStatus)
+    def update_status() -> UpdateStatus:
+        return updates.status()
+
+    @app.get("/api/updates/restart")
+    def update_restart() -> dict:
+        return updates.restart()
+
+    @app.post("/api/updates/prepare", response_model=UpdateStatus, status_code=202)
+    async def prepare_update(request: Request) -> UpdateStatus:
+        if request.headers.get("x-monkeyhub-local-patch") != "1":
+            raise HubFailure(422, "LOCAL_PATCH_REQUIRED", "Choose a local developer patch explicitly.")
+        path = updates.begin_upload()
+        try:
+            size = 0
+            with path.open("xb") as output:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_PATCH_BYTES:
+                        raise HubFailure(413, "UPDATE_PATCH_TOO_LARGE", "A patch must be no larger than 256 MiB.")
+                    output.write(chunk)
+            if size == 0:
+                raise HubFailure(422, "UPDATE_PATCH_EMPTY", "Choose a nonempty patch ZIP.")
+        except (Exception, asyncio.CancelledError) as error:
+            updates.fail_upload(path, str(error))
+            raise
+        updates.prepare(path)
+        return updates.status()
+
+    @app.post("/api/updates/apply", response_model=UpdateStatus, status_code=202)
+    def apply_update() -> UpdateStatus:
+        return updates.apply()
+
+    @app.post("/api/updates/complete", response_model=UpdateStatus)
+    def complete_update(body: CompleteUpdate) -> UpdateStatus:
+        return updates.complete(body.fromCommit)
+
+    @app.post("/api/updates/rollback", response_model=UpdateStatus)
+    def rollback_update(body: RollbackUpdate) -> UpdateStatus:
+        return updates.rollback(body.fromCommit, body.targetCommit)
 
     @app.get("/api/apps", response_model=list[AppStatus])
     def list_apps(projectDir: str | None = None) -> list[AppStatus]:

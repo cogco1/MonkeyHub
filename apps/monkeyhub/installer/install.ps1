@@ -4,6 +4,7 @@ param(
     [switch]$CreateDesktopShortcut,
     [string]$DesktopDirectory,
     [switch]$OpenHub,
+    [switch]$ActivateInstalled,
     [switch]$RequireSignedRelease,
     [switch]$VerifyReleaseManifest,
     [string]$ReleaseManifest,
@@ -456,7 +457,7 @@ try {
     if ($VerifyReleaseManifest) {
         # Inspect a downloaded manifest before extracting anything. This mode
         # installs nothing, so it binds no package and says so in its evidence.
-        if ($RequireSignedRelease) {
+        if ($RequireSignedRelease -or $ActivateInstalled) {
             throw 'Choose either -VerifyReleaseManifest or -RequireSignedRelease, not both.'
         }
         if (-not $ReleaseManifest -or -not $ReleaseSignature -or -not $ExpectedPublisherThumbprint) {
@@ -518,6 +519,23 @@ try {
     $signedRelease = $null
     if ($RequireSignedRelease) {
         $signedRelease = Test-SignedRelease $packageRoot $version
+    }
+    if ($ActivateInstalled) {
+        # Hub has already staged and health-checked this side-by-side version.
+        # Reuse the only shortcut writer; activation neither copies nor launches.
+        if ($InstallDirectory -or $Interactive -or $OpenHub) {
+            throw '-ActivateInstalled cannot copy to -InstallDirectory, prompt or open another host.'
+        }
+        if (-not $desktopBuild) { throw '-ActivateInstalled requires a desktop package.' }
+        if ([IO.Path]::GetFileName($packageRoot) -ne $versionName -or
+            [IO.Path]::GetFileName([IO.Path]::GetDirectoryName($packageRoot)) -ne 'versions') {
+            throw '-ActivateInstalled must run from its exact installed versions directory.'
+        }
+        $installedFiles = if ($signedRelease) { $signedRelease.binding.boundPackageFiles } else { 0 }
+        Write-TrustNotice $signedRelease $installedFiles
+        Complete-Installation $packageRoot
+        Write-Host "Activated installed MonkeyHub source $version"
+        exit 0
     }
     if (-not $InstallDirectory) {
         if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is unavailable; supply -InstallDirectory.' }

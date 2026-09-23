@@ -14,6 +14,12 @@ const toolLoads = [];
 const streams = new Set();
 let runtimeSequence = 0, runtimeReads = 0, allowRuntimeEvents = true;
 let confirmedStageForChat = null;
+const preparedPatch = { targetVersion: "fixture-next-desktop", targetRevision: "e".repeat(40), changedBytes: 1048576, changedFiles: 3, removedFiles: 1, reusedFiles: 21 };
+let updateStatus = { currentVersion: "fixture-current-desktop", currentRevision: "d".repeat(40), mode: "local", state: "idle", prepared: null, canApply: false, message: null, error: null };
+let patchPolls = 0, appliedPatches = 0, updateApplyFailure = false;
+let updateReadFailures = 0;
+let updateApplyResponse = "normal";
+const patchUploads = [];
 const emitRuntime = () => {
   const event = { serverId: "fixture-hub", sequence: ++runtimeSequence, kind: "changed", snapshot: runtimeSnapshot() };
   for (const stream of streams) stream.write(`event: runtime\ndata: ${JSON.stringify(event)}\n\n`);
@@ -145,6 +151,33 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
   }
   const data = () => req.postDataJSON();
   const json = async (body, status = 200) => { await route.fulfill({ json: body, status }); if (method !== "GET") emitRuntime(); };
+  if (url.pathname === "/api/updates/status") {
+    if (updateReadFailures > 0) { updateReadFailures--; return route.abort("connectionreset"); }
+    if (updateStatus.state === "preparing" && ++patchPolls >= 2) updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+    return json(updateStatus);
+  }
+  if (url.pathname === "/api/updates/prepare") {
+    assert.equal(method, "POST");
+    assert.equal(req.headers()["content-type"], "application/octet-stream");
+    assert.equal(req.headers()["x-monkeyhub-local-patch"], "1");
+    patchUploads.push(req.postDataBuffer()); patchPolls = 0;
+    updateStatus = { ...updateStatus, state: "preparing", prepared: null, canApply: false, error: null };
+    return json(updateStatus, 202);
+  }
+  if (url.pathname === "/api/updates/apply") {
+    assert.equal(method, "POST"); assert.deepEqual(data(), {}); appliedPatches++;
+    if (updateApplyFailure) return json({ code: "UPDATE_BUSY", detail: "A task started before restart. Wait and retry." }, 409);
+    if (updateApplyResponse === "not-received") return route.abort("connectionreset");
+    updateStatus = { ...updateStatus, state: "applying", canApply: false };
+    if (updateApplyResponse !== "normal") {
+      // The backend accepted the restart, but neither its reply nor the first
+      // status read reaches the page. Admission must never be replayed.
+      updateReadFailures = 1;
+      if (updateApplyResponse === "lost") return route.abort("connectionreset");
+      return route.fulfill({ status: 202, contentType: "application/json", body: "{" });
+    }
+    return json(updateStatus);
+  }
   if (method !== "GET") writes.push([method, url.pathname, data(), url.searchParams.get("projectDir")]);
   if (["/api/events", "/api/traces", "/api/rates", "/api/sources/codex"].includes(url.pathname)) {
     monitorReads.push(url.pathname);
@@ -402,6 +435,7 @@ const waitMonitor = async () => {
   assert.equal(await page.getByRole("navigation", { name: "Project tools" }).isVisible(), true);
 };
 try {
+  if (process.env.MONKEYHUB_UI_FOCUS !== "updates") {
   await page.goto(origin);
   await page.getByRole("heading", { name: "Start a project conversation" }).waitFor();
   assert.equal(await page.getByRole("link", { name: "Enter workspace" }).count(), 0);
@@ -1324,6 +1358,17 @@ try {
   assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft B");
   assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
   assert.equal(writes.filter(([, pathname]) => pathname.endsWith("/messages")).length, beforeAttachmentDrafts);
+  // A staged update cannot discard drafts, including a different project's
+  // hidden composer. Opening/closing settings must preserve the actual files.
+  updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+  assert.equal(appliedPatches, 0);
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  assert.equal(await page.locator("#chat-input").inputValue(), "Attachment draft B");
+  assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["clipboard.png", "notes.txt"]);
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   await page.locator("#chat-input").fill("");
   chatMessageFailureFor = "D:\\fixture\\B";
   await page.getByRole("button", { name: "Send", exact: true }).click();
@@ -1353,6 +1398,14 @@ try {
   await page.getByRole("button", { name: "Project B", exact: true }).first().click();
   await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
   assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
+  updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+  assert.equal(await page.locator("#chat-input").inputValue(), "");
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true,
+    "Project A's hidden draft blocks restart even though B's visible composer is empty");
+  await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+  updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
   const attachmentPost = writes.filter(([, pathname]) => pathname.endsWith("/messages")).at(-1);
   assert.equal(attachmentPost[2].content, "");
   assert.equal(attachmentPost[2].projectId, "B");
@@ -1371,6 +1424,43 @@ try {
   await savedAttachments.first().click();
   assert.equal((await downloaded).suggestedFilename(), "clipboard.png");
   await page.screenshot({ path: path.join(temporary, "chat-attachments.png"), fullPage: true });
+  // Public progress is readable without expanding tool diagnostics, including
+  // multi-line streamed summaries that used to be hidden after the first line.
+  const publicProgress = { id: "attachment-turn:progress:provider-summary", role: "tool", status: "streaming",
+    content: "Reading the uploaded drawings.\nChecking the marked opening against the project model." };
+  attachedSession.messages.push(publicProgress, { id: "attachment-turn:read-files", role: "tool", status: "streaming",
+    content: "Read project files · in_progress\nSynthetic tool diagnostics" });
+  emitRuntime();
+  const progressCard = page.locator(".chat-progress").filter({ hasText: "Reading the uploaded drawings." });
+  await progressCard.getByText("Checking the marked opening against the project model.", { exact: false }).waitFor();
+  assert.equal(await progressCard.locator("details").count(), 0);
+  const toolDetails = page.locator(".chat-activity details").filter({ hasText: "Read project files" });
+  assert.equal(await toolDetails.getAttribute("open"), null);
+  await toolDetails.locator("summary").click();
+  assert.equal(await toolDetails.locator("pre").innerText(), "Synthetic tool diagnostics");
+  publicProgress.content += "\nThe opening comparison is ready to review.";
+  publicProgress.status = "complete";
+  emitRuntime();
+  await progressCard.getByText("The opening comparison is ready to review.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Hide tools", exact: true }).click();
+  await page.getByRole("button", { name: "Hide projects", exact: true }).first().click();
+  const originalViewport = page.viewportSize();
+  for (const width of [1440, 900, 375]) {
+    await page.setViewportSize({ width, height: 960 });
+    await progressCard.scrollIntoViewIfNeeded();
+    const uploadButton = page.getByRole("button", { name: "Add attachments", exact: true });
+    const bounds = await uploadButton.boundingBox();
+    assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44 && bounds.x >= 0 && bounds.x + bounds.width <= width);
+    assert.ok(await progressCard.evaluate((node) => node.scrollWidth <= node.clientWidth + 1));
+    await uploadButton.focus();
+    const chooser = page.waitForEvent("filechooser");
+    await page.keyboard.press("Enter");
+    await (await chooser).setFiles({ name: "next-turn.txt", mimeType: "text/plain", buffer: Buffer.from("Next turn attachment") });
+    await page.getByRole("button", { name: "Remove attachment: next-turn.txt", exact: true }).click();
+    await page.screenshot({ path: path.join(temporary, `chat-progress-upload-${width}.png`), fullPage: true });
+  }
+  await page.setViewportSize(originalViewport);
+  await page.getByRole("button", { name: "Show projects", exact: true }).first().click();
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await page.getByRole("button", { name: "Project A", exact: true }).first().click();
   await page.locator(".chat-new").getByText("New chat", { exact: true }).click();
@@ -1650,6 +1740,143 @@ try {
   await waitMonitor();
   assert.equal(await page.getByRole("button", { name: "Modeling", exact: true }).isDisabled(), true,
     "restoring the system Monitor panel does not require or invent a project");
+  } else {
+    await page.goto(origin);
+    await page.waitForFunction(() => document.querySelector("#chat-input") && !document.querySelector("#chat-input").disabled);
+    await page.locator("#chat-input").fill("Keep this hidden project draft");
+    await page.locator('.chat-composer input[type="file"]').setInputFiles({ name: "keep.txt", mimeType: "text/plain", buffer: Buffer.from("Retain these exact draft bytes") });
+    await page.getByRole("button", { name: "Project B", exact: true }).first().click();
+    await page.waitForFunction(() => document.querySelector("#chat-input")?.value === "");
+    assert.equal(await page.locator(".chat-composer .chat-attachments li").count(), 0);
+    updateStatus = { ...updateStatus, state: "ready", prepared: preparedPatch, canApply: true };
+    await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+    await page.getByText("A conversation has unsent text or attachments. Send or remove them before restarting.").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+    assert.equal(appliedPatches, 0);
+    await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Project A", exact: true }).first().click();
+    assert.equal(await page.locator("#chat-input").inputValue(), "Keep this hidden project draft");
+    assert.deepEqual(await page.locator(".chat-composer .chat-attachment__name").allTextContents(), ["keep.txt"]);
+    // This is an explicit fixture reset, never a production update reload.
+    projects.splice(0); sessions.splice(0); settings.projectDir = null;
+    updateStatus = { ...updateStatus, state: "idle", prepared: null, canApply: false };
+    await page.evaluate(() => localStorage.removeItem("monkeyhub.chat-view.v1")); await page.reload();
+  }
+  // Patch preparation transfers the ZIP bytes exactly, polls until ready,
+  // preserves settings edits, and delegates restart without a document reload.
+  await page.getByRole("button", { name: "Hub settings", exact: true }).click();
+  await page.getByText("fixture-current-desktop", { exact: true }).waitFor();
+  await page.getByText("Local patch mode · Automatic downloads are not configured.").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Check for updates", exact: true }).count(), 0);
+  updateStatus = { ...updateStatus, mode: "unsupported" };
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByText("Patch updates require the installed MonkeyHub desktop app.").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).count(), 0);
+  updateStatus = { ...updateStatus, mode: "local" };
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).waitFor();
+  await page.locator('.software-update input[type="file"]').setInputFiles({ name: "not-a-patch.txt", mimeType: "text/plain", buffer: Buffer.from("not a patch") });
+  await page.getByText("Choose a patch ZIP file.", { exact: true }).waitFor();
+  assert.equal(patchUploads.length, 0, "invalid local selection never reaches the update API");
+  const patchBytes = Buffer.from([80, 75, 3, 4, 0, 255, 13, 10, 42]);
+  const patchChooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).click();
+  await (await patchChooser).setFiles({ name: "fixture-update.zip", mimeType: "application/zip", buffer: patchBytes });
+  await page.getByText("Verifying and preparing the patch…", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).isDisabled(), true);
+  await page.getByText("fixture-next-desktop", { exact: true }).waitFor();
+  assert.equal(patchUploads.length, 1); assert.deepEqual(patchUploads[0], patchBytes);
+  assert.ok(patchPolls >= 2); await page.getByText("1.0 MiB", { exact: true }).waitFor();
+  await page.locator("#theme").selectOption("dark");
+  await page.getByText("Save your settings changes before restarting.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+  await page.locator("#save-appearance").click();
+  await page.waitForFunction(() => ![...document.querySelectorAll("button")].find((button) => button.textContent === "Restart to update")?.disabled);
+  // The desktop dialog is usable at a small viewport, in dark mode, with
+  // larger text and reduced motion, without horizontal clipping.
+  await page.locator("#font-scale").selectOption("1.1");
+  await page.locator("#save-appearance").click();
+  await page.emulateMedia({ reducedMotion: "reduce" }); await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".software-update").scrollIntoViewIfNeeded();
+  assert.equal(await page.locator(".software-update").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
+  assert.equal(await page.getByRole("dialog").evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true);
+  for (const button of await page.locator(".software-update__actions button").all()) assert.ok((await button.boundingBox()).height >= 44);
+  await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-dark.png") });
+  await page.locator("#language").selectOption("zh-CN"); await page.locator("#save-appearance").click();
+  await page.getByRole("heading", { name: "软件更新", exact: true }).waitFor();
+  await page.locator(".software-update").scrollIntoViewIfNeeded();
+  await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-small-zh.png") });
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByRole("dialog").screenshot({ path: path.join(temporary, "software-update-wide-zh.png") });
+  await page.locator("#language").selectOption("en"); await page.locator("#save-appearance").click();
+  updateApplyFailure = true;
+  await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+  await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor();
+  assert.equal(appliedPatches, 1);
+  await page.waitForFunction(() => !document.querySelector('.chat-dialog--settings button[aria-label="Close"]')?.disabled);
+  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isEnabled(), true);
+  updateApplyFailure = false;
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByText("A task started before restart. Wait and retry.", { exact: true }).waitFor({ state: "hidden" });
+  const beforeUpdateLoads = documentLoads;
+  await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+  await page.getByText("Restarting to update…", { exact: true }).waitFor();
+  assert.equal(appliedPatches, 2); assert.equal(documentLoads, beforeUpdateLoads);
+  assert.equal(await page.getByRole("button", { name: "Restart to update", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("dialog").isVisible(), true, "accepted restart cannot expose a composer for new unsaved work");
+  // The desktop can reject a prepared target after /apply was accepted. A disconnected old
+  // server is expected while restarting; an explicit failed status restores
+  // the old window without discarding state or forcing any navigation.
+  const disconnectedStatus = page.waitForEvent("requestfailed", { predicate: (request) => new URL(request.url()).pathname === "/api/updates/status" });
+  updateReadFailures = 1; await disconnectedStatus;
+  await page.waitForResponse((response) => new URL(response.url()).pathname === "/api/updates/status" && response.ok());
+  assert.equal(await page.locator(".software-update .error-message").count(), 0);
+  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true);
+  updateStatus = { ...updateStatus, state: "failed", canApply: false, error: { code: "UPDATE_ROLLED_BACK", detail: "The new application could not start. The previous desktop version has been restored." } };
+  await page.getByText("The new application could not start. The previous desktop version has been restored.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isEnabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Choose patch ZIP", exact: true }).isEnabled(), true);
+  assert.equal(documentLoads, beforeUpdateLoads, "desktop rollback preserves the current application document");
+  for (const response of ["lost", "malformed"]) {
+    updateStatus = { ...updateStatus, state: "ready", canApply: true, error: null };
+    await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+    await page.getByText("Patch ready. Restart when your work is saved.", { exact: true }).waitFor();
+    updateApplyResponse = response;
+    const previousApplies = appliedPatches;
+    const failedRead = page.waitForEvent("requestfailed", { predicate: (request) => new URL(request.url()).pathname === "/api/updates/status" });
+    await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+    await failedRead;
+    assert.equal(appliedPatches, previousApplies + 1);
+    assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true,
+      `accepted apply with ${response} response must keep the restart lock`);
+    await page.keyboard.press("Escape"); await page.keyboard.press("Escape");
+    assert.equal(await page.getByRole("dialog").isVisible(), true);
+    await page.waitForResponse((result) => new URL(result.url()).pathname === "/api/updates/status" && result.ok());
+    assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isDisabled(), true);
+    assert.equal(appliedPatches, previousApplies + 1, "uncertain apply is reconciled by reads, never resubmitted");
+    updateStatus = { ...updateStatus, state: "failed", canApply: false, error: { code: "UPDATE_ROLLED_BACK", detail: `Recovered after ${response} apply response.` } };
+    await page.getByText(`Recovered after ${response} apply response.`, { exact: true }).waitFor();
+    assert.equal(await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).isEnabled(), true);
+    assert.equal(documentLoads, beforeUpdateLoads);
+  }
+  // A request that never reached admission can unlock only after a successful
+  // read confirms the previous ready state; the page still does not retry it.
+  updateStatus = { ...updateStatus, state: "ready", canApply: true, error: null };
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByText("Patch ready. Restart when your work is saved.", { exact: true }).waitFor();
+  updateApplyResponse = "not-received";
+  const previousApplies = appliedPatches;
+  const rejectedApply = page.waitForEvent("requestfailed", { predicate: (request) => new URL(request.url()).pathname === "/api/updates/apply" });
+  await page.getByRole("button", { name: "Restart to update", exact: true }).click();
+  await rejectedApply;
+  await page.waitForFunction(() => !document.querySelector('.chat-dialog--settings button[aria-label="Close"]')?.disabled);
+  assert.equal(appliedPatches, previousApplies + 1);
+  assert.equal(documentLoads, beforeUpdateLoads);
+  updateApplyResponse = "normal";
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, sessions: sessions.length, writes: writes.length, screenshots: temporary }));
 } catch (error) { console.error(JSON.stringify({ screenshots: temporary, errors, workspaceRequests: workspaceFixture.requests.slice(-15) }));

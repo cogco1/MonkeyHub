@@ -61,6 +61,40 @@ Hub 的启动和退出统一由包内 `apps/monkeyhub/launch-hub.ps1` 与 `run.p
 
 ## 开发者构建
 
+已安装新版桌面客户端后，在「设置 → 软件更新」选择匹配当前版本的本地补丁 ZIP。
+准备完成后点击「重启并更新」；未发送的草稿、附件或未同步模型需要先处理，运行任务需要先结束。
+新版启动验证失败会恢复旧版。旧客户端第一次需要安装含此更新入口的完整版本。
+
+### 本地补丁更新
+
+两个已经构建完成的桌面版本可以生成文件级补丁，不必重新下载相同的 Python、Node 和几何依赖：
+
+```powershell
+python tools/package_monkeyapps.py --patch-from '<完整旧版本目录>' --patch-to '<完整新版本目录>' --patch-output '<外部输出目录>\MonkeyHub.patch.zip'
+```
+
+输入必须包含完整提交号、对应的 `build-info.json` 和桌面主程序。补丁 ZIP 保存完整旧／新文件表、
+每个文件的字节数与 SHA-256、新增或修改文件的内容，以及删除列表。运行后产生的 `__pycache__`、
+`.pyc` 不进入分发表，也不复制到新版本。输出明确标为 `local-developer-unsigned`；校验一致性不能证明
+发行者身份，此入口只供明确选择的本地开发补丁使用，不是自动网络更新或签名发布的替代路径。
+
+`apps/monkeyhub/installer/patch.py` 的 `describe_patch(path)` 仅读取容器与清单摘要；
+`inspect_patch(path, base_root)` 校验完整旧版本与补丁内容；`stage_patch(path, base_root, destination_parent)`
+在明确提供的版本父目录中复制并重建 `<新提交前 12 位>-desktop`，全部目标文件校验通过后才就位。
+未变化文件通过独立复制复用，不硬链接或覆盖运行中的旧文件，因此仍需完整新版本的磁盘空间。
+目标已经存在时，只有逐文件字节数、SHA-256 和完整版本身份均与补丁完全一致才复用，不重新复制或覆盖；
+这允许暂存完成但更新状态保存失败后，重新选择同一补丁继续。未知、不完整、被修改或链接目录均拒绝，原目录保留。
+越界路径、同名／大小写冲突、链接／reparse point、旧文件被改动、
+缺失或损坏的内容都会拒绝更新；失败只清理本次创建的临时目录，旧版本和用户文件保留。
+`verify_target(path, target_root)` 用同一清单重新校验已暂存版本，供重启前及新应用健康检查后使用。
+
+版本切换与任务结束后的重启由 Hub 负责。新主程序通过健康检查后，可在该版本自己的安装脚本上调用
+`-ActivateInstalled -CreateDesktopShortcut`，复用已有快捷方式逻辑，不再次复制安装包或打开第二个窗口。
+该显式模式只接受 `versions/<准确版本>` 目录；普通安装仍拒绝把安装目录指向自身。
+若同时指定 `-RequireSignedRelease`，原有完整签名、清单、归档与文件校验仍必须全部通过。
+
+### 完整构建
+
 安装流程是本轮新增的分发工作；仓库原有启动器继续负责进程，项目存储继续由 ArchFlow 管理。
 `tools/package_monkeyapps.py` 只从指定 Git 提交导出白名单源码、构建 Web 成品、安装完整 Windows wheels
 并生成候选 ZIP。它不会把 working tree、凭据、用户项目或 node_modules 打入成品；用户运行配置只保存在 Hub 运行根目录的 `config/` 下，从不进入源码树。
@@ -170,7 +204,7 @@ CRL／OCSP 端点；那是平台行为，这里既没有配置也不依赖它，
 不带 `-RequireSignedRelease` 的普通安装保持原样，并在结尾明确打印 `Trust: candidate-unsigned`。
 一旦传了 `-RequireSignedRelease`，缺参数、文件不存在、指纹格式错误都会拒绝退出，**绝不回退成未签名安装**。
 
-尚未解决的部分：没有可发布的发行者证书与签名密钥、发布流程未接入签名、没有吊销与更新通道；
+尚未解决的部分：没有可发布的发行者证书与签名密钥、发布流程未接入签名、没有吊销与远程可信更新通道；
 也**没有回滚保护**——一份真实签名过的旧发行（连同它自己的 ZIP）仍会被完整接受，安装器不比较版本新旧、
 不检查签名时间。这些属于 Issue #58 其余部分。安全报告途径见随包的 `SECURITY.md`，
 或仓库根目录的 [SECURITY.md](https://github.com/cogco1/MonkeyHub/blob/main/SECURITY.md)：
