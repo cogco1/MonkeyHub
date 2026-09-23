@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-AppId = Literal["monkeyarch", "monkeymonitor", "monkeyboard", "monkeyfab"]
+AppId = Literal["monkeyarch", "monkeymonitor", "monkeyboard", "monkeyrender", "monkeyfab"]
 
 
 class HubError(BaseModel):

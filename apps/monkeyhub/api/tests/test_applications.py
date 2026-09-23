@@ -22,6 +22,8 @@ for directory in (ROOT, ROOT / "apps/archflow-studio/api", ROOT / "apps/monkeyhu
         sys.path.insert(0, str(directory))
 
 from archflow_studio_api.transport.settings import ApplicationSettingsDto
+from archflow_studio_api.settings import StudioSettings
+from archflow_studio_api.render_adapters.gemini import adapter_from_settings
 from monkeyhub_api.applications import Applications
 from monkeyhub_api.models import HubFailure
 
@@ -50,7 +52,7 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         return ApplicationSettingsDto.model_validate({"projectDir": str(self.project), **fields})
 
     def save_preferences(self, **preferences):
-        (self.appdata / "MonkeyArch").mkdir(parents=True)
+        (self.appdata / "MonkeyArch").mkdir(parents=True, exist_ok=True)
         (self.appdata / "MonkeyArch" / "settings.json").write_text(json.dumps(preferences), encoding="utf-8")
 
     def test_defaults_come_from_settings_and_nothing_from_the_shell(self):
@@ -93,6 +95,37 @@ class StudioChildEnvironmentTests(unittest.TestCase):
         with patch.dict(os.environ, self.inherited, clear=True):
             command, _ = self.applications._command("studio", self.settings())
         self.assertNotIn("--web-dir", command)
+
+    def test_render_preferences_reach_factory_only_with_explicit_hub_key(self):
+        self.save_preferences(renderProvider="gemini", renderModel="gemini-3.1-flash-image", renderTimeoutS=67)
+        synthetic = {**self.inherited, "MONKEYHUB_RENDER_API_KEY": "synthetic-render-key",
+                     "ARCHFLOW_STUDIO_RENDER_API_KEY": "discard-this-inherited-value",
+                     "ARCHFLOW_STUDIO_RENDER_MODEL": "discard-this-model"}
+        with patch.dict(os.environ, synthetic, clear=True):
+            _, environment = self.applications._command("studio", self.settings())
+        self.assertNotIn("MONKEYHUB_RENDER_API_KEY", environment)
+        self.assertEqual(environment["ARCHFLOW_STUDIO_RENDER_API_KEY"], "synthetic-render-key")
+        with patch.dict(os.environ, environment, clear=True):
+            settings = StudioSettings.from_env()
+        adapter = adapter_from_settings(settings)
+        self.assertIsNotNone(adapter)
+        self.assertTrue(adapter.capability().available)
+        self.assertEqual(settings.render_model, "gemini-3.1-flash-image")
+        self.assertEqual(settings.render_timeout_s, 67)
+        self.assertNotIn("synthetic-render-key", repr(settings))
+
+    def test_render_off_drops_key_and_missing_key_stays_unavailable(self):
+        self.save_preferences(renderProvider="off")
+        with patch.dict(os.environ, {**self.inherited, "MONKEYHUB_RENDER_API_KEY": "synthetic-only"}, clear=True):
+            _, environment = self.applications._command("studio", self.settings())
+        self.assertFalse(any("RENDER" in key for key in environment))
+        self.save_preferences(renderProvider="gemini")
+        with patch.dict(os.environ, self.inherited, clear=True):
+            _, environment = self.applications._command("studio", self.settings())
+        with patch.dict(os.environ, environment, clear=True):
+            adapter = adapter_from_settings(StudioSettings.from_env())
+        self.assertIsNotNone(adapter)
+        self.assertFalse(adapter.capability().available)
 
 
 if __name__ == "__main__":

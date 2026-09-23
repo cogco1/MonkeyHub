@@ -298,7 +298,9 @@ async function sceneFiles(board: BoardDto, documents: SourceDocumentDto[], previ
   return { files, failures };
 }
 
-export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restoreView = null, active = true, refreshKey = 0, expectedProjectId }: {
+export interface BoardPageRequest { source: PageSource; requestId: string }
+
+export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restoreView = null, active = true, refreshKey = 0, expectedProjectId, pageRequest = null }: {
   onSubmit: (request: BoardDesignRequest) => void;
   /** Hand one calibrated sketch frame to the App, which runs it as a sketch proposal. */
   onSketch: (request: BoardSketchRequest) => void;
@@ -309,6 +311,8 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restor
   active?: boolean;
   refreshKey?: number;
   expectedProjectId?: string;
+  /** Explicitly place or focus exactly this page; ordinary discovery stays quiet. */
+  pageRequest?: BoardPageRequest | null;
 }) {
   const studio = useStudio();
   const { language } = usePreferences();
@@ -328,7 +332,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restor
     }).catch((cause) => { if (alive) setError(cause); });
     return () => { alive = false; };
   }, [attempt, expectedProjectId]);
-  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} restoreView={restoreView} active={active} refreshKey={refreshKey} />;
+  if (loaded) return <BoardCanvas {...loaded} onSubmit={onSubmit} onSketch={onSketch} onOpenDocument={onOpenDocument} restoreView={restoreView} active={active} refreshKey={refreshKey} pageRequest={pageRequest} />;
   return <section className="monkeyboard monkeyboard-loading" aria-live="polite">
     <strong>MonkeyBoard</strong>
     <p>{error === null ? text.loading : text.loadFailed}</p>
@@ -336,7 +340,7 @@ export default function MonkeyBoard({ onSubmit, onSketch, onOpenDocument, restor
   </section>;
 }
 
-function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, restoreView, active, refreshKey }: {
+function BoardCanvas({ board, documents: initialDocuments, files, failures, preview, onSubmit, onSketch, onOpenDocument, restoreView, active, refreshKey, pageRequest }: {
   board: BoardDto; documents: SourceDocumentDto[]; files: BinaryFiles; failures: string[]; preview: PreviewLoader;
   onSubmit: (request: BoardDesignRequest) => void;
   onSketch: (request: BoardSketchRequest) => void;
@@ -344,6 +348,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
   restoreView: BoardViewState | null;
   active: boolean;
   refreshKey: number;
+  pageRequest: BoardPageRequest | null;
 }) {
   const studio = useStudio();
   const { language, theme } = usePreferences();
@@ -863,6 +868,30 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     api.scrollToContent(targets, { fitToContent: true, animate: false });
     return true;
   }, [active, ready, queue]);
+  const handledPageRequest = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || !ready || !pageRequest || handledPageRequest.current === pageRequest.requestId) return;
+    handledPageRequest.current = pageRequest.requestId;
+    void serial(async () => {
+      if (queue.getState().conflict) throw new Error(language === "zh-CN" ? "请先解决画板保存冲突，再重新发送这张图。" : "Resolve the board save conflict, then send this image again.");
+      const list = await studio.documents();
+      if (list.projectId !== board.projectId) throw new Error("The document list belongs to another project.");
+      const source = findSource(list.documents, pageRequest.source);
+      if (!source) throw new Error(language === "zh-CN" ? "这张精确来源的图页已不可用。" : "This exact source page is unavailable.");
+      acceptDocuments(list.documents);
+      await receive(list.documents);
+      const placed = () => canvas.current?.getSceneElements().some((element) => {
+        const ref = imageSource(element); return ref && pageKey(ref) === pageKey(pageRequest.source);
+      });
+      // A user-deleted page stays seen. Only this explicitly requested page may
+      // be placed again, through the same original-document insertion path.
+      if (!placed()) await addPage(source, pageRequest.source.pageIndex);
+      if (!placed()) throw new Error(language === "zh-CN" ? "图页未能放入画板，请检查画板状态后重试。" : "The page could not be placed. Check the board state and try again.");
+      pendingFocus.current = null;
+      if (focusSources([pageRequest.source], true)) root.current?.querySelector<HTMLElement>(".excalidraw")?.focus();
+      else setNotice(language === "zh-CN" ? "图页已在画板中；结束当前操作后可从项目文档定位。" : "The page is on the board. Finish the current interaction to view it from project documents.");
+    });
+  }, [active, ready, pageRequest, serial, studio, board.projectId, queue, acceptDocuments, receive, addPage, focusSources, language]);
   const scheduleUpdateFocus = useCallback(() => {
     if (!pendingFocus.current || focusFrame.current !== null) return;
     focusFrame.current = window.requestAnimationFrame(() => {
