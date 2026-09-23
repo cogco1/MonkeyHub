@@ -922,7 +922,7 @@ export const chatCopy = {
     attachmentCount: "Add up to 8 attachments per message.", attachmentSize: "Each attachment must be 20 MiB or smaller.", attachmentTotal: "Attachments must total 40 MiB or less.", attachmentRead: "Could not read the attachment. Select it again.",
     working: "Connecting the project…", tools: "Project tools", hideTools: "Hide tools", render: "Render", model: "Modeling", diagram: "Drawings", board: "Board", fab: "Fabrication", monitor: "Usage",
     refresh: "Reload page", browser: "Project browser", modelName: "Model (leave empty for CLI default)", defaultModel: "CLI default model", provider: "Connection",
-    toolEmpty: "Project tools", toolHint: "Choose modeling, board or fabrication. Open drawing pages from the board.",
+    toolEmpty: "Project tools", toolHint: "Choose modeling, drawings, rendering, board or fabrication.",
     loading: "Loading…", toolActivity: "Tool activity", retry: "Reload", projectRequired: "Add or choose a project first.", expand: "Show projects", collapse: "Hide projects",
     openCandidate: "Open this candidate on the right", candidateHint: "View the candidate in the modeling page.", activityEmpty: "Nothing further to show.",
     resize: "Resize right panel", noProvider: "No CLI connection is available", emptyProjects: "No projects yet", sessionError: "Could not read the conversation", complete: "Complete",

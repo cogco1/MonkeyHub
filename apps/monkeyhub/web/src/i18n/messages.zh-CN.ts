@@ -878,7 +878,7 @@ export const chatCopy = {
     attachmentCount: "每条消息最多添加 8 个附件。", attachmentSize: "每个附件不能超过 20 MiB。", attachmentTotal: "附件合计不能超过 40 MiB。", attachmentRead: "无法读取附件，请重新选择。",
     working: "正在连接项目…", tools: "项目工具", hideTools: "收起工具", render: "渲染", model: "建模", diagram: "图纸", board: "画板", fab: "制作", monitor: "用量",
     refresh: "刷新页面", browser: "项目浏览器", modelName: "模型（留空使用 CLI 默认值）", defaultModel: "CLI 默认模型", provider: "执行连接",
-    toolEmpty: "项目工具", toolHint: "选择建模、画板或制作工具。图页在画板内打开。",
+    toolEmpty: "项目工具", toolHint: "选择建模、图纸、渲染、画板或制作工具。",
     loading: "正在读取…", toolActivity: "执行过程", retry: "重新读取", projectRequired: "先添加或选择一个项目。", expand: "展开项目栏", collapse: "收起项目栏",
     openCandidate: "在右侧打开这个候选", candidateHint: "在建模页面查看候选结果。", activityEmpty: "没有更多可显示的内容。",
     resize: "调整右侧面板宽度", noProvider: "尚无可用的 CLI 连接", emptyProjects: "暂无项目", sessionError: "无法读取对话", complete: "已完成",
