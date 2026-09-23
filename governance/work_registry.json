@@ -648,34 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-32",
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/32",
-      "stream": "implementation",
-      "status": "active",
-      "goal": "Reduce redundant covered-fact reads in a numeric candidate observation using existing Hub tool guidance, measured with three frozen AB/BA pairs.",
-      "depends_on": [],
-      "modules": [
-        "hub.shell"
-      ],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "docs/CONTEXT_COMPILATION.md",
-        "governance/work_registry.json",
-        "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md"
-      ],
-      "branch": "codex/32-bounded-tool-context",
-      "worktree": "C:/Users/asus/.codex/worktrees/fce7/ARCHFLOW_V4",
-      "base_ref": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
-      "contributor": "Codex",
-      "reviewer": "Coordinator review pending",
-      "handoff": "Independent of PR #245 evidence transport; retain both sets of MCP guidance when integrating. No Study helper, DTO or Stage persistence changes.",
-      "acceptance": [
-        "Retain exact-base, keep, candidate authored-state and visual observation, missing-context recovery and unaccepted status.",
-        "Report all fixed-model, matching-input repeated measurements, including setup failures and unknown counters; do not imply broad speedup."
-      ]
     }
   ]
 }
