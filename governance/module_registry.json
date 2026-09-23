@@ -245,7 +245,7 @@
         "one process-wide Rhino host lock: a candidate's export and an explicitly requested work export are the same machine resource and take the same lock",
         "Blender solid and straight-extrusion meshes, explicit speculative .blend save in one background process, fresh-process geometry/semantic/binding readback, and the native retained receipt reader; no backend-specific project state",
         "Full Blender visualization rebuild from verified OCCT STEP, stable source IDs, explicit presentation settings, independent saved-scene render and source-bound artifact receipt; no geometry authoring",
-        "Bounded 3DM/GLB mesh format adapters and conversion readback; explicit unavailable SKP/DWG routes with no project writes."
+        "Bounded 3DM/GLB mesh format adapters and conversion readback; runtime-qualified provider selection and discovery-only native SKP/DWG executors with no project writes."
       ],
       "does_not_own": [
         "translating the program into a script - adapters.cad_program",
@@ -389,7 +389,8 @@
         "tests/test_blender_cad.py",
         "tests/test_blender_projection.py",
         "tests/test_model_formats.py",
-        "tests/model_export_glb_reader.mjs"
+        "tests/model_export_glb_reader.mjs",
+        "tests/test_model_providers.py"
       ],
       "notes": "P115 #13: Phase 0 contract merged in PR15 and Phase 1 lanes in PR17. Blender extends the same registration and request/result protocol; its runner-written receipt uses the existing P036 kind table. No runner dispatch, compiler, State, Stage or Hub/App Server mechanism is added.",
       "files": [
@@ -399,7 +400,9 @@
         "archflow/adapters/blender_cad.py",
         "archflow/adapters/blender_worker.py",
         "archflow/adapters/blender_projection.py",
-        "archflow/adapters/model_formats.py"
+        "archflow/adapters/model_formats.py",
+        "archflow/adapters/model_providers.py",
+        "archflow/adapters/local_cad_discovery.py"
       ]
     },
     {
@@ -3987,7 +3990,8 @@
         "capabilities.reference_resolver",
         "state.design_portfolio",
         "state.record",
-        "archflow.adapters.model_formats"
+        "archflow.adapters.model_formats",
+        "archflow.adapters.model_providers"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",

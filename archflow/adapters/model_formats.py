@@ -15,15 +15,6 @@ class ConversionError(ValueError):
     pass
 
 
-def unsupported(source, target):
-    reasons = []
-    if "skp" in (source, target):
-        reasons.append("SKP is unavailable: Issue #53's SketchUp SDK runtime and distribution approval are not complete")
-    if "dwg" in (source, target):
-        reasons.append("DWG is unavailable: no licensed DWG reader/writer runtime is configured (DXF is not DWG)")
-    return "; ".join(reasons)
-
-
 @dataclass
 class Mesh:
     name: str
@@ -213,28 +204,33 @@ class GLB:
         return struct.pack("<4sII", b"glTF", 2, 28+len(encoded)+len(binary)) + struct.pack("<I4s", len(encoded), b"JSON") + encoded + struct.pack("<I4s", len(binary), b"BIN\x00") + binary
 
 
-def convert(data, source, target):
-    reason = unsupported(source, target)
-    if reason:
-        raise ConversionError(reason)
+def encode_mesh(data, source, target):
+    """Produce mesh bytes; the provider's separate validate step must approve them."""
     adapters = {"3dm": ThreeDM, "glb": GLB}
     reader, writer = adapters[source](), adapters[target]()
-    try:
-        scene = reader.read(data)
-        before = scene.metrics()
-        output = data if source == target else writer.write(scene)
-        reopened = writer.read(output)
-        after = reopened.metrics()
-        if before["objectCount"] != after["objectCount"] or before["triangleCount"] != after["triangleCount"]:
-            raise ConversionError("Output validation changed mesh or triangle counts.")
-        for a, b in zip(sum(before["boundsMetersZUp"], []), sum(after["boundsMetersZUp"], [])):
-            if not math.isclose(a, b, rel_tol=2e-6, abs_tol=1e-6):
-                raise ConversionError("Output validation changed model scale or placement.")
-        return output, {"converter": [reader.version, writer.version], "sourceUnits": scene.units,
-                        "outputUnits": reopened.units, "coordinateSystem": "meters/Z-up (validation)",
-                        "warnings": [] if source == target else scene.warnings,
-                        "sourceMetrics": before, "outputMetrics": after, "converted": source != target}
-    except ConversionError:
-        raise
-    except Exception as exc:
-        raise ConversionError("Model decoding or output validation failed: " + type(exc).__name__) from exc
+    scene = reader.read(data)
+    output = data if source == target else writer.write(scene)
+    return output, {"converter": [reader.version, writer.version],
+                    "warnings": [] if source == target else scene.warnings,
+                    "converted": source != target}
+
+
+def validate_mesh(data, source, target, output):
+    """Reopen both original and output; never validate metrics supplied by a writer."""
+    adapters = {"3dm": ThreeDM, "glb": GLB}
+    original, reopened = adapters[source]().read(data), adapters[target]().read(output)
+    before, after = original.metrics(), reopened.metrics()
+    if before["objectCount"] != after["objectCount"] or before["triangleCount"] != after["triangleCount"]:
+        raise ConversionError("Output validation changed mesh or triangle counts.")
+    for a, b in zip(sum(before["boundsMetersZUp"], []), sum(after["boundsMetersZUp"], [])):
+        if not math.isclose(a, b, rel_tol=2e-6, abs_tol=1e-6):
+            raise ConversionError("Output validation changed model scale or placement.")
+    return {"sourceUnits": original.units, "outputUnits": reopened.units,
+            "coordinateSystem": "meters/Z-up (validation)",
+            "sourceMetrics": before, "outputMetrics": after}
+
+
+def convert(data, source, target, *, providers=None):
+    """Existing public entry, now routed through configured runtime providers."""
+    from .model_providers import ConversionCoordinator
+    return ConversionCoordinator(providers).convert(data, source, target)

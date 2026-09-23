@@ -70,11 +70,56 @@ class ExportJobTests(unittest.TestCase):
         self.assertEqual(source.read_bytes(),b"invalid")
         self.assertEqual(self.client.get(f'/api/exports/{result["exportId"]}/bytes').status_code,409)
 
+    def test_provider_report_survives_restart(self):
+        result = self.finish(self.submit())
+        self.assertEqual(result['provider'], 'InProcessMeshProvider')
+        self.assertTrue(result['providerVersion'])
+        self.assertEqual(result['executionMode'], 'headless')
+        self.assertFalse(result['usedIntermediateFormats'])
+        self.assertEqual(result['outputValidation']['status'], 'passed')
+        self.assertIn('layers', result['losses'])
+        self.assertEqual(result['previewArtifacts'], [])
+        self.assertIsNone(result['nativeOutputArtifact'])
+        with TestClient(create_app(self.settings)) as cold:
+            self.assertEqual(cold.get('/api/exports/' + result['exportId']).json(), result)
+
+    def test_provider_validation_failure_persists_and_blocks_download(self):
+        from archflow.adapters.model_providers import InProcessMeshProvider, Validation
+        with patch.object(InProcessMeshProvider, 'validate', return_value=Validation(False, reason='Bounds mismatch')):
+            result = self.finish(self.submit())
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['provider'], 'InProcessMeshProvider')
+        self.assertEqual(result['failureCode'], 'VALIDATION_FAILED')
+        self.assertEqual(result['outputValidation']['status'], 'failed')
+        self.assertIsNone(result['outputArtifact'])
+        self.assertEqual(self.client.get('/api/exports/' + result['exportId'] + '/bytes').status_code, 409)
+
+    def test_dwg_original_retained_without_invented_preview(self):
+        data = b'non-executable DWG placeholder; no native conversion claimed'
+        result = self.finish(self.submit('glb', data=data, name='drawing.dwg'))
+        self.assertEqual(result['failureCode'], 'NO_CONFIGURED_EXECUTOR')
+        self.assertNotIn('glb', result['previewPolicy']['suggestedFormats'])
+        self.assertEqual(result['previewArtifacts'], [])
+        self.assertEqual(self.repository.layout.resolve_relative(result['sourceArtifact']['relative_path']).read_bytes(), data)
+
+    def test_capability_endpoint_does_not_enable_detected_software(self):
+        rows = self.client.get('/api/exports/capabilities').json()
+        self.assertEqual(len(rows), 12)
+        for row in rows:
+            if 'skp' in (row['sourceFormat'], row['targetFormat']) or 'dwg' in (row['sourceFormat'], row['targetFormat']):
+                self.assertFalse(row['available'])
+                self.assertEqual(row['reason'], '当前没有配置可用的执行器')
+                self.assertTrue(any('discovery' in provider for provider in row['providers']))
+
     def test_unavailable_skp_and_dwg_are_failed_jobs(self):
         for target in ("skp","dwg"):
             result = self.finish(self.submit(target))
             self.assertEqual(result["status"],"failed")
-            self.assertIn("unavailable",result["failureReason"])
+            self.assertEqual(result["failureReason"], "当前没有配置可用的执行器")
+            self.assertEqual(result["failureCode"], "NO_CONFIGURED_EXECUTOR")
+            self.assertIsNone(result["provider"])
+            self.assertEqual(result["outputValidation"]["status"], "not-run")
+            self.assertTrue(result["providerCandidates"])
 
     def test_converter_runtime_failure_is_retained(self):
         with patch('archflow_studio_api.application.model_exports.convert', side_effect=RuntimeError('converter stopped')):

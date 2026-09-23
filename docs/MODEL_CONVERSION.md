@@ -11,16 +11,16 @@ Never change HEAD or treat an uploaded file as the current project state.
 |---|---|---|
 | 3DM | GLB | Bounded, lossy mesh conversion; requires rhino3dm. Exact surfaces without render meshes are refused. |
 | GLB | 3DM | Bounded triangle-mesh conversion; requires rhino3dm. No reconstruction of CAD solids. |
-| 3DM | SKP | Unsupported: #53 SDK/runtime/distribution verification remains open. |
-| 3DM | DWG | Unsupported: no licensed DWG reader/writer in the backend. |
-| GLB | SKP | Unsupported: #53 SDK/runtime/distribution verification remains open. |
-| GLB | DWG | Unsupported: no licensed DWG reader/writer in the backend. |
-| SKP | 3DM | Unsupported: #53 SDK/runtime/distribution verification remains open. |
-| SKP | GLB | Unsupported: #53 SDK/runtime/distribution verification remains open. |
-| SKP | DWG | Unsupported: both SKP and DWG runtimes are unavailable. |
-| DWG | 3DM | Unsupported: no licensed DWG reader/writer in the backend. |
-| DWG | GLB | Unsupported: no licensed DWG reader/writer in the backend. |
-| DWG | SKP | Unsupported: both DWG and SKP runtimes are unavailable. |
+| 3DM | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| 3DM | DWG | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| GLB | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| GLB | DWG | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| SKP | 3DM | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| SKP | GLB | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| SKP | DWG | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| DWG | 3DM | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| DWG | GLB | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
+| DWG | SKP | 当前没有配置可用的执行器 (`blocked-runtime`); native bridge/validator not configured. |
 
 This is not general CAD interchange. Unsupported entities, animation, compression,
 and other unsupported GLB features are refused rather than silently discarded.
@@ -32,6 +32,34 @@ SKP/DWG same-format requests are also refused until a real validator exists.
 SKP ownership remains [#53](https://github.com/cogco1/MonkeyHub/issues/53).
 Its local C API spike is not a distributable product adapter. No SketchUp DLL is
 copied or loaded by this feature. DXF support does not establish DWG support.
+
+## Provider contract and selection
+
+`ConversionProvider` supplies name/version, declared input/output formats,
+execution mode (local desktop, headless, cloud, SDK), per-route availability and
+verification/reason, `convert()` and `validate()`. The coordinator requires both
+available and verified, prioritizes local application executors, then in-process,
+SDK and cloud implementations. Execution failure is recorded without silently
+retrying elsewhere. Future SDK/ODA/RealDWG/APS providers can be explicitly injected;
+there is no plugin loader, additional queue or settings database.
+
+SketchUp, AutoCAD and Core Console currently have **discovery-only** providers.
+Read-only known-directory/App Paths probes inspect the Runtime host, which must
+be the user's machine for desktop execution; remote deployments do not probe a
+browser user's computer. Executable presence and directory version hints never
+establish compatibility, entitlement, session readiness or conversion support.
+Only the mesh provider currently declares implemented routes. Native absence,
+incompatibility or missing automation all return 当前没有配置可用的执行器.
+See [vendor investigation and Kevin's local experiments](MODEL_PROVIDER_RESEARCH.md).
+
+Reports retain actual provider/version/mode/host, candidate availability reasons,
+source/target, intermediate formats, units/layer/material/structure/geometry
+losses and validation checks. `sourceArtifact` is the preserved original;
+`outputArtifact` is the delivery; `nativeOutputArtifact` identifies a successful
+SKP/DWG delivery if a future executor qualifies. `previewArtifacts` is separate
+and currently empty. No preview generator or universal GLB preview is added.
+2D DWG keeps a 2D PDF/SVG/raster preview policy. Unknown DWG dimensionality is
+never evidence of 3D; providers must validate dimensionality before success.
 
 ## Chat and backend contract
 
@@ -88,7 +116,7 @@ This change has automated agent-tool routing coverage, not a live model-provider
 conversation acceptance run. Tests exercised rhino3dm 8.32.2 on this workstation;
 the repository's pinned 8.32.1 runtime was not independently exercised here.
 
-Verification on this branch: 71 Runtime export/job/event/artifact tests, 7 format
+Original PR baseline (83 tests): 71 Runtime export/job/event/artifact tests, 7 format
 tests, and 5 Hub conversion-tool tests passed; Three.js readback, `archcheck.py`
 and `git diff --check` passed. The broader 82-test Hub chat suite had 4 failures:
 `test_an_interrupted_tool_call_does_not_stay_pending`,
@@ -97,3 +125,10 @@ and `git diff --check` passed. The broader 82-test Hub chat suite had 4 failures
 `test_running_chat_cannot_be_archived_or_cancelled_by_archiving`.
 All four reproduced when the test process loaded `chat.py` from unchanged HEAD;
 they concern fake-CLI stopping/timeouts, not the new conversion routes.
+
+Provider architecture follow-up: **107 related tests passed** (75 Runtime,
+27 format/provider/discovery, 5 Hub conversion-tool). Independent Three.js
+readback and architecture checks passed again. Native selection tests use
+explicit test doubles and do not certify SketchUp/AutoCAD execution. The four
+broader chat failures above were established in the original PR baseline, not
+re-run for this follow-up. Live model-provider conversation remains unverified.

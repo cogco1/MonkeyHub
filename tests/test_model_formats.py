@@ -59,12 +59,11 @@ class FormatTests(unittest.TestCase):
             convert(base64.b64decode(model.Encode()), "3dm", "glb")
 
     def test_all_ten_unavailable_routes_are_explicit(self):
-        from archflow.adapters.model_formats import FORMATS, unsupported
-        routes = [{"sourceFormat": a, "targetFormat": b, "status": "unsupported" if unsupported(a,b) else "bounded-mesh"}
-                  for a in FORMATS for b in FORMATS if a != b]
+        from archflow.adapters.model_providers import ConversionCoordinator, NO_EXECUTOR
+        routes = ConversionCoordinator().capabilities()
         self.assertEqual(len(routes), 12)
-        blocked = [r for r in routes if r["status"] == "unsupported"]
+        blocked = [r for r in routes if not r["available"]]
         self.assertEqual(len(blocked), 10)
         for route in blocked:
-            with self.assertRaisesRegex(ConversionError, "unavailable"):
+            with self.assertRaisesRegex(ConversionError, NO_EXECUTOR):
                 convert(b"anything", route["sourceFormat"], route["targetFormat"])

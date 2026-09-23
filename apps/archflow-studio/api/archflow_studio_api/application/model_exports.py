@@ -9,7 +9,8 @@ from uuid import uuid4
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from .artifacts import artifact_bytes, list_artifacts, require_model_source, require_complete_model, ModelSource
 from .projection import project_state
-from archflow.adapters.model_formats import convert, FORMATS, unsupported, VERSION
+from archflow.adapters.model_formats import convert, FORMATS
+from archflow.adapters.model_providers import ConversionCoordinator, ConversionFailure
 from ..transport.errors import StudioError, error_sentence
 
 KIND = "studio-model-export"
@@ -103,7 +104,12 @@ def submit(binding, jobs, payload):
              "sourceProjectRevision": source_revision, "sourceSha256": hashlib.sha256(data).hexdigest(),
              "sourceFileName": upload.file_name if upload else None,
              "sourceAttachmentId": upload.attachment_id if upload else None,
-             "converter": [VERSION], "sourceUnits": None, "outputUnits": None, "warnings": [],
+             "converter": [], "sourceUnits": None, "outputUnits": None, "warnings": [],
+             "provider": None, "providerVersion": None, "executionMode": None,
+             "intermediateFormats": [], "usedIntermediateFormats": False, "losses": None,
+             "previewArtifacts": [], "nativeOutputArtifact": None,
+             "artifactRoles": {"sourceArtifact": "original", "outputArtifact": "delivery", "previewArtifacts": "preview"},
+             "outputValidation": {"status": "not-run", "checks": []},
              "outputArtifact": None, "failureReason": None}
     _save(binding, run, value)
 
@@ -112,14 +118,17 @@ def submit(binding, jobs, payload):
         _save(binding, run, current)
         try:
             output, details = convert(data, source_format, target)
+            current = current | details
             artifact = binding.repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
                 artifact_id="converted-model", media_type="model/gltf-binary" if target == "glb" else "application/octet-stream",
                 source=BytesIO(output))
             _save(binding, run, current | details | {"status": "succeeded", "outputArtifact": asdict(artifact),
+                "nativeOutputArtifact": asdict(artifact) if target in ("skp", "dwg") else None,
                 "outputSha256": artifact.sha256, "downloadPath": f"/api/exports/{export_id}/bytes",
                 "fileName": f"model.{target}"})
         except Exception as exc:
-            _save(binding, run, current | {"status": "failed", "failureReason": error_sentence(exc)})
+            details = exc.report if isinstance(exc, ConversionFailure) else {}
+            _save(binding, run, current | details | {"status": "failed", "failureReason": error_sentence(exc)})
             raise
     try:
         job = jobs.submit(candidate_id=export_id, proposal_id=export_id, work=work, kind="export")
@@ -131,7 +140,4 @@ def submit(binding, jobs, payload):
 
 
 def capabilities():
-    return [{"sourceFormat": source, "targetFormat": target,
-             "status": "unsupported" if unsupported(source, target) else "bounded-mesh",
-             "reason": unsupported(source, target) or "Requires rhino3dm; unsupported geometry is refused, mesh losses are reported."}
-            for source in FORMATS for target in FORMATS if source != target]
+    return ConversionCoordinator().capabilities()
