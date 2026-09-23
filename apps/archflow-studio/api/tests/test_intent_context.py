@@ -1,10 +1,12 @@
 """Request reduction follows the real record graph without widening edits."""
 
 from copy import deepcopy
+import base64
 from dataclasses import replace
 import json
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import archflow_studio_api  # noqa: F401
 from archflow.state.operational_state import DesignObligation
@@ -18,6 +20,7 @@ from archflow_studio_api.main import create_app
 
 from .support import PROJECT_ID, REFERENCE_RUN_ID
 from .test_design_history import DesignHistoryFixture
+from .study_fixture import fixture_evidence, fixture_png, fixture_research
 
 
 def fixture(*, shared=False):
@@ -605,6 +608,98 @@ class ConfirmedStageContextRouteTests(DesignHistoryFixture):
         after = {path.relative_to(self.root): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
         self.assertEqual(after, before)
         self.assertEqual(self.repository.read_head(), self.initial_head)
+
+
+class StudyEvidenceContextRouteTests(DesignHistoryFixture):
+    def save_study(self, *, previous=None, research=None):
+        if not hasattr(self, "study_document"):
+            uploaded = self.client.post("/api/documents", json={
+                "projectId": PROJECT_ID, "fileName": "synthetic-precedent.png", "mimeType": "image/png",
+                "contentBase64": base64.b64encode(fixture_png("base")).decode("ascii"),
+            })
+            self.assertEqual(uploaded.status_code, 201, uploaded.text)
+            self.study_document = uploaded.json()
+        document = self.study_document
+        saved = self.client.post("/api/studies", json={
+            "projectId": PROJECT_ID, "studyId": "passage", "expectedPreviousRef": previous,
+            "source": {"runId": document["runId"], "assetSha256": document["assetSha256"], "pageIndex": 0},
+            "evidence": fixture_evidence(), "research": research if research is not None else fixture_research(),
+        })
+        self.assertEqual(saved.status_code, 201, saved.text)
+        return saved.json()
+
+    def context_request(self, studies=(), **extra):
+        return {"projectId": PROJECT_ID, "sourceRunId": REFERENCE_RUN_ID,
+                "stateDigest": self.state_digest, "utterance": "Continue the facade study",
+                "elementId": "portico-base", "studyEvidence": list(studies), **extra}
+
+    def test_cold_context_keeps_exact_old_prior_and_conditions_without_changing_design(self):
+        first = self.save_study()
+        changed = fixture_research(changed_context=True)
+        changed["designPrior"]["statement"] = "A later revision must not replace the one requested."
+        second = self.save_study(previous=first["ledgerRef"], research=changed)
+        initial = self.initialize()
+        requested = {"studyId": "passage", "ledgerRef": first["ledgerRef"]}
+        before = {str(path): path.read_bytes() for path in self.root.rglob("*") if path.is_file()}
+        with TestClient(create_app(self.settings)) as reopened:
+            baseline = reopened.post("/api/intents/context", json=self.context_request(sourceStageRef=initial["stageRef"]))
+            answer = reopened.post("/api/intents/context", json=self.context_request(
+                [requested], sourceStageRef=initial["stageRef"]))
+        self.assertEqual(answer.status_code, 200, answer.text)
+        pack = answer.json()
+        evidence = pack["studyEvidence"][0]
+        self.assertTrue(evidence["completeness"]["complete"], evidence)
+        self.assertEqual(evidence["ledgerRef"], first["ledgerRef"])
+        self.assertNotEqual(evidence["ledgerRef"], second["ledgerRef"])
+        self.assertEqual(evidence["designPrior"], first["research"]["designPrior"])
+        self.assertEqual(evidence["compositionPattern"]["exceptions"], first["research"]["compositionPattern"]["exceptions"])
+        self.assertEqual(evidence["source"], first["source"])
+        self.assertLess(len(json.dumps(evidence).encode()), len(json.dumps(first).encode()))
+        for key in ("source", "target", "keep", "request", "context", "scopedDecisions", "confirmedStage"):
+            self.assertEqual(pack[key], baseline.json()[key], key)
+        self.assertEqual(before, {str(path): path.read_bytes() for path in self.root.rglob("*") if path.is_file()})
+        self.assertEqual(self.repository.read_head(), self.initial_head)
+
+    def test_unrequested_studies_are_not_read(self):
+        from archflow_studio_api.routes import intents
+        self.save_study()
+        with patch.object(intents, "read_study", side_effect=AssertionError("unrequested study read")):
+            answer = self.client.post("/api/intents/context", json=self.context_request())
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["studyEvidence"], [])
+
+    def test_invalid_project_study_or_revision_is_refused_not_rebound(self):
+        saved = self.save_study()
+        for request in (
+            {"studyId": "other-study", "ledgerRef": saved["ledgerRef"]},
+            {"studyId": "passage", "ledgerRef": saved["ledgerRef"].replace(PROJECT_ID, "other-project")},
+            {"studyId": "passage", "ledgerRef": "not-a-record"},
+        ):
+            with self.subTest(request=request):
+                answer = self.client.post("/api/intents/context", json=self.context_request([request]))
+                self.assertEqual(answer.status_code, 422, answer.text)
+                self.assertEqual(answer.json()["code"], "STUDY_LEDGER_REF_INVALID")
+
+    def test_duplicate_or_unbounded_study_request_is_rejected_before_read(self):
+        saved = self.save_study()
+        selected = {"studyId": "passage", "ledgerRef": saved["ledgerRef"]}
+        for studies in ([selected, selected], [selected] * 4, [{"studyId": "passage"}]):
+            with self.subTest(studies=studies):
+                answer = self.client.post("/api/intents/context", json=self.context_request(studies))
+                self.assertEqual(answer.status_code, 422, answer.text)
+
+    def test_budget_refusal_never_returns_a_prior_without_its_long_condition(self):
+        research = fixture_research()
+        research["designPrior"]["conditions"] = ["重要条件 " * 5000]
+        saved = self.save_study(research=research)
+        answer = self.client.post("/api/intents/context", json=self.context_request(
+            [{"studyId": "passage", "ledgerRef": saved["ledgerRef"]}]))
+        self.assertEqual(answer.status_code, 200, answer.text)
+        evidence = answer.json()["studyEvidence"][0]
+        self.assertFalse(evidence["completeness"]["complete"])
+        self.assertEqual(evidence["completeness"]["reason"], "budget-exceeded")
+        self.assertNotIn("designPrior", evidence)
+        self.assertEqual(evidence["reopen"]["ledgerRef"], saved["ledgerRef"])
 
 
 if __name__ == "__main__":

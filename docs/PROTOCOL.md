@@ -207,6 +207,28 @@ index contains up to 64 entries per page. Repeat the exact source, utterance and
 additional facts without expanding focus. An individual fact over budget remains explicitly
 omitted. Existing internal Studio intent compilation is unchanged.
 
+`studyEvidence` optionally names up to three distinct `{studyId, ledgerRef}` pairs, using the
+existing Study revision reference contract. Each is read from this bound project at that exact
+revision; a different project, Study or unavailable ledger is refused, never replaced by its
+latest revision. Omitting this field reads no Study. The returned `studyEvidence` carries the
+retained DesignPrior with its pattern conditions/exceptions, declared competing hypotheses,
+supporting/counterevidence, relevant evidence gaps and source-page identity. It is separate from
+`scopedDecisions`, design conditions and `confirmedStage`: retrieval does not accept a prior or
+turn it into an executable constraint.
+
+Each Study content projection has a 12 KiB compact UTF-8 JSON budget. Identity, limitations and
+refusal metadata are outside that detail budget; this is not a billed-token or total-pack limit.
+If its complete selected content does not fit, no isolated prior statement is returned:
+`completeness.complete=false`, `reason=budget-exceeded`, `requiredBytes` and `budgetBytes` explain
+the omission. `no-design-prior` means the selected ledger contains no retained prior to project.
+Complete delivery of declared companions does not establish source sufficiency or applicability
+to the current building. Hypothesis status, unresolved preferences and `changedContext` remain
+as retained, including rejection and revision. Historical citations/summaries are not verified
+external source text. Counterfactual/comparison numerical details are explicitly omitted; use
+`GET /api/studies/{studyId}?ledgerRef=<exact-ref>` before relying on them. This exact reopen read
+is available through the existing project-bound Hub MCP tool; no Study writer is added there.
+Hub `designContext.studyEvidence` forwards the same references when preparing a fresh task.
+
 For visual observation, `GET /api/drawings/model-view` requires exact `runId`, `stateDigest` and
 `assetSha256` from a complete `ModelSource`, plus `view=front|back|left|right|top` (default front).
 It returns source metadata and an inline PNG (base64 `data`, `mimeType`, width/height, and

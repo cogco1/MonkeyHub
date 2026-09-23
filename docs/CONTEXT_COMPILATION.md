@@ -854,3 +854,59 @@ numeric-edit latency**. Evidence remains at
 directories, shared `input.zip`, `comparison.json`, and the waterfall. The
 temporary summary script was implemented by the real Claude CLI, then reviewed,
 corrected and executed independently; it is not a production mechanism.
+
+## Exact precedent evidence in task context (#122 / #32 / #185)
+
+A saved Study can contain a conditional DesignPrior, yet an agent continuing a
+building task previously had to read the whole Study separately. The existing
+ContextPack now accepts up to three explicit `studyEvidence: [{studyId, ledgerRef}]`
+references. It reads those revisions through the Study owner and carries their
+bounded prior/companion projections alongside current design facts and decisions.
+No new persistent schema, embedding index, project writer or Stage system is added.
+
+The common structure is an exact reference and a task-specific read projection;
+the records retain their different meanings:
+
+| Content | Existing owner | How the next task uses it |
+| --- | --- | --- |
+| Current geometry, parameters, conditions and dependencies | StateRecord / P036 | Exact design base and declared read scope |
+| Accepted phase result | DesignStage | Confirmed source and later changes requiring review |
+| Applicable human feedback | Scoped decision revisions | Scope-checked directions, original wording and attribution |
+| Conditional precedent knowledge | Study EvidenceLedger | Exact prior, applicability, competing explanations and counterevidence |
+| This task's assembled input | ContextPack | Disposable read projection; never another source of project truth |
+
+A prior's companions are selected by declared references, not similarity or a
+model-generated summary. The source page and ledger remain reopenable. Conditions,
+exceptions, revised/rejected hypotheses and changed-context judgements are preserved.
+External historical citations are still authored references/summaries, not verified
+source text. Detailed counterfactual/comparison geometry and numbers are explicitly
+left at the exact ledger. A model must reopen those before relying on them.
+
+Each selected content bundle has a 12 KiB compact UTF-8 budget. If it cannot fit,
+the entire content bundle is omitted with a reason and exact reopen reference.
+This prevents a short claim from arriving without a long decisive condition.
+The budget excludes the identity/limitation wrapper and does not claim a total
+prompt or billing limit. Unrequested Studies incur no Study reads; ordinary
+numeric/design context and active-decision selection keep their existing behavior.
+
+Verification uses the existing synthetic Study and retained design-history
+fixtures: exact old revision after a newer revision exists, cold reopening,
+conditions/alternatives/counterevidence, byte-budget refusal, wrong project/Study,
+unchanged design focus/Stage/HEAD, and native-CLI transport fixtures receiving
+selected evidence without old chat. These are deterministic boundary and transport
+tests, not evidence that an actual model makes a better architectural decision.
+
+On the existing synthetic passage plus retained design fixture, compact UTF-8
+JSON measured 68,800 bytes for the full Study and 5,212 bytes for the baseline
+ContextPack. The combined pack with the selected Study projection measured
+15,002 bytes instead of 74,012 bytes for both full responses (79.73% smaller).
+The evidence projection was 9,790 bytes including its identity/limitation wrapper.
+No model was called for this comparison; it establishes payload reduction on
+this fixture, not token savings, architectural quality or end-to-end latency.
+
+This implements one precise evidence consumer for #122. It does not complete the
+four retrieval baselines, regulation/jurisdiction filtering, document extraction,
+or the audited query corpus. #32 still needs matched real-provider performance
+measurements; #185 still needs a building task that tests whether a transferred
+prior applies, plus the remaining non-adjacent Stage interfaces. References unify
+access; neither a citation nor a delivered context establishes design correctness.

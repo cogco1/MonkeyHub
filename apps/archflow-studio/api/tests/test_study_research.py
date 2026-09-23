@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from copy import deepcopy
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -297,6 +298,179 @@ class StudyResearchTests(unittest.TestCase):
         self.assertEqual(stale.status_code, 409, stale.text)
         self.assertEqual(stale.json()["code"], "STUDY_REVISION_STALE")
         self.assertEqual(self.client.get("/api/studies/synthetic-passage").json(), first)
+
+    def evidence_view(self, saved):
+        return study_application.read_study(
+            bound_project(self.client.app.state), saved["studyId"], saved["ledgerRef"],
+        )
+
+    def test_prior_context_keeps_conditions_competing_explanations_and_global_gaps(self):
+        research = fixture_research()
+        research["designPrior"]["hypothesisIds"] = ["connection"]
+        research["hypotheses"][1]["counterEvidenceIds"] = ["envelope"]
+        research["hypotheses"][0]["historicalSourceIds"] = ["cited"]
+        research["historicalSources"] = [
+            {"sourceId": "cited", "citation": "Authored reference", "locator": "p. 3", "summary": "Unverified source summary"},
+            {"sourceId": "unrelated", "citation": "Unrelated reference", "summary": "Not selected"},
+        ]
+        research["gaps"].append({"gapId": "global", "description": "Unresolved metric scale", "evidenceIds": []})
+        # A large irrelevant explanation must not crowd conditions out of the
+        # context merely because it is in the same retained revision.
+        for index in range(10):
+            research["hypotheses"].append({"hypothesisId": f"unrelated-{index}", "statement": "Unrelated " * 500})
+        research["counterfactuals"][0]["parameters"] = {"dx": 1.0}
+        saved = self.save(research=research)
+        view = self.evidence_view(saved)
+        original = deepcopy(view.payload)
+        with patch.object(study_application, "_polygon_observations", side_effect=AssertionError("no recomputation")):
+            context = study_application.study_evidence_context(view)
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        self.assertEqual({row["hypothesis_id"] for row in context["hypotheses"]}, {"connection", "environmental-gap"})
+        self.assertEqual(context["design_prior"]["conditions"], research["designPrior"]["conditions"])
+        self.assertEqual(context["composition_pattern"]["exceptions"], research["compositionPattern"]["exceptions"])
+        self.assertIn("envelope", {row["evidence_id"] for row in context["evidence"]})
+        self.assertEqual([row["source_id"] for row in context["historical_sources"]], ["cited"])
+        self.assertIn("global", {row["gap_id"] for row in context["gaps"]})
+        self.assertEqual(context["counterfactuals"][0]["actual"]["status"], "unsupported")
+        self.assertIn("source page", context["counterfactuals"][0]["actual"]["reason"])
+        self.assertEqual(context["counterfactuals"][1]["actual"]["interpretation"], "underdetermined")
+        self.assertIn("evidence", context["counterfactuals"][1]["details_omitted"])
+        self.assertLess(context["completeness"]["required_bytes"], len(json.dumps(view.payload).encode("utf-8")) / 2)
+        context["hypotheses"][0]["assumptions"].append("Caller mutation")
+        context["source"]["page_index"] = 99
+        self.assertEqual(view.payload, original)
+        self.assertEqual(self.repository.read_head(), self.head)
+
+    def test_prior_context_budget_never_separates_a_claim_from_its_conditions(self):
+        research = fixture_research()
+        research["designPrior"]["conditions"].append("必须独立核对通行条件。")
+        view = self.evidence_view(self.save(research=research))
+        complete = study_application.study_evidence_context(view, budget_bytes=100000)
+        required = complete["completeness"]["required_bytes"]
+        content = {key: value for key, value in complete.items()
+                   if key not in {"study_id", "ledger_ref", "source", "derivation_method", "reopen", "limitations", "completeness"}}
+        self.assertEqual(required, len(json.dumps(content, ensure_ascii=False, separators=(",", ":")).encode("utf-8")))
+        self.assertTrue(study_application.study_evidence_context(view, budget_bytes=required)["completeness"]["complete"])
+        small = study_application.study_evidence_context(view, budget_bytes=required - 1)
+        self.assertFalse(small["completeness"]["complete"])
+        self.assertEqual(small["completeness"]["reason"], "budget-exceeded")
+        self.assertNotIn("design_prior", small)
+        self.assertNotIn("hypotheses", small)
+        self.assertEqual(small["reopen"], {"study_id": "synthetic-passage", "ledger_ref": view.ref.uri})
+        self.assertEqual(small["source"], view.payload["source"])
+
+    def test_prior_context_follows_competition_declared_by_either_endpoint(self):
+        research = fixture_research()
+        research["designPrior"]["hypothesisIds"] = ["connection"]
+        research["hypotheses"][0]["competesWith"] = []
+        research["hypotheses"].extend([
+            {"hypothesisId": "another-challenge", "statement": "A challenge to the environmental interpretation.",
+             "competesWith": ["environmental-gap"]},
+            {"hypothesisId": "unrelated", "statement": "No declared connection."},
+        ])
+        context = study_application.study_evidence_context(self.evidence_view(self.save(research=research)))
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        self.assertEqual({row["hypothesis_id"] for row in context["hypotheses"]},
+                         {"connection", "environmental-gap", "another-challenge"})
+
+    def test_prior_context_keeps_all_traces_named_by_reached_gaps(self):
+        research = fixture_research()
+        # Place the downstream gap before the initial one to require closure,
+        # not just one pass whose result depends on document ordering.
+        research["gaps"].extend([
+            {"gapId": "second", "description": "Compare envelope with remote trace.", "evidenceIds": ["envelope", "remote"]},
+            {"gapId": "first", "description": "Check the clear strip against its envelope.", "evidenceIds": ["clear-strip", "envelope"]},
+            {"gapId": "unrelated", "description": "Separate unresolved observation.", "evidenceIds": ["unused"]},
+        ])
+        request = self.request(research=research)
+        request["evidence"].extend([{**deepcopy(request["evidence"][0]), "evidenceId": identifier}
+                                    for identifier in ("remote", "unused")])
+        saved = self.client.post("/api/studies", json=request)
+        self.assertEqual(saved.status_code, 201, saved.text)
+        context = study_application.study_evidence_context(self.evidence_view(saved.json()))
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        self.assertEqual({row["evidence_id"] for row in context["evidence"]},
+                         {"left-mass", "right-mass", "clear-strip", "envelope", "remote"})
+        self.assertNotIn("unrelated", {row["gap_id"] for row in context["gaps"]})
+
+    def test_prior_context_joint_counterfactual_keeps_other_hypotheses_and_their_conditions(self):
+        research = fixture_research()
+        research["designPrior"]["hypothesisIds"] = ["connection"]
+        research["hypotheses"].extend([
+            {"hypothesisId": "joint-only", "statement": "The joint interpretation requires access.",
+             "assumptions": ["ONLY_WITH_FIRE_ACCESS"], "evidenceIds": ["envelope"],
+             "competesWith": ["access-challenge"]},
+            {"hypothesisId": "access-challenge", "statement": "Access is not established by plan geometry."},
+            {"hypothesisId": "second-joint", "statement": "Another condition reached through the joint interpretation.",
+             "assumptions": ["ONLY_WITH_SEPARATE_EXIT"]},
+            {"hypothesisId": "unrelated", "statement": "Not linked to any selected hypothesis."},
+        ])
+        # The second connection appears first in document order. Both it and
+        # the joint hypothesis's competitor must survive another closure round.
+        research["counterfactuals"][0]["hypothesisIds"] = ["joint-only", "second-joint"]
+        research["counterfactuals"][1]["hypothesisIds"] = ["connection", "joint-only"]
+        context = study_application.study_evidence_context(self.evidence_view(self.save(research=research)))
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        selected = {row["hypothesis_id"]: row for row in context["hypotheses"]}
+        self.assertEqual(selected["joint-only"]["assumptions"], ["ONLY_WITH_FIRE_ACCESS"])
+        self.assertEqual(selected["second-joint"]["assumptions"], ["ONLY_WITH_SEPARATE_EXIT"])
+        self.assertIn("access-challenge", selected)
+        self.assertNotIn("unrelated", selected)
+        self.assertIn("envelope", {row["evidence_id"] for row in context["evidence"]})
+        for row in context["counterfactuals"]:
+            self.assertTrue(set(row["hypothesis_ids"]).issubset(selected))
+
+    def test_prior_context_preserves_unscoped_counterfactual_but_excludes_unrelated_one(self):
+        research = fixture_research()
+        research["hypotheses"].append({"hypothesisId": "unrelated", "statement": "Separate hypothesis."})
+        research["counterfactuals"][0].update(hypothesisIds=["unrelated"], execute=False)
+        research["counterfactuals"].append({
+            "counterfactualId": "global-check", "hypothesisIds": [], "targetEvidenceId": "envelope",
+            "operation": "remove", "conditions": ["Only if the boundary is no longer fixed."],
+            "prediction": "The boundary condition would need independent reassessment.", "execute": False,
+        })
+        context = study_application.study_evidence_context(self.evidence_view(self.save(research=research)))
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        selected = {row["counterfactual_id"]: row for row in context["counterfactuals"]}
+        self.assertNotIn("narrowed", selected)
+        self.assertEqual(selected["global-check"]["conditions"], research["counterfactuals"][-1]["conditions"])
+        self.assertEqual(selected["global-check"]["prediction"], research["counterfactuals"][-1]["prediction"])
+        self.assertIsNone(selected["global-check"]["actual"])
+        self.assertIn("envelope", {row["evidence_id"] for row in context["evidence"]})
+
+    def test_prior_context_preserves_rejected_revised_and_changed_context_judgements(self):
+        research = fixture_research(changed_context=True)
+        research["hypotheses"][0]["status"] = "rejected"
+        research["hypotheses"][1]["status"] = "revised"
+        context = study_application.study_evidence_context(self.evidence_view(self.save(research=research)))
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        self.assertEqual([row["status"] for row in context["hypotheses"]], ["rejected", "revised"])
+        self.assertEqual(context["design_prior"]["changed_context"]["decision"], "revise")
+        self.assertEqual(context["design_prior"]["changed_context"]["revised_statement"],
+                         research["designPrior"]["changedContext"]["revisedStatement"])
+
+    def test_prior_context_does_not_promote_a_hypothesis_when_no_prior_was_retained(self):
+        research = fixture_research()
+        research["designPrior"] = None
+        context = study_application.study_evidence_context(self.evidence_view(self.save(research=research)))
+        self.assertEqual(context["completeness"]["reason"], "no-design-prior")
+        self.assertNotIn("design_prior", context)
+        self.assertNotIn("hypotheses", context)
+
+    def test_prior_context_keeps_exact_comparison_inputs_without_recomparing(self):
+        first = self.save()
+        other = self.save(study_id="comparison-source")
+        research = fixture_research()
+        research["comparisons"] = [{"studies": [
+            {"studyId": row["studyId"], "ledgerRef": row["ledgerRef"]} for row in (first, other)
+        ]}]
+        view = self.evidence_view(self.save(research=research, previous=first["ledgerRef"]))
+        with patch.object(study_routes, "_compare_exact_revisions", side_effect=AssertionError("no recomparison")):
+            context = study_application.study_evidence_context(view)
+        self.assertTrue(context["completeness"]["complete"], context["completeness"])
+        self.assertEqual(context["comparisons"], view.payload["research"]["comparisons"])
+        self.assertEqual(context["comparison_results"][0]["studies"], context["comparisons"][0]["studies"])
+        self.assertTrue(context["comparison_results"][0]["details_omitted"])
 
 
 if __name__ == "__main__":

@@ -1692,6 +1692,14 @@ export type ContextPackDto = {
      */
     scopedDecisions?: Array<DecisionDto>;
     /**
+     * Studyevidence
+     *
+     * Read-only projections of explicitly selected Study revisions. Check each completeness and applicability result before using a prior; evidence never becomes a design decision or constraint.
+     */
+    studyEvidence?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
      * Honesty
      */
     honesty?: Array<string>;
@@ -1760,6 +1768,12 @@ export type ContextPackRequestDto = {
      * offset into the bounded reference index; it changes no focus or edit scope
      */
     contextOffset?: number;
+    /**
+     * Studyevidence
+     *
+     * Optional exact retained Study revisions to read as conditional precedent evidence. Each prior travels with its declared conditions and counterevidence; no latest revision is inferred.
+     */
+    studyEvidence?: Array<StudyRevisionRequestDto>;
     /**
      * what this turn is about for the scoped decisions it should be handed: the domain, and for a drawing or copy turn its own exact evidence. Absent, the design domain, this source's Stage and the focus already named above answer for it
      */
