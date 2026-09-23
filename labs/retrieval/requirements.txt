@@ -1,0 +1,6 @@
+# Isolated CPU experiment; do not add to the application environment.
+sentence-transformers==3.4.1
+transformers==4.49.0
+numpy==2.2.3
+torch==2.6.0
+pytest==8.3.5

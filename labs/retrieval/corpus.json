@@ -1,0 +1,1093 @@
+{
+  "description": "Frozen excerpts plus explicitly synthetic project notes. No gold human labels or accepted project state.",
+  "items": [
+    {
+      "id": "ada-walk",
+      "text": "403.5.1 Clear Width. Except as provided in 403.5.2 and 403.5.3, the clear width of walking surfaces shall be 36 inches (915 mm) minimum.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "403.5.1 Clear",
+        "normalized_offsets": [
+          254514,
+          254650
+        ],
+        "excerpt_sha256": "f922d0d26f70b701647ef42d51d57aa1f2cd8e754594154423c710ff4ef8caad"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-walk-exception",
+        "ada-turn",
+        "ada-turn-exception",
+        "ada-passing"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-walk-exception",
+      "text": "EXCEPTION: The clear width shall be permitted to be reduced to 32 inches (815 mm) minimum for a length of 24 inches (610 mm) maximum provided that reduced width segments are separated by segments that are 48 inches (1220 mm) long minimum and 36 inches (915 mm) wide minimum.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "403.5.1 Clear adjacent EXCEPTION",
+        "normalized_offsets": [
+          254651,
+          254925
+        ],
+        "excerpt_sha256": "4eea6ed0cc8124c71c75c1e499b2dc176a73e9b8a96d6b1cc9e879983ac50da2"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-walk"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-door",
+      "text": "404.2.3 Clear Width. Door openings shall provide a clear width of 32 inches (815 mm) minimum. Clear openings of doorways with swinging doors shall be measured between the face of the door and the stop, with the door open 90 degrees. Openings more than 24 inches (610 mm) deep shall provide a clear opening of 36 inches (915 mm) minimum. There shall be no projections into the required clear opening width lower than 34 inches (865 mm) above the finish floor or ground. Projections into the clear opening width between 34 inches (865 mm) and 80 inches (2030 mm) above the finish floor or ground shall not exceed 4 inches (100 mm).",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "404.2.3 Clear",
+        "normalized_offsets": [
+          257228,
+          257857
+        ],
+        "excerpt_sha256": "3169fbdf3892ecea9ec6e42b53837ce60ba047a68ea77b096c2367b71e6a0299"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-door-exception-1",
+        "ada-door-exception-2"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-maneuver",
+      "text": "404.2.4 Maneuvering Clearances. Minimum manuevering clearances at doors and gates shall comply with 404.2.4. Maneuvering clearances shall extend the full width of the doorway and the required latch side or hinge side clearance.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "404.2.4 Maneuver",
+        "normalized_offsets": [
+          258155,
+          258382
+        ],
+        "excerpt_sha256": "6a6d94a4311ad1c2cf5f9e1ebb89a06b345a59f55055c1279dc6b49acde0b72c"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-maneuver-exception"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-maneuver-exception",
+      "text": "EXCEPTION: Entry doors to hospital patient rooms shall not be required to provide the clearance beyond the latch side of the door.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "404.2.4 Maneuver adjacent EXCEPTION",
+        "normalized_offsets": [
+          258383,
+          258513
+        ],
+        "excerpt_sha256": "a335e3b4366b842b6d7f4ed1a869b7de36332069f7a244d2f179b2a60a68f738"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-maneuver"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-ramp",
+      "text": "405.2 Slope. Ramp runs shall have a running slope not steeper than 1:12.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "405.2 Slope",
+        "normalized_offsets": [
+          268752,
+          268824
+        ],
+        "excerpt_sha256": "3fa6e29ef55bcb468fad5b17ec19f27c541a1c1452c21319ad5b15a4bb5fab43"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-definition",
+        "ada-ramp-exception",
+        "missing:ada-table-405.2"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-ramp-exception",
+      "text": "EXCEPTION: In existing sites, buildings, and facilities, ramps shall be permitted to have running slopes steeper than 1:12 complying with Table 405.2 where such slopes are necessary due to space limitations.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "405.2 Slope adjacent EXCEPTION",
+        "normalized_offsets": [
+          268825,
+          269032
+        ],
+        "excerpt_sha256": "0e0fe05cc8fd8a66da3f74f80329ed7226aef0a02acc8c569c578f183bef3028"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-ramp",
+        "missing:ada-table-405.2"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-rise",
+      "text": "405.6 Rise. The rise for any ramp run shall be 30 inches (760 mm) maximum.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "405.6 Rise",
+        "normalized_offsets": [
+          270491,
+          270565
+        ],
+        "excerpt_sha256": "0be1fc8d7b0a2907054dad792ac1e95f3100300819486c6398a662f48524614b"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010"
+    },
+    {
+      "id": "ada-landing",
+      "text": "405.7.3 Length. The landing clear length shall be 60 inches (1525 mm) long minimum.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "405.7.3 Length",
+        "normalized_offsets": [
+          271445,
+          271528
+        ],
+        "excerpt_sha256": "bb7b349e1688a5970bf76ea88d8a8bb940507c1677d650b2844a4fcc3d8872a1"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010"
+    },
+    {
+      "id": "ada-definition",
+      "text": "Ramp. A walking surface that has a running slope steeper than 1:20.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "Ramp. A walking",
+        "normalized_offsets": [
+          87279,
+          87346
+        ],
+        "excerpt_sha256": "54da4b6b9b7bf3dac74931f6be60562930842275aa09054bb6a990d67e8f3164"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-ramp"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-table-header",
+      "text": "Type of Use: Approach Direction Type of Use: Door or Gate Side Minimum Manuevering Clearance: Perpendicular to Doorway Minimum Manuevering Clearance: Parallel to Doorway (beyond latch side unless noted)",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "Table 404.2.4.1 / header",
+        "normalized_offsets": [
+          258729,
+          258931
+        ],
+        "excerpt_sha256": "07c1610587cf9864bee0f7bd5df420ec212a995db693f282af5586ac9f645c0b"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-table-front-pull"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-table-front-pull",
+      "text": "From Front Pull 60 inches (1525 mm) 18 inches (455 mm)",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "Table 404.2.4.1 / front-pull",
+        "normalized_offsets": [
+          258932,
+          258986
+        ],
+        "excerpt_sha256": "66613b992f348a04b9965b2e57b2f860878c30fab3775bea042a684bfa8cd812"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-table-header"
+      ],
+      "link_basis": "source adjacency/cross-reference"
+    },
+    {
+      "id": "old-walk",
+      "text": "The minimum clear width of an accessible route shall be 36 in (915 mm) except at doors (see 4.13.5 and 4.13.6). If a person in a wheelchair must make a turn around an obstruction, the minimum clear width of the accessible route shall be as shown in Fig. 7 , Fig. 7(a) and Fig. 7(b) .",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/1991-design-standards/",
+        "response_sha256": "8b29c1e1c7bf93774e2ffc4dd41942b14efe7c645d8c49668cc1c2b4987b3951",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "4.3.3 Width",
+        "normalized_offsets": [
+          63617,
+          63900
+        ],
+        "excerpt_sha256": "eafd23cb0cf33c3359db024fc7e4c48bef5d7dd10643ee920a405ed023af0d08"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "1991"
+    },
+    {
+      "id": "old-door",
+      "text": "Doorways shall have a minimum clear opening of 32 in (815 mm) with the door open 90 degrees, measured between the face of the door and the opposite stop (see Fig. 24(a) , (b) , (c) , and (d) ). Openings more than 24 in (610 mm) in depth shall comply with 4.2.1 and 4.3.3 (see Fig. 24(e) ).",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/1991-design-standards/",
+        "response_sha256": "8b29c1e1c7bf93774e2ffc4dd41942b14efe7c645d8c49668cc1c2b4987b3951",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "4.13.5 Clear",
+        "normalized_offsets": [
+          103914,
+          104203
+        ],
+        "excerpt_sha256": "66ec9863153e2b6cef4fd0e5ab46c6c7b9cfec39be623d4237bc0eb01d2ae03f"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "1991"
+    },
+    {
+      "id": "old-ramp",
+      "text": "The least possible slope shall be used for any ramp. The maximum slope of a ramp in new construction shall be 1:12. The maximum rise for any run shall be 30 in (760 mm) (see Fig. 16 ). Curb ramps and ramps to be constructed on existing sites or in existing buildings or facilities may have slopes and rises as allowed in 4.1.6(3)(a) if space limitations prohibit the use of a 1:12 slope or less.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/1991-design-standards/",
+        "response_sha256": "8b29c1e1c7bf93774e2ffc4dd41942b14efe7c645d8c49668cc1c2b4987b3951",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "4.8.2",
+        "normalized_offsets": [
+          82583,
+          82978
+        ],
+        "excerpt_sha256": "27677f679652ed5fdde566fadd2cbda4599d23699c62fb624e64c59f24ec52d4"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "1991"
+    },
+    {
+      "id": "aba-walk",
+      "text": "403.5.1 Clear Width. Except as provided in 403.5.2 and 403.5.3, the clear width of walking surfaces shall be 36 inches (915 mm) minimum.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.access-board.gov/aba/chapter/ch04/",
+        "response_sha256": "693ee4a99e8ca5351013ad8fd761776b8d6cc437b971cfa9d63ee3f40de633f0",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "403.5.1 Clear",
+        "normalized_offsets": [
+          2913,
+          3049
+        ],
+        "excerpt_sha256": "f922d0d26f70b701647ef42d51d57aa1f2cd8e754594154423c710ff4ef8caad"
+      },
+      "jurisdiction": "US-ABA",
+      "version": "ABA-web-2026-09-23"
+    },
+    {
+      "id": "aba-door",
+      "text": "404.2.3 Clear Width. Door openings shall provide a clear width of 32 inches (815 mm) minimum. Clear openings of doorways with swinging doors shall be measured between the face of the door and the stop, with the door open 90 degrees. Openings more than 24 inches (610 mm) deep shall provide a clear opening of 36 inches (915 mm) minimum. There shall be no projections into the required clear opening width lower than 34 inches (865 mm) above the finish floor or ground. Projections into the clear opening width between 34 inches (865 mm) and 80 inches (2030 mm) above the finish floor or ground shall not exceed 4 inches (100 mm).",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.access-board.gov/aba/chapter/ch04/",
+        "response_sha256": "693ee4a99e8ca5351013ad8fd761776b8d6cc437b971cfa9d63ee3f40de633f0",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "404.2.3 Clear",
+        "normalized_offsets": [
+          5627,
+          6256
+        ],
+        "excerpt_sha256": "3169fbdf3892ecea9ec6e42b53837ce60ba047a68ea77b096c2367b71e6a0299"
+      },
+      "jurisdiction": "US-ABA",
+      "version": "ABA-web-2026-09-23"
+    },
+    {
+      "id": "aba-ramp",
+      "text": "405.2 Slope. Ramp runs shall have a running slope not steeper than 1:12.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.access-board.gov/aba/chapter/ch04/",
+        "response_sha256": "693ee4a99e8ca5351013ad8fd761776b8d6cc437b971cfa9d63ee3f40de633f0",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "405.2 Slope",
+        "normalized_offsets": [
+          16815,
+          16887
+        ],
+        "excerpt_sha256": "3fa6e29ef55bcb468fad5b17ec19f27c541a1c1452c21319ad5b15a4bb5fab43"
+      },
+      "jurisdiction": "US-ABA",
+      "version": "ABA-web-2026-09-23"
+    },
+    {
+      "id": "study-method",
+      "text": "Use corrected source polygons to test **a stated geometric consequence under stated conditions**. Retain the explanation as a revisable claim. Neither matching a precedent nor surviving one edit establishes why a real building was designed that way. A person's preference needs their own attribution.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L10-L13",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          10,
+          13
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "44c064004951493e3dccbad50b346e8b895f9fd9424a09d5a47e5681a07912b0"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-source",
+      "text": "The existing [Study owner](../../apps/archflow-studio/api/archflow_studio_api/application/study.py) already binds evidence to an exact registered page and retains revisions through P036. [#111](https://github.com/cogco1/MonkeyHub/pull/111) delivered archive integrity; [#117](https://github.com/cogco1/MonkeyHub/pull/117) delivered aspect-correct, exact-revision comparison. Reuse these. The document editor remains the interaction surface; Study evidence is not ordinary annotation ink or canonical design state.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L15-L20",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          15,
+          20
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "ad57fa5aa6f8f99b6c64982c3ae45643faa24fb46bebc4bd6ba67073312098bf"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-geometry",
+      "text": "The square page contains an envelope, a concave left mass, a rectangular right mass and their intervening stepped void. Page-normalized areas are respectively `0.64`, `0.26`, `0.24`, `0.14`. The three interior polygons partition the envelope. Left-mass and void bounding boxes overlap by `0.08`, while their actual interiors overlap by **zero**. This is a deliberate counterexample to bounding-box semantics. The baseline raster was rendered and visually checked against these polygons.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L63-L68",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          63,
+          68
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "7a60b82767d4a03775224156dba0d7672ea9f78e131569a727f4a5cad271446f"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-hypotheses",
+      "text": "1. **Conditional connection:** the clear strip could connect the page's north and south edges, provided the ground surface and both ends are passable. 2. **Environmental interval:** the same footprint could be a non-passable light, planting or drainage gap. No daylight or drainage performance is inferred.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L72-L75",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          72,
+          75
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "3e856f4b72026e18b5bd9a441c229787c1a54f597012fcdbde1dbaec206680e1"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+      "companions": [
+        "study-gap",
+        "study-changed-context"
+      ],
+      "link_basis": "proposed by agent from explicit note context; not a sourced causal relation"
+    },
+    {
+      "id": "study-gap",
+      "text": "The evidence gap is substantive: the source gives no section, roof, levels, surface, endpoint access, metric scale or use record. Geometric connectivity supports the first explanation's geometric requirement; it does not discriminate between the uses. No original author, historical intention or personal preference is invented.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L77-L81",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          77,
+          81
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "38ff96876882568d5d47fe0b433c5dc0c306d82847b4c6391a0cb738c239611d"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-intervention",
+      "text": "Each intervention edits only the right mass, retaining the original source page and source void trace. The **unobstructed remainder** of that trace is recomputed; it is not assumed to retain its area or connectivity. Area units below are page area. The first two edits can obstruct the source void; the larger one is an explicit failed layout, not a proposal for construction.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L83-L87",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          83,
+          87
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "70e77007d6792ab25929adec8778f6e3f5ef82fb1e5a5565ed16e97eff1ca67f"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-oracle",
+      "text": "`fixture_observations()` subdivides the plane at the authored orthogonal vertices, classifies each cell center by polygon ray parity, sums occupied cell areas and flood-fills cells sharing a positive-length edge. This is exact for this bounded orthogonal fixture; it is neither a pixel tolerance nor a production navigation solver. Corner contact does not count as connectivity. Shapely independently checks intersections, area, distance and component count for these coordinates. No physical clearance, fire egress, accessibility or human route claim follows without scale and the missing conditions.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L96-L103",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          96,
+          103
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "af7785747883497f0dc69cfb3596077644e72d76f76f0d4071c7bbd28260f52d"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-variants",
+      "text": "For comparison, register `base`, `contracted` and `blocked` as three separately identified **synthetic variants**, not independent historical precedents. Read their exact ledger references through the existing comparison endpoint. One comparison tests proportion/contact changes; the obstructed variant challenges the inferred relation. These cases do not estimate a population, learned range, style or statistical accuracy.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L105-L110",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          105,
+          110
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "628bcece3b9cf44f7cdd23128211af33719723cbec021df278efce1b2caabbe9"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-pattern",
+      "text": "The editable pattern is to maintain an unblocked connected interval **when a connection is required**. Two-sided contact is a separate relation: contraction loses it while continuity survives, so it cannot automatically become a protected condition. The prior asks a new project to test its required connection instead of copying the silhouette or assigning corridor/wall/room labels.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L114-L118",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          114,
+          118
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "7622ee234cd7391d0f42f4442facbb7af43f28d3f8538427fc220910b4e99bd7"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+      "companions": [
+        "study-gap",
+        "study-changed-context"
+      ],
+      "link_basis": "proposed by agent from explicit note context; not a sourced causal relation"
+    },
+    {
+      "id": "study-changed-context",
+      "text": "The changed-context input declares the interval a non-passable planting/drainage strip and removes the through-access requirement. Its prior is **revised**: retain the geometric separation example, withdraw the circulation recommendation, and leave the environmental explanation untested. The earlier source and findings remain unchanged. `preferenceStatus` stays `unresolved`; no user is signed up to prefer the result.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L120-L125",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          120,
+          125
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "ba199f3d1b1b10aa731661a8619204302ec7b03008958ac9e33a4368bc3e1e92"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-manual",
+      "text": "This fixture is a manual authored baseline. Real machine tracing needs a real provider, the registered input page and a retained invocation receipt; its proposal must remain distinguishable from later correction. Provider success, trace agreement, geometric consequence, explanation quality and human preference are separate outcomes. The fixture helper and this note alone do not establish that the Hub UI or an image provider completed that workflow.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L127-L132",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          127,
+          132
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "abe51656a237f664150c48e61cd4bc813f827e9ec93898d5a3cdda125998b229"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+    },
+    {
+      "id": "study-counterprediction",
+      "text": "The initial model predicted that removing the left mass (`cf1`) would increase clear area from `0.14` to `0.16`. The result remained `0.14`: the declared void trace was fixed, and removing a neighboring mass did not add untraced area. Its leftward translation prediction (`cf2`) similarly overestimated the clear area. Right-mass translation (`cf3`) produced the predicted `0.10` and one component; rightward left-mass translation (`cf4`) produced `0.06` and two components. The follow-up response explicitly recognized the `cf1` prediction failure and used `cf4` only as evidence about simulated planar connectivity. It withdrew transfer of a passage interpretation to the changed-levels project. This is an observed correction, not a success score for architectural reasoning or proof of the original drawing's purpose.",
+      "corpus": "precedent",
+      "source": {
+        "url": "https://github.com/cogco1/MonkeyHub/blob/27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d/docs/research/study-evidence-method.md#L156-L166",
+        "git_commit": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+        "path": "docs/research/study-evidence-method.md",
+        "lines": [
+          156,
+          166
+        ],
+        "response_sha256": "fae8834551e496e231cfb9a8ac6948afe10d58b254e9307579e46952c07fa3c4",
+        "kind": "repository research note about one synthetic precedent; not historical original",
+        "excerpt_sha256": "fc3f958a14a03cd08bc0e5d28e9fb86eec281da28044ac9d04576596e20a5cd4"
+      },
+      "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+      "companions": [
+        "study-intervention"
+      ],
+      "link_basis": "proposed by agent from explicit note context; not a sourced causal relation"
+    },
+    {
+      "id": "alpha-r1-brief",
+      "text": "Synthetic project alpha, revision r1: keep the courtyard width at 4 metres. This is a fixture brief, not a user-approved fact.",
+      "corpus": "project",
+      "source": {
+        "ref": "fixture:gh122:alpha-r1-brief",
+        "kind": "synthetic authored fixture",
+        "reopen": "corpus.json item alpha-r1-brief",
+        "excerpt_sha256": "0cb0822dc8aba29b69aaf1e4bf0fce762d7fc2d1d1cd027cd4c554d3a1e38104"
+      },
+      "project": "alpha",
+      "version": "r1"
+    },
+    {
+      "id": "alpha-r1-decision",
+      "text": "Synthetic project alpha, revision r1: the declared entrance is on the east side. This is an authored experiment decision, with no acceptance authority.",
+      "corpus": "project",
+      "source": {
+        "ref": "fixture:gh122:alpha-r1-decision",
+        "kind": "synthetic authored fixture",
+        "reopen": "corpus.json item alpha-r1-decision",
+        "excerpt_sha256": "6e65e7a517febfaad7cf2c5929edc0edc33566e61048c26276d99bfd4ea6e7e8"
+      },
+      "project": "alpha",
+      "version": "r1"
+    },
+    {
+      "id": "alpha-r2-brief",
+      "text": "Synthetic project alpha, revision r2: keep the courtyard width at 4 metres. This is a fixture brief, not a user-approved fact.",
+      "corpus": "project",
+      "source": {
+        "ref": "fixture:gh122:alpha-r2-brief",
+        "kind": "synthetic authored fixture",
+        "reopen": "corpus.json item alpha-r2-brief",
+        "excerpt_sha256": "c0e83eb080e28d3589da4711622de05321f50697addddcb26c6d0ba878df67b0"
+      },
+      "project": "alpha",
+      "version": "r2"
+    },
+    {
+      "id": "alpha-r2-decision",
+      "text": "Synthetic project alpha, revision r2: the declared entrance is on the west side. Revision r2 supersedes the earlier east entrance note in r1. This is an authored experiment decision, with no acceptance authority.",
+      "corpus": "project",
+      "source": {
+        "ref": "fixture:gh122:alpha-r2-decision",
+        "kind": "synthetic authored fixture",
+        "reopen": "corpus.json item alpha-r2-decision",
+        "excerpt_sha256": "1e22d5b268c16b8269a2cec9fb8aea5b78651dbb83f897c5ac4b25eef6815c58"
+      },
+      "project": "alpha",
+      "version": "r2",
+      "companions": [
+        "alpha-r2-brief"
+      ],
+      "link_basis": "proposed by agent from explicit note context; not a sourced causal relation"
+    },
+    {
+      "id": "beta-r2-brief",
+      "text": "Synthetic project beta, revision r2: keep the courtyard width at 6 metres. This is a fixture brief, not a user-approved fact.",
+      "corpus": "project",
+      "source": {
+        "ref": "fixture:gh122:beta-r2-brief",
+        "kind": "synthetic authored fixture",
+        "reopen": "corpus.json item beta-r2-brief",
+        "excerpt_sha256": "f3ea71856e2db4678e04ec1ce230d9d1bf454ca23dbba43895659b3421b12a10"
+      },
+      "project": "beta",
+      "version": "r2"
+    },
+    {
+      "id": "beta-r2-decision",
+      "text": "Synthetic project beta, revision r2: the declared entrance is on the east side. This is an authored experiment decision, with no acceptance authority.",
+      "corpus": "project",
+      "source": {
+        "ref": "fixture:gh122:beta-r2-decision",
+        "kind": "synthetic authored fixture",
+        "reopen": "corpus.json item beta-r2-decision",
+        "excerpt_sha256": "c47dc34edc9f6a614d3791252afaf4d351f110857fb384f493e134c4746b1ded"
+      },
+      "project": "beta",
+      "version": "r2"
+    },
+    {
+      "id": "py3.11-exists",
+      "text": "Whether the path points to an existing file or directory:",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.11/library/pathlib.html",
+        "response_sha256": "a1a8a2c5773b3ea6400866a8c871dc12d4900db160a1ce2051771f8079700c4e",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.exists",
+        "normalized_offsets": [
+          21007,
+          21064
+        ],
+        "excerpt_sha256": "7727f4b83e878bfa7965d230875d3c2367eeb8fb0754df1c334e01cc0066ab64"
+      },
+      "version": "3.11"
+    },
+    {
+      "id": "py3.11-relative",
+      "text": "Compute a version of this path relative to the path represented by other . If it’s impossible, ValueError is raised:",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.11/library/pathlib.html",
+        "response_sha256": "a1a8a2c5773b3ea6400866a8c871dc12d4900db160a1ce2051771f8079700c4e",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.PurePath.relative_to",
+        "normalized_offsets": [
+          14765,
+          14881
+        ],
+        "excerpt_sha256": "962b93f7a2006f82b6c274c1d9103d4e73c2f4e32ed5edc60fe5ae5b52c092d3"
+      },
+      "version": "3.11"
+    },
+    {
+      "id": "py3.11-glob",
+      "text": "Glob the given relative pattern in the directory represented by this path, yielding all matching files (of any kind):",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.11/library/pathlib.html",
+        "response_sha256": "a1a8a2c5773b3ea6400866a8c871dc12d4900db160a1ce2051771f8079700c4e",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.glob",
+        "normalized_offsets": [
+          21677,
+          21794
+        ],
+        "excerpt_sha256": "d09594e19937277e94b3c87573d4d52a3ede5a193d013ea7309adfa0e8a93db6"
+      },
+      "version": "3.11"
+    },
+    {
+      "id": "py3.11-is-dir",
+      "text": "Return True if the path points to a directory (or a symbolic link pointing to a directory), False if it points to another kind of file.",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.11/library/pathlib.html",
+        "response_sha256": "a1a8a2c5773b3ea6400866a8c871dc12d4900db160a1ce2051771f8079700c4e",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.is_dir",
+        "normalized_offsets": [
+          22812,
+          22947
+        ],
+        "excerpt_sha256": "722affcb51a161fd6abb1087d930841aaf966fe7a77202824e9f6761775dcb4b"
+      },
+      "version": "3.11"
+    },
+    {
+      "id": "py3.12-exists",
+      "text": "Return True if the path points to an existing file or directory.",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.exists",
+        "normalized_offsets": [
+          24896,
+          24960
+        ],
+        "excerpt_sha256": "02f0bdb037aa0803e2f232a019d28dfcee6b0c185d7b807cf6db230638b10e8c"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-exists-condition"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-exists-condition",
+      "text": "This method normally follows symlinks; to check if a symlink exists, add the argument follow_symlinks=False .",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.exists condition",
+        "normalized_offsets": [
+          24961,
+          25070
+        ],
+        "excerpt_sha256": "18d565ee03954ece6ef6dd26c195b0baecb65b8b5f897d208733cf9213a0b2fe"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-exists"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-relative",
+      "text": "Compute a version of this path relative to the path represented by other . If it’s impossible, ValueError is raised:",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.PurePath.relative_to",
+        "normalized_offsets": [
+          15642,
+          15758
+        ],
+        "excerpt_sha256": "962b93f7a2006f82b6c274c1d9103d4e73c2f4e32ed5edc60fe5ae5b52c092d3"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-relative-condition",
+        "py3.12-relative-warning"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-relative-condition",
+      "text": "When walk_up is false (the default), the path must start with other . When the argument is true, .. entries may be added to form the relative path. In all other cases, such as the paths referencing different drives, ValueError is raised.:",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.PurePath.relative_to condition",
+        "normalized_offsets": [
+          16248,
+          16486
+        ],
+        "excerpt_sha256": "4ea6dcaddcb10be7ccc66ac1ce827902530558edb1b32d615ad2b3d757cf9630"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-relative"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-glob",
+      "text": "Glob the given relative pattern in the directory represented by this path, yielding all matching files (of any kind):",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.glob",
+        "normalized_offsets": [
+          30899,
+          31016
+        ],
+        "excerpt_sha256": "d09594e19937277e94b3c87573d4d52a3ede5a193d013ea7309adfa0e8a93db6"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-glob-condition"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-glob-condition",
+      "text": "By default, or when the case_sensitive keyword-only argument is set to None , this method matches paths using platform-specific casing rules: typically, case-sensitive on POSIX, and case-insensitive on Windows. Set case_sensitive to True or False to override this behaviour.",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.glob condition",
+        "normalized_offsets": [
+          31769,
+          32043
+        ],
+        "excerpt_sha256": "d3c33e58e68171329acaebad7086deaca0d3e33b0a1583419af56e7616a3fae3"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-glob"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-is-dir",
+      "text": "Return True if the path points to a directory (or a symbolic link pointing to a directory), False if it points to another kind of file.",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.is_dir",
+        "normalized_offsets": [
+          25609,
+          25744
+        ],
+        "excerpt_sha256": "722affcb51a161fd6abb1087d930841aaf966fe7a77202824e9f6761775dcb4b"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-is-dir-condition"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-door-exception-1",
+      "text": "In alterations, a projection of 5/8 inch (16 mm) maximum into the required clear width shall be permitted for the latch side stop.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "404.2.3 EXCEPTIONS item 1",
+        "normalized_offsets": [
+          257870,
+          258000
+        ],
+        "excerpt_sha256": "fed09e76fe86205c8cfdb7a9a921f89aa64f2e6376eb59f93c102c76dc032db2"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-door"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-door-exception-2",
+      "text": "Door closers and door stops shall be permitted to be 78 inches (1980 mm) minimum above the finish floor or ground.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "404.2.3 EXCEPTIONS item 2",
+        "normalized_offsets": [
+          248916,
+          249030
+        ],
+        "excerpt_sha256": "de3ae834fc524471676080fd37b3ff50074f50020fa190a82595d0c3f11a049f"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-door"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-is-dir-condition",
+      "text": "False is also returned if the path doesn’t exist or is a broken symlink; other errors (such as permission errors) are propagated.",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.Path.is_dir / broken symlink",
+        "normalized_offsets": [
+          25460,
+          25589
+        ],
+        "excerpt_sha256": "4c14e66dcb63f3d558e942c4e7b41a290c53fe8406e309fef20088df9d55efe5"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-is-dir"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "py3.12-relative-warning",
+      "text": "Warning This function is part of PurePath and works with strings. It does not check or access the underlying file structure. This can impact the walk_up option as it assumes that no symlinks are present in the path; call resolve() first if necessary to resolve symlinks.",
+      "corpus": "technical",
+      "source": {
+        "url": "https://docs.python.org/3.12/library/pathlib.html",
+        "response_sha256": "354a92800391b7983c782caee8a5d7286679ed4fea299bc520501d3e75b74b52",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "pathlib.PurePath.relative_to / Warning",
+        "normalized_offsets": [
+          16922,
+          17192
+        ],
+        "excerpt_sha256": "68d3d885aa9b8437262e4480d64afc24cc194af5171aff327086fd6d87fa46b0"
+      },
+      "version": "3.12",
+      "companions": [
+        "py3.12-relative"
+      ],
+      "link_basis": "source adjacency: retain the principal section with its qualification"
+    },
+    {
+      "id": "ada-turn",
+      "text": "403.5.2 Clear Width at Turn. Where the accessible route makes a 180 degree turn around an element which is less than 48 inches (1220 mm) wide, clear width shall be 42 inches (1065 mm) minimum approaching the turn, 48 inches (1220 mm) minimum at the turn and 42 inches (1065 mm) minimum leaving the turn.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "403.5.2 Clear",
+        "normalized_offsets": [
+          254976,
+          255279
+        ],
+        "excerpt_sha256": "8bd7f5fda28cb33c2326d8172bb07ac107990a13e7718cff7a482b349f6c6ab8"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-walk"
+      ],
+      "link_basis": "explicit cross-reference within 403.5 walking-surface width"
+    },
+    {
+      "id": "ada-turn-exception",
+      "text": "EXCEPTION: Where the clear width at the turn is 60 inches (1525 mm) minimum compliance with 403.5.2 shall not be required.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "403.5.2 Clear EXCEPTION",
+        "normalized_offsets": [
+          255280,
+          255402
+        ],
+        "excerpt_sha256": "c97e9e3a877160a5f2e381f03a0a2f6f06ac484c35a603c9ca7b56ae53410ab7"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-walk"
+      ],
+      "link_basis": "explicit cross-reference within 403.5 walking-surface width"
+    },
+    {
+      "id": "ada-passing",
+      "text": "403.5.3 Passing Spaces. An accessible route with a clear width less than 60 inches (1525 mm) shall provide passing spaces at intervals of 200 feet (61 m) maximum. Passing spaces shall be either: a space 60 inches (1525 mm) minimum by 60 inches (1525 mm) minimum; or, an intersection of two walking surfaces providing a T-shaped space complying with 304.3.2 where the base and arms of the T-shaped space extend 48 inches (1220 mm) minimum beyond the intersection.",
+      "corpus": "regulation",
+      "source": {
+        "url": "https://www.ada.gov/law-and-regs/design-standards/2010-stds/",
+        "response_sha256": "a2f0dc7adef43a4ace25e5f2792b7ab83a828e56d101f2ed84cbd40c77727554",
+        "checked_on": "2026-09-23",
+        "extraction": "BeautifulSoup get_text space then whitespace collapse; HTML section, not PDF page",
+        "section": "403.5.3 Passing",
+        "normalized_offsets": [
+          255438,
+          255900
+        ],
+        "excerpt_sha256": "667331b6033c70d542495b0ee4db9afab9972d988ff3ead607cc6ee6590866ac"
+      },
+      "jurisdiction": "US-ADA",
+      "version": "2010",
+      "companions": [
+        "ada-walk",
+        "missing:ada-304.3.2"
+      ],
+      "link_basis": "explicit cross-reference within 403.5 walking-surface width"
+    }
+  ]
+}
