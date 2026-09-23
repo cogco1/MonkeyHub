@@ -35,6 +35,7 @@ button:disabled{cursor:not-allowed}
 .settings-footer{position:sticky;bottom:0;background:var(--ground);padding-top:6px}
 .settings-section{min-width:0}
 .settings h2{font-size:calc(14px * var(--font-scale,1));font-weight:600;margin-bottom:14px}
+.software-update{margin-top:24px}.software-update__versions{display:grid;gap:10px;margin:0}.software-update__versions>div{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:12px}.software-update__versions dt{color:var(--muted)}.software-update__versions dd{margin:0;overflow-wrap:anywhere}.software-update__file{overflow-wrap:anywhere;margin-top:12px}.software-update__status{min-height:1.5em;margin-top:10px}.software-update__blocker{padding:10px 12px;border-left:2px solid var(--accent);background:var(--panel-2);margin-top:12px;line-height:1.7}.software-update__actions{margin-top:14px}.software-update__actions .btn{min-height:44px;white-space:normal}.software-update .help{font-size:calc(13px * var(--font-scale,1))}
 .help{font-size:calc(12px * var(--font-scale,1));line-height:1.8;color:var(--muted);margin:9px 0 13px}
 label{display:flex;flex-direction:column;gap:7px;font-size:calc(12px * var(--font-scale,1));color:var(--muted)}
 input:not([type=checkbox]):not([type=radio]),select{min-width:0;width:100%;min-height:36px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-2);color:var(--ink);font-size:calc(13px * var(--font-scale,1))}
@@ -46,7 +47,7 @@ input::placeholder{color:var(--faint)}
 .advanced{margin-top:13px}
 .advanced>summary{cursor:pointer;font-size:calc(12px * var(--font-scale,1));color:var(--muted);min-height:30px}
 .advanced[open]>summary{margin-bottom:10px}
-.save-row{display:flex;align-items:center;gap:12px;margin-top:17px}
+.save-row{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:17px}
 .save-row>span{font-size:calc(12px * var(--font-scale,1));color:var(--muted)}
 .error-message{padding:10px 12px;border-left:2px solid var(--violated);background:var(--panel-2);margin:14px 0;font-size:calc(12px * var(--font-scale,1));line-height:1.8;overflow-wrap:anywhere}
 .error-message details{color:var(--muted);font-size:calc(11px * var(--font-scale,1));margin-top:6px}

@@ -79,14 +79,22 @@ function total(values: Array<number | null>): CoverageTotal {
   return { value: known.length ? known.reduce((sum, value) => sum + value, 0) : null, recorded: known.length, missing: values.length - known.length };
 }
 
+export function isModelCall(event: MonitorEvent): boolean {
+  if (event.model_call != null) return event.model_call;
+  // Older usage rows lack the flag. Codex task boundaries are not token calls.
+  return event.phase === "model_request" || (event.source === "codex" && event.phase === "agent");
+}
+
+export function uncachedInput(event: MonitorEvent): number | null {
+  const input = event.tokens?.input_tokens;
+  const cache = event.tokens?.cached_input_tokens;
+  return measured(input) && measured(cache) && input >= cache ? input - cache : null;
+}
+
 export function summarizeUsage(events: readonly MonitorEvent[]): UsageSummary {
-  const calls = events.filter((event) => event.model_call === true || event.phase === "model_request" || event.source === "codex");
+  const calls = events.filter(isModelCall);
   const cached = calls.map((event) => event.tokens?.cached_input_tokens ?? null);
-  const uncached = calls.map((event) => {
-    const input = event.tokens?.input_tokens;
-    const cache = event.tokens?.cached_input_tokens;
-    return measured(input) && measured(cache) && input >= cache ? input - cache : null;
-  });
+  const uncached = calls.map(uncachedInput);
   const output = calls.map((event) => event.tokens?.output_tokens ?? null);
   const durations = calls
     .filter((event) => event.model_call === true || event.timing_scope === "model_call" || event.phase === "model_request")
@@ -113,7 +121,7 @@ export function aggregateTokens(events: readonly MonitorEvent[]): MonitorTokenUs
   ];
   const result = {} as MonitorTokenUsage;
   for (const key of keys) {
-    const values = events.filter((event) => event.model_call === true || event.source === "codex").map((event) => event.tokens?.[key] ?? null);
+    const values = events.filter(isModelCall).map((event) => event.tokens?.[key] ?? null);
     const known = values.filter((value): value is number => measured(value));
     result[key] = values.length && known.length === values.length ? known.reduce((sum, value) => sum + value, 0) : null;
   }

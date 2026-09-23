@@ -10,7 +10,7 @@ something the record answered.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Mapping
+from typing import Annotated, Any, Literal, Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
@@ -25,6 +25,7 @@ from ..application.gestures import (
 )
 from ..application.intent_agent import Compilation
 from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, detail_dto
+from .decisions import DecisionContextDto, DecisionDto, decision_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 from .artifacts import ModelSourceDto, model_source_dto
 
@@ -425,6 +426,12 @@ class ContextPackRequestDto(BaseModel):
     context_refs: list[Annotated[str, Field(min_length=1)]] = Field(alias="contextRefs", default_factory=list, max_length=16)
     context_offset: int = Field(alias="contextOffset", default=0, ge=0, strict=True,
                               description="offset into the bounded reference index; it changes no focus or edit scope")
+    decision_context: DecisionContextDto | None = Field(
+        alias="decisionContext", default=None,
+        description="what this turn is about for the scoped decisions it should be handed: the "
+        "domain, and for a drawing or copy turn its own exact evidence. Absent, the design "
+        "domain, this source's Stage and the focus already named above answer for it",
+    )
 
     @model_validator(mode="after")
     def coherent_focus(self) -> ContextPackRequestDto:
@@ -517,6 +524,13 @@ class ContextPackDto(BaseModel):
     confirmed_stage: ConfirmedStageContextDto | None = Field(
         alias="confirmedStage", default=None,
         description="Derived from verified committed design history, with differences from this exact source. Null when no committed Stage is bound; never inferred from an unaccepted candidate.",
+    )
+    scoped_decisions: list[DecisionDto] = Field(
+        alias="scopedDecisions", default_factory=list,
+        description="the decisions this project retains that still apply to this domain, Stage "
+        "and focus, in the architect's own words with their exact provenance. Revoked, "
+        "deferred, superseded and derived-stale ones are left out, and no transcript is "
+        "carried; it authorizes nothing and changes no reference",
     )
     honesty: list[str] = Field(default_factory=list)
 
@@ -842,7 +856,7 @@ BLOCKED_NOTE = (
 
 def context_pack_dto(
     description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
-    *, confirmed_stage: Mapping[str, Any] | None = None,
+    *, confirmed_stage: Mapping[str, Any] | None = None, scoped_decisions: Sequence[Any] = (),
 ) -> ContextPackDto:
     """One capability description and one compiled read context, as the pack.
 
@@ -864,6 +878,7 @@ def context_pack_dto(
         context=dict(model_facts),
         preflight=None if preflight is None else dict(preflight),
         confirmed_stage=None if confirmed_stage is None else ConfirmedStageContextDto(**confirmed_stage),
+        scoped_decisions=[decision_dto(row) for row in scoped_decisions],
         honesty=[
             *detail.honesty,
             *([BLOCKED_NOTE] if blocked else []),

@@ -63,8 +63,14 @@ class BoardExport:
 
 
 def _revisions(binding: ProjectBinding) -> dict[str, Mapping]:
-    if BOARD_RUN_ID not in binding.run_ids():
+    # The board's own run, asked for by name. Listing every run in the project
+    # to discover whether this one exists makes an exact read cost the whole
+    # project. Whether the directory is there is one bounded read-only
+    # question about this one known run; a run that exists is then loaded, so
+    # a damaged manifest still refuses instead of reading as an empty board.
+    if not binding.repository.layout.run(BOARD_RUN_ID).root.is_dir():
         return {}
+    binding.load_run(BOARD_RUN_ID)
     revisions = {}
     for ref in binding.record_refs(BOARD_RUN_ID):
         if record_kind(ref) != STUDIO_BOARD_SCENE:
@@ -91,11 +97,25 @@ def _scene(binding: ProjectBinding, revision: str | None, payload: Mapping | Non
                       tuple(payload["seenDocuments"]), revision)
 
 
-def read_board(binding: ProjectBinding) -> BoardScene:
+def read_board(binding: ProjectBinding, revision_sha256: str | None = None) -> BoardScene:
+    """The board as it stands, or one exact retained revision of it.
+
+    A named revision is read out of the same validated chain the latest one
+    comes from, so historic evidence cannot be answered from a record that
+    belongs to another project or to a broken chain. Reading an older
+    revision changes nothing: the board's latest revision stays where it is.
+    """
+
     with _board_lock:
         revisions = _revisions(binding)
         latest = _latest(revisions)
-        return _scene(binding, latest, revisions.get(latest))
+        if revision_sha256 is None:
+            return _scene(binding, latest, revisions.get(latest))
+        payload = revisions.get(revision_sha256)
+        if payload is None:
+            raise StudioError(404, "BOARD_REVISION_NOT_FOUND",
+                              "That board revision is not retained in this project.")
+        return _scene(binding, revision_sha256, payload)
 
 
 def _export_name(index: int, file_name: str, suffix: str) -> str:

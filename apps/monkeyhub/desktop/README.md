@@ -92,6 +92,35 @@ updates the native title: the current WebView document, open tool frames and
 unsubmitted inputs stay in place. Recovery restores the title without reloading.
 An exited root requires closing and reopening the desktop application.
 
+## Patch update handoff
+
+The Hub stages and validates updates beside the current version and exposes
+`GET /api/updates/restart` only after an explicit restart request has passed its
+idle/admission checks. The desktop accepts only a full commit and derives the
+sibling `<commit-prefix>-desktop` directory itself. Neither the page nor the
+HTTP reply can supply an arbitrary executable path. Checkout hosts cannot
+activate installed updates.
+
+The current desktop drains its Hub through the same managed stdin shutdown and
+waits for the Hub to exit. A short-lived instance of the current EXE then waits
+for that desktop to exit before opening the staged EXE with the same runtime
+root. It is not a separate launcher or service. The new desktop initially shows
+only its status page. It verifies its own Hub using the unchanged compiled
+revision/PID/instance checks and reports that identity through a private stdout
+pipe. The helper independently verifies that identity and calls the new Hub's
+idempotent `/api/updates/complete` to activate the existing application entry.
+Only the helper's `commit` on the trial's private stdin allows its project UI to
+load. No WebView command bridge is added.
+
+If startup or activation fails, the helper sends `stop` to only its trial
+desktop, which drains only its own Hub. It waits for complete exit before
+reopening the original EXE with the same runtime root. The original Hub's
+`/api/updates/rollback` restores the old entry before its UI opens. There is no
+forced-kill deadline and no overwrite of a running bundle. Losing the helper's
+pipe before commit also stops the trial cleanly. This rollback covers the
+initial, unopened trial; it does not downgrade a version after users have
+continued project work in it.
+
 The main window's navigation is restricted to the verified Hub origin and the
 embedded status page. Existing Stage comparisons and Board source links can open
 child native windows only on the same Hub or on a healthy worker origin currently
@@ -110,6 +139,11 @@ occupied-port refusal, spawn failure, child crash, stdin/EOF shutdown, operation
 drain, independent-root isolation, reopen and bounded child-window origins.
 Tests use disposable source and runtime directories plus a small Python child;
 set `MONKEYHUB_TEST_PYTHON` when `python` is not on the test runner's PATH.
+Update tests additionally exercise exact sibling selection, independent trial
+identity, helper EOF/commit behavior, and native trial shutdown/reopen without
+loading project UI before commit. Native trial tests never activate the user's
+actual desktop shortcut; full installer/handoff tests require a private desktop
+directory as well as an isolated runtime root.
 The Windows workflow builds the complete ZIP through `package_monkeyapps.py
 --desktop`, checks its checksum and runs the existing installer in a private
 directory. Native lifecycle tests then run with the installed embedded Python

@@ -1,11 +1,16 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+use monkeyhub_desktop::updates::{
+    await_trial_decision, complete_handoff, launch_helper, reject_restart, requested_target,
+    target_directory, TrialReady,
+};
 use monkeyhub_desktop::{
     is_status_url, DiagnosticLog, ExpectedIdentity, HealthError, LaunchConfig, OwnedRuntime,
     SOURCE_REVISION,
 };
 use serde::Serialize;
 use std::{
+    io::Write,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -30,6 +35,8 @@ struct Shared {
     finished: AtomicBool,
     identity: Mutex<Option<ExpectedIdentity>>,
     status: Mutex<Status>,
+    trial: bool,
+    trial_committed: AtomicBool,
 }
 
 fn paint_status(window: &WebviewWindow, shared: &Shared) {
@@ -168,6 +175,8 @@ fn supervise(
     let mut recovering = false;
     let mut outage: Option<Instant> = None;
     let mut last_health = Instant::now() - Duration::from_secs(1);
+    let mut pending_update: Option<String> = None;
+    let mut trial_announced = false;
     loop {
         let quitting = shared.shutdown.load(Ordering::SeqCst);
         if quitting && !stopping {
@@ -190,6 +199,35 @@ fn supervise(
                 ));
                 if quitting {
                     log.state("stopped", "Owned Hub exited after shutdown");
+                    if let Some(commit) = pending_update.take() {
+                        if status.success() {
+                            if let Err(error) = launch_helper(&config, &commit) {
+                                show_status(
+                                    &window,
+                                    &shared,
+                                    &log,
+                                    "failed",
+                                    "无法启动更新",
+                                    &error,
+                                );
+                                shared.finished.store(true, Ordering::SeqCst);
+                                shared.shutdown.store(false, Ordering::SeqCst);
+                                return;
+                            }
+                        } else {
+                            show_status(
+                                &window,
+                                &shared,
+                                &log,
+                                "failed",
+                                "更新未启动",
+                                "旧运行时未正常关闭，已保留当前版本。请重新打开应用后查看日志。",
+                            );
+                            shared.finished.store(true, Ordering::SeqCst);
+                            shared.shutdown.store(false, Ordering::SeqCst);
+                            return;
+                        }
+                    }
                 } else if !failed {
                     let output = match log.tail() {
                         Ok(tail) if !tail.is_empty() => format!("\n\n运行时最后输出：\n{tail}"),
@@ -225,6 +263,26 @@ fn supervise(
             last_health = Instant::now();
             match runtime.identity.check() {
                 Ok(()) => {
+                    if shared.trial && !shared.trial_committed.load(Ordering::SeqCst) {
+                        if !trial_announced {
+                            let ready =
+                                serde_json::to_string(&TrialReady::for_identity(&runtime.identity))
+                                    .unwrap();
+                            println!("{ready}");
+                            let _ = std::io::stdout().flush();
+                            trial_announced = true;
+                            show_status(
+                                &window,
+                                &shared,
+                                &log,
+                                "verifying_update",
+                                "正在验证更新",
+                                "新版本已启动，正在确认应用入口。验证结束后将打开工作界面。",
+                            );
+                        }
+                        thread::sleep(Duration::from_millis(100));
+                        continue;
+                    }
                     if !ready {
                         if shared.shutdown.load(Ordering::SeqCst) {
                             continue;
@@ -256,6 +314,34 @@ fn supervise(
                         recovering = false;
                     }
                     outage = None;
+                    if ready && pending_update.is_none() {
+                        // The owned Hub exposes a target only after rejecting busy
+                        // work and closing admission. A failed poll is not consent.
+                        if let Ok(Some(commit)) = requested_target(&runtime.identity) {
+                            if commit != config.source_revision {
+                                match target_directory(&config.source_root, &commit) {
+                                    Ok(_) => {
+                                        log.state(
+                                            "update-requested",
+                                            &format!("Confirmed idle restart to {commit}"),
+                                        );
+                                        pending_update = Some(commit);
+                                        shared.shutdown.store(true, Ordering::SeqCst);
+                                    }
+                                    Err(error) => {
+                                        log.write(&format!("event=update-rejected detail={error}"));
+                                        if let Err(error) =
+                                            reject_restart(&runtime.identity, &commit)
+                                        {
+                                            log.write(&format!(
+                                                "event=update-rollback-error detail={error}"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(HealthError::Rejected(error)) => {
                     failed = true;
@@ -300,7 +386,33 @@ fn run() -> Result<(), String> {
         );
         return Ok(());
     }
-    let config = LaunchConfig::from_args(std::env::args_os().skip(1))?;
+    let mut args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|arg| arg == "--complete-update") {
+        if args.len() != 8
+            || args[2] != "--runtime-root"
+            || args[4] != "--wait-for-desktop"
+            || args[6] != "--startup-timeout-seconds"
+        {
+            return Err("Invalid desktop update helper arguments".into());
+        }
+        let commit = args[1].to_str().ok_or("Invalid update commit")?.to_owned();
+        let old_desktop = args[5]
+            .to_str()
+            .ok_or("Invalid desktop PID")?
+            .parse()
+            .map_err(|_| "Invalid desktop PID")?;
+        let config = LaunchConfig::from_args([
+            args[2].clone(),
+            args[3].clone(),
+            args[6].clone(),
+            args[7].clone(),
+        ])?;
+        let log = DiagnosticLog::open(&config.runtime_root, &format!("update-{}", Uuid::new_v4()))?;
+        return complete_handoff(&config, &commit, old_desktop, &log);
+    }
+    let trial = args.iter().any(|arg| arg == "--update-trial");
+    args.retain(|arg| arg != "--update-trial");
+    let config = LaunchConfig::from_args(args)?;
     let instance = Uuid::new_v4();
     let log = DiagnosticLog::open(&config.runtime_root, &instance.to_string())?;
     let data_directory = config.runtime_root.join("cache/desktop-webview");
@@ -315,6 +427,8 @@ fn run() -> Result<(), String> {
             detail: "正在准备本地工作环境。".into(),
             log: log.path.display().to_string(),
         }),
+        trial,
+        trial_committed: AtomicBool::new(false),
     });
     let setup_shared = shared.clone();
     let setup_log = log.clone();
@@ -355,6 +469,18 @@ fn run() -> Result<(), String> {
                     if close_shared.finished.load(Ordering::SeqCst) { close_app.exit(0); }
                 }
             });
+            if setup_shared.trial {
+                let trial_shared = setup_shared.clone();
+                let trial_app = app.handle().clone();
+                thread::spawn(move || {
+                    if await_trial_decision(std::io::stdin().lock()) {
+                        trial_shared.trial_committed.store(true, Ordering::SeqCst);
+                    } else {
+                        trial_shared.shutdown.store(true, Ordering::SeqCst);
+                        if trial_shared.finished.load(Ordering::SeqCst) { trial_app.exit(0); }
+                    }
+                });
+            }
             thread::spawn(move || supervise(window, config, setup_shared, setup_log, instance));
             Ok(())
         })
@@ -377,23 +503,25 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
         #[cfg(windows)]
-        unsafe {
-            // A visible fallback also covers a missing WebView2 runtime.
-            #[link(name = "user32")]
-            extern "system" {
-                fn MessageBoxW(
-                    hwnd: *mut std::ffi::c_void,
-                    text: *const u16,
-                    caption: *const u16,
-                    flags: u32,
-                ) -> i32;
+        if !std::env::args_os().any(|arg| arg == "--update-trial") {
+            unsafe {
+                // A visible fallback also covers a missing WebView2 runtime.
+                #[link(name = "user32")]
+                extern "system" {
+                    fn MessageBoxW(
+                        hwnd: *mut std::ffi::c_void,
+                        text: *const u16,
+                        caption: *const u16,
+                        flags: u32,
+                    ) -> i32;
+                }
+                let message: Vec<u16> = error.encode_utf16().chain(Some(0)).collect();
+                let title: Vec<u16> = "MonkeyHub · 启动失败"
+                    .encode_utf16()
+                    .chain(Some(0))
+                    .collect();
+                MessageBoxW(std::ptr::null_mut(), message.as_ptr(), title.as_ptr(), 0x10);
             }
-            let message: Vec<u16> = error.encode_utf16().chain(Some(0)).collect();
-            let title: Vec<u16> = "MonkeyHub · 启动失败"
-                .encode_utf16()
-                .chain(Some(0))
-                .collect();
-            MessageBoxW(std::ptr::null_mut(), message.as_ptr(), title.as_ptr(), 0x10);
         }
         std::process::exit(1);
     }

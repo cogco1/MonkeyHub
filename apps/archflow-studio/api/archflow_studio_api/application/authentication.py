@@ -22,6 +22,10 @@ _ACCEPT_PATHS = (
     r"/api/design-stages/initialize",
     r"/api/design-branches",
     r"/api/candidates/[^/]+/accept",
+    # A scoped decision is an explicit judgement of the studio: it uses the
+    # existing decision grant and still accepts no Stage and moves no HEAD.
+    r"/api/decisions",
+    r"/api/decisions/[^/]+/revisions",
 )
 _SHARED_READ_PATHS = (
     r"/api/(?:health|protocol|project|design-history|artifacts|documents|events)",
@@ -33,6 +37,7 @@ _SHARED_READ_PATHS = (
     r"/api/working-copies(?:/[^/]+)?",
     r"/api/episodes(?:/[^/]+)?",
     r"/api/sync/(?:manifest|files)",
+    r"/api/decisions(?:/[^/]+)?",
 )
 
 

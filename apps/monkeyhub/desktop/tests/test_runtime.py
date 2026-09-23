@@ -386,7 +386,7 @@ class DesktopRuntimeTests(unittest.TestCase):
                     shell.kill()  # Only the Popen object created by this test.
                     shell.wait(timeout=10)
 
-    def launch(self, port=None):
+    def launch(self, port=None, *, trial=False):
         previous = set((self.runtime / "logs").glob("desktop-*.log"))
         command = [str(Path(EXE)), "--source-root", str(ROOT), "--python", sys.executable,
                    "--runtime-root", str(self.runtime), "--startup-timeout-seconds", "40"]
@@ -394,15 +394,54 @@ class DesktopRuntimeTests(unittest.TestCase):
             command = [str(Path(EXE))]  # Exercise the installed double-click defaults.
         if port is not None:
             command.extend(("--port", str(port)))
+        if trial:
+            command.append("--update-trial")
         self.shell = subprocess.Popen(
-            command, cwd=self.root, env=self.environment, stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            command, cwd=self.root, env=self.environment,
+            stdin=subprocess.PIPE if trial else subprocess.DEVNULL,
+            stdout=subprocess.PIPE if trial else subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         self.shells.append(self.shell)
         self.log = wait_for(lambda: next(iter(set((self.runtime / "logs").glob("desktop-*.log")) - previous), None),
                             lambda: f"No desktop log; EXE exit={self.shell.poll()}")
         return self.shell
+
+    def trial_ready(self):
+        self.wait_state("verifying_update")
+        handshake = json.loads(self.shell.stdout.readline())
+        self.assertEqual(handshake["event"], "update-ready")
+        self.assertEqual(handshake["parentProcessId"], self.shell.pid)
+        self.assertEqual(handshake["sourceRevision"], self.revision)
+        health = request(f'http://127.0.0.1:{handshake["port"]}/api/health')
+        for key in ("processId", "parentProcessId", "managedInstanceId", "sourceRevision"):
+            self.assertEqual(handshake[key], health[key])
+        self.native.track(handshake["processId"])
+        self.assertNotIn("ready", self.states())
+        self.assertFalse(any(url.startswith("http://127.0.0.1:") for url in PAGE_LOADED.findall(self.log_text())))
+        return handshake
+
+    def test_update_trial_waits_for_commit_before_loading_project_ui(self):
+        self.launch(trial=True)
+        self.trial_ready()
+        self.shell.stdin.write(b"commit\n")
+        self.shell.stdin.flush()
+        self.shell.stdin.close()
+        self.ready()
+        self.assertIsNone(self.shell.poll(), "Committed trial must survive helper exit")
+        self.shell.stdout.close()
+
+    def test_lost_update_helper_drains_trial_and_allows_same_runtime_reopen(self):
+        self.launch(trial=True)
+        handshake = self.trial_ready()
+        self.shell.stdin.close()  # An update helper crash must not strand a Hub.
+        self.shell.wait(timeout=45)
+        self.shell.stdout.close()
+        wait_for(lambda: self.native.exited(handshake["processId"]), "Trial Hub did not release its runtime")
+        self.assertFalse(port_open(handshake["port"]))
+        self.assertEqual(self.project_bytes(), self.before)
+        self.launch()
+        self.ready()
 
     def log_text(self):
         return self.log.read_text(encoding="utf-8", errors="replace")

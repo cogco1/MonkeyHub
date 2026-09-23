@@ -901,6 +901,24 @@ change it; explicit continuation does. An unsynchronized local draft has no save
 must be synchronized before project-context continuation. A selected object is included only
 when its resolved source agrees with that editing digest.
 
+The bound chat tool exposes `GET /api/decisions`, `GET /api/decisions/{id}` and a
+narrow subset of the Runtime's decision writes. `POST /api/decisions` accepts only
+`avoid`/`keep`; Hub fills `rawLanguage` and `messageSource` from the current real
+user message and fixes `sourceKind=agent` for the interpreted scope/target. Those
+fields cannot be supplied by the provider. `POST /api/decisions/{id}/revisions`
+accepts only `revoke`, the revision read and the bound project; Hub verifies the
+original chat message and fills `reason`/`revisionMessageSource` from this turn.
+Optional tool argument `feedbackQuote` selects one unique continuous verbatim
+passage from that current user message, bounded by the Runtime's 2000-character
+limit; Hub rejects fabricated or ambiguous selections and extracts the words
+itself. The original message ID remains bound on both creation and revocation.
+Lock, supersede and Stage acceptance are not exposed by this capability. Runtime
+authorization and CAS remain authoritative. Its schema tool derives these
+narrowed inputs from the actual Runtime OpenAPI rather than another Decision DTO.
+Drawing/copy work explicitly selects `decisionContext.domain` on the existing
+context read; the prepared default remains design. Full applicable decision
+slices pass through, while revoked, deferred or inapplicable records do not.
+
 `contextMode` defaults to `continue`, preserving native conversation continuity. Explicit
 `project` requires `designContext`; after that source read succeeds, Hub starts a new native
 CLI/ACP provider session containing the current request, current attachments and prepared

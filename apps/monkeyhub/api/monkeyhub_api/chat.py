@@ -1046,6 +1046,9 @@ class ChatStore:
             rows[key] = row
         row.content = (row.content + clean if append else clean)[-2400:]
         row.status = status
+        # This row is a live snapshot, not a retained transcript entry. Keep
+        # its latest update beside the current activity as new tool rows arrive.
+        row.createdAt = _now()
         if self.on_change is not None:
             self.on_change(session)
 
@@ -2012,8 +2015,8 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
-_POST = re.compile(r"^/api/(project/modeling|intents/context|board/export|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
+_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
+_POST = re.compile(r"^/api/(project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
 _WRITE = re.compile(r"^/api/(board|document-annotations)$")
 _PAGE_IMAGE_MAX_EDGE = 2048
 _PAGE_IMAGE_MAX_BYTES = 4 * 1024 * 1024
@@ -2217,7 +2220,10 @@ _CONTEXT_NOTE = (
     "against the same base. Focus, dependency facts and retained constraints describe the current "
     "project; they do not approve edits or imply that omitted facts do not exist. Any request template "
     "contains current values, not an approved change. Read coverage and supplement omitted facts through "
-    "the same source when needed; refresh the context when its source changes."
+    "the same source when needed; refresh the context when its source changes. scopedDecisions contains "
+    "the retained judgments applicable to this task. Keep their raw wording and interpretation provenance "
+    "distinct; respect supported keep references, treat preferences as preferences, and report unsupported "
+    "effects as deferred. They do not accept a Stage or create or remove parameter locks."
 )
 
 
@@ -2438,6 +2444,56 @@ def call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         _trace_headers.reset(token)
 
 
+def _feedback_body(hub: str, base: str, chat_id: str, session: dict, path: str, body: dict,
+                   quote: str | None = None) -> dict:
+    """Bind ordinary feedback to real user words, not a model's claimed authorship.
+
+    The Runtime still owns the decision contract, source validation, CAS and
+    authorization. This adapter only narrows what a chat can ask it to write.
+    """
+    message = next((row for row in reversed(session.get("messages", [])) if row.get("role") == "user"), None)
+    if session.get("id") != chat_id or not message or not message.get("id") or not message.get("content", "").strip():
+        raise HubFailure(409, "CHAT_FEEDBACK_SOURCE", "Feedback needs this conversation's current user message.")
+    wording = message["content"]
+    if quote is not None:
+        if not isinstance(quote, str) or not quote.strip():
+            raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote must select a nonempty exact passage from this user message.")
+        start = wording.find(quote)
+        if start < 0 or wording.find(quote, start + 1) >= 0:
+            raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote must occur exactly once, unchanged, in this user message. Include enough surrounding words to identify it.")
+        wording = wording[start:start + len(quote)]
+    if len(wording) > 2000:
+        raise HubFailure(422, "CHAT_FEEDBACK_TOO_LONG", "Select the feedback's exact passage with feedbackQuote beside method/path/body (at most 2000 characters); the user need not repeat the message.")
+    provenance = {"sessionId": chat_id, "messageId": message["id"]}
+    if path == "/api/decisions":
+        reserved = {"rawLanguage", "raw_language", "messageSource", "message_source", "sourceKind", "source_kind"}
+        if reserved.intersection(body) or body.get("disposition") not in {"avoid", "keep"}:
+            raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Chat can save only avoid/keep feedback. Its words, message source and agent attribution are filled from this user turn.")
+        return {**body, "projectId": session["projectId"], "rawLanguage": wording,
+                "messageSource": provenance, "sourceKind": "agent"}
+    if set(body) - {"projectId", "expectedRevisionRef", "action"} or body.get("action") != "revoke":
+        raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Chat can only revoke its retained avoid/keep feedback; the reason and message source come from this user turn.")
+    history = _request_json(base, path.removesuffix("/revisions"))
+    revisions = history.get("revisions", [])
+    latest = revisions[-1] if revisions else {}
+    origin = latest.get("messageSource") or {}
+    if (history.get("projectId") != session["projectId"] or latest.get("sourceKind") != "agent"
+            or latest.get("disposition") not in {"avoid", "keep"} or not origin.get("sessionId") or not origin.get("messageId")):
+        raise HubFailure(403, "CHAT_FEEDBACK_UNAVAILABLE", "This record is not ordinary feedback saved from a user chat message.")
+    original = _request_json(hub, f"/api/chat/sessions/{_identifier(origin['sessionId'])}")
+    original_message = next((row for row in original.get("messages", [])
+                             if row.get("id") == origin["messageId"] and row.get("role") == "user"), None)
+    original_text = (original_message or {}).get("content", "")
+    original_words = latest.get("rawLanguage", "")
+    start = original_text.find(original_words)
+    if (original.get("id") != origin["sessionId"] or original.get("projectId") != session["projectId"]
+            or original.get("projectDir") != session["projectDir"] or not original_message
+            or not original_words or start < 0 or original_text.find(original_words, start + 1) >= 0):
+        raise HubFailure(403, "CHAT_FEEDBACK_SOURCE", "The original feedback message does not match this project's retained judgment.")
+    return {**body, "projectId": session["projectId"], "reason": wording,
+            "revisionMessageSource": provenance}
+
+
 def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     from . import computer_tools
 
@@ -2467,6 +2523,9 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
     method, path = str(arguments.get("method", "GET")).upper(), arguments.get("path", "")
     parsed = urlsplit(path)
     allowed = {"GET": _READ, "POST": _POST, "PUT": _WRITE}
+    if "feedbackQuote" in arguments and (name != "studio_request" or method != "POST"
+            or not parsed.path.startswith("/api/decisions") or not isinstance(arguments["feedbackQuote"], str)):
+        raise HubFailure(422, "CHAT_FEEDBACK_QUOTE", "feedbackQuote only selects source words for a feedback save or revocation.")
     if "producer" in arguments and name != "studio_schema":
         raise HubFailure(422, "CHAT_TOOL_INVALID", "producer selects an authoring schema; it belongs to studio_schema.")
     if "operationId" in arguments and (name != "studio_request" or method == "GET"
@@ -2509,6 +2568,16 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         operation = document["paths"].get(template, {}).get(method.lower())
         if operation is None:
             raise HubFailure(422, "CHAT_TOOL_UNAVAILABLE", "The running Studio has no matching action.")
+        if method == "POST" and parsed.path.startswith("/api/decisions"):
+            # Expose the Runtime's real schema, narrowed to the chat capability;
+            # provenance is supplied by this adapter, never by the provider.
+            reference = operation["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+            schema = document["components"]["schemas"][reference.rsplit("/", 1)[-1]]
+            creating = parsed.path == "/api/decisions"
+            hidden = {"rawLanguage", "messageSource", "sourceKind"} if creating else {"reason", "revisionMessageSource", "replacement"}
+            schema["properties"] = {key: value for key, value in schema["properties"].items() if key not in hidden}
+            schema["required"] = [key for key in schema.get("required", []) if key not in hidden]
+            schema["properties"]["disposition" if creating else "action"]["enum"] = ["avoid", "keep"] if creating else ["revoke"]
         producer = arguments.get("producer")
         if producer is not None:
             if method != "POST" or parsed.path != "/api/proposals" or not isinstance(producer, str):
@@ -2576,6 +2645,10 @@ def _call_tool(hub: str, chat_id: str, name: str, arguments: dict):
         if parsed.path in {"/api/proposals", "/api/board/export"}:
             body["projectId"] = session["projectId"]
     comparison = body or {}
+    if method == "POST" and parsed.path.startswith("/api/decisions"):
+        if parsed.query or not isinstance(body, dict):
+            raise HubFailure(422, "CHAT_FEEDBACK_INVALID", "Feedback takes its scope and exact source in the body, without query parameters.")
+        body = _feedback_body(hub, base, chat_id, session, parsed.path, body, arguments.get("feedbackQuote"))
     if method == "POST" and parsed.path == "/api/board/export":
         if parsed.query:
             raise HubFailure(422, "CHAT_TOOL_INVALID", "The registered page read takes its source in the body, without query parameters.")
@@ -2691,6 +2764,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "type": "object", "properties": {
             **request_fields,
             "operationId": {"type": "string", "format": "uuid", "description": "Optional stable identity for this mutation. Reusing it returns the same admission/result and never executes the request twice. Different requests must use different ids."},
+            "feedbackQuote": {"type": "string", "minLength": 1, "maxLength": 2000, "description": "Only for POST /api/decisions or /api/decisions/{id}/revisions: select one exact, unique, continuous passage in the current user's message. Hub extracts these unedited words itself and retains the original message identity. Use for long messages; invented, rewritten or ambiguous passages are refused. Omit to retain the entire message when it fits."},
             "awaitSeconds": {
                 "type": "integer", "minimum": 1, "maximum": _AWAIT_MAX_S,
                 "description": "Wait for one submitted change, in seconds; 60 suits an ordinary change. "
@@ -2756,6 +2830,13 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "OTHER ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select, /api/candidates/combine;",
         "CONTEXT READ: POST /api/intents/context compiles current task facts from projectId, stateDigest, utterance and exact sourceRunId/sourceStageRef; focus is optional.",
         "Repeat the same source/task/focus with contextRefs for omitted facts or contextOffset for the next reference index page. This reads only and grants no edits; use studio_schema for its full contract.",
+        "RETAINED FEEDBACK: When the user gives an avoid/keep direction for later work, POST /api/decisions using its studio_schema, exact observed source and narrow stated scope. Save that feedback before continuing; do not turn an ordinary change request or your own judgment into a retained preference.",
+        "The chat fills rawLanguage/messageSource from this actual user turn and sourceKind=agent for your interpretation. Never supply those fields, invent user approval or strengthen a soft preference into a hard rule. The user need not confirm an internal grant; the existing Runtime authorization still applies.",
+        "GET /api/decisions reads retained feedback; GET /api/decisions/{id} reads its history. On the user's revocation request, POST /api/decisions/{id}/revisions with action=revoke and the revisionRef you read as expectedRevisionRef; the chat binds the reason and revisionMessageSource. This tool cannot supersede rules, save lock decisions, accept a Stage or unlock a parameter.",
+        "Before drawing or writing artifact copy, read /api/intents/context with decisionContext.domain=drawing or copy and the actual Stage/targets/source; the default context is design. Consume only scopedDecisions returned for that task, not every record in the decision list. Refresh after saving/revoking feedback or changing scope/source.",
+        "In this supported slice, copy feedback targets copy:style and drawing feedback targets drawing:hatch. Only design uses targetRefs. For copy/drawing context omit targetRefs; omit decisionContext.source when no exact document/Board evidence is needed, rather than putting the outer Design source there. Copy evidence is document; drawing evidence is document or Board. The outer ContextPack still binds the current Design source.",
+        "Carry applicable supported design keep refs into the existing edit's keep field and check the execution result. Preserve the actual relation or parameter asked for, not an entire unrelated object. Keep existing parameter locks; unsupported relation protection or hatch controls require explicit defer, not invented enforcement.",
+        "Use each decision once for its relevant effect: preserve/filter for supported hard constraints, a generation preference for soft wording, or defer for unsupported effects. Inspect the next artifact and name any remaining gap; a context entry alone proves no behavior changed.",
         "PUT /api/board, /api/document-annotations. Use their schemas for exact inputs.",
         "DRAWINGS: POST /api/drawings/elevations automatically registers results in MonkeyDiagram's documents list.",
         "OBSERVE: GET /api/drawings/model-view?runId=<id>&stateDigest=<digest>&assetSha256=<3dm sha256>&view=front returns an MCP image with exact source metadata.",
