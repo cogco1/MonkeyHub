@@ -499,9 +499,11 @@ def focus_refs(record: StateRecord | None, element_ids: Sequence[str]) -> tuple[
     An element is not only itself: the parameters its rows are explicitly
     bound to (including the bindings it inherits from its type) are what a
     "keep this dimension" decision was made about, and the relations incident
-    to it are the conditions a change to it has to respect. Nothing else is
-    pulled in - the project's other parameters and locks stay out of one
-    turn's focus.
+    to it are the conditions a change to it has to respect. Follow declared
+    upstream reads as the ContextPack does: a later element can consume an
+    earlier Stage's parameter through expressions, a type or a host. This
+    does not follow those inputs into other consumers or global locks, widen
+    edit permission, or change any decision's scope, strength or applicability.
     """
 
     if record is None:
@@ -517,7 +519,39 @@ def focus_refs(record: StateRecord | None, element_ids: Sequence[str]) -> tuple[
         refs.extend(f"parameter:{key}" for _path, key in parameter_bindings_of(entity, record))
     refs.extend(f"relation:{relation.relation_id}" for relation in record.relations
                 if relation.subject in focused or relation.object in focused)
-    return tuple(dict.fromkeys(refs))
+    upstream: dict[str, list[tuple[str, str]]] = {}
+    edges = record.dependency_edges()
+    types = {entity.ref: entity for entity in record.entities_of("Type@1")}
+    type_edges: dict[str, list] = {}
+    for edge in edges:
+        # Type invalidation includes all defaults, even values overridden by
+        # an instance. A read focus must use that instance's effective fields.
+        if edge.downstream_ref in types:
+            type_edges.setdefault(edge.downstream_ref, []).append(edge)
+            continue
+        upstream.setdefault(edge.downstream_ref, []).append((edge.upstream_ref, edge.source_ref))
+    for entity in record.entities_of("Element@1"):
+        dependencies = upstream.setdefault(entity.ref, [])
+        dependencies.extend((f"parameter:{key}", entity.ref)
+                            for _path, key in parameter_bindings_of(entity, record))
+        type_ref = entity.fields.get("type_ref")
+        declared_type = types.get("entity:" + type_ref.removeprefix("entity:")) if type_ref else None
+        if declared_type is not None:
+            inherited = declared_type.fields.get("references", {}).keys() - entity.fields.get("references", {}).keys()
+            dependencies.extend((edge.upstream_ref, edge.source_ref) for edge in type_edges.get(declared_type.ref, ())
+                                if edge.source_ref == declared_type.ref and edge.relation in inherited)
+    included = set(refs)
+    pending = list(refs)
+    while pending:
+        for ref, source in upstream.get(pending.pop(), ()):
+            if ref not in included:
+                included.add(ref)
+                pending.append(ref)
+            # Retain the relation actually traversed, not every other relation
+            # incident to its upstream end (which can belong to another task).
+            if source.startswith("relation:"):
+                included.add(source)
+    return tuple(sorted(included))
 
 
 def decision_context_for(

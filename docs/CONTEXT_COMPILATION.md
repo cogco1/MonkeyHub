@@ -283,6 +283,70 @@ are derived deterministically from StateRecord and Stage instead of introducing
 a model-written summary authority. Neither source establishes a cost saving for
 this project; the paired measurements below must report that separately.
 
+### Non-adjacent construction interface (#185)
+
+`tests/test_nonadjacent_stage_context.py` reuses the existing window/lintel
+fixture as a bare opening and measured lintel-bearing construction slice.
+The filled window's frame/glass and unmeasured room/outside relation are outside
+this fixture; their existing tests remain unchanged. Its 150 mm end bearing is
+an authored test condition, not a structural design standard.
+
+| Existing value | Meaning in this slice |
+| --- | --- |
+| `StateRecord.Parameter` | Opening left edge/width, their lock attribution, and expressions for the lintel ends |
+| `StateRecord.Relation` | Declared opening-to-lintel dependency with the existing minimum-bearing validator |
+| `Reading@1` | Named opening condition and scoped lintel/independent-object review prompts; not a validation result |
+| `DesignStage` | Exact explicitly accepted model, record and runner binding; S0/S1/S2 are local history labels, all using the existing runtime phase |
+| Scoped decision revision | Original wording and exact S0 source, target scope and typed parameter binding; no new lock or acceptance authority |
+| `ContextPack@1` | Disposable current task projection with upstream state, applicable decisions and cumulative review scope |
+| P036 | The same retained records, candidate runs and branch CAS; published `HEAD` stays unchanged |
+
+S0 confirms the 1.2 m opening and 2 m left edge. S1 changes only an independent
+solid's height. S2 changes the lintel depth while consuming S0's parameter
+expressions across S1. Actual in-process OCCT exports and explicit Stage
+acceptance run through existing owners. After closing and reconstructing the
+Runtime client/repository, a lintel task reads S0's scoped decisions with their
+exact source, current locks and conditions, without needing an earlier chat.
+Context reads leave the project's bytes unchanged.
+
+The record/context dependency slice already reached those upstream parameters.
+The missing behavior was decision focus: it stopped at direct bindings, so the
+same task lost a decision on a transitive input. `decisions.focus_refs` now
+follows declared upstream inputs, preserving effective instance bindings when
+Type defaults are overridden. It does not traverse from a shared input into
+its other consumers, include unrelated global locks, or rewrite a decision's
+domain, scope, strength or applicability. Explicit decision targets still
+narrow the query. Type identity remains readable; unused default parameters
+do not make their decisions applicable.
+
+Explicitly unlocking width and changing it to 1.6 m creates two unaccepted
+candidates. The old typed width/lock decision drops out while the unchanged
+left-edge decision survives. The existing confirmed-Stage comparison names
+the opening, lintel and scoped review conditions; it excludes the independent
+solid and its review. STEP readback verifies the 0.4 m span increase, retained
+150 mm end bearing and identical independent geometry. Original decision
+revisions remain readable. Stage-only and exact-source decisions do not leak
+from S0 into S2, copy decisions remain outside design context, and separate
+API tests cover keep/avoid/reject strength, explicit narrowing and revocation.
+
+Reproduce with `python -m unittest tests.test_nonadjacent_stage_context -v`
+(OCCT is required; missing OCCT is an explicit skip), and
+`python -m pytest apps/archflow-studio/api/tests/test_decisions.py apps/archflow-studio/api/tests/test_intent_context.py -q`.
+This proves retained-state/API and real CAD behavior in a disposable fixture.
+It does not measure a new native provider session, a human design trial,
+undeclared relationships, a MEP engine, or complete building usability.
+Existing provider-session evidence above remains a separate acceptance.
+
+Implementation comparison: [Bazel's Skyframe](https://bazel.build/reference/skyframe)
+distinguishes dependency reads from reverse invalidation and warns that omitted
+dependencies undermine incrementality. [Build systems à la carte](https://www.microsoft.com/en-us/research/publication/build-systems-la-carte/)
+provides an executable framework for comparing build systems; it does not
+establish architectural completeness. [buildingSMART's constraint association](https://standards.buildingsmart.org/IFC/RELEASE/IFC4_3/HTML/lexical/IfcRelAssociatesConstraint.htm)
+also keeps the applied constraint distinct from the objects it concerns.
+These are comparison points, not imported schemas or new runtime dependencies:
+our declared propagation still proves neither that all necessary architectural
+relations were declared nor that the authored 150 mm condition is appropriate.
+
 ### 2026-09-20 confirmed-stage comparison (#185): four measured arms
 
 A separate helper measures the accepted-Stage handoff itself. All four arms used
