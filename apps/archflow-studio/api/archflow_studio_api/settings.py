@@ -153,8 +153,8 @@ class StudioSettings:
 
         if self.render_provider not in ("off", "gemini"):
             raise SettingsError(f"{RENDER_PROVIDER_ENV} must be off or gemini.")
-        if not math.isfinite(self.render_timeout_s) or not 0 < self.render_timeout_s <= 300:
-            raise SettingsError(f"{RENDER_TIMEOUT_ENV} must be more than 0 and at most 300 seconds.")
+        if not math.isfinite(self.render_timeout_s) or not 1 <= self.render_timeout_s <= 300:
+            raise SettingsError(f"{RENDER_TIMEOUT_ENV} must be between 1 and 300 seconds.")
         if type(self.intent_context_budget_tokens) is not int or self.intent_context_budget_tokens < 1:
             raise SettingsError(f"{CONTEXT_BUDGET_ENV} must be a positive whole number.")
         if self.cad_export not in CAD_EXPORTS:

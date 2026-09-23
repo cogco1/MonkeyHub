@@ -14,6 +14,9 @@ from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings, SettingsError
+from archflow_studio_api.application.artifacts import save_document
+from archflow.project.ports import PersistenceArea, PersistenceDestination
+from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
 from .support import make_project, PROJECT_ID
 
@@ -253,3 +256,73 @@ def test_render_settings_are_environment_only_and_secret_is_not_repr(tmp_path, m
         monkeypatch.setenv("ARCHFLOW_STUDIO_RENDER_TIMEOUT_S", value)
         with pytest.raises(SettingsError):
             StudioSettings.from_env()
+
+
+def test_legacy_native_result_is_readable_without_inventing_ai_request(setup):
+    client, app, repository, adapter = setup
+    binding = bound_project(app.state)
+    job_id = "render-" + uuid4().hex
+    run = repository.create_run(job_id)
+    document = save_document(binding, job_id, "native.png", "image/png", base64.b64encode(png()).decode())
+    repository.put_json(run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=job_id),
+                        record_kind=STUDIO_RENDER_JOB, payload={
+                            "schema": "StudioRenderJob@1", "projectId": PROJECT_ID, "jobId": job_id,
+                            "instance": "old-runtime", "sequence": 1, "status": "succeeded", "createdAt": "2026-09-21T00:00:00Z",
+                            "renderer": "monkeyhub-three-webgl2-v1", "documentSha256": document.asset_sha256,
+                        })
+    result = client.get("/api/render/jobs/" + job_id).json()
+    assert result["status"] == "succeeded" and result["resultAvailable"]
+    assert result["request"] is None and result["execution"] == "browser-native"
+    assert client.get("/api/render/jobs").json()["jobs"][0] == result
+    assert not adapter.calls
+
+
+def test_result_survives_a_lost_completion_transition(setup, monkeypatch):
+    client, app, _, _ = setup
+    original = app.state.render_jobs._transition
+    def interrupted(binding, row, **values):
+        if values.get("status") == "succeeded":
+            raise OSError("synthetic persistence interruption")
+        return original(binding, row, **values)
+    monkeypatch.setattr(app.state.render_jobs, "_transition", interrupted)
+    result = finished(client, submit(client, request(upload(client))))
+    assert result["status"] == "succeeded" and result["resultAvailable"]
+
+
+def test_provider_preflight_rejection_does_not_count_as_a_model_call(setup):
+    import json
+    client, app, _, adapter = setup
+    adapter.failure = RenderProviderError("failed", "unsupported_input")
+    result = finished(client, submit(client, request(upload(client))))
+    assert result["status"] == "failed"
+    app.state.render_jobs.shutdown()
+    events = [json.loads(line) for path in app.state.settings.monitor_dir.rglob("*.jsonl") for line in path.read_text().splitlines()]
+    observed = [event for event in events if event.get("phase") == "image_render"]
+    assert len(observed) == 1 and observed[0]["model_call"] is False
+
+
+def test_real_gemini_adapter_mock_transport_through_http_and_p036(setup):
+    from archflow_studio_api.render_adapters.gemini import GeminiImageRenderAdapter
+    from .test_render_gemini_adapter import RecordingTransport, final_image, image_bytes
+
+    client, app, repository, _ = setup
+    source, ref = upload(client), upload(client, "red")
+    output = image_bytes("JPEG", (1024, 1024))
+    transport = RecordingTransport({
+        "id": "test-interaction", "status": "completed", "model": "gemini-3-pro-image",
+        "steps": [{"type": "model_output", "content": [final_image(output)]}],
+        "usage": {"total_input_tokens": 12, "total_output_tokens": 34},
+    })
+    app.state.render_jobs.adapter = GeminiImageRenderAdapter(api_key="test-key", model="gemini-3-pro-image", transport=transport)
+    capability = client.get("/api/render/capabilities").json()["providers"][0]
+    assert capability["maxReferences"] == 3 and capability["available"]
+    head = repository.read_head()
+    payload = request(source, providerId="gemini", references=[ref])
+    result = finished(client, submit(client, payload))
+    assert result["status"] == "succeeded" and result["document"]["mimeType"] == "image/jpeg"
+    assert result["providerRequestId"] == "test-interaction"
+    assert result["inputTokens"] == 12 and result["costUsd"] is None
+    assert result["request"]["references"] == [ref]
+    assert result["document"]["viewRecipe"]["request"]["source"] == source
+    assert submit(client, payload)["status"] == "succeeded" and len(transport.calls) == 1
+    assert repository.read_head() == head

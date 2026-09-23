@@ -227,7 +227,9 @@
         "Exact registered image-page resolution, ordered references and immutable per-request attempts",
         "P036 RenderJobRecords history and restart readback without paid replay",
         "ImageRenderAdapter values, server-image dispatch and safe unknown versus failed outcomes",
-        "Derived source replacement or declared Stage branch freshness; no inferred model source"
+        "Derived source replacement or declared Stage branch freshness; no inferred model source",
+        "One configured Gemini image HTTP attempt with bounded inputs, final-image validation and measured usage; no retry, redirect or model fallback",
+        "Read-only PR #235 native history; no fabricated AI recipe or resumed native executor"
       ],
       "does_not_own": [
         "SourceDocument persistence and bytes: studio.artifacts",
@@ -245,7 +247,9 @@
         "RenderInput",
         "RenderOutput",
         "RenderProviderError",
-        "RenderCapability"
+        "RenderCapability",
+        "GeminiImageRenderAdapter",
+        "adapter_from_settings"
       ],
       "depends_on": [
         "studio.artifacts",
@@ -262,10 +266,13 @@
         "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
         "apps/archflow-studio/api/archflow_studio_api/application/render_contract.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/render_adapters/__init__.py",
+        "apps/archflow-studio/api/archflow_studio_api/render_adapters/gemini.py"
       ],
       "tests": [
-        "apps/archflow-studio/api/tests/test_rendering.py"
+        "apps/archflow-studio/api/tests/test_rendering.py",
+        "apps/archflow-studio/api/tests/test_render_gemini_adapter.py"
       ],
       "inputs": [
         "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",

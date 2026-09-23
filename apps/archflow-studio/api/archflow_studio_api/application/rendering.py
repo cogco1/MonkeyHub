@@ -13,12 +13,12 @@ from datetime import datetime, timezone
 import re
 import threading
 from time import perf_counter
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from archflow.contracts.canonical import canonical_json
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
-from archflow.project.refs import ProjectRecordRef
+from archflow.project.refs import ProjectRecordRef, record_ref_from_uri
 from archflow.project.repository import ProjectRepositoryError
 from monkeymonitor.usage import TokenUsage
 
@@ -74,9 +74,7 @@ def _freshness(binding, request, snapshots):
             if snapshot["modelSource"]:
                 require_model_source(binding, ModelSource.from_dict(snapshot["modelSource"]))
             if snapshot["sourceStageRef"]:
-                from .design_history import stage_ref_from
-
-                ref = stage_ref_from(binding, snapshot["sourceStageRef"])
+                ref = record_ref_from_uri(snapshot["sourceStageRef"], binding.project_id)
                 stage = binding.design_stage(ref)
                 branch = binding.repository.read_design_branches().get(stage.branch_id)
                 if branch is None:
@@ -128,13 +126,16 @@ class RenderJobRecords:
         if not rows:
             raise StudioError(409, "RENDER_REQUEST_UNCERTAIN", "This request has an incomplete retained attempt; it cannot be replayed.")
         row = max(rows, key=lambda value: value["sequence"])
-        if (row.get("projectId"), row.get("jobId"), row.get("schema")) != (binding.project_id, job_id, "StudioRenderJob@2"):
+        if ((row.get("projectId"), row.get("jobId")) != (binding.project_id, job_id)
+                or row.get("schema") not in ("StudioRenderJob@1", "StudioRenderJob@2")):
             raise StudioError(409, "RENDER_RECORD_INVALID", "The retained render task has a different binding or unsupported schema.")
         return row
 
     def get(self, binding, job_id):
         with self.lock:
             row = self._load(binding, job_id)
+        if row["schema"] == "StudioRenderJob@1":
+            return self._legacy(binding, row)
         status, error = row["status"], row.get("error")
         if status in ("queued", "running") and row["instance"] != self.instance:
             status, error = "unknown", "The runtime stopped before confirming this attempt. Refresh never resends it."
@@ -169,6 +170,28 @@ class RenderJobRecords:
             outputTokens=row.get("outputTokens"), costUsd=row.get("costUsd"),
         )
 
+    def _legacy(self, binding, row):
+        """Read #235 native history without inventing an AI recipe or replaying it."""
+        status, error = row["status"], row.get("error")
+        if status in ("running", "queued", "interrupted"):
+            status, error = "unknown", "This retained native attempt has no connected executor."
+        document = next((doc for doc in list_documents(binding, row["jobId"])
+                         if doc.asset_sha256 == row.get("documentSha256")), None)
+        available = False
+        if document:
+            try:
+                document_bytes(binding, document.run_id, document.asset_sha256, document.revision_ref)
+                available = True
+            except (StudioError, ProjectRepositoryError, OSError, ValueError):
+                error = "The retained native result bytes are unavailable."
+        return RenderJobDto(
+            projectId=binding.project_id, jobId=row["jobId"], requestId=UUID(row["jobId"][7:]),
+            status=status, execution="browser-native", providerId=row.get("renderer", "native"), model=None,
+            request=None, createdAt=row["createdAt"], finishedAt=row.get("finishedAt"), error=error,
+            sourceState="unavailable", sourceStateReason="This native history does not contain an AI source-page request.",
+            document=document_dto(document) if document else None, resultAvailable=available,
+        )
+
     def list(self, binding):
         jobs = [self.get(binding, run_id) for run_id in binding.run_ids()
                 if re.fullmatch(r"render-[0-9a-f]{32}", run_id)
@@ -183,7 +206,7 @@ class RenderJobRecords:
         with self.lock, binding.repository.working_draft_guard():
             if job_id in binding.run_ids():
                 old = self._load(binding, job_id)
-                if canonical_json(old["request"]) != canonical_json(request):
+                if canonical_json(old.get("request")) != canonical_json(request):
                     raise StudioError(409, "RENDER_REQUEST_CONFLICT", "This request ID already names different render parameters.")
                 return self.get(binding, job_id)
             if self.stopping:
@@ -254,6 +277,8 @@ class RenderJobRecords:
                              outputTokens=output.output_tokens, costUsd=output.cost_usd)
         except RenderProviderError as exc:
             status = exc.outcome
+            if exc.code in ("not_configured", "unsupported_input"):
+                dispatched = False
             messages = {
                 "not_configured": "The image provider is not configured.",
                 "unsupported_input": "The image provider does not support these images or options.",

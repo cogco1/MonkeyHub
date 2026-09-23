@@ -60,7 +60,7 @@ class RenderJobDto(BaseModel):
     execution: Literal["server-image", "browser-native", "host"]
     provider_id: str = Field(alias="providerId")
     model: str | None
-    request: RenderRequestDto
+    request: RenderRequestDto | None
     created_at: str = Field(alias="createdAt")
     finished_at: str | None = Field(alias="finishedAt", default=None)
     error: str | None = None

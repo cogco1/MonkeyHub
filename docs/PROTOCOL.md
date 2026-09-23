@@ -1132,6 +1132,19 @@ are neither user-settings responses nor project records. An image adapter receiv
 certified bytes and values through `application/render_contract.py`, has no project
 writer, and performs one call without automatic retry or model fallback.
 
+MonkeyHub resolves `renderProvider`, `renderModel` and `renderTimeoutS` from the
+existing local user preferences. For Gemini only, it forwards the explicitly
+named launch secret `MONKEYHUB_RENDER_API_KEY` as the Runtime key above. User
+preferences and HTTP settings never contain keys; saving preferences affects
+subsequently opened project Runtimes, without silently restarting active work.
+A new or changed launch key requires launching Hub again with that environment;
+reopening a project cannot change the environment of an already running Hub.
+
+Retained `StudioRenderJob@1` native rows remain read-only history with
+`request: null`. Their exact output documents remain usable, but a client cannot
+reuse them as an AI recipe or resume their old browser executor. An incomplete
+legacy attempt is `unknown`; it is never submitted by reading the history.
+
 The storage/history boundary in `RenderJobRecords` is adapted from
 YNNAP-HelloWorld's PR #235, commit `6f39e67116a2716c2dac70bb4ee3cf1b369afd9d`.
 The AI lane does not import its Native WebGL2 executor or claim Physical acceptance.
