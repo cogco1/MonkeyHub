@@ -66,6 +66,7 @@ class Job:
     wall_time_s: float | None = None
     # The queue's own facts: which lane the job runs in, and while it is
     # queued, which candidate it is waiting for and why.
+    kind: str = "candidate"
     lane: str = PARALLEL
     read_refs: frozenset[str] = frozenset()
     write_refs: frozenset[str] = frozenset()
@@ -119,6 +120,7 @@ class JobRegistry:
         self,
         *,
         candidate_id: str,
+        kind: str = "candidate",
         proposal_id: str,
         work: Callable[[], Any],
         read_refs: Iterable[str] = (),
@@ -171,6 +173,7 @@ class JobRegistry:
             job_id=f"job-{uuid4().hex[:12]}",
             status=QUEUED,
             candidate_id=candidate_id,
+            kind=kind,
             proposal_id=proposal_id,
             created_at=_now(),
             lane=EXCLUSIVE if exclusive else PARALLEL,
@@ -378,7 +381,7 @@ class JobRegistry:
         return job
 
     def _publish(self, job: Job, event_type: str) -> None:
-        self._events.publish(event=_event(job, event_type))
+        self._events.publish(event=_event(job, event_type.replace("candidate.", job.kind + ".", 1)))
 
 
 def _event(job: Job, event_type: str) -> Mapping[str, Any]:

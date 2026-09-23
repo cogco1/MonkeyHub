@@ -141,6 +141,7 @@ _RUN_BRANCH = PersistenceArea.RUN_BRANCH.value
 
 
 _TABLE: tuple[RecordKind, ...] = (
+    RecordKind("studio-model-export", "StudioModelExport@1", _RUN_RECORD, "Conversion job lifecycle, original source provenance and validated output; never canonical state."),
     RecordKind(
         STUDIO_BOARD_SCENE,
         "StudioBoardScene@1",

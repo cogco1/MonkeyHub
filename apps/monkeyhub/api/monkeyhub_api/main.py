@@ -481,6 +481,15 @@ def create_app(settings: HubSettings, *, source_root: Path = SOURCE_ROOT) -> Fas
                             content_disposition_type="inline" if inline else "attachment",
                             headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"})
 
+    @app.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/model-source")
+    def read_chat_model_source(session_id: str, attachment_id: str):
+        import base64
+        attachment, path = chats.attachment(session_id, attachment_id)
+        if path.suffix.lower() not in {".3dm", ".glb", ".skp", ".dwg"}:
+            raise HubFailure(422, "CHAT_MODEL_SOURCE_INVALID", "Choose a 3DM, GLB, SKP or DWG attachment.")
+        return {"fileName": attachment.name, "attachmentId": attachment.id,
+                "contentBase64": base64.b64encode(path.read_bytes()).decode("ascii")}
+
     @app.get("/api/chat/sessions/{session_id}/attachments/{attachment_id}/read", response_model=ChatAttachmentContent)
     def read_chat_attachment_content(session_id: str, attachment_id: str, offset: int = Query(0, ge=0),
                                      limit: int = Query(32768, ge=1, le=65536), page: int = Query(1, ge=1)):
