@@ -50,7 +50,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
   const [drawingRequest, setDrawingRequest] = useState<DrawingDesignRequest | undefined>();
   const [drawingVisited, setDrawingVisited] = useState(workspace === "drawing");
   const [boardVisited, setBoardVisited] = useState(workspace === "board");
-  const [archVisited, setArchVisited] = useState(workspace === "arch");
+  const [archVisited, setArchVisited] = useState(workspace !== "render");
   const [renderVisited, setRenderVisited] = useState(workspace === "render");
   const [boardRefresh, setBoardRefresh] = useState(0);
   const [boardPage, setBoardPage] = useState<BoardPageRequest | null>(null);
@@ -61,7 +61,7 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
     if (workspace === "board") setBoardVisited(true);
     if (workspace === "drawing") setDrawingVisited(true);
     if (workspace === "render") setRenderVisited(true);
-    if (workspace === "arch") setArchVisited(true);
+    if (workspace !== "render") setArchVisited(true);
   }, [workspace]);
   useEffect(() => {
     if (workspace === "arch") setVisit(null);

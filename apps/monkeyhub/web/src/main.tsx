@@ -253,7 +253,7 @@ function App() {
           <label>{t("renderProvider")}<select id="render-provider" value={renderDraft.renderProvider ?? "off"} onChange={(event) => {
             appearanceEdits.current += 1; setAppearanceIssue(null); setRenderDraft((value) => ({ ...value, renderProvider: event.target.value as RenderDefaults["renderProvider"] }));
           }}><option value="off">{t("renderOff")}</option><option value="gemini">Gemini</option></select></label>
-          <label>{t("renderModel")}<input id="render-model" value={renderDraft.renderModel ?? ""} placeholder={t("runtimeDefault")} onChange={(event) => {
+          <label>{t("renderModel")}<input id="render-model" value={renderDraft.renderModel ?? ""} placeholder="gemini-3.1-flash-image" onChange={(event) => {
             appearanceEdits.current += 1; setAppearanceIssue(null); setRenderDraft((value) => ({ ...value, renderModel: event.target.value.trim() || null }));
           }} /></label>
           <label>{t("renderTimeout")}<input id="render-timeout" type="number" min="1" max="300" value={renderDraft.renderTimeoutS ?? ""} placeholder={t("runtimeDefault")} onChange={(event) => {

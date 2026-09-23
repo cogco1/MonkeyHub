@@ -95,7 +95,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
   const generate = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting.current || hasPending || uploadingRef.current || !source || !sourceDocument || !provider?.available || !direction.trim()
-      || !references.length || references.length > provider.maxReferences || !actualSize || !actualAspect) return;
+      || references.length > provider.maxReferences || !actualSize || !actualAspect) return;
     submitting.current = true; setSending(true); setSubmitError(null);
     const requestId = crypto.randomUUID();
     submittedRequest.current = requestId;
@@ -134,11 +134,12 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       const replacements = pageReplacements(documents);
       const original = { ...job.request.source, revisionRef: job.request.source.revisionRef ?? null };
       const next = replacements.get(pageKey(original));
-      setSource(next ?? null);
-      setReferences((job.request.references ?? []).map((ref) => {
-        const source = { ...ref, revisionRef: ref.revisionRef ?? null }; return replacements.get(pageKey(source)) ?? source;
-      }));
-      if (!next) setSubmitError(zh ? "请从项目图片选择或上传更新的视图；项目中尚无此来源的替代图片。" : "Choose or upload an updated view. No replacement image for this source is registered in the project.");
+      const originalReferences = (job.request.references ?? []).map((ref) => ({ ...ref, revisionRef: ref.revisionRef ?? null }));
+      const nextReferences = originalReferences.map((source) => replacements.get(pageKey(source)) ?? source);
+      const hasReplacement = !!next || nextReferences.some((source, index) => pageKey(source) !== pageKey(originalReferences[index]));
+      setSource(hasReplacement ? next ?? original : null);
+      setReferences(nextReferences);
+      if (!hasReplacement) setSubmitError(zh ? "请从项目图片选择或上传更新的视图；项目中尚无此来源的替代图片。" : "Choose or upload an updated view. No replacement image for this source is registered in the project.");
     } catch (cause) { setSubmitError(asStudioApiError(cause).detail); }
   };
   const addReference = (key: string) => {
@@ -206,7 +207,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
               </li>;
             })}
           </ol>
-          {!references.length && <p className="render-note">{zh ? "至少添加一张参考图；可调整顺序。" : "Add at least one reference; you can reorder them."}</p>}
+          {!references.length && <p className="render-note">{zh ? "参考图可选；添加多张后可调整顺序。" : "References are optional; multiple images can be reordered."}</p>}
           <label>{zh ? "视觉方向" : "Visual direction"}<textarea value={direction} maxLength={16000} rows={5} onChange={(event) => setDirection(event.target.value)}
             placeholder={zh ? "说明材质、光线、氛围，以及希望保留的设计特征。" : "Describe materials, light, atmosphere and design features to preserve."} /></label>
           <div className="render-output-options">
@@ -217,7 +218,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
         {submitError && <div className="render-error" role="alert">{submitError}</div>}
         {uncertain && <p className="render-note" role="alert">{zh ? "提交结果未知，可能已计费。先刷新状态；再次生成会创建新请求。" : "Submission outcome is unknown and may be charged. Refresh status first; generating again creates a new request."}<small>{uncertain}</small></p>}
         <button type="submit" className="render-generate" disabled={sending || hasPending || uploading || !sourceDocument || !provider?.available || !direction.trim()
-          || !references.length || references.length > referenceLimit || references.some((ref) => !findSource(images, ref)) || !actualSize || !actualAspect}>
+          || references.length > referenceLimit || references.some((ref) => !findSource(images, ref)) || !actualSize || !actualAspect}>
           {sending ? (zh ? "正在提交…" : "Submitting…") : uncertain ? (zh ? "新建一次生成" : "Generate a new attempt") : (zh ? "生成" : "Generate")}
         </button>
         {uploading && <p role="status">{zh ? "正在保存项目图片…" : "Saving project images…"}</p>}

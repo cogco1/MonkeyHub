@@ -27,7 +27,7 @@ type Props = {
 };
 type ToolTab = { id: AppId; url: string; revision: number; projectDir?: string; projectId?: string; runtimeId?: string; candidate?: string };
 type SavedTool = { id: AppId; candidate?: string };
-type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null };
+type ProjectPreparation = { promise: Promise<AppStatus[]>; apps: AppStatus[] | null; modeling?: Promise<unknown> };
 const VIEW_KEY = "monkeyhub.chat-view.v1";
 /** The rail is always on screen; the conversation never shrinks past this. */
 const RAIL_WIDTH = 76, RESIZER_WIDTH = 5, CHAT_MIN_WIDTH = 360;
@@ -389,7 +389,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     else { const view = tabs.find((tab) => tab.projectDir === item.projectDir); setProjectDir(item.projectDir); setChatId(null); setActiveTool(view?.id ?? null); setPanel(Boolean(view)); }
   };
 
-  const startTool = async (appId: AppId, target?: string) => {
+  const startTool = useCallback(async (appId: AppId, target?: string) => {
     const query = target ? `?${new URLSearchParams({ projectDir: target })}` : "";
     let status = await request<AppStatus>(`/api/apps/${appId}/start${query}`, {});
     const deadline = Date.now() + 60000;
@@ -402,10 +402,10 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       status = (await request<AppStatus[]>(`/api/apps${query}`)).find((item) => item.appId === appId)!;
     }
     return status.url;
-  };
+  }, []);
 
-  /** One preparation per managed Studio, shared by navigation, send and project workspaces. */
-  const ensureProject = useCallback(async (target: string, projectId: string, appId: AppId = "monkeyarch") => {
+  /** Runtime attachment is read-only for project content; only an explicit Arch entry seeds modeling. */
+  const ensureProject = useCallback(async (target: string, projectId: string, appId?: AppId) => {
     let preparation = projectPreparations.current.get(target);
     if (!preparation) {
       const query = new URLSearchParams({ projectDir: target });
@@ -415,14 +415,16 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
         // snapshot may update worker state or supersede an event already read.
         receiveRuntime(await request<HubRuntimeDto>("/api/runtime"));
         const attached = runtimeRef.current?.projects.find((item) => item.runtimeId === opened.runtimeId);
-        if (!attached) throw new Error("The project runtime is no longer attached.");
+        if (!attached || attached.projectId !== projectId || opened.projectId !== projectId) throw new Error("The project runtime is no longer attached to this project.");
         const worker = attached.workers?.find((item) => item.serviceId === "studio");
         if (worker?.state === "crashed" || (worker?.state === "unavailable" && worker.processId)) {
           throw Object.assign(new Error("The project service needs recovery."), { failure: worker.error ?? { code: "WORKER_NEEDS_RECOVERY", detail: "The project service exited. Recover it to read saved results." } });
         }
-        if (!worker?.healthy || attached.projection !== "ready") await request(`/api/project/modeling?${query}`, { projectId });
+        if (!worker?.healthy) await startTool("monkeyrender", target);
         const statuses = await request<AppStatus[]>(`/api/apps?${query}`);
         if (!statuses.some((item) => item.appId === "monkeyarch" && item.state === "running" && item.url)) throw new Error("The project service did not become ready.");
+        const binding = await request<{ projectId: string }>(`/api/runtime/projects/${opened.runtimeId}/studio/api/project`);
+        if (binding.projectId !== projectId) throw new Error("The running application belongs to a different project.");
         return statuses;
       })() };
       preparation = entry;
@@ -431,15 +433,19 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     try {
       const statuses = await preparation.promise;
       preparation.apps = statuses;
+      if (appId === "monkeyarch" && runtimeAttachments.current.get(target)?.projection !== "ready") {
+        preparation.modeling ??= request(`/api/project/modeling?${new URLSearchParams({ projectDir: target })}`, { projectId });
+        await preparation.modeling;
+      }
       if (selection.current.projectDir === target) setProjectApps({ projectDir: target, apps: statuses });
-      const url = statuses.find((item) => item.appId === (appId === "drawing" ? "monkeyarch" : appId) && item.state === "running")?.url;
+      const url = statuses.find((item) => item.appId === (!appId || appId === "drawing" ? "monkeyarch" : appId) && item.state === "running")?.url;
       if (!url) throw new Error("The project workspace is unavailable.");
       return url;
     } catch (cause) {
       if (projectPreparations.current.get(target) === preparation) projectPreparations.current.delete(target);
       throw cause;
     }
-  }, [receiveRuntime]);
+  }, [receiveRuntime, startTool]);
   useEffect(() => {
     if (!project) return;
     let cancelled = false;
@@ -639,7 +645,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
     // An explicit system-page choice supersedes even a stale project link.
     if (id === "monkeymonitor") routeRestored.current = true;
     const existing = tabs.find((item) => needsProject ? item.projectDir === projectDir : item.id === id);
-    if (existing) {
+    if (existing && id !== "monkeyarch") {
       setTabs((items) => items.map((item) => item === existing ? { ...item, id,
         candidate: view?.candidate ?? item.candidate,
         url: needsProject ? `${window.location.origin}/?${new URLSearchParams({ runtimeId: item.runtimeId!, view: id === "monkeyboard" ? "board" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` : item.url } : item));
@@ -665,7 +671,7 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
       if (needsProject) {
         const attached = runtimeAttachments.current.get(target!);
         if (!attached || attached.projectId !== project!.projectId) throw new Error("The project runtime has not been attached.");
-        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate, revision: 0,
+        tab = { id, projectDir: target!, projectId: attached.projectId, runtimeId: attached.runtimeId, candidate: view?.candidate ?? existing?.candidate, revision: existing?.revision ?? 0,
           url: `${window.location.origin}/?${new URLSearchParams({ runtimeId: attached.runtimeId, view: id === "monkeyboard" ? "board" : id === "drawing" ? "drawing" : id === "monkeyrender" ? "render" : "arch" })}` };
       } else {
         tab = { id, url: applicationUrl(location, preferences), revision: 0 };
