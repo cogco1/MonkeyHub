@@ -361,6 +361,14 @@ class ChatArchiveRequest(BaseModel):
     archived: bool
 
 
+class ChatStudyEvidence(BaseModel):
+    """An explicit Study reference forwarded to the project runtime for validation."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    studyId: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+    ledgerRef: str = Field(min_length=1)
+
+
 class ChatDesignContext(BaseModel):
     """Exact project state, with an optional object or multi-object read focus.
 
@@ -378,6 +386,7 @@ class ChatDesignContext(BaseModel):
     sourceStageRef: str | None = Field(default=None, min_length=1)
     contextRefs: list[str] = Field(default_factory=list, max_length=16)
     contextOffset: int = Field(default=0, ge=0)
+    studyEvidence: list[ChatStudyEvidence] = Field(default_factory=list, max_length=3)
 
     @field_validator("elementIds", "contextRefs")
     @classmethod
@@ -392,6 +401,8 @@ class ChatDesignContext(BaseModel):
     def consistent_focus(self):
         if self.elementId is not None and self.elementIds and self.elementIds != [self.elementId]:
             raise ValueError("elementId and elementIds must name the same focus when both are supplied.")
+        if len({(item.studyId, item.ledgerRef) for item in self.studyEvidence}) != len(self.studyEvidence):
+            raise ValueError("studyEvidence must not repeat an exact revision.")
         return self
 
 

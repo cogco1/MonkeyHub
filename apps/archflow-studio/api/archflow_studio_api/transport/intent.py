@@ -28,6 +28,7 @@ from .capability import CapabilitySourceDto, CapabilityTargetDto, KeepScopeDto, 
 from .decisions import DecisionContextDto, DecisionDto, decision_dto
 from .proposal import STATE_DIGEST_PATTERN, ProposalDto
 from .artifacts import ModelSourceDto, model_source_dto
+from .study import StudyRevisionRequestDto, study_evidence_dto
 
 Vector3 = tuple[float, float, float]
 
@@ -426,6 +427,11 @@ class ContextPackRequestDto(BaseModel):
     context_refs: list[Annotated[str, Field(min_length=1)]] = Field(alias="contextRefs", default_factory=list, max_length=16)
     context_offset: int = Field(alias="contextOffset", default=0, ge=0, strict=True,
                               description="offset into the bounded reference index; it changes no focus or edit scope")
+    study_evidence: list[StudyRevisionRequestDto] = Field(
+        alias="studyEvidence", default_factory=list, max_length=3,
+        description="Optional exact retained Study revisions to read as conditional precedent evidence. "
+        "Each prior travels with its declared conditions and counterevidence; no latest revision is inferred.",
+    )
     decision_context: DecisionContextDto | None = Field(
         alias="decisionContext", default=None,
         description="what this turn is about for the scoped decisions it should be handed: the "
@@ -441,6 +447,8 @@ class ContextPackRequestDto(BaseModel):
             raise ValueError("elementId and elementIds must name the same single focus, or use elementIds alone")
         if len(set(self.context_refs)) != len(self.context_refs):
             raise ValueError("contextRefs must not repeat a reference")
+        if len({(item.study_id, item.ledger_ref) for item in self.study_evidence}) != len(self.study_evidence):
+            raise ValueError("studyEvidence must not repeat an exact revision")
         return self
 
 
@@ -531,6 +539,11 @@ class ContextPackDto(BaseModel):
         "and focus, in the architect's own words with their exact provenance. Revoked, "
         "deferred, superseded and derived-stale ones are left out, and no transcript is "
         "carried; it authorizes nothing and changes no reference",
+    )
+    study_evidence: list[dict[str, Any]] = Field(
+        alias="studyEvidence", default_factory=list,
+        description="Read-only projections of explicitly selected Study revisions. Check each completeness "
+        "and applicability result before using a prior; evidence never becomes a design decision or constraint.",
     )
     honesty: list[str] = Field(default_factory=list)
 
@@ -857,6 +870,7 @@ BLOCKED_NOTE = (
 def context_pack_dto(
     description, context, preflight: Mapping[str, Any] | None, model_facts: Mapping[str, Any],
     *, confirmed_stage: Mapping[str, Any] | None = None, scoped_decisions: Sequence[Any] = (),
+    study_evidence: Sequence[Mapping[str, Any]] = (),
 ) -> ContextPackDto:
     """One capability description and one compiled read context, as the pack.
 
@@ -879,6 +893,7 @@ def context_pack_dto(
         preflight=None if preflight is None else dict(preflight),
         confirmed_stage=None if confirmed_stage is None else ConfirmedStageContextDto(**confirmed_stage),
         scoped_decisions=[decision_dto(row) for row in scoped_decisions],
+        study_evidence=[study_evidence_dto(row) for row in study_evidence],
         honesty=[
             *detail.honesty,
             *([BLOCKED_NOTE] if blocked else []),

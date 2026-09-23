@@ -19,6 +19,7 @@ same evidence contract and can never bypass user correction.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 import json
 import math
 import threading
@@ -112,6 +113,128 @@ class StudyView:
     ref: ProjectRecordRef
     payload: Mapping[str, Any]
     composition_graph: Mapping[str, Any]
+
+
+def study_evidence_context(view: StudyView, *, budget_bytes: int = 12288) -> dict[str, Any]:
+    """Read a retained prior with its conditions, alternatives and source links.
+
+    ``read_study`` checks the revision before this projection is called. This
+    function selects already retained values only: it neither searches other
+    revisions nor reruns research. The budget covers the complete selected
+    content in compact UTF-8 JSON; identity and refusal information remain
+    available even when that content does not fit.
+    """
+    if type(budget_bytes) is not int or budget_bytes < 1:
+        raise ValueError("budget_bytes must be a positive integer")
+    payload = view.payload
+    result = {
+        "study_id": payload["study_id"],
+        "ledger_ref": view.ref.uri,
+        "source": deepcopy(payload["source"]),
+        "derivation_method": payload.get("derivation_method"),
+        "reopen": {"study_id": payload["study_id"], "ledger_ref": view.ref.uri},
+        "limitations": [
+            "This is the named retained revision, not a claim that it is the latest revision or accepted design state.",
+            "Completeness means the selected declared companion content fits this response; it does not establish that the evidence is sufficient or the prior is valid.",
+            "Historical sources retain authored citations and summaries; their external source text has not been verified here.",
+            "Counterfactual and comparison details must be reopened before relying on their omitted geometry or numerical results; nothing was rerun.",
+        ],
+    }
+    research = payload.get("research") or {}
+    prior = research.get("design_prior")
+    if prior is None:
+        result["completeness"] = {
+            "complete": False, "reason": "no-design-prior", "required_bytes": 0,
+            "budget_bytes": budget_bytes,
+        }
+        return result
+
+    hypotheses = research["hypotheses"]
+    selected_ids = set(prior["hypothesis_ids"])
+    while True:
+        companions: set[str] = set()
+        for row in hypotheses:
+            # Either endpoint can declare the comparison. Selecting A must
+            # still expose B's challenge when only B names A as a competitor.
+            if row["hypothesis_id"] in selected_ids or not selected_ids.isdisjoint(row["competes_with"]):
+                companions.add(row["hypothesis_id"])
+                companions.update(row["competes_with"])
+        # A shared intervention also binds its hypotheses together: returning
+        # its result without a joint hypothesis would omit that hypothesis's
+        # assumptions and evidence. Its competitors are reached next round.
+        for row in research["counterfactuals"]:
+            if not selected_ids.isdisjoint(row["hypothesis_ids"]):
+                companions.update(row["hypothesis_ids"])
+        if companions.issubset(selected_ids):
+            break
+        selected_ids.update(companions)
+    selected = [row for row in hypotheses if row["hypothesis_id"] in selected_ids]
+    pattern = research["composition_pattern"]
+    evidence_ids = set(pattern["evidence_ids"])
+    source_ids: set[str] = set()
+    for row in selected:
+        evidence_ids.update(row["evidence_ids"])
+        evidence_ids.update(row.get("counter_evidence_ids", ()))
+        source_ids.update(row["historical_source_ids"])
+
+    counterfactuals = []
+    for row in research["counterfactuals"]:
+        if row["hypothesis_ids"] and selected_ids.isdisjoint(row["hypothesis_ids"]):
+            continue
+        evidence_ids.add(row["target_evidence_id"])
+        projected = deepcopy({key: value for key, value in row.items() if key != "actual"})
+        actual = row.get("actual")
+        if actual is None:
+            projected["actual"] = None
+        else:
+            # Keep the retained status, failure reason and interpretation, not
+            # a new prose conclusion about its repeated polygon snapshots.
+            omitted = {"evidence", "measurements", "relations", "baseline_measurements",
+                       "baseline_relations", "removed_facts", "added_facts"}
+            projected["actual"] = deepcopy({key: value for key, value in actual.items() if key not in omitted})
+            projected["details_omitted"] = sorted(omitted.intersection(actual))
+        counterfactuals.append(projected)
+
+    # A gap can name several traces together. Once relevant, all those
+    # companions travel with it, including gaps reached through that addition.
+    # Empty evidence_ids are global gaps; no declared scope excludes them.
+    while True:
+        companion_evidence = {identifier for row in research["gaps"]
+                              if not evidence_ids.isdisjoint(row["evidence_ids"])
+                              for identifier in row["evidence_ids"]}
+        if companion_evidence.issubset(evidence_ids):
+            break
+        evidence_ids.update(companion_evidence)
+
+    comparisons = []
+    for row in research.get("comparison_results", ()):
+        comparisons.append({
+            "method": row["method"],
+            "studies": [{"study_id": item["study_id"], "ledger_ref": item["ledger_ref"]}
+                        for item in row["studies"]],
+            "details_omitted": True,
+        })
+    content = deepcopy({
+        "design_prior": prior,
+        "composition_pattern": pattern,
+        "hypotheses": selected,
+        "evidence": [row for row in payload["evidence"] if row["evidence_id"] in evidence_ids],
+        "historical_sources": [row for row in research["historical_sources"] if row["source_id"] in source_ids],
+        "gaps": [row for row in research["gaps"]
+                 if not row["evidence_ids"] or not evidence_ids.isdisjoint(row["evidence_ids"])],
+        "counterfactuals": counterfactuals,
+        "comparisons": research.get("comparisons", []),
+        "comparison_results": comparisons,
+    })
+    size = len(json.dumps(content, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+    complete = size <= budget_bytes
+    result["completeness"] = {
+        "complete": complete, "reason": None if complete else "budget-exceeded",
+        "required_bytes": size, "budget_bytes": budget_bytes,
+    }
+    if complete:
+        result.update(content)
+    return result
 
 
 @dataclass(frozen=True, slots=True)

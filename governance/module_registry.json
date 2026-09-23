@@ -4483,7 +4483,8 @@
         "shared structured multimodal transport for its intent parser and Study RESEARCH; provider configuration, subprocess, timeout and usage remain one implementation",
         "Read-only confirmedStage projection in ContextPack from committed DesignStage and exact StateRecord content; compare declared dependencies and retained conditions to flag changed downstream work for review",
         "scoped project decisions: one architect judgement with its raw wording, disposition, strength, target, explicit scope, applicability and the exact source evidence it was said against, as an immutable revision chain in the fixed explicit studio-decisions P036 run",
-        "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack"
+        "compiling the decisions that still apply to one next turn - same domain, exact Stage, intersection with relevant task targets, applicability and current parameter binding - into the existing ContextPack",
+        "Composing explicitly selected exact Study evidence revisions into ContextPack separately from design facts and applicable decisions; no implicit Study scan, acceptance or project write."
       ],
       "does_not_own": [
         "running the proposal - studio.candidate",
@@ -4666,7 +4667,8 @@
         "state.design_portfolio",
         "project.repository",
         "state.stage_workflow",
-        "studio.board"
+        "studio.board",
+        "studio.study"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -6300,7 +6302,8 @@
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
         "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations.",
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
-        "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions."
+        "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
+        "Forwarding explicitly selected Study revisions into prepared task context and exposing the existing project-bound Study read for exact evidence reopening; no Study mutation tool."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6800,7 +6803,8 @@
         "explicit correction against the current Study revision, and cold reads that replay a retained revision's own findings after verifying its exact source and evidence",
         "the Study side panel and independent evidence draft in the existing document page editor",
         "editable, evidence-linked competing explanations, gaps, polygon counterfactual predictions/outcomes and conditional CompositionPattern/DesignPrior revisions",
-        "real RESEARCH model proposals through the existing configured intent transport, with source image identity and invocation receipts retained in the same ledger"
+        "real RESEARCH model proposals through the existing configured intent transport, with source image identity and invocation receipts retained in the same ledger",
+        "Read-only projection of an exact retained DesignPrior with its declared companion evidence for the existing ContextPack; an over-budget bundle is omitted whole, never stripped of conditions."
       ],
       "does_not_own": [
         "source document import and byte identity (studio.artifacts)",
@@ -6819,7 +6823,8 @@
         "StudyViewDto",
         "retained research polygon observations and bounded intervention results",
         "conditional CompositionPattern/DesignPrior and true model invocation receipts",
-        "exact comparison references and computed snapshots retained with the research and supplied to model reasoning"
+        "exact comparison references and computed snapshots retained with the research and supplied to model reasoning",
+        "Plain bounded Study evidence context with exact ledger/page refs, retained conditions, counterevidence, explicit missing-prior or budget refusal, and a reopen reference"
       ],
       "public_api": [
         "POST /api/studies",
@@ -6831,7 +6836,8 @@
         "POST /api/studies/propose",
         "list_studies",
         "polygon_observations",
-        "web: DocumentStudyPanel"
+        "web: DocumentStudyPanel",
+        "study_evidence_context"
       ],
       "depends_on": [
         "studio.artifacts",

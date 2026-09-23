@@ -282,6 +282,10 @@ export type ChatDesignContext = {
      * Contextoffset
      */
     contextOffset?: number;
+    /**
+     * Studyevidence
+     */
+    studyEvidence?: Array<ChatStudyEvidence>;
 };
 
 /**
@@ -719,6 +723,22 @@ export type ChatProvider = {
      * Modeldetail
      */
     modelDetail?: string;
+};
+
+/**
+ * ChatStudyEvidence
+ *
+ * An explicit Study reference forwarded to the project runtime for validation.
+ */
+export type ChatStudyEvidence = {
+    /**
+     * Studyid
+     */
+    studyId: string;
+    /**
+     * Ledgerref
+     */
+    ledgerRef: string;
 };
 
 /**

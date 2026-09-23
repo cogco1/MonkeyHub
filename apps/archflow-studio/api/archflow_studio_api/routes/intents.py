@@ -51,6 +51,7 @@ from ..application.intent_agent import (
 )
 from ..application.intent_context import compile_task_context, confirmed_stage_context, model_context
 from ..application.intent_requests import action_preflight
+from ..application.study import read_study, study_evidence_context
 from ..application.projection import StateProjection, project_state, require_actionable
 from ..application.proposals import proposal_from
 from ..transport.errors import (
@@ -320,8 +321,11 @@ def read_intent_context(request: Request, body: ContextPackRequestDto) -> Contex
         binding, _decision_context(binding, body, projection, element_ids or context.target_ids),
         projection.record,
     )
+    study_evidence = [study_evidence_context(read_study(binding, item.study_id, item.ledger_ref))
+                      for item in body.study_evidence]
     return context_pack_dto(description, context, preflight, model_context(context),
-                            confirmed_stage=confirmed_stage, scoped_decisions=decisions)
+                            confirmed_stage=confirmed_stage, scoped_decisions=decisions,
+                            study_evidence=study_evidence)
 
 
 def _decision_context(

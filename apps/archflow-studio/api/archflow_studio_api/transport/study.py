@@ -232,3 +232,8 @@ def study_comparison_dto(comparison: Mapping[str, Any]) -> StudyComparisonDto:
     """Camel-case a deterministic comparison without changing its evidence."""
 
     return StudyComparisonDto.model_validate(_camelize(dict(comparison)))
+
+
+def study_evidence_dto(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    """Use Study's existing wire names for a read-only ContextPack projection."""
+    return _camelize(dict(evidence))

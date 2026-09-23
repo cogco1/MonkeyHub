@@ -2015,7 +2015,7 @@ def _stop_process(process: subprocess.Popen) -> None:
             process.kill()
 
 
-_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
+_READ = re.compile(r"^/api/(project|state(?:/frame|/volumes)?|semantics|program|options|board|artifacts|documents|document-annotations|studies/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|decisions(?:/[A-Za-z0-9_-]+)?|drawings/(?:styles|model-view)|capabilities(?:/[A-Za-z0-9_.-]+)?|proposals/[A-Za-z0-9_-]+|jobs/[A-Za-z0-9_-]+|candidates/[A-Za-z0-9_-]+(?:/compare)?)$")
 _POST = re.compile(r"^/api/(project/modeling|intents/context|board/export|decisions(?:/[A-Za-z0-9_-]+/revisions)?|state/closure|capabilities/[A-Za-z0-9_.-]+/run|proposals|proposals/(sketch|transform|push-pull|delete|elevation)|proposals/[A-Za-z0-9_-]+/candidate|program|options|options/[A-Za-z0-9_-]+/select|candidates/combine|drawings/(elevations|sheets))$")
 _WRITE = re.compile(r"^/api/(board|document-annotations)$")
 _PAGE_IMAGE_MAX_EDGE = 2048
@@ -2223,7 +2223,11 @@ _CONTEXT_NOTE = (
     "the same source when needed; refresh the context when its source changes. scopedDecisions contains "
     "the retained judgments applicable to this task. Keep their raw wording and interpretation provenance "
     "distinct; respect supported keep references, treat preferences as preferences, and report unsupported "
-    "effects as deferred. They do not accept a Stage or create or remove parameter locks."
+    "effects as deferred. They do not accept a Stage or create or remove parameter locks. "
+    "studyEvidence contains explicitly selected, exact Study revisions, not accepted project facts. "
+    "Keep their conditions, exceptions, competing hypotheses and counterevidence together. "
+    "Check completeness and changedContext before transferring a prior; incomplete evidence requires "
+    "its exact reopen read, and an archived preference or interpretation is not a current user decision."
 )
 
 
@@ -2830,6 +2834,7 @@ def _mcp(hub: str, chat_id: str | None, external: ChatPresentationBindRequest | 
         "OTHER ACTIONS: POST /api/state/closure, /api/program, /api/options, /api/options/{id}/select, /api/candidates/combine;",
         "CONTEXT READ: POST /api/intents/context compiles current task facts from projectId, stateDigest, utterance and exact sourceRunId/sourceStageRef; focus is optional.",
         "Repeat the same source/task/focus with contextRefs for omitted facts or contextOffset for the next reference index page. This reads only and grants no edits; use studio_schema for its full contract.",
+        "For an explicitly selected precedent, add studyEvidence:[{studyId,ledgerRef}] (up to 3 exact revisions) to that context read. It returns the retained prior with conditions and counterevidence, not accepted design truth. Never infer that an older revision is current. If completeness is false or numerical details are needed, GET /api/studies/{studyId}?ledgerRef=<exact-ref> reopens that source; external citation summaries are not verified source text.",
         "RETAINED FEEDBACK: When the user gives an avoid/keep direction for later work, POST /api/decisions using its studio_schema, exact observed source and narrow stated scope. Save that feedback before continuing; do not turn an ordinary change request or your own judgment into a retained preference.",
         "The chat fills rawLanguage/messageSource from this actual user turn and sourceKind=agent for your interpretation. Never supply those fields, invent user approval or strengthen a soft preference into a hard rule. The user need not confirm an internal grant; the existing Runtime authorization still applies.",
         "GET /api/decisions reads retained feedback; GET /api/decisions/{id} reads its history. On the user's revocation request, POST /api/decisions/{id}/revisions with action=revoke and the revisionRef you read as expectedRevisionRef; the chat binds the reason and revisionMessageSource. This tool cannot supersede rules, save lock decisions, accept a Stage or unlock a parameter.",

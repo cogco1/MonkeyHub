@@ -2321,7 +2321,8 @@ class ChatTests(unittest.TestCase):
     def test_whole_project_and_multiple_focus_forward_without_inventing_an_element(self):
         session = self.create()
         packs = []
-        for extra in ({}, {"elementIds": ["wall-a", "wall-b"], "contextRefs": ["entity:roof"], "contextOffset": 64}):
+        for extra in ({}, {"elementIds": ["wall-a", "wall-b"], "contextRefs": ["entity:roof"], "contextOffset": 64},
+                      {"studyEvidence": [{"studyId": "courtyard", "ledgerRef": "project:exact-retained-study"}]}):
             with patch.object(chat, "_request_json", side_effect=self.studio(session, packs)):
                 self.store.post(session.id, ChatPostRequest(projectId=session.projectId, content="Design the facade",
                     designContext=ChatDesignContext(sourceRunId="run-001", stateDigest="a" * 64, **extra)))
@@ -2333,6 +2334,44 @@ class ChatTests(unittest.TestCase):
         from pydantic import ValidationError
         with self.assertRaises(ValidationError):
             ChatPostRequest(projectId="chat-project", content="Continue", contextMode="project")
+
+    def test_fresh_context_carries_selected_study_conditions_without_old_chat(self):
+        session = self.create(provider="claude")
+        self.post(session, "OLD_PRECEDENT_CHAT")
+        self.finished(session)
+        old_id = self.store._sessions[session.id].nativeSessionId
+        selected = {"studyId": "passage", "ledgerRef": "project:exact-study-revision"}
+        evidence = {**selected, "designPrior": {"conditions": ["ONLY_WITH_VERIFIED_ACCESS"],
+                    "changedContext": {"decision": "reject"}}, "completeness": {"complete": True}}
+        pack = {**self.PACK, "studyEvidence": [evidence]}
+        calls = []
+        with patch.object(self, "PACK", pack), patch.object(chat, "_request_json", side_effect=self.studio(session, calls)):
+            self.store.post(session.id, ChatPostRequest(projectId=session.projectId,
+                content="Continue with the selected precedent", contextMode="project",
+                designContext=self.selected(studyEvidence=[selected])))
+            result = self.finished(session)
+        self.assertEqual(result.status, "idle", result.error)
+        prompt = self.calls()[-1]["prompt"]
+        self.assertIn("ONLY_WITH_VERIFIED_ACCESS", prompt)
+        self.assertIn('"decision": "reject"', prompt)
+        self.assertNotIn("OLD_PRECEDENT_CHAT", prompt)
+        self.assertNotIn(old_id, self.calls()[-1]["args"])
+        self.assertEqual(calls[0]["body"]["studyEvidence"], [selected])
+
+    def test_study_reopen_uses_project_bound_read_without_mutation_admission(self):
+        session = self.create()
+        self.store._sessions[session.id].status = "running"
+        path = "/api/studies/passage.v1?ledgerRef=project%3Aexact-study"
+        def request(base, requested, method="GET", body=None, **kwargs):
+            if requested == path:
+                self.assertEqual(base, "http://127.0.0.1:8791")
+                self.assertEqual(method, "GET")
+                return {"ledgerRef": "project:exact-study", "studyId": "passage.v1"}
+            return self.studio(session, [])(base, requested, method, body, **kwargs)
+        with patch.object(chat, "_request_json", side_effect=request):
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": path})
+        self.assertEqual(result["ledgerRef"], "project:exact-study")
+        self.assertIsNone(chat._POST.fullmatch("/api/studies"))
 
     def test_model_view_reaches_mcp_as_image_with_exact_metadata(self):
         import io

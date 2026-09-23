@@ -648,6 +648,50 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-122",
+      "issue": "https://github.com/cogco1/MonkeyHub/issues/122",
+      "stream": "implementation",
+      "status": "active",
+      "goal": "Consume an exact retained Study prior and its companion evidence in the existing ContextPack for GH-32 and GH-185; no new persistent state or retrieval store.",
+      "depends_on": [],
+      "modules": [
+        "studio.study",
+        "studio.intent",
+        "hub.shell"
+      ],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/study.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/intents.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/intent.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/study.py",
+        "apps/archflow-studio/api/tests/test_study_research.py",
+        "apps/archflow-studio/api/tests/test_intent_context.py",
+        "apps/monkeyhub/api/monkeyhub_api/chat.py",
+        "apps/monkeyhub/api/monkeyhub_api/models.py",
+        "apps/monkeyhub/api/tests/test_chat.py",
+        "apps/monkeyhub/web/workspaces/src/api/generated/",
+        "docs/PROTOCOL.md",
+        "docs/CONTEXT_COMPILATION.md",
+        "docs/SYSTEM_MAP.md",
+        "governance/module_registry.json",
+        "governance/work_registry.json",
+        "apps/monkeyhub/web/src/api/generated/",
+        "docs/DYNAMIC_MAP.md",
+        "docs/mapping/planning/INDEX.md"
+      ],
+      "branch": "codex/task-evidence-context",
+      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-task-evidence-context",
+      "base_ref": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+      "contributor": "Codex",
+      "reviewer": "Codex independent read-only review",
+      "handoff": "Exact Study evidence reaches prepared task context; independent read-only review passed after joint-counterfactual closure repair. Broader retrieval baselines and Stage validation remain open.",
+      "acceptance": [
+        "Exact Study references survive cold reads and reach ContextPack with conditions and counterevidence intact.",
+        "Insufficient byte budget yields no stripped prior; wrong project or revision is refused.",
+        "Existing design scope and decisions remain unchanged; no writes or provider calls."
+      ]
     }
   ]
 }
