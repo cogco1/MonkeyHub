@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { aggregateTokens, formatDuration, projectIds, summarizeUsage, quoteDraftReducer, type QuoteDraft, type MonitorEvent, type MonitorTrace } from "../src/monitorData.ts";
+import { aggregateTokens, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer, type QuoteDraft, type MonitorEvent, type MonitorTrace } from "../src/monitorData.ts";
 
 const tokens = (input: number | null, cached: number | null, output: number | null) => ({
   input_tokens: input, output_tokens: output, cached_input_tokens: cached,
@@ -28,6 +28,41 @@ test("aggregate tokens stays unknown when any model call is missing the field", 
   const incomplete = aggregateTokens([...events, { ...events[0], event_id: "d", tokens: tokens(null, 0, 1) }]);
   assert.equal(incomplete.input_tokens, null);
   assert.equal(incomplete.output_tokens, 51);
+});
+
+test("Codex turn boundaries and Hub rounds do not inflate calls or erase the calculator's known tokens", () => {
+  const calls = Array.from({ length: 37 }, (_, index) => ({ ...events[1], event_id: `call-${index}` }));
+  const turns = Array.from({ length: 4 }, (_, index) => ({ ...events[1], event_id: `turn-${index}`,
+    phase: "agent_turn", timing_scope: "agent_turn", model_call: null, tokens: tokens(null, null, null) }));
+  const operations = [{ ...events[2], source: "hub", phase: "provider_round" }, ...turns];
+  const mixed = [...calls, ...operations];
+  assert.equal(summarizeUsage(mixed).calls, 37);
+  assert.deepEqual(summarizeUsage(mixed).cachedInput, { value: 1850, recorded: 37, missing: 0 });
+  assert.deepEqual(aggregateTokens(mixed), aggregateTokens(calls));
+  assert.deepEqual(mixed.filter(isModelCall), calls);
+});
+
+test("legacy model requests, explicit non-calls and missing usage have the same summary/detail/estimate scope", () => {
+  const legacy = { ...events[0], model_call: undefined };
+  const legacyCodex = { ...events[1], model_call: null };
+  const nonCall = { ...legacy, model_call: false, tokens: tokens(null, null, null) };
+  const unknown = { ...events[1], event_id: "unknown", tokens: tokens(null, null, null) };
+  const mixed = [legacy, legacyCodex, nonCall, unknown];
+  assert.deepEqual(mixed.filter(isModelCall), [legacy, legacyCodex, unknown]);
+  assert.deepEqual(summarizeUsage(mixed).cachedInput, { value: 90, recorded: 2, missing: 1 });
+  assert.equal(aggregateTokens(mixed).input_tokens, null);
+  assert.equal(aggregateTokens([legacy]).input_tokens, 100);
+});
+
+test("loading more detail rows changes the visible subtotal, not the project total", () => {
+  const calls = Array.from({ length: 21 }, (_, index) => ({ ...events[1], event_id: `call-${index}` }));
+  const mixed = [events[2], ...calls];
+  const detail = mixed.filter(isModelCall);
+  assert.equal(summarizeUsage(detail.slice(0, 20)).uncachedInput.value, 3000);
+  assert.equal(summarizeUsage(mixed).uncachedInput.value, 3150);
+  assert.equal(detail.reduce((sum, event) => sum + uncachedInput(event)!, 0), 3150);
+  assert.equal(uncachedInput({ ...events[1], tokens: tokens(20, 30, 0) }), null);
+  assert.equal(uncachedInput({ ...events[1], tokens: tokens(20, null, 0) }), null);
 });
 
 test("project list combines trace and usage identities without duplicates", () => {

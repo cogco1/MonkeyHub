@@ -71,6 +71,15 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 page.setDefaultTimeout(12000);
 const errors = [], writes = [], sessions = [], providerReads = [];
 const monitorReads = [];
+const monitorTokens = { input_tokens: 200, cached_input_tokens: 50, output_tokens: 30,
+  cache_write_input_tokens: 0, cache_write_1h_input_tokens: 0, reasoning_output_tokens: 0 };
+const monitorEvents = [
+  ...Array.from({ length: 4 }, (_, i) => ({ event_id: `turn-${i}`, source: "codex", provider: "openai", model: "test",
+    phase: "agent_turn", timing_scope: "agent_turn", model_call: null, status: "completed", started_at: "2026-09-20T00:00:00Z",
+    tokens: Object.fromEntries(Object.keys(monitorTokens).map((key) => [key, null])) })),
+  ...Array.from({ length: 37 }, (_, i) => ({ event_id: `call-${i}`, source: "codex", provider: "openai", model: "test",
+    phase: "agent", model_call: true, status: "observed", started_at: "2026-09-20T00:00:00Z", tokens: monitorTokens })),
+];
 const monitorTrace = { trace_id: "finished-with-missing-end", started_at: "2026-09-20T00:00:00Z", ended_at: "2026-09-20T00:00:02Z",
   status: "succeeded", summary: { elapsed_ms: 2000, first_candidate_ms: null, verified_ms: 1200 }, spans: [
     { span_id: "missing-end", label: "Model request", lane: "model", status: "incomplete", offset_ms: 100, duration_ms: null },
@@ -159,7 +168,7 @@ await page.route((url) => url.pathname.startsWith("/api/"), async (route) => {
       monitorReadLocked = true;
       try {
         await new Promise((resolve) => setTimeout(resolve, 40));
-        return await json(url.pathname === "/api/events" ? { events: [], warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace], warnings: [] });
+        return await json(url.pathname === "/api/events" ? { events: monitorEvents, warnings: [] } : { traces: [monitorTrace, monitorCandidateTrace, monitorLegacyTrace], warnings: [] });
       } finally { monitorReadLocked = false; }
     }
     if (url.pathname === "/api/rates") return json({ rates: [] });
@@ -456,6 +465,23 @@ try {
   await composer.fill("Keep this conversation while viewing usage");
   await page.getByRole("button", { name: "Usage", exact: true }).click();
   await waitMonitor();
+  const callCard = page.locator(".monitor-stat").filter({ has: page.getByText("Model calls", { exact: true }) }).locator("strong");
+  assert.equal(await callCard.innerText(), "37", "four Codex task boundaries are not model calls");
+  await page.getByText("Showing 20 of 37 records", { exact: true }).waitFor();
+  assert.equal(await page.locator(".monitor-table tbody tr").count(), 20);
+  const displayedTokens = page.locator(".monitor-table tfoot tr").filter({ hasText: "Displayed model-call subtotal" }).locator("td").first();
+  const allTokens = page.locator(".monitor-table tfoot tr").filter({ hasText: "All model-call totals" }).locator("td").first();
+  assert.match(await displayedTokens.innerText(), /^1,000\s+20 recorded$/);
+  assert.match(await allTokens.innerText(), /^1,850\s+37 recorded$/);
+  assert.equal(await page.getByLabel("Total input", { exact: true }).inputValue(), "7400", "task rows do not erase the estimate's known counters");
+  await page.getByRole("button", { name: "Show 20 more", exact: true }).click();
+  await page.getByText("Showing 37 of 37 records", { exact: true }).waitFor();
+  assert.equal(await displayedTokens.innerText(), await allTokens.innerText(), "all visible model rows sum to the dashboard total");
+  await page.getByLabel("Include tools and local operations").check();
+  await page.getByText("Showing 20 of 41 records", { exact: true }).waitFor();
+  assert.match(await displayedTokens.innerText(), /^800\s+16 recorded$/);
+  assert.equal(await callCard.innerText(), "37", "expanding diagnostics does not change model-call totals");
+  await page.getByLabel("Include tools and local operations").uncheck();
   const firstCandidateCard = page.locator(".monitor-trace-summary > span").filter({ has: page.getByText("First candidate", { exact: true }) });
   assert.equal(await firstCandidateCard.locator("strong").innerText(), "—", "missing candidate readback timing must not fall back to verification time");
   await page.locator(".monitor-section__head select").selectOption(monitorCandidateTrace.trace_id);

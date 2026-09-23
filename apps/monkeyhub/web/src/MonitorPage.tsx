@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSS
 import type { AppearancePreferences } from "../../../shared-web/src/appearance.js";
 import type { AppStatus, ApplicationSettingsDto } from "./api/generated";
 import {
-  aggregateTokens, formatCount, formatDuration, projectIds, summarizeUsage, quoteDraftReducer,
+  aggregateTokens, formatCount, formatDuration, isModelCall, uncachedInput, projectIds, summarizeUsage, quoteDraftReducer,
   type MonitorEvent, type MonitorTrace,
 } from "./monitorData";
 import "./MonitorPage.css";
@@ -29,6 +29,9 @@ const words = {
     tasks: "任务时间线", noTasks: "暂无任务记录。MonkeyHub 发起任务后会在这里出现。", task: "任务", status: "状态", elapsed: "总历时", firstVisible: "首次可见", firstCandidate: "首个候选", modelRounds: "模型轮次", toolRounds: "工具轮次",
     activity: "阶段", lane: "泳道", duration: "耗时", blocking: "阻塞", yes: "是", no: "否", details: "详情", diagnostics: "耗时诊断", warnings: "记录提示",
     usage: "调用记录", source: "来源", provider: "Provider / 模型", phase: "阶段", time: "时间", noUsage: "暂无用量记录。", showMore: "再显示 20 条",
+    usageScope: "汇总与明细均统计所选项目的全部已记录任务；任务选择仅切换时间线。",
+    includeOperations: "包含工具与本地操作", visibleSubtotal: "当前显示的模型调用小计", allCallsTotal: "全部模型调用合计",
+    recordRange: (shown: number, count: number) => `当前显示 ${shown} / ${count} 条记录`,
     sources: "Codex 来源", sourcesHelp: "每行一个明确的本机 JSONL 路径。Hub 自动绑定的会话不需要手填；这里仅用于诊断补充。", apply: "应用来源", applied: "来源已更新",
     calculator: "费用估算", calculatorHelp: "按你明确选择的费率计算 API 等价值；不是订阅实际扣款，也不自动猜计费档位。", rate: "费率", chooseRate: "选择参考费率", input: "总输入", cacheRead: "缓存读取", cacheWrite: "缓存写入", cacheWrite1h: "其中 1 小时写入", reasoning: "其中推理输出", calculate: "计算", resetTotals: "恢复当前汇总", estimated: "估算费用", knownSubtotal: "已知小计", missing: "仍缺少",
     serviceDetail: "技术详情", updated: "更新于", download: "下载 Trace JSON", raw: "原始记录", endNotObserved: "结束时间未观测",
@@ -41,6 +44,9 @@ const words = {
     tasks: "Task timeline", noTasks: "No task records yet. Tasks started from MonkeyHub will appear here.", task: "Task", status: "Status", elapsed: "Elapsed", firstVisible: "First visible", firstCandidate: "First candidate", modelRounds: "Model rounds", toolRounds: "Tool rounds",
     activity: "Stage", lane: "Lane", duration: "Duration", blocking: "Blocking", yes: "Yes", no: "No", details: "Details", diagnostics: "Timing diagnostics", warnings: "Record notices",
     usage: "Call records", source: "Source", provider: "Provider / model", phase: "Phase", time: "Time", noUsage: "No usage records yet.", showMore: "Show 20 more",
+    usageScope: "Totals and records cover all recorded tasks in the selected project scope. The task selector changes only the timeline.",
+    includeOperations: "Include tools and local operations", visibleSubtotal: "Displayed model-call subtotal", allCallsTotal: "All model-call totals",
+    recordRange: (shown: number, count: number) => `Showing ${shown} of ${count} records`,
     sources: "Codex sources", sourcesHelp: "One explicit local JSONL path per line. Hub-bound sessions do not need to be entered here; this is only for diagnostic supplements.", apply: "Apply sources", applied: "Sources updated",
     calculator: "Cost estimate", calculatorHelp: "Calculates an API-rate equivalent from the rate you explicitly select. It is not a subscription charge and no billing tier is guessed.", rate: "Rate", chooseRate: "Choose reference rate", input: "Total input", cacheRead: "Cache read", cacheWrite: "Cache write", cacheWrite1h: "Of which 1-hour write", reasoning: "Of which reasoning output", calculate: "Calculate", resetTotals: "Use current totals", estimated: "Estimated cost", knownSubtotal: "Known subtotal", missing: "Still missing",
     serviceDetail: "Technical details", updated: "Updated", download: "Download Trace JSON", raw: "Raw record", endNotObserved: "End not observed",
@@ -89,6 +95,7 @@ export function MonitorPage({ preferences, active }: Props) {
   const [project, setProject] = useState("");
   const [traceId, setTraceId] = useState("");
   const [visible, setVisible] = useState(20);
+  const [includeOperations, setIncludeOperations] = useState(false);
   const [rateIndex, setRateIndex] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -170,13 +177,16 @@ export function MonitorPage({ preferences, active }: Props) {
   const filteredEvents = useMemo(() => project ? events.filter((event) => event.project_id === project) : events, [events, project]);
   const filteredTraces = useMemo(() => project ? traces.filter((trace) => trace.project_id === project) : traces, [traces, project]);
   const summary = useMemo(() => summarizeUsage(filteredEvents), [filteredEvents]);
+  const detailEvents = useMemo(() => includeOperations ? filteredEvents : filteredEvents.filter(isModelCall), [filteredEvents, includeOperations]);
+  const visibleEvents = detailEvents.slice(0, visible);
+  const visibleSummary = summarizeUsage(visibleEvents);
   const selectedTrace = filteredTraces.find((trace) => trace.trace_id === traceId) ?? filteredTraces[0] ?? null;
 
   useEffect(() => {
     if (!selectedTrace) { if (traceId) setTraceId(""); return; }
     if (traceId !== selectedTrace.trace_id) setTraceId(selectedTrace.trace_id);
   }, [selectedTrace?.trace_id, traceId]);
-  useEffect(() => { setVisible(20); }, [project]);
+  useEffect(() => { setVisible(20); }, [project, includeOperations]);
 
   useEffect(() => {
     dispatchQuoteDraft({ type: "refresh", projectId: project, tokens: aggregateTokens(filteredEvents) });
@@ -235,6 +245,7 @@ export function MonitorPage({ preferences, active }: Props) {
     <main className="monitor-shell">
       <div className="monitor-heading"><div><p className="monitor-eyebrow">MonkeyMonitor</p><h1>{t.title}</h1><p>{t.subtitle}</p></div><label>{t.project}<select value={project} onChange={(event) => { invalidateQuote(); setProject(event.target.value); }}><option value="">{t.allProjects}</option>{projects.map((id) => <option key={id}>{id}</option>)}</select></label></div>
       {error && <div className="error-message" role="alert"><strong>{t.failed}</strong><p>{error}</p><button className="btn" type="button" onClick={() => void readAll(true)}>{t.retry}</button></div>}
+      <p className="monitor-help">{t.usageScope}</p>
       <section className="monitor-stats" aria-label={t.usage}>
         {[
           [t.calls, summary.calls.toLocaleString(), ""],
@@ -276,13 +287,14 @@ export function MonitorPage({ preferences, active }: Props) {
       </section>
 
       <section className="monitor-section">
-        <div className="monitor-section__head"><div><p className="monitor-eyebrow">UsageLog</p><h2>{t.usage}</h2></div></div>
-        {!filteredEvents.length ? <p className="monitor-empty">{t.noUsage}</p> : <><div className="monitor-table-wrap"><table className="monitor-table"><thead><tr><th>{t.time}</th><th>{t.source}</th><th>{t.provider}</th><th>{t.phase}</th><th>{t.cached}</th><th>{t.uncached}</th><th>{t.output}</th><th>{t.duration}</th></tr></thead><tbody>{filteredEvents.slice(0, visible).map((event) => {
-          const cache = event.tokens.cached_input_tokens;
-          const input = event.tokens.input_tokens;
-          const uncached = input != null && cache != null && input >= cache ? input - cache : null;
-          return <tr key={event.event_id}><td>{dateText(event.started_at)}</td><td>{event.source}</td><td>{event.provider}<small>{event.model}</small></td><td>{event.phase}<small>{event.status}</small></td><td>{formatCount(cache)}</td><td>{formatCount(uncached)}</td><td>{formatCount(event.tokens.output_tokens)}</td><td>{formatDuration(event.duration_ms)}</td></tr>;
-        })}</tbody></table></div>{visible < filteredEvents.length && <button className="btn monitor-more" type="button" onClick={() => setVisible((value) => value + 20)}>{t.showMore}</button>}</>}
+        <div className="monitor-section__head"><div><p className="monitor-eyebrow">UsageLog</p><h2>{t.usage}</h2></div><label className="monitor-operation-toggle"><input type="checkbox" checked={includeOperations} onChange={(event) => setIncludeOperations(event.target.checked)} />{t.includeOperations}</label></div>
+        <p className="monitor-help" aria-live="polite">{t.recordRange(visibleEvents.length, detailEvents.length)}</p>
+        {!detailEvents.length ? <p className="monitor-empty">{t.noUsage}</p> : <><div className="monitor-table-wrap"><table className="monitor-table"><thead><tr><th>{t.time}</th><th>{t.source}</th><th>{t.provider}</th><th>{t.phase}</th><th>{t.cached}</th><th>{t.uncached}</th><th>{t.output}</th><th>{t.duration}</th></tr></thead><tbody>{visibleEvents.map((event) => {
+          const modelCall = isModelCall(event);
+          return <tr key={event.event_id}><td>{dateText(event.started_at)}</td><td>{event.source}</td><td>{event.provider}<small>{event.model}</small></td><td>{event.phase}<small>{event.status}</small></td><td>{formatCount(modelCall ? event.tokens.cached_input_tokens : null)}</td><td>{formatCount(modelCall ? uncachedInput(event) : null)}</td><td>{formatCount(modelCall ? event.tokens.output_tokens : null)}</td><td>{formatDuration(event.duration_ms)}</td></tr>;
+        })}</tbody><tfoot>{[{ label: t.visibleSubtotal, totals: visibleSummary }, { label: t.allCallsTotal, totals: summary }].map(({ label, totals }) => {
+          return <tr key={label}><th colSpan={4} scope="row">{label}</th>{[totals.cachedInput, totals.uncachedInput, totals.output].map((bucket, index) => <td key={index}>{formatCount(bucket.value)}<small>{t.coverage(bucket.recorded, bucket.missing)}</small></td>)}<td>—</td></tr>;
+        })}</tfoot></table></div>{visible < detailEvents.length && <button className="btn monitor-more" type="button" onClick={() => setVisible((value) => value + 20)}>{t.showMore}</button>}</>}
       </section>
 
       <div className="monitor-lower-grid">
