@@ -66,10 +66,14 @@ class RenderCapability:
 class RenderProviderError(Exception):
     """Only certainty crosses this boundary, never raw HTTP/secret text."""
 
-    def __init__(self, outcome: Literal["failed", "unknown"]):
+    def __init__(self, outcome: Literal["failed", "unknown"], code: str = "provider_error"):
         if outcome not in ("failed", "unknown"):
             raise ValueError("A provider error must say failed or unknown.")
         self.outcome = outcome
+        self.code = code if code in {
+            "provider_error", "not_configured", "unsupported_input", "provider_rejected",
+            "timeout", "transport_unknown", "invalid_output",
+        } else "provider_error"
         super().__init__(outcome)
 
 
