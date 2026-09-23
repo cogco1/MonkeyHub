@@ -648,51 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-183",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Consume retained scoped feedback through the existing bound Hub chat tool: bind real user wording, save/revoke only avoid/keep, and verify the actual next artifact in a fresh provider session. Runtime decision persistence remains GH-185.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/monkeyhub/api/monkeyhub_api/chat.py",
-        "apps/monkeyhub/api/tests/test_chat_feedback.py",
-        "tests/monkeymonitor/run_feedback_loop.py",
-        "apps/monkeyhub/README.md"
-      ],
-      "card": "docs/mapping/planning/GH-183-scoped-feedback.md",
-      "acceptance": [
-        "Real user chat feedback is saved with its exact message origin and interpreted scope through the existing tool; model-authored provenance and lock/supersede routes are refused.",
-        "A fresh provider session produces an observed changed artifact using retained copy feedback; a design keep uses existing protected-ref execution, and unsupported hatch execution is explicitly deferred.",
-        "Revocation and unrelated task scope omit the feedback without Stage acceptance, HEAD change or parameter unlock. Focused behavior tests and archcheck pass."
-      ],
-      "notes": [
-        "Stacked on GH-185 PR #238 exact commit 9358d8c63132c25f1de0f26ce33246e616c9d706; upstream remains independently owned."
-      ],
-      "lanes": [
-        {
-          "id": "consumers",
-          "status": "active",
-          "issue": "GH-183 scoped feedback consumption",
-          "branch": "codex/183-decision-consumers",
-          "worktree": "C:/Users/asus/.codex/worktrees/36a7/ARCHFLOW_V4",
-          "base_ref": "9358d8c63132c25f1de0f26ce33246e616c9d706",
-          "contributor": "codex",
-          "reviewer": null,
-          "handoff": "Consume completed GH-185 commit; report Runtime failures to its owner; PR depends on #238.",
-          "modules": [
-            "hub.shell"
-          ],
-          "write_scope": [
-            "apps/monkeyhub/api/monkeyhub_api/chat.py",
-            "apps/monkeyhub/api/tests/test_chat_feedback.py",
-            "tests/monkeymonitor/run_feedback_loop.py",
-            "apps/monkeyhub/README.md"
-          ],
-          "depends_on": []
-        }
-      ]
     }
   ]
 }
