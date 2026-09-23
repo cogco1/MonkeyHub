@@ -8,11 +8,57 @@ from starlette.requests import Request
 
 from ..application.binding import bound_project
 from ..application.drawings import generate_elevation, generate_sheet, model_view
+from ..application.drawing_plans import generate_plan, plan_status, plan_dimension_choices, dimension_proposal
 from ..transport.artifacts import ModelSourceDto, SourceDocumentDto, document_dto, model_source_from
-from ..transport.drawings import DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto
+from ..transport.drawings import (
+    DrawingStylesDto, ElevationRequestDto, ModelViewDto, SheetRequestDto,
+    PlanRequestDto, PlanStatusRequestDto, PlanStatusDto,
+    PlanDimensionChoicesDto, PlanDimensionProposalRequestDto,
+)
 from ..transport.errors import StudioError
+from ..transport.proposal import ProposalDto, to_dto as proposal_dto
 
 router = APIRouter(tags=["drawings"])
+
+
+@router.post("/drawings/plans", response_model=SourceDocumentDto, response_model_by_alias=True, status_code=201)
+def create_plan(request: Request, payload: PlanRequestDto) -> SourceDocumentDto:
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
+    values = payload.model_dump(exclude={"project_id", "model_source", "dimensions"})
+    return document_dto(generate_plan(binding, **values,
+        model_source=None if payload.model_source is None else model_source_from(payload.model_source),
+        dimensions=None if payload.dimensions is None else [row.model_dump(by_alias=True) for row in payload.dimensions]))
+
+
+@router.post("/drawings/plans/status", response_model=PlanStatusDto, response_model_by_alias=True)
+def read_plan_status(request: Request, payload: PlanStatusRequestDto) -> PlanStatusDto:
+    return PlanStatusDto(**plan_status(bound_project(request.app.state),
+        **payload.model_dump(exclude={"target_model_source"}),
+        target_model_source=None if payload.target_model_source is None else model_source_from(payload.target_model_source)))
+
+
+@router.get("/drawings/plans/dimensions", response_model=PlanDimensionChoicesDto, response_model_by_alias=True)
+def read_plan_dimension_choices(request: Request,
+    source_run_id: str = Query(alias="sourceRunId", min_length=1),
+    state_digest: str = Query(alias="stateDigest", pattern=r"^[0-9a-f]{64}$"),
+    asset_sha256: str = Query(alias="assetSha256", pattern=r"^[0-9a-f]{64}$"),
+    source_stage_ref: str | None = Query(alias="sourceStageRef", default=None),
+) -> PlanDimensionChoicesDto:
+    source = model_source_from(ModelSourceDto(run_id=source_run_id, state_digest=state_digest, asset_sha256=asset_sha256))
+    return PlanDimensionChoicesDto(**plan_dimension_choices(bound_project(request.app.state), source, source_stage_ref))
+
+
+@router.post("/drawings/plans/dimension-proposal", response_model=ProposalDto, response_model_by_alias=True, status_code=201)
+def create_plan_dimension_proposal(request: Request, payload: PlanDimensionProposalRequestDto) -> ProposalDto:
+    binding = bound_project(request.app.state)
+    if payload.project_id != binding.project_id:
+        raise StudioError(403, "PROJECT_MISMATCH", "The drawing names another project.")
+    proposal = dimension_proposal(binding,
+        **payload.model_dump(exclude={"project_id", "target_model_source"}),
+        target_model_source=None if payload.target_model_source is None else model_source_from(payload.target_model_source))
+    return proposal_dto(request.app.state.proposals.put(proposal))
 
 
 @router.get("/drawings/model-view", response_model=ModelViewDto, response_model_by_alias=True)

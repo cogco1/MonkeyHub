@@ -36,7 +36,7 @@ from monkeyarch.capabilities.reference_resolver import (
     resolve_plan,
 )
 from monkeyarch.capabilities.opening_solver import DoorType, WindowType, solve_openings
-from monkeyarch.capabilities.wall_solver import OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall, subtract_rectangular_cutouts
+from monkeyarch.capabilities.wall_solver import HostedVoid, OpeningKind, OpeningRequest, WallElement, WallSolverError, solve_wall, subtract_rectangular_cutouts
 from archflow.project.refs import require_identifier
 from archflow.state.geometry_program import (
     DatumBinding,
@@ -450,6 +450,7 @@ class ProducedElement:
     relations: tuple[ProducedRelation, ...] = ()
     host_line: HostLine | None = None
     assemblies: tuple[HostedAssembly, ...] = ()
+    hosted_voids: tuple[HostedVoid, ...] = ()
 
 
 @dataclass
@@ -771,7 +772,7 @@ def produce_wall(row: ElementRow, context: ProductionContext) -> ProducedElement
         for fill in fills:
             ops.extend(fill.operations); bindings.extend(fill.datum_bindings); assemblies.append(fill.assembly)
     relations = tuple(ProducedRelation(f"{row.element_id}-hosts-{v.opening_id}", "hosts_void", row.element_id, v.opening_id, None) for v in solution.voids)
-    return ProducedElement(tuple(ops), tuple(bindings), (), relations, HostLine(origin, direction), tuple(assemblies))
+    return ProducedElement(tuple(ops), tuple(bindings), (), relations, HostLine(origin, direction), tuple(assemblies), solution.voids)
 
 
 def _rel(reference: Mapping[str, Any], base_datum: str, context: ProductionContext) -> float:

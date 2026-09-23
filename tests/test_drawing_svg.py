@@ -10,10 +10,11 @@ from monkeydiagram.drawing_svg import (
     DrawingSvgError,
     crop_polylines,
     drawing_svg,
+    dimension_placement_fits,
     render_svg_png,
     svg_objects,
 )
-from archflow.adapters.occt_backend import OcctDrawingPolyline
+from archflow.adapters.occt_backend import OcctDrawingPolyline, OcctDrawingRegion
 
 SVG = "{http://www.w3.org/2000/svg}"
 
@@ -120,6 +121,96 @@ class PngTests(unittest.TestCase):
                     b'<svg xmlns="http://www.w3.org/2000/svg" width="10mm" height="10mm" viewBox="0 0 1 1"><rect/></svg>'):
             with self.subTest(svg=svg), self.assertRaises(DrawingSvgError):
                 render_svg_png(svg)
+
+
+class CutPlanSvgTests(unittest.TestCase):
+    graphics = {"cutLineMm": 0.35, "visibleLineMm": 0.18, "hatchSpacingMm": 2.0}
+
+    def render(self, *, multiplier=1, unit="meter", dimensions=()):
+        loops = (
+            ((0, 0), (4, 0), (4, 4), (0, 4), (0, 0)),
+            ((1, 1), (3, 1), (3, 3), (1, 3), (1, 1)),
+        )
+        loops = tuple(tuple((x * multiplier, y * multiplier) for x, y in loop) for loop in loops)
+        lines = tuple(_line("wall", "section", *loop) for loop in loops)
+        return drawing_svg(lines, crop_uv=tuple(v * multiplier for v in (-1, -1, 5, 5)), unit=unit,
+                           scale_denominator=100, hidden_lines=False, title="cut-plan",
+                           regions=(OcctDrawingRegion("wall", loops),), graphics=self.graphics, dimensions=dimensions)
+
+    def test_section_hatch_keeps_hole_white_and_uses_paper_spacing_in_both_units(self):
+        from PIL import Image, ImageChops, ImageStat
+
+        svg = self.render()
+        root = ElementTree.fromstring(svg)
+        self.assertEqual(root.find(f"{SVG}g[@id='section']").get("stroke-width"), "0.0350")
+        self.assertTrue(root.findall(f"{SVG}g[@id='section-hatch']/{SVG}polyline"))
+        self.assertEqual(svg_objects(svg), ("wall",))
+        png = render_svg_png(svg, dots_per_inch=254)
+        mm_png = render_svg_png(self.render(multiplier=1000, unit="millimeter"), dots_per_inch=254)
+        with Image.open(BytesIO(png)) as image, Image.open(BytesIO(mm_png)) as mm:
+            self.assertEqual(image.size, (600, 600))
+            self.assertEqual(image.size, mm.size)
+            self.assertEqual(image.crop((210, 210, 390, 390)).getextrema(), (255, 255), "no hatch crosses the real hole")
+            self.assertLess(image.crop((110, 110, 190, 190)).getextrema()[0], 128, "material is hatched")
+            # SVG coordinate rounding may shift a single antialiased pixel; paper stroke widths and spacing remain identical.
+            self.assertLess(ImageStat.Stat(ImageChops.difference(image, mm)).mean[0], 1)
+
+    def test_resolved_dimension_text_and_marks_are_drawn_from_the_svg_and_unresolved_are_not(self):
+        from PIL import Image
+
+        resolved = {"id": "opening-width", "status": "resolved", "start": [1, 1], "end": [3, 1],
+                    "value": 2, "label": "2000 mm", "offsetMm": -12}
+        missing = {"id": "old-opening", "status": "missing", "label": "9999 BAD", "offsetMm": 8}
+        svg = self.render(dimensions=(resolved, missing))
+        self.assertEqual(svg, self.render(dimensions=(resolved, missing)))
+        root = ElementTree.fromstring(svg)
+        text = root.find(f".//{SVG}text")
+        self.assertEqual(text.text, "2000 mm")
+        self.assertNotIn(b"9999 BAD", svg)
+        self.assertNotIn(b"old-opening", svg)
+        png = render_svg_png(svg, dots_per_inch=254)
+        x, y = (float(text.get(key)) * 100 for key in ("x", "y"))
+        with Image.open(BytesIO(png)) as image:
+            self.assertLess(image.crop((int(x - 80), int(y - 35), int(x + 80), int(y))).getextrema()[0], 128)
+        text.text = ""
+        self.assertNotEqual(png, render_svg_png(ElementTree.tostring(root), dots_per_inch=254),
+                            "PNG labels must come from the supplied SVG, not from dimensions outside it")
+
+    def test_invalid_graphics_or_resolved_coordinates_are_refused(self):
+        for changed in ({"cutLineMm": 0}, {"hatchSpacingMm": float("nan")}, {"visibleLineMm": False}):
+            with self.subTest(changed=changed), self.assertRaises(DrawingSvgError):
+                drawing_svg((), crop_uv=(0, 0, 4, 4), unit="meter", scale_denominator=100,
+                            hidden_lines=False, title="cut", graphics={**self.graphics, **changed})
+        with self.assertRaises(DrawingSvgError):
+            self.render(dimensions=({"id": "bad", "status": "resolved", "start": [9, 9], "end": [3, 1],
+                                     "value": 2, "label": "2", "offsetMm": 5},))
+
+
+    def test_complete_dimension_placement_checks_offset_ticks_and_actual_text_bounds(self):
+        row = {"id": "door-width", "status": "resolved", "start": [1, 1], "end": [3, 1],
+               "value": 2, "label": "2000 mm", "offsetMm": 8}
+        crop = (0, 0, 4, 4)
+        self.assertTrue(dimension_placement_fits(row, crop, 10))
+        mm = {**row, "start": [1000, 1000], "end": [3000, 1000]}
+        self.assertTrue(dimension_placement_fits(mm, (0, 0, 4000, 4000), .01))
+        cases = (
+            {**row, "offsetMm": 100},
+            {**row, "offsetMm": -100},
+            {**row, "start": [.05, 1], "end": [2, 1]},  # endpoints fit, but the left tick crosses the edge
+            {**row, "start": [1, 3.8], "end": [3, 3.8], "offsetMm": 0},  # marks fit, glyphs above baseline do not
+            {**row, "start": [3, 1], "end": [3.5, 1], "label": "200000000000 mm"},
+        )
+        for changed in cases:
+            with self.subTest(row=changed):
+                self.assertTrue(all(0 <= v <= 4 for p in (changed["start"], changed["end"]) for v in p),
+                                "each source endpoint is valid; only the displayed placement leaves the crop")
+                self.assertFalse(dimension_placement_fits(changed, crop, 10))
+                with self.assertRaisesRegex(DrawingSvgError, "text or marks outside"):
+                    drawing_svg((), crop_uv=crop, unit="meter", scale_denominator=100,
+                                hidden_lines=False, title="plan", dimensions=(changed,))
+        self.assertEqual(row["offsetMm"], 8, "fit checking cannot rewrite retained representation intent")
+        with self.assertRaises(DrawingSvgError):
+            dimension_placement_fits(row, crop, 0)
 
 
 if __name__ == "__main__":

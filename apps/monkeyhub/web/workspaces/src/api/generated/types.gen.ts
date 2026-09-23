@@ -5051,6 +5051,314 @@ export type PickResolutionDto = {
 };
 
 /**
+ * PlanDimensionChoiceDto
+ */
+export type PlanDimensionChoiceDto = {
+    /**
+     * Entityref
+     */
+    entityRef: string;
+    /**
+     * Openingid
+     */
+    openingId: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Parameterkey
+     */
+    parameterKey?: string | null;
+    /**
+     * Parameterunit
+     */
+    parameterUnit?: string | null;
+    /**
+     * Candrive
+     */
+    canDrive: boolean;
+    /**
+     * Drivereason
+     */
+    driveReason?: string | null;
+};
+
+/**
+ * PlanDimensionChoicesDto
+ */
+export type PlanDimensionChoicesDto = {
+    /**
+     * Lengthunit
+     */
+    lengthUnit: string;
+    /**
+     * Dimensions
+     */
+    dimensions: Array<PlanDimensionChoiceDto>;
+};
+
+/**
+ * PlanDimensionDto
+ *
+ * One semantic aperture, not a client-authored measurement or driving grant.
+ */
+export type PlanDimensionDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Entityref
+     */
+    entityRef: string;
+    /**
+     * Openingid
+     */
+    openingId: string;
+    placement?: PlanDimensionPlacementDto;
+};
+
+/**
+ * PlanDimensionPlacementDto
+ */
+export type PlanDimensionPlacementDto = {
+    /**
+     * Offsetmm
+     */
+    offsetMm?: number;
+};
+
+/**
+ * PlanDimensionProposalRequestDto
+ */
+export type PlanDimensionProposalRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    targetModelSource?: ModelSourceDto | null;
+    /**
+     * Targetstageref
+     */
+    targetStageRef?: string | null;
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Dimensionid
+     */
+    dimensionId: string;
+    /**
+     * Value
+     *
+     * Requested aperture width in the source STEP length unit.
+     */
+    value: number;
+};
+
+/**
+ * PlanDimensionReadDto
+ */
+export type PlanDimensionReadDto = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Entityref
+     */
+    entityRef: string;
+    /**
+     * Openingid
+     */
+    openingId: string;
+    /**
+     * Status
+     */
+    status: 'resolved' | 'missing' | 'ambiguous' | 'outside-view' | 'unverified';
+    /**
+     * Start
+     */
+    start?: [
+        number,
+        number
+    ] | null;
+    /**
+     * End
+     */
+    end?: [
+        number,
+        number
+    ] | null;
+    /**
+     * Value
+     */
+    value?: number | null;
+    /**
+     * Label
+     */
+    label?: string | null;
+    /**
+     * Offsetmm
+     */
+    offsetMm: number;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Parameterkey
+     */
+    parameterKey?: string | null;
+    /**
+     * Parameterunit
+     */
+    parameterUnit?: string | null;
+    /**
+     * Candrive
+     */
+    canDrive: boolean;
+    /**
+     * Drivereason
+     */
+    driveReason?: string | null;
+};
+
+/**
+ * PlanRequestDto
+ */
+export type PlanRequestDto = {
+    /**
+     * Projectid
+     */
+    projectId: string;
+    /**
+     * Sourcestageref
+     */
+    sourceStageRef?: string | null;
+    modelSource?: ModelSourceDto | null;
+    /**
+     * Drawingid
+     */
+    drawingId?: string | null;
+    /**
+     * Previousrevisionref
+     */
+    previousRevisionRef?: string | null;
+    /**
+     * Cutheight
+     *
+     * Horizontal cut elevation in the exact STEP length unit.
+     */
+    cutHeight?: number | null;
+    /**
+     * Bottom
+     */
+    bottom?: number | null;
+    /**
+     * Scaledenominator
+     */
+    scaleDenominator?: number | null;
+    /**
+     * Cropuv
+     */
+    cropUv?: [
+        number,
+        number,
+        number,
+        number
+    ] | null;
+    /**
+     * Cutlinemm
+     */
+    cutLineMm?: number | null;
+    /**
+     * Visiblelinemm
+     */
+    visibleLineMm?: number | null;
+    /**
+     * Hatchspacingmm
+     */
+    hatchSpacingMm?: number | null;
+    /**
+     * Hiddenobjectids
+     */
+    hiddenObjectIds?: Array<string> | null;
+    /**
+     * Dimensions
+     */
+    dimensions?: Array<PlanDimensionDto> | null;
+};
+
+/**
+ * PlanStatusDto
+ */
+export type PlanStatusDto = {
+    /**
+     * Status
+     */
+    status: 'current' | 'outdated' | 'partially-broken' | 'unknown';
+    /**
+     * Detail
+     */
+    detail: string;
+    targetModelSource?: ModelSourceDto | null;
+    /**
+     * Targetstageref
+     */
+    targetStageRef?: string | null;
+    /**
+     * Lengthunit
+     */
+    lengthUnit?: string | null;
+    /**
+     * Bindingchanged
+     */
+    bindingChanged?: boolean;
+    /**
+     * Dimensions
+     */
+    dimensions?: Array<PlanDimensionReadDto>;
+    /**
+     * Unresolvedobjectids
+     */
+    unresolvedObjectIds?: Array<string>;
+};
+
+/**
+ * PlanStatusRequestDto
+ */
+export type PlanStatusRequestDto = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256: string;
+    /**
+     * Revisionref
+     */
+    revisionRef: string;
+    targetModelSource?: ModelSourceDto | null;
+    /**
+     * Targetstageref
+     */
+    targetStageRef?: string | null;
+};
+
+/**
  * ProgramAdjacencyDto
  *
  * One requirement between two spaces of the brief.
@@ -10501,6 +10809,163 @@ export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses = {
 };
 
 export type ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponse = ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses[keyof ReviseDecisionApiDecisionsDecisionIdRevisionsPostResponses];
+
+export type CreatePlanApiDrawingsPlansPostData = {
+    body: PlanRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/plans';
+};
+
+export type CreatePlanApiDrawingsPlansPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreatePlanApiDrawingsPlansPostError = CreatePlanApiDrawingsPlansPostErrors[keyof CreatePlanApiDrawingsPlansPostErrors];
+
+export type CreatePlanApiDrawingsPlansPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: SourceDocumentDto;
+};
+
+export type CreatePlanApiDrawingsPlansPostResponse = CreatePlanApiDrawingsPlansPostResponses[keyof CreatePlanApiDrawingsPlansPostResponses];
+
+export type ReadPlanStatusApiDrawingsPlansStatusPostData = {
+    body: PlanStatusRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/plans/status';
+};
+
+export type ReadPlanStatusApiDrawingsPlansStatusPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadPlanStatusApiDrawingsPlansStatusPostError = ReadPlanStatusApiDrawingsPlansStatusPostErrors[keyof ReadPlanStatusApiDrawingsPlansStatusPostErrors];
+
+export type ReadPlanStatusApiDrawingsPlansStatusPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlanStatusDto;
+};
+
+export type ReadPlanStatusApiDrawingsPlansStatusPostResponse = ReadPlanStatusApiDrawingsPlansStatusPostResponses[keyof ReadPlanStatusApiDrawingsPlansStatusPostResponses];
+
+export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query: {
+        /**
+         * Sourcerunid
+         */
+        sourceRunId: string;
+        /**
+         * Statedigest
+         */
+        stateDigest: string;
+        /**
+         * Assetsha256
+         */
+        assetSha256: string;
+        /**
+         * Sourcestageref
+         */
+        sourceStageRef?: string | null;
+    };
+    url: '/api/drawings/plans/dimensions';
+};
+
+export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetError = ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors[keyof ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetErrors];
+
+export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlanDimensionChoicesDto;
+};
+
+export type ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponse = ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses[keyof ReadPlanDimensionChoicesApiDrawingsPlansDimensionsGetResponses];
+
+export type CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostData = {
+    body: PlanDimensionProposalRequestDto;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/drawings/plans/dimension-proposal';
+};
+
+export type CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostError = CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostErrors[keyof CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostErrors];
+
+export type CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ProposalDto;
+};
+
+export type CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostResponse = CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostResponses[keyof CreatePlanDimensionProposalApiDrawingsPlansDimensionProposalPostResponses];
 
 export type ReadModelViewApiDrawingsModelViewGetData = {
     body?: never;

@@ -165,6 +165,10 @@ def require_actor(request: Request, action: str, project_id: str | None = None) 
 def request_action(method: str, path: str, *, shared_project: bool) -> str | None:
     """One action mapping for both route assembly and request authorization."""
 
+    if not shared_project and method == "POST" and path == "/api/drawings/plans/status":
+        # Exact source references travel in a body, but freshness/anchor inspection
+        # is a read. Shared services still exclude this local geometry computation.
+        return "read"
     if not shared_project and method == "POST" and path == "/api/proposals/parameter-locks":
         # An explicit constraint decision uses the existing decision grant;
         # it still produces only a detached candidate, never Stage acceptance.

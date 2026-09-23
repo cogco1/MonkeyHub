@@ -46,7 +46,7 @@ function Icon({ name }: { name: DocumentTool | "undo" | "redo" | "fit" }) {
 }
 
 /** PDF.js applies the native CropBox and rotation; both canvas and ink use that visible page. */
-function DocumentSurface({ file, page, scale, onReady, timing }: {
+export function DocumentSurface({ file, page, scale, onReady, timing }: {
   file: File; page: DocumentPageDto; scale: number; onReady(ready: boolean): void;
   timing?: ClientTimingSpan;
 }) {
