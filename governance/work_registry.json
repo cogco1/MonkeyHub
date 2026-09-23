@@ -679,7 +679,9 @@
         "governance/work_registry.json",
         "apps/monkeyhub/web/src/api/generated/",
         "docs/DYNAMIC_MAP.md",
-        "docs/mapping/planning/INDEX.md"
+        "docs/mapping/planning/INDEX.md",
+        "labs/retrieval/",
+        "docs/mapping/planning/GH-122-retrieval-lab.md"
       ],
       "branch": "codex/task-evidence-context",
       "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-task-evidence-context",
@@ -690,7 +692,35 @@
       "acceptance": [
         "Exact Study references survive cold reads and reach ContextPack with conditions and counterevidence intact.",
         "Insufficient byte budget yields no stripped prior; wrong project or revision is refused.",
-        "Existing design scope and decisions remain unchanged; no writes or provider calls."
+        "Existing design scope and decisions remain unchanged; no writes or provider calls.",
+        "Obtain attributed human review of the 41 proxy judgments, including auxiliary precedent evidence, before any held-out default selection. Current results remain development evidence, not parent-issue acceptance."
+      ],
+      "lanes": [
+        {
+          "id": "retrieval-lab",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/122",
+          "branch": "codex/gh122-retrieval-lab",
+          "worktree": "C:\\Users\\asus\\.codex\\worktrees\\adfd\\ARCHFLOW_V4",
+          "base_ref": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d",
+          "contributor": "Codex retrieval task",
+          "reviewer": "Codex review_retrieval agent",
+          "handoff": "Coordinator task 01a07a9b-1a50-7081-9e08-1b86961d799e; append this lab lane to its GH-122 item during integration without replacing the public context lane.",
+          "modules": [
+            "studio.shell"
+          ],
+          "write_scope": [
+            "labs/retrieval/",
+            "docs/mapping/planning/GH-122-retrieval-lab.md",
+            "governance/work_registry.json"
+          ],
+          "depends_on": [],
+          "status": "review",
+          "blocked_reason": null
+        }
+      ],
+      "card": "docs/mapping/planning/GH-122-retrieval-lab.md",
+      "notes": [
+        "Independent GH-122/retrieval-lab review slice. Four real CPU methods, 54 fragments, 41 proxy queries and 656 measurements are delivered. Human judgments, broader corpus/chunking/downstream work remain #122. Public integration stays with coordinator; append this lane to the coordinator-owned GH-122 item at integration."
       ]
     }
   ]

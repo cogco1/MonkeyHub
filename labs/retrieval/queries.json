@@ -1,0 +1,826 @@
+{
+  "label_origin": "agent-authored proxy judgments; human review pending",
+  "query_reuse": "Study queries adapt the existing study_fixture question and research note; no GH-122 query file existed at base. Regulatory/API queries are new, source-grounded agent prompts.",
+  "queries": [
+    {
+      "id": "reg-walk",
+      "request": {
+        "query": "How wide must an accessible walking surface be?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-walk",
+        "ada-walk-exception",
+        "ada-turn",
+        "ada-turn-exception",
+        "ada-passing"
+      ],
+      "principal": [
+        "ada-walk"
+      ],
+      "companions": [
+        "ada-walk-exception",
+        "ada-turn",
+        "ada-turn-exception",
+        "ada-passing"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-pinch",
+      "request": {
+        "query": "May a 32 inch walking route pinch point continue indefinitely?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-walk-exception",
+        "ada-walk",
+        "ada-turn",
+        "ada-turn-exception",
+        "ada-passing"
+      ],
+      "principal": [
+        "ada-walk-exception"
+      ],
+      "companions": [
+        "ada-walk",
+        "ada-turn",
+        "ada-turn-exception",
+        "ada-passing"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-door",
+      "request": {
+        "query": "Where is the 32 inch clear door opening measured with a swinging door?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-door",
+        "ada-door-exception-1",
+        "ada-door-exception-2"
+      ],
+      "principal": [
+        "ada-door"
+      ],
+      "companions": [
+        "ada-door-exception-1",
+        "ada-door-exception-2"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-deep",
+      "request": {
+        "query": "What clear width applies when a doorway is more than 24 inches deep?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-door",
+        "ada-door-exception-1",
+        "ada-door-exception-2"
+      ],
+      "principal": [
+        "ada-door"
+      ],
+      "companions": [
+        "ada-door-exception-1",
+        "ada-door-exception-2"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-hospital",
+      "request": {
+        "query": "Does a hospital patient room entry require clearance beyond its latch?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-maneuver",
+        "ada-maneuver-exception"
+      ],
+      "principal": [
+        "ada-maneuver"
+      ],
+      "companions": [
+        "ada-maneuver-exception"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "reg-ramp",
+      "request": {
+        "query": "What running slope is allowed for an accessible ramp?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-ramp",
+        "ada-definition",
+        "ada-ramp-exception"
+      ],
+      "principal": [
+        "ada-ramp"
+      ],
+      "companions": [
+        "ada-definition",
+        "ada-ramp-exception"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-definition",
+      "request": {
+        "query": "When does a walking surface become a ramp rather than an ordinary path?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-definition"
+      ],
+      "principal": [
+        "ada-definition"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-rise",
+      "request": {
+        "query": "What is the maximum rise for a ramp run?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-rise"
+      ],
+      "principal": [
+        "ada-rise"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-landing",
+      "request": {
+        "query": "How long must the clear ramp landing be?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-landing"
+      ],
+      "principal": [
+        "ada-landing"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-table",
+      "request": {
+        "query": "For a front pull approach what are perpendicular and latch-side door clearances?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2010"
+      },
+      "relevant": [
+        "ada-table-front-pull",
+        "ada-table-header"
+      ],
+      "principal": [
+        "ada-table-front-pull"
+      ],
+      "companions": [
+        "ada-table-header"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": true
+    },
+    {
+      "id": "reg-jurisdiction-missing",
+      "request": {
+        "query": "What accessible door width is required in New York City zoning?",
+        "corpus": "regulation",
+        "jurisdiction": "NYC-zoning",
+        "version": "2026"
+      },
+      "relevant": [],
+      "principal": [],
+      "companions": [],
+      "known_missing": true,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "reg-version-missing",
+      "request": {
+        "query": "What does the 2025 edition say about ramp run slope?",
+        "corpus": "regulation",
+        "jurisdiction": "US-ADA",
+        "version": "2025"
+      },
+      "relevant": [],
+      "principal": [],
+      "companions": [],
+      "known_missing": true,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-original",
+      "request": {
+        "query": "Which geometric consequence and explanations are being tested?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-method"
+      ],
+      "principal": [
+        "study-method"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-binding",
+      "request": {
+        "query": "How does Study bind research to an exact document page?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-source"
+      ],
+      "principal": [
+        "study-source"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-overlap",
+      "request": {
+        "query": "Do overlapping bounding boxes establish polygon overlap?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-geometry"
+      ],
+      "principal": [
+        "study-geometry"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-passage",
+      "request": {
+        "query": "Does the connected stepped gap establish a usable north-south passage?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-hypotheses",
+        "study-gap",
+        "study-changed-context"
+      ],
+      "principal": [
+        "study-hypotheses"
+      ],
+      "companions": [
+        "study-gap",
+        "study-changed-context"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-unknown",
+      "request": {
+        "query": "What evidence is missing to distinguish circulation from an environmental gap?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-gap",
+        "study-hypotheses"
+      ],
+      "principal": [
+        "study-gap"
+      ],
+      "companions": [
+        "study-hypotheses"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-intervention",
+      "request": {
+        "query": "Does moving a mass automatically enlarge the retained source void trace?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-intervention",
+        "study-counterprediction"
+      ],
+      "principal": [
+        "study-intervention"
+      ],
+      "companions": [
+        "study-counterprediction"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-oracle",
+      "request": {
+        "query": "How was connectivity checked without counting corner contact?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-oracle"
+      ],
+      "principal": [
+        "study-oracle"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-variants",
+      "request": {
+        "query": "Are base contracted and blocked independent historical precedents?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-variants"
+      ],
+      "principal": [
+        "study-variants"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-prior",
+      "request": {
+        "query": "Can a silhouette be copied as a transferable through-connection rule?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-pattern",
+        "study-gap",
+        "study-changed-context"
+      ],
+      "principal": [
+        "study-pattern"
+      ],
+      "companions": [
+        "study-gap",
+        "study-changed-context"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-counterexample",
+      "request": {
+        "query": "Find a changed use that defeats the attractive circulation analogy.",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-changed-context",
+        "study-pattern"
+      ],
+      "principal": [
+        "study-changed-context"
+      ],
+      "companions": [
+        "study-pattern"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-trace",
+      "request": {
+        "query": "Does the manual authored fixture prove the image provider completed tracing?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-manual"
+      ],
+      "principal": [
+        "study-manual"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-prediction",
+      "request": {
+        "query": "Which prediction about removing a mass was contradicted by the actual clear area?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [
+        "study-counterprediction",
+        "study-intervention"
+      ],
+      "principal": [
+        "study-counterprediction"
+      ],
+      "companions": [
+        "study-intervention"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-width",
+      "request": {
+        "query": "What courtyard width does the current project brief protect?",
+        "corpus": "project",
+        "project": "alpha",
+        "version": "r2"
+      },
+      "relevant": [
+        "alpha-r2-brief"
+      ],
+      "principal": [
+        "alpha-r2-brief"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-entrance",
+      "request": {
+        "query": "Which side is the current entrance on?",
+        "corpus": "project",
+        "project": "alpha",
+        "version": "r2"
+      },
+      "relevant": [
+        "alpha-r2-decision",
+        "alpha-r2-brief"
+      ],
+      "principal": [
+        "alpha-r2-decision"
+      ],
+      "companions": [
+        "alpha-r2-brief"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-superseded",
+      "request": {
+        "query": "Does the old east entrance decision still apply?",
+        "corpus": "project",
+        "project": "alpha",
+        "version": "r2"
+      },
+      "relevant": [
+        "alpha-r2-decision",
+        "alpha-r2-brief"
+      ],
+      "principal": [
+        "alpha-r2-decision"
+      ],
+      "companions": [
+        "alpha-r2-brief"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-dimension",
+      "request": {
+        "query": "Should I widen this courtyard to six metres?",
+        "corpus": "project",
+        "project": "alpha",
+        "version": "r2"
+      },
+      "relevant": [
+        "alpha-r2-brief"
+      ],
+      "principal": [
+        "alpha-r2-brief"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-old",
+      "request": {
+        "query": "Which entrance did the earlier revision declare?",
+        "corpus": "project",
+        "project": "alpha",
+        "version": "r1"
+      },
+      "relevant": [
+        "alpha-r1-decision"
+      ],
+      "principal": [
+        "alpha-r1-decision"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-beta",
+      "request": {
+        "query": "What courtyard width does the current brief require?",
+        "corpus": "project",
+        "project": "beta",
+        "version": "r2"
+      },
+      "relevant": [
+        "beta-r2-brief"
+      ],
+      "principal": [
+        "beta-r2-brief"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-missing",
+      "request": {
+        "query": "Which entrance is approved in gamma?",
+        "corpus": "project",
+        "project": "gamma",
+        "version": "r2"
+      },
+      "relevant": [],
+      "principal": [],
+      "companions": [],
+      "known_missing": true,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "project-revision-missing",
+      "request": {
+        "query": "What does the future revision r3 require?",
+        "corpus": "project",
+        "project": "alpha",
+        "version": "r3"
+      },
+      "relevant": [],
+      "principal": [],
+      "companions": [],
+      "known_missing": true,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-exists",
+      "request": {
+        "query": "Can I check a symlink itself rather than its target with Path.exists?",
+        "corpus": "technical",
+        "version": "3.12"
+      },
+      "relevant": [
+        "py3.12-exists",
+        "py3.12-exists-condition"
+      ],
+      "principal": [
+        "py3.12-exists"
+      ],
+      "companions": [
+        "py3.12-exists-condition"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-relative",
+      "request": {
+        "query": "How does relative_to walk_up allow parent segments and when does it raise?",
+        "corpus": "technical",
+        "version": "3.12"
+      },
+      "relevant": [
+        "py3.12-relative",
+        "py3.12-relative-condition",
+        "py3.12-relative-warning"
+      ],
+      "principal": [
+        "py3.12-relative"
+      ],
+      "companions": [
+        "py3.12-relative-condition",
+        "py3.12-relative-warning"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-glob",
+      "request": {
+        "query": "Can glob override platform dependent case matching?",
+        "corpus": "technical",
+        "version": "3.12"
+      },
+      "relevant": [
+        "py3.12-glob",
+        "py3.12-glob-condition"
+      ],
+      "principal": [
+        "py3.12-glob"
+      ],
+      "companions": [
+        "py3.12-glob-condition"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-isdir",
+      "request": {
+        "query": "Does Path.is_dir return false for a broken symbolic link?",
+        "corpus": "technical",
+        "version": "3.12"
+      },
+      "relevant": [
+        "py3.12-is-dir",
+        "py3.12-is-dir-condition"
+      ],
+      "principal": [
+        "py3.12-is-dir"
+      ],
+      "companions": [
+        "py3.12-is-dir-condition"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-old",
+      "request": {
+        "query": "What did Python 3.11 Path.exists promise about existing paths?",
+        "corpus": "technical",
+        "version": "3.11"
+      },
+      "relevant": [
+        "py3.11-exists"
+      ],
+      "principal": [
+        "py3.11-exists"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-absent-version",
+      "request": {
+        "query": "What is the Path.glob API in Python 3.9?",
+        "corpus": "technical",
+        "version": "3.9"
+      },
+      "relevant": [],
+      "principal": [],
+      "companions": [],
+      "known_missing": true,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-glob-return",
+      "request": {
+        "query": "Does glob yield only files or all kinds of matching paths?",
+        "corpus": "technical",
+        "version": "3.12"
+      },
+      "relevant": [
+        "py3.12-glob"
+      ],
+      "principal": [
+        "py3.12-glob"
+      ],
+      "companions": [],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "tech-error",
+      "request": {
+        "query": "When does relative_to raise ValueError?",
+        "corpus": "technical",
+        "version": "3.12"
+      },
+      "relevant": [
+        "py3.12-relative",
+        "py3.12-relative-condition",
+        "py3.12-relative-warning"
+      ],
+      "principal": [
+        "py3.12-relative"
+      ],
+      "companions": [
+        "py3.12-relative-condition",
+        "py3.12-relative-warning"
+      ],
+      "known_missing": false,
+      "label_origin": "agent-authored proxy judgment; not human reviewed",
+      "numeric_rule": false
+    },
+    {
+      "id": "pre-missing-intent",
+      "request": {
+        "query": "What was the original historical architect intent for this stepped void?",
+        "corpus": "precedent",
+        "version": "27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d"
+      },
+      "relevant": [],
+      "principal": [],
+      "companions": [],
+      "known_missing": true,
+      "label_origin": "agent-authored proxy judgment; absent semantic evidence despite matching metadata",
+      "numeric_rule": false
+    }
+  ]
+}
