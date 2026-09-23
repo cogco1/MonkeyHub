@@ -5,10 +5,10 @@
 
 Phase: Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.
 
-- active: P115
+- active: P115, GH-32
 - ready: none
 - blocked: P105, P108, P110, P111, P113
-- next: continue active work: P115
+- next: continue active work: P115, GH-32
 
 ## Live work
 
@@ -20,3 +20,4 @@ Phase: Namespace migration and local Stage/Branch/Candidate implementation are c
 | P110 | blocked | Connect actual retained obligations and authorized claims to the existing validation input so a violated project requirement cannot disappear behind empty facts. Follow the exact record references through one existing owner; do not treat a reference envelope as design content or invent facts to fill an old schema. Existing relation checks remain in use; candidate continuation need not wait for this entire card. | [P110](mapping/planning/P110-canonical-state-projection.md) |
 | P111 | blocked | Follow up the existing-project trial of delivered candidate continuation: the selected run remains the next edit's exact base and preserves the prior revision. Implementation and isolated verification are complete; The remaining user trial is blocked pending the current page and a new specific edit. This does not establish whole-assembly usability or correct architectural dependencies. | [P111](mapping/planning/P111-continuing-design-cycle.md) |
 | P113 | blocked | Make retained research evidence usable by one identified design or export consumer. First check existing Reading and source references; extend their existing owner if sufficient. The earlier ledger/import/export design is a proposal to revisit only if that consumer demonstrates a missing contract. | [P113](mapping/planning/P113-evidence-ledger.md) |
+| GH-32 | active | Reduce redundant covered-fact reads in a numeric candidate observation using existing Hub tool guidance, measured with three frozen AB/BA pairs. | [GH-32](https://github.com/cogco1/MonkeyHub/issues/32) |
