@@ -14,11 +14,12 @@ from archflow_studio_api.application.binding import bound_project
 from archflow_studio_api.application.render_contract import RenderCapability, RenderOutput, RenderProviderError
 from archflow_studio_api.main import create_app
 from archflow_studio_api.settings import StudioSettings, SettingsError
-from archflow_studio_api.application.artifacts import save_document
+from archflow_studio_api.application.artifacts import ModelSource, save_document
 from archflow.project.ports import PersistenceArea, PersistenceDestination
 from archflow.project.record_kinds import STUDIO_RENDER_JOB
 
 from .support import make_project, PROJECT_ID
+from .test_design_history import DesignHistoryFixture
 
 
 def png(color="blue"):
@@ -326,3 +327,29 @@ def test_real_gemini_adapter_mock_transport_through_http_and_p036(setup):
     assert result["document"]["viewRecipe"]["request"]["source"] == source
     assert submit(client, payload)["status"] == "succeeded" and len(transport.calls) == 1
     assert repository.read_head() == head
+
+
+class RenderModelFreshnessTests(DesignHistoryFixture):
+    def test_declared_stage_advances_without_rebinding_saved_render(self):
+        stage = self.initialize()
+        adapter = Adapter()
+        self.app.state.render_jobs.adapter = adapter
+        self.addCleanup(self.app.state.render_jobs.shutdown)
+        source = save_document(
+            bound_project(self.app.state), stage["candidateId"], "exact-view.png", "image/png",
+            base64.b64encode(png()).decode(),
+            model_source=ModelSource.from_dict(stage["modelSource"]),
+            source_stage_ref=stage["stageRef"], view_recipe={"camera": {"projection": "orthographic"}},
+        )
+        page = {"runId": source.run_id, "assetSha256": source.asset_sha256, "revisionRef": None, "pageIndex": 0}
+        result = finished(self.client, submit(self.client, request(page)))
+        self.assertEqual(result["sourceState"], "current")
+        self.assertEqual(result["document"]["modelSource"], stage["modelSource"])
+        candidate = self.candidate_from(stage)
+        accepted = self.accept(candidate, stage)
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        stale = self.client.get("/api/render/jobs/" + result["jobId"]).json()
+        self.assertEqual(stale["sourceState"], "outdated")
+        self.assertEqual(stale["document"], result["document"])
+        self.assertEqual(stale["document"]["viewRecipe"]["sourceSnapshots"][0]["viewRecipe"], source.view_recipe)
+        self.assertEqual(self.repository.read_head(), self.initial_head)
