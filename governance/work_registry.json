@@ -20,7 +20,6 @@
         "apps/archflow-studio/api/tests/test_rendering.py",
         "apps/archflow-studio/api/tests/test_settings.py"
       ],
-      "card": "https://github.com/cogco1/MonkeyHub/issues/253",
       "acceptance": [
         "Exact registered images and ordered references; one dispatch per request; immutable SourceDocument outputs; restart without replay; unchanged Design HEAD; real provider acceptance."
       ],

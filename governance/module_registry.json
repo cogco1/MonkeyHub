@@ -219,6 +219,73 @@
   ],
   "modules": [
     {
+      "module_id": "studio.render",
+      "owner_path": "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+      "purpose": "Retain and execute independent image attempts in the existing project Runtime. CREATE: candidate jobs require proposals and design runs; artifacts owns saving, not paid image execution.",
+      "status": "canonical",
+      "owns": [
+        "Exact registered image-page resolution, ordered references and immutable per-request attempts",
+        "P036 RenderJobRecords history and restart readback without paid replay",
+        "ImageRenderAdapter values, server-image dispatch and safe unknown versus failed outcomes",
+        "Derived source replacement or declared Stage branch freshness; no inferred model source"
+      ],
+      "does_not_own": [
+        "SourceDocument persistence and bytes: studio.artifacts",
+        "Design geometry, Stage acceptance or HEAD advancement",
+        "Browser-native or external host execution",
+        "Hub navigation and application lifecycle"
+      ],
+      "public_api": [
+        "GET /api/render/capabilities",
+        "POST /api/render/jobs",
+        "GET /api/render/jobs/{job_id}",
+        "GET /api/render/jobs",
+        "RenderJobRecords",
+        "ImageRenderAdapter",
+        "RenderInput",
+        "RenderOutput",
+        "RenderProviderError",
+        "RenderCapability"
+      ],
+      "depends_on": [
+        "studio.artifacts",
+        "studio.binding",
+        "studio.shell",
+        "project.ports",
+        "project.record_kinds",
+        "project.refs",
+        "project.repository",
+        "contracts.canonical",
+        "monkeymonitor"
+      ],
+      "files": [
+        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/render_contract.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py"
+      ],
+      "tests": [
+        "apps/archflow-studio/api/tests/test_rendering.py"
+      ],
+      "inputs": [
+        "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
+        "Explicitly injected image adapter and optional StudioMonitor"
+      ],
+      "outputs": [
+        "Project-scoped immutable render-job transitions and SourceDocument result references",
+        "Adapter-derived capability availability; nullable actual usage and cost"
+      ],
+      "invariants": [
+        "Each requestId has one immutable request and at most one dispatch; changed parameters conflict",
+        "Every attempt has its own P036 run, including identical output bytes from different requests",
+        "Restart or uncertain provider response yields unknown and never causes automatic replay",
+        "No adapter receives a project path or writer; all result persistence uses save_document",
+        "Uploaded images without models are valid and never acquire fabricated modelSource",
+        "Source freshness is derived from registered replacements and a declared Stage branch, never filenames or current UI selection",
+        "No render action changes Design HEAD or accepts a Stage; hidden UI does not cancel a running attempt"
+      ]
+    },
+    {
       "module_id": "adapters.cad_execution",
       "owner_path": "archflow/adapters/cad_execution.py",
       "purpose": "Execute an exact compiled program through one CAD backend interface: OCCT exact STEP/mesh preview, supervised Rhino export, or Blender mesh scene save and cold readback. Extract named drawing edges and material sections from existing OCCT shapes.",

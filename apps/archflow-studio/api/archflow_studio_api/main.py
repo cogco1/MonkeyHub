@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
+from starlette.concurrency import run_in_threadpool
 from starlette.types import ASGIApp, Receive, Scope, Send
 import uvicorn
 
@@ -33,6 +34,7 @@ from .application.episodes import EpisodeStore
 from .application.events import StudioEvents
 from .application.intent_agent import compiler_from_settings
 from .application.jobs import JobRegistry
+from .application.rendering import RenderJobRecords
 from .application.monitoring import MonitoredCompiler, StudioMonitor
 from .application.options import OptionStore
 from .application.proposals import ProposalStore
@@ -174,7 +176,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         initialize_drawing_runtime()
 
     yield
-    app.state.jobs.shutdown()
+    app.state.jobs.stop_accepting()
+    app.state.render_jobs.stop_accepting()
+    await run_in_threadpool(app.state.render_jobs.shutdown)
+    await run_in_threadpool(app.state.jobs.shutdown)
 
 
 async def _diagnostic_request(request: Request,
@@ -213,7 +218,7 @@ async def _diagnostic_request(request: Request,
                     interval["project_id"] = binding.project_id
 
 
-def create_app(settings: StudioSettings) -> FastAPI:
+def create_app(settings: StudioSettings, *, render_adapter=None) -> FastAPI:
     credentials = read_actor_credentials(settings.actors_file, settings.project_dir) if settings.actors_file is not None else None
     shared_project = settings.service_role == SHARED_PROJECT_ROLE
     app = FastAPI(
@@ -224,6 +229,13 @@ def create_app(settings: StudioSettings) -> FastAPI:
     from monkeymonitor.store import UsageLog
 
     app.state.monitor = StudioMonitor(UsageLog(settings.monitor_dir) if settings.monitor_dir is not None else None)
+    if render_adapter is None and settings.render_provider != "off" and not shared_project:
+        from .render_adapters.gemini import adapter_from_settings
+
+        render_adapter = adapter_from_settings(settings)
+    app.state.render_jobs = RenderJobRecords(None if shared_project else render_adapter, monitor=app.state.monitor)
+    if shared_project:
+        app.state.render_jobs.stop_accepting()
     # Proposals live in this process and nowhere else. The store is created
     # here so that fact is visible at the top of the application rather than
     # accumulating quietly at the bottom of a route.
@@ -334,13 +346,15 @@ def _source_revision(root: Path = REPOSITORY_ROOT) -> str | None:
     return revision if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", revision) else None
 
 
-def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: TextIO) -> None:
+def _watch_managed_stdin(server: uvicorn.Server, jobs: JobRegistry, stream: TextIO, render_jobs=None) -> None:
     """Only the owning parent's pipe requests a managed shutdown."""
 
     for line in stream:
         if line.strip() == "stop":
             break
     jobs.stop_accepting()
+    if render_jobs is not None:
+        render_jobs.stop_accepting()
     server.should_exit = True
 
 
@@ -389,7 +403,7 @@ def main(argv: list[str] | None = None) -> None:
         initialize_drawing_runtime()
     server = uvicorn.Server(uvicorn.Config(app, host=settings.bind_host, port=args.port))
     threading.Thread(
-        target=_watch_managed_stdin, args=(server, app.state.jobs, sys.stdin),
+        target=_watch_managed_stdin, args=(server, app.state.jobs, sys.stdin, app.state.render_jobs),
         name="studio-owner-input", daemon=True,
     ).start()
     try:

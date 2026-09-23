@@ -1085,3 +1085,55 @@ applicability can retain, revise or reject a prior without rewriting the source.
 All Study operations leave StateRecord, DesignStage and canonical HEAD unchanged.
 Method limits and the public synthetic experiment are described in
 [the Study method note](research/study-evidence-method.md).
+
+
+## Render image attempts
+
+The existing Project Runtime exposes `GET /api/render/capabilities`,
+`POST /api/render/jobs`, `GET /api/render/jobs` and `GET /api/render/jobs/{job_id}`.
+Capabilities come from the configured adapter; an unconfigured adapter is unavailable.
+`server-image`, `browser-native` and `host` name execution locations; this slice only
+executes `server-image`. It adds no service process or geometry candidate.
+
+An AI request carries `projectId`, a UUID `requestId`, `providerId`, one `source`,
+ordered `references`, `direction`, and `output` (`size`, `aspectRatio`). Every page
+ref is the exact existing `runId`, `assetSha256`, nullable `revisionRef` and zero-based
+`pageIndex`. A null revision selects only the unversioned registration. The first
+adapter input accepts PNG/JPEG pages; unsupported or unresolved pages are refused.
+Model correspondence and camera/view data are retained only from the registered
+source document when present. A standalone upload is a valid source.
+
+Each request creates its own `render-<UUID hex>` P036 run. Repeating identical
+parameters with that UUID returns the same job; different parameters return 409.
+Different UUIDs keep distinct attempts even when their pixels are identical.
+Transitions use `studio-render-job` / `StudioRenderJob@2`; result bytes and metadata
+use `studio.artifacts.save_document`, so Board consumes the same SourceDocument refs.
+No output changes Design HEAD, accepts a Stage or overwrites an earlier attempt.
+
+`status` is `queued`, `running`, `succeeded`, `failed` or `unknown`. A runtime restart,
+transport timeout or ambiguous upstream response cannot cause a second paid call.
+GET and repeated POST for the same request only recover status. A new explicit
+attempt needs a new UUID. `errorCode` and `error` contain only bounded safe reasons;
+raw provider errors, credentials and image bytes never enter diagnostics.
+`sourceState` is derived as `current`, `outdated` or `unavailable`: explicit source
+page replacement or advancement of its declared Stage branch makes it outdated.
+For a source with no declared Stage, current means the exact registered source
+remains available, not that it matches an untracked external model or active view.
+Old output registrations remain readable independently of source availability.
+`document` is the retained SourceDocument, and `resultAvailable` independently
+reports whether its immutable bytes can still be read. Usage and cost stay null
+when unreported; image pixels are never converted into invented tokens.
+
+Runtime configuration is injected through `ARCHFLOW_STUDIO_RENDER_PROVIDER`
+(`off` or `gemini`), `ARCHFLOW_STUDIO_RENDER_MODEL`,
+`ARCHFLOW_STUDIO_RENDER_API_KEY`, and `ARCHFLOW_STUDIO_RENDER_TIMEOUT_S`
+(default 120; maximum 300). The Runtime reads only its launch environment; keys
+are neither user-settings responses nor project records. An image adapter receives
+certified bytes and values through `application/render_contract.py`, has no project
+writer, and performs one call without automatic retry or model fallback.
+
+The storage/history boundary in `RenderJobRecords` is adapted from
+YNNAP-HelloWorld's PR #235, commit `6f39e67116a2716c2dac70bb4ee3cf1b369afd9d`.
+The AI lane does not import its Native WebGL2 executor or claim Physical acceptance.
+Offline tests inject an adapter; only an explicitly authorized real provider call
+can complete online acceptance.

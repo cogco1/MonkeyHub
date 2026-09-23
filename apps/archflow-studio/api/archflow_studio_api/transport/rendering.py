@@ -64,6 +64,7 @@ class RenderJobDto(BaseModel):
     created_at: str = Field(alias="createdAt")
     finished_at: str | None = Field(alias="finishedAt", default=None)
     error: str | None = None
+    error_code: str | None = Field(alias="errorCode", default=None)
     source_state: Literal["current", "outdated", "unavailable"] = Field(alias="sourceState")
     source_state_reason: str | None = Field(alias="sourceStateReason", default=None)
     document: SourceDocumentDto | None = None
