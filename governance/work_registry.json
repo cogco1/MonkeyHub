@@ -3,6 +3,60 @@
   "phase": "Namespace migration and local Stage/Branch/Candidate implementation are complete. Existing live cards retain their remaining architectural and product acceptance; P115 continues only its unfinished consolidation items. Real project acceptance and formal issue are explicit user actions.",
   "items": [
     {
+      "id": "GH-253",
+      "stream": "implementation",
+      "status": "active",
+      "goal": "Deliver AI Render in the existing Hub and Project Runtime; real provider acceptance requires an explicitly authorized sample.",
+      "depends_on": [],
+      "write_scope": [
+        "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/render_contract.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
+        "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+        "apps/archflow-studio/api/archflow_studio_api/main.py",
+        "apps/archflow-studio/api/archflow_studio_api/settings.py",
+        "archflow/project/record_kinds.py",
+        "apps/archflow-studio/api/tests/test_rendering.py",
+        "apps/archflow-studio/api/tests/test_settings.py"
+      ],
+      "card": "https://github.com/cogco1/MonkeyHub/issues/253",
+      "acceptance": [
+        "Exact registered images and ordered references; one dispatch per request; immutable SourceDocument outputs; restart without replay; unchanged Design HEAD; real provider acceptance."
+      ],
+      "lanes": [
+        {
+          "id": "runtime",
+          "status": "active",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/253",
+          "branch": "codex/render-runtime",
+          "worktree": "C:/Users/asus/.codex/worktrees/c4b9/ARCHFLOW_V4",
+          "base_ref": "77fa6c5a48678a8751c7fd3d885b618890ba6cdb",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": "Contract and backend feed the provider and workspace lanes.",
+          "modules": [
+            "studio.render",
+            "studio.shell",
+            "project.record_kinds"
+          ],
+          "depends_on": [],
+          "write_scope": [
+            "apps/archflow-studio/api/archflow_studio_api/application/rendering.py",
+            "apps/archflow-studio/api/archflow_studio_api/application/render_contract.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/rendering.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/rendering.py",
+            "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
+            "apps/archflow-studio/api/archflow_studio_api/main.py",
+            "apps/archflow-studio/api/archflow_studio_api/settings.py",
+            "archflow/project/record_kinds.py",
+            "apps/archflow-studio/api/tests/test_rendering.py",
+            "apps/archflow-studio/api/tests/test_settings.py"
+          ]
+        }
+      ]
+    },
+    {
       "id": "P115",
       "stream": "planning",
       "status": "active",
