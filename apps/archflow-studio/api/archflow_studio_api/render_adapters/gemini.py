@@ -17,7 +17,7 @@ import math
 import re
 from typing import TYPE_CHECKING
 import warnings
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from PIL import Image
@@ -113,8 +113,6 @@ class GeminiImageRenderAdapter:
         )
 
     def _payload(self, request: RenderInput) -> bytes:
-        if not self.capability().available:
-            raise ValueError("not_configured")
         if (not isinstance(request.direction, str) or not request.direction.strip()
                 or len(request.direction.encode("utf-8")) > 32_000
                 or len(request.references) > MAX_REFERENCES
@@ -126,8 +124,10 @@ class GeminiImageRenderAdapter:
             raise ValueError("input_too_large")
         content = [{"type": "text", "text": (
             "Render the BASE image using this visual direction:\n" + request.direction.strip()
-            + "\nKeep the BASE camera, composition, architecture, object placement and material identity."
-            " Use REFERENCE images only for the requested visual qualities, never as the source view."
+            + "\nKeep the BASE camera, composition, architecture and object placement."
+            " Preserve existing material identities by default; apply material changes explicitly"
+            " requested in the visual direction. Use REFERENCE images for the requested materials"
+            " and visual qualities, never as the source view."
             " Return exactly one finished image."
         )}]
         for index, image in enumerate(images):
@@ -154,10 +154,12 @@ class GeminiImageRenderAdapter:
 
     def generate(self, request: RenderInput) -> RenderOutput:
         # Separate preflight failures from exceptions after a paid call may have started.
+        if not self.capability().available:
+            raise RenderProviderError("failed", "not_configured")
         try:
             body = self._payload(request)
         except Exception:
-            raise RenderProviderError("failed") from None
+            raise RenderProviderError("failed", "unsupported_input") from None
         try:
             status, _headers, response = self._transport(
                 ENDPOINT, {"Content-Type": "application/json", "x-goog-api-key": self._api_key},
@@ -165,14 +167,16 @@ class GeminiImageRenderAdapter:
             )
             if type(status) is not int or not 100 <= status <= 599:
                 raise ValueError("invalid_http_status")
-        except Exception:
-            raise RenderProviderError("unknown") from None
+        except Exception as error:
+            reason = error.reason if isinstance(error, URLError) else error
+            code = "timeout" if isinstance(reason, TimeoutError) else "transport_unknown"
+            raise RenderProviderError("unknown", code) from None
         if status in (408, 409, 429) or status >= 500 or 300 <= status < 400:
-            raise RenderProviderError("unknown")
+            raise RenderProviderError("unknown", "timeout" if status == 408 else "transport_unknown")
         if 400 <= status < 500:
-            raise RenderProviderError("failed")
+            raise RenderProviderError("failed", "provider_rejected")
         if not 200 <= status < 300:
-            raise RenderProviderError("unknown")
+            raise RenderProviderError("unknown", "transport_unknown")
         try:
             if not isinstance(response, bytes) or len(response) > MAX_RESPONSE_BYTES:
                 raise ValueError("response_too_large")
@@ -180,17 +184,17 @@ class GeminiImageRenderAdapter:
             if not isinstance(interaction, dict):
                 raise ValueError("invalid_interaction")
         except Exception:
-            raise RenderProviderError("unknown") from None
+            raise RenderProviderError("unknown", "invalid_output") from None
         if interaction.get("status") in ("failed", "cancelled"):
-            raise RenderProviderError("failed")
+            raise RenderProviderError("failed", "provider_rejected")
         if interaction.get("status") != "completed":
-            raise RenderProviderError("unknown")
+            raise RenderProviderError("unknown", "transport_unknown")
         # A completed interaction with unusable output is a terminal failed result.
         # Neither outcome allows an automatic paid replay.
         try:
             return self._output(interaction, request)
         except Exception:
-            raise RenderProviderError("failed") from None
+            raise RenderProviderError("failed", "invalid_output") from None
 
     def _output(self, interaction: dict, request: RenderInput) -> RenderOutput:
         if interaction.get("model", self._model) != self._model:
@@ -212,6 +216,8 @@ class GeminiImageRenderAdapter:
         except (ValueError, binascii.Error):
             raise ValueError("invalid_image_encoding") from None
         width, height = _image_size(data, "image/jpeg", MAX_OUTPUT_BYTES)
+        # Gemini-specific sanity floors reject thumbnails, not certify a universal
+        # resolution class. Actual dimensions remain those of the returned JPEG.
         minimum_edge, minimum_pixels = {"1K": (1000, 500_000), "2K": (2000, 2_000_000),
                                         "4K": (4000, 8_000_000)}[request.output.size]
         if max(width, height) < minimum_edge or width * height < minimum_pixels:

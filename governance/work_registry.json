@@ -28,14 +28,14 @@
       "lanes": [
         {
           "id": "provider",
-          "status": "active",
+          "status": "review",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/253",
           "branch": "codex/render-gemini-provider",
           "worktree": "C:/Users/asus/.codex/worktrees/b274/ARCHFLOW_V4",
           "base_ref": "77fa6c5a48678a8751c7fd3d885b618890ba6cdb",
           "contributor": "Codex",
           "reviewer": null,
-          "handoff": "Uses Runtime contract eb2c9a03; Runtime owns public contracts and module registration. Main control integrates and performs separately authorized live acceptance.",
+          "handoff": "Uses Runtime contracts eb2c9a03 and 97358357. Offline provider checks are complete; Runtime owns integration and module registration. Main control performs separately authorized live acceptance.",
           "modules": ["studio.render"],
           "depends_on": [],
           "write_scope": [

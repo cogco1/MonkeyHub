@@ -65,18 +65,20 @@ class GeminiAdapterTests(unittest.TestCase):
     def adapter(self, transport, **kwargs):
         return gemini.GeminiImageRenderAdapter(api_key=KEY, model=MODEL, transport=transport, **kwargs)
 
-    def assert_outcome(self, outcome, transport, request=None):
+    def assert_outcome(self, outcome, transport, request=None, code=None):
         with self.assertRaises(RenderProviderError) as caught:
             self.adapter(transport).generate(request or self.request)
         self.assertEqual(caught.exception.outcome, outcome)
         self.assertEqual(str(caught.exception), outcome)
+        if code is not None:
+            self.assertEqual(caught.exception.code, code)
         return caught.exception
 
     def test_ordered_roles_preserve_original_bytes_and_do_not_send_project_identity(self):
         references = (source(image_bytes(color="red")), source(image_bytes("JPEG", color="blue"), mime_type="image/jpeg"))
         for ordered in (references, references[::-1], (references[0], references[0])):
             with self.subTest(ordered=[item.ref.asset_sha256 for item in ordered]):
-                request = replace(self.request, references=ordered)
+                request = replace(self.request, references=ordered, direction="Change facade material to red brick")
                 transport = RecordingTransport(self.response)
                 result = self.adapter(transport).generate(request)
                 self.assertEqual(len(transport.calls), 1)
@@ -89,6 +91,8 @@ class GeminiAdapterTests(unittest.TestCase):
                 self.assertFalse(payload["store"])
                 self.assertEqual(payload["response_format"], {"type": "image", "mime_type": "image/jpeg", "image_size": "1K"})
                 content = payload["input"]
+                self.assertIn(request.direction, content[0]["text"])
+                self.assertIn("apply material changes explicitly requested", content[0]["text"])
                 self.assertEqual([part["text"] for part in content[1::2]], ["Image 1: BASE", "Image 2: REFERENCE 1", "Image 3: REFERENCE 2"])
                 self.assertEqual([base64.b64decode(part["data"]) for part in content[2::2]], [self.request.source.data, *(item.data for item in ordered)])
                 self.assertNotIn(KEY.encode(), body)
@@ -117,7 +121,7 @@ class GeminiAdapterTests(unittest.TestCase):
         changed = replace(self.request.source, data=image_bytes(color="red"))
         for request in (replace(self.request, source=changed), replace(self.request, references=(changed,))):
             transport = RecordingTransport(self.response)
-            self.assert_outcome("failed", transport, request)
+            self.assert_outcome("failed", transport, request, code="unsupported_input")
             self.assertFalse(transport.calls)
 
     def test_invalid_inputs_never_dispatch(self):
@@ -157,8 +161,9 @@ class GeminiAdapterTests(unittest.TestCase):
                 adapter = gemini.GeminiImageRenderAdapter(api_key=key, model=model, transport=transport)
                 self.assertFalse(adapter.capability().available)
                 self.assertNotIn(KEY, repr(adapter))
-                with self.assertRaises(RenderProviderError):
+                with self.assertRaises(RenderProviderError) as caught:
                     adapter.generate(self.request)
+                self.assertEqual(caught.exception.code, "not_configured")
                 self.assertFalse(transport.calls)
 
     def test_timeout_configuration_is_finite_bounded_and_not_silently_changed(self):
@@ -185,18 +190,20 @@ class GeminiAdapterTests(unittest.TestCase):
         for status in (400, 401, 403, 404, 413, 422):
             with self.subTest(status=status):
                 transport = RecordingTransport({"error": {"message": KEY}}, status)
-                error = self.assert_outcome("failed", transport)
+                error = self.assert_outcome("failed", transport, code="provider_rejected")
                 self.assertNotIn(KEY, repr(error))
                 self.assertEqual(len(transport.calls), 1)
 
     def test_transport_exceptions_are_unknown_and_sanitized(self):
-        for error in (TimeoutError(KEY), URLError(KEY), ConnectionResetError(KEY), OSError(KEY), RuntimeError(KEY)):
+        for error in (TimeoutError(KEY), URLError(TimeoutError(KEY)), URLError(KEY), ConnectionResetError(KEY), OSError(KEY), RuntimeError(KEY)):
             with self.subTest(error=type(error).__name__):
                 transport = Mock(side_effect=error)
                 try:
                     self.adapter(transport).generate(self.request)
                 except RenderProviderError as caught:
                     self.assertEqual(caught.outcome, "unknown")
+                    reason = error.reason if isinstance(error, URLError) else error
+                    self.assertEqual(caught.code, "timeout" if isinstance(reason, TimeoutError) else "transport_unknown")
                     self.assertNotIn(KEY, traceback.format_exc())
                 else:
                     self.fail("Expected a sanitized error")
@@ -223,7 +230,7 @@ class GeminiAdapterTests(unittest.TestCase):
         for value in steps:
             with self.subTest(steps=len(value)):
                 transport = RecordingTransport(dict(self.response, steps=value))
-                self.assert_outcome("failed", transport)
+                self.assert_outcome("failed", transport, code="invalid_output")
                 self.assertEqual(len(transport.calls), 1)
 
     def test_thought_image_is_ignored_when_real_final_image_exists(self):
