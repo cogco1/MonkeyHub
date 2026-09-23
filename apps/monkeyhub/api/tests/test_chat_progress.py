@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from monkeyhub_api import chat
@@ -98,8 +99,50 @@ class ChatProgressProjectionTests(unittest.TestCase):
                     "result": {"content": [{"type": "text", "text": "{}"}]},
                 }
                 self.store._tool_message(self.session, item, kind, {})
-                self.assertEqual([], self.visible_progress())
+                progress = "\n".join(row.content for row in self.visible_progress())
+                self.assertIn("studio_schema", progress)
+                self.assertNotIn("已经同步", progress)
+                self.assertNotIn("正在把", progress)
         self.assertTrue(any("studio_schema" in row.content for row in self.session.messages))
+
+    def test_tools_supply_live_progress_when_provider_sends_no_summary(self):
+        def update(call_id, status):
+            self.store._acp_update(self.session.id, {
+                "sessionId": "fixture/session",
+                "update": {"sessionUpdate": "tool_call", "toolCallId": call_id,
+                           "title": "Read project files", "status": status,
+                           "rawOutput": "private tool output"},
+            }, {})
+
+        with patch.object(chat, "_now", return_value="2026-09-22T10:00:01Z"):
+            update("read-1", "in_progress")
+        self.assertEqual(self.visible_progress()[0].status, "streaming")
+        self.assertIn("当前操作：Read project files", self.visible_progress()[0].content)
+        update("read-1", "completed")
+        self.assertEqual(self.visible_progress()[0].status, "complete")
+        with patch.object(chat, "_now", return_value="2026-09-22T10:00:02Z"):
+            update("read-2", "failed")
+        self.assertEqual(len(self.visible_progress()), 1)
+        self.assertEqual(self.visible_progress()[0].status, "failed")
+        visible = self.store.get(self.session.id).messages
+        progress_index = visible.index(self.visible_progress()[0])
+        self.assertGreater(progress_index, next(i for i, row in enumerate(visible) if row.id.endswith(":read-1")))
+        self.assertEqual(abs(progress_index - next(i for i, row in enumerate(visible) if row.id.endswith(":read-2"))), 1)
+        self.assertNotIn("private tool output", self.visible_progress()[0].content)
+        # Full receipts are still expandable; the narrative never enters context.
+        self.assertEqual(len([row for row in self.session.messages if row.role == "tool"]), 2)
+        self.assertFalse(any(":progress:" in row.id for row in self.session.messages))
+
+    def test_stale_or_stopped_acp_events_cannot_project_progress(self):
+        event = {"sessionId": "old/session", "update": {
+            "sessionUpdate": "tool_call", "toolCallId": "late", "title": "Read files", "status": "in_progress",
+        }}
+        self.store._acp_update(self.session.id, event, {})
+        self.assertEqual([], self.visible_progress())
+        event["sessionId"] = self.session.acpSessionId
+        self.store._running[self.session.id].stop.set()
+        self.store._acp_update(self.session.id, event, {})
+        self.assertEqual([], self.visible_progress())
 
     def test_cancelled_and_interrupted_writes_never_narrate_success(self):
         for status in ("cancelled", "interrupted"):

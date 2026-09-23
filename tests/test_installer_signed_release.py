@@ -493,6 +493,83 @@ class SignedInstallationTests(unittest.TestCase):
         self.assertIn("No publisher signature was verified", output)
         self.assertNotIn("ReleaseSignatureEvidence@1", output)
 
+    def prepare_installed_desktop(self) -> None:
+        """A staged desktop version; the fixture executable is never launched."""
+        info = dict(BUILD_INFO, desktop={"sourceCommit": COMMIT, "version": "0.1.0"})
+        (self.package / "build-info.json").write_text(json.dumps(info), encoding="utf-8")
+        (self.package / "MonkeyHub.exe").write_bytes(b"fixture desktop - never executed")
+        (self.package / "_runtime/desktop-Cargo.lock").write_text("fixture", encoding="utf-8")
+        destination = self.root / "versions" / (COMMIT[:12] + "-desktop")
+        destination.parent.mkdir()
+        self.package.rename(destination)
+        self.package = destination
+        self.archive = self.build_archive(self.package, self.prefix)
+        self.signature.unlink()
+        self.manifest, self.signature = self.publish(self.package, self.archive, self.prefix, info)
+
+    def test_activate_installed_reuses_shortcut_writer_without_copy_or_launch(self) -> None:
+        self.prepare_installed_desktop()
+        before = {path.relative_to(self.package): path.read_bytes()
+                  for path in self.package.rglob("*") if path.is_file()}
+        result = self.run_installer("-ActivateInstalled", "-CreateDesktopShortcut",
+                                    "-DesktopDirectory", str(self.shortcuts))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("candidate-unsigned", result.stdout)
+        self.assertIn("Activated installed MonkeyHub source", result.stdout)
+        self.assertFalse(self.installed.exists())
+        self.assertFalse((self.root / "local/MonkeyHub/versions").exists())
+        self.assertEqual(before, {path.relative_to(self.package): path.read_bytes()
+                                 for path in self.package.rglob("*") if path.is_file()})
+        link = self.shortcuts / "MonkeyHub.lnk"
+        self.assertTrue(link.is_file())
+        # The existing writer itself reopens the link and verifies its target.
+        self.assertIn(str(link), result.stdout)
+
+    def test_activate_installed_preserves_an_unrelated_existing_shortcut(self) -> None:
+        self.prepare_installed_desktop()
+        link = self.shortcuts / "MonkeyHub.lnk"
+        # A foreign link must not become an owned MonkeyHub entry.
+        unrelated = self.root / "unrelated.cmd"
+        unrelated.write_text("not a MonkeyHub entry", encoding="ascii")
+        created = subprocess.run([
+            self.host, "-NoProfile", "-Command",
+            "$shell = New-Object -ComObject WScript.Shell\n"
+            "$link = $shell.CreateShortcut($env:MH_TEST_LINK)\n"
+            "$link.TargetPath = $env:MH_TEST_TARGET\n$link.Save()",
+        ], env=dict(self.environment, MH_TEST_LINK=str(link), MH_TEST_TARGET=str(unrelated)),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+        before = link.read_bytes()
+        result = self.run_installer("-ActivateInstalled", "-CreateDesktopShortcut",
+                                    "-DesktopDirectory", str(self.shortcuts))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(link.read_bytes(), before)
+        self.assertNotIn("Desktop shortcut:", result.stdout)
+
+    def test_activate_installed_keeps_the_signed_binding_and_rejects_tampering(self) -> None:
+        self.prepare_installed_desktop()
+        result = self.run_installer("-ActivateInstalled", *self.signed_arguments())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ReleaseSignatureEvidence@1", result.stdout)
+        (self.package / "apps/monkeyhub/run.py").write_text("changed after signing", encoding="utf-8")
+        result = self.run_installer("-ActivateInstalled", "-CreateDesktopShortcut",
+                                    "-DesktopDirectory", str(self.shortcuts), *self.signed_arguments())
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("Activated installed MonkeyHub", result.stdout)
+        self.assertEqual(list(self.shortcuts.iterdir()), [])
+
+    def test_activate_installed_requires_exact_directory_and_never_enables_ordinary_self_install(self) -> None:
+        self.prepare_installed_desktop()
+        result = self.run_installer("-InstallDirectory", str(self.package))
+        self.assertRefused(result, "outside the extracted package")
+        result = self.run_installer("-ActivateInstalled", "-InstallDirectory", str(self.package))
+        self.assertRefused(result, "-ActivateInstalled cannot copy")
+        wrong = self.package.with_name("wrong-version")
+        self.package.rename(wrong)
+        self.package = wrong
+        result = self.run_installer("-ActivateInstalled")
+        self.assertRefused(result, "exact installed versions directory")
+
     def test_every_signature_input_without_an_explicit_mode_is_refused(self) -> None:
         token = "require -RequireSignedRelease or -VerifyReleaseManifest"
         for argument in (["-ReleaseManifest", str(self.manifest)],

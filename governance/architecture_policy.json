@@ -417,6 +417,62 @@
       "kind": "adapter_workspace",
       "owner": "adapters.cad_execution",
       "reason": "Writes only transport plan and subprocess logs beside OCCT bytes in the supplied speculative workspace. Existing runner retains projection receipts through P036."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/main.py",
+      "function": "prepare_update",
+      "operations": [
+        "open_write"
+      ],
+      "kind": "application_update",
+      "owner": "hub.shell",
+      "reason": "Streams the explicitly selected, size-bounded developer patch into the private incoming file returned by DesktopUpdates under its caller-supplied nonproject runtime/updates root."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "function": "_save",
+      "operations": [
+        "mkdir",
+        "write_text",
+        "replace"
+      ],
+      "kind": "application_update",
+      "owner": "hub.shell",
+      "reason": "Atomically records only the desktop update transaction under the explicitly supplied nonproject updates directory; no project data or alternative configuration authority."
+    },
+    {
+      "path": "apps/monkeyhub/api/monkeyhub_api/updates.py",
+      "function": "begin_upload",
+      "operations": [
+        "mkdir"
+      ],
+      "kind": "application_update",
+      "owner": "hub.shell",
+      "reason": "Creates a private incoming patch directory under the explicitly supplied nonproject updates root; patch failures clean only that validated temporary directory."
+    },
+    {
+      "path": "apps/monkeyhub/installer/patch.py",
+      "function": "stage_patch",
+      "operations": [
+        "mkdir",
+        "open_write",
+        "rename"
+      ],
+      "kind": "distribution_install",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Reconstructs and verifies a fresh version under the explicitly supplied sibling parent, rejects existing targets and linked paths, then renames its own verified staging directory; never overwrites the running application or project data."
+    },
+    {
+      "path": "apps/monkeyhub/installer/patch.py",
+      "function": "create_patch",
+      "operations": [
+        "mkdir",
+        "rename",
+        "unlink"
+      ],
+      "kind": "distribution_build",
+      "owner": "tools.package_monkeyapps",
+      "reason": "Writes a developer delta ZIP only to the explicit output outside both input bundles; inputs are read-only and only the bounded temporary ZIP is cleaned on failure."
     }
   ],
   "forbidden_layer_imports": [

@@ -10,12 +10,14 @@ import { ChatMarkdown, ChatMessageFiles, type ChatDocument } from "./ChatMessage
 import type { PageSource } from "../workspaces/src/workspaces/monkeyboard/boardScene";
 const ProjectWorkspace = lazy(() => import("../workspaces/src/app/ProjectWorkspace").then((module) => ({ default: module.ProjectWorkspace })));
 import { presentFailure } from "./chatError";
+import { SoftwareUpdateSettings, type RestartBlocker } from "./SoftwareUpdateSettings";
 import "./ChatShell.css";
 
 type AppId = AppStatus["appId"];
 type Props = {
   preferences: AppearancePreferences;
   settings: ReactNode;
+  settingsDirty?: boolean;
   configuredProject: string | null;
   /** The saved global defaults a *new* conversation starts with. */
   defaults: { provider: ChatCreateRequest["provider"]; model: string | null };
@@ -134,7 +136,7 @@ function Failure({ failure, language, labels, connection, onClose, onChangeModel
   </div>;
 }
 
-export function ChatShell({ preferences, settings, configuredProject, defaults, workspace, apps }: Props) {
+export function ChatShell({ preferences, settings, settingsDirty = false, configuredProject, defaults, workspace, apps }: Props) {
   const t = words[preferences.language];
   const [initial] = useState(readView);
   const [projects, setProjects] = useState<ChatProject[]>([]);
@@ -178,6 +180,8 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const [folder, setFolder] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectInfo, setProjectInfo] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [updateRestarting, setUpdateRestarting] = useState(false);
   // The model this conversation will use next. An existing chat keeps its own;
   // a new one starts from the saved default until it is sent.
   const [draftModel, setDraftModel] = useState<string | null>(defaults.model);
@@ -232,6 +236,16 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
   const contextUnavailable = workspaceContext?.unavailableReason === "unsaved" ? t.contextUnsaved
     : workspaceContext?.unavailableReason === "loading" ? t.contextLoading : t.contextOpenProject;
   const running = chat?.id === chatId && chat.status === "running";
+  // Include hidden conversations and mounted project workspaces: a restart
+  // would lose their in-memory drafts just as it would the visible composer.
+  const restartBlocker: RestartBlocker = Object.values(drafts).some((text) => Boolean(text.trim())) || Object.values(draftAttachments).some((files) => files.length)
+    ? "drafts" : Object.values(designContexts).some((context) => context?.unavailableReason === "unsaved") ? "model"
+      : settingsDirty ? "settings" : busy || toolBusy || modelBusy || archiveBusy || permissionBusy || recovering || loading || running || !eventsConnected ||
+        sessions.some((session) => session.status === "running") ||
+        Object.values(designContexts).some((context) => context?.unavailableReason === "loading") ||
+        runtime?.projects.some((item) => item.workers?.some((worker) => ["starting", "busy", "stopping", "recovering"].includes(worker.state)) ||
+          item.operations?.some((operation) => ["queued", "planning", "validated", "executing", "committing"].includes(operation.status)))
+        ? "busy" : null;
   const archived = chat?.id === chatId && chat.archived;
   const external = chat?.id === chatId && Boolean(chat.sourceSessionId);
   const visibleSessions = sessions.filter((session) => Boolean(session.archived) === archivedView);
@@ -826,7 +840,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
         </section>)}
       </div>
       <button className="chat-settings chat-archive-toggle" aria-pressed={archivedView} onClick={() => setArchivedView(!archivedView)}><Icon name="archive" /><span>{archivedView ? t.activeChats : t.archivedChats}</span></button>
-      <button className="chat-settings" onClick={() => settingsDialog.current?.showModal()}><Icon name="settings" /><span>{t.settings}</span></button>
+      <button className="chat-settings" onClick={() => { setSettingsOpen(true); settingsDialog.current?.showModal(); }}><Icon name="settings" /><span>{t.settings}</span></button>
     </aside>
     <main className="chat-main">
       <header className="chat-header"><button className="chat-icon mobile-project-toggle" aria-label={sidebar ? t.collapse : t.expand} onClick={() => setSidebar(!sidebar)}><Icon name="sidebar" /></button><div><span className="chat-header__project">{project?.name ?? "MonkeyHub"}</span><h1>{chat?.id === chatId ? chat.title : t.newChat}{external && <small className="chat-external-badge">{t.externalChat}</small>}</h1></div></header>
@@ -840,7 +854,13 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       </div>}
       <div className="chat-messages" ref={messages} role="log" aria-live="polite" aria-relevant="additions text">
         {!chat?.messages?.length ? <div className="chat-welcome"><div className="chat-welcome__mark"><Icon name="chat" /></div><h2>{project ? t.empty : t.noProject}</h2><p>{t.emptyHint}</p>{!project && <div className="chat-welcome__actions"><button className="btn btn--primary" onClick={() => { setDialogError(null); newDialog.current?.showModal(); }}>{t.newProject}</button><button className="btn" onClick={() => { setDialogError(null); addDialog.current?.showModal(); }}>{t.addExisting}</button></div>}</div>
-          : <div className="chat-message-list">{(chat?.messages ?? []).map((message) => message.role === "tool"
+          : <div className="chat-message-list">{(chat?.messages ?? []).map((message) => message.role === "tool" && message.id.includes(":progress:")
+            ? <article className="chat-progress" key={message.id} data-status={message.status}>
+                <div className="chat-progress__heading"><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} />{t.progress}</div>
+                <ChatMarkdown text={message.content} />
+                {(message.status === "failed" || message.status === "interrupted") && <p className="chat-muted">{t[message.status]}</p>}
+              </article>
+            : message.role === "tool"
             ? <div className="chat-activity" key={message.id} data-status={message.status}>
                 <details><summary><span className="chat-thread__dot" data-status={message.status === "streaming" ? "running" : message.status === "failed" ? "failed" : "idle"} /><span className="chat-activity__line">{activityLine(message.content).slice(0, 160) || t.toolActivity}</span></summary>
                   {activityDetail(message.content) ? <pre>{activityDetail(message.content)}</pre> : <p className="chat-muted">{t.activityEmpty}</p>}</details>
@@ -904,7 +924,7 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
           </label>
           {(!designContext || contextMode === "project") && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
           {designContext && contextMode !== "project" && <p className="chat-muted">{t.contextStageHint}</p>}
-          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="attach" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
+          <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /><span>{t.attach}</span></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
             <select id="chat-model" className="chat-connection__model" value={customModel !== null ? "__custom__" : chosenModel ?? ""} disabled={running || modelBusy || busy}
@@ -1064,6 +1084,11 @@ export function ChatShell({ preferences, settings, configuredProject, defaults, 
       <div className="chat-dialog__actions"><button type="button" className="btn" onClick={() => restoreDialog.current?.close()}>{t.close}</button>
         <button type="submit" className="btn btn--primary" disabled={busy || !restorePath.trim()}>{busy ? t.restoring : t.restoreRun}</button></div>
     </form></dialog>
-    <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings"><div className="chat-dialog__heading"><h2>{t.settingsHeading}</h2><button className="chat-icon" aria-label={t.close} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button></div>{settings}</dialog>
+    <dialog ref={settingsDialog} className="chat-dialog chat-dialog--settings" closedby={updateRestarting ? "none" : "closerequest"}
+      onClose={() => setSettingsOpen(false)} onCancel={(event) => { if (updateRestarting) event.preventDefault(); }}>
+      <div className="chat-dialog__heading"><h2>{t.settingsHeading}</h2><button className="chat-icon" aria-label={t.close} disabled={updateRestarting} onClick={() => settingsDialog.current?.close()}><Icon name="close" /></button></div>
+      <div inert={updateRestarting}>{settings}</div>
+      <SoftwareUpdateSettings language={preferences.language} open={settingsOpen} restartBlocker={restartBlocker} onRestarting={setUpdateRestarting} />
+    </dialog>
   </div>;
 }

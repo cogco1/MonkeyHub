@@ -873,6 +873,19 @@ export type MessageCatalog = {
 };
 
 export const hubCopy = {
+    softwareUpdate: "Software update", updateCurrent: "Current version", updateTarget: "Prepared version", updateChangedBytes: "Changed files size",
+    updateLocalMode: "Local patch mode · Automatic downloads are not configured.",
+    updateUnsupported: "Patch updates require the installed MonkeyHub desktop app.",
+    updateTrustLocal: "A local development patch contains executable code. Choose a ZIP from a source you trust (up to 256 MiB).",
+    updateChoosePatch: "Choose patch ZIP", updateRefresh: "Refresh status", updateRestart: "Restart to update",
+    updateUploading: "Uploading patch…", updatePreparing: "Verifying and preparing the patch…", updateReady: "Patch ready. Restart when your work is saved.",
+    updateApplying: "Restarting to update…", updateFailed: "The patch could not be prepared or applied.", updateLoading: "Reading update status…",
+    updateZipRequired: "Choose a patch ZIP file.", updateTooLarge: "The patch exceeds 256 MiB. Choose a smaller patch ZIP.",
+    updateDraftsBlocked: "A conversation has unsent text or attachments. Send or remove them before restarting.",
+    updateModelBlocked: "A model has unsynced edits. Sync or save them before restarting.",
+    updateSettingsBlocked: "Save your settings changes before restarting.",
+    updateBusyBlocked: "Wait for current work and workspace loading to finish before restarting.",
+    updateRecovery: "Projects, conversations and settings are kept. The previous app version remains available if the update fails.",
     apps: "Workspaces", settings: "Settings", refresh: "Refresh", connected: "Hub connected", connecting: "Connecting", disconnected: "Cannot read workspace status",
     closeNote: "Closing this page does not stop workspaces. Use their Stop buttons, or quit MonkeyHub from the system tray.",
     archTitle: "Modeling", diagramTitle: "Drawings", monitorTitle: "Usage", boardTitle: "Presentation", fabTitle: "Fabrication",
@@ -900,6 +913,7 @@ export const chatCopy = {
     folder: "Project folder", folderHelp: "Paste the full path to an existing ArchFlow project folder.", folderPlaceholder: "For example D:\\projects\\my-project",
     empty: "Start a project conversation", emptyHint: "Describe what you want to do. Open project tools on the right when you need them.", noProject: "Add a project to start a conversation",
     placeholder: "What would you like to do in this project?", send: "Send", stop: "Stop", thinking: "Working", interrupted: "Interrupted", failed: "Incomplete",
+    progress: "Progress",
     attach: "Add attachments", attachments: "Attachments", removeAttachment: "Remove attachment", dropFiles: "Drop to attach files",
     previewImage: "Enlarge image", download: "Download", imageLoading: "Loading image…", imageFailed: "This image could not be loaded. You can still download the file.", openDocument: "Open document",
     externalChat: "External conversation", externalNotice: "Replies and progress from your connected agent appear here. Continue the conversation in the source application.",

@@ -53,6 +53,7 @@ if str(SOURCE_ROOT) not in sys.path:
 from tools.workspace import (
     WORKSPACE_CONFIG_KEY, configured_root, configure_root, task_name, task_paths, validate_root,
 )
+from apps.monkeyhub.installer.patch import create_patch
 # Git, rather than the working directory, supplies these files. User runtime
 # configuration, projects, credentials, caches and local WIP never enter a ZIP.
 SOURCE_PATHS = (
@@ -887,6 +888,10 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--show-paths", action="store_true", help="show resolved paths without creating directories or building")
     action.add_argument("--verify", type=Path, metavar="RELEASE_MANIFEST",
                         help="check the distributed files beside a ReleaseManifest@1 and exit; builds nothing")
+    action.add_argument("--patch-from", type=Path, metavar="BASE_DIRECTORY",
+                        help="build a local developer delta from two complete desktop bundles; builds no runtimes")
+    parser.add_argument("--patch-to", type=Path, metavar="TARGET_DIRECTORY")
+    parser.add_argument("--patch-output", type=Path, metavar="PATCH_ZIP")
     parser.add_argument("--task", help="task directory name; defaults to the current branch")
     parser.add_argument("--staging-dir", type=Path, help="overrides <workspace-root>/temp/package-monkeyapps/<task>")
     parser.add_argument("--output-dir", type=Path, help="overrides <workspace-root>/packages/<task>")
@@ -900,6 +905,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     npm_cli = args.npm_cli or args.node.resolve().parent / "node_modules/npm/bin/npm-cli.js"
     try:
+        if args.patch_from is not None:
+            if args.patch_to is None or args.patch_output is None:
+                raise ValueError("--patch-from requires --patch-to and --patch-output.")
+            patch_output = external(args.patch_output, args.source_root.resolve())
+            result = create_patch(args.patch_from, args.patch_to, patch_output)
+            print(json.dumps({"patch": str(patch_output), **result}, ensure_ascii=False, indent=2))
+            return 0
+        if args.patch_to is not None or args.patch_output is not None:
+            raise ValueError("--patch-to and --patch-output require --patch-from.")
         if args.verify is not None:
             problems = verify_release(args.verify.resolve())
             for problem in problems:
