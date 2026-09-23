@@ -68,11 +68,3 @@ permission to create 3D geometry. No new preview generator is implemented here.
 3. Only then add a concrete native provider with validated route declarations,
    license/runtime checks, output validation and per-job provenance. Server/cloud
    alternatives remain a separate explicitly configured implementation.
-
-## Read-only observation on this workstation
-
-The Windows probe found `acad.exe` and `accoreconsole.exe` in standard install
-directories with the unverified directory hint `2025`. Actual executable version,
-license, compatibility and automation remain unverified; neither was launched.
-SketchUp was not found in inspected locations, not proof of absence everywhere.
-These observations do not enable a native conversion route.
