@@ -76,11 +76,39 @@ class CollaborationAuthTests(unittest.TestCase):
             for method in set(methods) & {"post", "put", "patch", "delete"}:
                 if not path.startswith("/api/"):
                     continue
+                if method == "post" and path == "/api/drawings/plans/status":
+                    continue  # A body-carrying read, exercised with real actor grants below.
                 checked += 1
                 with self.subTest(method=method, path=path):
                     response = client.request(method, path, headers=self.headers("reader"), json={"actor_id": "reviewer"})
                     self.assertEqual(response.status_code, 403)
         self.assertGreater(checked, 10)
+
+    def test_reader_can_inspect_plan_status_but_cannot_propose_a_dimension_change(self) -> None:
+        client = self.client(shared=False)
+        path = "/api/drawings/plans/status"
+        payload = {"runId": "source-run", "assetSha256": "a" * 64, "revisionRef": "retained-drawing"}
+        with patch("archflow_studio_api.routes.drawings.plan_status", return_value={
+            "status": "current", "detail": "Matches the exact source.", "dimensions": [],
+        }) as inspect:
+            read = client.post(path, headers=self.headers("reader"), json=payload)
+            self.assertEqual(read.status_code, 200, read.text)
+            self.assertEqual(read.json()["status"], "current")
+            inspect.assert_called_once()
+            for actor in ("outsider", "issuer"):
+                denied = client.post(path, headers=self.headers(actor), json=payload)
+                self.assertEqual(denied.status_code, 403, denied.text)
+            self.assertEqual(client.post(path, json=payload).status_code, 401)
+            inspect.assert_called_once()
+        proposal = "/api/drawings/plans/dimension-proposal"
+        self.assertEqual(client.post(proposal, headers=self.headers("reader"), json={}).status_code, 403)
+        self.assertEqual(client.post(proposal, headers=self.headers("designer"), json={}).status_code, 422)
+        # The read exception is exact, not an authorization prefix for nested routes.
+        self.assertEqual(client.post(path + "/other", headers=self.headers("reader"), json=payload).status_code, 403)
+        shared = self.client()
+        denied = shared.post(path, headers=self.headers("reader"), json=payload)
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.json()["code"], "SERVICE_ROLE_FORBIDDEN")
 
     def test_accept_does_not_follow_from_propose_or_release(self) -> None:
         client = self.client()

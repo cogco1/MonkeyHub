@@ -65,6 +65,7 @@ export async function createProjectWorkspaceFixture(runtimes, sessions) {
       }
       if (name === "/api/state/frame") return json({ levels: [], axes: [], honesty: [] });
       if (name === "/api/documents") return json({ projectId, runId: null, documents: [] });
+      if (name === "/api/design-history") return json({ projectId, branchId: "main", branches: [], stages: [] });
       if (name === "/api/board") return json(current.board);
       if (name === "/api/drawings/styles") return json({ styles: [] });
       const bytes = name.match(/^\/api\/artifacts\/([^/]+)\/bytes$/);

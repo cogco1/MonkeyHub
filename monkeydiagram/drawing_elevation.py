@@ -1,4 +1,4 @@
-"""One model-axis orthographic elevation of a retained exact STEP, frozen through P036.
+"""Model-axis elevations and horizontal cut plans from retained exact STEP through P036.
 
 The A0 drawing slice of ``docs/DRAWING_MODULE_ARCHITECTURE_PLAN.md``, as far
 as it is real: a source run's exact STEP (certified by its retained
@@ -27,9 +27,10 @@ What this module decides and nothing else:
   before.
 
 The in-memory projection (``project_model_axis_elevation``) returns plain
-values and mints nothing.  There is no view record, job, runner, second
-storage or update mechanism here; plans, sections and axonometrics are not
-implemented.
+values and mints nothing. ``freeze_cut_plan`` adds a real horizontal plane
+section and below-cut visibility to that same retention boundary, with
+caller-resolved dimensions. There is no second storage, design mutation or
+update mechanism here; arbitrary sections and axonometrics are not implemented.
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ import asyncio
 import hashlib
 import math
 import re
+from copy import deepcopy
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -53,6 +55,8 @@ from archflow.adapters.cad_execution import (
     StepEntry,
     backend_identity,
     project_occt_lines,
+    section_occt_lines,
+    section_occt_regions,
     read_step,
 )
 from monkeydiagram.drawing_svg import (
@@ -446,6 +450,142 @@ def _artifact_ref(project_id: str, value: Mapping[str, Any]) -> ProjectArtifactR
     return ProjectArtifactRef(project_id, value["artifact_id"], value["relative_path"], value["sha256"], value["media_type"])
 
 
+def _retain_projection(repository, *, source, verified, projection, view, name, drawing_run_id,
+                       backend, head_before, projection_details=None, previous_revision_ref=None):
+    """The one existing receipt/artifact boundary for elevation and cut-plan projections."""
+    run = _drawing_run(repository, drawing_run_id, verified.run)
+    destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
+    try:
+        svg_ref = repository.put_workspace_file(
+            run=run, destination=destination, artifact_id=f"{name}-svg",
+            workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{name}.svg",
+            media_type=SVG_MEDIA_TYPE, source=BytesIO(projection.svg),
+        )
+        png_ref = repository.put_workspace_file(
+            run=run, destination=destination, artifact_id=f"{name}-png",
+            workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{name}.png",
+            media_type=PNG_MEDIA_TYPE, source=BytesIO(projection.png),
+        )
+        payload = {
+            "schema": DRAWING_PROJECTION_RECEIPT_SCHEMA,
+            "project_id": run.project_id,
+            "run_id": run.run_id,
+            "base": run.base.to_dict(),
+            "view": view,
+            "unit": verified.length_unit,
+            "source": {
+                "run_id": verified.run.run_id,
+                "base": verified.run.base.to_dict(),
+                "stage_id": verified.stage_id,
+                "program_digest": verified.program_digest,
+                "step": {"relative_path": source.step_relative_path, "sha256": source.step_sha256,
+                         "media_type": STEP_MEDIA_TYPE},
+                "cad_receipt": {"relative_path": source.cad_receipt_relative_path,
+                                "sha256": source.cad_receipt_sha256},
+                "object_identity": "STEP shape name = CAD receipt physical object id",
+                "physical_object_ids": list(verified.physical_object_ids),
+            },
+            "projection": {
+                "backend": backend,
+                "algorithm": "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction",
+                "object_count": len(verified.physical_object_ids),
+                **projection.counts(),
+                **(projection_details or {}),
+            },
+            "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
+        }
+        if previous_revision_ref is not None:
+            payload["previousRevisionRef"] = previous_revision_ref
+        receipt_ref = repository.put_json(
+            run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+            record_kind=DRAWING_PROJECTION_RECEIPT, payload=payload,
+        )
+    except ProjectRepositoryError as exc:
+        raise DrawingElevationError(f"the drawing could not be retained in run {run.run_id}: {exc}") from exc
+    drawing = read_model_axis_elevation(repository, receipt_ref)
+    _require(drawing.svg == projection.svg and drawing.png == projection.png,
+             "the retained drawing files read back differently from what was written")
+    _require(repository.read_head() == head_before, "the project's published version changed while drawing")
+    return drawing
+
+
+def freeze_cut_plan(
+    repository: FilesystemProjectRepository, *, source: ElevationSource, recipe: Mapping,
+    drawing_run_id: str, dimensions: tuple[Mapping, ...] = (), previous_revision_ref: str | None = None,
+) -> ElevationDrawing:
+    """Retain a horizontal section and the exact below-cut visibility in the existing drawing envelope.
+
+    ``recipe`` retains representation intent; ``dimensions`` contains the application's resolved
+    source measurements or explicit unresolved statuses. Neither can change the source model.
+    Coordinates are the verified STEP's CAD Z-up frame and length unit, never Program Y-up.
+    """
+    if not isinstance(repository, FilesystemProjectRepository):
+        raise TypeError("repository must be FilesystemProjectRepository")
+    try:
+        recipe = deepcopy(dict(recipe))
+        _require(recipe.get("kind") == "cut-plan", "the view recipe must be a cut-plan")
+        require_identifier(recipe["name"], "cut-plan name")
+        frame = recipe["frame"]
+        scale = frame["scale"]
+        _require(isinstance(scale, str) and re.fullmatch(r"1:[1-9][0-9]*", scale) is not None,
+                 "the cut-plan scale must be 1:N")
+        view = ElevationView(
+            name=recipe["name"], origin=frame["origin"], look=frame["look"], right=frame["right"], up=frame["up"],
+            crop_uv=frame["crop_uv"], near_depth=frame["near_depth"], far_depth=frame["far_depth"],
+            hidden_lines=frame["hidden_lines"], linear_deflection=frame["linear_deflection"],
+            scale_denominator=int(scale[2:]),
+        )
+        _require(view.right == (1, 0, 0) and view.up == (0, 1, 0) and view.look == (0, 0, -1)
+                 and view.near_depth == 0, "a cut-plan must look down CAD -Z from its horizontal cut plane")
+        graphics = recipe["graphics"]
+        _require(isinstance(graphics, Mapping), "cut-plan graphics must be a mapping")
+        resolved = deepcopy(list(dimensions))
+        ids = [row["id"] for row in resolved]
+        _require(all(isinstance(name, str) and name for name in ids) and len(ids) == len(set(ids)),
+                 "cut-plan dimensions must have unique ids")
+        _require(all(row["status"] in {"resolved", "missing", "ambiguous", "outside-view", "unverified"} for row in resolved),
+                 "cut-plan dimensions need explicit resolution statuses")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DrawingElevationError(f"the cut-plan recipe is invalid: {exc}") from exc
+    head_before = repository.read_head()
+    verified = read_elevation_source(repository, source)
+    hidden = recipe.get("hiddenObjectIds", [])
+    if not isinstance(hidden, (list, tuple)) or any(not isinstance(name, str) for name in hidden):
+        raise DrawingElevationError("hiddenObjectIds must be a list of physical object ids")
+    # Rebuilding keeps authored visibility intent even when its source object was removed.
+    # The application validates newly authored selections; this retained recipe reports missing ones.
+    unresolved_objects = sorted(set(hidden) - set(verified.physical_object_ids))
+    semantics = verified.receipt.get("expected_semantics", {}).get("objects", {})
+    source_hidden = {name for name, row in semantics.items() if row.get("visible") is False}
+    # Native STEP also retains hidden inspection witnesses such as aperture volumes.
+    # They are source evidence, not cut material or occluders in the drawing.
+    excluded = set(hidden) | source_hidden
+    selected = tuple(name for name in verified.physical_object_ids if name not in excluded)
+    _require(bool(selected), "a cut-plan must retain at least one physical object")
+    try:
+        common = dict(object_ids=selected, origin=view.origin, right=view.right, up=view.up,
+                      linear_deflection=view.linear_deflection)
+        sections = section_occt_lines(verified.entries, **common)
+        regions = section_occt_regions(verified.entries, **common)
+        background = project_occt_lines(verified.entries, **common, depth_range=(0, view.far_depth))
+        lines = background + sections
+        svg = drawing_svg(lines, crop_uv=view.crop_uv, unit=verified.length_unit,
+                          scale_denominator=view.scale_denominator, hidden_lines=view.hidden_lines,
+                          title=recipe["name"], regions=regions, graphics=graphics, dimensions=resolved)
+        projection = ElevationProjection(lines=lines, svg=svg, png=render_svg_png(svg))
+    except (OcctBackendError, DrawingSvgError) as exc:
+        raise DrawingElevationError(f"cut-plan {view.name}: {exc}") from exc
+    return _retain_projection(
+        repository, source=source, verified=verified, projection=projection, view=recipe, name=view.name,
+        drawing_run_id=drawing_run_id, backend=backend_identity(), head_before=head_before,
+        projection_details={
+            "algorithm": "BRepAlgoAPI_Section on the cut plane; exact below-cut slab and global HLRBRep_Algo visibility",
+            "selected_object_ids": list(selected), "section_polylines": len(sections),
+            "section_regions": len(regions), "dimensions": resolved, "unresolvedObjectIds": unresolved_objects,
+        }, previous_revision_ref=previous_revision_ref,
+    )
+
+
 def freeze_model_axis_elevation(
     repository: FilesystemProjectRepository, *, source: ElevationSource, view: ElevationView, drawing_run_id: str,
     operation_observer: Callable[[Mapping[str, Any]], None] | None = None,
@@ -483,56 +623,10 @@ def freeze_model_axis_elevation(
         operation_observer=observer, parent_event_id=parent_event_id,
     )
     with _observed_stage(observer, "drawing.persist", parent_event_id=parent_event_id) as observation:
-        run = _drawing_run(repository, drawing_run_id, verified.run)
-        destination = PersistenceDestination(PersistenceArea.RUN_WORKSPACE, run_id=run.run_id)
-        try:
-            svg_ref = repository.put_workspace_file(
-                run=run, destination=destination, artifact_id=f"{view.name}-svg",
-                workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{view.name}.svg",
-                media_type=SVG_MEDIA_TYPE, source=BytesIO(projection.svg),
-            )
-            png_ref = repository.put_workspace_file(
-                run=run, destination=destination, artifact_id=f"{view.name}-png",
-                workspace_relative_path=f"{DOCUMENTATION_WORKSPACE}/{view.name}.png",
-                media_type=PNG_MEDIA_TYPE, source=BytesIO(projection.png),
-            )
-            payload = {
-                "schema": DRAWING_PROJECTION_RECEIPT_SCHEMA,
-                "project_id": run.project_id,
-                "run_id": run.run_id,
-                "base": run.base.to_dict(),
-                "view": view.to_dict(),
-                "unit": verified.length_unit,
-                "source": {
-                    "run_id": verified.run.run_id,
-                    "base": verified.run.base.to_dict(),
-                    "stage_id": verified.stage_id,
-                    "program_digest": verified.program_digest,
-                    "step": {"relative_path": source.step_relative_path, "sha256": source.step_sha256,
-                             "media_type": STEP_MEDIA_TYPE},
-                    "cad_receipt": {"relative_path": source.cad_receipt_relative_path,
-                                    "sha256": source.cad_receipt_sha256},
-                    "object_identity": "STEP shape name = CAD receipt physical object id",
-                    "physical_object_ids": list(verified.physical_object_ids),
-                },
-                "projection": {
-                    "backend": backend,
-                    "algorithm": "HLRBRep_Algo exact hidden-line solve over every listed object, then per-object extraction",
-                    "object_count": len(verified.physical_object_ids),
-                    **projection.counts(),
-                },
-                "artifacts": {"svg": _ref_dict(svg_ref), "png": _ref_dict(png_ref)},
-            }
-            receipt_ref = repository.put_json(
-                run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
-                record_kind=DRAWING_PROJECTION_RECEIPT, payload=payload,
-            )
-        except ProjectRepositoryError as exc:
-            raise DrawingElevationError(f"the drawing could not be retained in run {run.run_id}: {exc}") from exc
-        drawing = read_model_axis_elevation(repository, receipt_ref)
-        _require(drawing.svg == projection.svg and drawing.png == projection.png,
-                 "the retained drawing files read back differently from what was written")
-        _require(repository.read_head() == head_before, "the project's published version changed while drawing")
+        drawing = _retain_projection(
+            repository, source=source, verified=verified, projection=projection, view=view.to_dict(), name=view.name,
+            drawing_run_id=drawing_run_id, backend=backend, head_before=head_before,
+        )
         observation["output_refs"] = [drawing.receipt_ref.uri, drawing.svg_ref.uri, drawing.png_ref.uri]
     return drawing
 
@@ -587,6 +681,7 @@ __all__ = [
     "ElevationSource",
     "ElevationView",
     "freeze_model_axis_elevation",
+    "freeze_cut_plan",
     "list_model_axis_elevations",
     "project_model_axis_elevation",
     "read_model_axis_elevation",

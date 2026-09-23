@@ -398,7 +398,7 @@ const activityRows = (expected) => page.waitForFunction(
 const visibleWorkspace = () => page.locator('.chat-project-workspace:not([hidden])');
 const waitWorkspace = async (kind = "arch") => {
   await visibleWorkspace().locator(`[data-project-surface="${kind}"]:not([hidden])`).waitFor();
-  await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : ".stage canvas").first().waitFor();
+  await visibleWorkspace().locator(kind === "board" ? ".monkeyboard-canvas canvas" : kind === "drawing" ? ".drawing-workspace" : ".stage canvas").first().waitFor();
   assert.equal(await page.locator(".chat-project-workspace iframe").count(), 0, "project workspaces mount directly in the Hub");
 };
 const waitCandidate = async (runId) => {
@@ -453,7 +453,7 @@ try {
   // is no second copy of them anywhere.
   const rail = page.getByRole("navigation", { name: "Project tools" });
   await rail.waitFor();
-  for (const label of ["Modeling", "Board", "Fabrication", "Usage"]) {
+  for (const label of ["Modeling", "Drawings", "Board", "Fabrication", "Usage"]) {
     assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1, `${label} appears once`);
   }
   assert.ok(await railWidth() > 40, "the rail stays on screen while the tool content is closed");
@@ -711,10 +711,15 @@ try {
   await visibleWorkspace().getByLabel("Board title", { exact: true }).fill("Board A retained");
   await page.getByRole("button", { name: "Modeling", exact: true }).click();
   await waitWorkspace();
-  for (const [label, kind] of [["Board", "board"], ["Modeling", "arch"]]) {
+  for (const [label, kind] of [["Drawings", "drawing"], ["Board", "board"], ["Modeling", "arch"]]) {
     await page.getByRole("button", { name: label, exact: true }).click();
     await waitWorkspace(kind);
     if (kind === "board") assert.equal(await visibleWorkspace().getByLabel("Board title", { exact: true }).inputValue(), "Board A retained");
+    if (kind === "drawing") {
+      assert.equal(new URL(page.url()).searchParams.get("view"), "drawing");
+      assert.equal(await visibleWorkspace().locator('[data-project-surface="arch"]').isVisible(), false);
+      assert.equal(await visibleWorkspace().locator('[data-project-surface="board"]').isVisible(), false);
+    }
   }
   assert.equal(writes.length, beforePeerWorkspaces, "workspace switches never restart or prepare the project");
   assert.equal(await visibleWorkspace().evaluate((element) => element.retainedCanvas === element.querySelector(".stage canvas")), true);

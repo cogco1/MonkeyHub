@@ -283,6 +283,70 @@ are derived deterministically from StateRecord and Stage instead of introducing
 a model-written summary authority. Neither source establishes a cost saving for
 this project; the paired measurements below must report that separately.
 
+### Non-adjacent construction interface (#185)
+
+`tests/test_nonadjacent_stage_context.py` reuses the existing window/lintel
+fixture as a bare opening and measured lintel-bearing construction slice.
+The filled window's frame/glass and unmeasured room/outside relation are outside
+this fixture; their existing tests remain unchanged. Its 150 mm end bearing is
+an authored test condition, not a structural design standard.
+
+| Existing value | Meaning in this slice |
+| --- | --- |
+| `StateRecord.Parameter` | Opening left edge/width, their lock attribution, and expressions for the lintel ends |
+| `StateRecord.Relation` | Declared opening-to-lintel dependency with the existing minimum-bearing validator |
+| `Reading@1` | Named opening condition and scoped lintel/independent-object review prompts; not a validation result |
+| `DesignStage` | Exact explicitly accepted model, record and runner binding; S0/S1/S2 are local history labels, all using the existing runtime phase |
+| Scoped decision revision | Original wording and exact S0 source, target scope and typed parameter binding; no new lock or acceptance authority |
+| `ContextPack@1` | Disposable current task projection with upstream state, applicable decisions and cumulative review scope |
+| P036 | The same retained records, candidate runs and branch CAS; published `HEAD` stays unchanged |
+
+S0 confirms the 1.2 m opening and 2 m left edge. S1 changes only an independent
+solid's height. S2 changes the lintel depth while consuming S0's parameter
+expressions across S1. Actual in-process OCCT exports and explicit Stage
+acceptance run through existing owners. After closing and reconstructing the
+Runtime client/repository, a lintel task reads S0's scoped decisions with their
+exact source, current locks and conditions, without needing an earlier chat.
+Context reads leave the project's bytes unchanged.
+
+The record/context dependency slice already reached those upstream parameters.
+The missing behavior was decision focus: it stopped at direct bindings, so the
+same task lost a decision on a transitive input. `decisions.focus_refs` now
+follows declared upstream inputs, preserving effective instance bindings when
+Type defaults are overridden. It does not traverse from a shared input into
+its other consumers, include unrelated global locks, or rewrite a decision's
+domain, scope, strength or applicability. Explicit decision targets still
+narrow the query. Type identity remains readable; unused default parameters
+do not make their decisions applicable.
+
+Explicitly unlocking width and changing it to 1.6 m creates two unaccepted
+candidates. The old typed width/lock decision drops out while the unchanged
+left-edge decision survives. The existing confirmed-Stage comparison names
+the opening, lintel and scoped review conditions; it excludes the independent
+solid and its review. STEP readback verifies the 0.4 m span increase, retained
+150 mm end bearing and identical independent geometry. Original decision
+revisions remain readable. Stage-only and exact-source decisions do not leak
+from S0 into S2, copy decisions remain outside design context, and separate
+API tests cover keep/avoid/reject strength, explicit narrowing and revocation.
+
+Reproduce with `python -m unittest tests.test_nonadjacent_stage_context -v`
+(OCCT is required; missing OCCT is an explicit skip), and
+`python -m pytest apps/archflow-studio/api/tests/test_decisions.py apps/archflow-studio/api/tests/test_intent_context.py -q`.
+This proves retained-state/API and real CAD behavior in a disposable fixture.
+It does not measure a new native provider session, a human design trial,
+undeclared relationships, a MEP engine, or complete building usability.
+Existing provider-session evidence above remains a separate acceptance.
+
+Implementation comparison: [Bazel's Skyframe](https://bazel.build/reference/skyframe)
+distinguishes dependency reads from reverse invalidation and warns that omitted
+dependencies undermine incrementality. [Build systems à la carte](https://www.microsoft.com/en-us/research/publication/build-systems-la-carte/)
+provides an executable framework for comparing build systems; it does not
+establish architectural completeness. [buildingSMART's constraint association](https://standards.buildingsmart.org/IFC/RELEASE/IFC4_3/HTML/lexical/IfcRelAssociatesConstraint.htm)
+also keeps the applied constraint distinct from the objects it concerns.
+These are comparison points, not imported schemas or new runtime dependencies:
+our declared propagation still proves neither that all necessary architectural
+relations were declared nor that the authored 150 mm condition is appropriate.
+
 ### 2026-09-20 confirmed-stage comparison (#185): four measured arms
 
 A separate helper measures the accepted-Stage handoff itself. All four arms used
@@ -904,9 +968,194 @@ The evidence projection was 9,790 bytes including its identity/limitation wrappe
 No model was called for this comparison; it establishes payload reduction on
 this fixture, not token savings, architectural quality or end-to-end latency.
 
-This implements one precise evidence consumer for #122. It does not complete the
-four retrieval baselines, regulation/jurisdiction filtering, document extraction,
-or the audited query corpus. #32 still needs matched real-provider performance
-measurements; #185 still needs a building task that tests whether a transferred
-prior applies, plus the remaining non-adjacent Stage interfaces. References unify
-access; neither a citation nor a delivered context establishes design correctness.
+This implements one precise evidence consumer for #122. The independent
+[retrieval development comparison](../labs/retrieval/RESULTS.md) now measures four
+methods, metadata filtering and companion budgets; human-reviewed held-out queries,
+broader precedents and downstream generation remain open. The paired #32 experiment
+below tested separate tool guidance and found no supported efficiency improvement;
+it did not measure this Study transport. The non-adjacent Stage construction test
+in this document verifies a declared window/lintel dependency, not whole-building
+usability or whether a transferred precedent applies. References unify access;
+neither a citation nor a delivered context establishes design correctness.
+
+## Covered-fact guidance: three paired negative results (#32, 2026-09-23)
+
+The tested guidance did **not** improve this numeric-edit task. Three baseline
+turns used four Hub tools each; three revised turns used five each. Median turn
+time increased from 54.265 to 63.190 seconds, and median recorded input increased
+from 186,818 to 254,947 tokens (including cached input). The four experimental
+tool-description sentences were therefore removed. Their tested implementation
+remains in Git at `dbf56d2cb04d7ec469fe5cc96c30d8c1e326afc1`; this delivery changes
+only this evidence document. #32's broader efficiency acceptance remains open.
+
+### Hypothesis and fixed comparison
+
+The preceding retained numeric traces and a new pilot showed post-candidate
+reads of the original state, candidate state, ContextPack and proposal. The
+prepared ContextPack already covered the original facts, and the numeric reply
+already carried `target/change/kept`. The experimental MCP description told the
+agent to reuse those covered facts while retaining candidate authored-state,
+visual, missing-context and changed-scope checks. It added no cache, scheduler,
+store, DTO or execution path. This was an EXTEND of `hub.shell` guidance over the
+existing `studio.intent`/P036 readers, not a change to their ownership.
+
+[Anthropic's tool-engineering guidance](https://www.anthropic.com/engineering/writing-tools-for-agents)
+motivates testing tool descriptions and response content against actual tool,
+token, error and task outcomes. [LLMCompiler's paper](https://arxiv.org/abs/2312.04511v3)
+and [author implementation](https://github.com/SqueezeAILab/LLMCompiler) pursue
+parallel orchestration through a planner, task fetcher and executor. The local
+trace did not justify adding that machinery; these sources supply hypotheses,
+not evidence of an ArchFlow performance benefit.
+
+Before sampling, the experiment froze baseline **A** at
+`27e7f2fddb8bf969abd4db8e1c575b8e1ba14b0d`, revised **B** at
+`dbf56d2cb04d7ec469fe5cc96c30d8c1e326afc1`, and order **AB / BA / AB**.
+Each arm restores the same P036 archive into its own project/runtime and starts
+a fresh native session. There is no primer model turn. All six reports agree
+on the archive transfer manifest, prompt, fixture, context mode and reported
+model. Native session metadata independently confirms Codex `0.153.4`,
+`gpt-6-astra`, effort `xhigh`. No inference seed is exposed or controlled.
+No sample was replaced, no automatic model retry was requested, and the source
+was not adjusted between arms.
+
+The unchanged `incremental-edit` prompt raises `portico-cornice` from 0.3 to
+0.5 m, keeps `entity:portico-base` at 0.6 m, preserves both footprints, support
+datum and other authored fields, and leaves the candidate unaccepted. The
+fixture is `apps/archflow-studio/api/tests/support.py`, last changed at
+`786863581e4794523987253b8a91cc22ac23a28a`; this is a synthetic two-object task.
+Initial `run-001` state digest is
+`76af4e2ac8bfa5a6ac4ae891b9dfcfe57f6890f108a415cae556969d03a810b1`;
+prompt SHA-256 is
+`dd5602583cd4a35cc8a5e11ce2e90b30bc772e9e97309887011f62e11db63bf0`.
+Every measured checkout had an empty source diff. Runs used the existing
+`run_turn_benchmark.py` with `--context-pack --no-preview --timeout 240`.
+
+### All six observations
+
+Times are seconds. Start/end are UTC on 2026-09-23 and bound the whole child
+benchmark process. Process time includes service setup, the measured turn,
+independent checks and teardown; it is not added to turn time. First candidate
+is Monitor's same-turn successful generation/readback event, not design acceptance
+or browser visibility. Model-request counts are **unknown in every arm**.
+
+| Pair / arm | Process start–end UTC | Process | Turn | First candidate | Hub tools | Input / cached subset / output |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| 1 / A | 05:56:41.007–05:57:40.289 | 59.281 | 50.406 | 21.717 | 4 | 147,279 / 104,576 / 1,005 |
+| 1 / B | 05:57:40.438–05:58:56.313 | 75.875 | 67.336 | 22.512 | 5 | 240,879 / 191,104 / 1,225 |
+| 2 / B | 05:58:56.415–06:00:07.333 | 70.919 | 63.190 | 19.995 | 5 | 255,010 / 201,984 / 1,265 |
+| 2 / A | 06:00:07.483–06:01:22.422 | 74.939 | 65.731 | 24.349 | 4 | 186,818 / 144,768 / 1,226 |
+| 3 / A | 06:01:22.539–06:02:25.361 | 62.823 | 54.265 | 19.230 | 4 | 197,624 / 152,192 / 923 |
+| 3 / B | 06:02:25.499–06:03:31.534 | 66.034 | 57.263 | 19.067 | 5 | 254,947 / 201,984 / 1,065 |
+
+All six arms passed independent retained geometry, authored entity/parameter/
+relation/obligation and unchanged-HEAD checks. Each produced one candidate with
+one CAD build, one candidate-state GET and one exact-source model-view read.
+These checks establish the specified synthetic result, not architectural quality
+or formal acceptance. The preserved expected boxes are base Z=0–0.6 m and
+cornice Z=0.6–1.1 m, with unchanged 4 by 2 m footprints and support reference.
+
+A1 also read the original state, A2 read the proposal, and A3 read candidate
+ContextPack directly. Each B read candidate ContextPack **and its schema**;
+none repeated the original state or proposal. Candidate ContextPack exposes
+authored fields that the ordinary state projection does not fully show, so it
+cannot simply be labeled wasted verification. Its schema discovery is the
+observed extra call in all three B turns. A lower read count alone would not
+prove equivalent observation coverage.
+
+Native `functions.exec` wrapper counts were A1=3, B1=5, B2=5, A2=4, A3=4,
+B3=5, each including one `ALL_TOOLS` discovery. These are a different layer
+from the Hub MCP calls in the table and must not be added to them or counted
+as model requests. Recorded agent/CLI activity totaled respectively 46.368,
+63.214, 58.554, 62.517, 49.876 and 53.167 seconds. These intervals include
+provider wait and host scheduling; pure inference, network, queueing and internal
+retries are not separately observed. First-candidate median fell from 21.717
+to 19.995 seconds while total median rose by 8.925 seconds. Neither difference
+establishes a causal or general speed effect.
+
+### Failure, preparation and cost accounting
+
+All six bounded responses retained a **failed source comparison**: input
+`run-001` has no inspection. Candidate object readback succeeded, but aggregate
+readback remained incomplete with a recovery GET. This known degraded fixture
+path was identical in both arms and may influence follow-up behavior. No failed
+Hub tool or retry span was observed; those zeroes do not erase the six failed
+comparison reads. B2 also retained one Monitor busy/503 snapshot and recovered
+on a later read. No unfinished span or missing-observation notice remained in
+the final reports; provider-internal retries remain unknown.
+
+Archive creation and six restores took 1.181 seconds. The six child processes
+took 409.871 seconds in total, including 358.191 seconds of measured turns and
+51.680 seconds of combined setup/check/teardown overhead. The latter phases are
+not separately timed. Total recorded usage was **1,282,557 input, including
+996,608 cached, and 6,709 output tokens**, with 27 Hub tools and six CAD builds.
+Cached tokens are a subset, not an extra charge; billed cost is unknown.
+
+The separate reconnaissance pilot used baseline A and took 71.930 seconds
+(first candidate 21.559; six Hub tools; 235,233 input / 189,696 cached / 1,605
+output; one CAD build and view). Its candidate passed the same checks, with
+the same missing-inspection comparison failure. It is excluded from the paired
+statistics. Before that pilot, one setup attempt returned HTTP 503 at chat
+creation because this checkout lacked its locked ACP adapter; no provider turn
+started. Installing only this checkout's `npm ci --ignore-scripts --no-audit
+--no-fund` dependencies took approximately 3.7 seconds. Failed-setup, pilot setup/check/
+teardown and pilot archive preparation wall times are unknown, not zero.
+Including the successful pilot, all seven measured design turns total 430.121
+seconds, 1,517,790 input / 1,186,304 cached / 8,314 output tokens, 33 Hub tools,
+seven candidates/CAD builds and seven comparison failures. There were no other
+preparation model turns. This is not a fully measured all-in elapsed cost.
+
+Other developer model sessions and local CPU embedding/reranking and OCCT work
+were concurrent. Provider/cache/workstation load was not controlled. Three
+pairs, one synthetic task and a missing-inspection source do not support a
+population speed estimate. Necessary observation still matters; this result
+rejects the tested guidance as an efficiency improvement, not ContextPack use.
+Before another optimization, identify the required after-state facts and the
+smallest existing reader that supplies them, so saving calls does not omit checks.
+
+### Retained sources and reproduction
+
+Local diagnostics remain at
+`D:/MONKEYHUB_DEV/temp/32-bounded-tool-context`: `comparison-attempts.json`
+contains order, exact commands, process times and exit codes; `comparison.json`
+projects existing reports; `paired-input.zip` and each `pair-N-baseline/revised`
+directory retain their P036 project, Hub runtime, chat, candidate and Monitor
+trace. The pilot is separate under `pilot/project`; the failed prerequisite
+attempt is under `pilot/continue`. Native JSONL files are located by the exact
+`provider_session_id` in each report. No private transcript or raw project was
+uploaded. Local `run_comparison.py` and `summarize.py` only invoke/project the
+existing benchmark and do not define production behavior.
+
+For a fresh reproduction, use an explicit unused nonproject directory, the same
+installed provider/model/effort, and the pinned source revisions above. Prepare
+one fixture archive and restore it once per arm through the existing ports:
+
+```python
+from pathlib import Path
+from tests.monkeymonitor import run_turn_benchmark as b
+root = Path(r"<absolute-unused-nonproject-directory>")
+fixture = b.project_fixture()
+seed, _ = fixture.make_project(root / "seed")
+b.write_project_archive(seed, root / "input.zip")
+for pair in (1, 2, 3):
+    for arm in ("baseline", "revised"):
+        restored, _ = b.restore_project_archive(
+            root / f"pair-{pair}-{arm}" / "projects" / fixture.PROJECT_ID, root / "input.zip")
+        assert b.source_identity(restored) == b.source_identity(seed)
+```
+
+Switch only the isolated source checkout between the frozen revisions, in
+AB/BA/AB order, and invoke this unchanged command for each restored arm. Wrap
+each process with a monotonic timer if comparing setup/check/teardown too;
+retain its exit code, stderr and failed attempts. Never overwrite a used arm.
+
+```text
+python tests/monkeymonitor/run_turn_benchmark.py --scenario incremental-edit --model gpt-6-astra --context-pack --no-preview --timeout 240 --retained-root <absolute-arm-directory> --output <absolute-arm-directory>
+```
+
+Validation of the experimental source: 85 existing Hub chat and benchmark
+tests passed, including bounded single-submit/partial-read recovery and real
+OCCT fixture checks; architecture and commit-scope checks passed after registering
+the narrow GH-32 scope. The completed slice removes that live scope and restores
+production source exactly to A. PR #245's exact Study evidence is independent
+and was not present in either measured arm; integration must retain its evidence
+warnings. This negative result does not test or establish its token/time benefit.

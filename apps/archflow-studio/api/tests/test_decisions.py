@@ -442,7 +442,7 @@ class DecisionContextTests(DecisionFixture):
         unrelated = self.context(cold, run_id=run.run_id, elementIds=["unrelated-block"])
         self.assertEqual(unrelated["scopedDecisions"], [])
 
-    def test_a_target_scope_follows_the_focused_elements_own_bindings(self) -> None:
+    def test_a_target_scope_follows_bindings_and_a_declared_downstream_consumer(self) -> None:
         # portico-base's height is bound to the parameter this decision keeps,
         # so a turn that focuses that element is the turn it is about.
         bound = self.bind_height_to_module()
@@ -453,8 +453,42 @@ class DecisionContextTests(DecisionFixture):
         cold = self.new_client()
         focused = self.context(cold, run_id=bound, elementIds=["portico-base"])
         self.assertEqual([row["decisionId"] for row in focused["scopedDecisions"]], [keep["decisionId"]])
-        elsewhere = self.context(cold, run_id=bound, elementIds=["portico-cornice"])
-        self.assertEqual(elsewhere["scopedDecisions"], [])
+        # The cornice explicitly reads the base through its support relation.
+        downstream = self.context(cold, run_id=bound, elementIds=["portico-cornice"])
+        self.assertEqual(downstream["scopedDecisions"], [keep])
+
+    def test_transitive_parameter_decisions_keep_scope_strength_and_revocation(self) -> None:
+        payload = deepcopy(RECORD_PAYLOAD)
+        for entity in payload["entities"]:
+            if entity["entity_id"] == "portico-base":
+                entity["fields"]["params"]["height"] = "@span"
+        # A sibling also consumes module, but is not an input to this task.
+        payload["parameters"].append({"key": "sibling", "value": 3.6, "unit": "m", "expr": "3 * module"})
+        run = self.repository.create_run("run-transitive")
+        digest = runner_state_digest(self.repository, run.run_id, payload)
+        retain_runner_receipt(self.repository, run, record_payload=payload, design_state_digest=digest)
+        source = self.design_source(run.run_id, digest)
+        upstream = [self.design(
+            rawLanguage=f"{disposition} this module interpretation", disposition=disposition,
+            strength="soft_preference", source=source,
+            scope={"domain": "design", "extent": "targets", "targetRefs": ["parameter:module"]},
+        ) for disposition in ("keep", "avoid", "reject")]
+        unrelated = [self.design(
+            targetRef=f"parameter:{key}", source=source,
+            scope={"domain": "design", "extent": "targets", "targetRefs": [f"parameter:{key}"]},
+        ) for key in ("sibling", "plinth")]
+        pack = self.context(self.new_client(), run_id=run.run_id, elementIds=["portico-base"])
+        self.assertEqual(pack["scopedDecisions"], upstream)
+        self.assertTrue({row["decisionId"] for row in unrelated}.isdisjoint(
+            row["decisionId"] for row in pack["scopedDecisions"]))
+        # Explicit decision focus is still authoritative; dependency reading
+        # cannot turn a caller's narrower design query into a global preference.
+        narrowed = self.context(run_id=run.run_id, elementIds=["portico-base"],
+                                decisionContext={"domain": "design", "targetRefs": ["parameter:span"]})
+        self.assertEqual(narrowed["scopedDecisions"], [])
+        self.revise(upstream[1], action="revoke", reason="Withdraw this interpretation")
+        after = self.context(self.new_client(), run_id=run.run_id, elementIds=["portico-base"])
+        self.assertEqual(after["scopedDecisions"], [upstream[0], upstream[2]])
 
     def bind_height_to_module(self, run_id: str = "run-bound") -> str:
         payload = deepcopy(RECORD_PAYLOAD)
@@ -466,6 +500,41 @@ class DecisionContextTests(DecisionFixture):
         retain_runner_receipt(self.repository, run, record_payload=payload,
                               design_state_digest=self.bound_digest)
         return run_id
+
+    def test_type_overrides_exclude_unused_defaults_but_keep_inherited_inputs(self) -> None:
+        payload = deepcopy(RECORD_PAYLOAD)
+        payload["entities"].append({"entity_id": "base-type", "schema": "Type@1", "fields": {
+            "producer": "prism", "params": {"height": "@module"},
+            "references": {"base": {"level": "type-level"}},
+        }})
+        payload["entities"].append({"entity_id": "type-level", "schema": "Level@1",
+                                    "fields": {"role": "type-base", "elevation": 0.3}})
+        base = next(row for row in payload["entities"] if row["entity_id"] == "portico-base")
+        base["fields"].update(type_ref="base-type")
+        # plinth is independent of module (bay/span would consume module).
+        base["fields"]["params"]["height"] = "@plinth"
+        run = self.repository.create_run("run-overridden-type")
+        digest = runner_state_digest(self.repository, run.run_id, payload)
+        retain_runner_receipt(self.repository, run, record_payload=payload, design_state_digest=digest)
+        source = self.design_source(run.run_id, digest)
+        defaults = self.design(source=source,
+            scope={"domain": "design", "extent": "targets", "targetRefs": ["parameter:module"]})
+        actual = self.design(targetRef="parameter:plinth", source=source,
+            scope={"domain": "design", "extent": "targets", "targetRefs": ["parameter:plinth"]})
+        typed = self.design(targetRef="entity:base-type", source=source,
+            scope={"domain": "design", "extent": "targets", "targetRefs": ["entity:base-type"]})
+        level = self.design(targetRef="entity:type-level", source=source,
+            scope={"domain": "design", "extent": "targets", "targetRefs": ["entity:type-level"]})
+        overridden = self.context(self.new_client(), run_id=run.run_id, elementIds=["portico-cornice"])
+        self.assertEqual(overridden["scopedDecisions"], [actual, typed])
+
+        base["fields"]["params"].pop("height")
+        base["fields"]["references"].pop("base")
+        inherited = self.repository.create_run("run-inherited-type")
+        digest = runner_state_digest(self.repository, inherited.run_id, payload)
+        retain_runner_receipt(self.repository, inherited, record_payload=payload, design_state_digest=digest)
+        pack = self.context(self.new_client(), run_id=inherited.run_id, elementIds=["portico-cornice"])
+        self.assertEqual(pack["scopedDecisions"], [defaults, typed, level])
 
     def test_a_decision_about_a_target_the_record_dropped_goes_stale(self) -> None:
         keep = self.design(rawLanguage="檐口这条关系保留", targetRef="relation:rel-cornice-on-base")
