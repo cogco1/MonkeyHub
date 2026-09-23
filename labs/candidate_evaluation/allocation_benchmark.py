@@ -211,9 +211,16 @@ def _trial_job(job: tuple) -> dict:
 
 
 def run_benchmark(output: Path, *, repetitions: int, master_seed: int, budgets: tuple[int, ...],
-                  include_production: bool = True, workers: int = 1) -> dict:
+                  include_production: bool = True, workers: int = 1,
+                  fixture_names: tuple[str, ...] | None = None,
+                  policies: tuple[str, ...] = POLICIES,
+                  budget_units: tuple[str, ...] = ("samples", "cost")) -> dict:
     if repetitions < 2 or not budgets or any(b <= 0 for b in budgets) or workers < 1:
         raise ValueError("at least two repetitions and positive budgets are required")
+    for values, allowed, label in ((policies, POLICIES, "policies"),
+                                  (budget_units, ("samples", "cost"), "budget units")):
+        if not values or len(set(values)) != len(values) or set(values) - set(allowed):
+            raise ValueError(f"unknown, empty or duplicate {label}")
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     outputs = [output / name for name in ("trials.jsonl.gz", "summary.json", "summary.csv")]
@@ -225,17 +232,31 @@ def run_benchmark(output: Path, *, repetitions: int, master_seed: int, budgets: 
     started = datetime.now(timezone.utc).isoformat()
     with TemporaryDirectory(prefix="monkeyhub-evaluation-") as project_dir:
         fixtures = synthetic_fixtures()
-        if include_production:
+        if include_production and (fixture_names is None or "monkeyhub_fixed_massing" in fixture_names):
             fixtures = (*fixtures, production_fixture(Path(project_dir) / "project"))
+        if fixture_names is not None:
+            if (not fixture_names or len(set(fixture_names)) != len(fixture_names)
+                    or set(fixture_names) - {fixture.name for fixture in fixtures}):
+                raise ValueError("unknown, empty or duplicate fixture names")
+            fixtures = tuple(fixture for fixture in fixtures if fixture.name in fixture_names)
+        conditions = [(fixture, unit, policy) for fixture in fixtures
+                      for unit in (("samples", "cost") if fixture.name in
+                                   ("heterogeneous_cost", "monkeyhub_fixed_massing") else ("samples",))
+                      if unit in budget_units for policy in policies
+                      if policy != "cost_ocba" or unit == "cost"]
+        if not conditions:
+            raise ValueError("filters select no compatible conditions")
         rows = []
         pool_context = ProcessPoolExecutor(max_workers=workers) if workers > 1 else nullcontext(None)
         with gzip.open(outputs[0], "wt", encoding="utf-8") as raw, pool_context as pool:
             for fixture in fixtures:
                 units = ("samples", "cost") if fixture.name in ("heterogeneous_cost", "monkeyhub_fixed_massing") else ("samples",)
                 for unit in units:
+                    if unit not in budget_units:
+                        continue
                     for nominal_budget in budgets:
                         budget = nominal_budget * (5 if unit == "cost" else 1)
-                        for policy in POLICIES:
+                        for policy in policies:
                             if policy == "cost_ocba" and unit != "cost":
                                 continue
                             trials = []
@@ -254,6 +275,8 @@ def run_benchmark(output: Path, *, repetitions: int, master_seed: int, budgets: 
             "python_version": platform.python_version(), "started_at": started,
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "repetitions": repetitions, "master_seed": master_seed, "sample_budgets": budgets,
+            "selected_fixtures": [fixture.name for fixture in fixtures],
+            "selected_policies": policies, "selected_budget_units": budget_units,
             "workers": workers,
             "warmup_successes": 5, "trace_columns": TRACE_COLUMNS,
             "fixtures": [fixture.to_dict() for fixture in fixtures], "results": rows,
@@ -279,13 +302,19 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20260920)
-    parser.add_argument("--budgets", type=int, nargs="+", default=[100, 300, 900])
+    parser.add_argument("--budgets", type=int, nargs="+", default=[100, 300, 900],
+                        help="sample budgets; each cost-budget condition uses five times this value")
     parser.add_argument("--synthetic-only", action="store_true")
+    parser.add_argument("--fixtures", nargs="+", help="optional exact fixture names")
+    parser.add_argument("--policies", nargs="+", choices=POLICIES, default=list(POLICIES))
+    parser.add_argument("--budget-units", nargs="+", choices=("samples", "cost"), default=["samples", "cost"])
     parser.add_argument("--workers", type=int, default=1,
                         help="independent Monte Carlo processes; does not simulate batch allocation")
     args = parser.parse_args()
     summary = run_benchmark(args.output, repetitions=args.repetitions, master_seed=args.seed,
-                            budgets=tuple(args.budgets), include_production=not args.synthetic_only, workers=args.workers)
+                            budgets=tuple(args.budgets), include_production=not args.synthetic_only, workers=args.workers,
+                            fixture_names=None if args.fixtures is None else tuple(args.fixtures),
+                            policies=tuple(args.policies), budget_units=tuple(args.budget_units))
     print(json.dumps({"rows": len(summary["results"]), "code_revision": summary["code_revision"],
                       "lab_has_uncommitted_changes": summary["lab_has_uncommitted_changes"]}))
 
