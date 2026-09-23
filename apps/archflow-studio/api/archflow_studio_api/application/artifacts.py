@@ -55,7 +55,7 @@ from archflow.project.record_kinds import (
     SEAT_OCCT_EXECUTION, SEAT_RHINO_EXECUTION, STUDIO_SOURCE_DOCUMENT, STUDIO_MODEL_ASSET,
     STUDIO_DOCUMENT_MODEL_SOURCE,
 )
-from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, ThreeDmInspectionError
+from archflow.adapters.three_dm_inspector import inspect_three_dm_contents, inspect_three_dm_index, ThreeDmInspectionError
 from archflow.adapters.cad_program import ROOT_LAYER
 from archflow.project.layout import cad_workspace_path
 from archflow.project.ports import PersistenceArea, PersistenceDestination
@@ -1086,6 +1086,54 @@ def require_complete_model(record: ArtifactRecord, runner_receipt: Mapping[str, 
     produced = [row for row in runner_receipt.get("seat_results", ()) if row.get("program_ref")]
     if not produced or any((row.get("cad") or {}).get("execution_ref") != record.receipt_ref for row in produced):
         raise StudioError(409, "MODEL_SOURCE_INCOMPLETE", "This native export does not establish coverage of every producing seat. Select a complete composed model or the run's complete native delivery.")
+
+
+@retained_sources
+def read_model_source_index(
+    binding: ProjectBinding, source: ModelSource, *, object_ids: tuple[str, ...] = (),
+    offset: int = 0, limit: int = 50,
+) -> dict[str, Any]:
+    """Page native identities from exact retained bytes, without admitting an edit."""
+
+    if offset < 0 or not 1 <= limit <= 200 or len(object_ids) > 200:
+        raise StudioError(422, "MODEL_INDEX_RANGE_INVALID", "Use a nonnegative offset and at most 200 objects per read.")
+    artifact = require_model_source(binding, source)
+    assert artifact.path is not None
+    try:
+        data = artifact.path.read_bytes()
+    except OSError as exc:
+        raise StudioError(409, "MODEL_SOURCE_UNAVAILABLE", "The exact model bytes could not be read.") from exc
+    if hashlib.sha256(data).hexdigest() != source.asset_sha256:
+        raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The model bytes changed during the index read.")
+    try:
+        index = inspect_three_dm_index(data)
+    except ThreeDmInspectionError as exc:
+        raise StudioError(422, "MODEL_INDEX_UNAVAILABLE", exc.message) from exc
+    rows = index["objects"]
+    requested = set(object_ids)
+    if requested - {row["object_id"] for row in rows}:
+        raise StudioError(404, "MODEL_OBJECT_NOT_FOUND", "An object GUID is absent from this exact source; names are not identity matches.")
+    matched = [row for row in rows if not requested or row["object_id"] in requested]
+    page = matched[offset:offset + limit]
+    layers = {row["id"]: row for row in index["layers"]}
+    references = {row["object_id"]: row for row in index["instance_references"]}
+    definitions = index["instance_definitions"]
+    membership: dict[str, list[str]] = {}
+    for definition in definitions:
+        for member in definition["object_ids"]:
+            membership.setdefault(member, []).append(definition["id"])
+    objects = []
+    for row in page:
+        # Only the page's native relations enter the response. Neither a block
+        # membership nor a layer/name is interpreted as an architectural role.
+        objects.append({**row, "layer": layers.get(row["layer_id"]),
+                        "containing_definition_ids": membership.get(row["object_id"], []),
+                        "instance_reference": references.get(row["object_id"])})
+    next_offset = offset + len(page)
+    return {"modelSource": source.to_dict(), "fileName": artifact.file_name,
+            "archiveVersion": index["archive_version"], "units": index["units"],
+            "objectCount": len(rows), "matchedCount": len(matched), "objects": objects,
+            "offset": offset, "nextOffset": next_offset if next_offset < len(matched) else None}
 
 
 # How long a work export waits for the one Rhino this machine has, and how

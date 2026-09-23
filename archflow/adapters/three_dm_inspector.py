@@ -222,8 +222,90 @@ def inspect_three_dm_contents(data: bytes) -> ThreeDmInspection:
     return _inspect_bytes(data, include_geometry=False)
 
 
-def _inspect_bytes(file_bytes: bytes, *, include_geometry: bool) -> ThreeDmInspection:
+def inspect_three_dm_index(data: bytes) -> dict[str, object]:
+    """Read native identities and relations without inspecting geometry content.
+
+    This index includes unnamed objects and block definition members as saved.
+    Names, layers and user strings are source metadata, not inferred semantics;
+    visibility and material source are the native object attributes, not resolved
+    display properties. Geometry validity, bounds, encoding and morphology are
+    deliberately outside this inexpensive lookup path.
+    """
+
+    if not isinstance(data, bytes):
+        raise TypeError("3dm contents must be bytes")
     rhino3dm = _load_rhino3dm()
+    model = _decode_model(data, rhino3dm)
+    try:
+        objects = tuple(model.Objects)
+        layers, layers_by_index = _layers(model, objects)
+        rows: list[dict[str, Any]] = []
+        object_ids: set[str] = set()
+        for item in objects:
+            attributes = item.Attributes
+            geometry = item.Geometry
+            if geometry is None:
+                raise ValueError("3dm object has no geometry")
+            object_id = _identifier(attributes.Id, "object id")
+            if object_id in object_ids:
+                raise ValueError("duplicate object id")
+            object_ids.add(object_id)
+            layer_index = _integer(attributes.LayerIndex, "object layer index")
+            layer = layers_by_index.get(layer_index)
+            row = {
+                "id": object_id,
+                "name": _string(attributes.Name, "object name"),
+                "type": _enum_name(geometry.ObjectType, "object type"),
+                "layer_index": layer_index,
+                "layer_id": None if layer is None else layer["id"],
+                "layer_path": None if layer is None else layer["full_path"],
+                "is_instance_definition_object": bool(
+                    attributes.IsInstanceDefinitionObject
+                ),
+                "visible": bool(attributes.Visible),
+                "material_index": _integer(
+                    attributes.MaterialIndex, "object material index"
+                ),
+                "material_source": _enum_name(
+                    attributes.MaterialSource, "object material source"
+                ),
+                "attributes": attributes,
+                "geometry": geometry,
+            }
+            mode = getattr(attributes, "Mode", None)
+            if mode is not None:
+                row["mode"] = _enum_name(mode, "object mode")
+            rows.append(row)
+        rows.sort(key=lambda item: item["id"])
+        definitions, _ = _definitions(model)
+        references = _references(rows, definitions, layers_by_index)
+        reference_counts = Counter(item["definition_id"] for item in references)
+        for definition in definitions:
+            definition["reference_count"] = reference_counts.get(definition["id"], 0)
+        for row in rows:
+            row["object_id"] = row.pop("id")
+            row["attributes"] = _user_strings(row["attributes"])
+            row["geometry"] = _user_strings(row["geometry"])
+        return {
+            "file_sha256": hashlib.sha256(data).hexdigest(),
+            "file_bytes": len(data),
+            "archive_version": _integer(model.ArchiveVersion, "archive version"),
+            "units": _units(model.Settings.ModelUnitSystem),
+            "layers": layers,
+            "objects": rows,
+            "instance_definitions": definitions,
+            "instance_references": references,
+        }
+    except ThreeDmInspectionError:
+        raise
+    except Exception as exc:
+        raise ThreeDmInspectionError(
+            ThreeDmInspectionErrorCode.INVALID_FILE,
+            "the decoded 3dm model contains invalid index data",
+        ) from exc
+
+
+def _decode_model(file_bytes: bytes, rhino3dm: Any) -> Any:
 
     try:
         model = rhino3dm.File3dm.FromByteArray(file_bytes)
@@ -237,6 +319,12 @@ def _inspect_bytes(file_bytes: bytes, *, include_geometry: bool) -> ThreeDmInspe
             ThreeDmInspectionErrorCode.INVALID_FILE,
             "rhino3dm rejected the file as invalid or damaged",
         )
+    return model
+
+
+def _inspect_bytes(file_bytes: bytes, *, include_geometry: bool) -> ThreeDmInspection:
+    rhino3dm = _load_rhino3dm()
+    model = _decode_model(file_bytes, rhino3dm)
 
     try:
         payload = _summarize_model(model, rhino3dm, include_geometry=include_geometry)
