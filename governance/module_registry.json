@@ -4119,7 +4119,8 @@
         "apps/monkeyhub/web/workspaces/test/boardNavigation.test.ts",
         "apps/monkeyhub/web/workspaces/test/boardDocumentOpen.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/boardConceptFeedback.test.ts",
-        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/boundWorkCopy.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
       ],
       "notes": "CREATE: existing artifacts owns originals and intent owns page annotations; neither owns a persistent multi-image presentation canvas. This single requested consumer needs a scene value and uses the existing project repository and document APIs."
     },
@@ -4894,7 +4895,8 @@
       ],
       "tests": [
         "apps/archflow-studio/api/tests/test_rendering.py",
-        "apps/archflow-studio/api/tests/test_render_gemini_adapter.py"
+        "apps/archflow-studio/api/tests/test_render_gemini_adapter.py",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
       ],
       "inputs": [
         "Exact SourceDocument runId/assetSha256/revisionRef/pageIndex, ordered references, direction and output options",
@@ -6548,7 +6550,8 @@
         "External presentation cannot launch a provider or write project state; mutations require loopback plus the exact source/project capability, images use bounded session attachments or verified retained document references, and progress is never saved or replayed as model context.",
         "Updates do not overwrite the running application or alter project data. Restart blocks active requests, running conversations/jobs, unsent drafts, attachments and unsynchronized model edits. A trial desktop cannot open the working UI before exact owned-Hub health and activation succeed; failed trials drain before the old host reopens. This startup rollback does not authorize later project-format downgrades.",
         "Render, Board and Arch share one project Runtime; image execution and persistence remain studio.render and studio.artifacts, with no Render process or store",
-        "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call"
+        "A new Render attempt gets a new requestId; status refresh and workspace/project switches never resend an uncertain paid call",
+        "Automatic project selection, chat and first Render entry attach and verify the Runtime without seeding authored modeling inputs; explicit Arch entry initializes only when the modeling projection is not ready, including after Render-first navigation"
       ],
       "used_by": [
         "apps/monkeyhub/run.py",
@@ -6647,7 +6650,8 @@
         "apps/monkeyhub/desktop/tests/test_update_handoff.py",
         "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
         "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
       ],
       "depends_on": [
         "project.repository",

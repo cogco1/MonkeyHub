@@ -65,14 +65,14 @@
         },
         {
           "id": "runtime",
-          "status": "active",
+          "status": "review",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/253",
           "branch": "codex/render-runtime",
           "worktree": "C:/Users/asus/.codex/worktrees/c4b9/ARCHFLOW_V4",
           "base_ref": "77fa6c5a48678a8751c7fd3d885b618890ba6cdb",
           "contributor": "Codex",
           "reviewer": null,
-          "handoff": "Contract and backend feed the provider and workspace lanes.",
+          "handoff": "Integrated on codex/render-runtime for one Draft PR. Offline Runtime, provider and browser checks are complete; real provider acceptance remains open under GH-253.",
           "modules": [
             "studio.render",
             "studio.shell",
@@ -96,13 +96,13 @@
         {
           "id": "frontend",
           "issue": "https://github.com/cogco1/MonkeyHub/issues/253",
-          "status": "active",
+          "status": "review",
           "branch": "codex/render-ai-workspace",
           "worktree": "C:/Users/asus/.codex/worktrees/ef1a/ARCHFLOW_V4",
           "base_ref": "77fa6c5a48678a8751c7fd3d885b618890ba6cdb",
           "contributor": "Codex frontend task",
           "reviewer": null,
-          "handoff": "Runtime owns the confirmed HTTP contract and public module registry; frontend generates its client after taking that dependency. Independent navigation/gallery work proceeds first.",
+          "handoff": "Integrated on codex/render-runtime for one Draft PR. Offline Runtime, provider and browser checks are complete; real provider acceptance remains open under GH-253.",
           "modules": [
             "hub.shell"
           ],
