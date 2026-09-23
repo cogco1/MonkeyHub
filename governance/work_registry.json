@@ -18,6 +18,7 @@
         "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
         "apps/archflow-studio/api/archflow_studio_api/main.py",
         "apps/archflow-studio/api/archflow_studio_api/settings.py",
+        "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
         "archflow/project/record_kinds.py",
         "apps/archflow-studio/api/tests/test_rendering.py",
         "apps/archflow-studio/api/tests/test_settings.py"
@@ -67,6 +68,7 @@
             "apps/archflow-studio/api/archflow_studio_api/routes/__init__.py",
             "apps/archflow-studio/api/archflow_studio_api/main.py",
             "apps/archflow-studio/api/archflow_studio_api/settings.py",
+            "apps/archflow-studio/api/archflow_studio_api/transport/settings.py",
             "archflow/project/record_kinds.py",
             "apps/archflow-studio/api/tests/test_rendering.py",
             "apps/archflow-studio/api/tests/test_settings.py"

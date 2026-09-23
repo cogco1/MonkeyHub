@@ -25,6 +25,11 @@ class UserSettingsDto(BaseModel):
         default=None, alias="intentModel", min_length=1, pattern=r"^[^\x00-\x1f\x7f]+$",
     )
     intent_timeout_s: float | None = Field(default=None, alias="intentTimeoutS", gt=0)
+    render_provider: Literal["off", "gemini"] | None = Field(default=None, alias="renderProvider")
+    render_model: str | None = Field(
+        default=None, alias="renderModel", min_length=1, max_length=160, pattern=r"^[^\x00-\x1f\x7f]+$",
+    )
+    render_timeout_s: float | None = Field(default=None, alias="renderTimeoutS", ge=1, le=300)
     # What a new Hub conversation starts with. An existing conversation keeps
     # the connection and native session it was created with; changing these
     # never reaches one.

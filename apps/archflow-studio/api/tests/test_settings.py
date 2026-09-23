@@ -236,6 +236,18 @@ class UserSettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.json(), {"language": "en"})
         self.assertEqual(self.client.get("/api/settings/user").json(), {"language": "en"})
 
+    def test_render_preferences_save_without_credential_storage_or_runtime_mutation(self) -> None:
+        payload = {"renderProvider": "gemini", "renderModel": "gemini-3-pro-image", "renderTimeoutS": 120.0}
+        self.assertEqual(self.client.put("/api/settings/user", json=payload).json(), payload)
+        self.assertEqual(self.client.get("/api/settings/user").json(), payload)
+        self.assertEqual(self.client.app.state.settings.render_provider, "off")
+        for invalid in ({"renderApiKey": "synthetic-secret"}, {"renderProvider": "unknown"},
+                        {"renderTimeoutS": 301}, {"renderTimeoutS": True}, {"renderTimeoutS": 0.5}):
+            response = self.client.put("/api/settings/user", json=invalid)
+            self.assertEqual(response.status_code, 422)
+            self.assertNotIn("synthetic-secret", response.text)
+            self.assertEqual(self.client.get("/api/settings/user").json(), payload)
+
     def test_unsupported_values_and_secret_fields_cannot_replace_saved_settings(self) -> None:
         self.client.put("/api/settings/user", json={"theme": "light"})
         for payload in ({"language": "zh"}, {"language": ["en"]}, {"theme": "auto"},
