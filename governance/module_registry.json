@@ -6421,7 +6421,8 @@
         "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow",
         "Render as a peer project workspace with lazy first mount and preserved per-project inputs/history; hidden views suspend polling without cancelling image attempts",
         "Explicit Render result handoff to the existing Board using its exact SourceDocument page identity",
-        "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP"
+        "Nonsecret Render preferences through existing Hub settings; only MONKEYHUB_RENDER_API_KEY is mapped to the configured Gemini Runtime, never exposed over HTTP",
+        "Read-only Modeling-to-Render preview borrows the mounted project scene and copies its active camera including projection, target, lens, aspect and clipping; no second model store."
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6616,7 +6617,9 @@
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderResults.tsx",
-        "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css"
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -6651,7 +6654,8 @@
         "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
         "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
         "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/renderView.test.ts"
       ],
       "depends_on": [
         "project.repository",

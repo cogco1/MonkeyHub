@@ -85,3 +85,8 @@
   .render-comparison[data-view=compare] { flex-direction: column; min-height: 320px; }
   .render-compare-pane + .render-compare-pane { border-left: 0; border-top: 1px solid var(--line); }
 }
+
+.render-model-preview { flex: 0 0 auto; padding: 12px; border-bottom: 1px solid var(--line); }
+.render-model-preview header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.render-model-canvas { height: 280px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #171717; margin: 8px 0; }
+.render-model-canvas canvas { display: block; max-width: 100%; }

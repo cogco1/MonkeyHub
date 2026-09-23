@@ -1,3 +1,4 @@
+import type { RenderView } from "../workspaces/monkeyarch/viewer/renderView";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { asStudioApiError, StudioApiError } from "../api/client";
 import { useConnection, useStudio } from "../api/ProjectRuntimeContext";
@@ -37,6 +38,9 @@ export interface ProjectWorkspaceProps {
 /** One mounted project: the Board, its page editor and the same local model draft. */
 export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId = null, active = true, refreshKey = 0, documentRequest = null,
   onWorkspaceChange, onChatRequest, onDesignContextChange }: ProjectWorkspaceProps) {
+  const renderReader = useRef<(() => RenderView | null) | null>(null);
+  const registerRenderReader = useCallback((reader: (() => RenderView | null) | null) => { renderReader.current = reader; }, []);
+  const readRenderView = useCallback(() => renderReader.current?.() ?? null, []);
   const connection = useConnection();
   const studio = useStudio();
   const boundProjectId = useRef(expectedProjectId);
@@ -121,12 +125,12 @@ export function ProjectWorkspace({ workspace, expectedProjectId, candidateRunId 
       <App server={server.value} expectedProjectId={boundProjectId.current} initialRunId={candidateRunId} documentSource={pageOpen ? visit.source : null}
         initialDocumentIntent={documentIntent} initialSketchRequest={sketchRequest} initialDrawingRequest={drawingRequest}
         active={active && modelVisible} refreshKey={refreshKey + attempt} onReturnToBoard={openBoard} onOpenBoard={openBoard} onChatRequest={onChatRequest}
-        onDesignContextChange={onDesignContextChange} />
+        onDesignContextChange={onDesignContextChange} onRenderReader={registerRenderReader} />
     </div>}
     {(renderVisited || workspace === "render") && <div data-project-surface="render" hidden={workspace !== "render"} inert={!active || workspace !== "render"}
       style={{ height: "100%", minHeight: 0, display: workspace === "render" ? "block" : "none" }}>
       <Suspense fallback={<LoadingOverlay mode="boot" status="Render" />}>
-        <Render projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={refreshKey + attempt}
+        <Render readModelView={readRenderView} onModeling={() => onWorkspaceChange("arch")} projectId={boundProjectId.current!} active={active && workspace === "render"} refreshKey={refreshKey + attempt}
           onBoard={(source) => { setVisit(null); setBoardPage({ source, requestId: crypto.randomUUID() }); setBoardRefresh((value) => value + 1); onWorkspaceChange("board"); }} />
       </Suspense>
     </div>}

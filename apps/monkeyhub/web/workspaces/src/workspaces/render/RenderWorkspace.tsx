@@ -1,3 +1,5 @@
+import ModelPreview from "./ModelPreview";
+import type { RenderView } from "../monkeyarch/viewer/renderView";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useStudio } from "../../api/ProjectRuntimeContext";
 import { asStudioApiError } from "../../api/client";
@@ -8,7 +10,8 @@ import RenderResults, { ImageThumbnail, renderStatus } from "./RenderResults";
 import "./render.css";
 
 /** One mounted draft. Entering another workspace only suspends reads. */
-export default function RenderWorkspace({ projectId, active, refreshKey, onBoard }: {
+export default function RenderWorkspace({ projectId, active, refreshKey, onBoard, readModelView, onModeling }: {
+  readModelView?: () => RenderView | null; onModeling?: () => void;
   projectId: string; active: boolean; refreshKey: number; onBoard(source: PageSource): void;
 }) {
   const studio = useStudio(), { language } = usePreferences(), zh = language === "zh-CN";
@@ -159,6 +162,7 @@ export default function RenderWorkspace({ projectId, active, refreshKey, onBoard
       </div>
       <button type="button" onClick={() => void refresh()} disabled={loading}>{loading ? (zh ? "读取中…" : "Reading…") : (zh ? "刷新状态" : "Refresh status")}</button>
     </header>
+    <ModelPreview active={active} readView={readModelView} onModeling={onModeling} zh={zh} />
     {error && <div className="render-error" role="alert">{error}</div>}
     {mode === "physical" && <div className="render-physical" role="status">
       <h2>Physical Render</h2>

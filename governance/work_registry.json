@@ -38,7 +38,11 @@
         "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
         "apps/monkeyhub/web/workspaces/src/workspaces/render/",
-        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs"
+        "apps/monkeyhub/web/workspaces/test/renderWorkspace.browser.mjs",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
+        "apps/monkeyhub/web/workspaces/test/renderView.test.ts",
+        "apps/monkeyhub/web/workspaces/test/viewportFit.test.ts"
       ],
       "acceptance": [
         "Exact registered images and ordered references; one dispatch per request; immutable SourceDocument outputs; restart without replay; unchanged Design HEAD; real provider acceptance."
@@ -102,7 +106,7 @@
           "base_ref": "77fa6c5a48678a8751c7fd3d885b618890ba6cdb",
           "contributor": "Codex frontend task",
           "reviewer": null,
-          "handoff": "Integrated on codex/render-runtime for one Draft PR. Offline Runtime, provider and browser checks are complete; real provider acceptance remains open under GH-253.",
+          "handoff": "Integrated on codex/render-runtime for one Draft PR. Offline Runtime, provider and browser checks are complete; real provider acceptance remains open under GH-253. User authorized camera-sync to build on the integrated PR #257 commit without waiting for review. Subsequent App/ProjectWorkspace and preview edits are claimed by camera-sync; PR #257 itself remains unchanged.",
           "modules": [
             "hub.shell"
           ],
@@ -113,9 +117,6 @@
             "apps/monkeyhub/api/tests/test_applications.py",
             "apps/monkeyhub/web/src/i18n/",
             "apps/monkeyhub/web/src/api/generated/",
-            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
-            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
-            "apps/monkeyhub/web/workspaces/src/workspaces/render/",
             "apps/monkeyhub/web/workspaces/src/workspaces/monkeyboard/Board.tsx",
             "apps/monkeyhub/web/workspaces/src/api/client.ts",
             "apps/monkeyhub/web/workspaces/src/api/generated/",
@@ -124,7 +125,35 @@
             "apps/monkeyhub/web/test/projectWorkspaceFixture.mjs",
             "apps/monkeyhub/api/monkeyhub_api/applications.py",
             "apps/monkeyhub/api/monkeyhub_api/models.py",
-            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py"
+            "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
+            "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderResults.tsx"
+          ]
+        },
+        {
+          "id": "camera-sync",
+          "status": "review",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/253",
+          "branch": "codex/render-camera-sync",
+          "worktree": "C:\\Users\\jiayu\\OneDrive\\文档\\ChatGPT\\Blender skill\\projection-development\\workspace\\worktrees\\codex-render-camera-sync",
+          "base_ref": "26ee3c84272516335b0da34a67d90e540acc9f72",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": "Depends on PR #257. Frontend same-scene and camera preview only; no executor, material or asset work. Implemented on the explicit #257 base; camera/projection checks and real local-model browser verification passed. Review this branch separately; do not merge #257 changes here again.",
+          "modules": [
+            "hub.shell"
+          ],
+          "depends_on": [],
+          "write_scope": [
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/ThreeDmViewport.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/monkeyarch/viewer/renderView.ts",
+            "apps/monkeyhub/web/workspaces/test/renderView.test.ts",
+            "apps/monkeyhub/web/workspaces/src/app/App.tsx",
+            "apps/monkeyhub/web/workspaces/src/app/ProjectWorkspace.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/render/RenderWorkspace.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/render/ModelPreview.tsx",
+            "apps/monkeyhub/web/workspaces/src/workspaces/render/render.css",
+            "apps/monkeyhub/web/workspaces/src/workspaces/render/README.md",
+            "apps/monkeyhub/web/workspaces/test/viewportFit.test.ts"
           ]
         }
       ]
