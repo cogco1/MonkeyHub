@@ -716,6 +716,31 @@
           "depends_on": [],
           "status": "review",
           "blocked_reason": null
+        },
+        {
+          "id": "integration",
+          "issue": "https://github.com/cogco1/MonkeyHub/issues/122",
+          "branch": "codex/integrate-context-drawing",
+          "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-integrate-context-drawing",
+          "base_ref": "39be5ce5368fda206efb3b69a746bbf6cf493dd8",
+          "contributor": "Codex",
+          "reviewer": null,
+          "handoff": "Integrate reviewed slices and retire their completed source scopes.",
+          "modules": [
+            "studio.intent",
+            "studio.study",
+            "hub.shell"
+          ],
+          "write_scope": [
+            "docs/CONTEXT_COMPILATION.md",
+            "docs/mapping/planning/GH-122-retrieval-lab.md",
+            "docs/DYNAMIC_MAP.md",
+            "docs/mapping/planning/INDEX.md",
+            "governance/work_registry.json"
+          ],
+          "depends_on": [],
+          "status": "active",
+          "blocked_reason": null
         }
       ],
       "card": "docs/mapping/planning/GH-122-retrieval-lab.md",
