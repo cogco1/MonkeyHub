@@ -648,37 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-124",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Complete the existing first-phase collaborator discussion with verified boundaries, result tables and questions.",
-      "depends_on": [],
-      "write_scope": [
-        "docs/research/ocba-discussion.md"
-      ],
-      "lanes": [
-        {
-          "id": "discussion-closeout",
-          "issue": "https://github.com/cogco1/MonkeyHub/issues/124",
-          "status": "active",
-          "branch": "codex/integrate-release-closeout",
-          "worktree": "integrate-release-closeout",
-          "base_ref": "eb6d56b1f5e066262b72531aeb1461b070620857",
-          "contributor": "Codex at repository owner's request",
-          "reviewer": null,
-          "handoff": null,
-          "modules": [
-            "state.massing_metrics"
-          ],
-          "write_scope": [
-            "docs/research/ocba-discussion.md"
-          ],
-          "depends_on": [],
-          "blocked_reason": null
-        }
-      ]
     }
   ]
 }
