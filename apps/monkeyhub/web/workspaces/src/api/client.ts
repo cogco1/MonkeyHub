@@ -7,6 +7,9 @@
 import type { ServerConnection } from "./connection";
 import type { ElevationEditRequestDto } from "./generated";
 import type { SaveStudyRequestDto, StudyViewDto, ProposeStudyRequestDto } from "./generated";
+import type { PlanRequestDto, PlanStatusRequestDto, PlanStatusDto, PlanDimensionProposalRequestDto, PlanDimensionChoicesDto } from "./generated";
+import { createPlanApiDrawingsPlansPost, readPlanStatusApiDrawingsPlansStatusPost,
+  readPlanDimensionChoicesApiDrawingsPlansDimensionsGet, createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost } from "./generated";
 import { retainStudyApiStudiesPost, discoverStudiesApiStudiesGet,
   proposeStudyApiStudiesProposePost } from "./generated";
 import {
@@ -215,6 +218,20 @@ export const createStudioClient = (connection: ServerConnection) => ({
   },
   drawingSheet(body: SheetRequestDto): Promise<SourceDocumentDto> {
     return call("POST /api/drawings/sheets", createSheetApiDrawingsSheetsPost({ client: connection.client, body }));
+  },
+  drawingPlan(body: PlanRequestDto): Promise<SourceDocumentDto> {
+    return call("POST /api/drawings/plans", createPlanApiDrawingsPlansPost({ client: connection.client, body }));
+  },
+  drawingPlanStatus(body: PlanStatusRequestDto): Promise<PlanStatusDto> {
+    return call("POST /api/drawings/plans/status", readPlanStatusApiDrawingsPlansStatusPost({ client: connection.client, body }));
+  },
+  drawingPlanDimensions(source: ModelSourceDto, sourceStageRef?: string | null): Promise<PlanDimensionChoicesDto> {
+    return call("GET /api/drawings/plans/dimensions", readPlanDimensionChoicesApiDrawingsPlansDimensionsGet({ client: connection.client, query: {
+      sourceRunId: source.runId, stateDigest: source.stateDigest, assetSha256: source.assetSha256, sourceStageRef,
+    } }));
+  },
+  drawingDimensionProposal(body: PlanDimensionProposalRequestDto): Promise<ProposalDto> {
+    return call("POST /api/drawings/plans/dimension-proposal", createPlanDimensionProposalApiDrawingsPlansDimensionProposalPost({ client: connection.client, body }));
   },
   combineCandidates(body: CombineCandidatesRequestDto): Promise<CandidateAcceptedDto> {
     return call("POST /api/candidates/combine", combineCandidatesApiCandidatesCombinePost({ client: connection.client, body }));

@@ -526,7 +526,8 @@
       "owns": [
         "cropping projected polylines to the view window after visibility was solved (crop_polylines)",
         "the SVG document of a drawing: viewBox in frame units, physical mm size at the sheet scale, hidden group under visible group, data-object per polyline, fixed-decimal coordinates, no timestamp (drawing_svg)",
-        "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)"
+        "rasterising that SVG's own polylines to a PNG at its physical size (render_svg_png), and reading the object ids an SVG names (svg_objects)",
+        "even-odd section hatching and measured dimension strokes/native text with one embedded font; shared paper-placement bounds reject clipped dimensions"
       ],
       "does_not_own": [
         "projecting geometry - adapters.cad_execution (project_occt_lines)",
@@ -536,7 +537,9 @@
       "inputs": [
         "OcctDrawingPolyline tuple",
         "crop window, unit, scale, hidden-line switch, title",
-        "SVG bytes"
+        "SVG bytes",
+        "optional section regions, section polylines and paper pen/hatch settings",
+        "resolved dimension values with anchors, label and paper offset"
       ],
       "outputs": [
         "OcctDrawingPolyline tuple (cropped)",
@@ -551,7 +554,8 @@
         "svg_objects",
         "DrawingSvgError",
         "SVG_MEDIA_TYPE",
-        "PNG_MEDIA_TYPE"
+        "PNG_MEDIA_TYPE",
+        "dimension_placement_fits"
       ],
       "depends_on": [
         "archflow.adapters.occt_backend"
@@ -564,7 +568,7 @@
       "invariants": [
         "the same polylines, crop and options give the same SVG bytes; the same SVG gives the same PNG bytes",
         "the PNG is rendered only from what the SVG holds; an SVG element the renderer does not draw is an error, never skipped",
-        "hidden lines are omitted entirely unless asked for; every polyline written names its source object id",
+        "hidden lines are omitted entirely unless asked for; geometry and hatch strokes name their source object, while dimension marks and native text name their dimension id",
         "no project, run or filesystem path is known here"
       ],
       "status": "canonical",
@@ -834,7 +838,8 @@
         "DatumBinding",
         "InterfaceDatum",
         "ProducedRelation",
-        "HostedAssembly"
+        "HostedAssembly",
+        "ProducedElement.hosted_voids: the existing wall solver HostedVoid values, without recomputing wall geometry"
       ],
       "public_api": [
         "ElementProducerError",
@@ -2723,20 +2728,21 @@
     {
       "module_id": "runtime.drawing_elevation",
       "owner_path": "monkeydiagram/drawing_elevation.py",
-      "purpose": "Freeze one model-axis orthographic elevation or top projection of a retained exact STEP: verify the source through its receipt, project every object, write SVG, PNG and one receipt into a drawing run on the source base, and read them back.",
+      "purpose": "Freeze model-axis orthographic projections or one horizontal cut plan from retained exact STEP into SVG, PNG and an existing drawing receipt, without changing design state.",
       "owns": [
         "ElevationSource: the retained STEP and OcctExecutionReceipt@1 a drawing is derived from, and the verification that they agree (SHA, run, base, unit, Z-up, STEP names = physical object ids)",
         "ElevationView: origin, look/right/up along the model axes, crop window, near/far depths, hidden-line switch, chord deflection and sheet scale, checked for consistency",
         "the in-memory projection value (project_model_axis_elevation): polylines, SVG and PNG, minting nothing",
         "the drawing run: created with base = source run base, or reused only when it already carries that base",
         "DrawingProjectionReceipt@1 (retained as drawing-projection-receipt): source binding, frame, backend, counts and the two artifact refs",
-        "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified"
+        "cold readback of a retained drawing (read_model_axis_elevation, list_model_axis_elevations) with every sha verified",
+        "horizontal cut-plan composition: section boundaries, one material hatch and below-cut visible lines, with caller-resolved semantic dimensions and retained representation recipe"
       ],
       "does_not_own": [
         "the hidden-line solve - adapters.cad_execution",
         "SVG serialisation and PNG rendering - adapters.drawing_svg",
         "writing files - project.repository (put_workspace_file, put_json); this module never writes a path itself",
-        "cut plans, sections, axonometrics, sheets, annotations, freshness/update, Studio routes or jobs: not implemented"
+        "semantic dimension resolution, freshness/update and Studio routes - studio.artifacts; general section sheets, axonometrics and formal issue are outside this slice"
       ],
       "inputs": [
         "FilesystemProjectRepository",
@@ -2744,7 +2750,8 @@
         "ElevationView",
         "drawing run id",
         "ProjectRecordRef",
-        "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals"
+        "Optional operation_observer and parent event id for source load, global hidden-line solve, SVG, PNG and persistence intervals",
+        "cut-plan recipe and verified dimension read values; optional previous drawing revision ref"
       ],
       "outputs": [
         "ElevationProjection",
@@ -2766,7 +2773,8 @@
         "list_model_axis_elevations",
         "DRAWING_PROJECTION_RECEIPT_SCHEMA",
         "ELEVATION_KIND",
-        "DOCUMENTATION_WORKSPACE"
+        "DOCUMENTATION_WORKSPACE",
+        "freeze_cut_plan"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -2787,7 +2795,8 @@
         "HEAD is read before and after and must be the same; the SVG, PNG and receipt are read back through the repository before the result is reported",
         "the same source and view give the same SVG/PNG bytes and the same receipt; a repeat lands on the same paths",
         "two identities only: the SVG/PNG content (sha256) and the source binding (run, base, STEP, CAD receipt, object ids, frame); the receipt digests nothing of itself",
-        "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve"
+        "Observations are plain values; callback failure cannot alter or repeat projection or persistence; input and emitted object ids do not claim a changed-object-only visibility solve",
+        "Existing elevation/top recipe and digest bytes keep their original meaning; cut-plan is an explicit recipe kind. Missing retained visibility ids and dimension intent remain explicit in the new receipt."
       ],
       "status": "canonical",
       "tests": [
@@ -3861,7 +3870,8 @@
         "optional explicit replacesPages mappings on an uploaded revision: validate exact registered old pages and new page indices before retaining the mapping with the existing source registration",
         "optional candidate sourceStageRef on GET /api/artifacts, read once per run from its verified retained delta, runner and committed Stage without projecting complete states",
         "the explicitly requested editable work model: POST /api/artifacts/{sha256}/rhino-export takes the exact STEP of one named run, imports it through the existing supervised Rhino host, retains the ordinary Rhino execution receipt with the source STEP digest and receipt it was made from, and answers with the work model's own artifact row; the layers, material declarations and colours come from that export's own retained preview inspection, and a copy that cannot reproduce them is refused rather than moved or recoloured",
-        "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight"
+        "the explicitly requested editable work copy of one registered document (PDF, PNG or JPEG): POST /api/documents/{asset_sha256}/work-copy seeds one P036 run-workspace file under studio-documents/work/<origin sha256>/ from the page that registration currently answers for, returns the copy already there untouched when asked again, and never overwrites it; which copies exist is derived from the registered documents plus that one path, with no second store and no workspace scan; one derivation decides whether a document can have a single editable file and carries the reason it cannot on the row itself, so opening a copy and listing the copies never disagree and a file already on disk is never dropped out of sight",
+        "one horizontal cut-plan revision over the existing SourceDocument and DrawingProjectionReceipt: retained scale, pens, hatch, semantic rectangular empty-door dimensions and explicit rebuild against a named exact source or the original Stage branch head"
       ],
       "does_not_own": [
         "producing the export or its receipt - adapters.cad_execution through runtime.project_runner",
@@ -3930,7 +3940,15 @@
         "list_document_work_copies",
         "DocumentWorkCopy",
         "GET /api/drawings/model-view",
-        "model_view"
+        "model_view",
+        "POST /api/drawings/plans",
+        "POST /api/drawings/plans/status",
+        "GET /api/drawings/plans/dimensions",
+        "POST /api/drawings/plans/dimension-proposal",
+        "generate_plan",
+        "plan_status",
+        "plan_dimension_choices",
+        "dimension_proposal"
       ],
       "depends_on": [
         "adapters.cad_execution",
@@ -3951,7 +3969,14 @@
         "archflow.adapters.occt_backend",
         "contracts.canonical",
         "studio.binding",
-        "studio.shell"
+        "studio.shell",
+        "capabilities.element_producers",
+        "adapters.drawing_svg",
+        "studio.intent",
+        "adapters.cad_patch",
+        "capabilities.reference_resolver",
+        "state.design_portfolio",
+        "state.record"
       ],
       "used_by": [
         "apps/archflow-studio/api/archflow_studio_api/application/candidate.py",
@@ -3981,7 +4006,9 @@
         "registered source bytes stay immutable: edited work-copy bytes become a new registered document through the existing save_document replacement path, declaring the whole document they replace, with no modelSource, drawingId, sourceStageRef or revisionRef inherited and no change to canonical HEAD",
         "an upload names either the pages it replaces or the one document it replaces whole, never both; a declared whole-document replacement must be the same kind of file with the same page count as the document it replaces, so a file that gained or lost a page is refused visibly instead of registering pages that are placed on no board; a page-by-page upload may still take any page of a longer file, and no two old pages may be answered for by one uploaded page",
         "model-view is a transient orthographic PNG from a complete retained STEP bound to exact run/stateDigest/model asset; it creates no drawing or project record and refuses unsupported sources.",
-        "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance and remain eligible for unreferenced automatic cleanup. Legacy registrations are conservatively protected."
+        "Uploaded model registrations protect their source run permanently; generated compositions retain generated provenance and remain eligible for unreferenced automatic cleanup. Legacy registrations are conservatively protected.",
+        "Cut-plan freshness is derived from exact source object inputs intersecting the view slab, including entering and occluding objects, and resolved dimension anchors; unknown targets and broken anchors are explicit. Rebuild preserves the recipe and immutable prior revision; no nearest-object rebinding is allowed.",
+        "Design width proposals require two uniquely verified cut STEP jambs, an unlocked direct parameter with matching units and the original exact source at its accepted branch head. Placement edits change only paper representation and dimensions outside the view cannot drive."
       ],
       "status": "canonical",
       "tests": [
@@ -3990,7 +4017,9 @@
         "apps/archflow-studio/api/tests/test_captures.py",
         "apps/archflow-studio/api/tests/test_documents.py",
         "apps/archflow-studio/api/tests/test_working_copies.py",
-        "apps/archflow-studio/api/tests/test_drawings.py"
+        "apps/archflow-studio/api/tests/test_drawings.py",
+        "apps/archflow-studio/api/tests/test_drawing_plans.py",
+        "apps/archflow-studio/api/tests/test_drawing_dimensions.py"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [
@@ -3999,7 +4028,9 @@
         "apps/archflow-studio/api/archflow_studio_api/transport/artifacts.py",
         "apps/archflow-studio/api/archflow_studio_api/application/drawings.py",
         "apps/archflow-studio/api/archflow_studio_api/routes/drawings.py",
-        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py"
+        "apps/archflow-studio/api/archflow_studio_api/transport/drawings.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_plans.py",
+        "apps/archflow-studio/api/archflow_studio_api/application/drawing_dimensions.py"
       ]
     },
     {
@@ -6300,7 +6331,8 @@
         "External source-bound conversation presentation through the existing chat store and stdio adapter: transient public progress, revisioned result upserts, session-scoped raster previews and exact retained document review; native CLI/ACP remains the provider owner.",
         "Scheduling project working-draft cleanup along the existing project watcher, preserving active/recovery operations and exact document/candidate links retained by conversations.",
         "A narrow ordinary-chat feedback capability over studio.intent decisions: current user wording/message provenance is bound by Hub, interpreted avoid/keep fields stay attributed to the agent, and revocation verifies the original project/message without exposing lock, supersede or Stage acceptance.",
-        "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions."
+        "User-selected local desktop patch preparation, idle restart admission, owned host trial activation and startup rollback; update files and transaction state live only under the explicitly supplied nonproject runtime/updates directory and sibling application versions.",
+        "Drawing as a project-bound page in the same Hub: retained cut-plan revisions and representation controls, explicit source comparison/rebuild, and exact-source dimension proposal handoff into the existing Modeling candidate flow"
       ],
       "does_not_own": [
         "Building project state, geometry, drawing algorithms, model gateways, provider credentials or project creation",
@@ -6486,7 +6518,10 @@
         "apps/monkeyhub/web/src/ChatMessageContent.tsx",
         "apps/monkeyhub/web/src/ChatMessageContent.css",
         "apps/monkeyhub/api/monkeyhub_api/updates.py",
-        "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx"
+        "apps/monkeyhub/web/src/SoftwareUpdateSettings.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.tsx",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/DrawingCanvas.css",
+        "apps/monkeyhub/web/workspaces/src/workspaces/monkeydiagram/drawingPlan.ts"
       ],
       "tests": [
         "apps/monkeyhub/api/tests/test_monkeyhub_lifecycle.py",
@@ -6517,7 +6552,10 @@
         "apps/monkeyhub/api/tests/test_chat_feedback.py",
         "apps/monkeyhub/api/tests/test_updates.py",
         "apps/monkeyhub/desktop/tests/updates.rs",
-        "apps/monkeyhub/desktop/tests/test_update_handoff.py"
+        "apps/monkeyhub/desktop/tests/test_update_handoff.py",
+        "apps/monkeyhub/web/workspaces/test/drawingPlan.test.ts",
+        "apps/monkeyhub/web/workspaces/test/drawingCanvas.browser.mjs",
+        "apps/monkeyhub/web/workspaces/test/candidatePreview.browser.mjs"
       ],
       "depends_on": [
         "project.repository",

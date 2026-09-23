@@ -12,6 +12,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
+from xml.etree import ElementTree
 
 from archflow.adapters import occt_backend
 from monkeydiagram import drawing_elevation
@@ -24,6 +25,7 @@ from monkeydiagram.drawing_elevation import (
     ElevationSource,
     ElevationView,
     freeze_model_axis_elevation,
+    freeze_cut_plan,
     list_model_axis_elevations,
     project_model_axis_elevation,
     read_model_axis_elevation,
@@ -328,6 +330,157 @@ class FreezeElevationTests(unittest.TestCase):
         path.write_bytes(drawing.svg + b"<!-- tampered -->")
         with self.assertRaises(DrawingElevationError):
             read_model_axis_elevation(FilesystemProjectRepository.open(self.root), drawing.receipt_ref)
+
+
+def _room_plan_source(root, *, hidden_witnesses=False):
+    """A retained exact room with a real door cut; also used for visual inspection."""
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+    from OCP.gp import gp_Pnt
+
+    box = lambda origin, size: BRepPrimAPI_MakeBox(gp_Pnt(*origin), *size).Shape()
+    shapes = {
+        "south-wall": BRepAlgoAPI_Cut(box((0, 0, 0), (4, .2, 3)), box((1, -.1, 0), (1, .4, 2.1))).Shape(),
+        "north-wall": box((0, 2.8, 0), (4, .2, 3)),
+        "west-wall": box((0, .2, 0), (.2, 2.6, 3)),
+        "east-wall": box((3.8, .2, 0), (.2, 2.6, 3)),
+        "roof": box((0, 0, 3), (4, 3, .2)),
+        "floor": box((0, 0, -.2), (4, 3, .2)),
+    }
+    witnesses = {}
+    if hidden_witnesses:
+        witnesses = {
+            "door-inspection-witness": box((1, 0, 0), (1, .2, 2.1)),
+            "inspection-screen": box((-.5, -.5, 1), (5, 4, .1)),
+        }
+        shapes.update(witnesses)
+    repository = FilesystemProjectRepository.initialize(root, project_id=PROJECT_ID,
+                                                        initial_state={"phase": "request", "commitments": []})
+    run = repository.create_run(SOURCE_RUN)
+    workspace = repository.layout.run(SOURCE_RUN).workspaces / WORKSPACE
+    workspace.mkdir()
+    step = workspace / STEP_NAME
+    occt_backend.write_step(step, tuple(occt_backend.StepObject(name, shape, "room") for name, shape in shapes.items()),
+                            length_unit="meter")
+    digest = hashlib.sha256(step.read_bytes()).hexdigest()
+    receipt = repository.put_json(
+        run=run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=SOURCE_RUN),
+        record_kind=SEAT_OCCT_EXECUTION, payload={
+            "schema": "OcctExecutionReceipt@1", "status": "succeeded", "readback_verified": True,
+            "identity": {"schema": "OcctCadExportIdentity@1", "length_unit": "meter", "up_axis": "Z-up",
+                         "binding": {"project_id": PROJECT_ID, "run_id": SOURCE_RUN, "base": run.base.to_dict(),
+                                     "program_digest": "1" * 64, "stage_id": STAGE}},
+            "exact_artifact": {"relative_path": STEP_NAME, "sha256": digest, "exact_brep": True,
+                               "deliveries": {name: "closed_solid" for name in shapes}},
+            "physical_object_ids": sorted(shapes),
+            "expected_semantics": {"objects": {name: {"visible": name not in witnesses} for name in shapes}},
+        },
+    )
+    source = ElevationSource(SOURCE_RUN, f"runs/{SOURCE_RUN}/workspaces/{WORKSPACE}/{STEP_NAME}", digest,
+                             receipt.relative_path, receipt.sha256)
+    view = ElevationView(name="ground-plan", origin=(0, 0, 1.2), look=(0, 0, -1), right=(1, 0, 0), up=(0, 1, 0),
+                         crop_uv=(-1, -1, 5, 4), near_depth=0, far_depth=1.3, scale_denominator=50)
+    recipe = {"kind": "cut-plan", "name": "ground-plan", "frame": view.to_dict(),
+              "graphics": {"cutLineMm": .35, "visibleLineMm": .18, "hatchSpacingMm": 2},
+              "dimensions": [{"id": "door-width", "openingId": "door", "parameterRef": "door.width", "offsetMm": -8}]}
+    dimension = {"id": "door-width", "status": "resolved", "start": [1, 0], "end": [2, 0],
+                 "value": 1, "label": "1000 mm", "offsetMm": -8}
+    return repository, source, recipe, dimension
+
+
+@NEEDS_OCCT
+class CutPlanTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name) / PROJECT_ID
+        self.repository, self.source, self.recipe, self.dimension = _room_plan_source(self.root)
+        self.head = self.repository.read_head()
+
+    def test_real_door_cut_roof_removal_dimensions_and_cold_readback_share_source_and_recipe(self):
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                  drawing_run_id="plan-run", dimensions=(self.dimension,))
+        self.assertEqual(drawing.receipt["schema"], "DrawingProjectionReceipt@1")
+        self.assertEqual(drawing.receipt["view"], self.recipe)
+        self.assertEqual(drawing.receipt["projection"]["dimensions"], [self.dimension])
+        self.assertEqual(drawing.receipt["source"]["step"]["sha256"], self.source.step_sha256)
+        self.assertEqual(drawing.receipt["projection"]["section_regions"], 4)
+        self.assertNotIn("roof", svg_objects(drawing.svg), "the uncut top projection would hide the entire room behind its roof")
+        self.assertIn("roof", drawing.receipt["source"]["physical_object_ids"])
+        root = ElementTree.fromstring(drawing.svg)
+        namespace = "{http://www.w3.org/2000/svg}"
+        south = root.findall(f"{namespace}g[@id='section']/{namespace}polyline[@data-object='south-wall']")
+        self.assertTrue(south)
+        for line in south:
+            xs = [float(pair.split(",")[0]) - 1 for pair in line.get("points").split()]
+            self.assertFalse(min(xs) < 1.5 < max(xs), "the door opening must not be bridged by a cut line")
+        self.assertIn(b"1000 mm", drawing.svg)
+        self.assertEqual(drawing.run.base, self.repository.load_run(SOURCE_RUN).base)
+        self.assertEqual(self.repository.read_head(), self.head)
+        reopened = FilesystemProjectRepository.open(self.root)
+        cold = read_model_axis_elevation(reopened, drawing.receipt_ref)
+        self.assertEqual((drawing.receipt, drawing.svg, drawing.png), (cold.receipt, cold.svg, cold.png))
+        repeated = freeze_cut_plan(reopened, source=self.source, recipe=self.recipe,
+                                   drawing_run_id="plan-run", dimensions=(self.dimension,))
+        self.assertEqual(repeated.receipt_ref, drawing.receipt_ref)
+
+    def test_revision_preserves_recipe_intent_and_explicit_missing_dimension_without_a_number(self):
+        first = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                drawing_run_id="plan-run", dimensions=(self.dimension,))
+        missing = {"id": "door-width", "status": "missing", "detail": "The source opening was removed.", "offsetMm": -8}
+        second = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe, drawing_run_id="plan-rebuild",
+                                 dimensions=(missing,), previous_revision_ref=first.receipt_ref.uri)
+        self.assertEqual(second.receipt["previousRevisionRef"], first.receipt_ref.uri)
+        self.assertEqual(second.receipt["view"]["dimensions"], self.recipe["dimensions"])
+        self.assertEqual(second.receipt["projection"]["dimensions"], [missing])
+        self.assertNotIn(b"1000 mm", second.svg)
+        self.assertNotIn(b"<text ", second.svg)
+        self.assertEqual(read_model_axis_elevation(self.repository, first.receipt_ref).svg, first.svg)
+
+    def test_hidden_source_witnesses_neither_fill_the_door_nor_occlude_background_geometry(self):
+        baseline = freeze_cut_plan(self.repository, source=self.source, recipe=self.recipe,
+                                   drawing_run_id="plan-run", dimensions=(self.dimension,))
+        repository, source, recipe, dimension = _room_plan_source(self.root.parent / "witness-source", hidden_witnesses=True)
+        drawing = freeze_cut_plan(repository, source=source, recipe=recipe,
+                                  drawing_run_id="plan-run", dimensions=(dimension,))
+        source_ids = drawing.receipt["source"]["physical_object_ids"]
+        selected_ids = drawing.receipt["projection"]["selected_object_ids"]
+        for name in ("door-inspection-witness", "inspection-screen"):
+            self.assertIn(name, source_ids, "the exact STEP still retains its source evidence")
+            self.assertNotIn(name, selected_ids)
+            self.assertNotIn(name, svg_objects(drawing.svg))
+        self.assertEqual(drawing.receipt["projection"]["section_regions"], 4)
+        self.assertEqual(drawing.svg, baseline.svg, "an invisible aperture cannot add cut fill and an invisible screen cannot hide the floor")
+        self.assertEqual(drawing.png, baseline.png)
+
+    def test_bad_source_frame_or_graphics_refuses_before_a_drawing_run_is_created(self):
+        for recipe in (
+            {**self.recipe, "frame": {**self.recipe["frame"], "look": [0, 1, 0]}},
+            {**self.recipe, "graphics": {**self.recipe["graphics"], "cutLineMm": 0}},
+            {**self.recipe, "hiddenObjectIds": "not-a-list"},
+        ):
+            with self.subTest(recipe=recipe), self.assertRaises(DrawingElevationError):
+                freeze_cut_plan(self.repository, source=self.source, recipe=recipe, drawing_run_id="bad-plan")
+        with self.assertRaises(DrawingElevationError):
+            freeze_cut_plan(self.repository, source=replace(self.source, step_sha256="f" * 64),
+                            recipe=self.recipe, drawing_run_id="bad-plan")
+        self.assertFalse(self.repository.layout.run("bad-plan").manifest.exists())
+        self.assertEqual(self.repository.read_head(), self.head)
+
+
+    def test_rebuild_preserves_deleted_hidden_object_intent_and_renders_remaining_source(self):
+        recipe = {**self.recipe, "hiddenObjectIds": ["deleted-partition", "east-wall"]}
+        drawing = freeze_cut_plan(self.repository, source=self.source, recipe=recipe,
+                                  drawing_run_id="plan-rebuild", dimensions=(self.dimension,))
+        self.assertEqual(drawing.receipt["view"], recipe)
+        self.assertEqual(drawing.receipt["view"]["hiddenObjectIds"], ["deleted-partition", "east-wall"])
+        self.assertEqual(drawing.receipt["projection"]["unresolvedObjectIds"], ["deleted-partition"])
+        self.assertNotIn("east-wall", drawing.receipt["projection"]["selected_object_ids"])
+        self.assertNotIn("east-wall", svg_objects(drawing.svg))
+        self.assertIn("south-wall", svg_objects(drawing.svg))
+        cold = read_model_axis_elevation(FilesystemProjectRepository.open(self.root), drawing.receipt_ref)
+        self.assertEqual((cold.svg, cold.png, cold.receipt), (drawing.svg, drawing.png, drawing.receipt))
+        self.assertEqual(self.repository.read_head(), self.head)
 
 
 if __name__ == "__main__":
