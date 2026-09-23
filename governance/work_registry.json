@@ -648,6 +648,25 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
+    },
+    {
+      "id": "GH-122-RETRIEVAL-LAB",
+      "stream": "planning",
+      "status": "blocked",
+      "goal": "Four-corpus development baselines are delivered in labs/retrieval. Await human relevance review before a new held-out comparison selects any default; retain exact source, conditions and project isolation.",
+      "depends_on": [],
+      "write_scope": [
+        "labs/retrieval/",
+        "docs/mapping/planning/GH-122-retrieval-lab.md",
+        "governance/work_registry.json"
+      ],
+      "card": "docs/mapping/planning/GH-122-retrieval-lab.md",
+      "acceptance": [
+        "Obtain attributed human review of the 41 proxy judgments, including auxiliary precedent evidence, before any held-out default selection. Current results remain development evidence, not parent-issue acceptance."
+      ],
+      "notes": [
+        "Independent #122 lab sub-slice. Four real CPU methods, 54 fragments, 41 proxy queries and 656 measurements are delivered. Blocked on unsupplied human judgments; broader corpus/chunking/downstream work remains #122. Public integration stays with coordinator."
+      ]
     }
   ]
 }
