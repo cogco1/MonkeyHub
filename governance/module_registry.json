@@ -4730,7 +4730,8 @@
         "lock records and verifies the lock the record already carries: a decision never acquires one, and revoking a decision never releases one",
         "applicability 'scope' survives later revisions inside its scope; 'exact-source' applies only while the caller supplies the same source identity. A target that is gone, a parameter value or unit that moved and a released lock are derived stale at read time, and revoked, superseded and deferred decisions are never injected as requirements",
         "sourceKind and messageSource are the caller's own provenance claims, kept apart from the boundary's resolved attribution; neither is a credential and neither grants an action",
-        "every applicable decision is returned without a decision-count cutoff; a target scope applies when any of its members intersects the task's relevant targets, so changing one end of a kept relation does not discard that decision"
+        "every applicable decision is returned without a decision-count cutoff; a target scope applies when any of its members intersects the task's relevant targets, so changing one end of a kept relation does not discard that decision",
+        "decision focus includes declared upstream reads across retained Stages, with effective instance bindings instead of overridden Type defaults; it does not follow shared inputs into other consumers, include unrelated locks, widen writes or alter decision scope, strength and applicability"
       ],
       "status": "canonical",
       "tests": [
@@ -4763,7 +4764,8 @@
         "apps/archflow-studio/api/tests/test_acceptance_audit.py",
         "apps/archflow-studio/api/tests/test_elevation.py",
         "apps/monkeyhub/web/workspaces/test/elevation.browser.mjs",
-        "apps/archflow-studio/api/tests/test_decisions.py"
+        "apps/archflow-studio/api/tests/test_decisions.py",
+        "tests/test_nonadjacent_stage_context.py"
       ],
       "notes": "CANONICAL_SPINE 2.1 makes this the door live-model authoring re-enters by: typed intent, then record, then runner. clarification.py retired require_grammatical: the same two refusals, in the same words, with the target the agent had just worked out kept instead of thrown away.",
       "files": [
