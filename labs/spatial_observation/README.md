@@ -116,3 +116,11 @@ abstention are reported separately. Query distance is between named solids;
 it is not a generalized path/circulation clearance or proof of design intent.
 Learned methods can propose associations but cannot suppress declared closure or
 replace source verification. Production integration is a separate owner decision.
+
+## Preserved local OCCT pilot
+
+[LOCAL_PILOT.md](LOCAL_PILOT.md) preserves a separate, previously uncommitted #170 prototype.
+It selects bound in-memory shapes, measures exact pairs, and checks finite sight lines against actual faces.
+Run its synthetic geometry checks with `python -m unittest labs.spatial_observation.test_observation`.
+This is a research branch preservation, not a production tool or a validation of architectural judgment;
+the existing retained-project experiments above remain unchanged.
