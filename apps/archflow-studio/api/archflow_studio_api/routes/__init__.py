@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from . import (
     artifacts,
+    model_exports,
     boards,
     candidates,
     capabilities,
@@ -42,6 +43,7 @@ router.include_router(runtime.router)
 router.include_router(state.router)
 router.include_router(program.router)
 router.include_router(artifacts.router)
+router.include_router(model_exports.router)
 router.include_router(rendering.router)
 router.include_router(boards.router)
 router.include_router(decisions.router)

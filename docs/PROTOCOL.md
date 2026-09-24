@@ -1087,6 +1087,31 @@ All Study operations leave StateRecord, DesignStage and canonical HEAD unchanged
 Method limits and the public synthetic experiment are described in
 [the Study method note](research/study-evidence-method.md).
 
+## Conversational model conversion
+
+`POST /api/exports` accepts `targetFormat` (`3dm`, `skp`, `glb`, `dwg`) and
+exactly one of `upload`, `sourceArtifactId`, or `projectRevision`. An upload carries
+`fileName`, `contentBase64` and optional `attachmentId`; a project revision carries
+`runId`, `stateDigest` and optional `assetSha256`, and must resolve to one complete
+model of that retained state. The 202 response supplies `exportId`, `jobId`,
+`status` and `statusPath`. Hub's bound chat tool substitutes an exact session
+`attachmentId` for upload bytes through its session-scoped `model-source` route.
+
+`GET /api/exports/capabilities` reports all 12 directed routes and qualified
+providers. `GET /api/exports/{export_id}` reads retained source provenance,
+progress, provider, units, measurable losses and output-validation results.
+Only `succeeded` exposes `downloadPath`; `GET /api/exports/{export_id}/bytes`
+rechecks the retained output digest. Failed jobs have no downloadable output;
+unfinished jobs after a Runtime restart report `interrupted` and are not replayed.
+These operations use existing jobs and P036 noncanonical export runs, leaving
+project HEAD and the authoritative model unchanged.
+
+The current provider supports bounded 3DM/GLB triangle-mesh interchange and
+validated same-format delivery. It does not reconstruct exact CAD solids or
+transfer materials, textures or hierarchy. SKP/DWG routes report no configured
+executor; discovery of installed software does not enable conversion.
+See [the complete conversion limits](MODEL_CONVERSION.md).
+
 
 ## Render image attempts
 

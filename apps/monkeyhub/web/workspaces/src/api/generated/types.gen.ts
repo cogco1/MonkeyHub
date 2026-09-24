@@ -4519,6 +4519,22 @@ export type ModelAssetRequestDto = {
 };
 
 /**
+ * ModelExportRequest
+ */
+export type ModelExportRequest = {
+    /**
+     * Targetformat
+     */
+    targetFormat: '3dm' | 'skp' | 'glb' | 'dwg';
+    projectRevision?: ProjectRevision | null;
+    /**
+     * Sourceartifactid
+     */
+    sourceArtifactId?: string | null;
+    upload?: ModelUpload | null;
+};
+
+/**
  * ModelGestureDto
  *
  * The existing 3D gesture, with a stable id for erasing and restoring saved ink.
@@ -4694,6 +4710,24 @@ export type ModelSourceIndexDto = {
      * Nextoffset
      */
     nextOffset: number | null;
+};
+
+/**
+ * ModelUpload
+ */
+export type ModelUpload = {
+    /**
+     * Filename
+     */
+    fileName: string;
+    /**
+     * Contentbase64
+     */
+    contentBase64: string;
+    /**
+     * Attachmentid
+     */
+    attachmentId?: string | null;
 };
 
 /**
@@ -5825,6 +5859,24 @@ export type ProjectListDto = {
      * Projects
      */
     projects: Array<ProjectSummaryDto>;
+};
+
+/**
+ * ProjectRevision
+ */
+export type ProjectRevision = {
+    /**
+     * Runid
+     */
+    runId: string;
+    /**
+     * Statedigest
+     */
+    stateDigest: string;
+    /**
+     * Assetsha256
+     */
+    assetSha256?: string | null;
 };
 
 /**
@@ -10879,6 +10931,148 @@ export type ReadArtifactBytesApiArtifactsSha256BytesGetErrors = {
 export type ReadArtifactBytesApiArtifactsSha256BytesGetError = ReadArtifactBytesApiArtifactsSha256BytesGetErrors[keyof ReadArtifactBytesApiArtifactsSha256BytesGetErrors];
 
 export type ReadArtifactBytesApiArtifactsSha256BytesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CapabilitiesApiExportsCapabilitiesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/exports/capabilities';
+};
+
+export type CapabilitiesApiExportsCapabilitiesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CapabilitiesApiExportsCapabilitiesGetError = CapabilitiesApiExportsCapabilitiesGetErrors[keyof CapabilitiesApiExportsCapabilitiesGetErrors];
+
+export type CapabilitiesApiExportsCapabilitiesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type CreateExportApiExportsPostData = {
+    body: ModelExportRequest;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/exports';
+};
+
+export type CreateExportApiExportsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateExportApiExportsPostError = CreateExportApiExportsPostErrors[keyof CreateExportApiExportsPostErrors];
+
+export type CreateExportApiExportsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: unknown;
+};
+
+export type ReadExportApiExportsExportIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Export Id
+         */
+        export_id: string;
+    };
+    query?: never;
+    url: '/api/exports/{export_id}';
+};
+
+export type ReadExportApiExportsExportIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReadExportApiExportsExportIdGetError = ReadExportApiExportsExportIdGetErrors[keyof ReadExportApiExportsExportIdGetErrors];
+
+export type ReadExportApiExportsExportIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type DownloadExportApiExportsExportIdBytesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Monkey-Operation
+         */
+        'x-monkey-operation'?: string | null;
+        /**
+         * X-Monkey-Parent
+         */
+        'x-monkey-parent'?: string | null;
+    };
+    path: {
+        /**
+         * Export Id
+         */
+        export_id: string;
+    };
+    query?: never;
+    url: '/api/exports/{export_id}/bytes';
+};
+
+export type DownloadExportApiExportsExportIdBytesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadExportApiExportsExportIdBytesGetError = DownloadExportApiExportsExportIdBytesGetErrors[keyof DownloadExportApiExportsExportIdBytesGetErrors];
+
+export type DownloadExportApiExportsExportIdBytesGetResponses = {
     /**
      * Successful Response
      */
