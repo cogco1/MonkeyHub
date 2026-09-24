@@ -31,6 +31,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import Board from "/src/workspaces/monkeyboard/Board.tsx";
 import { UserPreferencesProvider } from "/test/TestProviders.tsx";
+import "/@fs/${path.join(repoRoot, "apps/shared-web/src/base.css").replaceAll("\\", "/")}";
 import "/src/styles.css";
 createRoot(document.getElementById("root")).render(React.createElement(UserPreferencesProvider, null,
   React.createElement(Board, { onSubmit: (request) => window.receiveBoardRequest(request) })));
@@ -225,6 +226,8 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   await selectAll();
   await page.locator(".monkeyboard-context").waitFor();
   await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).waitFor();
+  assert.equal(await page.locator(".monkeyboard-context-identity strong").innerText(), firstDocument.fileName);
+  assert.equal(await page.locator(".monkeyboard-context-binding").innerText(), "Drawing only");
   assert.equal(submissions.length, 0);
   // Associate the uploaded source through the existing API, then rediscover it.
   const bound = await call("POST", `/api/documents/${firstDocument.assetSha256}/model-source`, {
@@ -236,6 +239,21 @@ print(json.dumps({"models": models, "pdf": base64.b64encode(two_page_pdf()).deco
   const feedback = () => page.locator(".monkeyboard-context").getByRole("button", { name: "Send design feedback", exact: true });
   await feedback().waitFor(); assert.equal(await feedback().isEnabled(), true);
   assert.equal(await page.locator(".monkeyboard-context").getByRole("button", { name: "Link model in MonkeyDiagram", exact: true }).count(), 0);
+  assert.equal(await page.locator(".monkeyboard-context-binding").innerText(), "Model linked");
+  for (const [name, width, height] of [["dock-wide", 1440, 1000], ["dock-narrow", 620, 900], ["dock-phone", 390, 844]]) {
+    await page.setViewportSize({ width, height });
+    const dock = page.locator(".monkeyboard-context");
+    await dock.waitFor();
+    const layout = await dock.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return { left: bounds.left, right: bounds.right, viewport: innerWidth, scroll: element.scrollWidth, client: element.clientWidth };
+    });
+    assert.ok(layout.left >= 0 && layout.right <= layout.viewport && layout.scroll <= layout.client + 1,
+      `Selected drawing actions must fit the ${width}px viewport: ${JSON.stringify(layout)}`);
+    assert.equal(await feedback().isEnabled(), true, "Resizing keeps the same actionable drawing selection");
+    await screenshot(name);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await setMore(true);
   await page.locator(".monkeyboard-actions-panel").getByRole("button", { name: "Send design feedback", exact: true }).click();
   await page.getByRole("dialog", { name: "Discuss this drawing", exact: true }).waitFor();
@@ -376,8 +394,24 @@ assert image.getextrema() == ((199, 199), (221, 221), (237, 237)), image.getextr
     const context = canvas.getContext("2d"); context.fillStyle = "#bbddaa"; context.fillRect(0, 0, 300, 200);
     return canvas.toDataURL().split(",")[1];
   });
-  await page.locator(".monkeyboard-context").getByRole("button", { name: "Update this page", exact: true }).click();
+  // Hold a real background refresh. It must not swallow this enabled entry;
+  // opening the picker writes nothing, and upload still joins the serial queue.
+  let releaseRefresh;
+  const refreshHeld = new Promise(resolve => { releaseRefresh = resolve; });
+  let sawRefresh;
+  const refreshSeen = new Promise(resolve => { sawRefresh = resolve; });
+  let refreshContinued;
+  const refreshDone = new Promise(resolve => { refreshContinued = resolve; });
+  const holdDocuments = async route => { sawRefresh(); await refreshHeld; await route.continue(); refreshContinued(); };
+  await page.route("**/api/documents", holdDocuments);
+  await Promise.race([refreshSeen, delay(15000).then(() => assert.fail("Background document refresh did not start"))]);
   const replacementDialog = page.getByRole("dialog", { name: "Update this page", exact: true });
+  try {
+    await page.locator(".monkeyboard-context").getByRole("button", { name: "Update this page", exact: true }).click();
+    await replacementDialog.waitFor();
+  } finally {
+    releaseRefresh(); await refreshDone; await page.unroute("**/api/documents", holdDocuments);
+  }
   await replacementDialog.getByLabel("Updated PDF / image", { exact: true }).setInputFiles({
     name: "原位更新.png", mimeType: "image/png", buffer: Buffer.from(replacementPng, "base64") });
   await replacementDialog.getByRole("button", { name: "Update in place", exact: true }).click();

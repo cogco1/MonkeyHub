@@ -89,6 +89,7 @@ const passed = [];
 let observationTransforms = 0, heldIntent = null, heldDocument = null, heldPick = null, phase = "setup", vite, browser, page;
 const http = createHttpServer();
 const cacheDir = await mkdtemp(path.join(tmpdir(), "monkeyarch-intent-view-test-"));
+const screenshots = await mkdtemp(path.join(tmpdir(), "monkeyarch-context-ui-"));
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 function deferred() { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; }
 async function until(read, accepts, message, timeout = 30_000) {
@@ -114,7 +115,7 @@ async function openVersions() {
 const snapshot = () => page.evaluate(() => window.__intentViewSource.snapshot);
 const entryCount = (kind) => snapshot().then((value) => value.entries.filter((entry) => entry.kind === kind).length);
 const untilIdle = () => until(snapshot, (value) => !value.busy, "The intent response did not finish");
-const editingBase = () => page.locator("#stage-versions-panel .stage__versions-session .editing-base");
+const editingBase = () => page.locator(".stage__foot .editing-base");
 const annotationStatus = () => page.locator("#stage-versions-panel [data-model-annotations-status]");
 async function ready(option) {
   await openVersions();
@@ -183,6 +184,9 @@ try {
     plugins: [workspaceFixture(), { name: "observe-actual-viewport-methods", enforce: "pre",
       transform(source, id) {
         const modulePath = id.split("?")[0].replaceAll("\\", "/");
+        if (modulePath === `${webRoot.replaceAll("\\", "/")}/test/workspace-fixture.tsx`) {
+          return { code: `import "/@fs/${path.resolve(webRoot, "../../../shared-web/src/base.css").replaceAll("\\", "/")}";\n${source}`, map: null };
+        }
         if (modulePath === `${webRoot.replaceAll("\\", "/")}/src/workspaces/monkeydiagram/documentVisualInput.ts`) {
           const marker = "  if (!Number.isFinite(maxEdge)";
           assert.equal(source.split(marker).length, 2, "Observe the real document renderer once");
@@ -373,6 +377,25 @@ try {
     await view(optionB);
     assert.equal(group.selectedOptionId, "A"); assert.deepEqual(selections, []);
     assert.equal(await editingBase().getAttribute("data-source-match"), "different");
+    await page.locator(".stage__versions-toggle").click();
+    assert.equal(await page.locator("#stage-versions-panel").count(), 0);
+    for (const width of [1440, 800, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const layout = await page.locator(".stage__context").evaluate(node => {
+        if (!getComputedStyle(node).getPropertyValue("--ink").trim()) throw new Error("Load the real Hub theme before checking layout");
+        const rect = node.getBoundingClientRect();
+        const tool = document.querySelector(".stage-model .viewtools")?.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, bottom: rect.bottom,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          overlap: tool && Math.min(rect.right, tool.right) > Math.max(rect.left, tool.left) && Math.min(rect.bottom, tool.bottom) > Math.max(rect.top, tool.top) };
+      });
+      assert.ok(layout.left >= 0 && layout.right <= width + 1 && layout.bottom <= 900 && !layout.overflow && !layout.overlap,
+        `Source context must remain visible without covering modeling controls: ${JSON.stringify(layout)}`);
+      assert.equal(await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).isVisible(), true);
+      await page.screenshot({ path: path.join(screenshots, `context-${width}.png`) });
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
     await editingBase().getByRole("button", { name: "Continue from this version", exact: true }).click();
     await until(() => editingBase().getAttribute("data-source-match"), (value) => value === "same", "Continue B did not bind B");
     await ready(optionB); assert.equal(group.selectedOptionId, "B"); assert.equal(selections.length, 1);
@@ -637,7 +660,7 @@ try {
     "Tracing calibration follows the displayed model's run: the shared A/B run, and C's own while C is viewed");
   console.log(JSON.stringify({ passed: passed.length, projectId, sources: { A: sourceA, B: sourceB, C: sourceC },
     interceptedIntents: intents.length, mockSelections: selections.length, frameReads: frameReads.length,
-    pixelAudit, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
+    pixelAudit, screenshots, escapedApiRequests: 0, jsErrors: 0 }, null, 2));
 } catch (error) {
   console.error(`FAIL ${phase}: ${error.stack ?? error}`); if (errors.length) console.error(JSON.stringify(errors, null, 2));
   if (page && !page.isClosed()) console.error(await page.locator("body").innerText().catch(() => "Cannot inspect failed page"));

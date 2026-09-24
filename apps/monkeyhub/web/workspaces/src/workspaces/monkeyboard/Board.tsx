@@ -23,6 +23,11 @@ const copy = {
 };
 type Copy = typeof copy.en;
 
+const selectionCopy = {
+  en: { selected: "Selected drawing", linked: "Model linked", unlinked: "Drawing only" },
+  "zh-CN": { selected: "选中图纸", linked: "已关联模型", unlinked: "尚未关联模型" },
+};
+
 const whiteboardCopy = {
   en: { more: "More board actions", hideSources: "Hide project documents", welcome: "Drop a drawing or image here", gestures: "Circle, draw an arrow, or type a note.", example: "Drawing + arrow + note", designHint: "Select a project drawing and your marks to discover design feedback.", oneSource: "Mark the drawing you want changed inside its own frame. Other selected drawings travel as reference only.", connectReference: "Draw an arrow between the edit drawing and each extra drawing, and select it too, to send them as reference.", referenceMarks: "Marks on a reference drawing cannot be sent. Select that reference's image on its own.", stale: "This drawing is no longer available. Select its current page from project documents.", outside: "Move the selected marks fully onto the drawing before sending.", unsupported: "This selection cannot be sent yet. Use solid outline marks on an uncropped drawing.", invalid: "A selected object has invalid geometry. Redraw it before sending.", linkModel: "Link model in MonkeyDiagram" },
   "zh-CN": { more: "更多画板操作", hideSources: "收起项目资料", welcome: "拖入图纸或图片开始", gestures: "圈画、画箭头，或直接写下想法。", example: "图纸 + 箭头 + 文字", designHint: "选中项目图纸与圈线，即可查看设计反馈入口。", oneSource: "请在要修改的那张图纸的图框内画出标记；同时选中的其他图纸只作参考。", connectReference: "在主改图纸与每张附加图纸之间画一根连线并一并选中，它们才会作为参考发送。", referenceMarks: "参考图纸上的标记无法一起发送，请只选中该参考图片本身。", stale: "这张图纸已不可用，请从项目资料重新选择当前图页。", outside: "请先将选中圈线完整移入图纸范围。", unsupported: "此选区暂时无法发送，请使用实线轮廓标记及未裁切的图纸。", invalid: "选中对象的几何无效，请重新绘制后发送。", linkModel: "在 MonkeyDiagram 中关联模型" },
@@ -925,13 +930,17 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
     setNotice(`${replacementCopy[language].workCopyHint}: ${workCopy.relativePath}`);
   });
   const source = selected && findSource(documents, selected);
+  const contextSource = context?.source ?? selected;
+  const contextDocument = contextSource && findSource(documents, contextSource);
   const openReplacement = (document: SourceDocumentDto, pageIndex: number) => {
     replacementReturnFocus.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null;
     replacementOpen.current = true; setReplacement({ document, pageIndex });
   };
   const openSelectedReplacement = () => {
     const api = canvas.current;
-    if (!api || !ready || busyRef.current || queue.getState().conflict) return;
+    // Opening this picker is read-only. A silent source refresh must not
+    // swallow an enabled click; upload still joins the serial work queue.
+    if (!api || !ready || busy || queue.getState().conflict) return;
     const current = selectedPageSource(records(api.getSceneElements()), api.getAppState().selectedElementIds);
     const document = current && findSource(documentsRef.current, current);
     if (document && current) openReplacement(document, current.pageIndex);
@@ -1192,12 +1201,21 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         {!ready && <div className="monkeyboard-initializing" role="status">{text.loading}</div>}
         {busy && <div className="monkeyboard-busy" role="status">{text.busy}</div>}
         {!critMode && (context || source) && <div className="monkeyboard-context" role="group" aria-label={language === "en" ? "Selected drawing actions" : "选中图纸操作"}>
-          {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
-          {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementCopy[language].action}</button>}
+          {contextDocument && contextSource && <div className="monkeyboard-context-source">
+            <div className="monkeyboard-context-identity">
+              <span>{selectionCopy[language].selected} · {contextSource.pageIndex + 1}/{contextDocument.pageCount}</span>
+              <strong title={contextDocument.fileName}>{contextDocument.fileName}</strong>
+            </div>
+            <span className={`monkeyboard-context-binding${contextDocument.modelSource ? " is-linked" : ""}`}>{contextDocument.modelSource ? selectionCopy[language].linked : selectionCopy[language].unlinked}</span>
+          </div>}
+          <div className="monkeyboard-context-actions">
+            {source && selected && onOpenDocument && <button disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{text.openPage}</button>}
+            {source && <button disabled={!ready || busy || saveState.conflict} onClick={openSelectedReplacement}>{replacementCopy[language].action}</button>}
+            {context && (context.reason === "modelRequired" && context.source
+              ? <button type="button" className="monkeyboard-context-next" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
+              : <button className="monkeyboard-primary monkeyboard-context-next" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
+          </div>
           {context?.reason && <p id="monkeyboard-context-hint" role="status">{context.reason === "modelRequired" ? feedbackCopy[language].modelRequired : boardText[context.reason]}</p>}
-          {context && (context.reason === "modelRequired" && context.source
-            ? <button type="button" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(context.source!)}>{boardText.linkModel}</button>
-            : <button className="monkeyboard-primary" disabled={!!context.reason || !ready || busy || saveState.conflict || feedbackWaiting} aria-describedby={context.reason ? "monkeyboard-context-hint" : undefined} onClick={openFeedback}>{feedbackWaiting ? text.busy : feedbackCopy[language].action}</button>)}
         </div>}
         {critMode && <div className="monkeyboard-crit-actions" role="group" aria-label={text.crit}>
           <button type="button" className="monkeyboard-primary" disabled={!ready || saveState.conflict || feedbackWaiting} onClick={openFeedback}>{feedbackWaiting ? text.busy : text.critSubmit}</button>
@@ -1206,7 +1224,7 @@ function BoardCanvas({ board, documents: initialDocuments, files, failures, prev
         </div>}
       </div>
     </div>
-    <footer className="monkeyboard-footer"><span>{text.hint}{onOpenDocument ? ` · ${text.openHint}` : ""}</span>{source && selected ? <button type="button" disabled={!ready || busy || saveState.conflict} onClick={() => openDocument(selected)}>{source.fileName} · {selected.pageIndex + 1}/{source.pageCount} · {text.open}</button> : <span>{text.select}</span>}</footer>
+    <footer className="monkeyboard-footer"><span>{text.hint}{onOpenDocument ? ` · ${text.openHint}` : ""}</span>{source && selected ? <span title={source.fileName}>{source.fileName} · {selected.pageIndex + 1}/{source.pageCount}</span> : <span>{text.select}</span>}</footer>
     {feedback && <FeedbackDialog active={active} onOpenDocument={openDocument} selection={feedback} language={language} returnFocus={feedbackReturnFocus.current} onCancel={() => { feedbackOpen.current = false; setFeedback(null); }} onSubmit={submitFeedback} />}
     {replacement && <ReplacementDialog active={active} target={replacement} language={language} returnFocus={replacementReturnFocus.current} onCancel={() => { replacementOpen.current = false; setReplacement(null); }} onSubmit={replacePage} />}
   </section>;

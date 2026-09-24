@@ -2037,7 +2037,7 @@ class FilesystemProjectRepository:
                         payload = read(path)
                         # Original source material, including documents registered
                         # inside an automatic model run, is a permanent root.
-                        if (payload.get("schema") in {"StudioSourceDocument@1", "StudioBoardScene@1", "StudioWorkingCopy@1"}
+                        if (payload.get("schema") in {"StudioSourceDocument@1", "StudioBoardScene@1", "StudioWorkingCopy@1", "StudioExternalModelAsset@1"}
                                 or (payload.get("schema") == "StudioModelAsset@1" and payload.get("origin") != "generated")):
                             roots.add(run_id)
                         deps.update(references(payload))

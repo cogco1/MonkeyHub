@@ -109,7 +109,7 @@ async function painted() {
 }
 async function assertAnnotationNotePlacement() {
   const placement = await page.locator(".annotate__note").evaluateAll((notes) => {
-    const controls = [...document.querySelectorAll(".stage-mode-switch, #stage-versions-panel .stage__versions-session, .stage-model .viewtools, .stage__versions-toggle")];
+    const controls = [...document.querySelectorAll(".stage-mode-switch, #stage-versions-panel .stage__versions-session, .stage-model .viewtools, .stage__context")];
     const visible = notes.filter((note) => {
       const style = getComputedStyle(note);
       const rect = note.getBoundingClientRect();
@@ -139,7 +139,7 @@ const workspaceState = () => page.evaluate(() => window.__versionWorkspace);
 async function sessionState() {
   assert.equal(await versionsToggle().getAttribute("aria-expanded"), "true");
   return {
-    sourceMatch: await versionSession().locator(".editing-base[data-source-match]").getAttribute("data-source-match"),
+    sourceMatch: await page.locator(".stage__foot .editing-base[data-source-match]").getAttribute("data-source-match"),
     modelAnnotations: await versionSession().locator("[data-model-annotations-status]").getAttribute("data-model-annotations-status"),
   };
 }

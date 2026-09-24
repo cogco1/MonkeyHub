@@ -827,6 +827,21 @@ try {
     await openVersions();
   });
 
+  await step("viewing a historical candidate labels its own source Stage without moving the editing base", async () => {
+    const historical = prepare("history-source-label");
+    candidateBases.set(historical.candidateId, s0.stageRef);
+    jobs.get(historical.jobId).status = "succeeded"; allArtifacts.push(...historical.artifacts);
+    await page.reload({ waitUntil: "domcontentloaded" }); await rendered(historyA.candidateId);
+    await openVersions();
+    await page.locator('[data-preview-candidate="history-source-label"]').waitFor();
+    await view(historical.artifacts[0]);
+    await until(() => page.locator(".stage__versions-current").innerText(),
+      value => value.includes("S0") && value.includes("Uncommitted candidate"), "The viewed candidate must show its own source Stage");
+    assert.equal((await snapshot()).sourceStageRef, s1.stageRef);
+    assert.equal((await snapshot()).editingRunId, historyA.candidateId);
+    await view(historyA.artifacts[0]);
+  });
+
   await step("historical Stage selection changes the real editing source and branch creation is explicit", async () => {
     await openVersions();
     await page.locator('[data-design-stage="S0"]').getByRole("button", { name: "S0", exact: true }).click();
@@ -1005,6 +1020,9 @@ try {
     assert.equal((await snapshot()).documentView.revisionRef, lastDrawing.revisionRef);
     assert.equal(await page.locator("#document-comment").inputValue(), "Keep the terrace line.");
     annotationFailure = false;
+    // A refused switch leaves history open. Dismiss the overlay before reaching
+    // the drawing's autosave error; a longer retained history may cover it.
+    await page.locator("#stage-versions-panel").getByRole("button", { name: "Close", exact: true }).click();
     await page.locator(".document-error button").first().click();
     await until(async () => page.locator(".document-error").count(), (value) => value === 0, "Retry did not save the retained draft");
     await openVersions();

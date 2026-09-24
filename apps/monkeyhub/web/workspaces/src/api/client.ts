@@ -46,6 +46,7 @@ import {
   chooseWorkingCopyOptionApiWorkingCopiesGroupIdSelectionPut,
   compileIntentApiIntentsPost,
   createDocumentApiDocumentsPost,
+  createModelAssetApiModelAssetsPost,
   createDocumentWorkCopyApiDocumentsAssetSha256WorkCopyPost,
   createProposalApiProposalsPost,
   createTracingPaperReviewApiTracingPaperReviewsPost,
@@ -364,6 +365,20 @@ export const createStudioClient = (connection: ServerConnection) => ({
         body: { runId, pngBase64 },
       }),
     );
+  },
+
+  /** Retain the original 3DM in this project before exposing it to downstream workspaces. */
+  async uploadModel(projectId: string, file: File, signal?: AbortSignal): Promise<ProjectArtifactDto> {
+    if (!file.name.toLowerCase().endsWith(".3dm")) throw new Error("Choose a Rhino .3dm model.");
+    if (file.size <= 0 || file.size > 128 * 1024 * 1024) throw new Error("Choose a non-empty model up to 128 MiB.");
+    signal?.throwIfAborted();
+    const bytes = await file.arrayBuffer();
+    signal?.throwIfAborted();
+    const contentBase64 = base64Of(bytes);
+    return call("POST /api/model-assets", createModelAssetApiModelAssetsPost({
+      client: connection.client, signal,
+      body: { projectId, fileName: file.name, contentBase64 },
+    }));
   },
 
   /**

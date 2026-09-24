@@ -149,3 +149,37 @@ test("document authorization and revision conflicts remain StudioApiError failur
   await assert.rejects(studio.saveDocumentAnnotations(body), isExpectedError);
   assert.equal(calls, 3, "a refusal is not retried or converted to an empty result");
 });
+
+
+test("external model import sends original bytes without inventing a semantic run/state", async (t) => {
+  const { studio } = await documentApi(t);
+  const bytes = Uint8Array.from({ length: 65_553 }, (_, index) => index % 256);
+  const file = new File([bytes], "建筑.3dm");
+  const stateDigest = "c".repeat(64);
+  const artifact = { runId, sha256: assetSha256, modelSource: { runId, stateDigest, assetSha256 } };
+  t.mock.method(globalThis, "fetch", async (request: Request) => {
+    assert.equal(request.url, "http://studio.test/api/model-assets");
+    assert.equal(request.method, "POST");
+    assert.equal(request.headers.get("authorization"), "Bearer document-test-token");
+    assert.deepEqual(await request.json(), {
+      projectId, fileName: file.name, contentBase64: Buffer.from(bytes).toString("base64"),
+    });
+    return Response.json(artifact, { status: 201 });
+  });
+  assert.deepEqual(await studio.uploadModel(projectId, file), artifact);
+});
+
+test("invalid or cancelled local model imports never send a registration request", async (t) => {
+  const { studio } = await documentApi(t);
+  const fetch = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected upload"); });
+  await assert.rejects(studio.uploadModel(projectId, new File(["x"], "model.skp")), /3dm/);
+  await assert.rejects(studio.uploadModel(projectId, new File([], "empty.3dm")), /non-empty/);
+  const tooLarge = new File(["x"], "large.3dm");
+  Object.defineProperty(tooLarge, "size", { value: 128 * 1024 * 1024 + 1 });
+  await assert.rejects(studio.uploadModel(projectId, tooLarge), /128 MiB/);
+  const controller = new AbortController();
+  const file = new File(["source"], "model.3dm");
+  t.mock.method(file, "arrayBuffer", async () => { controller.abort(); return new ArrayBuffer(6); });
+  await assert.rejects(studio.uploadModel(projectId, file, controller.signal), { name: "AbortError" });
+  assert.equal(fetch.mock.callCount(), 0);
+});

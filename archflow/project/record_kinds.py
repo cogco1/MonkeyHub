@@ -214,7 +214,7 @@ _TABLE: tuple[RecordKind, ...] = (
         STUDIO_MODEL_ASSET,
         "StudioModelAsset@1",
         _RUN_RECORD,
-        "an existing composed model retained with its explicit exact run state binding",
+        "a composed model with exact run state binding, or external original bytes with no semantic source",
     ),
     RecordKind(
         STUDIO_SOURCE_DOCUMENT,

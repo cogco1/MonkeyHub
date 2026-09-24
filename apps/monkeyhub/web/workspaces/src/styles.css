@@ -1187,6 +1187,62 @@ button.chip:hover {
   max-width: 100%;
 }
 
+.stage__context {
+  display: grid;
+  max-width: min(760px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--overlay);
+}
+
+.stage__context-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.stage__context .picked {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.stage__context .picked .label,
+.stage__context .picked__meta {
+  flex: none;
+}
+
+.stage__context .picked__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stage__context .editing-base {
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.stage__context .editing-base > [role="status"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 5px;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.stage__context .editing-base__name {
+  max-width: min(320px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stage__versions-toggle {
   display: flex;
   flex-wrap: wrap;
@@ -1195,7 +1251,8 @@ button.chip:hover {
   min-height: 36px;
   border-radius: var(--radius-lg);
   max-width: 100%;
-  background: var(--overlay);
+  border: 0;
+  background: transparent;
 }
 
 .stage__versions-current {

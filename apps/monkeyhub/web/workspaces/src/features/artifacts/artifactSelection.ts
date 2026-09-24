@@ -144,7 +144,8 @@ export function workModelOf(
  */
 export function artifactKindKey(
   artifact: ProjectArtifactDto,
-): "artifact.kind.exactStep" | "artifact.kind.previewMesh" | "artifact.kind.exact3dm" | "artifact.kind.composed3dm" | "artifact.kind.workModel" {
+): "artifact.kind.exactStep" | "artifact.kind.previewMesh" | "artifact.kind.exact3dm" | "artifact.kind.composed3dm" | "artifact.kind.workModel" | "artifact.kind.external3dm" {
+  if (artifact.representation === "external") return "artifact.kind.external3dm";
   if (artifact.representation === "composed") return "artifact.kind.composed3dm";
   if (artifact.representation === "preview") return "artifact.kind.previewMesh";
   if (artifact.format === "step") return "artifact.kind.exactStep";
