@@ -450,8 +450,15 @@ def _run_operator(
                              retain=(*retain, (STUDIO_CANDIDATE_DELTA, delta)),
                              model_source_ref=source_model.receipt_ref if source_model is not None else None,
                              source_run_receipt_ref=runner_ref, monitor=monitor)
+    _require_built_components(operator, receipt)
     if source_model is not None and settings.exports:
         _retain_composed_candidate(binding, source_model, run_id, receipt, source_receipt=projection.reference.receipt)
+    return receipt
+
+
+def _require_built_components(operator: StateRecordOperator, receipt: Mapping[str, Any]) -> None:
+    """A completed seat run must cover the change, including after restart."""
+
     # A run builds the components its seats own. The receipt says which ones
     # each seat covered, so a change whose own components appear in none of
     # them built nothing: the record would carry it and the model would show
@@ -474,7 +481,6 @@ def _run_operator(
             "model: the run is not a candidate of it. Author the component under one a seat owns, or "
             "have the project's seat pack own it.",
         )
-    return receipt
 
 
 def read_candidate_delta(binding: ProjectBinding, run_id: str) -> dict[str, Any]:
@@ -686,6 +692,14 @@ def describe(
             "job, not a candidate.",
         )
     retained, receipt = _receipt(binding, candidate_id)
+    delta = binding.candidate_delta(candidate_id)
+    if delta is not None:
+        # The job disappears on restart; its retained operator and the runner's
+        # coverage still determine whether this run produced its own change.
+        try:
+            _require_built_components(StateRecordOperator.from_dict(delta["operator"]), receipt)
+        except StudioError as exc:
+            raise StudioError(404, "CANDIDATE_NOT_FOUND", exc.detail) from exc
     seat_rows = _rows(receipt.get("seat_results"))
     record_digest = _text(receipt.get("state_record_digest"))
     projection = project_state(binding)

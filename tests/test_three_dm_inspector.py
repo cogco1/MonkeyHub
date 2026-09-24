@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +20,7 @@ from archflow.adapters.three_dm_inspector import (
     _visible_geometry_points,
     inspect_three_dm,
     inspect_three_dm_contents,
+    inspect_three_dm_index,
 )
 
 try:
@@ -27,6 +30,145 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 class ThreeDmInspectorTests(unittest.TestCase):
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_preserves_identity_metadata_and_cold_reopen(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "native-source.3dm"
+            model = rhino3dm.File3dm()
+            model.Settings.ModelUnitSystem = rhino3dm.UnitSystem.Millimeters
+            parent = rhino3dm.Layer()
+            parent.Name = "Facade"
+            parent_index = model.Layers.Add(parent)
+            child = rhino3dm.Layer()
+            child.Name = "East"
+            child.ParentLayerId = model.Layers[parent_index].Id
+            child_index = model.Layers.Add(child)
+            material = rhino3dm.Material()
+            material.Name = "Original material"
+            material_index = model.Materials.Add(material)
+            object_ids = []
+            for index, name in enumerate(("Window", "Window", "")):
+                attributes = rhino3dm.ObjectAttributes()
+                attributes.Name = name
+                attributes.LayerIndex = child_index
+                attributes.MaterialIndex = material_index
+                attributes.MaterialSource = rhino3dm.ObjectMaterialSource.MaterialFromObject
+                attributes.SetUserString("design_note", "source text, not a semantic role")
+                if index == 2:
+                    attributes.Mode = rhino3dm.ObjectMode.Hidden
+                geometry = rhino3dm.Point(rhino3dm.Point3d(index, 0, 0))
+                geometry.SetUserString("native_label", "unaltered")
+                object_ids.append(str(model.Objects.Add(geometry, attributes)))
+            self.assertTrue(model.Write(str(source), 8))
+            data = source.read_bytes()
+            result = inspect_three_dm_index(data)
+            reopened = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import json,sys; from pathlib import Path; "
+                    "from archflow.adapters.three_dm_inspector import inspect_three_dm_index; "
+                    "print(json.dumps(inspect_three_dm_index(Path(sys.argv[1]).read_bytes())))",
+                    str(source),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result, json.loads(reopened.stdout))
+            self.assertEqual(source.read_bytes(), data)
+
+        self.assertEqual(result["file_sha256"], hashlib.sha256(data).hexdigest())
+        self.assertEqual(result["file_bytes"], len(data))
+        self.assertEqual(result["archive_version"], 80)
+        self.assertEqual(result["units"], {"name": "Millimeters", "code": 2})
+        rows = result["objects"]
+        self.assertEqual([item["object_id"] for item in rows], sorted(object_ids))
+        self.assertEqual(sum(item["name"] == "Window" for item in rows), 2)
+        self.assertEqual(sum(item["name"] == "" for item in rows), 1)
+        hidden = next(item for item in rows if item["object_id"] == object_ids[2])
+        self.assertFalse(hidden["visible"])
+        self.assertEqual(hidden["mode"], "Hidden")
+        for row in rows:
+            self.assertEqual(row["type"], "Point")
+            self.assertEqual(row["layer_path"], "Facade::East")
+            self.assertEqual(row["layer_id"], str(model.Layers[child_index].Id))
+            self.assertEqual(row["material_index"], material_index)
+            self.assertEqual(row["material_source"], "MaterialFromObject")
+            self.assertEqual(row["attributes"], [
+                {"key": "design_note", "value": "source text, not a semantic role"},
+            ])
+            self.assertEqual(row["geometry"], [
+                {"key": "native_label", "value": "unaltered"},
+            ])
+            self.assertFalse(row["is_instance_definition_object"])
+        json.dumps(result, allow_nan=False)
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_keeps_block_identity_transform_and_members(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "block.3dm"
+            self._write_model(source)
+            with patch(
+                "archflow.adapters.three_dm_inspector._objects",
+                side_effect=AssertionError("full object inspection is not an index"),
+            ), patch(
+                "archflow.adapters.three_dm_inspector._encoded_geometry_sha256",
+                side_effect=AssertionError("an index must not encode geometry"),
+            ), patch(
+                "archflow.adapters.three_dm_inspector._aggregate_bbox",
+                side_effect=AssertionError("an index must not inspect bounds"),
+            ):
+                result = inspect_three_dm_index(source.read_bytes())
+        definition = result["instance_definitions"][0]
+        reference = result["instance_references"][0]
+        self.assertEqual(definition["reference_count"], 1)
+        self.assertEqual(reference["definition_id"], definition["id"])
+        self.assertEqual(reference["transform"], [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        rows = {item["object_id"]: item for item in result["objects"]}
+        self.assertEqual(rows[reference["object_id"]]["type"], "InstanceReference")
+        self.assertTrue(rows[definition["object_ids"][0]]["is_instance_definition_object"])
+        self.assertEqual(result["units"], {"name": "Meters", "code": 4})
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_does_not_read_geometry_validity(self) -> None:
+        class MetadataOnlyGeometry:
+            ObjectType = rhino3dm.ObjectType.Brep
+
+            @property
+            def IsValid(self):
+                raise AssertionError("an index must not validate geometry")
+
+            def GetUserStrings(self):
+                return ()
+
+        attributes = rhino3dm.ObjectAttributes()
+        model = SimpleNamespace(
+            Objects=[SimpleNamespace(Attributes=attributes, Geometry=MetadataOnlyGeometry())],
+            Layers=[],
+            InstanceDefinitions=[],
+            Settings=SimpleNamespace(ModelUnitSystem=rhino3dm.UnitSystem.Meters),
+            ArchiveVersion=80,
+        )
+        with patch("archflow.adapters.three_dm_inspector._decode_model", return_value=model):
+            result = inspect_three_dm_index(b"mock native snapshot")
+        self.assertEqual(result["objects"][0]["type"], "Brep")
+        self.assertNotIn("is_valid", result["objects"][0])
+
+    @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
+    def test_native_index_rejects_damaged_bytes_and_mutable_input(self) -> None:
+        with self.assertRaises(ThreeDmInspectionError) as raised:
+            inspect_three_dm_index(b"not a 3dm archive")
+        self.assertIs(raised.exception.code, ThreeDmInspectionErrorCode.INVALID_FILE)
+        with self.assertRaises(TypeError):
+            inspect_three_dm_index(bytearray(b"mutable input"))
+
     @unittest.skipIf(rhino3dm is None, "rhino3dm is not installed")
     def test_container_read_keeps_unmeshed_brep_while_export_inspection_stays_strict(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

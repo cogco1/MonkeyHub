@@ -1815,6 +1815,12 @@ class ChatTests(unittest.TestCase):
             with self.assertRaises(HubFailure) as wrong_method:
                 chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": "/api/state/closure"})
             self.assertEqual(wrong_method.exception.error.code, "CHAT_TOOL_UNAVAILABLE")
+            index_path = "/api/model-assets/" + "a" * 64 + "/index?runId=source&stateDigest=" + "b" * 64 + "&limit=20"
+            result = chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "GET", "path": index_path})
+            self.assertEqual(result["path"], index_path)
+            self.assertEqual(result["method"], "GET")
+            with self.assertRaises(HubFailure):
+                chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "POST", "path": index_path})
             for path in ("/api/intents", "/api/issue", "/api/settings/apps", "https://remote.example/api/state"):
                 with self.assertRaises(HubFailure):
                     chat.call_tool(self.store.hub_url, session.id, "studio_request", {"method": "POST", "path": path})
