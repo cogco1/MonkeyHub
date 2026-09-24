@@ -4503,11 +4503,11 @@ export type ModelAssetRequestDto = {
     /**
      * Runid
      */
-    runId: string;
+    runId?: string | null;
     /**
      * Statedigest
      */
-    stateDigest: string;
+    stateDigest?: string | null;
     /**
      * Filename
      */

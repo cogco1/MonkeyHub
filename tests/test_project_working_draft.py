@@ -9,7 +9,7 @@ import unittest
 
 from archflow.project.archive import restore_project_archive, write_project_archive
 from archflow.project.ports import PersistenceArea, PersistenceDestination
-from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_CANDIDATE_DELTA, STUDIO_LOCAL_DRAFT, STUDIO_SOURCE_DOCUMENT
+from archflow.project.record_kinds import STUDIO_BOARD_SCENE, STUDIO_CANDIDATE_DELTA, STUDIO_LOCAL_DRAFT, STUDIO_MODEL_ASSET, STUDIO_SOURCE_DOCUMENT
 from archflow.project.repository import FilesystemProjectRepository, ProjectIntegrityError, StaleWorkingDraft
 
 
@@ -67,6 +67,19 @@ class WorkingDraftRepositoryTests(unittest.TestCase):
         for name in ("current", "parent", "combined", "saved", "board-page", "document", "legacy", "recent", "external"):
             self.assertEqual(self.repo.load_run(name).run_id, name)
         self.assertNotIn("expired", FilesystemProjectRepository.open(self.repo.layout.root).read_working_draft()[0]["runs"])
+
+    def test_original_model_imports_survive_expired_draft_collection_and_reopen(self):
+        for name, schema in (("original", "StudioModelAsset@1"), ("legacy-original", "StudioExternalModelAsset@1")):
+            run = self.create(name)
+            self.put(run, STUDIO_MODEL_ASSET, {"schema": schema, "origin": "uploaded",
+                "representation": "external", "modelSource": None, "projectId": "building"})
+        self.create("expired")
+        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
+        self.assertEqual(reopened.prune_working_draft(now=NOW), ("expired",))
+        reopened = FilesystemProjectRepository.open(self.repo.layout.root)
+        for name in ("original", "legacy-original"):
+            self.assertEqual(reopened.load_run(name).run_id, name)
+        reopened.verify()
 
     def test_current_local_snapshot_protects_exact_source_indefinitely_and_old_snapshots_expire(self):
         self.create("source")

@@ -67,6 +67,7 @@ from ..transport.errors import StudioError, error_sentence
 from .binding import retained_sources
 from .binding import ProjectBinding, ReferenceRun, record_kind
 from .projection import StateProjection, project_state, require_actionable
+from .monitoring import StudioMonitor
 
 # A file digest, as it travels in a path parameter. Lowercase because that is
 # what the kernel writes; anything else names no artifact here.
@@ -84,6 +85,7 @@ PNG_MEDIA_TYPE = "image/png"
 JPEG_MEDIA_TYPE = "image/jpeg"
 PNG_END = b"\x00\x00\x00\x00IEND\xaeB\x60\x82"
 DOCUMENT_UPLOAD_RUN_ID = "studio-documents"
+MODEL_UPLOAD_RUN_PREFIX = "studio-model-"
 
 # Where one registered document's editable copy lives, below the run that
 # holds the registration it was made from. A speculative workspace file,
@@ -1489,66 +1491,150 @@ def _work_model_failure(execution: Any) -> str:
 _model_asset_lock = threading.RLock()
 
 
-@retained_sources
-def register_model_asset(
-    binding: ProjectBinding, run_id: str, state_digest: str, file_name: str, content_base64: str,
-    *, event_sink: StudioEventSink | None = None, generated: bool = False,
-) -> ArtifactRecord:
-    """Retain an explicitly supplied composed model; never claim a native export."""
-
-    projection = project_state(binding, run_id)
-    require_actionable(projection)
-    if not projection.reference_state_exact or projection.state_digest != state_digest:
-        raise StudioError(409, "MODEL_SOURCE_MISMATCH", "Register the model against its exact retained run state.")
+def _decode_model_asset(file_name: str, content_base64: str, monitor: StudioMonitor) -> bytes:
     if not file_name.lower().endswith(".3dm") or len(file_name) > 240 or any(char in file_name for char in "/\\\r\n\x00"):
         raise StudioError(422, "MODEL_ASSET_INVALID", "Provide a 3dm file name, not a server path.")
     if len(content_base64) > 4 * ((128 * 1024 * 1024 + 2) // 3):
         raise StudioError(413, "MODEL_ASSET_TOO_LARGE", "A model asset may contain at most 128 MiB.")
-    try:
-        data = base64.b64decode(content_base64, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise StudioError(422, "MODEL_ASSET_INVALID", "The model bytes are not valid base64.") from exc
-    if not data.startswith(b"3D Geometry File Format"):
-        raise StudioError(422, "MODEL_ASSET_INVALID", "The file is not a 3dm model.")
-    digest = hashlib.sha256(data).hexdigest()
-    source = ModelSource(run_id, state_digest, digest)
-    with _model_asset_lock:
-        existing = next((row for row in _registered_model_assets(binding, run_id) if row.model_source == source), None)
-        if existing is not None:
-            require_model_source(binding, source, projection)
-            if not generated:
-                original = binding.repository.load_json(record_ref_from_uri(existing.receipt_ref, binding.project_id))
-                if original.get("origin") == "generated":
-                    binding.repository.put_json(run=projection.run,
-                        destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
-                        record_kind=STUDIO_MODEL_ASSET, payload=original | {"origin": "uploaded"})
-            return existing
+    with monitor.measure("model_ingest.decode"):
         try:
-            inspected = inspect_three_dm_contents(data)
-        except ThreeDmInspectionError as exc:
-            raise StudioError(422, "MODEL_ASSET_INVALID", "The supplied 3dm cannot be read as a complete model.") from exc
-        unit = {"Feet": "foot", "Inches": "inch", "Meters": "meter", "Millimeters": "millimeter"}.get(inspected.units["name"])
-        if unit is None:
-            raise StudioError(422, "MODEL_ASSET_INVALID", "The model must declare supported length units.")
-        artifact = binding.repository.ingest(
-            run=projection.run, destination=PersistenceDestination(PersistenceArea.OBJECT),
-            artifact_id=f"composed-model-{digest}", media_type="model/vnd.rhino", source=BytesIO(data),
-        )
-        binding.repository.put_json(
-            run=projection.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
-            record_kind=STUDIO_MODEL_ASSET,
-            payload={
-                "schema": "StudioModelAsset@1", "projectId": binding.project_id,
-                "origin": "generated" if generated else "uploaded",
-                "modelSource": source.to_dict(), "stateRecordRef": projection.record_source,
-                "artifact": asdict(artifact), "fileName": file_name, "sizeBytes": len(data),
-                "objectCount": inspected.object_count, "lengthUnit": unit,
-            },
-        )
-        registered = require_model_source(binding, source, projection)
-        if event_sink is not None:
-            event_sink.publish(event={"type": "model_asset.registered", "run_id": run_id})
-        return registered
+            data = base64.b64decode(content_base64, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise StudioError(422, "MODEL_ASSET_INVALID", "The model bytes are not valid base64.") from exc
+        if not data.startswith(b"3D Geometry File Format"):
+            raise StudioError(422, "MODEL_ASSET_INVALID", "The file is not a 3dm model.")
+    return data
+
+
+@retained_sources
+def register_model_asset(
+    binding: ProjectBinding, run_id: str | None, state_digest: str | None, file_name: str, content_base64: str,
+    *, event_sink: StudioEventSink | None = None, generated: bool = False,
+    monitor: StudioMonitor | None = None,
+) -> ArtifactRecord:
+    """Retain exact external or state-bound composed bytes; never claim a native export."""
+
+    monitor = monitor if monitor is not None else StudioMonitor(None)
+    if (run_id is None) != (state_digest is None):
+        raise StudioError(422, "MODEL_SOURCE_REQUIRED", "Provide both run and state, or neither for an external source.")
+    if run_id is None:
+        if generated:
+            raise StudioError(422, "MODEL_SOURCE_REQUIRED", "Generated geometry requires an exact retained state.")
+        return _register_external_model_asset(binding, file_name, content_base64, monitor, event_sink)
+    with monitor.measure("model_ingest", project_id=binding.project_id, run_id=run_id,
+                         details={"cache_status": "unknown"}) as operation:
+        with monitor.measure("model_ingest.source_binding"):
+            projection = project_state(binding, run_id)
+            require_actionable(projection)
+            if not projection.reference_state_exact or projection.state_digest != state_digest:
+                raise StudioError(409, "MODEL_SOURCE_MISMATCH", "Register the model against its exact retained run state.")
+        data = _decode_model_asset(file_name, content_base64, monitor)
+        with monitor.measure("model_ingest.digest"):
+            digest = hashlib.sha256(data).hexdigest()
+        operation["source_ref"] = projection.record_source
+        operation["details"].update(input_bytes=len(data), input_identity={"asset_sha256": digest, "state_digest": state_digest})
+        source = ModelSource(run_id, state_digest, digest)
+        with monitor.measure("model_ingest.lock_wait"):
+            _model_asset_lock.acquire()
+        try:
+            with monitor.measure("model_ingest.lookup"):
+                existing = next((row for row in _registered_model_assets(binding, run_id) if row.model_source == source), None)
+            if existing is not None:
+                operation["details"]["cache_status"] = "hit"
+                with monitor.measure("model_ingest.verify"):
+                    require_model_source(binding, source, projection)
+                if not generated:
+                    original = binding.repository.load_json(record_ref_from_uri(existing.receipt_ref, binding.project_id))
+                    if original.get("origin") == "generated":
+                        binding.repository.put_json(run=projection.run,
+                            destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+                            record_kind=STUDIO_MODEL_ASSET, payload=original | {"origin": "uploaded"})
+                return existing
+            operation["details"]["cache_status"] = "miss"
+            try:
+                with monitor.measure("model_ingest.inspect"):
+                    inspected = inspect_three_dm_contents(data)
+            except ThreeDmInspectionError as exc:
+                raise StudioError(422, "MODEL_ASSET_INVALID", "The supplied 3dm cannot be read as a complete model.") from exc
+            unit = {"Feet": "foot", "Inches": "inch", "Meters": "meter", "Millimeters": "millimeter"}.get(inspected.units["name"])
+            if unit is None:
+                raise StudioError(422, "MODEL_ASSET_INVALID", "The model must declare supported length units.")
+            with monitor.measure("model_ingest.persist"):
+                artifact = binding.repository.ingest(
+                    run=projection.run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+                    artifact_id=f"composed-model-{digest}", media_type="model/vnd.rhino", source=BytesIO(data),
+                )
+                binding.repository.put_json(
+                    run=projection.run, destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run_id),
+                    record_kind=STUDIO_MODEL_ASSET,
+                    payload={
+                        "schema": "StudioModelAsset@1", "projectId": binding.project_id,
+                        "origin": "generated" if generated else "uploaded",
+                        "modelSource": source.to_dict(), "stateRecordRef": projection.record_source,
+                        "artifact": asdict(artifact), "fileName": file_name, "sizeBytes": len(data),
+                        "objectCount": inspected.object_count, "lengthUnit": unit,
+                    },
+                )
+            with monitor.measure("model_ingest.verify"):
+                registered = require_model_source(binding, source, projection)
+            if event_sink is not None:
+                event_sink.publish(event={"type": "model_asset.registered", "run_id": run_id})
+            return registered
+        finally:
+            _model_asset_lock.release()
+
+
+def _register_external_model_asset(binding, file_name, content_base64, monitor, event_sink):
+    """Retain exact external bytes without inventing a semantic design state."""
+    with monitor.measure("model_ingest", project_id=binding.project_id,
+                         details={"cache_status": "unknown"}) as operation:
+        data = _decode_model_asset(file_name, content_base64, monitor)
+        with monitor.measure("model_ingest.digest"):
+            digest = hashlib.sha256(data).hexdigest()
+        source_run_id = MODEL_UPLOAD_RUN_PREFIX + digest
+        operation["run_id"] = source_run_id
+        operation["details"].update(input_bytes=len(data), input_identity={"asset_sha256": digest})
+        with _model_asset_lock:
+            with monitor.measure("model_ingest.lookup"):
+                rows = _registered_model_assets(binding, source_run_id) if source_run_id in binding.run_ids() else ()
+                existing = next((row for row in rows if row.sha256 == digest), None)
+            if existing is not None:
+                if not existing.available:
+                    raise _unavailable(binding, existing)
+                operation["details"]["cache_status"] = "hit"
+                operation["source_ref"] = existing.receipt_ref
+                return existing
+            operation["details"]["cache_status"] = "miss"
+            try:
+                with monitor.measure("model_ingest.inspect"):
+                    inspected = inspect_three_dm_contents(data)
+            except ThreeDmInspectionError as exc:
+                raise StudioError(422, "MODEL_ASSET_INVALID", "The supplied 3dm cannot be read as a complete model.") from exc
+            unit = {"Feet": "foot", "Inches": "inch", "Meters": "meter", "Millimeters": "millimeter"}.get(inspected.units["name"])
+            if unit is None:
+                raise StudioError(422, "MODEL_ASSET_INVALID", "The model must declare supported length units.")
+            with monitor.measure("model_ingest.persist"):
+                run = (binding.load_run(source_run_id) if source_run_id in binding.run_ids()
+                       else binding.repository.create_run(source_run_id))
+                artifact = binding.repository.ingest(run=run, destination=PersistenceDestination(PersistenceArea.OBJECT),
+                    artifact_id=f"external-model-{digest}", media_type="model/vnd.rhino", source=BytesIO(data))
+                binding.repository.put_json(run=run,
+                    destination=PersistenceDestination(PersistenceArea.RUN_RECORD, run_id=run.run_id),
+                    record_kind=STUDIO_MODEL_ASSET, payload={
+                        "schema": "StudioModelAsset@1", "representation": "external", "modelSource": None,
+                        "projectId": binding.project_id,
+                        "runId": run.run_id, "assetSha256": digest, "origin": "uploaded",
+                        "artifact": asdict(artifact), "fileName": file_name, "sizeBytes": len(data),
+                        "objectCount": inspected.object_count, "lengthUnit": unit,
+                    })
+            with monitor.measure("model_ingest.verify"):
+                registered = next(row for row in _registered_model_assets(binding, run.run_id) if row.sha256 == digest)
+                if not registered.available:
+                    raise _unavailable(binding, registered)
+            operation["source_ref"] = registered.receipt_ref
+            if event_sink is not None:
+                event_sink.publish(event={"type": "model_asset.registered", "run_id": run.run_id})
+            return registered
 
 
 def _registered_model_assets(
@@ -1559,32 +1645,39 @@ def _registered_model_assets(
         if record_kind(ref) != STUDIO_MODEL_ASSET:
             continue
         payload = binding.repository.load_json(ref)
-        source = ModelSource.from_dict(payload["modelSource"])
-        if payload.get("schema") != "StudioModelAsset@1" or payload.get("projectId") != binding.project_id or source.run_id != run_id:
+        external = (payload.get("schema") == "StudioExternalModelAsset@1"
+                    or (payload.get("schema") == "StudioModelAsset@1" and payload.get("representation") == "external"
+                        and payload.get("modelSource") is None))
+        source = None if external else ModelSource.from_dict(payload["modelSource"])
+        digest = payload.get("assetSha256") if external else source.asset_sha256
+        if (payload.get("projectId") != binding.project_id
+            or (external and (payload.get("runId") != run_id or not isinstance(digest, str) or not SHA256_HEX.fullmatch(digest)
+                              or run_id != MODEL_UPLOAD_RUN_PREFIX + digest))
+            or (not external and (payload.get("schema") != "StudioModelAsset@1" or source.run_id != run_id))):
             raise StudioError(409, "MODEL_SOURCE_MISMATCH", "The retained model asset has a different project or run binding.")
         path = binding.repository.layout.resolve_relative(payload["artifact"]["relative_path"])
         reason = FILE_MISSING
         try:
             if path.is_file():
-                reason = None if _file_sha256(binding, path) == source.asset_sha256 else DIGEST_MISMATCH
+                reason = None if _file_sha256(binding, path) == digest else DIGEST_MISMATCH
         except OSError:
             reason = FILE_UNREADABLE
         run = binding.load_run(run_id)
         records.append(ArtifactRecord(
-            artifact_id=source.asset_sha256, run_id=run_id, stage_id=None,
+            artifact_id=digest, run_id=run_id, stage_id=None,
             file_name=payload["fileName"], relative_path=payload["artifact"]["relative_path"],
-            path=path if reason is None else None, sha256=source.asset_sha256,
+            path=path if reason is None else None, sha256=digest,
             size_bytes=payload["sizeBytes"], object_count=payload["objectCount"],
             status="registered", readback_verified=None, available=reason is None,
             unavailable_reason=reason, unavailable_error=None,
             base_version=run.base.version, base_state_sha256=run.base.state_sha256,
             branch_id=None, branch_epoch=None, program_ref=None, program_digest=None,
-            design_state_digest=source.state_digest, length_unit=payload["lengthUnit"], up_axis="Z-up",
-            receipt_ref=ref.uri, format=FORMAT_3DM, representation="composed", model_source=source,
+            design_state_digest=None if external else source.state_digest, length_unit=payload["lengthUnit"], up_axis="Z-up",
+            receipt_ref=ref.uri, format=FORMAT_3DM, representation="external" if external else "composed", model_source=source,
         ))
     unique = {}
     for record in records:
-        unique.setdefault(record.model_source, record)
+        unique.setdefault((record.run_id, record.design_state_digest, record.sha256), record)
     return tuple(unique.values())
 
 

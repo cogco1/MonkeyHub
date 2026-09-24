@@ -83,7 +83,8 @@ def create_model_asset(request: Request, payload: ModelAssetRequestDto) -> Proje
     if payload.project_id != binding.project_id:
         raise StudioError(403, "PROJECT_MISMATCH", "The model asset names another project.")
     return artifact_dto(register_model_asset(binding, payload.run_id, payload.state_digest, payload.file_name,
-                                           payload.content_base64, event_sink=request.app.state.events))
+                                           payload.content_base64, event_sink=request.app.state.events,
+                                           monitor=request.app.state.monitor))
 
 
 @router.post("/documents/{asset_sha256}/model-source", response_model=SourceDocumentDto, response_model_by_alias=True)

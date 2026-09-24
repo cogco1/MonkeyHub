@@ -261,7 +261,7 @@ export function Stage({
   changingBase: boolean;
   baseError: StudioApiError | null;
   baseActionBusy: boolean;
-  onContinue(runId: string): void;
+  onContinue: ((runId: string) => void) | null;
   onDefaultBase(): void;
   onCompareVersion(artifact: ProjectArtifactDto): void;
   /** A cross-fade in progress: before is the loaded run, after the candidate. */
@@ -1147,13 +1147,13 @@ export function Stage({
           {changingBase ? t("stage.base.loading") : sameSource ? t("stage.base.sameSource") : t("stage.base.current")}
           {!sameSource && <strong className="editing-base__name" title={editingLabel ?? undefined}> {editingLabel}</strong>}
         </span>
-        {loadedRunId !== null && !sameSource && (
+        {loadedRunId !== null && !sameSource && (viewedModelSource !== null || onContinue !== null) && (
           <button
             type="button"
             className="btn btn--small"
             disabled={changingBase || baseActionBusy || loadingSha !== null || status === "loading" || blend !== null}
             title={t("stage.base.continueTitle")}
-            onClick={() => viewedModelSource ? void onContinueModelSource(viewedModelSource) : onContinue(loadedRunId)}
+            onClick={() => viewedModelSource ? void onContinueModelSource(viewedModelSource) : onContinue?.(loadedRunId)}
           >
             {t("stage.base.continue")}
           </button>

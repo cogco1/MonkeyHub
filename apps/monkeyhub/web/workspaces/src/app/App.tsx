@@ -338,7 +338,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   const [artifactLoadingSha, setArtifactLoadingSha] = useState<string | null>(
     null,
   );
-  const [artifactLoadPhase, setArtifactLoadPhase] = useState<"download" | "parse" | null>(null);
+  const [artifactLoadPhase, setArtifactLoadPhase] = useState<"upload" | "download" | "parse" | null>(null);
   const [artifactError, setArtifactError] = useState<StudioApiError | null>(
     null,
   );
@@ -387,6 +387,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // wanted: the run it belongs to, the receipt a pick is resolved against,
   // the seat a cross-fade is loaded beside.
   const loadedArtifact = loadedArtifacts[0] ?? null;
+  const viewingExternalModel = loadedArtifact?.representation === "external";
   const viewingAnotherBase = sourceLabel === LOCAL_SOURCE_LABEL ||
     (loadedArtifact !== null && session.status === "ready" &&
       loadedArtifact.runId !== session.value.projection.referenceRun.runId);
@@ -1050,16 +1051,6 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     void refreshWorkingDraft().catch((cause) => setHistoryError(asStudioApiError(cause).detail));
   }, [versionRefreshRequest, session.status, changingBase, artifacts.status, project?.projectId, loadArtifacts, refreshWorkingCopies, refreshWorkingDraft]);
 
-  const openLocalFile = useCallback((file: File) => {
-    finishEditTiming(activeEditTiming.current, "cancelled");
-    modelLoadRequest.current += 1;
-    modelDownloadAbort.current?.abort();
-    pendingArtifacts.current = [];
-    setArtifactLoadingSha(null);
-    setArtifactLoadPhase(null);
-    manualLoadRef.current = true;
-    void viewportRef.current?.openFile(file);
-  }, []);
 
   const monitorLoads = server.capabilities.includes("operation-timing");
   const startModelLoadTiming = useCallback((projectId: string | null, runId: string, sourceRef: string | null) => {
@@ -1177,6 +1168,41 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
     },
     [monitorDiagnostics, startModelLoadTiming],
   );
+
+  const openLocalFile = useCallback(async (file: File) => {
+    if (!project || changingBase || session.status !== "ready") {
+      setArtifactError(asStudioApiError(new Error("Wait for the project to finish opening before importing a model.")));
+      return;
+    }
+    finishEditTiming(activeEditTiming.current, "cancelled");
+    const request = ++modelLoadRequest.current;
+    modelDownloadAbort.current?.abort();
+    const controller = new AbortController();
+    modelDownloadAbort.current = controller;
+    const projectId = project.projectId;
+    const isCurrent = () => request === modelLoadRequest.current && projectId === artifactProjectRef.current;
+    pendingArtifacts.current = [];
+    manualLoadRef.current = true;
+    setArtifactError(null);
+    setArtifactLoadingSha("local-import");
+    setArtifactLoadPhase("upload");
+    try {
+      const artifact = await studio.uploadModel(projectId, file, controller.signal);
+      if (!isCurrent()) return;
+      // Reuse retained bytes for viewing and reopening the imported source,
+      // and a late upload can never replace another project or a newer selection.
+      void loadArtifacts(true);
+      await loadArtifactIntoViewer(artifact, `IMPORTED · ${artifact.fileName} · ${artifact.sha256?.slice(0, 8)}`);
+    } catch (cause) {
+      if (isCurrent()) setArtifactError(asStudioApiError(cause));
+    } finally {
+      // Once the retained load starts it owns this indicator and its cancellation.
+      if (isCurrent()) {
+        setArtifactLoadingSha(null);
+        setArtifactLoadPhase(null);
+      }
+    }
+  }, [project, changingBase, session.status, studio, loadArtifacts, loadArtifactIntoViewer]);
 
   /**
    * Put a whole run on the stage: every seat it exported, in the listing's
@@ -2530,7 +2556,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
   // made while looking at a candidate was made *from* that candidate, and undo
   // means the picture before it. A local file or an authored-only projection
   // has no retained run to add to this history.
-  const baseRunId = loadedArtifact?.runId ?? sourceRunId ?? null;
+  const baseRunId = viewingExternalModel ? null : loadedArtifact?.runId ?? sourceRunId ?? null;
   useEffect(() => {
     if (baseRunId === null) return;
     // Read once, outside the update: whether this base is one an undo or a redo
@@ -2588,8 +2614,8 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
       append({ kind: "refusal", error, what: "POST /api/proposals/parameter-locks" });
     } finally { setParameterLockBusy(false); }
   }, [parameterLockBusy, parameterLockReason, project, projection, contextKey, studio, append, runCandidate, recoverFromStaleBase]);
-  const canUndoModel = sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index > 0 : modelHistory.index > 0) && !modelNavigationBusy;
-  const canRedoModel = sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length :
+  const canUndoModel = !viewingExternalModel && sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index > 0 : modelHistory.index > 0) && !modelNavigationBusy;
+  const canRedoModel = !viewingExternalModel && sourceLabel !== LOCAL_SOURCE_LABEL && (localModel ? localModel.history.index + 1 < localModel.history.snapshots.length :
     modelHistory.index >= 0 && modelHistory.index < modelHistory.runs.length - 1) && !modelNavigationBusy;
 
   /** Show one retained run as both the picture and the base edits continue from. */
@@ -3328,7 +3354,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
                 } } : null,
             }}
             viewportRef={viewportRef}
-            message={artifactLoadPhase === "download" ? t("candidate.loadingBytes") : modelRunPending !== null ? t("stage.sketch.busy") : viewerMessage}
+            message={artifactLoadPhase === "upload" ? t("model.importing") : artifactLoadPhase === "download" ? t("candidate.loadingBytes") : modelRunPending !== null ? t("stage.sketch.busy") : viewerMessage}
             status={artifactLoadingSha !== null ? "loading" : viewerStatus}
             artifactError={artifactError}
             tool={tool}
@@ -3426,7 +3452,7 @@ export default function App({ server, expectedProjectId, initialDocumentIntent, 
             changingBase={changingBase || selectingWorkingCopy}
             baseError={baseError}
             baseActionBusy={session.status !== "ready" || missingChosenModel || proposalBusy || candidateBusy || refiningEntryId !== null || selectingWorkingCopy}
-            onContinue={(runId) => void changeEditingBase(runId)}
+            onContinue={viewingExternalModel ? null : (runId) => void changeEditingBase(runId)}
             onDefaultBase={() => void changeEditingBase(null)}
             evidenceCounts={evidenceCounts}
             review={review}

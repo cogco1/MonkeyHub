@@ -343,6 +343,7 @@ export const messagesZhCN = {
   "candidate.timings.of": "/",
   "candidate.noModelExported":
     "此候选方案没有导出模型 — 文件未写出，但这不等于运行失败",
+  "model.importing": "正在导入模型…",
   "candidate.loadingBytes": "正在加载文件…",
   "candidate.preview": "预览",
   "artifact.kind.exactStep": "精确 STEP",
@@ -801,6 +802,7 @@ export const messagesZhCN = {
   "document.modelSource.continuing": "正在切换修改起点…",
   "document.modelSource.noModels": "当前没有可关联的模型。",
   "stage.workingCopy.view": "查看 {label}",
+  "artifact.kind.external3dm": "导入的 Rhino 模型",
   "artifact.kind.composed3dm": "完整组合模型（3DM）",
   "stage.workingCopy.selected": "此事项已选方案",
   "stage.annotations.loading": "正在读取模型批注…",

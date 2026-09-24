@@ -47,8 +47,8 @@ class ModelAssetRequestDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True, frozen=True, extra="forbid")
 
     project_id: str = Field(alias="projectId", min_length=1)
-    run_id: str = Field(alias="runId", min_length=1)
-    state_digest: str = Field(alias="stateDigest", pattern=r"^[0-9a-f]{64}$")
+    run_id: str | None = Field(alias="runId", default=None, min_length=1)
+    state_digest: str | None = Field(alias="stateDigest", default=None, pattern=r"^[0-9a-f]{64}$")
     file_name: str = Field(alias="fileName", min_length=1, max_length=240)
     content_base64: str = Field(alias="contentBase64", min_length=1)
 

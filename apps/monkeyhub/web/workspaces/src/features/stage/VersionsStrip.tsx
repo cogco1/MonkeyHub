@@ -287,7 +287,7 @@ export function VersionsStrip({
                       : (artifact.unavailableReason ?? t("stage.versions.unavailableNoReason"))}
                     onClick={() => onOpen(artifact, sourceLabel)}
                   >
-                    <span className="vcard__asset-kind">{loadingThis ? t("stage.versions.loading") : t(artifact.representation === "composed" ? "stage.versions.completeModel" : "stage.versions.nativeExport")}</span>
+                    <span className="vcard__asset-kind">{loadingThis ? t("stage.versions.loading") : t(artifact.representation === "external" ? "artifact.kind.external3dm" : artifact.representation === "composed" ? "stage.versions.completeModel" : "stage.versions.nativeExport")}</span>
                     <span className="vcard__filename">{artifact.fileName}</span>
                     {(developerMode || artifact.representation === "preview") && <span className="quiet">{developerMode ? `${seat} · ` : ""}{t(artifactKindKey(artifact))}</span>}
                     {!artifact.available && ` · ${t("stage.versions.unavailable")}`}
