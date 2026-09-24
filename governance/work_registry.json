@@ -648,31 +648,6 @@
       "notes": [
         "2026-09-08 rule alignment: Awaiting the first concrete evidence consumer and a check of existing Reading/source references. The earlier proposed ledger and private Atlas field superset are not a mandate to add a core record."
       ]
-    },
-    {
-      "id": "GH-234",
-      "stream": "planning",
-      "status": "active",
-      "goal": "Unify Hub typography and shared controls after the attachment UI review; use one scaled type hierarchy for equal-role text.",
-      "depends_on": [],
-      "write_scope": [
-        "apps/shared-web/src/base.css",
-        "apps/monkeyhub/web/src/styles.css",
-        "apps/monkeyhub/web/src/ChatShell.css",
-        "apps/monkeyhub/web/src/ChatMessageContent.css",
-        "apps/monkeyhub/web/test/chatShell.browser.mjs"
-      ],
-      "issue": "https://github.com/cogco1/MonkeyHub/issues/234",
-      "branch": "codex/attachment-toolbar",
-      "worktree": "D:/MONKEYHUB_DEV/workspace/worktrees/codex-attachment-toolbar",
-      "base_ref": "a35c6de6619beaa3fb1f9c58c76e2f1d125c11c6",
-      "contributor": "Codex",
-      "reviewer": null,
-      "handoff": "Continue PR #264; preserve chat semantics and verify font scaling plus responsive layouts.",
-      "acceptance": [
-        "Same-role Hub text shares family, size and weight at every supported font scale.",
-        "Dark/light and narrow/wide interaction checks and shared-control browser smoke pass."
-      ]
     }
   ]
 }
