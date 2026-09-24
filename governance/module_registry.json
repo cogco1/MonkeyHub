@@ -3873,7 +3873,7 @@
         "the per-path sha256 cache keyed by path, size and mtime",
         "verifying and decoding a viewport PNG before retaining its original bytes through P036 under runs/<requested-run>/workspaces/studio-captures with a server-generated content name",
         "validating original PDF/PNG/JPEG bytes and visible page dimensions, ingesting them through P036, and registering their content identity in the named run; serving only registered source bytes whose SHA-256 still matches",
-        "retaining an explicitly supplied composed 3dm in P036 objects and a registration in its exact retained run state; listing composed alongside native exports with registered status and no native readback claim",
+        "retaining an explicitly supplied composed 3dm against its exact run state, or an external 3dm without semantic state in P036 source runs keyed by the exact asset digest; original bytes and immutable registrations share the existing artifact owner, with no native readback claim",
         "one-time declared model-source association for an existing unbound document, retained in its unchanged storage run; serving the association without rewriting source bytes, annotations or earlier comments",
         "registering model-axis elevation and top projection revisions from a complete exact STEP in the existing document list, with fixed model/Stage source, logical drawing id, view recipe and immutable drawing receipt; top is an uncut orthographic projection",
         "composing front/right/top review sheets from the exact retained model using a selected drawing style and explicit scale, registering PDF and same-scene editable DXF through P036, and reusing an identical retained sheet without another projection",
@@ -3903,7 +3903,7 @@
         "optional StudioEventSink for successful API registration or option additions",
         "optional source run for project-wide discovery or project source-material upload",
         "optional exact DocumentPageReplacement values mapping registered old pages to uploaded page indices",
-        "Optional StudioMonitor for generation, exact drawing-cache comparison and registration intervals through the same generate_elevation implementation"
+        "Optional StudioMonitor for drawing generation/cache comparison and model registration stages (binding, decode, digest, lock wait, lookup, inspection, persistence and verification) through the existing application functions"
       ],
       "outputs": [
         "ArtifactListing",
@@ -4014,7 +4014,7 @@
         "an unavailable artifact is refused in the receipt's own terms, naming the reason and the runs not searched",
         "source documents are original references in the project object store, registered in a named run and never listed as certified model exports; no HTTP request may select a server filesystem path",
         "page coordinates refer to the visible PDF CropBox after rotation, or the EXIF-oriented image; identical names do not identify identical file content",
-        "model bytes require a retained export receipt or explicit composed-model registration; registration declares correspondence to an exact run state and does not establish that pixels or all imported geometry were generated from that state",
+        "model bytes require a retained export receipt or explicit model registration; composed registrations declare an exact run-state correspondence; external registrations omit design state and modelSource, retain exact original bytes and never create runner receipts, candidates, Stages or HEAD changes",
         "an unknown document may receive one explicit model association; a known association cannot be overwritten and old submitted comments keep the exact association they originally used",
         "only a completed new model registration emits model_asset.registered; exact-source retries, including concurrent requests in one process, and failed registration emit no new-model event",
         "drawing requests refuse a partial native STEP for a complete composed model; document bytes resolve the requested drawing revision and verify its retained source and artifact hashes",
@@ -4043,7 +4043,9 @@
         "apps/archflow-studio/api/tests/test_drawing_plans.py",
         "apps/archflow-studio/api/tests/test_drawing_dimensions.py",
         "apps/archflow-studio/api/tests/test_model_exports.py",
-        "apps/archflow-studio/api/tests/test_model_source_index.py"
+        "apps/archflow-studio/api/tests/test_model_source_index.py",
+        "apps/archflow-studio/api/tests/test_model_load_monitoring.py",
+        "apps/monkeyhub/web/workspaces/test/externalModelImport.browser.mjs"
       ],
       "notes": "The viewer's only source of model bytes; digests are the identity, filenames are not.",
       "files": [

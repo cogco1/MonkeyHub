@@ -200,3 +200,10 @@ test("a copy that failed, or belongs to another stage or program, is not this mo
   });
   assert.equal(workModelOf([source, mine], source)?.sha256, mine.sha256);
 });
+
+
+test("an external Rhino source is viewable without being called a native export", () => {
+  const external = row({ representation: "external", designStateDigest: null, modelSource: null });
+  assert.equal(artifactKindKey(external), "artifact.kind.external3dm");
+  assert.deepEqual(viewableArtifacts([external]), [external]);
+});

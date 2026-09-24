@@ -21,6 +21,7 @@ export function seatOf(artifact: ProjectArtifactDto): string {
  * is there so one seat of a run never reads as the whole of it.
  */
 export function canonicalSourceLabel(artifact: ProjectArtifactDto): string {
+  if (artifact.representation === "external") return `IMPORTED · ${artifact.fileName} · ${sha8(artifact.sha256)}`;
   return `CANONICAL · ${artifact.runId} · ${seatOf(artifact)} · ${sha8(artifact.sha256)}`;
 }
 

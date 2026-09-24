@@ -356,6 +356,7 @@ export const messagesEn = {
   "candidate.timings.of": "of",
   "candidate.noModelExported":
     "this candidate exported no model — a file that was not written, not a failure",
+  "model.importing": "Importing model…",
   "candidate.loadingBytes": "loading bytes…",
   "candidate.preview": "Preview",
   "artifact.kind.exactStep": "exact STEP",
@@ -844,6 +845,7 @@ export const messagesEn = {
   "document.modelSource.continuing": "Changing editing base…",
   "document.modelSource.noModels": "No model is available to link.",
   "stage.workingCopy.view": "View {label}",
+  "artifact.kind.external3dm": "Imported Rhino model",
   "artifact.kind.composed3dm": "Complete composed model (3DM)",
   "stage.workingCopy.selected": "Selected option for this work item",
   "stage.annotations.loading": "Reading model marks…",
