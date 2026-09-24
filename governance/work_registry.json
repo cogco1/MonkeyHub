@@ -661,7 +661,7 @@
       "base_ref": "04e719617d6aa20507b5c1846de3059b5c57a451",
       "contributor": "Codex",
       "reviewer": "Independent bounded sub-agent reviews and parent integration",
-      "handoff": "Combined integration PR for project-linked output workspaces. #244 V0 is implemented; #66, #223 and #216 retain the broader acceptance described in the PR.",
+      "handoff": "Combined integration PR for project-linked output workspaces. #244, #66, #223 and #216 remain open for complete architect workflows; bounded drawing dressing, rendering readback and publication operations do not establish full workspace usability. Includes the requested quiet availability labels and accurate, contextual model-sync guidance.",
       "modules": [
         "studio.publication",
         "studio.artifacts",
@@ -689,6 +689,7 @@
         "apps/monkeyhub/web/src/ChatShell.tsx",
         "apps/monkeyhub/web/src/i18n/messages.en.ts",
         "apps/monkeyhub/web/src/i18n/messages.zh-CN.ts",
+        "apps/monkeyhub/web/test/chatShell.browser.mjs",
         "apps/monkeyhub/web/workspaces/src/api/client.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/index.ts",
         "apps/monkeyhub/web/workspaces/src/api/generated/sdk.gen.ts",
@@ -718,7 +719,8 @@
         "governance/module_registry.json",
         "governance/work_registry.json",
         "monkeydiagram/drawing_elevation.py",
-        "monkeydiagram/drawing_svg.py"
+        "monkeydiagram/drawing_svg.py",
+        "tests/test_version_refs.py"
       ],
       "acceptance": [
         "Project-bound pages save/reopen; exact source replacement/freeze; editable PPTX and deterministic PDF; Board selection preserves narrative page order without changing design HEAD."

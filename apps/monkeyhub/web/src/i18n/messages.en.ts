@@ -942,7 +942,7 @@ export const chatCopy = {
     contextProjectHint: "The next message starts a new model context from the saved editing state. This conversation stays visible.",
     contextOpenProject: "Open the project workspace to read its saved editing state before starting a new context.",
     contextLoading: "Reading the editing state. Wait before starting a new context.",
-    contextUnsaved: "Local model edits are not saved. Sync or undo them before using the model as chat context.",
+    contextUnsaved: "Model edits have not been synced to a candidate. Sync or undo them in Modeling before starting a new context from project state. You can still continue this conversation.",
     contextProjectMessage: "Project context",
     contextStageMessage: "Continuing from confirmed stage",
     contextStageHint: "After you confirm a stage, its saved result starts the next model context. Candidate revisions keep the same conversation.",

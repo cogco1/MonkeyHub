@@ -934,12 +934,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
             onChange={(event) => setDrafts((value) => ({ ...value, [draftKey]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running) void send(); } }} />
           <input ref={fileInput} type="file" multiple hidden aria-label={t.attach} disabled={!project || busy} onChange={(event) => { addAttachments(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
           <label className="chat-context-option" title={designContext ? t.contextProjectHint : contextUnavailable}>
-            <input type="checkbox" checked={contextMode === "project"} disabled={busy || running || (!designContext && contextMode !== "project")}
+            <input type="checkbox" checked={contextMode === "project"} aria-description={designContext ? t.contextProjectHint : contextUnavailable} disabled={busy || running || (!designContext && contextMode !== "project")}
               onChange={(event) => setContextModes((value) => ({ ...value, [draftKey]: event.target.checked ? "project" : "continue" }))} />
             {t.contextProject}
           </label>
-          {(!designContext || contextMode === "project") && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
-          {designContext && contextMode !== "project" && <p className="chat-muted">{t.contextStageHint}</p>}
+          {contextMode === "project" && <p className="chat-muted" role="status">{designContext ? t.contextProjectHint : contextUnavailable}</p>}
           <div className="chat-composer__bottom"><button type="button" className="chat-icon chat-attach" aria-label={t.attach} title={t.attach} disabled={!project || busy} onClick={() => fileInput.current?.click()}><Icon name="plus" /></button><div className="chat-connection" title={running ? t.modelRunning : t.connectionHint}>
             <span className="chat-connection__name">{providers.find((item) => item.id === connection.provider)?.label ?? connection.provider}</span>
             <label className="sr-only" htmlFor="chat-model">{t.modelLabel}</label>
@@ -1005,11 +1004,11 @@ export function ChatShell({ preferences, settings, settingsDirty = false, config
           const status = statuses?.find((app) => app.appId === ((item.id === "drawing" || item.id === "publish") ? "monkeyarch" : item.id));
           const state = needsProject && studioWorker?.state === "crashed" ? "error" : status?.state;
           const stateText = state === "unavailable" ? t.toolUnavailable : state === "error" ? t.toolError
-            : state === "running" ? t.toolRunning : state === "starting" ? t.toolStarting
-            : state === "stopping" ? t.toolStopping : state === "stopped" ? t.toolStopped : t.toolUnknown;
+            : state === "starting" ? t.toolStarting : state === "stopping" ? t.toolStopping
+            : state === "running" || state === "stopped" ? undefined : t.toolUnknown;
           return <button key={item.id} className="chat-rail__tool" aria-label={t[item.label]} aria-pressed={panel && item.id === activeTool}
             title={status?.error?.detail ?? stateText} data-state={state} disabled={(needsProject && !project) || (!currentTabs.some((tab) => tab.runtimeId || tab.id === item.id) && (busy || Boolean(toolBusy)))}
-            onClick={() => void openTool(item.id)}><Icon name={item.icon} /><span>{t[item.label]}</span><small aria-hidden="true">{stateText}</small></button>;
+            onClick={() => void openTool(item.id)}><Icon name={item.icon} /><span>{t[item.label]}</span>{stateText && <small aria-hidden="true">{stateText}</small>}</button>;
         })}
       </div>)}
       <div className="chat-rail__spacer" />

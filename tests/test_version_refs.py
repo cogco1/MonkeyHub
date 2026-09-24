@@ -91,6 +91,7 @@ NO_VERSION_IDENTITY = {
     "ProjectStageWorkflow@1": "the workflow shape; bound per run by the envelope",
     "ProjectStageWorkflowFreezeReceipt@1": "freezes a workflow digest; no base",
     "ProtocolCompletion@1": "completion of a proposal round; no base",
+    "PublicationDocument@1": "page layout bound to source document record refs and asset digests; no canonical version",
     "RelationCheckReport@1": "check findings against a state digest",
     "RunnerRunFailure@1": "a failure report; no base",
     "SeatAuthoringContext@1": "seat inputs keyed by digests",

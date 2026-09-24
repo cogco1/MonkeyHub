@@ -900,7 +900,7 @@ export const chatCopy = {
     contextProjectHint: "下一条消息将从已保存的编辑状态开始新的模型上下文，当前聊天记录仍然保留。",
     contextOpenProject: "请打开项目工作面，读取已保存的编辑状态后再开始新上下文。",
     contextLoading: "正在读取编辑状态，请稍后再开始新上下文。",
-    contextUnsaved: "模型有尚未保存的本地修改，请先同步或撤销，再将模型作为聊天上下文。",
+    contextUnsaved: "模型修改尚未同步为候选。请到建模工作区同步，或撤销这些修改，再从项目状态开始新上下文；仍可继续当前对话。",
     contextProjectMessage: "项目状态",
     contextStageMessage: "从已确认阶段继续",
     contextStageHint: "确认阶段后，从保存的阶段成果开始新的模型上下文；候选修改继续当前对话。",
