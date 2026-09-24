@@ -30,7 +30,7 @@ class DesktopUpdateTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="hub-update-")
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.base = self.root / "versions" / (BASE[:12] + "-desktop")
         self.target = self.root / "complete-target"
         for name in REQUIRED_FILES:
